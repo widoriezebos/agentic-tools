@@ -1,0 +1,32 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing run",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "the landing lane is stopped by Wido, so no landing agent was started",
+  "data": {
+    "outcome": "paused",
+    "root": "/Users/wido/GitHub/agentic-tools-landing",
+    "batch": "4gr18nm8t3nyev9sssda9jgtsq"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "start"
+    ],
+    "reason": "resumes the lane; then run metasystem landing run again"
+  },
+  "details": [
+    "the landing agent at /Users/wido/GitHub/agentic-tools-landing is not started: the lane is paused by Wido; metasystem landing start resumes it"
+  ]
+}
+
+--

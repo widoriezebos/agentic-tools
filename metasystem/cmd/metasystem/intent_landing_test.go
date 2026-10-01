@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -38,6 +39,10 @@ type laneVerbBed struct {
 	// (landing-m1l) holding; oldClaimsErr an unreadable ledger.
 	oldClaims    []string
 	oldClaimsErr error
+	// keeper is the landing agent's keeper landing run steps; helmed is a
+	// lane checkout at the helm.
+	keeper func(home, root string) lane.AgentKeeper
+	helmed bool
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -88,6 +93,13 @@ func (bed *laneVerbBed) owners() intentOwners {
 		},
 		oldOwnerClaims: func(string) ([]string, error) {
 			return bed.oldClaims, bed.oldClaimsErr
+		},
+		keeper: bed.keeper,
+		helm: func(root string) helm.State {
+			if bed.helmed {
+				return helm.State{Active: true}
+			}
+			return helm.Active(root)
 		},
 	}}
 }

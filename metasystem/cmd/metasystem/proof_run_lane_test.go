@@ -180,7 +180,7 @@ func TestLaneRunNamesItsLaneCheckout(t *testing.T) {
 }
 
 // The landing agent charges a proof to the lane by launch descent (lane
-// design r10 K7): the lane checkout's lease is held under lineage
+// design r10 K7): the lane installation's lease is held under lineage
 // landing-agent and the caller descends from that holder. A seat session
 // holding the checkout is not the agent, and a process outside the agent's
 // descent is refused.
@@ -208,11 +208,11 @@ func TestLaneAgentDescentChargesAProofToTheLane(t *testing.T) {
 		if batch.ModuleRoot(checkout) == checkout {
 			t.Fatalf("fixture is not nested: %s", checkout)
 		}
-		if _, err := lease.AnnounceWithPair(checkout, "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-agent-test", "metasystem", lineage); err != nil {
+		if _, err := lease.AnnounceWithPair(batch.ModuleRoot(checkout), "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-agent-test", "metasystem", lineage); err != nil {
 			t.Fatal(err)
 		}
-		if holder, err := lease.RequireHolder(checkout, int64(os.Getpid()), nil); err != nil || !holder.Holder {
-			t.Fatalf("hold the lane checkout as %s: %+v %v", lineage, holder, err)
+		if holder, err := lease.RequireHolder(batch.ModuleRoot(checkout), int64(os.Getpid()), nil); err != nil || !holder.Holder {
+			t.Fatalf("hold the lane installation as %s: %+v %v", lineage, holder, err)
 		}
 		return batch.ModuleRoot(checkout)
 	}
@@ -226,5 +226,65 @@ func TestLaneAgentDescentChargesAProofToTheLane(t *testing.T) {
 	}
 	if err := proveLaneOwnerCaller(controlRoot, 1); err == nil || !strings.Contains(err.Error(), "does not descend") {
 		t.Fatalf("a process outside the agent's descent was accepted: %v", err)
+	}
+}
+
+// The landing agent's lease sits at the lane's installation root, where its
+// session announces; a nested lane checkout may still carry a stale lease at
+// its checkout root from an earlier lane (2026-10-01: landing-m1l, dead
+// pid). The agent is proven at the installation, for a proof and for a
+// return alike, and a holder there that is not the agent is still refused
+// whatever the checkout root's file says.
+func TestLaneAgentIsProvenAtTheInstallationRoot(t *testing.T) {
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe: %s %v", state, err)
+	}
+	hold := func(root, lineage string) {
+		t.Helper()
+		if _, err := lease.AnnounceWithPair(root, "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-install-test", "metasystem", lineage); err != nil {
+			t.Fatal(err)
+		}
+		if holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil); err != nil || !holder.Holder {
+			t.Fatalf("hold %s as %s: %+v %v", root, lineage, holder, err)
+		}
+	}
+	lane := func(checkoutLineage, installLineage string) (checkout, install string) {
+		t.Helper()
+		checkout = t.TempDir()
+		registerLane(t, home, checkout, "test", time.Now())
+		record, ok, err := landinglane.Read(home)
+		if err != nil || !ok {
+			t.Fatalf("read the lane: %v %v", ok, err)
+		}
+		layout, err := record.Layout()
+		if err != nil || string(layout.Install) == string(layout.Checkout) {
+			t.Fatalf("fixture is not nested: %+v %v", layout, err)
+		}
+		hold(checkout, checkoutLineage)
+		hold(string(layout.Install), installLineage)
+		return checkout, string(layout.Install)
+	}
+
+	checkout, install := lane("landing-m1l", landinglane.AgentLineage)
+	if err := proveLaneOwnerCaller(install, int64(os.Getpid())); err != nil {
+		t.Fatalf("the agent holding the installation was refused a proof over a stale checkout lease: %v", err)
+	}
+	if err := laneAgentCaller(checkout); err != nil {
+		t.Fatalf("the agent holding the installation was refused a return over a stale checkout lease: %v", err)
+	}
+
+	checkout, install = lane(landinglane.AgentLineage, "steward-seat")
+	if err := proveLaneOwnerCaller(install, int64(os.Getpid())); err == nil || !strings.Contains(err.Error(), "not by its landing agent") {
+		t.Fatalf("a seat holding the installation charged the lane: %v", err)
+	}
+	if err := laneAgentCaller(checkout); err == nil || !strings.Contains(err.Error(), "not by its landing agent") {
+		t.Fatalf("a seat holding the installation returned a member: %v", err)
 	}
 }

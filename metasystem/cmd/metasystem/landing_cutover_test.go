@@ -94,7 +94,7 @@ func TestCutoverRefusedWithOldOwnerClaims(t *testing.T) {
 }
 
 // holdNestedLaneCheckout registers a nested lane checkout on the test's
-// host home and holds its lease as this process under lineage; it returns
+// host home and holds its installation's lease as this process under lineage; it returns
 // the checkout's control root (its module).
 func holdNestedLaneCheckout(t *testing.T, lineage string) string {
 	t.Helper()
@@ -117,11 +117,11 @@ func holdNestedLaneCheckout(t *testing.T, lineage string) string {
 	if batch.ModuleRoot(checkout) == checkout {
 		t.Fatalf("fixture is not nested: %s", checkout)
 	}
-	if _, err := lease.AnnounceWithPair(checkout, "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-cutover-test", "metasystem", lineage); err != nil {
+	if _, err := lease.AnnounceWithPair(batch.ModuleRoot(checkout), "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-cutover-test", "metasystem", lineage); err != nil {
 		t.Fatal(err)
 	}
-	if holder, err := lease.RequireHolder(checkout, int64(os.Getpid()), nil); err != nil || !holder.Holder {
-		t.Fatalf("hold the lane checkout as %s: %+v %v", lineage, holder, err)
+	if holder, err := lease.RequireHolder(batch.ModuleRoot(checkout), int64(os.Getpid()), nil); err != nil || !holder.Holder {
+		t.Fatalf("hold the lane installation as %s: %+v %v", lineage, holder, err)
 	}
 	return batch.ModuleRoot(checkout)
 }

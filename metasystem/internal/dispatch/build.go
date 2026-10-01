@@ -24,8 +24,9 @@ import (
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var gitObjectIDRe = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// designCritiqueRoundLimit implements section 4 of critique-closes-on-folded-proof-design.md and R-97-m1e.
-const designCritiqueRoundLimit uint8 = 2
+// designCritiqueRoundLimit implements section 4 of critique-closes-on-folded-proof-design.md and R-97-m1e,
+// raised to five as a backstop (Wido 2026-10-01): the loop ends on materiality, not on the count.
+const designCritiqueRoundLimit uint8 = 5
 
 // VerifyChainIncarnation proves a chain still belongs to the LIVE mission
 // incarnation: a mission identifier can be
@@ -248,8 +249,8 @@ func reviewRoundLimitForRole(role string, goalBound bool, sourceLimit uint8) rev
 }
 
 func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
-	if role == "design-critic" && goalBound && tier != 3 {
-		return fmt.Errorf("design-critic at goal tier %d is refused: design critique exists at tier 3 only", tier)
+	if role == "design-critic" && goalBound && tier < 2 {
+		return fmt.Errorf("design-critic at goal tier %d is refused: design critique exists at tiers 2 and 3", tier)
 	}
 	return nil
 }

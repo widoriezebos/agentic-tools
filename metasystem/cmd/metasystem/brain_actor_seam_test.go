@@ -107,6 +107,7 @@ cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+cmd/metasystem/intent_landing_kernel.go:	if caller, err := classifyVerbCaller(string(layout.Install), int64(os.Getppid())); err == nil && caller.Class == lease.ClassHuman {
 cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
 cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {

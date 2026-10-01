@@ -889,8 +889,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 			if request.BatchPrefixReceipt || request.BatchAdmission || !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
 				return nil, nil
 			}
-			receipt, payload, prepareErr := landing.PrepareTestingReceiptPayload(prepared.Installation,
-				prepared.CandidateTree, result, completion.CompletedAt)
+			receipt, payload, prepareErr := prepareTestingRunReceipt(prepared, result, completion.CompletedAt)
 			if prepareErr == nil && receipt.Testing != nil {
 				updated := *receipt.Testing
 				retained = &updated
@@ -917,6 +916,14 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		}
 	}
 	return launchStatus
+}
+
+// prepareTestingRunReceipt builds the receipt of a passing run. Its
+// attempt records are read at the proof control root, where the run wrote
+// them: a lane proof's lie in the lane checkout, not in the detached worktree
+// it ran in; a seat proof's control root is its own installation.
+func prepareTestingRunReceipt(prepared testrun.Preparation, result proofrun.TestResult, completedAt time.Time) (landing.TestReceipt, json.RawMessage, error) {
+	return landing.PrepareTestingReceiptPayloadFrom(prepared.Installation, prepared.ProofControlRoot(), prepared.CandidateTree, result, completedAt)
 }
 
 func testingWorkerEnvironment(environment []string) ([]string, error) {

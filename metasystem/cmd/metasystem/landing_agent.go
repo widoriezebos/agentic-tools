@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
@@ -60,6 +61,9 @@ type landingAgent struct {
 	settings func(stateRoot string) (launch.Settings, error)
 	now      func() time.Time
 	nonce    func() (string, error)
+	// hold makes a started launch's agent the lane installation's holder;
+	// nil is holdLaneInstallation.
+	hold func(module string, record launch.Record) error
 }
 
 func newLandingAgent() landingAgent {
@@ -137,7 +141,49 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 		// A start that did not happen leaves no brief behind.
 		return "", errors.Join(err, os.Remove(brief))
 	}
+	// The launch, not the agent, makes the agent the lane installation's
+	// holder (2026-10-01): its SessionStart hook may skip arming (an engine
+	// rebuilding), and an agent that is not the holder can prove, push and
+	// return nothing. Start returns once the child exists, before its model
+	// has answered once, so the lease is held before its first tool call.
+	hold := a.hold
+	if hold == nil {
+		hold = holdLaneInstallation
+	}
+	if err := hold(module, record); err != nil {
+		// An agent that cannot act on the lane is not left running.
+		_, cancelErr := manager.Cancel(record.ID)
+		return "", errors.Join(fmt.Errorf("landing agent %s could not take the lane installation's lease, so it was stopped: %w", record.ID, err), cancelErr)
+	}
 	return record.ID, nil
+}
+
+// holdLaneInstallation announces a started landing launch's agent process
+// at the lane installation under the landing-agent lineage and takes the
+// installation's lease for it, as session start does: a dead holder's lease
+// passes to it. A live holder that is another process keeps the lease, and
+// that is an error: the agent could not prove it is the lane's agent.
+func holdLaneInstallation(module string, record launch.Record) error {
+	child := record.Child
+	if child == nil {
+		return errors.New("the launch recorded no agent process")
+	}
+	ticks, boot := child.StartTicks, child.BootID
+	if ticks == 0 || boot == "" {
+		ticks, boot = 0, ""
+	}
+	if _, err := lease.AnnounceWithPair(module, record.ID, child.Pid, child.StartedAtSec, ticks, boot,
+		fmt.Sprintf("claude:%d", child.Pid), "claude", launch.LandingOwnerLineage); err != nil {
+		return err
+	}
+	holder, err := lease.CurrentHolder(module)
+	if err != nil {
+		return err
+	}
+	if holder.Pid != child.Pid || holder.OwnerLineage != launch.LandingOwnerLineage {
+		return fmt.Errorf("the lane installation is held by the live session %s (pid %d)", holder.OwnerLineage, holder.Pid)
+	}
+	return nil
 }
 
 // cancel stops a landing launch that started as the lane was paused.
@@ -187,6 +233,8 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return "", nil
 			},
 		},
+		Settle:  lane.SettleMemberless,
+		Sources: lane.WakeSources{Proof: laneProof},
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 

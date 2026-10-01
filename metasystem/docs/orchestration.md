@@ -41,8 +41,8 @@ For each substantial piece of work, use this five-step loop:
    finding shows that the design cannot be built as written or would build the
    wrong behavior, and names the artifact; witness bookkeeping, naming and
    record-format findings are notes for the builder's brief, not rounds. The
-   orchestrator dispositions every finding. A second round runs only after a
-   fold that changed a rule; there is never a third. An amendment that records
+   orchestrator dispositions every finding. A further round runs only after a
+   fold that changed a rule, up to the five-round backstop. An amendment that records
    a human ruling gets no round: the ruling is the authority and the builder
    proves the fold (2026-09-17 reset,
    records/misc/delivery-process-reset-2026-09-17.md).
@@ -65,8 +65,8 @@ implementation, after which the critic reviews the new tree. Design and code
 critique have separate round rules. For code critique and the warden, Part One
 stores a review-round member on the goal: the `metasystem.budget.tier-1`,
 `metasystem.budget.tier-2`, and `metasystem.budget.tier-3` keys in
-`metasystem.conf` provide zero, two, and three rounds, while
-`metasystem.budget.review-round-max` keeps three as the ceiling. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
+`metasystem.conf` provide zero, five, and five rounds, while
+`metasystem.budget.review-round-max` keeps five as the ceiling. The count is a backstop: the loop ends when no remaining finding would change the implementation materially under the brief's threat model and step 1 (R-124), and hitting the cap with material findings open goes to the human. Design critique has five rounds at tiers 2 and 3 (Wido 2026-10-01) and does not exist at tier 1. A design-critic chain's `reviewRoundLimit` is frozen at 5 at dispatch whatever the goal's stored member says; a chain frozen at 2 before 2026-10-01 is rebound to the current limit at its next round or close. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
 
 Before reserving a job, the dispatcher judges the exact claimed revision and
 the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and
@@ -180,12 +180,12 @@ finding, and under R-124 a finding is material only when the slice does not
 work or is not safe without it; everything else is deferred, never folded
 with new mechanism. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
-For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no third design round and none can be bought.
+For design critique, the loop ends on materiality, not on a count; the final-round rules below apply only when the backstop is reached. For design critique, The cap is a backstop, not the stop criterion: a loop that ends on materiality closes before it. The final round is the chain's frozen limit. The final round folded with no material finding closes the loop. The final round folded with only mechanical findings on a falling trajectory (its material count below the round before) closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round N on M fixture obligations`. Any other final-round residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no design round past the cap and none can be bought.
 When code-critique or warden rounds are spent, closing the review (`metasystem work review j2:<job> --dispositions`
 or `metasystem work finish`, whose close owner closes the register) defers each bounded open finding into a review obligation on the goal (discharged later by `metasystem work review <goal> --review R --finding F --test NAME` against the chain, artifact and test that carry
 it) and closes the register; a severe or unproven finding closes only after a
 human records `metasystem goal accept-risk <goal> --finding F [--review R] --reason <text>` for it. The reviewer never dispatches a
-silent fourth round.
+silent round past the cap.
 Tier 1 has no critique and lands as a receipted direct fix bound to the
 candidate tree.
 A carried landing is the separate, human-only landing form: a verified human

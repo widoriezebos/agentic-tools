@@ -123,7 +123,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if after.StopCapability.Revision != after.Revision || after.StopCapability.Generation != after.Revision || after.StopCapability.Machine != beforeCapability.Machine || after.StopCapability.ClaimEpoch != beforeCapability.ClaimEpoch || after.StopCapability.FenceEpoch != beforeCapability.FenceEpoch {
 		t.Fatalf("stop capability rebind changed more than revision coordinates: before=%+v after=%+v", beforeCapability, after.StopCapability)
 	}
-	if after.Budget.ElapsedLimit != beforeBudget.ElapsedLimit || after.Budget.AttemptLimit != beforeBudget.AttemptLimit || after.Budget.ReservedJobMinutesLimit != beforeBudget.ReservedJobMinutesLimit || after.Budget.ActiveJobLimit != beforeBudget.ActiveJobLimit || after.Budget.ReviewRoundLimit != 3 || after.BudgetExceptions != beforeExceptions {
+	if after.Budget.ElapsedLimit != beforeBudget.ElapsedLimit || after.Budget.AttemptLimit != beforeBudget.AttemptLimit || after.Budget.ReservedJobMinutesLimit != beforeBudget.ReservedJobMinutesLimit || after.Budget.ActiveJobLimit != beforeBudget.ActiveJobLimit || after.Budget.ReviewRoundLimit != 5 || after.BudgetExceptions != beforeExceptions {
 		t.Fatalf("raise changed spend members, failed to lift review rounds, or counted an exception: before=%+v after=%+v exceptions=%d", beforeBudget, after.Budget, after.BudgetExceptions)
 	}
 	lastReason := after.History[len(after.History)-1].Reason

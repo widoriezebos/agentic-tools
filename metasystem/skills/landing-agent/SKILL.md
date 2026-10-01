@@ -26,28 +26,32 @@ Nothing you remember from an earlier session counts: the lane's records are the 
    `git fetch origin`, `git checkout --detach origin/main`, then `git merge --no-ff HEAD_OF_MEMBER`
    for each member whose state is `joined`, one at a time. Fix a conflict yourself when the fix is
    small and plain; commit it with a message that says what you resolved.
-3. Run `metasystem landing prove`. It runs the selected tests of HEAD's tree, the same tests a
-   seat's own landing runs.
+3. Run `metasystem landing prove`; it starts the proof and returns. End your turn: you are woken
+   when it ends. Then read `metasystem landing status --json` `last_proof`. The proof runs the
+   selected tests of HEAD's tree, the same tests a seat's own landing runs, and belongs to the lane:
+   it goes on when your session ends. Never wait for it in a loop; while it runs `landing status`
+   shows it in `running_proof` and no other landing agent starts.
 4. When it is green, run `metasystem landing push`. Every member main then contains is recorded
    landed and its goal goes back to its seat as landed. Go to step 1.
 5. When it is red, decide which member caused it: read the failing tests, the members' diffs and,
    when that does not settle it, prove smaller merges (main plus one member) with
-   `metasystem landing prove`. Then hand that member back with
-   `metasystem landing return MEMBER --reason TEXT`, saying which tests fail and why you place
-   them on it. Start again at step 1 without it.
+   `metasystem landing prove`, ending your turn after each as in step 3. Then hand that member
+   back with `metasystem landing return MEMBER --reason TEXT`, saying which tests fail and why you
+   place them on it. Start again at step 1 without it.
 6. When a member does not merge and the conflict is not yours to fix, return it the same way, with
    the conflicting paths as the reason.
 7. Stop only when the queue holds no `joined` member: every member is pushed (landed) or returned
-   with `metasystem landing return MEMBER --reason TEXT`. Never end the session with a member
-   still queued that you cannot land (a conflict you cannot resolve, a red you place on it,
-   anything you cannot finish): return it with its reason first. The keeper starts a new session
-   on every steward tick while work is queued.
+   with `metasystem landing return MEMBER --reason TEXT`, or a proof you started runs (step 3).
+   Never end the session with a member still queued that you cannot land (a conflict you cannot
+   resolve, a red you place on it, anything you cannot finish): return it with its reason first.
+   The keeper starts a new session on every steward tick while work is queued and no proof runs.
 8. When a batch shows `held-unclassified` after a return, return its remaining members too, each
    with its reason; never leave a batch held.
 
 ## When the run itself fails
 
-A prove that ends `unavailable` says nothing about the work: no member is returned for it. Read
+A prove that ends `unavailable` says nothing about the work, nor does a proof that `landing status`
+shows as `died` (its process ended without a result): no member is returned for it. Read
 the reason, fix what is in your reach (a checkout left mid-merge, a stale fetch), and prove again.
 When it stays unavailable, or main itself is red without any member, return the queued members
 with that as the reason, then stop and leave it to a person: say what you saw in your final

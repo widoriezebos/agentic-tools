@@ -67,8 +67,9 @@ Use `accepted` or `refuted` for material findings; a TRUE finding outside the br
 
 When a design chain exited through fixtures-as-arbiter (see the design-critique skill), this code critique is MANDATORY and the named fixture obligations are part of its findings surface: an unimplemented or failing named fixture is a material finding.
 
-Part One stores the review-round member in the goal's tier box: zero rounds
-for Tier 1, two for Tier 2, and three for Tier 3, and the tier itself derives
+The round count is a backstop, not the stop criterion (Wido 2026-10-01). The loop ends when no remaining finding would change the implementation materially, judged against the brief's threat model (blank means the template's default: our own agents and operators make mistakes; nobody attacks) and step 1: a finding is material only when step 1 does not WORK or is not SAFE without it (R-124). Every real finding is fixed, by subtraction first. Stop on divergence: when the material findings are not falling, or half or more of them sit in what the last fold changed, step back and go to the human. The backstop: Part One stores the review-round member in the goal's tier box: zero rounds
+for Tier 1 and five for Tiers 2 and 3, under the `metasystem.budget.review-round-max`
+ceiling of five, and the tier itself derives
 from the goal's severity and novelty answers (exposure and accumulation
 weight the proof, not the tier), never from the shape of the change. Part Two accounts mechanically (design
 point STR2-ROUND-ACCOUNTING-05): dispatch freezes that member on the critic
@@ -94,15 +95,15 @@ Stop on divergence. From round 2 on, count the adjudicated material findings (ac
 
 Run before round 2. When the change has a runnable surface, run it for real (`skills/verify/SKILL.md`) after the first fold and before round 2. A failure from that run outranks the open review findings, and round 2 reads the fold plus whatever the run touched.
 
-As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. One fix round is the norm; the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains.
+As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. The loop ends on that test, judged against the brief's threat model, not on a round count: the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains. The five-round cap is a backstop; reaching it with material findings open goes to the human (accept-risk or re-scope).
 
 Only a finding that changes what gets built can keep the chain open, and it
 must name the artifact it would change; a finding that fails the artifact
 test is demoted at registration. If material findings remain, do not certify
 the change. Only an approved token raising the goal's five-member tuple can
-raise its stored review-round member, never above the three-round ceiling;
+raise its stored review-round member, never above the five-round ceiling;
 the chain's next follow-up (`metasystem work revise j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`,
 `metasystem work finish`) first carries the raised member onto every critic root reviewing the implementation. When
 the rounds are spent, closing the review (inside `metasystem work review`) sends exhausted bounded
 findings to review obligations on the goal (discharged later by `metasystem work review <goal> --review R --finding F --test NAME`) and closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>` for the rest; while a severe or unproven finding stands, stop
-with the work waiting on the human. Never dispatch a silent fourth round.
+with the work waiting on the human. Never dispatch a silent round past the cap.

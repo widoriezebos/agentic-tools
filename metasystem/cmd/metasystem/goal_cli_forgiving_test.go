@@ -446,7 +446,7 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 	bed := newGoalCLIBed(t, goalCLISeed{amend: gcliForgivingBoxed(
 		"keep-preset", "empty-member", "four-members", "four-members-twin", "invalid-member", "invalid-member-twin",
 		"mixed-box", "approved-completion")})
-	norm := "elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3"
+	norm := "elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=5"
 	standing := "elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2"
 
 	gcliForgivingOpen(t, bed, "norm-preset")
@@ -471,9 +471,9 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 	gcliForgivingMust(t, bed, "goal", "budget", "keep-without-standing-twin", "norm", "--by", "Wido", gcliForgivingFixture)
 	gcliForgivingMust(t, bed, "goal", "unapprove", "keep-without-standing-twin", "--reason", "prepare a fieldless budget twin", "--by", "Wido", gcliForgivingFixture)
 	remedy := gcliForgivingRefusalRemedy(t, bed, "keep without a standing box", "fix-docs", "keep-without-standing-twin",
-		gcliForgivingLongForm(t, bed, "keep-without-standing-twin", "1d", "10", "1200", "1", "3"),
+		gcliForgivingLongForm(t, bed, "keep-without-standing-twin", "1d", "10", "1200", "1", "5"),
 		"goal", "budget", "fix-docs", "keep", gcliForgivingFixture)
-	if remedy[len(remedy)-1] != "1d/10/1200m/1/3" {
+	if remedy[len(remedy)-1] != "1d/10/1200m/1/5" {
 		t.Fatalf("keep without a standing box did not print the tier-three box: %q", remedy)
 	}
 	if got := gcliForgivingBudget(bed.goalRecord("fix-docs")); got != norm {
@@ -518,9 +518,9 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 	gcliForgivingOpen(t, bed, "over-round-limit", "rejected-reference", "fixture-over-norm")
 	gcliForgivingMust(t, bed, "goal", "budget", "approved-completion", "keep", gcliForgivingFixture)
 	tip = bed.tip()
-	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "over-round-limit", "4h/6/360m/1/4", gcliForgivingFixture)
+	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "over-round-limit", "4h/6/360m/1/6", gcliForgivingFixture)
 	gcliForgivingWords(t, "an over-limit review-round member", "goal budget", code, stderr,
-		"reviewRoundLimit 4 exceeds configured maximum 3", "reviewRoundLimit 4 exceeds configured maximum 3")
+		"reviewRoundLimit 6 exceeds configured maximum 5", "reviewRoundLimit 6 exceeds configured maximum 5")
 
 	// R-129 (U-idem): the standing box repeated is a repeat whose effect
 	// holds: success, nothing recorded.
@@ -676,7 +676,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("the printed family remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}
-	gcliForgivingLongForm(t, bed, "fixture-pair-twin", "1d", "10", "1200", "1", "3", "--by", "Wido")()
+	gcliForgivingLongForm(t, bed, "fixture-pair-twin", "1d", "10", "1200", "1", "5", "--by", "Wido")()
 	gcliForgivingSameAct(t, bed, "fixture and temporary authority", "fixture-pair", "fixture-pair-twin")
 
 	// The approval sweep is not a public act (the public goal approve takes
@@ -701,7 +701,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	}); code != 0 || report.refusal != nil {
 		t.Fatalf("the direct approval remedy did not complete: code=%d refusal=%+v failure=%v", code, report.refusal, report.failure)
 	}
-	gcliForgivingLongForm(t, bed, "sweep-with-id-twin", "1d", "10", "1200", "1", "3", "--by", "Wido")()
+	gcliForgivingLongForm(t, bed, "sweep-with-id-twin", "1d", "10", "1200", "1", "5", "--by", "Wido")()
 	gcliForgivingSameAct(t, bed, "approval sweep with a named goal", "sweep-with-id", "sweep-with-id-twin")
 
 	// A parked goal's incomplete box is completed from its standing box.
@@ -722,12 +722,12 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 			bed.prove, bed.commandNow, dependencies, gcliForgivingBinding(bed))
 	})
 	if code == 0 || report.refusal == nil || !strings.HasPrefix(report.refusal.remedy.command, "metasystem goal budget ship-widget ") ||
-		!strings.HasSuffix(report.refusal.remedy.command, " 1d/10/1200m/1/3") {
+		!strings.HasSuffix(report.refusal.remedy.command, " 1d/10/1200m/1/5") {
 		t.Fatalf("resume without a fence did not print the tierless goal's tier-three box: code=%d refusal=%+v", code, report.refusal)
 	}
 	gcliForgivingRunRemedy(t, bed, "resume without a fence", shellWords(report.refusal.remedy.command))
 	if record := bed.goalRecord("ship-widget"); !strings.Contains(record, " set-budget actor=human:Wido ") ||
-		gcliForgivingBudget(record) != "elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3" {
+		gcliForgivingBudget(record) != "elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=5" {
 		t.Fatalf("resume without a fence printed a command that did not land the norm box:\n%s", record)
 	}
 	if code, stdout, stderr := gcliForgivingPublic(bed, "goal", "resume", "ship-widget", "--by", "Wido", gcliForgivingFixture); code != 0 ||

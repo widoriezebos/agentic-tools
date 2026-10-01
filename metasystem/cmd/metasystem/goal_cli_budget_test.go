@@ -489,7 +489,7 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 		!strings.Contains(stdout, `"outcome":"confirmed"`) || !strings.Contains(stdout, `"classified":3`) || stderr != "" {
 		t.Fatalf("classification confirmation did not confirm on the supplied stdout: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	for _, row := range []struct{ id, tier, rounds string }{{"fix-docs", "1", "0"}, {"perf-pass", "2", "2"}, {"ship-widget", "3", "3"}} {
+	for _, row := range []struct{ id, tier, rounds string }{{"fix-docs", "1", "0"}, {"perf-pass", "2", "5"}, {"ship-widget", "3", "5"}} {
 		record := bed.goalRecord(row.id)
 		if goalCLILine(record, "- Tier: ") != "- Tier: "+row.tier || !strings.HasSuffix(goalCLILine(record, "- Budget: "), "reviewRoundLimit="+row.rounds) {
 			t.Fatalf("classification did not normalize %s to tier %s and %s rounds:\n%s", row.id, row.tier, row.rounds, record)

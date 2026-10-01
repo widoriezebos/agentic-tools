@@ -143,6 +143,9 @@ type ViewSources struct {
 	// Helm reads whether a unit's seat is at the helm, which holds a batch
 	// whole (batch.HelmHeldSeat); nil asks nothing.
 	Helm func(seatRoot string) helm.State
+	// Proof reads the lane's proof at the lane checkout, as the keeper's
+	// wake does; nil reads none.
+	Proof func(root string) (ProofFact, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -171,8 +174,10 @@ func BuildView(sources ViewSources) View {
 		}
 	}
 	records, recordsErr := readRecords(sources, record.Root)
-	wake := wakeOf(records, recordsErr)
-	if _, err := ReadAgentState(sources.Home); err != nil {
+	proof, proofErr := readProof(sources.Proof, record.Root)
+	agent, agentErr := ReadAgentState(sources.Home)
+	wake := wakeOf(records, recordsErr, proof, proofErr, agent)
+	if err := agentErr; err != nil {
 		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
 	}
 	view.Wake = &wake

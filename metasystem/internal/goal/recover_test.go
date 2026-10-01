@@ -105,7 +105,7 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 	}
 	orphaned := p.Tree.Live["orphaned"]
 	if orphaned == nil || orphaned.Intent != "The dead owner's work." || strings.Join(orphaned.Labels, ",") != "custody,recovery" ||
-		orphaned.Tier != 3 || orphaned.Budget == nil || orphaned.Budget.ReviewRoundLimit != 3 {
+		orphaned.Tier != 3 || orphaned.Budget == nil || orphaned.Budget.ReviewRoundLimit != 5 {
 		t.Fatal("the recovered open is on the canonical branch")
 	}
 	if orphaned.History[0].Opid != opid {

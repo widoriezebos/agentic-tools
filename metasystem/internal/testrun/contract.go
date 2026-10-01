@@ -101,11 +101,32 @@ func GoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
 	return GoalRiskAt(endpoint, id, time.Now().UTC())
 }
 
+// GoalRiskAt reads the goal's accepted risk and budget episode. It reads the
+// local accepted ledger first, so a test run never waits on the network; only
+// when that ledger does not hold the goal's risk and budget episode does it
+// fetch the shared ledger once and read again, because a checkout whose
+// watcher stopped fetching lags the goals opened since.
 func GoalRiskAt(endpoint goal.Endpoint, id string, now time.Time) (testpolicy.GoalRisk, uint64, error) {
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		return testpolicy.GoalRisk{}, 0, err
 	}
+	risk, revision, err := goalRiskIn(projection, id)
+	if err == nil {
+		return risk, revision, nil
+	}
+	fetched, fetchErr := goal.Project(endpoint, true, now)
+	if fetchErr != nil {
+		reason, _, _ := strings.Cut(fetchErr.Error(), "\n")
+		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s is not in this checkout's goal list, and fetching the shared list failed: %s\nrun: metasystem goal list --fetch", id, reason)
+	}
+	if fetched.Tree.Live[id] == nil {
+		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s is not in the goal list, even after fetching the shared list\nrun: metasystem goal list --fetch", id)
+	}
+	return goalRiskIn(fetched, id)
+}
+
+func goalRiskIn(projection goal.Projection, id string) (testpolicy.GoalRisk, uint64, error) {
 	file := projection.Tree.Live[id]
 	if file == nil || file.Risk == nil {
 		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted risk and budget episode", id)

@@ -215,7 +215,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		if _, err := dispatchcore.ParseBriefBounds(text, ""); err != nil {
 			t.Fatalf("brief admission refused: %v", err)
 		}
-		for _, section := range []string{"Round budget: 2 focused rounds", "Threat model: ", "Scope: ", "## Prepared copy", "## Checklist", "Maximum reader tool calls: 30", "01DESIGN"} {
+		for _, section := range []string{"Round budget: 3 focused rounds", "The count is a backstop: the loop ends", "is material under the threat model below (R-124)", "Threat model: ", "Scope: ", "## Prepared copy", "## Checklist", "Maximum reader tool calls: 30", "01DESIGN"} {
 			if !strings.Contains(string(text), section) {
 				t.Fatalf("brief lacks %q:\n%s", section, text)
 			}

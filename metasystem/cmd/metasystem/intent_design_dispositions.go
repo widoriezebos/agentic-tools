@@ -21,11 +21,12 @@ import (
 // finding per round, when the chain closes.
 
 // designRoundLimit is the round limit the dispatch owner froze on the chain's
-// root; a root that carries none is a design critique's two rounds.
+// root; a root that carries none is a design critique's five rounds. A root
+// frozen before the cap rose keeps its own limit, as the register close does.
 func (inv *intentInvocation) designRoundLimit(root string) int64 {
 	if record, err := inv.jobRecord(root); err == nil {
-		if limit, ok := record["reviewRoundLimit"].(float64); ok && limit >= 1 {
-			return int64(limit)
+		if limit := recordInt(record, "reviewRoundLimit"); limit >= 1 {
+			return limit
 		}
 	}
 	return designCritiqueRounds

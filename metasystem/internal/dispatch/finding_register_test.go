@@ -148,6 +148,10 @@ func TestCritiqueRegisterAdvanceIsIdempotent(t *testing.T) {
 
 func TestLegacyCritiqueRootBackfillsRoundAccountingOnAdvance(t *testing.T) {
 	repo := t.TempDir()
+	// The legacy root reads the configured ceiling; pin it at three rounds.
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.budget.review-round-max=3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
 	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
 	root := readJSONFile(t, rootPath)

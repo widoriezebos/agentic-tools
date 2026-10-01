@@ -444,7 +444,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"nonnumeric ledger-attention threshold", LedgerAttentionStaleMinutesKey + "=soon\n", LedgerAttentionStaleMinutesKey + " must be a positive integer"},
 		{"retired goal norm", GoalNormJobMinutesKey + "=1200\n", GoalNormJobMinutesKey + " is retired"},
 		{"negative review round ceiling", ReviewRoundMaxKey + "=-1\n", ReviewRoundMaxKey + " must be a non-negative integer"},
-		{"tier box above round ceiling", Tier2BudgetKey + "=4h/6/720m/1/4\n", ReviewRoundMaxKey},
+		{"tier box above round ceiling", Tier2BudgetKey + "=4h/6/720m/1/6\n", ReviewRoundMaxKey},
 		{"zero dispatch cap maximum", "dispatch.cap-max=0\n", "dispatch.cap-max must be a positive integer"},
 		{"negative return margin", "dispatch.return-margin-min=-1\n", "dispatch.return-margin-min must be a non-negative integer"},
 		{"nonnumeric return margin", "dispatch.return-margin-min=soon\n", "dispatch.return-margin-min must be a non-negative integer"},

@@ -495,10 +495,11 @@ func sha256FileP5(path string) (string, error) {
 
 // cap-driver and cap-warden terminal exhaustion (3636-3670, 3699-3738): a
 // code critic and a warden whose first round raised a severe finding run
-// through their third round; the fourth-round follow-up refuses before any
-// successor record or payload exists, and closing the chain refuses with
-// the human's next steps. The warden reviews with network denied.
-func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheFourthRound(t *testing.T) {
+// through their fifth round, the cap (Wido 2026-10-01); the sixth-round
+// follow-up refuses before any successor record or payload exists, and
+// closing the chain refuses with the human's next steps. The warden reviews
+// with network denied.
+func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheRoundPastTheCap(t *testing.T) {
 	t.Parallel()
 	for _, role := range []string{"code-critic", "warden"} {
 		t.Run(role, func(t *testing.T) {
@@ -523,7 +524,7 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheFourthRound(
 			})
 			message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: implement\n\nLook again.\n")
 			parent := root
-			for round := 2; round <= 3; round++ {
+			for round := 2; round <= 5; round++ {
 				result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
 				requireExit(t, result, 0, b.stderr.String())
 				parent = fmt.Sprintf("%s-r%d", root, round)
@@ -531,10 +532,10 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheFourthRound(
 			}
 			result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
 			if result.ExitCode != 10 || !strings.Contains(b.stderr.String(), "review-round limit is exhausted") {
-				t.Fatalf("round four was not refused as terminal exhaustion: exit %d stderr %q", result.ExitCode, b.stderr.String())
+				t.Fatalf("round six was not refused as terminal exhaustion: exit %d stderr %q", result.ExitCode, b.stderr.String())
 			}
-			if exists(b.recordPath(root+"-r4")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "4")) {
-				t.Fatal("the pre-reservation cap refusal stranded a round-four record or payload")
+			if exists(b.recordPath(root+"-r6")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "6")) {
+				t.Fatal("the pre-reservation cap refusal stranded a round-six record or payload")
 			}
 			result = b.run("close", "--job", root)
 			if result.ExitCode != 1 || !strings.Contains(b.stderr.String(),
@@ -549,10 +550,10 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheFourthRound(
 }
 
 // design_round_two_fixture_obligations (3804-3864), lifecycle half: a
-// design critic freezes a two-round limit; after a round-two fold whose
-// material count fell from two to one, the round-three follow-up refuses
-// with the typed human-raise exit before any successor record exists.
-func TestPortP5DispatchIntegrationDesignRoundThreeRefusesAtTheTwoRoundLimit(t *testing.T) {
+// design critic freezes the five-round cap (Wido 2026-10-01); after the
+// round-five fold, the round-six follow-up refuses with the typed exhaustion
+// exit before any successor record exists.
+func TestPortP5DispatchIntegrationDesignRoundSixRefusesAtTheFiveRoundLimit(t *testing.T) {
 	t.Parallel()
 	b := newDispatchBed(t)
 	page := "metasystem/fixture-admission/design-round-two.md"
@@ -562,8 +563,8 @@ func TestPortP5DispatchIntegrationDesignRoundThreeRefusesAtTheTwoRoundLimit(t *t
 	root := "design-round-two-fixture"
 	requireExit(t, b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "design-critic", "--outputs", outputs,
 		"--design", page, "--brief", brief, "--runtime", "fake", "--job-id", root), 0, b.stderr.String())
-	if limit := fmt.Sprint(b.record(root)["reviewRoundLimit"]); limit != "2" {
-		t.Fatalf("design critic froze reviewRoundLimit=%s, want 2", limit)
+	if limit := fmt.Sprint(b.record(root)["reviewRoundLimit"]); limit != "5" {
+		t.Fatalf("design critic froze reviewRoundLimit=%s, want 5", limit)
 	}
 	commit := b.p5ReadSubjectFile(root, 1).ReviewedCommit
 	facts := map[string]any{"local": true, "recoverable": true, "proofBoundaryCrossed": false, "authorityBoundaryCrossed": false,
@@ -584,27 +585,32 @@ func TestPortP5DispatchIntegrationDesignRoundThreeRefusesAtTheTwoRoundLimit(t *t
 		t.Fatalf("fold round one: %v", err)
 	}
 	workspace := b.record(root)["workspaceRoot"].(string)
-	b.writeFileAbs(filepath.Join(workspace, page), "# Design round two fixture\n\nRound two changes the page.\n")
 	message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: design\n\nLook again.\n")
-	requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", root, "--message", message), 0, b.stderr.String())
-	b.p5Complete(root+"-r2", root, 2, map[string]any{
-		"reviewedCommit": commit, "verdictMaterialCount": 1,
-		"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding("ROUND2-FIXTURE", "medium", true)},
-		"rigor":    []any{bounded("ROUND2-FIXTURE", "go test ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures")},
-	})
-	if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, root+"-r2"); err != nil {
-		t.Fatalf("fold round two: %v", err)
+	parent := root
+	for round := 2; round <= 5; round++ {
+		b.writeFileAbs(filepath.Join(workspace, page), fmt.Sprintf("# Design round two fixture\n\nRound %d changes the page.\n", round))
+		requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message), 0, b.stderr.String())
+		parent = fmt.Sprintf("%s-r%d", root, round)
+		id := fmt.Sprintf("ROUND%d-FIXTURE", round)
+		b.p5Complete(parent, root, round, map[string]any{
+			"reviewedCommit": commit, "verdictMaterialCount": 1,
+			"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding(id, "medium", true)},
+			"rigor":    []any{bounded(id, "go test ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures")},
+		})
+		if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, parent); err != nil {
+			t.Fatalf("fold round %d: %v", round, err)
+		}
 	}
-	if trajectory, _ := json.Marshal(b.record(root)["materialByRound"]); string(trajectory) != `[{"material":2,"round":1},{"material":1,"round":2}]` {
+	if trajectory, _ := json.Marshal(b.record(root)["materialByRound"]); string(trajectory) != `[{"material":2,"round":1},{"material":1,"round":2},{"material":1,"round":3},{"material":1,"round":4},{"material":1,"round":5}]` {
 		t.Fatalf("material trajectory %s", trajectory)
 	}
-	result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", root+"-r2", "--message", message)
+	result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
 	requireExit(t, result, 10, b.stderr.String())
 	if strings.Contains(b.stderr.String(), "cap-exhausted-human-raise") || !strings.Contains(b.stderr.String(), "the review-round limit is exhausted") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
-	if exists(b.recordPath(root+"-r3")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "3")) {
-		t.Fatal("the round-three refusal created a successor record or payload")
+	if exists(b.recordPath(root+"-r6")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "6")) {
+		t.Fatal("the round-six refusal created a successor record or payload")
 	}
 }
 

@@ -84,6 +84,7 @@ var classHumanSites = []string{
 	"cmd/metasystem/goalsync_mutations.go#mainSplitRatification",
 	"cmd/metasystem/goalsync_mutations.go#runGoalDischargeReviewObligationWithDependencies",
 	"cmd/metasystem/goalsync_mutations.go#syncReqClassifiedWithTerminalGradeAtWithDependencies",
+	"cmd/metasystem/intent_landing_kernel.go#laneProofCaller",
 	"cmd/metasystem/person_class.go#personVerbCallerWith",
 	"cmd/metasystem/process_verbs.go#humanTerminalCheck",
 	"cmd/metasystem/process_verbs.go#missionFenceBeforeArmFor",

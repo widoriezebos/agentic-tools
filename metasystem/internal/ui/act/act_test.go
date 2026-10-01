@@ -422,7 +422,7 @@ func ledger(t *testing.T) *ledgerBed {
 	root := filepath.Join(t.TempDir(), "clone")
 	write(t, filepath.Join(root, "README.md"), "seed\n", 0o644)
 	write(t, filepath.Join(root, "metasystem.conf"),
-		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=3\n", 0o644)
+		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=5\n", 0o644)
 
 	record := &goal.RootRecord{
 		Identity: "01J5X000000000000000000000", FormatVersion: "1",

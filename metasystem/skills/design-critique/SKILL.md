@@ -52,10 +52,10 @@ The loop's stop rule is fixed before round 1, never improvised mid-loop: the bri
 
 ## Round Budget and Exhaustion
 
-For code critique and the warden, Part One stores the review-round member in
-the goal's tier box: zero rounds for Tier 1, two for Tier 2, and three for Tier
-3. The tier derives from severity and novelty (exposure and accumulation
-weight the proof), never from the change's shape. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root (a goal-free non-design root reads `metasystem.budget.review-round-max` alone), counts each follow-up round against it, refuses the round past it, and exhaustion opens no fresh budget. Start every chain from
+The round count is a backstop, not the stop criterion (Wido 2026-10-01). The loop ends when no remaining finding would change the implementation materially, judged against the brief's threat model (blank means the template's default: our own agents and operators make mistakes; nobody attacks) and step 1: a finding is material only when step 1 does not WORK or is not SAFE without it (R-124). Every real finding is fixed, by subtraction first. Stop on divergence: when the material findings are not falling, or half or more of them sit in what the last fold changed, step back and go to the human. The backstop: for code critique and the warden, Part One stores the review-round member in
+the goal's tier box: zero rounds for Tier 1 and five for Tiers 2 and 3, under
+the `metasystem.budget.review-round-max` ceiling of five. The tier derives from severity and novelty (exposure and accumulation
+weight the proof), never from the change's shape. Design critique has five rounds at tiers 2 and 3 (Wido 2026-10-01) and does not exist at tier 1. A design-critic chain's `reviewRoundLimit` is frozen at 5 at dispatch whatever the goal's stored member says; a chain frozen at 2 before 2026-10-01 is rebound to the current limit at its next round or close. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root (a goal-free non-design root reads `metasystem.budget.review-round-max` alone), counts each follow-up round against it, refuses the round past it, and exhaustion opens no fresh budget. Start every chain from
 `internal/protocol/templates/review-brief.md` — budget, threat model, appetite,
 and scope declared BEFORE round one; a true finding outside the declared
 threat model closes as out-of-scope citing the brief. Record the goal's budget
@@ -64,16 +64,16 @@ material finding. A finding keeps the chain open only when it changes what gets 
 and names the artifact it would change; a finding that fails the artifact
 test is demoted at registration.
 
-Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no third design round and none can be bought.
+The cap is a backstop, not the stop criterion: a loop that ends on materiality closes before it. The final round is the chain's frozen limit. The final round folded with no material finding closes the loop. The final round folded with only mechanical findings on a falling trajectory (its material count below the round before) closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round N on M fixture obligations`. Any other final-round residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no design round past the cap and none can be bought.
 
 For code critique and the warden, only an approved token raising the goal's
-five-member tuple can raise its stored review-round member, and the three-round
+five-member tuple can raise its stored review-round member, and the five-round
 ceiling still applies; the chain's next follow-up (`metasystem design review FILE --dispositions`, `metasystem work revise
 j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`, `metasystem work finish`) first carries the raised
 member onto its root. When their rounds are spent, closing the review (inside `metasystem work review`)
 defers exhausted bounded findings into review obligations on the goal (`metasystem work review <goal> --review R --finding F --test NAME` discharges them later against the chain,
 artifact and test that carry them) or closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
-design waiting on the human. Never dispatch a silent fourth round.
+design waiting on the human. Never dispatch a silent round past the cap.
 
 Rounds must run as follow-ups on one critic chain. Dispatching a fresh critic
 job per round silently evades the budget — no exhaustion can ever fire — which

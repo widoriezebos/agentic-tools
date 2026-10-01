@@ -28,7 +28,20 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	return prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree, result, completedAt, gittree.Workspace{Dir: result.ProjectRoot})
 }
 
+// PrepareTestingReceiptPayloadFrom is PrepareTestingReceiptPayload for a run
+// whose attempt records live at a control root other than the installation
+// it ran in: a lane or batch proof runs in a detached worktree and keeps its
+// attempts in the lane checkout. The candidate's posture is still read in
+// the installation; the attempt owners are read where they were written.
+func PrepareTestingReceiptPayloadFrom(installationRoot, controlRoot, tree string, result proofrun.TestResult, completedAt time.Time) (TestReceipt, json.RawMessage, error) {
+	return prepareTestingReceiptPayloadFromWorkspace(installationRoot, controlRoot, tree, result, completedAt, gittree.Workspace{Dir: result.ProjectRoot})
+}
+
 func prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree string, result proofrun.TestResult, completedAt time.Time, workspace gittree.Workspace) (TestReceipt, json.RawMessage, error) {
+	return prepareTestingReceiptPayloadFromWorkspace(installationRoot, installationRoot, tree, result, completedAt, workspace)
+}
+
+func prepareTestingReceiptPayloadFromWorkspace(installationRoot, controlRoot, tree string, result proofrun.TestResult, completedAt time.Time, workspace gittree.Workspace) (TestReceipt, json.RawMessage, error) {
 	publicationStarted := time.Now()
 	if err := proofrun.ValidateTestResult(result); err != nil || !result.Delivery.Sufficient {
 		return TestReceipt{}, nil, fmt.Errorf("testing result is not sufficient delivery evidence: %v", err)
@@ -48,7 +61,7 @@ func prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree string, re
 		changed, _ := workspace.ChangedPaths(tree, worktreeBefore)
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved before preparation: index=%s worktree=%s expected=%s changed=%v cause=%v", indexBefore, worktreeBefore, tree, changed, errors.Join(err, indexBeforeErr))
 	}
-	ids, err := validateTestingAttemptOwnersAt(installationRoot, result, true, completedAt)
+	ids, err := validateTestingAttemptOwnersAt(controlRoot, result, true, completedAt)
 	if err != nil {
 		return TestReceipt{}, nil, err
 	}
