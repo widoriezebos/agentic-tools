@@ -32,6 +32,29 @@ func transportMemberExited(pid int) (bool, error) {
 	return pollfds[0].Revents&unix.POLLIN != 0, nil
 }
 
+// awaitTransportMemberExit blocks until pid has exited. A process that was
+// sent SIGKILL closes its files before the kernel marks it exited, so a
+// reader that saw its pipe close must wait for the exit itself rather than
+// probe once: the pidfd becomes readable exactly when the process exits.
+func awaitTransportMemberExit(pid int) error {
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		if errors.Is(err, unix.ESRCH) || errors.Is(err, unix.EINVAL) && errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	defer unix.Close(pidfd)
+	for {
+		pollfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+		_, err := unix.Poll(pollfds, -1)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		return err
+	}
+}
+
 func TestTransportMemberExitedRefusesALiveThreadID(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
