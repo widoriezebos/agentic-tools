@@ -106,7 +106,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	if len(staleBatches) > 0 {
 		first := staleBatches[0]
 		return roleDead(RoleTrunkRed, "held trunk red was not recorded: "+strings.Join(staleBatches, ", "),
-			"a person names its fix goal: metasystem incident claim <id> --goal <goal> (first held batch "+first+")")
+			"a person returns the held batch's members: metasystem landing return MEMBER --disposition person (first held batch "+first+")")
 	}
 	defects := ""
 	if tracked > 0 {

@@ -2,7 +2,6 @@ package testpolicy
 
 import (
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
 )
@@ -194,7 +195,7 @@ func TestRepositoryParallelRatchetRefusesSerialTestRegressions(t *testing.T) {
 	}
 }
 
-func TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner(t *testing.T) {
+func TestMetaSystemBatchBuildCDPinsInputs(t *testing.T) {
 	data, err := os.ReadFile("../../testing.json")
 	if err != nil {
 		t.Fatal(err)
@@ -215,23 +216,6 @@ func TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner(t *testing.T) {
 		if !contains(group.Inputs, input) {
 			t.Errorf("%s inputs omit %s: %v", groupID, input, group.Inputs)
 		}
-	}
-	const witness = "TestBatchTaggedCapabilityWitnessExecutesInProof"
-	var owners []string
-	for _, candidate := range contract.Groups {
-		if candidate.Adapter != "go" {
-			continue
-		}
-		all, names, parseErr := GoTests(candidate)
-		if parseErr != nil {
-			t.Fatalf("group %s tests: %v", candidate.ID, parseErr)
-		}
-		if !all && contains(names, witness) {
-			owners = append(owners, candidate.ID)
-		}
-	}
-	if !reflect.DeepEqual(owners, []string{groupID}) {
-		t.Fatalf("%s owners=%v, want exactly [%s]", witness, owners, groupID)
 	}
 }
 

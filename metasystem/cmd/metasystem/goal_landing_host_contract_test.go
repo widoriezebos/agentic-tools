@@ -174,6 +174,10 @@ var retiredWithDeletedLibrary = map[string]string{
 	"batch-buildcd-standard/TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin":        "landing/batchowner RecoverMovedBatchPushWith",
 	"batch-buildcd-standard/TestBatchLandProductionSeamsBoundRecoveryAndAbandon":          "landing/batchowner BatchLandRecoverPush",
 	"batch-buildcd-standard/TestRecoveryFailureDoesNotAbortAmbientRebase":                 "landing/batchowner ReopenMovedBatchAfterRecoveryFailure",
+	// Unit D: its tagged-witness half checked the old owner's batchtest
+	// witness, deleted with the owner; its input pins stay as
+	// TestMetaSystemBatchBuildCDPinsInputs.
+	"batch-buildcd-standard/TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner": "cmd/metasystem TestBatchTaggedCapabilityWitnessExecutesInProof",
 	// Lane runtime design r10 §5, unit D: the old batch owner, its state
 	// machine, diagnosis, verifier retries, re-arm, cadence tick driver,
 	// replay reconstruction and supervised component are deleted (hard
