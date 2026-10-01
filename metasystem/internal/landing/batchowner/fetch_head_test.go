@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // TestLandingBaseTreeReadsItsOwnFetchNotTheSharedFetchHead runs the lane's
@@ -37,7 +39,7 @@ func TestLandingBaseTreeReadsItsOwnFetchNotTheSharedFetchHead(t *testing.T) {
 	bin := t.TempDir()
 	script := "#!/bin/sh\n" + strconv.Quote(real) + " \"$@\"\nstatus=$?\ncase \" $* \" in *\" fetch \"*) : > " +
 		strconv.Quote(filepath.Join(checkout, ".git", "FETCH_HEAD")) + " ;; esac\nexit $status\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
