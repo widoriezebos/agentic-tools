@@ -60,7 +60,7 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	checkout, module = resolvedPath(checkout), resolvedPath(module)
 	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
 	store := launch.Store{Root: filepath.Join(base, "launches")}
-	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude"}},
+	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
@@ -118,7 +118,17 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	}
 
 	// The agent ended on a provider limit: the reap records the outage at
-	// the lane installation, and the outage holds the next start.
+	// the lane installation, and the outage holds the next start. Its
+	// usage is read from its transcript (K-g), so only the outage holds.
+	var session string
+	_ = json.Unmarshal(record.AdapterData["sessionID"], &session)
+	transcripts := filepath.Join(base, "projects", "-landing")
+	if err := os.MkdirAll(transcripts, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(transcripts, session+".jsonl"), []byte(`{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":1}}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	dir, _ := store.StateDir(record.ID)
 	if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"is_error":true,"result":"API Error: 529 overloaded_error"}`), 0o600); err != nil {
 		t.Fatal(err)
