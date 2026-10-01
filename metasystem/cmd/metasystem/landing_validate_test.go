@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,11 @@ func newValidateVerbBed(t *testing.T) *validateBed {
 	t.Helper()
 	bed := &validateBed{kernelBed: newKernelBed(t)}
 	bed.enroll(t, runningTestBinary(t))
+	// A registered lane has a machine nickname (landing set requires it):
+	// the lane's claim identity names it.
+	if out, err := exec.Command("git", "-C", bed.checkout, "config", "metasystem.goal.machine", "landing").CombinedOutput(); err != nil {
+		t.Fatalf("name the lane's machine: %v %s", err, out)
+	}
 	return bed
 }
 
@@ -63,6 +69,11 @@ func TestLandingValidateNamesTheAuthorityGapInTwoLines(t *testing.T) {
 	code, stdout, stderr := bed.run(t, "landing", "validate")
 	if code == 0 || len(bed.requests) != 1 || bed.requests[0].Force {
 		t.Fatalf("exit %d, requests %+v\n%s%s", code, bed.requests, stdout, stderr)
+	}
+	// The run claims the standing authority as the lane's stable claim
+	// identity at its custody epoch (K7).
+	if claim, err := lane.Claim(bed.home); err != nil || bed.requests[0].Claim != claim {
+		t.Fatalf("validate acts as %+v; want the lane's claim identity %+v (%v)", bed.requests[0].Claim, claim, err)
 	}
 	text := stdout + stderr
 	for _, want := range []string{"goal standing-validation is not approved, so no landing validation runs; main is untouched",

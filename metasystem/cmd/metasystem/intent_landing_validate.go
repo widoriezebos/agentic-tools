@@ -21,16 +21,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
-// laneValidationLineage is the lineage the lane claims the standing
-// validation authority under: the lane's stable claim identity {lane
-// machine, lineage landing-lane, custody epoch} (design K7), which unit K-d
-// owns.
-const laneValidationLineage = "landing-lane"
-
 // laneValidateRequest is one landing validate.
 type laneValidateRequest struct {
 	Home, Checkout, Installation string
-	Epoch                        uint64
+	// Claim is the lane's stable claim identity {lane machine, lineage
+	// landing-lane, custody epoch} (design K7) the standing validation
+	// authority is claimed under.
+	Claim lane.ClaimIdentity
 	// Force and By: a person's word past custody that can't be read.
 	Force bool
 	By    string
@@ -57,7 +54,7 @@ func productionLaneValidate(request laneValidateRequest) (gaterun.ValidateOutcom
 		}
 	}
 	validate := cadence.ValidateLane{Home: request.Home, Root: request.Installation,
-		Owner: cadence.Owner{Epoch: int64(request.Epoch), Lineage: laneValidationLineage, Require: func() error { return nil },
+		Owner: cadence.Owner{Epoch: int64(request.Claim.Epoch), Lineage: request.Claim.Lineage, Require: func() error { return nil },
 			FetchOrigin: batchowner.FetchBatchOrigin, WeightThreshold: weightThreshold, Prepare: prepareTestingForCommand, WorkerPolicy: testingWorkerPolicy},
 		Clock: time.Now, Probes: probes, Gate: gate, Force: request.Force}
 	seams, err := validate.Seams()
@@ -83,7 +80,15 @@ func landingValidateCommand() intentCommand {
 
 func runIntentLandingValidate(inv *intentInvocation, kernel laneKernel) int {
 	targets := laneTargets(kernel.record.Root)
-	request := laneValidateRequest{Home: kernel.home, Checkout: kernel.record.Root, Installation: kernel.installation, Epoch: kernel.record.CustodyEpoch}
+	claim, err := lane.ClaimOf(kernel.record)
+	if err != nil {
+		var refusal *lane.Refusal
+		if errors.As(err, &refusal) {
+			return inv.render(*laneRefusalResult(targets, refusal))
+		}
+		return inv.render(landingKernelFailure(targets, "the landing lane's claim identity can't be read, so nothing ran", err))
+	}
+	request := laneValidateRequest{Home: kernel.home, Checkout: kernel.record.Root, Installation: kernel.installation, Claim: claim}
 	if inv.input.switched("force") {
 		by, refused := inv.forcingPerson(kernel, "the landing validation")
 		if refused != nil {
