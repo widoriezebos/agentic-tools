@@ -41,6 +41,9 @@ type BatchJoinRequest struct {
 	ChainHead string
 	Last      bool
 	At        time.Time
+	// ReadsWaived is set by the join from the goal's bound budget: zero
+	// review rounds (tier 1) means its units join without a critic read.
+	ReadsWaived bool
 }
 
 type BatchJoinDependencies struct {
@@ -106,7 +109,7 @@ func ProductionBatchBranchMember(request BatchJoinRequest) (batch.BranchMember, 
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
-	member, err := batch.ReadGoalBranch(batch.BranchReadRequest{Repo: request.SeatRoot, EndpointTip: endpoint, BranchTip: tip, GoalID: request.GoalID, Through: request.Through, Last: request.Last})
+	member, err := batch.ReadGoalBranch(batch.BranchReadRequest{Repo: request.SeatRoot, EndpointTip: endpoint, BranchTip: tip, GoalID: request.GoalID, Through: request.Through, Last: request.Last, ReadsWaived: request.ReadsWaived})
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
@@ -153,6 +156,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 		if dependencies.member == nil {
 			return batch.Record{}, fmt.Errorf("%s: goal branch reader is unavailable", codeJoinUnread)
 		}
+		request.ReadsWaived = goal.ReadsWaived(binding.File)
 		member, patch, err = dependencies.member(request)
 	} else {
 		chain, err = dependencies.Chain(request.SeatRoot, request.GoalID, request.ChainID, binding.Revision)

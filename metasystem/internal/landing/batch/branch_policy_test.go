@@ -2,6 +2,7 @@ package batch
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -194,4 +195,51 @@ func TestBranchPolicyLastUsesOnlyBranchCommits(t *testing.T) {
 		}
 		assertBranchPolicyCalls(t, calls, branchPolicyCalls{status: 1})
 	})
+}
+
+// A tier-1 goal's budget allows zero review rounds (R-54-m1), so its units
+// join the lane unread, and a unit read by a reader record joins too; a
+// goal whose budget has review rounds is still refused an unread unit.
+func TestBranchPolicyTierOneJoinsUnreadUnits(t *testing.T) {
+	t.Parallel()
+	status := goalbranch.Status{
+		Tip: "branch-tip",
+		Commits: []goalbranch.Commit{
+			{ID: "U-read", Kind: goalbranch.Unit, Unit: "read", Units: []string{"read"}},
+			{ID: "R-read", Kind: goalbranch.Read, Unit: "read"},
+			{ID: "U-unread", Kind: goalbranch.Unit, Unit: "unread", Units: []string{"unread"}},
+		},
+		Units: []goalbranch.UnitStatus{
+			{Unit: "read", Units: []string{"read"}, Commit: "U-read", Digest: "read-digest", ReadState: "read clean"},
+			{Unit: "unread", Units: []string{"unread"}, Commit: "U-unread", Digest: "unread-digest", ReadState: "built"},
+		},
+		Prefix: 1,
+	}
+	readers := branchReaders{
+		status: func(string, string, string, string) (goalbranch.Status, error) { return status, nil },
+		attestation: func(_, _, _, _, unit, _ string) (goalbranch.Attestation, error) {
+			if unit != "read" {
+				t.Fatalf("an unread unit's attestation was read: %s", unit)
+			}
+			return goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "reader-record"}}, nil
+		},
+		entries: func(string, string) ([]goalbranch.Entry, error) { return nil, nil },
+		message: func(string, string) ([]byte, error) { return []byte("unit\n"), nil },
+	}
+	request := BranchReadRequest{Repo: "repo", EndpointTip: "endpoint", BranchTip: "branch-tip", GoalID: "goal-tier", Last: true}
+	if _, err := readGoalBranchWithReaders(request, readers); err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_UNREAD") {
+		t.Fatalf("a goal with review rounds joins an unread unit: %v", err)
+	}
+	request.ReadsWaived = true
+	member, err := readGoalBranchWithReaders(request, readers)
+	if err != nil {
+		t.Fatalf("a tier-1 goal's unread unit is refused: %v", err)
+	}
+	if len(member.Builds) != 2 || member.Builds[1].Commit != "U-unread" || member.Builds[0].Attestation.Source.Kind != "reader-record" {
+		t.Fatalf("tier-1 member = %+v", member.Builds)
+	}
+	request.Last, request.Through = false, "U-unread"
+	if member, err := readGoalBranchWithReaders(request, readers); err != nil || len(member.Builds) != 2 {
+		t.Fatalf("a tier-1 goal's --through an unread unit: %+v %v", member, err)
+	}
 }

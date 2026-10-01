@@ -1161,3 +1161,39 @@ func TestIntentLandBatchRefusalSpeaksWordsNotItsCode(t *testing.T) {
 		t.Fatalf("the code is a detail for --verbose and --json: %q", result.Details)
 	}
 }
+
+// A tier-1 goal stores zero review rounds in its box (R-54-m1), so its unread
+// units land by hand and join the landing lane without a read; a goal with
+// review rounds is still refused at its first unread unit on both routes.
+func TestWorkLandTierOneUnitsNeedNoRead(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	owners := &landingOwners{status: readBranch(0)}
+	owners.install(b)
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "tier-2 unread unit by hand", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "has no clean read") || len(owners.preps) != 0 {
+		t.Fatalf("a goal with review rounds lands an unread unit: %+v", result)
+	}
+	owners.status.ReadsWaived = true
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "tier-1 unread units by hand", code, result, intentConfirmed)
+	if len(owners.preps) != 1 || len(owners.pushes) != 1 {
+		t.Fatalf("a tier-1 goal's unread units do not land by hand: %+v", result)
+	}
+
+	lane := newDeliveryBed(t)
+	laneOwners := &landingOwners{configured: true, status: readBranch(1, "reader-record")}
+	laneOwners.install(lane)
+	code, result = lane.do("work", "land", "standing-validation")
+	expectOutcome(t, "tier-2 unread unit in the lane", code, result, intentRefused)
+	if len(laneOwners.joins) != 0 {
+		t.Fatalf("a goal with review rounds joins the lane unread: %+v", result)
+	}
+	laneOwners.status.ReadsWaived = true
+	code, result = lane.do("work", "land", "standing-validation")
+	expectOutcome(t, "tier-1 unread units in the lane", code, result, intentInProgress)
+	if len(laneOwners.joins) != 1 || !laneOwners.joins[0].Last || len(laneOwners.preps) != 0 {
+		t.Fatalf("a tier-1 goal's unread units do not join the lane: %+v %+v", result, laneOwners.joins)
+	}
+}

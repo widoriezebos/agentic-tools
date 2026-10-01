@@ -306,6 +306,9 @@ type intentBranchState struct {
 	Status                 branch.Status
 	// Sources is each read unit's attestation source kind, in branch order.
 	Sources []string
+	// ReadsWaived says the goal's budget allows zero review rounds (tier
+	// 1, R-54-m1), so its units land without a read.
+	ReadsWaived bool
 }
 
 // carriedRelease is the exception route's release set around the carried
@@ -412,7 +415,11 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	if err != nil {
 		return intentBranchState{}, err
 	}
-	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status}
+	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	if err != nil {
+		return intentBranchState{}, err
+	}
+	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status, ReadsWaived: goal.ReadsWaived(projection.Tree.Live[goalID])}
 	for _, unit := range status.Units[:status.Prefix] {
 		attestation, err := branch.ValidateAttestationAt(root, branchTip, endpointTip, goalID, unit.Unit, unit.Commit)
 		if err != nil {
@@ -1852,8 +1859,8 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	// With a landing lane configured, the lane is the one route. It takes
 	// only units read by a critic root; a selection holding a unit read by a
 	// reader record lands by hand only as the fix of an open red on main.
-	unread := slices.IndexFunc(state.Sources[:count], func(source string) bool { return source != "critic-root" })
-	if unread < 0 {
+	unread := slices.IndexFunc(state.Sources[:min(count, len(state.Sources))], func(source string) bool { return source != "critic-root" })
+	if unread < 0 || state.ReadsWaived {
 		return inv.joinBatch(targets, batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
 	}
 	entry, err := inv.redOnMainFixed(goalID)
@@ -2074,7 +2081,8 @@ func receiptProves(path, candidate string) bool {
 }
 
 // handLandingSubject is the unit commit a landing ends at and the number of
-// units through it, provided every one of them has a clean read.
+// units through it, provided every one of them has a clean read or the
+// goal's reads are waived.
 func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState) (string, int, *intentResult) {
 	units := state.Status.Units
 	unread := func(index int) *intentResult {
@@ -2091,16 +2099,22 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			next: []string{"metasystem", "status", goalID}, nextReason: "shows the goal's work and its reviews",
 			Details: []string{"the branch reader returned no attestation source for a read unit"}}
 	}
+	// A goal whose reads are waived (tier 1, zero review rounds) lands its
+	// units unread.
+	landable := state.Status.Prefix
+	if state.ReadsWaived {
+		landable = len(units)
+	}
 	if through == "" {
-		if state.Status.Prefix != len(units) {
-			return "", 0, unread(state.Status.Prefix)
+		if landable != len(units) {
+			return "", 0, unread(landable)
 		}
 		return state.BranchTip, len(units), nil
 	}
 	for index, unit := range units {
 		if unit.Commit == through {
-			if index >= state.Status.Prefix {
-				return "", 0, unread(state.Status.Prefix)
+			if index >= landable {
+				return "", 0, unread(landable)
 			}
 			return unit.Commit, index + 1, nil
 		}
