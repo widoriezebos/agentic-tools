@@ -1,10 +1,7 @@
 package batch
 
 import (
-	"errors"
 	"fmt"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 // boundaryRefusal names a policy decision made at a batch boundary. Callers
@@ -26,13 +23,4 @@ func (refusal *boundaryRefusal) RefusalWords() string { return refusal.Detail }
 
 func refuseBatch(code, detail string) error {
 	return &boundaryRefusal{Code: code, Detail: detail}
-}
-
-func isBoundaryRefusal(err error) bool {
-	var batchRefusal *boundaryRefusal
-	if errors.As(err, &batchRefusal) {
-		return true
-	}
-	var contractRefusal *contractgit.Refusal
-	return errors.As(err, &contractRefusal)
 }

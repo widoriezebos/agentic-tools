@@ -588,14 +588,6 @@ func landingPathOwners() landpath.Owners {
 	}
 }
 
-// landingPathCommit runs the commit boundary in this process: the landing
-// owner, which supplies itself, commits each unit.
-func landingPathCommit(request landpath.CommitRequest) (string, int) {
-	var combined bytes.Buffer
-	status := landpath.Commit(landingPathOwners(), request, &combined, &combined)
-	return combined.String(), status
-}
-
 // landingGuardOwners are the production owners of the pre-commit guard.
 func landingGuardOwners() landpath.GuardOwners {
 	return landpath.GuardOwners{

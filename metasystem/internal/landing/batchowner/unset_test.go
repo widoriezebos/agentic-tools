@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -37,7 +38,7 @@ type unsetBed struct {
 	publish            bool
 	releases, edits    int
 	releaseRoots       []string
-	probes, ends       int
+	agentReads, stops  int
 	pendingChange, fix string
 }
 
@@ -59,7 +60,12 @@ func unsetGoalFile(id string, claimed *goal.ClaimRecord) []byte {
 		state = goal.StateClaimed
 		history = append(history, goal.HistoryLine{At: "2026-09-17T10:00:00Z", Opid: "01J5X0000000000000000000B1-" + claimed.Machine + "-1a2b3c4d", Verb: "claim", Actor: claimed.Machine + "+" + claimed.Lineage, Keep: -1})
 	}
-	return goal.RenderFile(&goal.GoalFile{Id: id, State: state, Intent: "land " + id, Origin: goal.OriginHuman, OpenedAt: "2026-09-17T10:00:00Z", Revision: 2, Claimed: claimed, History: history})
+	file := &goal.GoalFile{Id: id, State: state, Intent: "land " + id, Origin: goal.OriginHuman, OpenedAt: "2026-09-17T10:00:00Z", Revision: 2, Claimed: claimed, History: history}
+	if claimed != nil {
+		// The claim's epoch: the lane's custody epoch for the lane's claim.
+		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: claimed.Revision, Machine: claimed.Machine, ClaimEpoch: 1}
+	}
+	return goal.RenderFile(file)
 }
 
 func newUnsetBed(t *testing.T) *unsetBed {
@@ -80,7 +86,7 @@ func newUnsetBed(t *testing.T) *unsetBed {
 			SyncMode: goal.SyncRemote, MigrationEpoch: "2026-08-20T00:00:00Z", ManifestDigest: strings.Repeat("ab", 32), MigrationMode: "manifest", Revision: 1,
 			History: []goal.HistoryLine{{At: "2026-08-20T09:00:00Z", Opid: "01J5X0000000000000000000A0-mac-a-1a2b3c4d", Verb: "migrate", Actor: "mac-a+lin-1", Keep: -1}}}),
 		// goal-a is held by the lane for this batch, handed over by the seat.
-		"metasystem/plans/goals/goal-a.md": unsetGoalFile("goal-a", &goal.ClaimRecord{Machine: "landing", Lineage: "owner", At: "2026-09-17T10:00:00Z", Revision: 2, AccountingRevision: 1,
+		"metasystem/plans/goals/goal-a.md": unsetGoalFile("goal-a", &goal.ClaimRecord{Machine: "landing", Lineage: lane.ClaimLineage, At: "2026-09-17T10:00:00Z", Revision: 2, AccountingRevision: 1,
 			HandedOver: goal.HandedOver{FromMachine: "seat", FromLineage: "lineage-a", FromEpoch: 4, Batch: unsetBatchID}}),
 		// The seat holds another goal, so goal-a cannot go back to it: the
 		// return releases goal-a instead of handing it back.
@@ -100,6 +106,8 @@ func newUnsetBed(t *testing.T) *unsetBed {
 	unsetGit(t, bed.publisher, "remote", "add", "origin", bed.origin)
 	unsetGit(t, bed.publisher, "push", "-q", "origin", "main")
 	unsetGit(t, base, "clone", "-q", bed.origin, bed.checkout)
+	// The lane's machine: its claim identity is landing+landing-lane.
+	unsetGit(t, bed.checkout, "config", "metasystem.goal.machine", "landing")
 	layout, err := lane.NewLayout(bed.checkout)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +155,7 @@ func (bed *unsetBed) publishRelease(t *testing.T, goalID string) {
 func (bed *unsetBed) unset(t *testing.T) lane.UnsetReport {
 	t.Helper()
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Calls: BatchOwnerCallSet{
+		Calls: LaneCallSet{
 			Handover: func(ownercall.Invocation, ownercall.HandoverRequest) error {
 				t.Fatalf("goal-a was handed back to a seat that holds another goal")
 				return nil
@@ -169,11 +177,11 @@ func (bed *unsetBed) unset(t *testing.T) lane.UnsetReport {
 				return nil
 			},
 		},
-		Probe: func(root string) (lane.OwnerProbe, error) {
-			bed.probes++
-			return lane.OwnerProbe{}, nil
+		Agent: func() (string, bool, error) {
+			bed.agentReads++
+			return "", false, nil
 		},
-		End: func(string) (int64, error) { bed.ends++; return 0, nil },
+		StopAgent: func(string) error { bed.stops++; return nil },
 	}
 	report, err := lane.Unset(bed.home, "Wido", unsetNow, false, steps.Seams())
 	if err != nil {
@@ -276,14 +284,14 @@ func TestUnsetResumesAfterFailedReturn(t *testing.T) {
 	if err != nil || !fenced || !journal.Done(lane.StepSettled) || len(journal.Unresolved) != 1 {
 		t.Fatalf("journal = %+v %v %v; want fenced, settled, goal-a listed", journal, fenced, err)
 	}
-	probes := bed.probes
+	reads := bed.agentReads
 	bed.releaseErr, bed.publish = nil, true
 	report = bed.unset(t)
 	if !report.Unregistered || !report.Resumed {
 		t.Fatalf("resumed unset = %+v; want it to continue and unregister", report)
 	}
-	if bed.probes != probes {
-		t.Fatalf("the resumed unset settled again (%d probes, was %d)", bed.probes, probes)
+	if bed.agentReads != reads {
+		t.Fatalf("the resumed unset settled again (%d agent reads, was %d)", bed.agentReads, reads)
 	}
 	if pending := bed.unit(t, bed.pendingChange); pending.State != batch.UnitEjected || pending.ReturnDisposition != batch.ReturnRecorded || pending.Failure != "its own proof was red" {
 		t.Fatalf("custody already returning = %s/%s %q; want its own outcome kept", pending.State, pending.ReturnDisposition, pending.Failure)
@@ -376,20 +384,26 @@ func TestUnsetFinishesAPushThatReachedMainUnrecorded(t *testing.T) {
 	}
 }
 
-// Settling re-reads the owner after ending it: an owner still running is
-// live work the unset waits for, never taken as ended.
-func TestUnsetSettleRereadsTheOwnerAfterEndingIt(t *testing.T) {
+// Settling stops a running landing agent and re-reads it: an agent still
+// running after it was asked to end is live work the unset waits for, never
+// taken as ended; an unreadable agent state is unknown.
+func TestUnsetSettleRereadsTheAgentAfterStoppingIt(t *testing.T) {
 	t.Parallel()
 	bed := newUnsetBed(t)
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Probe: func(string) (lane.OwnerProbe, error) {
-			bed.probes++
-			return lane.OwnerProbe{Alive: true, PID: 4242}, nil
+		Agent: func() (string, bool, error) {
+			bed.agentReads++
+			return "landing-0123456789abcdef", true, nil
 		},
-		End: func(string) (int64, error) { bed.ends++; return 4242, nil }}
+		StopAgent: func(string) error { bed.stops++; return nil },
+		Custody:   func(lane.Layout) custody.Probes { return custody.Probes{} }}
 	settlement, err := steps.settle(bed.layout)
-	if err != nil || settlement.Settled(true) || bed.ends != 1 || bed.probes != 2 {
-		t.Fatalf("settle with an owner that outlives its end = %+v %v (ends %d, probes %d); want live work", settlement, err, bed.ends, bed.probes)
+	if err != nil || settlement.Settled(true) || bed.stops != 1 || bed.agentReads != 2 {
+		t.Fatalf("settle with an agent that outlives its stop = %+v %v (stops %d, reads %d); want live work", settlement, err, bed.stops, bed.agentReads)
+	}
+	steps.Agent = func() (string, bool, error) { return "", false, errors.New("the launch store is unreadable") }
+	if settlement, err := steps.settle(bed.layout); err != nil || settlement.Settled(false) {
+		t.Fatalf("settle with an unreadable agent state = %+v %v; want it unknown", settlement, err)
 	}
 }
 

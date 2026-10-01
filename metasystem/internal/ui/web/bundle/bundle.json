@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:1a9ddc0ed9afaa6b2ce0e9d60caa57c8bc98c4d5efd7d630c70e21b3d7e22aaa",
+  "sourceDigest": "sha256:5223c3c074e7b173b08a3055f5d726bed413a7ed804747a35dd228d503da7a01",
   "source": [
     {
       "path": ".npmrc",
@@ -408,7 +408,7 @@
     },
     {
       "path": "src/fleet/LandingLane.test.tsx",
-      "sha256": "d97602b476f92a5add80625eadc5fe939230551d90eb9bd8eaac7b07c0fa4f12"
+      "sha256": "4a1d4d6f6e761d7fb58f3acbfffe76b656003cf304bbc51e81441bed7452b515"
     },
     {
       "path": "src/fleet/LandingLane.tsx",
@@ -1243,16 +1243,20 @@
       "sha256": "f00adaef74a5eb06541182802eab43861f3833e306c68af35cddc4af19d8f09c"
     },
     {
+      "path": "src/shell/troubles.test.tsx",
+      "sha256": "383ed7190d9c61eb95703940a7c3c72a1ffc7331679e637ad5894ba57a0275ef"
+    },
+    {
       "path": "src/shell/troubles.tsx",
-      "sha256": "33137ebd9650a73e31dbc3ccd9207416ef7a4c2d87cb2d34808d548535b45e51"
+      "sha256": "f476740a319c457d17b2fe0f15720ebaa934332820aa04a17b0dc1856f9fde15"
     },
     {
       "path": "src/shell/troubling.test.ts",
-      "sha256": "8ecb85958fcd727c6c42cfb7c9fefca7c3bc1d701f3b0a1fe1973dee3b156523"
+      "sha256": "048b138b9388bd4d9583b8b86e469ab8480286808fc2bfd25596ea6e6ddfb011"
     },
     {
       "path": "src/shell/troubling.ts",
-      "sha256": "ffc364da7c08076a23cc81ff6dc97096a26c2d4a02c5b17f548fb562ab95e104"
+      "sha256": "ca982cc710f9d7beeb6940f642c32d03855b9242d11b44ef8e270a3c09cd89dc"
     },
     {
       "path": "src/shell/workmodal.test.ts",
@@ -1304,7 +1308,7 @@
     },
     {
       "path": "src/storage.ts",
-      "sha256": "84f4233806f5239ff8115e6951a11b4e5a5571f371e8935e393ea8d341e0db12"
+      "sha256": "4eb2710da703dfc64272a375dd76c535f29faf351beaf3d042bb240273c4265a"
     },
     {
       "path": "src/theme.test.ts",
@@ -1586,7 +1590,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "a37e071a4992891e905efd5e5362b128935e74b7c673ce6144a2bdb0e0ce884f"
+      "sha256": "9d9aa0c11445c53bccf6bc96f651c7fd821bb8ae745179330b28107a32116eed"
     },
     {
       "path": "assets/info-A6RAGUB7.js",
@@ -1702,7 +1706,7 @@
     },
     {
       "path": "assets/render.js",
-      "sha256": "237a5c4a42366859abd2a9c50bcf586de3a4345042b002c7f5e00e141d94dfa4"
+      "sha256": "e4ce82b81fd4516be48098a98a2ed34a9eeb7db67a0926a2b56f50f089f5908d"
     },
     {
       "path": "assets/requirementDiagram-PLB6GJNP.js",

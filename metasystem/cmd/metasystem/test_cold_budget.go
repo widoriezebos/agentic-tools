@@ -13,7 +13,7 @@ import (
 
 // coldBuildBudgetRefusal is a performance preflight, never a reservation.
 // The final locked proof admission remains the authority for starting work.
-// Its code, BUDGET_REFUSED, reaches the landing batch owner through the
+// Its code, BUDGET_REFUSED, reaches the landing lane's prove through the
 // test run's --json envelope; its words are only for a person.
 type coldBuildBudgetRefusal struct{ goal, detail string }
 

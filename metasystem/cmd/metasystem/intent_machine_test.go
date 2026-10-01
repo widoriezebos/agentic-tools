@@ -277,7 +277,6 @@ func (b *machineBed) owners() intentOwners {
 		landing: laneVerbOwners{
 			// The lane beds keep no goal ledger: validation is never due.
 			validation: func(string, time.Time) (bool, error) { return false, nil },
-			agent:      func() (string, bool, error) { return "", false, nil },
 			home:       func() (string, error) { return b.home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !b.laneAlive {
@@ -379,7 +378,7 @@ func TestMachineListSummarizesThisComputerFirst(t *testing.T) {
 		"stopped since " + local(time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)),
 		"agentic-tools-landing " + b.landing + " · landing lane · running · since " + machineLocal(1790000301),
 		"pids landing batch owner 301",
-		"lane owner running, pid 4242, since " + local(machineBedNow.Add(-2*time.Hour)),
+		"lane agent running, pid 4242, since " + local(machineBedNow.Add(-2*time.Hour)),
 		"On other computers m2a last reported " + local(machineBedNow.Add(-3*time.Hour)),
 		"Not ours, left alone 900 codex app-server since " + machineLocal(1790000900),
 	} {

@@ -45,7 +45,10 @@ func TestMain(m *testing.M) {
 	if helper, ok := testHelperCommands[firstArgument()]; ok && os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" {
 		os.Exit(helper(os.Args[2:]))
 	}
-	if resourceCustodyCommand || os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
+	// The landing lane checkout's real pre-push hook runs the lane's
+	// enrolled engine, which the kernel beds make a copy of this binary.
+	lanePrePush := len(os.Args) > 2 && os.Args[1] == "internal" && os.Args[2] == "pre-push"
+	if resourceCustodyCommand || lanePrePush || os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
 		os.Exit(dispatch(os.Args[1:]))
 	}
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {

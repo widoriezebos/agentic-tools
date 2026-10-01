@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,12 +59,12 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	checkout, module = resolvedPath(checkout), resolvedPath(module)
 	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
 	store := launch.Store{Root: filepath.Join(base, "launches")}
-	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude"}},
+	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
 		nonce: func() (string, error) { return "0011223344556677", nil },
-		gateSettings: func(asked string) (string, error) {
+		gateSettings: func(_ launch.Store, _, _, asked string) (string, error) {
 			if asked != module {
 				t.Errorf("the gate settings were asked for %s, want the lane installation %s", asked, module)
 			}
@@ -117,7 +117,17 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	}
 
 	// The agent ended on a provider limit: the reap records the outage at
-	// the lane installation, and the outage holds the next start.
+	// the lane installation, and the outage holds the next start. Its
+	// usage is read from its transcript (K-g), so only the outage holds.
+	var session string
+	_ = json.Unmarshal(record.AdapterData["sessionID"], &session)
+	transcripts := filepath.Join(base, "projects", "-landing")
+	if err := os.MkdirAll(transcripts, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(transcripts, session+".jsonl"), []byte(`{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":1}}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	dir, _ := store.StateDir(record.ID)
 	if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"is_error":true,"result":"API Error: 529 overloaded_error"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -152,39 +162,91 @@ func resolvedPath(path string) string {
 	return resolved
 }
 
-// TestNoOwnerStartsWhileTheAgentStarts (A-a, re-review 1): the read every
-// batch owner start makes names a landing agent whose start the keeper has
-// claimed and not finished, as it names one that runs.
-func TestNoOwnerStartsWhileTheAgentStarts(t *testing.T) {
+// TestLandingAgentWritesItsToolGateIntoTheLaunchState (integration of A-a
+// and A-b): the production landing agent passes the tool gate to every
+// landing launch. Its settings file is written by agentgate in the launch's
+// own state directory, outside the lane checkout the agent may edit, and
+// its hook runs the lane installation's engine in the lane checkout.
+func TestLandingAgentWritesItsToolGateIntoTheLaunchState(t *testing.T) {
 	t.Parallel()
-	base := t.TempDir()
-	home := filepath.Join(base, "home")
-	if err := os.MkdirAll(lane.HostDir(home), 0o700); err != nil {
+	base := resolvedPath(t.TempDir())
+	checkout := filepath.Join(base, "landing")
+	module := filepath.Join(checkout, "metasystem")
+	if err := os.MkdirAll(module, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
-	manager := &launch.Manager{Store: launch.Store{Root: filepath.Join(base, "launches")}}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return now }}
-	live := agent.liveOrStarting(func() (string, error) { return home, nil })
-	if _, running, err := live(); err != nil || running {
-		t.Fatalf("no agent: running=%t err=%v", running, err)
+	store := launch.Store{Root: filepath.Join(base, "launches")}
+	agent := newLandingAgent()
+	if agent.gateSettings == nil {
+		t.Fatal("the production landing agent passes no tool gate, so the launcher refuses every landing session")
 	}
-	claim := `{"startingAt":"` + now.Add(-time.Minute).Format(time.RFC3339) + `"}`
-	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte(claim), 0o600); err != nil {
+	path, err := agent.gateSettings(store, "landing-0011223344556677", checkout, module)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if id, running, err := live(); err != nil || !running || !strings.Contains(id, "starting") || strings.Contains(id, "T1") {
-		t.Fatalf("a claimed start: %q running=%t err=%v; want it named, with no raw stamp", id, running, err)
-	}
-	// Unknown holds: an unreadable keeper record, or no lane home.
-	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte("{torn"), 0o600); err != nil {
+	dir, err := store.StateDir("landing-0011223344556677")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := live(); err == nil || !strings.Contains(err.Error(), "metasystem landing start") {
-		t.Fatalf("an unreadable keeper record: err %v; want a hold naming the repair", err)
+	if filepath.Dir(path) != dir {
+		t.Fatalf("the gate settings are at %s; want them in the launch's state directory %s", path, dir)
 	}
-	homeless := agent.liveOrStarting(func() (string, error) { return "", errors.New("no home") })
-	if _, _, err := homeless(); err == nil {
-		t.Fatal("no lane home read as no agent")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(module, "bin", "metasystem")
+	if !strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data), "'"+engine+"' internal hook claude tool") || !strings.Contains(string(data), "cd '"+checkout+"'") {
+		t.Fatalf("gate settings = %s; want a PreToolUse hook running %s in %s", data, engine, checkout)
+	}
+	if _, err := agent.gateSettings(store, "landing-0011223344556677", checkout, module); err != nil {
+		t.Fatalf("a second write over the same launch: %v", err)
+	}
+	if _, err := agent.gateSettings(launch.Store{Root: filepath.Join(module, "launches")}, "landing-0011223344556677", checkout, module); err == nil {
+		t.Fatal("gate settings were written inside the lane checkout, where the agent may edit them")
+	}
+}
+
+// The landing-agent skill (A-b) is the agent's brief: every metasystem
+// landing or agent command it spells is a command this engine declares,
+// with options that command takes, and a kernel verb over a batch names
+// it with --batch. A brief that spells a form the engine refuses sends the
+// agent into a denial or a usage error at the step it describes.
+func TestLandingAgentSkillUsesTheVerbsAsDeclared(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "skills", "landing-agent", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spans := strings.Split(string(data), "`")
+	checked := 0
+	for index := 1; index < len(spans); index += 2 {
+		words := strings.Fields(spans[index])
+		if len(words) < 3 || words[0] != "metasystem" || (words[1] != "landing" && words[1] != "agent") {
+			continue
+		}
+		command, ok := findIntentAction(words[1], words[2])
+		if !ok {
+			t.Errorf("the skill spells %q, which this engine does not declare", spans[index])
+			continue
+		}
+		checked++
+		named := map[string]bool{}
+		for _, word := range words[3:] {
+			if !strings.HasPrefix(word, "--") {
+				continue
+			}
+			name, _, _ := strings.Cut(strings.TrimPrefix(word, "--"), "=")
+			named[name] = true
+			if _, ok := command.lookupFlag(name); !ok {
+				t.Errorf("the skill spells %q, but %s takes no --%s", spans[index], command.name, name)
+			}
+		}
+		if slices.Contains([]string{"begin", "prove", "publish"}, words[2]) && len(named) > 0 && !named["batch"] {
+			t.Errorf("the skill spells %q without the --batch it acts on", spans[index])
+		}
+	}
+	if checked == 0 {
+		t.Fatal("the skill spells no landing or agent command")
 	}
 }

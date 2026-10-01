@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,11 +13,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -36,101 +32,6 @@ func must(t *testing.T, err error) {
 }
 func load(t *testing.T, s Store) Record      { r, e := s.Load(testBatchID); must(t, e); return r }
 func contents(t *testing.T, p string) []byte { b, e := os.ReadFile(p); must(t, e); return b }
-func polls(t *testing.T, owner *proofLock, wants ...lockPoll) {
-	for _, want := range wants {
-		if got, err := owner.poll(); err != nil || got != want {
-			t.Fatalf("poll=%v error=%v, want %v", got, err, want)
-		}
-	}
-}
-func seedProofLock(t *testing.T, dir, pid string) {
-	must(t, os.Mkdir(dir, 0o755))
-	must(t, os.WriteFile(filepath.Join(dir, "owner"), []byte("m1e "+pid+" 2029-01-01T00:00:00Z hand\n"), 0o644))
-}
-func testProofLock(prober scriptedProber, lockDir, queueDir string, pid int64, now *time.Time) *proofLock {
-	return newProofLock(NewStore("", prober), lockDir, queueDir, "batch:test", pid, func() time.Time { return *now })
-}
-func TestBatchLockIsFifoAndStaleSafe(t *testing.T) {
-	root, now := t.TempDir(), time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
-	lockDir, queueDir := filepath.Join(root, "lock"), filepath.Join(root, "queue")
-	prober := scriptedProber{1: identity.Alive, 2: identity.Alive, 3: identity.Dead, 4: identity.Unknown, 9: identity.Alive, 90: identity.Alive}
-	seedProofLock(t, lockDir, "90")
-	first := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, first, lockQueued)
-	now = now.Add(time.Second)
-	second := testProofLock(prober, lockDir, queueDir, 2, &now)
-	polls(t, second, lockQueued)
-	must(t, os.RemoveAll(lockDir))
-	polls(t, second, lockQueued)
-	polls(t, first, lockAcquired)
-	if owner := string(contents(t, filepath.Join(lockDir, "owner"))); !strings.HasPrefix(owner, "landing-batch-owner 1 ") {
-		t.Fatalf("owner=%q", owner)
-	}
-	_ = first.whileHeld(func() error { return os.ErrInvalid })
-	polls(t, second, lockAcquired)
-	must(t, os.WriteFile(filepath.Join(lockDir, "owner"), []byte("m1e 90 2030-01-01T00:00:01Z successor\n"), 0o644))
-	must(t, second.release())
-	_ = contents(t, filepath.Join(lockDir, "owner"))
-	must(t, os.RemoveAll(lockDir))
-
-	now = now.Add(time.Second)
-	hand := filepath.Join(queueDir, "1893456001-m1e-9")
-	must(t, os.WriteFile(hand, []byte("m1e 9 2030-01-01T00:00:01Z hand proof\n"), 0o644))
-	third := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, third, lockQueued)
-	prober[9] = identity.Dead
-	polls(t, third, lockAcquired)
-	must(t, third.release())
-	seedProofLock(t, lockDir, "3")
-	fourth := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, fourth, lockAcquired)
-	must(t, fourth.release())
-	must(t, os.Mkdir(lockDir, 0o755))
-	young := now.Add(-time.Minute)
-	must(t, os.Chtimes(lockDir, young, young))
-	early := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, early, lockQueued)
-	must(t, early.release())
-	must(t, os.WriteFile(filepath.Join(lockDir, "owner"), nil, 0o644))
-	old := now.Add(-2*time.Minute - time.Second)
-	must(t, os.Chtimes(lockDir, old, old))
-	fifth := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, fifth, lockAcquired)
-	must(t, fifth.release())
-	seedProofLock(t, lockDir, "4")
-	sixth := testProofLock(prober, lockDir, queueDir, 1, &now)
-	polls(t, sixth, lockQueued)
-	must(t, sixth.release())
-	if entries, err := os.ReadDir(queueDir); err != nil || len(entries) != 0 {
-		t.Fatalf("give up left queue entries: %v, %v", entries, err)
-	}
-}
-func TestBatchStartRule(t *testing.T) {
-	landing := t.TempDir()
-	joined, now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}
-	settings, err := config.NewBatchLanding(landing, 2*time.Minute, func() time.Time { return now })
-	must(t, err)
-	quiet := proofrun.LoadSample{Sample: hostload.Sample{Available: true, Cores: 8}, OverlapKnown: true}
-	loaded := proofrun.LoadSample{Sample: hostload.Sample{Available: true, Cores: 2, Load1m: 2}, OverlapKnown: true, OverlappingHost: 2}
-	check := func(name string, free bool, units, cap int, elapsed time.Duration, sample proofrun.LoadSample, start bool, window string) {
-		t.Run(name, func(t *testing.T) {
-			now = joined.Add(elapsed)
-			startGot, windowGot, capGot := batchStartRule(free, units, joined, settings, sample, proofrun.AdmissionCap{Max: cap})
-			if startGot != start || windowGot != window || capGot != (sample.OverlapKnown && sample.OverlappingHost < cap) {
-				t.Fatalf("decision=%v/%s cap=%v", startGot, windowGot, capGot)
-			}
-		})
-	}
-	check("no units", true, 0, 3, 2*time.Minute, quiet, false, "")
-	check("lock held", false, 2, 3, 0, quiet, false, "")
-	check("one before wait", true, 1, 3, 0, quiet, false, "")
-	check("at wait", true, 1, 3, 2*time.Minute, quiet, true, "expired")
-	check("two quiet", true, 2, 3, 0, quiet, true, "quiet")
-	check("unknown census", true, 2, 3, 0, proofrun.LoadSample{}, false, "")
-	check("overlap is not quiet", true, 2, 3, 0, loaded, false, "")
-	check("wait overrides load", true, 2, 3, 2*time.Minute, loaded, true, "expired")
-	check("engine cap", true, 2, 2, 2*time.Minute, loaded, false, "")
-}
 func TestBatchJoinsSerializeUnderTheLock(t *testing.T) {
 	store := NewStore(t.TempDir(), scriptedProber{})
 	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, TipTree: "base", State: StateOpen}))
@@ -354,18 +255,27 @@ func TestBatchUnitJoinsOneBatch(t *testing.T) {
 		t.Fatalf("same-batch goal refusal=%v", err)
 	}
 }
-func joinBed(t *testing.T) (assemblyBed, Store) {
-	bed := assemblyFixture(t)
-	store := NewStore(bed.root, scriptedProber{})
-	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, BaseTree: bed.base, TipTree: bed.base, State: StateOpen}))
-	return bed, store
-}
 func joiningUnit(goalID, chain string) Unit {
 	return Unit{GoalID: goalID, Chain: chain, Claim: Claim{Machine: "seat", Lineage: goalID, Epoch: 1, Revision: 2, AccountingRevision: 1}, Gate: runIDs{"gate-1"}}
 }
 
 func joinPlanMode(mode testpolicy.Mode) func(string, string, string) (testpolicy.Plan, error) {
 	return func(string, string, string) (testpolicy.Plan, error) { return testpolicy.Plan{RequiredMode: mode}, nil }
+}
+
+// publishJoinVerified publishes a join whose admission tree is verified,
+// as a join admitted by its exact tree is.
+func publishJoinVerified(store Store, batchID string, unit Unit, actor string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
+	return PublishJoinWithAdmission(store, batchID, unit, actor, at, plan, handover, func(_ string, unit Unit) (JoinAdmission, error) {
+		return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified"}, nil
+	})
+}
+
+func joinBed(t *testing.T) (assemblyBed, Store) {
+	bed := assemblyFixture(t)
+	store := NewStore(bed.root, scriptedProber{})
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, BaseTree: bed.base, TipTree: bed.base, State: StateOpen}))
+	return bed, store
 }
 
 func TestBatchJoinSelectsGroupsFromEachUnitsOwnTree(t *testing.T) {
@@ -387,10 +297,10 @@ func TestBatchJoinSelectsGroupsFromEachUnitsOwnTree(t *testing.T) {
 		}
 		return testpolicy.Plan{SelectedGroups: selected}, nil
 	}
-	must(t, PublishJoin(store, testBatchID, first, "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
+	must(t, publishJoinVerified(store, testBatchID, first, "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
 	second := joiningUnit("goal-b", "chain-b")
 	secondTree = bed.expectJoin(second, testpolicy.Plan{SelectedGroups: []string{"shared", "group-b"}})
-	must(t, PublishJoin(store, testBatchID, second, "seat+goal-b", time.Unix(2, 0), plan, func() error { return nil }))
+	must(t, publishJoinVerified(store, testBatchID, second, "seat+goal-b", time.Unix(2, 0), plan, func() error { return nil }))
 	record := load(t, store)
 	if !slices.Equal(record.PrefixTrees, []string{testCommit(201), testCommit(202)}) || record.TipTree != testCommit(202) ||
 		record.Units[0].Admission.Tree != firstTree || record.Units[1].Admission.Tree != secondTree {
@@ -421,7 +331,7 @@ func TestBatchJoinPlanningPinsMergeBaseToBatchBase(t *testing.T) {
 		}
 		return testpolicy.Plan{SelectedGroups: []string{"group-a"}}, nil
 	}
-	must(t, PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
+	must(t, publishJoinVerified(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
 }
 
 func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
@@ -458,20 +368,18 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 			}
 			joinDone := make(chan error, 1)
 			go func() {
-				joinDone <- PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), joinPlanMode(testpolicy.ModeStandard), func() error { return nil })
+				joinDone <- publishJoinVerified(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), joinPlanMode(testpolicy.ModeStandard), func() error { return nil })
 			}()
 			select {
 			case <-reached:
 			case err := <-joinDone:
 				t.Fatalf("join returned before reaching publication %q: %v", point, err)
 			}
+			// Any other writer of the batch record waits for the join's
+			// flock: here a plain update of the record.
 			tickDone := make(chan error, 1)
 			go func() {
-				err := ReconcileJoins(store, testBatchID, "unused", "landing+owner", time.Unix(2, 0),
-					func(string, string, string, string) (Claim, error) {
-						t.Error("publication tick read a claim")
-						return Claim{}, fmt.Errorf("unexpected claim read")
-					})
+				err := store.Update(testBatchID, func(*Record) error { return nil })
 				events <- "tick"
 				tickDone <- err
 			}()
@@ -480,7 +388,7 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 			case err := <-tickDone:
 				close(proceed)
 				<-joinDone
-				t.Fatalf("tick finished before waiting for the join flock: %v", err)
+				t.Fatalf("the update finished before waiting for the join flock: %v", err)
 			}
 			close(proceed)
 			must(t, <-joinDone)
@@ -500,69 +408,7 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 		})
 	}
 }
-func TestBatchTickReconcilesAKilledJoinerOnce(t *testing.T) {
-	t.Parallel()
-	exact := joiningUnit("goal-a", "chain-a").Claim
-	bad := func(change func(*Claim)) Claim {
-		claim := exact
-		change(&claim)
-		return claim
-	}
-	tests := []struct {
-		name, point, want string
-		claim             Claim
-		readErr           error
-	}{
-		{"before handover", UnitJoining, UnitEjected, Claim{}, os.ErrNotExist},
-		{"after handover", "handover", UnitJoined, exact, nil},
-		{"batch mismatch", "handover", UnitEjected, Claim{}, fmt.Errorf("goal ledger entry goal-a has no valid handed-over claim for batch other-batch: []")},
-		{"source machine mismatch", "handover", UnitEjected, bad(func(c *Claim) { c.Machine = "other" }), nil},
-		{"source lineage mismatch", "handover", UnitEjected, bad(func(c *Claim) { c.Lineage = "other" }), nil},
-		{"revision mismatch", "handover", UnitEjected, bad(func(c *Claim) { c.Revision++ }), nil},
-		{"accounting revision mismatch", "handover", UnitEjected, bad(func(c *Claim) { c.AccountingRevision++ }), nil},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if test.want == UnitEjected {
-				test.want = UnitReturnPending
-			}
-			bed := newOrdinaryJoinBed(t)
-			store := bed.store
-			bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
-			store.seams.publish = func(point string) error {
-				if point == test.point {
-					return os.ErrProcessDone
-				}
-				return nil
-			}
-			err := PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), joinPlanMode(testpolicy.ModeStandard), func() error { return nil })
-			witness(t, err == os.ErrProcessDone, "join error=%v", err)
-			// Pre-cutover records had no admission marker and still require the
-			// original claim-based crash reconciliation.
-			must(t, store.Update(testBatchID, func(record *Record) error {
-				record.Units[0].Admission = nil
-				return nil
-			}))
-			reads := 0
-			read := func(root, tree, batchID, goalID string) (Claim, error) {
-				reads++
-				if reads != 1 || root != bed.root || tree != bed.base || batchID != testBatchID || goalID != "goal-a" {
-					t.Errorf("unexpected claim read %d: root=%q tree=%q batch=%q goal=%q", reads, root, tree, batchID, goalID)
-					return Claim{}, fmt.Errorf("unexpected claim read")
-				}
-				return test.claim, test.readErr
-			}
-			must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), read))
-			must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), read))
-			if reads != 1 {
-				t.Fatalf("claim reads=%d, want one", reads)
-			}
-			record := load(t, store)
-			unit := record.Units[0]
-			witness(t, unit.State == test.want && len(record.History) == 2 && record.History[1].Verb == "reconcile" && (test.want == UnitReturnPending) == (unit.Failure == "join-incomplete"), "%s unit=%+v history=%+v", test.name, unit, record.History)
-		})
-	}
-}
+
 func TestBatchJoinPrechecksBeforePublication(t *testing.T) {
 	t.Parallel()
 	bed := newOrdinaryJoinBed(t)
@@ -572,7 +418,7 @@ func TestBatchJoinPrechecksBeforePublication(t *testing.T) {
 	must(t, store.Update(testBatchID, func(record *Record) error { record.Units = append(record.Units, ejected); return nil }))
 	handovers := 0
 	join := func(unit Unit, mode testpolicy.Mode) error {
-		return PublishJoin(store, testBatchID, unit, "seat+joiner", time.Unix(1, 0), joinPlanMode(mode), func() error { handovers++; return nil })
+		return publishJoinVerified(store, testBatchID, unit, "seat+joiner", time.Unix(1, 0), joinPlanMode(mode), func() error { handovers++; return nil })
 	}
 	bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
 	must(t, join(joiningUnit("goal-a", "chain-a"), testpolicy.ModeStandard))

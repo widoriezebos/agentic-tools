@@ -80,6 +80,11 @@ func registeredTopLevelEntries() []topLevelEntry {
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
 				return runPreCommitEntry(args, stdout, stderr)
 			}},
+		{name: "pre-push", usage: "pre-push --home <home> <remote> <url>",
+			launcher: "internal/landing/lane/hook.go", evidence: "internal pre-push", required: []string{"home"},
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runPrePushEntry(args, stdout, stderr)
+			}},
 		{name: runtimes.SupervisorEntry, usage: runtimes.SupervisorEntry + " <runtime> <verb> --root <installation> [flags]",
 			launcher: "internal/delegation/owners.go", evidence: "runtimes.SupervisorArgs",
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
@@ -131,12 +136,12 @@ func registeredFamilies() []family {
 			},
 		},
 		{
-			name: "test", summary: "proof runs on another engine or as the landing owner's child",
+			name: "test", summary: "proof runs on another engine or as landing prove's child",
 			verbs: []verb{
 				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string, stdout, stderr io.Writer) int {
 					return runTestPlanAs("internal test plan", args, stdout, stderr)
 				}, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
-				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "internal/landing/batchowner/prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
+				{name: "run", summary: "run one proof as landing prove's own child", run: runTestRun, launcher: "internal/landing/kernel/prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
 				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "internal/testrun/worker.go", evidence: "\"test\", \"worker-capabilities\""},
 				{name: "worker", summary: "execute one admitted selected plan on a pinned engine", run: runTestWorker, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"worker\"", required: []string{"packet", "packet-sha256", "result"}},
@@ -220,7 +225,7 @@ func registeredFamilies() []family {
 		{
 			name: "run", summary: "the cadence run's detached leader",
 			verbs: []verb{
-				{name: "wrap", summary: "the detached leader of the landing owner's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
+				{name: "wrap", summary: "the detached leader of landing validate's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
 			},
 		},
 		{
@@ -509,8 +514,21 @@ func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
 }
 
+// retiredIntentAction is an action that was removed, with why and the one
+// command that does its work now: someone who learned it is told so, not
+// offered a guess by spelling.
+type retiredIntentAction struct{ why, next string }
+
+var retiredIntentActions = map[string]retiredIntentAction{
+	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
+}
+
 // writeUnknownIntentAction refuses an action the object does not have.
 func writeUnknownIntentAction(w io.Writer, object, action string, rest []string) {
+	if retired, ok := retiredIntentActions[object+" "+action]; ok {
+		fmt.Fprintf(w, "metasystem %s %s was removed; %s; nothing was done\nrun: %s\n", object, action, retired.why, retired.next)
+		return
+	}
 	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
 	if looksLikeFlagOrPath(action) {
 		// No suggestion: a flag or path is not a misspelt action, and the

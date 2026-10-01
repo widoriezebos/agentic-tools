@@ -9,6 +9,11 @@ citing this section — accepted as fact, rejected as work. Example:
 "two trusted operators, no adversaries; accidents and crashes are
 in scope, hostile inputs are not.">
 
+Default when this field is left blank: our own agents and operators
+make mistakes and crash; nobody is attacking us; hostile inputs and
+deliberate circumvention are out of scope. A review that defends
+against an adversary names it here.
+
 Scope: <the files, behaviors, or contracts under review — and
 what is explicitly OUT, including any agreed ceiling on fix work>
 

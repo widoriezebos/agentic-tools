@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: owner running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
+  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
   "data": {
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
@@ -19,12 +19,9 @@ exit 0
       "state": "running",
       "pid": 38928,
       "since": "2026-09-30T08:53:00Z",
-      "restarts": 0,
       "last_exit": null,
       "stopped_by": null,
-      "retry_hint": null,
-      "last_tick_error": null,
-      "last_tick_problem": null
+      "retry_hint": null
     },
     "batch": {
       "id": "4gr18nm8t3nyev9sssda9jgtsq",
@@ -65,7 +62,7 @@ exit 0
       ],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: owner running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member"
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member"
   }
 }
 

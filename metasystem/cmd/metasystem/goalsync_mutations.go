@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -125,6 +126,25 @@ func goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage stri
 	return identity.Unknown, nil
 }
 
+// laneClaimTargetLiveness authenticates the landing lane's stable claim
+// identity as a handover target (lane design r10 K7): the host's lane
+// record registers a lane on targetMachine at custody epoch targetEpoch. No
+// session, lease or process is read, so a lane with no agent running takes
+// custody.
+func laneClaimTargetLiveness(home, targetMachine string, targetEpoch int64) (identity.Liveness, error) {
+	if home == "" {
+		return identity.Unknown, fmt.Errorf("no host lane record was named to authenticate the landing lane")
+	}
+	claim, err := landinglane.Claim(home)
+	if err != nil {
+		return identity.Unknown, err
+	}
+	if claim.Machine != targetMachine || targetEpoch < 1 || claim.Epoch != uint64(targetEpoch) {
+		return identity.Unknown, fmt.Errorf("the landing lane registered now is %s (registration %d), not %s (%d)", claim.Machine, claim.Epoch, targetMachine, targetEpoch)
+	}
+	return identity.Alive, nil
+}
+
 func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error) {
 	if targetRoot != "" {
 		return targetRoot, nil
@@ -157,6 +177,9 @@ func goalHandoverEffect(invocation ownercall.Invocation, request ownercall.Hando
 				return identity.Unknown, fmt.Errorf("this session doesn't hold claim %d, so it can't receive the handover", request.TargetEpoch)
 			}
 			return identity.Alive, nil
+		}
+		if request.TargetLineage == goal.LaneClaimLineage {
+			return laneClaimTargetLiveness(request.LaneHome, request.TargetMachine, request.TargetEpoch)
 		}
 		authRoot, err := goalHandoverAuthenticationRoot(request.Root, request.TargetRoot)
 		if err != nil {
@@ -633,7 +656,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	}
 	configureCarriedCounselor(&e)
 	// A publish blocked by a provably dead owner's pushed entry recovers it
-	// (the batch owner's handover included) under the same live policy
+	// (a landing lane's handover included) under the same live policy
 	// `goal sync --recover` carries, at the command's clock, read only when
 	// that recovery runs.
 	e.ConfigureBlockedRecovery(blockedRecoveryAtCommandClock{root: root, commandNow: commandNow})

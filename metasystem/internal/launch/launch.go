@@ -119,6 +119,11 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
 		return Record{}, fmt.Errorf("seats are off here (%s=%s); set claude, codex or auto in metasystem.conf.local", SeatRuntimeKey, SeatRuntimeOff)
 	}
+	// A landing lane on a runtime its tool gate does not hold on is refused
+	// first, wherever it would run (A-b); then the lane guard (A-a).
+	if err := landingRuntimeRefusal(spec.Kind, settings.launchRuntime(spec.Kind)); err != nil {
+		return Record{}, err
+	}
 	if err := m.admitOnLane(spec); err != nil {
 		return Record{}, err
 	}
@@ -321,6 +326,9 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
 	}
 	defer releaseOutputs()
+	if record.Kind == LandingKind && record.Adapter != "claude-headless" {
+		return m.failCause(id, "command: "+refuseUngatedLanding(record, record.Adapter).Error(), nil)
+	}
 	command, err := adapter.Command(record, stateDir)
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)
@@ -445,8 +453,10 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	var outputs []Output
 	var adapterData map[string]json.RawMessage
 	var measureErr, copyErr error
+	// Every ended launch is measured, a cancelled one too (K10): its usage
+	// is reconciled like any other's.
+	measurement, outputs, adapterData, measureErr = adapter.Measure(record, stateDir)
 	if latest.Reason != "cancel-requested" {
-		measurement, outputs, adapterData, measureErr = adapter.Measure(record, stateDir)
 		var declared []Output
 		declared, copyErr = copyDeclaredOutputs(record, stateDir)
 		outputs = append(outputs, declared...)
@@ -459,6 +469,13 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		if record.Reason == "cancel-requested" {
 			record.State, record.Reason = Cancelled, "cancelled"
 			record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+			record.Measured, record.Measurement = measureErr == nil, measurement
+			for key, value := range adapterData {
+				if record.AdapterData == nil {
+					record.AdapterData = map[string]json.RawMessage{}
+				}
+				record.AdapterData[key] = value
+			}
 			if record.Kind == "read" {
 				counts := false
 				record.VerdictCounts = &counts
@@ -833,4 +850,44 @@ func (m *Manager) publishCard(record Record) {
 	if err := board.Write(card); err != nil {
 		fmt.Fprintf(os.Stderr, "launch %s: the board card was not written: %v\n", record.ID, err)
 	}
+}
+
+// Usage is an ended launch's token use as its reconciliation reads it.
+type Usage struct {
+	Known  bool
+	Tokens int64
+	// Source is "measure" (the launch's own measurement) or "transcript"
+	// (read afterwards from the runtime's record of the session).
+	Source string
+	// Why is what kept an unknown usage from being read.
+	Why string
+}
+
+// Usage reads launch id's token use once it has ended: from its own
+// measurement when that read the whole session, else from the runtime's
+// transcript of the session (a launch cancelled where no supervisor could
+// measure it). Unknown is a usage, not an error; an error is a launch that
+// can't be read or has not ended.
+func (m *Manager) Usage(id string) (Usage, error) {
+	record, err := m.Store.Read(id)
+	if err != nil {
+		return Usage{}, err
+	}
+	if !record.State.Terminal() {
+		return Usage{}, fmt.Errorf("launch %s has not ended, so its usage is not final", id)
+	}
+	if record.Measurement.UsageRead {
+		return Usage{Known: true, Tokens: record.Measurement.TotalTokens(), Source: "measure"}, nil
+	}
+	reader, ok := m.Adapters[record.Adapter].(interface {
+		TranscriptUsage(Record) (Measurement, error)
+	})
+	if !ok {
+		return Usage{Why: fmt.Sprintf("the %s runtime keeps no transcript this engine can read", record.Adapter)}, nil
+	}
+	measurement, err := reader.TranscriptUsage(record)
+	if err != nil {
+		return Usage{Why: err.Error()}, nil
+	}
+	return Usage{Known: true, Tokens: measurement.TotalTokens(), Source: "transcript"}, nil
 }

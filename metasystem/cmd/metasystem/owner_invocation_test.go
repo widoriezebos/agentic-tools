@@ -9,15 +9,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // stageUnannouncedAgentParent makes this test process's parent an
@@ -133,8 +133,8 @@ func TestOwnerSyncRequestChild(t *testing.T) {
 // landing path's replaced edges: on the same fixture, the in-process owner
 // call and the former child produce the same actor, holder classification,
 // epoch authority and claim epoch, both while this process holds the landing
-// lease (the owner's own claim) and before it holds anything (the refusal
-// side: no holder epoch authority).
+// checkout's lease (as the landing agent) and before it holds anything (the
+// refusal side: no holder epoch authority).
 func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
@@ -146,7 +146,7 @@ func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 		for _, verb := range []string{"edit", "release", "handover"} {
 			child := exec.Command(os.Args[0], "-test.run=^TestOwnerSyncRequestChild$", "-test.count=1")
 			child.Env = append(os.Environ(), "GO_WANT_OWNER_SYNC_REQUEST_CHILD="+verb,
-				"OWNER_SYNC_REQUEST_ROOT="+root, "OWNER_SYNC_REQUEST_LINEAGE="+batchowner.LandingOwnerLineage)
+				"OWNER_SYNC_REQUEST_ROOT="+root, "OWNER_SYNC_REQUEST_LINEAGE="+lane.AgentLineage)
 			output, err := child.Output()
 			if err != nil {
 				t.Fatalf("%s %s child: %v: %s", label, verb, err, output)
@@ -159,124 +159,26 @@ func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 			if err := json.Unmarshal([]byte(line), &fromChild); err != nil {
 				t.Fatalf("%s %s child output %q: %v", label, verb, output, err)
 			}
-			inProcess := authorityOf(ownerSyncRequest(batchowner.LandingOwnerInvocation(), verb, root, verb == "release"))
+			inProcess := authorityOf(ownerSyncRequest(ownercall.FromThisProcess(lane.AgentLineage), verb, root, verb == "release"))
 			if fromChild != inProcess {
 				t.Fatalf("%s %s: in-process authority %+v differs from the child's %+v", label, verb, inProcess, fromChild)
 			}
 			holder := inProcess.EpochAuthority == goal.EpochAuthorityHolder && inProcess.ClaimEpoch > 0
-			if holder != wantHolder || inProcess.Actor.Lineage != batchowner.LandingOwnerLineage || inProcess.Actor.Machine != "landing-machine" {
+			if holder != wantHolder || inProcess.Actor.Lineage != lane.AgentLineage || inProcess.Actor.Machine != "landing-machine" {
 				t.Fatalf("%s %s: authority %+v, want holder=%t under the landing lineage", label, verb, inProcess, wantHolder)
 			}
 		}
 	}
 	compare("before the lease", false)
-	held, err := batchowner.AcquireBatchOwner(root)
-	if err != nil {
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe: %s %v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "landing-agent-session", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "owner-call-parity", "metasystem", lane.AgentLineage); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := held.Retire(); err != nil {
-			t.Errorf("retire owner: %v", err)
-		}
-	})
+	if holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil); err != nil || !holder.Holder {
+		t.Fatalf("hold the checkout as the landing agent: %+v %v", holder, err)
+	}
 	compare("as the lease holder", true)
 }
-
-// TestBatchProofCancellationSparesTheResidentOwner is the VOA-15 witness:
-// the landing owner's proofs stay child processes, so cancelling one proof —
-// goal-stop signals the proof's recorded launcher, the child — ends that proof
-// alone while the owner, proving another batch at the same time, survives and
-// completes it.
-func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
-	state := t.TempDir()
-	proof := filepath.Join(state, "proof")
-	script := "#!/usr/bin/env bash\nset -euo pipefail\ngoal=; result=\n" +
-		"while (( $# )); do case $1 in --goal) goal=$2; shift 2;; --result) result=$2; shift 2;; *) shift;; esac; done\n" +
-		"printf '%s\\n' $$ >\"$PROOF_STATE/$goal.pid\"\n" +
-		"if [[ $goal == cancelled ]]; then exec sleep 600; fi\n" +
-		"while [[ ! -e \"$PROOF_STATE/release\" ]]; do sleep 0.05; done\n" +
-		"printf '{}\\n' >\"$result\"\nexit 0\n"
-	script = withTestRunEnvelope(t, script)
-	if err := testexec.WriteFile(proof, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PROOF_STATE", state)
-	dependencies := batchowner.BatchExecutionDependencies{
-		Executable: func() (string, error) { return proof, nil },
-		Checkout: func(string, string) (string, func() error, error) {
-			return t.TempDir(), func() error { return nil }, nil
-		},
-		TopLevel: func(root string) (string, error) { return root, nil },
-		ReadGit:  func(string, ...string) (string, error) { return "", fmt.Errorf("no git in this witness") },
-	}
-	type outcome struct {
-		goal string
-		err  error
-	}
-	done := make(chan outcome, 2)
-	// Each proof child reports its pid through a FIFO: the read blocks until
-	// the child writes, so the witness waits on the event, not on a clock.
-	for _, goalID := range []string{"cancelled", "completed"} {
-		if err := syscall.Mkfifo(filepath.Join(state, goalID+".pid"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, goalID := range []string{"cancelled", "completed"} {
-		goalID := goalID
-		go func() {
-			_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: t.TempDir(), BatchID: "batch-" + goalID, GoalID: goalID,
-				Tree: strings.Repeat("a", 40), Mode: "auto", ResultPath: filepath.Join(state, goalID+".json")}, dependencies)
-			done <- outcome{goalID, err}
-		}()
-	}
-	pidOf := func(goalID string) int {
-		t.Helper()
-		type report struct {
-			data []byte
-			err  error
-		}
-		reported := make(chan report, 1)
-		go func() {
-			data, err := os.ReadFile(filepath.Join(state, goalID+".pid"))
-			reported <- report{data, err}
-		}()
-		select {
-		case <-t.Context().Done():
-			t.Fatalf("proof %s never started", goalID)
-		case got := <-reported:
-			if got.err != nil {
-				t.Fatal(got.err)
-			}
-			var pid int
-			if _, err := fmt.Sscan(string(got.data), &pid); err != nil {
-				t.Fatal(err)
-			}
-			return pid
-		}
-		return 0
-	}
-	cancelled, completed := pidOf("cancelled"), pidOf("completed")
-	if cancelled == os.Getpid() || completed == os.Getpid() || cancelled == completed {
-		t.Fatalf("proof launchers are not their own processes: owner=%d cancelled=%d completed=%d", os.Getpid(), cancelled, completed)
-	}
-	process, err := os.FindProcess(cancelled)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := process.Signal(syscallTERM); err != nil {
-		t.Fatal(err)
-	}
-	first := <-done
-	if first.goal != "cancelled" || first.err == nil {
-		t.Fatalf("the cancelled proof did not end first with its error: %+v", first)
-	}
-	if err := os.WriteFile(filepath.Join(state, "release"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	second := <-done
-	if second.goal != "completed" || second.err != nil {
-		t.Fatalf("the owner did not complete the other batch's proof after the cancellation: %+v", second)
-	}
-}
-
-var syscallTERM = syscall.SIGTERM

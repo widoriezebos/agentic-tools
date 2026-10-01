@@ -300,7 +300,7 @@ type intentDeliveryOwners struct {
 	changeAdvance func(root, branch string) error
 }
 
-// intentBranchState is the goal branch as the landing owners read it.
+// intentBranchState is the goal branch as the landing paths read it.
 type intentBranchState struct {
 	EndpointTip, BranchTip string
 	Status                 branch.Status
@@ -1728,7 +1728,7 @@ func chainHead(record map[string]any) string {
 }
 
 // joinBatch reads the goal's existing batch membership first: a joined unit
-// is reported where the batch owner has it, and only a goal with no live
+// is reported where the landing lane has it, and only a goal with no live
 // membership joins. The same land command is the continuation until the
 // batch records the landing.
 func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowner.BatchJoinRequest, branchTip string) intentResult {
@@ -1756,7 +1756,7 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 	}
 	switch unit.State {
 	case batch.UnitLanded:
-		// The batch owner recorded the landing; this call only reads it, so
+		// The landing lane recorded the landing; this call only reads it, so
 		// the repeat is success that changes nothing (R-129-ui).
 		landed := ""
 		if unit.LandedCommit != "" {
@@ -1769,9 +1769,9 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 			Summary: fmt.Sprintf("goal %s left landing batch %s (%s) and did not land", request.GoalID, record.BatchID, unit.State),
 			next:    inv.publicArgv("landing", "status"), nextReason: "shows why it left the batch"}
 	}
-	summary := fmt.Sprintf("goal %s is %s in landing batch %s; the batch owner proves and pushes it", request.GoalID, unit.State, record.BatchID)
+	summary := fmt.Sprintf("goal %s is %s in landing batch %s; the landing lane proves and pushes it", request.GoalID, unit.State, record.BatchID)
 	if joined {
-		summary = fmt.Sprintf("goal %s joined landing batch %s; the batch owner proves and pushes it", request.GoalID, record.BatchID)
+		summary = fmt.Sprintf("goal %s joined landing batch %s; the landing lane proves and pushes it", request.GoalID, record.BatchID)
 	}
 	return intentResult{Targets: targets, Outcome: intentInProgress, Data: data, Summary: summary,
 		next: inv.sameCommand(), nextReason: "reads the same batch membership until it records the landing; it never joins twice"}

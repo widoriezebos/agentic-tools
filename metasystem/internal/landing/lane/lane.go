@@ -1,7 +1,7 @@
 // Package lane is the host's one landing lane (batch-lane design U12): the
 // record that names the landing checkout every seat of this host lands
 // through, the flock that lets one batch prove at a time on the host, and the
-// keeper that restarts the lane's owner when it dies. Everything lives in the
+// keeper that wakes the lane's landing agent. Everything lives in the
 // host directory beside the board and the bridge (~/.metasystem/host); the
 // caller passes the home, so tests never touch the real one.
 package lane
@@ -265,10 +265,22 @@ func Register(home string, layout Layout, by string, now time.Time) (previous Re
 		if journal, fenced, _ := ReadUnset(home); fenced {
 			return unsettingRefusal(journal)
 		}
+		// The lane's pre-push hook goes into its checkout first (design
+		// r10 §1, K3), also when the registration stands: a lane an
+		// earlier engine registered gets it now.
+		if err := installHook(home, layout); err != nil {
+			return err
+		}
 		// An unreadable or older record is replaced at a person's word.
 		current, ok, readErr := Read(home)
 		if ok && readErr == nil && current.Root == string(layout.Checkout) && current.Install == string(layout.Install) {
 			return nil
+		}
+		if ok && current.Root != "" && resolved(current.Root) != resolved(string(layout.Checkout)) {
+			// The lane moved: the checkout it leaves pushes as any other.
+			if err := removeHook(current.Root); err != nil {
+				return err
+			}
 		}
 		used, err := readEpoch(home)
 		if err != nil {
@@ -284,10 +296,7 @@ func Register(home string, layout Layout, by string, now time.Time) (previous Re
 		if err := writeJSON(home, epochPath(home), epochRecord{CustodyEpoch: record.CustodyEpoch}); err != nil {
 			return err
 		}
-		if err := writeJSON(home, RecordPath(home), record); err != nil {
-			return err
-		}
-		return removeIfPresent(keeperPath(home))
+		return writeJSON(home, RecordPath(home), record)
 	})
 	return previous, changed, err
 }
@@ -366,5 +375,5 @@ func ProvingHolder(home string) string {
 	if pid := strings.TrimSpace(string(data)); err == nil && pid != "" {
 		return "pid " + pid
 	}
-	return "another landing owner"
+	return "a process that recorded no pid"
 }

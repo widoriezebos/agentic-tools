@@ -45,7 +45,7 @@ func TestBoardCarriesTheLandingLane(t *testing.T) {
 	unregistered := New(Info{Observe: silentHolder, Now: func() time.Time { return fleetNow },
 		Board: &BoardSource{Home: home, Seats: seats, Prober: boardProber{}, Stall: 20 * time.Minute,
 			Lane: func(time.Time) lane.View {
-				return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "no landing lane is registered"}
+				return lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "no landing lane is registered"}
 			}}}, loopback(), testBundle())
 	payload = nil
 	testutil.Require(t, "decode unregistered", json.Unmarshal(request(t, unregistered, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Body.Bytes(), &payload), nil)

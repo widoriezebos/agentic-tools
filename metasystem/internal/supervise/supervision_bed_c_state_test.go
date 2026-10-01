@@ -24,7 +24,6 @@ func TestSupCPublishedStateNamesExactlyTheComponentSet(t *testing.T) {
 	held := []Held{
 		{Component: Watcher, Tag: "w-3", Generation: 3, Identity: identity.Ref{Pid: 50, StartedAtSec: 200}},
 		{Component: Reaper, Tag: "r-3", Generation: 3, Identity: identity.Ref{Pid: 51, StartedAtSec: 201}},
-		{Component: LandingOwner, Tag: "l-3", Generation: 3, Identity: identity.Ref{Pid: 52, StartedAtSec: 202}},
 	}
 	if err := checkout.PublishState(held); err != nil {
 		t.Fatal(err)
@@ -45,7 +44,7 @@ func TestSupCPublishedStateNamesExactlyTheComponentSet(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"landing-owner", "reaper", "watcher"}) {
+	if !reflect.DeepEqual(names, []string{"reaper", "watcher"}) {
 		t.Fatalf("S4-5: state components = %v", names)
 	}
 	for _, name := range names {

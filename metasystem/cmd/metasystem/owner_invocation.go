@@ -21,6 +21,18 @@ func ownerSyncDependencies(invocation ownercall.Invocation) syncRequestDependenc
 	dependencies.authorityFacts.caller = invocation.Caller
 	lineage := invocation.Lineage
 	dependencies.ownerLineage = func() string { return lineage }
+	if ledger := invocation.Ledger; ledger != nil {
+		// The landing lane's own goal writes go through its publication
+		// boundary (lane runtime design r10, K3); a seat's never do.
+		resolve := dependencies.endpoint
+		dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+			endpoint, err := resolve(root)
+			if err != nil {
+				return endpoint, err
+			}
+			return ledger(endpoint), nil
+		}
+	}
 	return dependencies
 }
 
@@ -30,10 +42,19 @@ func ownerSyncDependencies(invocation ownercall.Invocation) syncRequestDependenc
 // builder (release), which proves nothing further without a --by.
 func ownerSyncRequest(invocation ownercall.Invocation, verb, root string, stopping bool) (goal.VerbRequest, error) {
 	dependencies := ownerSyncDependencies(invocation)
+	var req goal.VerbRequest
+	var err error
 	if stopping {
-		return syncStoppingReqWithProofWithDependencies(verb, root, "", invocation.Lineage, nil, goalCommandNow, dependencies)
+		req, err = syncStoppingReqWithProofWithDependencies(verb, root, "", invocation.Lineage, nil, goalCommandNow, dependencies)
+	} else {
+		req, err = syncReqWithProofAtWithDependencies(verb, root, "", invocation.Lineage, nil, goalCommandNow, dependencies)
 	}
-	return syncReqWithProofAtWithDependencies(verb, root, "", invocation.Lineage, nil, goalCommandNow, dependencies)
+	if err == nil && invocation.LaneEpoch > 0 {
+		// The lane's stable claim identity acts at the custody epoch its
+		// kernel read from the host record, never a session's lease epoch.
+		req.ClaimEpoch, req.EpochAuthority = invocation.LaneEpoch, goal.EpochAuthorityLane
+	}
+	return req, err
 }
 
 // goalHandoverOwner transfers a claim under the invocation's context.

@@ -71,14 +71,11 @@ func TestLandingLaneArmedReadsTheInstallationsSupervision(t *testing.T) {
 	}
 }
 
-// Every production reader of the lane asks whether its owner can run: the
-// steward's keeper and the board's view (a nil Ready would ask nothing).
-func TestProductionLaneReadersAskWhetherTheOwnerCanRun(t *testing.T) {
+// The board's view of the lane asks whether the lane can run and reads the
+// landing agent (a nil Ready or Owner would ask nothing).
+func TestProductionLaneReadersAskWhetherTheLaneCanRun(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	if keeper := landingLaneKeeper(home); keeper.Ready == nil || keeper.Start == nil || keeper.Inspect == nil {
-		t.Fatalf("keeper = %+v", keeper)
-	}
 	if sources := LandingLaneViewSources(home, time.Now()); sources.Ready == nil || sources.Owner == nil {
 		t.Fatalf("view sources = %+v", sources)
 	}

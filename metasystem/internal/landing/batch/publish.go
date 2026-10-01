@@ -15,12 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
-func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
-	return PublishJoinWithAdmission(store, batchID, unit, actor, at, plan, handover, func(_ string, unit Unit) (JoinAdmission, error) {
-		return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified"}, nil
-	})
-}
-
 func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (_ testpolicy.Plan, err error) {
 	if _, err := batchMergeDriverArgs(); err != nil {
 		return testpolicy.Plan{}, err
@@ -142,42 +136,6 @@ func runPlanningMergeGit(dir string, stdin []byte, args ...string) ([]byte, erro
 func pathExists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
-}
-func ReconcileJoins(store Store, batchID, tree, actor string, at time.Time, read func(string, string, string, string) (Claim, error)) error {
-	if read == nil {
-		read = claimAt
-	}
-	return store.locked(func() error {
-		return store.updateLocked(batchID, func(record *Record) error {
-			for index := range record.Units {
-				unit := &record.Units[index]
-				if unit.State != UnitJoining {
-					continue
-				}
-				if unit.Admission != nil {
-					if unit.Admission.Status == "handed-over" {
-						// The admission owner must reconsume or execute evidence;
-						// claim equality alone cannot promote membership.
-						continue
-					}
-					claim, claimErr := read(store.root, tree, batchID, unit.GoalID)
-					if claimErr == nil && claim.Machine == unit.Claim.Machine && claim.Lineage == unit.Claim.Lineage && claim.Revision == unit.Claim.Revision && claim.AccountingRevision == unit.Claim.AccountingRevision {
-						// Handover completed before the joiner crashed while writing
-						// its marker. Resume its proof; never promote it here.
-						unit.Admission.Status = "handed-over"
-						continue
-					}
-				}
-				claim, claimErr := read(store.root, tree, batchID, unit.GoalID)
-				unit.State, unit.Outcome, unit.Failure = UnitReturnPending, UnitEjected, "join-incomplete"
-				if claimErr == nil && claim.Machine == unit.Claim.Machine && claim.Lineage == unit.Claim.Lineage && claim.Revision == unit.Claim.Revision && claim.AccountingRevision == unit.Claim.AccountingRevision {
-					unit.State, unit.Outcome, unit.Failure = UnitJoined, "", ""
-				}
-				appendUnitHistory(record, at, "reconcile", actor, unit.GoalID, UnitJoining, unit.State)
-			}
-			return nil
-		})
-	})
 }
 func appendUnitHistory(record *Record, at time.Time, verb, actor, goalID, from, to string) {
 	record.History = append(record.History, HistoryEntry{At: at.UTC().Format(time.RFC3339Nano), Verb: verb, From: from, To: to, Actor: actor, Detail: goalID + " " + to})

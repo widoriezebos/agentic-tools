@@ -78,6 +78,25 @@ describe("a trouble", () => {
       .toBe(`Backlog · ${clock}`);
   });
 
+  // The bell chip says what the notification said (goal ask-what-happened-
+  // follow-ups): its own words and when, never the section label or the
+  // notification's reference id.
+  it("from a notification names the notification's own words", () => {
+    const at = new Date(LAND.at);
+    const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    const alert: Trouble = {
+      text: "HEALTH unhealthy \u2014 the repository watcher is dead",
+      where: { section: "alert notification", path: "", subject: "alert-9f2c1a7b4e6d8035-1", kind: "notification" },
+      at: LAND.at,
+    };
+    expect(chipLine(alert)).toBe(`HEALTH unhealthy \u2014 the repository watcher is dead · ${clock}`);
+    // A long one is its opening words, so the chip stays a label.
+    const long = chipLine({ ...alert, text: "steward: " + "the runner is stale ".repeat(10) });
+    expect(long.startsWith("steward: the runner is stale")).toBe(true);
+    expect(long.endsWith(`… · ${clock}`)).toBe(true);
+    expect(long.length).toBeLessThan(90);
+  });
+
   it("from a pane that threw carries the error's name", () => {
     expect(boundaryText(new TypeError("cannot read properties of undefined (reading 'lane')")))
       .toBe("This pane could not be rendered: TypeError: cannot read properties of undefined (reading 'lane')");

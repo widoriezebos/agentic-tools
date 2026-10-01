@@ -5,13 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
@@ -89,21 +89,43 @@ func (host *pipelineHost) source(claims map[string]string) batchowner.HostPipeli
 	return source
 }
 
-func unknownReasons(picture batch.BoardPicture) map[string]string {
+// viewReasons are a board view's Unknown goals as machine/goal → reason,
+// and a seat Unknown as a whole under machine/.
+func viewReasons(view board.View) map[string]string {
 	reasons := map[string]string{}
-	for _, unknown := range picture.Unknown {
-		reasons[unknown.Seat.Machine+"/"+unknown.Goal] = unknown.Reason
+	for _, seat := range view.Seats {
+		if seat.Unknown != "" {
+			reasons[seat.Machine+"/"] = seat.Unknown
+		}
+		for _, goal := range seat.Goals {
+			if goal.Unknown != "" {
+				reasons[seat.Machine+"/"+goal.Goal] = goal.Unknown
+			}
+		}
 	}
 	return reasons
+}
+
+// viewBelieved are a board view's goals that are not Unknown, in seat order.
+func viewBelieved(view board.View) []string {
+	var believed []string
+	for _, seat := range view.Seats {
+		for _, goal := range seat.Goals {
+			if goal.Unknown == "" {
+				believed = append(believed, goal.Goal)
+			}
+		}
+	}
+	return believed
 }
 
 // TestBatchPipelineReadsOnlyTheArmedSeats (R24, U10b-1; the production
 // source's half of TestBoardReadsOnlyTheSeatsItIsGiven): a fixture registry
 // with two open seats, a closed one, one whose directory is gone, a board
 // directory with no registration, a card of a foreign installation and two
-// armed checkouts with one nickname: the source hands board.Read exactly
-// the armed, present seats with their nicknames, the foreign card is
-// Unknown with its reason, and the shared nickname makes both Unknown.
+// armed checkouts with one nickname: the source reads exactly the armed,
+// present seats with their nicknames, the foreign card is Unknown with its
+// reason, and the shared nickname makes the seat Unknown.
 func TestBatchPipelineReadsOnlyTheArmedSeats(t *testing.T) {
 	t.Parallel()
 	host := newPipelineHost(t)
@@ -120,44 +142,40 @@ func TestBatchPipelineReadsOnlyTheArmedSeats(t *testing.T) {
 	host.card(t, "m1g", "/gone", "goal-g", board.StageBuild, now)
 	host.card(t, "stranger", "/stranger", "goal-s", board.StageBuild, now)
 	_ = m1c
-	picture := host.source(map[string]string{"goal-b": "m1b", "goal-c": "m1c", "goal-x": "m1x", "goal-g": "m1g", "goal-s": "stranger"}).Board(now)
-	if !picture.Readable || len(picture.Cards) != 1 || picture.Cards[0].Goal != "goal-b" {
-		t.Fatalf("believed %+v unknown %v (%v %s)", picture.Cards, unknownReasons(picture), picture.Readable, picture.Reason)
+	view := host.source(map[string]string{"goal-b": "m1b", "goal-c": "m1c", "goal-x": "m1x", "goal-g": "m1g", "goal-s": "stranger"}).View(now)
+	reasons := viewReasons(view)
+	if believed := viewBelieved(view); !view.Readable || len(believed) != 1 || believed[0] != "goal-b" {
+		t.Fatalf("believed %v unknown %v (%v %s)", believed, reasons, view.Readable, view.Reason)
 	}
-	reasons := unknownReasons(picture)
 	if !strings.Contains(reasons["m1c/goal-c"], "not the armed checkout") {
 		t.Fatalf("the foreign installation: %v", reasons)
 	}
-	shared := 0
-	for _, unknown := range picture.Unknown {
-		if unknown.Seat.Machine == "m1e" && strings.Contains(unknown.Reason, "shared") {
-			shared++
-		}
-		if unknown.Goal == "goal-x" || unknown.Goal == "goal-g" || unknown.Goal == "goal-s" {
-			t.Fatalf("a closed, gone or unregistered seat was read: %+v", unknown)
-		}
+	if !strings.Contains(reasons["m1e/"], "shared") {
+		t.Fatalf("the shared nickname's seat is not Unknown: %v", reasons)
 	}
-	if shared != 2 {
-		t.Fatalf("both checkouts of the shared nickname are Unknown: %v", reasons)
+	for _, seat := range view.Seats {
+		if seat.Machine == "m1x" || seat.Machine == "m1g" || seat.Machine == "stranger" {
+			t.Fatalf("a closed, gone or unregistered seat was read: %+v", seat)
+		}
 	}
 }
 
 // TestBatchPipelineKeepsTheRegistryError (R24, U10b-1; the source's half of
 // TestArmedCheckoutsKeepTheirError): an unreadable registry is an
-// unreadable picture with the cause; an empty registry is a readable,
-// empty one.
+// unreadable view with the cause; an empty registry is a readable, empty
+// one.
 func TestBatchPipelineKeepsTheRegistryError(t *testing.T) {
 	t.Parallel()
 	host := newPipelineHost(t)
 	if err := os.Mkdir(host.registryPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if picture := host.source(nil).Board(time.Now()); picture.Readable || !strings.HasPrefix(picture.Reason, "registry: ") {
-		t.Fatalf("an unreadable registry = %+v", picture)
+	if view := host.source(nil).View(time.Now()); view.Readable || !strings.HasPrefix(view.Reason, "registry: ") {
+		t.Fatalf("an unreadable registry = %+v", view)
 	}
 	empty := newPipelineHost(t)
-	if picture := empty.source(nil).Board(time.Now()); !picture.Readable || len(picture.Cards)+len(picture.Unknown) != 0 {
-		t.Fatalf("an empty registry = %+v", picture)
+	if view := empty.source(nil).View(time.Now()); !view.Readable || len(view.Seats) != 0 {
+		t.Fatalf("an empty registry = %+v", view)
 	}
 }
 
@@ -176,25 +194,17 @@ func TestBatchPipelineChecksTheLedger(t *testing.T) {
 	host.card(t, "m1b", m1b, "goal-unclaimed", board.StageBuild, now)
 	host.card(t, "m1b", m1b, "goal-kept", board.StageBuild, now)
 	host.card(t, "m1b", m1b, "goal-done", board.StageReleased, now)
-	picture := host.source(map[string]string{"goal-moved": "m1c", "goal-kept": "m1b", "goal-silent": "m1c", "goal-elsewhere": "m1z"}).Board(now)
-	reasons := unknownReasons(picture)
+	view := host.source(map[string]string{"goal-moved": "m1c", "goal-kept": "m1b", "goal-silent": "m1c", "goal-elsewhere": "m1z"}).View(now)
+	reasons := viewReasons(view)
 	if reasons["m1b/goal-moved"] != "claim moved to m1c" || reasons["m1b/goal-unclaimed"] != "not claimed" || reasons["m1c/goal-silent"] != "no card" {
 		t.Fatalf("ledger reasons %v", reasons)
 	}
 	if _, named := reasons["m1z/goal-elsewhere"]; named {
 		t.Fatal("a claim of another host's machine is none of this board's business")
 	}
-	var believed []string
-	for _, card := range picture.Cards {
-		believed = append(believed, card.Goal)
-	}
+	believed := viewBelieved(view)
+	slices.Sort(believed)
 	if strings.Join(believed, ",") != "goal-done,goal-kept" {
 		t.Fatalf("believed %v", believed)
 	}
 }
-
-// emptyHostBoard is a readable host board with nothing underway: an owner
-// built for a test decides every start from its own joined units.
-type emptyHostBoard struct{}
-
-func (emptyHostBoard) Board(time.Time) batch.BoardPicture { return batch.BoardPicture{Readable: true} }

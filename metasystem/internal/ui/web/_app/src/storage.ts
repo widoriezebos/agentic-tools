@@ -10,10 +10,11 @@ import {
 } from "./backlog/filters";
 import { normalizeFace, normalizeLeading, normalizeSize, type Typeface } from "./partner/typeface";
 import { scopeOf, type ScopeFilter } from "./project/pane";
+import { troubleOf, type Pending } from "./shell/troubling";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The twenty-one keys this build remembers, and nothing else.
+ * The twenty-two keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -153,6 +154,17 @@ export const PARTNER_FONT_SIZE_KEY = "ms.ui.partner.font-size";
 export const PARTNER_LINE_HEIGHT_KEY = "ms.ui.partner.line-height";
 
 /**
+ * The questions a press on Ask what happened left waiting for their
+ * conversation's answer (g1-s68 D2), kept in the tab's own store so a reload
+ * of that tab finds them where they were, and no other tab reads or writes
+ * them: in their own conversation, ready to send, with the turn key they were
+ * minted with, so a send after the reload is the same turn. Nothing else of
+ * the page is kept with them; the trouble was scrubbed of every secret before
+ * it was held.
+ */
+export const PENDING_TROUBLES_KEY = "ms.ui.partner.troubles";
+
+/**
  * What the drawer is worth, in the work area's own height.
  *
  * Two fifths is what an opened drawer takes, and what double-clicking the
@@ -179,6 +191,20 @@ export type Store = {
 export function browserStore(): Store | null {
   try {
     return globalThis.localStorage as Store | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * This tab's own store, or null where there is none. Never throws. It survives
+ * a reload of the tab and is shared with no other tab, which is what the
+ * waiting questions need: a question taken back in one tab must not be put
+ * back by another (Sol SOL-AF-01).
+ */
+export function tabStore(): Store | null {
+  try {
+    return globalThis.sessionStorage as Store | null;
   } catch {
     return null;
   }
@@ -397,4 +423,72 @@ export function writePartnerTypeface(typeface: Typeface, store: Store | null = b
   write(PARTNER_FONT_KEY, typeface.face, store);
   write(PARTNER_FONT_SIZE_KEY, String(typeface.size), store);
   write(PARTNER_LINE_HEIGHT_KEY, String(typeface.leading), store);
+}
+
+/** A string, or "" for anything else. */
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * The questions left waiting, as the page before the reload kept them. Each
+ * is let go of the line it was pressed on: that line's id was the old page's,
+ * and a line on this page may be given the same one. Anything that is not a
+ * waiting question reads as none.
+ */
+export function readPendingTroubles(store: Store | null = tabStore()): Pending[] {
+  const stored = read(PENDING_TROUBLES_KEY, store);
+  if (stored === null || stored === "") {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  const kept: Pending[] = [];
+  for (const entry of parsed as unknown[]) {
+    if (entry === null || typeof entry !== "object") {
+      continue;
+    }
+    const { key, conversation, label, trouble } = entry as Record<string, unknown>;
+    if (text(key) === "" || typeof conversation !== "string" || trouble === null || typeof trouble !== "object") {
+      continue;
+    }
+    const said = trouble as Record<string, unknown>;
+    const where = said.where !== null && typeof said.where === "object" ? (said.where as Record<string, unknown>) : null;
+    if (text(said.text) === "" || where === null) {
+      continue;
+    }
+    const act = said.act !== null && typeof said.act === "object" ? (said.act as Record<string, unknown>) : null;
+    kept.push({
+      id: `kept-${text(key)}`,
+      origin: "",
+      key: text(key),
+      conversation,
+      label: text(label),
+      trouble: troubleOf(
+        {
+          text: text(said.text),
+          code: text(said.code),
+          where: { section: text(where.section), path: text(where.path), subject: text(where.subject), kind: text(where.kind) },
+          act: act === null ? undefined : { verb: text(act.verb), object: text(act.object), target: text(act.target) },
+          at: text(said.at),
+          tip: text(said.tip),
+          signIn: said.signIn === true,
+        },
+        [],
+      ),
+    });
+  }
+  return kept;
+}
+
+/** Keep the waiting questions, or let them all go: "" when none waits. */
+export function writePendingTroubles(list: readonly Pending[], store: Store | null = tabStore()): void {
+  write(PENDING_TROUBLES_KEY, list.length === 0 ? "" : JSON.stringify(list), store);
 }

@@ -13,7 +13,7 @@ m1e  ~/GitHub/agentic-tools-m1e · this checkout · running · since 21 Sep 16:1
 
 agentic-tools-landing  ~/GitHub/agentic-tools-landing · landing lane · running · since 21 Sep 16:18
   pids         landing batch owner 301
-  lane owner   running, pid 4242, since 10:00
+  lane agent   running, pid 4242, since 10:00
 
 m1x  ~/GitHub/agentic-tools-m1x · stopped
   stopped   since 11:00

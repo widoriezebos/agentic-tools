@@ -386,7 +386,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	}
 	result := land()
 	data, _ := result.Data.(map[string]any)
-	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || counts.handovers != 1 || counts.admissions != 1 || counts.ensures != 1 {
+	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || counts.handovers != 1 || counts.admissions != 1 {
 		t.Fatalf("public land = %+v; counts %+v", result, *counts)
 	}
 	id, _ := data["batchId"].(string)
@@ -422,7 +422,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 }
 
 // journeyLandCounts are the declared fixture effects of a public land.
-type journeyLandCounts struct{ handovers, admissions, ensures int }
+type journeyLandCounts struct{ handovers, admissions int }
 
 // journeyLandOwners are the journey bed's owners for public land into the
 // actual batch join at its landing root. The binding, handover, admission
@@ -445,7 +445,6 @@ func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandC
 	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
 	}
-	deps.Ensure = func(string) error { counts.ensures++; return nil }
 	projected := func(root string, at time.Time) *goal.GoalFile {
 		endpoint, err := branch.MainEndpoint(root)
 		if err != nil {

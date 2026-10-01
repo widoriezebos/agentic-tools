@@ -172,7 +172,7 @@ func (inv *intentInvocation) intentBranchTip(goalID string) string {
 }
 
 // landed reports that a land result is a confirmed publication of the goal's
-// work: pushed by hand, or recorded landed by the batch owner.
+// work: pushed by hand, or recorded landed by the landing lane.
 func landed(result intentResult) bool {
 	data, ok := result.Data.(map[string]any)
 	if !ok {

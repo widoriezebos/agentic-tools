@@ -190,6 +190,11 @@ type landingBatchRecord struct {
 	} `json:"receipts"`
 	// Early is the owner's early acts on the batch's wait (D14, U10b-3):
 	// the early proof's attempt and a red finding's attempt.
+	// Attempts are the lane kernel's prove runs (design r10 K6): each names
+	// the test run's own attempt once it ended.
+	Attempts []struct {
+		RunAttempt string `json:"runAttempt"`
+	} `json:"attempts"`
 	Early *struct {
 		Attempt string `json:"attempt"`
 		Finding *struct {
@@ -260,6 +265,9 @@ func (n landingBatchNamer) Named(context.Context, time.Time) ([]string, error) {
 			if record.Early.Finding != nil {
 				named = append(named, attemptIDs(record.Early.Finding.Attempt)...)
 			}
+		}
+		for _, attempt := range record.Attempts {
+			named = append(named, attemptIDs(attempt.RunAttempt)...)
 		}
 		for _, receipt := range record.Receipts {
 			named = append(named, attemptIDs(receipt.AttemptID)...)

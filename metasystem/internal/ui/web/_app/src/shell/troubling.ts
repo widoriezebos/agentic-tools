@@ -151,13 +151,31 @@ function clockOf(at: string): string {
   return `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
 }
 
+/** How much of a notification's words the chip shows before it trails off. */
+const CHIP_WORDS = 60;
+
+/** The opening words of a sentence, cut at a word where one is near. */
+function openingWords(text: string): string {
+  const one = text.replace(/\s+/gu, " ").trim();
+  if (one.length <= CHIP_WORDS) {
+    return one;
+  }
+  const cut = one.slice(0, CHIP_WORDS);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > CHIP_WORDS / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 /**
  * What the chip under the turn says travelled: the act and its subject, or the
- * pane; the code; the time.
+ * pane; the code; the time. A notification is named by its own words, which
+ * are what the human read in the toast or the bell's row, never by a section
+ * or its reference id.
  */
 export function chipLine(trouble: Trouble): string {
   const parts: string[] = [];
-  if (trouble.act !== undefined && trouble.act.verb !== "") {
+  if (trouble.where.kind === "notification") {
+    parts.push(openingWords(trouble.text));
+  } else if (trouble.act !== undefined && trouble.act.verb !== "") {
     parts.push(trouble.act.verb);
     const target = trouble.act.target ?? trouble.where.subject ?? "";
     if (target !== "") {

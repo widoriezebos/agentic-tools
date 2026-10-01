@@ -5,8 +5,6 @@
 package fakeadapter
 
 import (
-	"strings"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -71,39 +69,4 @@ func (a *Adapter) Identity(failure adapter.Failure) (adapter.TestIdentity, bool)
 		return adapter.TestIdentity{}, false
 	}
 	return adapter.TestIdentity{Report: "junit-xml", Classname: failure.Classname, Name: failure.Name}, true
-}
-
-// FreshExecution returns the scripted fresh-execution argv.
-func (a *Adapter) FreshExecution() []string {
-	a.record("FreshExecution")
-	return append([]string(nil), a.Fresh...)
-}
-
-// UnitGateSteps plans one fake build step per unit.
-func (a *Adapter) UnitGateSteps(closure adapter.Closure) []adapter.GateStep {
-	a.record("UnitGateSteps")
-	steps := []adapter.GateStep{}
-	for _, unit := range closure.Units() {
-		steps = append(steps, adapter.GateStep{Name: "unit " + unit, Args: []string{Tool, "test", unit}})
-	}
-	return steps
-}
-
-// GateReds reads lines "FAILED classname#name" and names the owning unit.
-func (a *Adapter) GateReds(_ adapter.GateStep, closure adapter.Closure, output string) []adapter.GateRed {
-	a.record("GateReds")
-	reds := []adapter.GateRed{}
-	for _, line := range strings.Split(output, "\n") {
-		test, found := strings.CutPrefix(strings.TrimSpace(line), "FAILED ")
-		if !found {
-			continue
-		}
-		classname, name, _ := strings.Cut(test, "#")
-		unit, ok := a.OwnerUnit(adapter.Failure{Classname: classname, Name: name}, closure)
-		if !ok {
-			unit = "unowned"
-		}
-		reds = append(reds, adapter.GateRed{Package: unit, Test: name})
-	}
-	return reds
 }

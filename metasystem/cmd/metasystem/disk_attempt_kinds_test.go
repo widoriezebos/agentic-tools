@@ -67,5 +67,6 @@ func TestAttemptKindsReadTheLandingPackagesOwnRecords(t *testing.T) {
 var landingNotAttemptIDs = map[string]string{
 	"batch.Record.Proof.SourcesUnresolved":                 "a sentence saying why a proof's sources were not recorded",
 	"batch.Record.Early.Proof":                             "the early proof's status (green, red, running, unavailable)",
+	"batch.Record.Openings[].Series[].Source":              "the agent's composed commit a canonical series commit was written from",
 	"landing.TestReceipt.Testing.EngineRearm.SourceCommit": "a git commit the engine was rebuilt from",
 }

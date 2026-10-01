@@ -43,14 +43,15 @@ import (
 // The engine identity's refusal codes (the refusal register names their
 // sites).
 const (
-	CodeNotEnrolled          = "LANE_ENGINE_NOT_ENROLLED"
-	CodeEnrollmentUnknown    = "LANE_ENGINE_ENROLLMENT_UNKNOWN"
-	CodePolicyNotEnrolled    = "LANE_POLICY_ENGINE_NOT_ENROLLED"
-	CodeAdvancePaused        = "LANE_ENGINE_ADVANCE_PAUSED"
-	CodeAdvanceBatchInFlight = "LANE_ENGINE_ADVANCE_BATCH_IN_FLIGHT"
-	CodeAdvanceCustodyLive   = "LANE_ENGINE_ADVANCE_CUSTODY_LIVE"
-	CodeAdvanceNotLanded     = "LANE_ENGINE_ADVANCE_NOT_LANDED"
-	CodeAdvanceRunnerDown    = "LANE_ENGINE_ADVANCE_RUNNER_DOWN"
+	CodeNotEnrolled           = "LANE_ENGINE_NOT_ENROLLED"
+	CodeEnrollmentUnknown     = "LANE_ENGINE_ENROLLMENT_UNKNOWN"
+	CodePolicyNotEnrolled     = "LANE_POLICY_ENGINE_NOT_ENROLLED"
+	CodeAdvancePaused         = "LANE_ENGINE_ADVANCE_PAUSED"
+	CodeAdvanceBatchInFlight  = "LANE_ENGINE_ADVANCE_BATCH_IN_FLIGHT"
+	CodeAdvanceCustodyLive    = "LANE_ENGINE_ADVANCE_CUSTODY_LIVE"
+	CodeAdvanceCustodyUnknown = "LANE_ENGINE_ADVANCE_CUSTODY_UNKNOWN"
+	CodeAdvanceNotLanded      = "LANE_ENGINE_ADVANCE_NOT_LANDED"
+	CodeAdvanceRunnerDown     = "LANE_ENGINE_ADVANCE_RUNNER_DOWN"
 )
 
 // Refusal is a refusal a person or the landing agent reads: Message is line

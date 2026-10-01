@@ -192,20 +192,6 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 		stackedBed.seatGit("log", "-1", "--format=%s") != "record: notes" {
 		t.Fatalf("stacked: result=%+v", result)
 	}
-	ownerless := newChangeLaneBed(t, true)
-	ownerless.owners.changeJoin = func(request batchowner.ChangeJoinRequest) (batch.Record, error) {
-		record := batch.Record{BatchID: "b-3", State: batch.StateOpen}
-		return record, &batchowner.ChangeOwnerStartError{Record: record, Cause: errors.New("BATCH_OWNER_INDETERMINATE: supervision refused")}
-	}
-	ownerless.edit("one\nownerless\n")
-	code, result = ownerless.land()
-	expectOutcome(t, "joined without an owner", code, result, intentInProgress)
-	ownerlessHead := ownerless.seatGit("rev-parse", "HEAD")
-	if !strings.Contains(result.Summary, "joined landing batch b-3, but the lane couldn't be started: supervision refused") ||
-		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem landing start" || !changePinned(ownerless.install, ownerlessHead) {
-		t.Fatalf("ownerless: result=%+v", result)
-	}
-
 	hand := newChangeLaneBed(t, false)
 	hand.edit("one\nthree\n")
 	code, result = hand.land()
@@ -234,8 +220,7 @@ func TestWorkLandAfterUnsetLandsOnTheSeat(t *testing.T) {
 		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
 	b.owners.batchRoot = seams.BatchRoot
 	steps := batchowner.ProductionUnsetLane(home, "Wido")
-	steps.Probe = func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil }
-	steps.End = func(string) (int64, error) { return 0, nil }
+	steps.Agent = func() (string, bool, error) { return "", false, nil }
 	report, err := lane.Unset(home, "Wido", time.Now(), false, steps.Seams())
 	if err != nil || !report.Unregistered {
 		t.Fatalf("unset = %+v %v", report, err)

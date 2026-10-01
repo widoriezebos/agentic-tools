@@ -6,10 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -18,25 +22,26 @@ import (
 )
 
 // laneVerbBed is a computer with a lane home, two nested landing checkouts,
-// an owner that is alive or not, and the lane's batch records; no process.
+// a landing agent that runs or not, and the lane's batch records; no
+// process.
 type laneVerbBed struct {
 	cwd, home, landingA, landingB string
 	alive                         bool
-	starts, ends                  int
 	pid                           int64
 	person                        error
 	records                       []batch.Record
-	// ready is whether an owner could run in the lane (nil: it could);
-	// noMachine is a checkout without a machine nickname; staysDown is an
-	// owner a start asks for that does not come up.
-	ready                error
-	noMachine, staysDown bool
+	// ready is whether the lane can run (nil: it can); noMachine is a
+	// checkout without a machine nickname.
+	ready     error
+	noMachine bool
 	// unset replaces landing unset's steps; nil runs the real ones.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// held are the goals the ledger shows the lane holding.
 	held []string
-	// agent is a landing agent that runs on the lane; empty is none.
-	agent string
+	// oldClaims are the goals the ledger shows the old owner lineage
+	// (landing-m1l) holding; oldClaimsErr an unreadable ledger.
+	oldClaims    []string
+	oldClaimsErr error
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -59,37 +64,12 @@ func (bed *laneVerbBed) owners() intentOwners {
 	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 		// The lane beds keep no goal ledger: validation is never due.
 		validation: func(string, time.Time) (bool, error) { return false, nil },
-		agent: func() (string, bool, error) {
-			if bed.agent != "" {
-				return bed.agent, true, nil
-			}
-			return "", false, nil
-		},
-		home: func() (string, error) { return bed.home, nil },
+		home:       func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil
 			}
 			return lane.OwnerProbe{Alive: true, PID: bed.pid, Since: laneTestNow.Add(-time.Hour)}, nil
-		},
-		start: func(string) error {
-			if !bed.alive && bed.staysDown {
-				bed.starts++
-				return nil
-			}
-			if !bed.alive {
-				bed.starts++
-				bed.alive, bed.pid = true, bed.pid+1
-			}
-			return nil
-		},
-		end: func(string) (int64, error) {
-			if !bed.alive {
-				return 0, nil
-			}
-			bed.ends++
-			bed.alive = false
-			return bed.pid, nil
 		},
 		person: func(string) (string, error) {
 			if bed.person != nil {
@@ -111,6 +91,9 @@ func (bed *laneVerbBed) owners() intentOwners {
 		unset: bed.unset,
 		laneHeld: func(string) ([]string, error) {
 			return bed.held, nil
+		},
+		oldOwnerClaims: func(string) ([]string, error) {
+			return bed.oldClaims, bed.oldClaimsErr
 		},
 	}}
 }
@@ -136,9 +119,11 @@ func (bed *laneVerbBed) status(t *testing.T) lane.View {
 	return result.Data
 }
 
-// The landing verbs register the lane, start, stop and restart its owner,
-// and a repeat whose effect holds is success that changes nothing.
-func TestLandingVerbsSetStartStopRestart(t *testing.T) {
+// The landing verbs register the lane, stop and start it, and a repeat
+// whose effect holds is success that changes nothing. landing start starts
+// nothing itself: it resumes the lane, whose steward wakes the landing
+// agent when there is work (lane design r10 §3); status shows the agent.
+func TestLandingVerbsSetStartStop(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
 	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(stdout, "No landing lane is registered") {
@@ -153,14 +138,11 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(oneSpaced(stdout), "already "+bed.landingA) {
 		t.Fatalf("set again = %d %q", code, stdout)
 	}
-	if view := bed.status(t); view.Root == nil || *view.Root != bed.landingA || *view.RegisteredBy != "Wido" || view.Owner.State != lane.OwnerNotStarted {
+	if view := bed.status(t); view.Root == nil || *view.Root != bed.landingA || *view.RegisteredBy != "Wido" || view.Owner.State != lane.OwnerIdle {
 		t.Fatalf("status after set = %+v", view)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 || !strings.Contains(stdout, "started") {
-		t.Fatalf("start = %d %q starts=%d", code, stdout, bed.starts)
-	}
-	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 || !strings.Contains(stdout, "already running (pid 4243)") {
-		t.Fatalf("start again = %d %q starts=%d", code, stdout, bed.starts)
+	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || !strings.Contains(oneSpaced(stdout), "is already running") {
+		t.Fatalf("start of a running lane = %d %q", code, stdout)
 	}
 	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 || !strings.Contains(stdout, "stopped the landing lane") {
 		t.Fatalf("stop = %d %q", code, stdout)
@@ -172,11 +154,73 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "stop"); code != 0 || !strings.Contains(stdout, "already stopped by Wido") {
 		t.Fatalf("stop again = %d %q", code, stdout)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 {
+	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || !strings.Contains(oneSpaced(stdout), "resumed the landing lane") {
 		t.Fatalf("start after stop = %d %q", code, stdout)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered   by Wido") || !strings.Contains(stdout, "pid 4243") {
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatal("a person's start left the lane paused")
+	}
+	bed.alive = true
+	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered   by Wido") || !strings.Contains(stdout, "pid 4242") ||
+		!strings.Contains(stdout, "agent is at work") {
 		t.Fatalf("status --verbose = %d %q", code, stdout)
+	}
+	if _, ok := findIntentAction("landing", "restart"); ok {
+		t.Fatal("landing restart still restarts a batch owner that no longer exists")
+	}
+}
+
+// landing stop --reason keeps the reason with the pause (design r10 §3,
+// the agent's stop and ask): the stop, status, a repeat and every gated
+// operation the pause holds name it on line 1; line 2 stays the command.
+func TestLandingStopRecordsItsReason(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	reason := "goal-a is red twice on its own tests"
+	code, stdout, stderr := bed.run(t, "landing", "stop", "--by", "Wido", "--reason", reason)
+	if code != 0 || !strings.Contains(oneSpaced(stdout), "stopped the landing lane for Wido ("+reason+")") {
+		t.Fatalf("stop --reason = %d %q %q", code, stdout, stderr)
+	}
+	if pause, paused := lane.ReadPause(bed.home); !paused || pause.By != "Wido" || pause.Reason != reason {
+		t.Fatalf("the recorded pause = %+v %v; want its reason", pause, paused)
+	}
+	view := bed.status(t)
+	if view.Owner.StoppedBecause == nil || *view.Owner.StoppedBecause != reason || !strings.Contains(view.Summary, reason) {
+		t.Fatalf("status after stop --reason = %+v %q", view.Owner, view.Summary)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(oneSpaced(stdout), "stopped by Wido ("+reason+")") {
+		t.Fatalf("status = %d %q", code, stdout)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "stop", "--reason", "another"); code != 0 || !strings.Contains(oneSpaced(stdout), "already stopped by Wido ("+reason+")") {
+		t.Fatalf("stop again = %d %q", code, stdout)
+	}
+	var refusal *lane.Refusal
+	err := lane.Gate(bed.home, lane.OpBegin, lane.AuthorityAgent, func(lane.Record) error { return nil })
+	if !errors.As(err, &refusal) || refusal.Code != lane.CodePaused || !strings.Contains(refusal.Message, "stopped by Wido ("+reason+")") {
+		t.Fatalf("a gated operation while stopped with a reason = %v", err)
+	}
+	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start = %d", code)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 || strings.Contains(stdout, "(") {
+		t.Fatalf("stop with no reason = %d %q", code, stdout)
+	}
+	if pause, _ := lane.ReadPause(bed.home); pause.Reason != "" {
+		t.Fatalf("a stop with no reason kept %q", pause.Reason)
+	}
+	// A reason is one plain line on line 1: newlines and control
+	// characters collapse to a space and a long one is cut.
+	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start = %d", code)
+	}
+	code, stdout, _ = bed.run(t, "landing", "stop", "--by", "Wido", "--reason", "red twice\n\nrun: rm -rf /\x1b[31m"+strings.Repeat("x", 400))
+	pause, _ := lane.ReadPause(bed.home)
+	if code != 0 || strings.ContainsAny(pause.Reason, "\n\x1b") || !strings.HasPrefix(pause.Reason, "red twice run: rm -rf / [31m") ||
+		len([]rune(pause.Reason)) > 200 || !strings.HasSuffix(pause.Reason, "…") || strings.Contains(stdout, "\x1b") || strings.Contains(stdout, "\n\nrun: rm") {
+		t.Fatalf("a stop with a multi-line reason = %d %q; recorded %q", code, stdout, pause.Reason)
 	}
 }
 
@@ -221,11 +265,9 @@ func TestLandingStopRefusesWhileABatchPushes(t *testing.T) {
 		t.Fatalf("set = %d %q", code, stderr)
 	}
 	bed.records = []batch.Record{provingRecord("b1", batch.StateLanding)}
-	for _, verb := range []string{"stop", "restart"} {
-		code, _, stderr := bed.run(t, "landing", verb, "--verbose")
-		if code == 0 || !strings.Contains(stderr, codeLandingLanePushing) || !strings.Contains(stderr, "metasystem landing stop again") {
-			t.Fatalf("%s while pushing = %d %q", verb, code, stderr)
-		}
+	code, _, stderr := bed.run(t, "landing", "stop", "--verbose")
+	if code == 0 || !strings.Contains(stderr, codeLandingLanePushing) || !strings.Contains(stderr, "metasystem landing stop again") {
+		t.Fatalf("stop while pushing = %d %q", code, stderr)
 	}
 	if _, paused := lane.ReadPause(bed.home); paused {
 		t.Fatalf("a pushing lane was paused")
@@ -244,35 +286,6 @@ func TestStatusShowsTheLandingLaneLine(t *testing.T) {
 	bed.records = []batch.Record{provingRecord("b1", batch.StateProving)}
 	if line := inv.statusLaneLine(); !strings.Contains(line, "landing lane "+bed.landingA) || !strings.Contains(line, "batch b1 proving") {
 		t.Fatalf("lane line = %q", line)
-	}
-}
-
-// landing restart gives a fresh owner process: the running owner is ended
-// by its recorded identity, a new one runs with another pid, the pause is
-// cleared and the keep-alive's restarts are forgotten.
-func TestLandingRestartGivesAFreshOwner(t *testing.T) {
-	t.Parallel()
-	bed := newLaneVerbBed(t)
-	bed.alive = true
-	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
-		t.Fatalf("set = %d %q", code, stderr)
-	}
-	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(lane.HostDir(bed.home), "landing-lane-keeper.json"), []byte(`{"failures":2,"restarts":2}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, stderr := bed.run(t, "landing", "restart")
-	if code != 0 || bed.ends != 1 || !strings.Contains(stdout, "4242") || !strings.Contains(stdout, "4243") {
-		t.Fatalf("restart = %d %q %q, ends %d; want pid 4242 ended and 4243 running", code, stdout, stderr, bed.ends)
-	}
-	view := bed.status(t)
-	if view.Owner.State != lane.OwnerRunning || view.Owner.PID == nil || *view.Owner.PID != 4243 || view.Owner.Restarts != 0 {
-		t.Fatalf("after restart = %+v", view.Owner)
-	}
-	if _, paused := lane.ReadPause(bed.home); paused {
-		t.Fatalf("restart left the lane paused")
 	}
 }
 
@@ -332,9 +345,9 @@ func TestLandingSetReplacesACorruptRecord(t *testing.T) {
 	}
 }
 
-// A lane whose checkout's supervision is not armed cannot start its owner:
-// landing start and restart say so, name the command a person runs and
-// change nothing; they never claim a start.
+// A lane whose checkout's supervision is not armed cannot run its landing
+// agent: landing start says so, names the command a person runs and changes
+// nothing; it never claims a start.
 func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -345,43 +358,22 @@ func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 		t.Fatal(err)
 	}
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
-	for _, verb := range []string{"start", "restart"} {
-		code, stdout, stderr := bed.run(t, "landing", verb, "--verbose")
-		for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "  → metasystem system start --repo " + bed.landingA, "nothing was started"} {
-			if !strings.Contains(stderr, want) {
-				t.Errorf("%s = %d %q; lacks %q", verb, code, stderr, want)
-			}
+	code, stdout, stderr := bed.run(t, "landing", "start", "--verbose")
+	for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "  → metasystem system start --repo " + bed.landingA, "nothing was started"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("start = %d %q; lacks %q", code, stderr, want)
 		}
-		if code != 3 || strings.Contains(stdout+stderr, "started the") || bed.starts != 0 || bed.ends != 0 {
-			t.Fatalf("%s = %d %q %q, starts %d ends %d; want a person's act named, nothing started", verb, code, stdout, stderr, bed.starts, bed.ends)
-		}
+	}
+	if code != 3 || strings.Contains(stdout+stderr, "resumed the") {
+		t.Fatalf("start = %d %q %q; want a person's act named, nothing started", code, stdout, stderr)
 	}
 	if _, paused := lane.ReadPause(bed.home); !paused {
 		t.Fatalf("the refused start changed the lane's pause")
 	}
 	var result struct{ Outcome string }
-	_, stdout, _ := bed.run(t, "landing", "start", "--json")
+	_, stdout, _ = bed.run(t, "landing", "start", "--json")
 	if json.Unmarshal([]byte(stdout), &result) != nil || result.Outcome != intentRefused {
 		t.Fatalf("start --json = %q; want outcome refused", stdout)
-	}
-}
-
-// A start whose owner does not come up is not a start: the verb says it
-// asked the checkout's supervision and that the owner does not run yet.
-func TestLandingStartNeverClaimsAnOwnerThatIsNotUp(t *testing.T) {
-	t.Parallel()
-	bed := newLaneVerbBed(t)
-	bed.staysDown = true
-	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
-		t.Fatalf("set = %d %q", code, stderr)
-	}
-	code, stdout, _ := bed.run(t, "landing", "start", "--json")
-	var result struct{ Outcome, Summary string }
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		t.Fatalf("start --json = %d %q", code, stdout)
-	}
-	if bed.starts != 1 || result.Outcome != intentInProgress || strings.Contains(result.Summary, "started the") || !strings.Contains(result.Summary, "does not run yet") {
-		t.Fatalf("start = %d %+v starts %d; want in-progress without a claimed start", code, result, bed.starts)
 	}
 }
 
@@ -406,9 +398,10 @@ func TestLandingSetRefusesACheckoutWithoutAMachineNickname(t *testing.T) {
 	}
 }
 
-// landing status says why the owner does not run and the one command that
-// fixes it, in its one line and as its next step; set names that step too.
-func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
+// landing status says why the lane can't run its landing agent and the one
+// command that fixes it, in its one line and as its next step; set names
+// that step too.
+func TestLandingStatusSaysWhyTheLaneCannotRun(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
@@ -417,68 +410,10 @@ func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
 		t.Fatalf("set on an unarmed checkout = %d %q %q; want the arming named next", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(t, "landing", "status")
-	for _, want := range []string{"! The landing lane's owner is not running", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
+	for _, want := range []string{"! The landing lane can't run its agent", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
 		if code != 0 || !strings.Contains(oneSpaced(stdout), want) {
 			t.Errorf("status = %d %q; lacks %q", code, stdout, want)
 		}
-	}
-}
-
-// landing status says a failing owner tick the way a person reads it: line 1
-// the plain situation (which batch cannot advance and why, in plain words),
-// line 2 the one command that shows more; the owner's raw error is only in
-// --verbose and --json. Known failure classes get their own words; an
-// unknown one gets a generic line.
-func TestLandingStatusSaysAFailingTickInPlainWords(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name, raw, want string
-	}{
-		{"re-arm asks for a session",
-			`batch 4gr18nm8t3nyev9sssda9jgtsq: bin/metasystem up --repo /lanes/landing/metasystem: exit status 1: up outcome=failed component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`,
-			"batch 4gr18nm8t3nyev9sssda9jgtsq can't advance: the lane owner could not re-arm the lane's engine for its proof"},
-		{"engine rebuild",
-			`batch b1: go run -trimpath ./cmd/devgate build: exit status 1: compile error`,
-			"batch b1 can't advance: the lane owner could not rebuild the lane's engine for its proof"},
-		{"fetch",
-			`batch b1: BATCH_LAND_PUSH_REFUSED: fetch origin/main: could not resolve host: exit status 128`,
-			"batch b1 can't advance: the lane owner could not fetch main"},
-		{"unknown",
-			`batch b1: something new broke: detail`,
-			"batch b1 can't advance: the lane owner's last tick failed"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			bed := newLaneVerbBed(t)
-			bed.alive = true
-			if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
-				t.Fatalf("set = %d %q", code, stderr)
-			}
-			path := lane.TickErrorPath(bed.landingA)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(test.raw+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			code, stdout, _ := bed.run(t, "landing", "status")
-			if code != 0 || !strings.HasPrefix(oneSpaced(stdout), "! "+test.want+" → metasystem landing status --verbose ") {
-				t.Fatalf("status = %d %q; want the situation, then the one command", code, stdout)
-			}
-			raw := strings.SplitN(test.raw, ": ", 2)[1]
-			if strings.Contains(stdout, raw) {
-				t.Errorf("status without --verbose carries the raw error: %q", stdout)
-			}
-			_, verbose, _ := bed.run(t, "landing", "status", "--verbose")
-			if !strings.Contains(oneSpaced(verbose), "last tick "+test.raw) || !strings.Contains(verbose, "owner log ") {
-				t.Errorf("verbose status lacks the raw error and the log: %q", verbose)
-			}
-			_, encoded, _ := bed.run(t, "landing", "status", "--json")
-			var result struct{ Data lane.View }
-			if err := json.Unmarshal([]byte(encoded), &result); err != nil || result.Data.Owner.LastTickError == nil || *result.Data.Owner.LastTickError != test.raw {
-				t.Errorf("json status lacks the raw error: %v %q", err, encoded)
-			}
-		})
 	}
 }
 
@@ -580,11 +515,8 @@ func TestLandingUnsetListsWhatIsLeftAndContinues(t *testing.T) {
 	if _, err := lane.Unset(bed.home, "Wido", laneTestNow, false, seams); err != nil {
 		t.Fatal(err)
 	}
-	for _, verb := range []string{"start", "restart"} {
-		code, _, stderr := bed.run(t, "landing", verb)
-		if code == 0 || !strings.Contains(stderr, "being unset") || !strings.Contains(stderr, "metasystem landing unset") || bed.starts != 0 {
-			t.Fatalf("%s during an unset = %d %q starts %d", verb, code, stderr, bed.starts)
-		}
+	if code, _, stderr := bed.run(t, "landing", "start"); code == 0 || !strings.Contains(stderr, "being unset") || !strings.Contains(stderr, "metasystem landing unset") {
+		t.Fatalf("start during an unset = %d %q", code, stderr)
 	}
 }
 
@@ -604,12 +536,15 @@ func TestLandingStartOfAStoppedLaneIsAPersonsAct(t *testing.T) {
 	if code != 3 || !strings.Contains(stderr, "only a person may resume the landing lane") {
 		t.Fatalf("start by no person = %d %q", code, stderr)
 	}
-	if _, paused := lane.ReadPause(bed.home); !paused || bed.starts != 0 {
+	if _, paused := lane.ReadPause(bed.home); !paused {
 		t.Fatalf("a refused start resumed the lane")
 	}
 	bed.person = nil
-	if code, _, stderr := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 {
+	if code, _, stderr := bed.run(t, "landing", "start"); code != 0 {
 		t.Fatalf("start by the person = %d %q", code, stderr)
+	}
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatalf("the person's start left the lane stopped")
 	}
 }
 
@@ -656,16 +591,16 @@ func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 }
 
 // TestLandingStartWithALandingAgentRunning (A-a, re-review 2 and 3): a
-// person's landing start while a landing agent runs starts no batch owner
-// beside it and says the agent runs, not that an owner was asked for; and
-// the start forgets the last agent's cooldown, so work wakes one at once.
+// person's landing start while a landing agent runs starts nothing beside
+// it; and the start forgets the last agent's cooldown, so work wakes one at
+// once.
 func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("landing set = %d %q", code, stderr)
 	}
-	bed.alive, bed.agent = false, "landing-0011"
+	bed.alive = true
 	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
 		t.Fatal(err)
 	}
@@ -673,13 +608,44 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reasons":["validation-due"],"reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	starts := bed.starts
 	code, stdout, stderr := bed.run(t, "landing", "start")
-	if code != 0 || bed.starts != starts || !strings.Contains(stdout, "landing agent landing-0011 runs") || strings.Contains(stdout, "asked the supervision") {
-		t.Fatalf("landing start with an agent running = %d %q %q, owner starts %d -> %d", code, stdout, stderr, starts, bed.starts)
+	if code != 0 || !strings.Contains(oneSpaced(stdout), "resumed the landing lane") {
+		t.Fatalf("landing start with an agent running = %d %q %q", code, stdout, stderr)
 	}
 	state, err := lane.ReadAgentState(bed.home)
 	if err != nil || len(state.Reasons) != 0 || state.Launch != "landing-0010" {
 		t.Fatalf("after a person's start the keeper record is %+v %v; want the cooldown reasons forgotten, the launch kept", state, err)
+	}
+}
+
+// A validation run that is reserved and whose custody has ended awaits its
+// finalization (integration of A-a and K-f): landing status --json names
+// it as a wake reason, and the keeper wakes the landing agent on the same
+// read, so landing validate finalizes it or runs it again.
+func TestLandingWakesForAPendingFinalization(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
+	if view := bed.status(t); view.Wake == nil || slices.Contains(view.Wake.Reasons, lane.WakeFinalizationPending) {
+		t.Fatalf("a lane with no validation reserved wakes for %+v", view.Wake)
+	}
+	reservation, err := json.Marshal(gaterun.Validation{RunID: "run-1", Key: goal.CadenceClaimKey{TrunkTree: strings.Repeat("a", 40)}, ReservedAt: laneTestNow.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cadence.ReservationPath(bed.home), reservation, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if view := bed.status(t); view.Wake == nil || !slices.Contains(view.Wake.Reasons, lane.WakeFinalizationPending) {
+		t.Fatalf("a reserved validation that runs no more wakes for %+v; want %s", view.Wake, lane.WakeFinalizationPending)
+	}
+	keeper := newLandingAgentKeeper(filepath.Join(bed.landingA, "metasystem"), bed.home, newLandingAgent())
+	record, _, err := lane.Read(bed.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keeper.Sources.Validation = nil
+	if wake := lane.ReadWake(record, laneTestNow, keeper.Sources); !slices.Contains(wake.Reasons, lane.WakeFinalizationPending) {
+		t.Fatalf("the keeper's wake = %+v; want %s", wake, lane.WakeFinalizationPending)
 	}
 }

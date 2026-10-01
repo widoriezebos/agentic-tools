@@ -113,7 +113,7 @@ cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerP
 cmd/metasystem/proof_run.go:				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/wait_register.go:	view, err := classifyVerbCaller(root, callerPID)
-internal/cadence/tick.go:	actor := goal.Actor{Machine: machine, Lineage: owner.Lineage}
+internal/cadence/validate.go:	actor := goal.Actor{Machine: machine, Lineage: v.Owner.Lineage}
 internal/channel/poll.go:				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
 internal/channel/poll.go:		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step})
 internal/channel/poll.go:		published, err := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: "wido"}, Ulid: ulid, Now: c.Now}, []string{status.GoalID}, nil, &proof)
@@ -123,7 +123,6 @@ internal/dispatch/finding_register.go:	req := goal.VerbRequest{Endpoint: endpoin
 internal/dispatch/stop.go:				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage, Human: human},
 internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
 internal/goal/recover.go:		r.Actor.Human = by
-internal/landing/batchowner/trunkred.go:	return &LedgerTrunkRedOwner{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Now: time.Now}, nil
 internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}

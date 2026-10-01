@@ -104,15 +104,6 @@ func (bed *ordinaryJoinBed) expectJoin(incoming Unit, reply testpolicy.Plan) str
 	return unitTree
 }
 
-func (bed *ordinaryJoinBed) expectConflict(incoming Unit) {
-	bed.t.Helper()
-	live := bed.liveWith(incoming)
-	bed.mu.Lock()
-	bed.wants = append(bed.wants, ordinaryJoinOperation{kind: "assemble", base: bed.base, units: live,
-		err: &assemblyConflict{GoalID: incoming.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+incoming.GoalID+" paths a.go, b.go")}})
-	bed.mu.Unlock()
-}
-
 func (bed *ordinaryJoinBed) liveWith(incoming Unit) []Unit {
 	bed.t.Helper()
 	record := load(bed.t, bed.store)
@@ -138,4 +129,13 @@ func cloneJoinPlan(plan testpolicy.Plan) testpolicy.Plan {
 		plan.Stages[index].Groups = slices.Clone(plan.Stages[index].Groups)
 	}
 	return plan
+}
+
+func (bed *ordinaryJoinBed) expectConflict(incoming Unit) {
+	bed.t.Helper()
+	live := bed.liveWith(incoming)
+	bed.mu.Lock()
+	bed.wants = append(bed.wants, ordinaryJoinOperation{kind: "assemble", base: bed.base, units: live,
+		err: &assemblyConflict{GoalID: incoming.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+incoming.GoalID+" paths a.go, b.go")}})
+	bed.mu.Unlock()
 }

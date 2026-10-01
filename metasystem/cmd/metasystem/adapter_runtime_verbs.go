@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/agentgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -29,8 +30,12 @@ var (
 )
 
 // runAdapterClaudeToolGate decides one Claude PreToolUse call. Once flags are
-// valid the hook fails open: every diagnostic path exits successfully.
+// valid the hook fails open: every diagnostic path exits successfully. The
+// landing agent's call fails closed instead (runLandingAdapterToolGate).
 func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
+	if agentgate.Governs(os.LookupEnv) {
+		return runLandingAdapterToolGate(args, stdout, stderr)
+	}
 	flags := newFlagSet("adapter claude-tool-gate", stdout, stderr)
 	var root string
 	pathFlagVar(flags, &root, "root", "", "installation or containing template root")
@@ -64,6 +69,26 @@ func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
+	}
+	return 0
+}
+
+// runLandingAdapterToolGate is the recorded gate for the landing agent
+// (lineage landing-agent): its fail-closed allowlist, reached before any
+// path that lets a call through. Bad flags or no root leave the gate
+// nothing to decide, which denies; a denial that cannot be written exits 2,
+// the runtime's blocking status, with the reason on stderr.
+func runLandingAdapterToolGate(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("adapter claude-tool-gate", io.Discard, io.Discard)
+	var root string
+	pathFlagVar(flags, &root, "root", "", "installation or containing template root")
+	options := adapter.ToolGateOptions{LandingAgent: true, Stdout: stdout, Stderr: stderr}
+	if flags.Parse(args) == nil && root != "" && flags.NArg() == 0 {
+		options.Installation, options.Stdin = root, os.Stdin
+	}
+	if err := adapter.RunToolGate(options); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
 	}
 	return 0
 }

@@ -21,7 +21,7 @@ const Name = "go"
 // build terminal; it names no test.
 const packageBuildIdentity = "package-build"
 
-// Adapter is the Go implementation of adapter.Adapter and adapter.UnitGate.
+// Adapter is the Go implementation of adapter.Adapter.
 type Adapter struct{}
 
 func init() { adapter.Register(Name, Adapter{}) }
@@ -59,22 +59,7 @@ func (Adapter) Identity(failure adapter.Failure) (adapter.TestIdentity, bool) {
 	return adapter.TestIdentity{Report: failure.Report, Classname: failure.Classname, Name: failure.Name}, true
 }
 
-// UnitGateSteps is the standalone unit gate's aggregated package run.
-func (Adapter) UnitGateSteps(closure adapter.Closure) []adapter.GateStep {
-	return AggregateUnitGateSteps(packagesOf(closure))
-}
-
-// GateReds maps one failed step's output to package/test lines.
-func (Adapter) GateReds(step adapter.GateStep, closure adapter.Closure, output string) []adapter.GateRed {
-	return GateReds(step, closure.Module, output)
-}
-
 func closureOf(selection UnitPackages) adapter.Closure {
 	return adapter.Closure{Tree: selection.Tree, Module: selection.ModulePath,
 		Changed: selection.Changed, Dependents: selection.Dependents}
-}
-
-func packagesOf(closure adapter.Closure) UnitPackages {
-	return UnitPackages{Tree: closure.Tree, ModulePath: closure.Module,
-		Changed: closure.Changed, Dependents: closure.Dependents}
 }

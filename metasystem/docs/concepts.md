@@ -134,8 +134,8 @@ that checkout, its MetaSystem installation (the checkout itself, or its
 `metasystem` folder) and the custody epoch its registration took. Only a
 person's `metasystem landing set PATH` writes the record; a seat's
 `landing.batch-root` never does. The record is what makes it the lane:
-every checkout has the same batch owner component, and it runs only in
-the checkout the record names. In every other seat it stands idle.
+only the steward of the checkout it names wakes a landing agent there; in
+every other seat nothing runs for the lane.
 
 **Why a separate checkout.** Merging and pushing need a clean tree that
 nothing else touches. A seat's checkout is full of half-built work,
@@ -151,31 +151,55 @@ is landing, so a landing never depends on the state of anyone's seat.
   batches never compete with each other for CPU.
 - On green it pushes the whole batch to main in one push, and each
   member is recorded as landed.
-- On red it works out which member broke the proof, ejects that member
-  and gives it back to its seat to fix, and lands the rest in their
-  original order. When main itself is red, the batch is held until main
-  is fixed.
-- It uses its waits: while one batch proves, the next one collects, and
-  it can wait briefly for work that is almost ready rather than start a
-  proof that misses it, never longer in total than that work's own proof
-  would have taken. An early proof may run on spare CPU, never ahead
-  of a real one.
-- It is kept alive. The steward of every seat on the computer watches
-  the lane's owner and restarts it when it dies, waiting a minute and
-  then longer between tries (up to ten minutes). After the fifth death
-  in a row it gives up and says so, rather than restart a broken owner
-  forever; a person fixes the cause and runs `metasystem landing start`.
+- On red its landing agent finds out which member broke the proof, by
+  testing one member's own work on main, gives that member back to its
+  seat with the failing run as evidence, and lands the rest in their
+  original order.
+- It runs a model only when there is work. The steward of the lane's
+  checkout wakes one landing agent when work is queued, a batch is
+  unfinished or a validation is due; an idle lane runs no agent. The
+  agent works through the lane's own verbs below, and nothing else moves
+  main from the lane.
+
+**The lane's own verbs.** Joining the lane runs no tests: a goal or a
+change is handed over and queued. `metasystem landing begin` records the
+series a batch is composed into on main before any test runs, one
+replay per member's work plus at most 40 lines of the lane's own seam
+fixes. `metasystem landing prove` runs the tests of that recorded series,
+of main, or of one member's own work on main, and records each run on
+the batch as green, red (a test failed) or unavailable (it could not
+run, which is never a member's red). Both act only while the lane is not
+stopped.
 
 **Stopped is not gone.** A stopped lane (`metasystem landing stop`)
 still takes seats' work, which waits in it; a stop may hold half-landed
 work, and landing past it would race that work. A pause that cannot be
 read counts as a pause, and only a person ends it. To go back to each
 seat landing its own work, a person runs `metasystem landing unset`: it
-fences the lane against new work, lets a push under way finish, ends the
-owner, finalizes members already on main, returns every other member to
+fences the lane against new work, lets a push under way finish, stops its
+landing agent, finalizes members already on main, returns every other member to
 its seat, reads each return back, and only then removes the record. When
 something is still running or a return is not confirmed, it stops and
 lists what is left, and the same command continues.
+
+**Only a publication moves main from the lane.** `metasystem landing set`
+puts a pre-push hook in the lane's checkout, never in a seat's, and
+`landing unset` takes it away. From that checkout, main moves only
+through the lane's one publication boundary. It publishes an exact update
+(this commit, this tree, on top of this main), and git's pushes pass the
+hook only for that update. `metasystem landing publish --batch ID` puts a
+proven batch on main: exactly the series the batch began with, each commit
+with a `Landing-Proof` trailer and its tree unchanged. It publishes only
+when the batch's latest tests passed on that series and were judged by
+the lane's enrolled engine. The lane's own goal-list writes go through
+the same boundary. When main moved in the meantime nothing is published,
+and the lane composes again on the new main; it never pushes the old
+series on top by itself. A seat's own goal writes and landings are
+unchanged. The hook guards main only, and it is not a sandbox: a push
+with `--no-verify`, a checkout whose `core.hooksPath` points elsewhere,
+or a separate clone made under the same account passes it. Those are
+caught only afterwards, by the landing agent's tool gate and the lane's
+detector of what reaches main.
 
 **Without a lane**, the seat lands it itself. `metasystem work land`
 proves the work on the seat and pushes it from there. This is correct,

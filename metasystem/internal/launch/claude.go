@@ -45,8 +45,22 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 		args = append(args, "--effort", effort)
 	}
 	args = append(args, "--dangerously-skip-permissions", "--output-format", "json", "--name", record.Kind+"-"+record.Tag)
+	// A settings file joins the checkout's own settings; the landing agent's
+	// fail-closed tool gate arrives this way (agentgate.ClaudeSettings), and
+	// a landing session never starts without it.
+	settings := readString(record.AdapterData, "settings")
+	if settings == "" && record.Kind == LandingKind {
+		return Command{}, fmt.Errorf("a landing session needs its tool gate settings; the launch records them under AdapterData \"settings\"")
+	}
+	if settings != "" {
+		args = append(args, "--settings", settings)
+	}
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
+	} else if session := readString(record.AdapterData, "sessionID"); session != "" && record.Kind == LandingKind {
+		// A landing session's id is fixed before it starts, so its
+		// transcript is found even when it is cancelled before it answers.
+		args = append(args, "--session-id", session)
 	}
 	var environment []string
 	if window > 0 {
@@ -61,43 +75,68 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 
 func (adapter ClaudeHeadless) Measure(record Record, stateDir string) (Measurement, []Output, map[string]json.RawMessage, error) {
 	measurement, outputs, pageErr := measurePage(record, stateDir)
-	resultPath := filepath.Join(stateDir, "result.json")
-	data, err := os.ReadFile(resultPath)
-	if err != nil {
-		return measurement, outputs, nil, errClaudeResultUnreadable
-	}
+	// The session's id is known before it runs when the launch fixed it
+	// (a landing session); its result names it once the session ends.
+	sessionID := readString(record.AdapterData, "sessionID")
+	var patch map[string]json.RawMessage
 	var result struct {
 		SessionID string `json:"session_id"`
 		IsError   *bool  `json:"is_error"`
 		Turns     int    `json:"num_turns"`
 		Result    string `json:"result"`
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return measurement, outputs, nil, errClaudeResultUnreadable
+	resultErr := errClaudeResultUnreadable
+	if data, err := os.ReadFile(filepath.Join(stateDir, "result.json")); err == nil && json.Unmarshal(data, &result) == nil && result.IsError != nil {
+		resultErr = nil
+		measurement.Turns = result.Turns
+		measurement.ResultLines, measurement.ResultWords, measurement.ResultTail = textMeasure(result.Result)
+		patch = map[string]json.RawMessage{}
+		setString(patch, "sessionID", result.SessionID)
+		if record.Kind == "read" {
+			measurement.Verdict = readVerdict(record)
+		}
+		if result.SessionID != "" {
+			sessionID = result.SessionID
+		}
+		if *result.IsError {
+			resultErr = errClaudeResultError
+		}
 	}
-	if result.IsError == nil {
-		return measurement, outputs, nil, errClaudeResultUnreadable
+	// The usage is read from the transcript whenever the session is known,
+	// also when the session failed or left no readable result: every ended
+	// session is measured (K10).
+	usageErr := fmt.Errorf("claude session of launch %s is not known, so its transcript can't be read", record.ID)
+	if sessionID != "" {
+		usageErr = adapter.measureTranscript(sessionID, &measurement)
+		measurement.UsageRead = usageErr == nil
 	}
-	measurement.Turns = result.Turns
-	measurement.ResultLines, measurement.ResultWords, measurement.ResultTail = textMeasure(result.Result)
-	patch := map[string]json.RawMessage{}
-	setString(patch, "sessionID", result.SessionID)
-	if record.Kind == "read" {
-		measurement.Verdict = readVerdict(record)
-	}
-	if *result.IsError {
-		return measurement, outputs, patch, errClaudeResultError
-	}
-	if pageErr != nil {
+	switch {
+	case resultErr != nil:
+		return measurement, outputs, patch, resultErr
+	case pageErr != nil:
 		return measurement, outputs, patch, pageErr
-	}
-	if result.SessionID == "" {
+	case result.SessionID == "":
 		return measurement, outputs, patch, errClaudeResultUnreadable
-	}
-	if err := adapter.measureTranscript(result.SessionID, &measurement); err != nil {
-		return measurement, outputs, patch, err
+	case usageErr != nil:
+		return measurement, outputs, patch, usageErr
 	}
 	return measurement, outputs, patch, nil
+}
+
+// TranscriptUsage reads an ended session's usage from its transcript alone,
+// by the session id its launch recorded: the reconciliation of a launch
+// whose own measure was skipped.
+func (adapter ClaudeHeadless) TranscriptUsage(record Record) (Measurement, error) {
+	sessionID := readString(record.AdapterData, "sessionID")
+	if sessionID == "" {
+		return Measurement{}, fmt.Errorf("launch %s recorded no claude session, so its transcript can't be found", record.ID)
+	}
+	var measurement Measurement
+	if err := adapter.measureTranscript(sessionID, &measurement); err != nil {
+		return Measurement{}, err
+	}
+	measurement.UsageRead = true
+	return measurement, nil
 }
 
 func (ClaudeHeadless) Outcome(exitCode int, measureErr error) (State, string) {

@@ -1,0 +1,44 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing prove",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    },
+    {
+      "kind": "batch",
+      "id": "01j5x00000000000000000vb01"
+    }
+  ],
+  "outcome": "failed",
+  "summary": "tests of goal-a on the base of batch 01j5x00000000000000000vb01 failed: app-standard",
+  "data": {
+    "id": "a1",
+    "opId": "",
+    "subject": "member",
+    "member": "goal-a",
+    "tree": "",
+    "purpose": "",
+    "actor": "",
+    "status": "red",
+    "resultPath": "",
+    "redGroups": [
+      "app-standard"
+    ],
+    "startedAt": ""
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "status",
+      "--verbose"
+    ],
+    "reason": "shows the batch and its recorded runs"
+  }
+}
+
+--

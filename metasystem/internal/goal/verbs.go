@@ -279,6 +279,15 @@ type VerbRequest struct {
 
 const EpochAuthorityHolder = "holder"
 
+// EpochAuthorityLane is the landing lane's own claim epoch: the custody
+// epoch of the host's lane record, which the lane's kernel reads and
+// supplies (lane design r10 K7). Only the lane's claim lineage carries it.
+const EpochAuthorityLane = "lane"
+
+// LaneClaimLineage is the landing lane's stable claim lineage, which
+// belongs to no session.
+const LaneClaimLineage = "landing-lane"
+
 // ClaimEpochForRebind is the single authority for replacing or preserving a
 // claimed goal's stop-capability epoch. Only the authenticated live MAIN
 // holder may replace it; every other actor preserves the recorded epoch.
@@ -286,6 +295,12 @@ func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	if r.EpochAuthority == EpochAuthorityHolder {
 		if r.CallerClass != "MAIN" || r.ClaimEpoch < 1 {
 			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("this session doesn't hold the checkout, so it can't renew the claim (%s, %d)", r.CallerClass, r.ClaimEpoch))
+		}
+		return r.ClaimEpoch, nil
+	}
+	if r.EpochAuthority == EpochAuthorityLane {
+		if r.Actor.Lineage != LaneClaimLineage || r.Actor.Human != "" || r.ClaimEpoch < 1 {
+			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("only the landing lane renews its own claim, not %s (%d)", r.Actor.Lineage, r.ClaimEpoch))
 		}
 		return r.ClaimEpoch, nil
 	}
@@ -1438,6 +1453,11 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			currentEpoch := f.StopCapability.ClaimEpoch
 			samePair := f.Claimed.Machine == targetMachine && f.Claimed.Lineage == targetLineage
 			if samePair {
+				if r.EpochAuthority == EpochAuthorityLane && rebindEpoch == targetClaimEpoch && targetClaimEpoch == currentEpoch && batch == f.Claimed.HandedOver.Batch {
+					// The lane's renewal another call already made: the
+					// claim is at the asked epoch (R-129-ui).
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s already holds claim %d", id, currentEpoch)}
+				}
 				if rebindEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
 					return nil, fmt.Errorf("goal %s: a handover to the same session must renew its claim (%d is not after %d)", id, targetClaimEpoch, currentEpoch)
 				}

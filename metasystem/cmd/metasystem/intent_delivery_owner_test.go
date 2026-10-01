@@ -353,7 +353,7 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	f, landingRoot := newBatchAdmissionLanding(t)
 	deps := batchowner.ProductionBatchJoinDependencies()
 	deps.CostForecast = nil
-	var handovers, admissions, ensures int
+	var handovers, admissions int
 	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handovers++; return nil }
 	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
 		admissions++
@@ -365,7 +365,6 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
 	}
-	deps.Ensure = func(string) error { ensures++; return nil }
 	// The claim/budget binding is a fixture fact: the goal's real projected
 	// file under this fixture claim, not the stop-authority owner.
 	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
@@ -408,8 +407,8 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	}
 	result := run()
 	data, _ := result.Data.(map[string]any)
-	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || handovers != 1 || admissions != 1 || ensures != 1 {
-		t.Fatalf("batch land = %+v; handovers %d admissions %d ensures %d", result, handovers, admissions, ensures)
+	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || handovers != 1 || admissions != 1 {
+		t.Fatalf("batch land = %+v; handovers %d admissions %d", result, handovers, admissions)
 	}
 	id, _ := data["batchId"].(string)
 	record, err := batch.NewStore(landingRoot, identity.KernelProber{}).Load(id)

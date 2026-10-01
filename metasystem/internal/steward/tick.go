@@ -58,10 +58,10 @@ type TickConfig struct {
 	// nothing; the breach stays for the next tick. nil is always ready (the
 	// external tick verb).
 	BreachStopReady func() bool
-	// KeepLandingLane is one step of the host landing lane's keeper (U12):
-	// it restarts the lane's owner when it died, within the keeper's
-	// thrashing bounds, and returns its line. The command layer supplies it;
-	// nil keeps nothing. RunLoop calls it once per cycle outside the helm.
+	// KeepLandingLane is one step of the host landing lane's keeper: it
+	// wakes the lane's landing agent when the lane has work (lane design
+	// r10 §3) and returns its line. The command layer supplies it; nil
+	// keeps nothing. RunLoop calls it once per cycle outside the helm.
 	KeepLandingLane func() string
 	// Stopping reports that the resident runner received a stop signal:
 	// the tick finishes the stop in progress and starts no further one.

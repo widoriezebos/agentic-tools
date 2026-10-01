@@ -186,7 +186,6 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 		owners.landing = laneVerbOwners{
 			// The lane beds keep no goal ledger: validation is never due.
 			validation: func(string, time.Time) (bool, error) { return false, nil },
-			agent:      func() (string, bool, error) { return "", false, nil },
 			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				return lane.OwnerProbe{Alive: true, PID: 38928, Since: layoutNow.Add(-5 * time.Minute)}, nil

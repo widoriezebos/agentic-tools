@@ -1,2 +1,0 @@
-✓ ended the landing lane's owner pid 38928; started the landing lane's owner at
-  ~/GitHub/agentic-tools-landing (pid 38928)

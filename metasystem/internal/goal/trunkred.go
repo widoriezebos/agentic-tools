@@ -722,23 +722,6 @@ func openTrunkRedByIdentity(entries []TrunkRedEntry, identity string) *TrunkRedE
 	return nil
 }
 
-// TrunkRedRefs returns the entries created or updated by one recording operation.
-func TrunkRedRefs(tree *TreeGoals, opid string) []EntryRef {
-	if tree == nil {
-		return nil
-	}
-	var refs []EntryRef
-	for _, entry := range tree.TrunkRed {
-		for _, sighting := range entry.Sightings {
-			if sighting.Opid == opid {
-				refs = append(refs, EntryRef{ID: entry.ID, Group: entry.Group})
-				break
-			}
-		}
-	}
-	return refs
-}
-
 type TrunkRedClearArgs struct {
 	Entry         string        `json:"entry"`
 	Attempt       string        `json:"attempt"`

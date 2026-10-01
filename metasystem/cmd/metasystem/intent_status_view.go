@@ -249,8 +249,12 @@ func (b statusBoard) drawLane(page *textui.Page, env textui.Env) {
 	if b.lane != nil {
 		owner := b.lane.Owner
 		switch {
-		case owner.State != lane.OwnerRunning || strings.Contains(b.lane.Summary, "unreadable"):
+		case (owner.State != lane.OwnerRunning && owner.State != lane.OwnerIdle) || strings.Contains(b.lane.Summary, "unreadable"):
 			table.Row(textui.Marked(textui.Alert, "owner"), textui.Plain(b.lane.Summary))
+		case owner.State == lane.OwnerIdle:
+			if page.Verbose() {
+				table.Row(textui.Marked(textui.Idle, "owner"), textui.Plain("idle; its agent starts when there is work"))
+			}
 		case page.Verbose():
 			detail := "running"
 			if owner.PID != nil {

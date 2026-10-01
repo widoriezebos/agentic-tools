@@ -1,11 +1,9 @@
 package main
 
 import (
-	"errors"
 	"io"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -81,61 +79,6 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 	if err != nil || !selected.FreshRequired || selected.FreshMaxAgeMS != maxAge ||
 		!slices.Equal(selected.Groups, []string{"admitted", "floor", "prerequisite"}) {
 		t.Fatalf("supplemental fresh decision=%+v err=%v", selected, err)
-	}
-}
-
-func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
-	t.Parallel()
-	root, tree := batchPrefixReceiptTestRoot(t)
-	// The tip run's kind comes from the envelope's code and data: a fenced
-	// candidate is ejected, and a bare budget refusal withdraws the member
-	// as the prefix run does (one classifier; the tip once called it
-	// capacity).
-	for _, test := range []struct {
-		code, kind string
-		data       any
-	}{
-		{"CANDIDATE_GOAL_REFUSED", "fenced", map[string]string{"state": "fenced"}},
-		{"CANDIDATE_GOAL_REFUSED", "capacity", map[string]string{"state": "claimed"}},
-		{"BUDGET_REFUSED", "budget", nil},
-		{"GOAL_REVISION_MOVED", "revision", nil},
-	} {
-		stub := filepath.Join(t.TempDir(), "refused-test-run")
-		script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, test.code, "refused", test.data, "state=fenced BATCH_MEMBER_BUDGET_REFUSED in a note")
-		if err := testexec.WriteFile(stub, []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		dependencies := batchTestExecutionDependencies(t, root, tree, stub)
-		_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
-			ResultPath: filepath.Join(t.TempDir(), "result.json")}, dependencies)
-		var refusal *batchowner.BatchProofAdmissionRefusal
-		if !errors.As(err, &refusal) || refusal.Kind != test.kind {
-			t.Fatalf("tip %s %v classified as %T %v, want %s", test.code, test.data, err, err, test.kind)
-		}
-	}
-}
-
-func TestGLEBatchRebasedPrefixTreesNamesEveryBoundary(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	base, tip := "base-commit", "rebased-tip"
-	expected := []string{"tree-a", "tree-b-one", "tree-b-two", "tree-c"}
-	readGit := func(gotRoot string, args ...string) (string, error) {
-		if gotRoot != root || !slices.Equal(args, []string{"log", "--first-parent", "--reverse", "--format=%T", base + ".." + tip}) {
-			t.Fatalf("ordered tree read root=%q args=%v", gotRoot, args)
-		}
-		return strings.Join(expected, "\n"), nil
-	}
-	units := []batch.Unit{{GoalID: "a"}, {GoalID: "b", Builds: []batch.BranchBuild{{Commit: "one"}, {Commit: "two"}}}, {GoalID: "c"}}
-	trees, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units, readGit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(trees, []string{expected[0], expected[2], expected[3]}) {
-		t.Fatalf("prefix trees=%v, want selected cumulative trees", trees)
-	}
-	if _, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units[:2], readGit); err == nil {
-		t.Fatal("incomplete unit inventory accepted a rebased range")
 	}
 }
 
@@ -226,20 +169,5 @@ printf '%s\n' '{"schemaVersion":1,"verb":"test plan","targets":[],"outcome":"con
 	if err != nil || !slices.Equal(plan.RequiredGroups, []string{"admitted", "dependency", "floor"}) ||
 		!slices.Equal(plan.SelectedGroups, plan.RequiredGroups) {
 		t.Fatalf("trusted floor lost when composing batch requirements: plan=%+v err=%v", plan, err)
-	}
-}
-
-func TestGLEBatchTipRetainsEveryAdmittedMemberObligation(t *testing.T) {
-	t.Parallel()
-	units := []batch.Unit{{GoalID: "a", SelectedGroups: []string{"accepted-a"}}, {GoalID: "b", SelectedGroups: []string{"accepted-b"}}}
-	plan, err := batchowner.PlanBatchMemberUnion("", "tree", units, "", testpolicy.ModeAuto,
-		func(_, _, _ string, _ testpolicy.Mode) (testpolicy.Plan, error) {
-			return testpolicy.Plan{SelectedGroups: []string{"protected-floor"}, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
-		})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(plan.SelectedGroups, []string{"accepted-a", "accepted-b", "protected-floor"}) {
-		t.Fatalf("tip omitted admitted union: %v", plan.SelectedGroups)
 	}
 }

@@ -33,7 +33,7 @@ func TestRunnerKeepsTheLandingLaneOutsideTheHelm(t *testing.T) {
 			loop.stop(t)
 		},
 	}
-	config := TickConfig{Now: now, KeepLandingLane: func() string { steps++; return "landing lane owner is running" }}
+	config := TickConfig{Now: now, KeepLandingLane: func() string { steps++; return "the landing lane at /lane is idle; no landing agent runs" }}
 	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 200*time.Millisecond, config, deps); err != nil {
 		t.Fatal(err)
 	}

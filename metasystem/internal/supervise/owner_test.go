@@ -40,7 +40,7 @@ type fakeWorld struct {
 
 type relaunchedRecord struct {
 	generation, retiredThrough int64
-	watcher, reaper, landing   string
+	watcher, reaper            string
 }
 
 type exitRecord struct {
@@ -84,12 +84,12 @@ func (w *fakeWorld) Stop(held Held) bool {
 	return w.stopProven
 }
 
-func (w *fakeWorld) AppendRelaunched(generation int64, watcherTag, reaperTag, landingOwnerTag string, retiredThrough int64) error {
+func (w *fakeWorld) AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error {
 	if w.relaunchedErr != nil {
 		return w.relaunchedErr
 	}
 	w.relaunched = append(w.relaunched, relaunchedRecord{generation: generation, retiredThrough: retiredThrough,
-		watcher: watcherTag, reaper: reaperTag, landing: landingOwnerTag})
+		watcher: watcherTag, reaper: reaperTag})
 	return nil
 }
 func (w *fakeWorld) AppendLaunched(held Held) error {
@@ -124,7 +124,10 @@ func newOwner(world *fakeWorld) *Owner {
 	}
 }
 
-func TestProductionSupervisorTakeoverRelaunchesLandingOwner(t *testing.T) {
+// A takeover relaunches the production set, watcher and reaper; the batch
+// landing owner an older engine launched is never launched again (lane
+// design r10 §5).
+func TestProductionSupervisorTakeoverRelaunchesTheProductionSet(t *testing.T) {
 	world := newWorld()
 	owner := newOwner(world)
 	owner.SeedGeneration, owner.generation = 1, 1
@@ -142,7 +145,7 @@ func TestProductionSupervisorTakeoverRelaunchesLandingOwner(t *testing.T) {
 		}
 	}
 	row := world.relaunched[0]
-	if !seen[Watcher] || !seen[Reaper] || !seen[LandingOwner] || row.landing != "test-owner-landing-owner-2" {
+	if !seen[Watcher] || !seen[Reaper] || seen[LegacyLandingOwner] || row.watcher != "test-owner-watcher-2" || row.reaper != "test-owner-reaper-2" {
 		t.Fatalf("production set=%v write-ahead=%+v", seen, row)
 	}
 }

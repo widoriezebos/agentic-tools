@@ -926,8 +926,7 @@ func newInstalledPublicApplicationFixture(t *testing.T, installed, expectedDiges
 		Enrollment: steward.EnrollmentFixture, EngineBuild: engineStatus.EngineBuild}); err != nil {
 		t.Fatal(err)
 	}
-	batchFixture := &batchE2EFixture{t: t, landing: root}
-	batchFixture.announce(root, "portable-lineage")
+	announceFixtureHolder(t, root, "portable-lineage")
 	holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil)
 	if err != nil || !holder.Holder {
 		t.Fatalf("installed replay checkout has no active fixture lease holder: %+v %v", holder, err)

@@ -92,7 +92,7 @@ func TestParseRecordRejections(t *testing.T) {
 		if err != nil {
 			t.Fatalf("refused a relaunched record from before the landing owner component: %v", err)
 		}
-		if record.LandingOwnerTag != "" || record.WatcherTag != "w" || record.ReaperTag != "r" {
+		if record.WatcherTag != "w" || record.ReaperTag != "r" {
 			t.Fatalf("record=%+v", record)
 		}
 	})
@@ -142,12 +142,14 @@ func TestParseRecordAcceptsKilledListAndDiagnosis(t *testing.T) {
 	}
 }
 
-func TestLandingOwnerIsProductionRegistryComponent(t *testing.T) {
+// An older engine's relaunched and launched records of its batch landing
+// owner stay readable: the registry is append-only.
+func TestAnOlderEnginesLandingOwnerRecordsStayReadable(t *testing.T) {
 	relaunched, err := ParseRecord(raw2(map[string]any{
 		"event": EventRelaunched, "generation": 2.0, "watcherTag": "w2", "reaperTag": "r2",
 		"landingOwnerTag": "l2", "retiredThrough": 1.0,
 	}))
-	if err != nil || relaunched.LandingOwnerTag != "l2" {
+	if err != nil || relaunched.WatcherTag != "w2" {
 		t.Fatalf("relaunched landing owner=%+v err=%v", relaunched, err)
 	}
 	launched, err := ParseRecord(raw2(map[string]any{

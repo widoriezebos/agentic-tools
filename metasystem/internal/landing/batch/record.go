@@ -27,6 +27,11 @@ type unitRecordFields struct {
 	Outcome           string `json:"outcome,omitempty"`
 	Failure           string `json:"failure,omitempty"`
 	ReturnDisposition string `json:"returnDisposition,omitempty"`
+	// Disposition is the typed way the member leaves (K8: red, conflict,
+	// seam-too-large or person) and Evidence the batch record that admits
+	// it; both are kept once the return settles.
+	Disposition string `json:"disposition,omitempty"`
+	Evidence    string `json:"evidence,omitempty"`
 }
 type Unit struct {
 	GoalID         string         `json:"goalId"`
@@ -104,6 +109,13 @@ type Record struct {
 	StartReason string     `json:"startReason,omitempty"`
 	// Early is what the owner did with the wait (D14, R27).
 	Early *Early `json:"early,omitempty"`
+	// Openings are the batch's landing begins, the last one current (K4);
+	// Compositions the composition evidence begin recorded (K8); Attempts
+	// every landing prove of the batch (K6). Openings and Compositions are
+	// append-only; an attempt changes only until it ends.
+	Openings     []Opening             `json:"openings,omitempty"`
+	Compositions []CompositionEvidence `json:"compositions,omitempty"`
+	Attempts     []ProofAttempt        `json:"attempts,omitempty"`
 	batchRecordFields
 }
 
