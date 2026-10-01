@@ -32,14 +32,6 @@ type WaitState struct {
 	Until    time.Time `json:"until,omitempty"`
 }
 
-// Decision is one start decision: start now with a reason, or wait.
-type Decision struct {
-	Start  bool
-	Window string
-	Reason string
-	Wait   *WaitState
-}
-
 func minutes(d time.Duration) string {
 	return fmt.Sprintf("%d min", max(int(d.Round(time.Minute)/time.Minute), 0))
 }

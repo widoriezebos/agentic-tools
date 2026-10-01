@@ -18,11 +18,10 @@ import (
 )
 
 type batchSeams struct {
-	prober      identity.Prober
-	flock       func(int, int) error
-	publish     func(string) error
-	updated     func(Record)
-	ledgerOwner LedgerOwner
+	prober  identity.Prober
+	flock   func(int, int) error
+	publish func(string) error
+	updated func(Record)
 }
 type Store struct {
 	root           string

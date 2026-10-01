@@ -35,31 +35,6 @@ type EarlyFinding struct {
 	Log     string `json:"log,omitempty"`
 }
 
-// EarlyResult is one early act's outcome: its attempt and its red groups.
-type EarlyResult struct {
-	Attempt string
-	Failing []RedGroup
-}
-
-// EarlySeams are the early acts' effects outside the record. Cheap runs the
-// join's cheap phase on the record's tip tree; Prove runs one delivery proof
-// of it, launched as the tip proof is but reserving no diagnostic headroom,
-// since it is nobody's tip; Budget says whether the head member, whom every
-// early act is charged to, keeps after one more attempt everything the batch
-// proof needs (U3-01), and in words why not.
-type EarlySeams struct {
-	Cheap  func(Record) (EarlyResult, error)
-	Prove  func(Record) (EarlyResult, error)
-	Budget func(Record) (bool, string)
-}
-
-// EarlyCompletion is an early act as it returns to the owner's loop.
-type EarlyCompletion struct {
-	ID, Tree, Kind string
-	Result         EarlyResult
-	Err            error
-}
-
 const earlyGreen, earlyRed, earlyRunning, earlyUnavailable = "green", "red", "running", "unavailable"
 
 // forgetEarly drops the early work of a batch whose inputs moved, with one

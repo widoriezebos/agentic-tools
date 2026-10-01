@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 // EndpointPushError preserves whether git named a stale lease or another
@@ -223,15 +222,6 @@ func runLandingGit(root, code string, args ...string) error {
 	}
 	return nil
 }
-
-// CommitDeclaration is the landing declaration a unit commits under.
-type CommitDeclaration struct {
-	chain, attested, snapshot, base string
-}
-
-// CommitBoundary runs the commit boundary (landpath.Commit) for one request
-// and returns what it printed and its exit status.
-type CommitBoundary func(landpath.CommitRequest) (string, int)
 
 func landingGitOutput(root string, args ...string) (string, error) {
 	command := realGit(root, args...)

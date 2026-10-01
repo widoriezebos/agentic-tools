@@ -24,43 +24,6 @@ type CadenceAuthority struct {
 	ObligationRevision uint64
 }
 
-type CadenceRunRequest struct {
-	Trunk            CadenceTrunk
-	Authority        CadenceAuthority
-	WeightGeneration uint64
-	ForceAttempt     bool
-	ForceGroups      bool
-}
-
-type CadenceRunResult struct {
-	RunID  string
-	Result proofrun.TestResult
-}
-
-type CadenceLedger interface {
-	Claim(time.Time, goal.CadenceClaimKey, time.Duration) (goal.CadenceClaimResult, error)
-	Publish(time.Time, string, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error
-}
-
-type CadenceTickInput struct {
-	Latest         *goal.CadenceStatus
-	Weight         WeightState
-	WeightDue      bool
-	DeepOnlyGroups []string
-	Lease          time.Duration
-}
-
-type CadenceDependencies struct {
-	Clock            func() time.Time
-	Fetch            func() (CadenceTrunk, error)
-	Revalidate       func(CadenceTrunk) (CadenceRevalidation, error)
-	Ledger           CadenceLedger
-	ClaimAuthority   func(time.Time) (CadenceAuthority, error)
-	ReleaseAuthority func(CadenceAuthority, time.Time) error
-	Run              func(CadenceRunRequest) (CadenceRunResult, error)
-	DischargeWeight  func(CadenceAuthority, string, uint64, time.Time) error
-}
-
 type CadenceTickResult struct {
 	ClaimOutcome goal.CadenceClaimOutcome
 	Trigger      goal.CadenceTrigger

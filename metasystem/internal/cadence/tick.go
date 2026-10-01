@@ -29,21 +29,9 @@ import (
 )
 
 const (
-	// FetchRefused is a tick that could not fetch the trunk.
-	FetchRefused            = "CADENCE_FETCH_REFUSED"
-	cadenceLedgerUnreadable = "CADENCE_LEDGER_UNREADABLE"
 	// AuthorityGoal is the standing goal a cadence run is claimed under.
 	AuthorityGoal = "standing-validation"
 )
-
-// Refusal is a tick refused before it ran, by code.
-type Refusal struct{ Code, Detail string }
-
-// TickOutput is the trunk a production tick judged and its result.
-type TickOutput struct {
-	Trunk gaterun.CadenceTrunk
-	Tick  gaterun.CadenceTickResult
-}
 
 // Owner is the landing owner a production tick runs under, and the
 // command-side reads it needs: its lineage and lease epoch, whether it still

@@ -46,30 +46,9 @@ type PushRejection struct {
 	OriginTip string `json:"originTip"`
 }
 
-// MissingLeaseBaseError reports an impossible endpoint transaction: recovery
-// cannot compare a commit lease with a tree or an inferred fallback.
-type MissingLeaseBaseError struct{}
-
-// FlakeAllowanceRefusal is the recheck's refusal to publish a composed proof
-// whose known flake is no longer carried: every member was already returned.
-type FlakeAllowanceRefusal struct{ Code, Reason string }
-
 // A moved base is returned, never republished (lane runtime design r10,
 // K3): a lease the endpoint refuses because main moved abandons the
 // candidate and reopens the batch on the new main.
-
-// BaseMove is what moved main under a batch: the changed paths, the
-// installation prefix they are relative to, and the batch whose landing
-// moved it (empty when no batch of this store did).
-type BaseMove struct {
-	Changed          []string
-	Prefix, LandedBy string
-}
-
-// MovedBase is the moved-base decision: reopen, or rebase and keep the proof.
-type MovedBase struct {
-	Reopen bool
-}
 
 // movedBaseConflictLine is the return of a member whose changes do not apply
 // on the moved base: BATCH_JOIN_CONFLICT's files and the next command.

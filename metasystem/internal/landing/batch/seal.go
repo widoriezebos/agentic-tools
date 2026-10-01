@@ -18,10 +18,6 @@ func ModuleRoot(checkout string) string {
 	return checkout
 }
 
-// SealChangedDuringGateRefusal preserves the registered refusal code when
-// composition or policy selection ran on a candidate that changed meanwhile.
-type SealChangedDuringGateRefusal struct{ BatchID string }
-
 func recordSelection(record *Record, plan testpolicy.Plan) {
 	record.SelectedGroups = append(record.SelectedGroups, plan.SelectedGroups...)
 	slices.Sort(record.SelectedGroups)
