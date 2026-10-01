@@ -92,8 +92,17 @@ func TestBatchLandingLifecycleWithdrawEndToEnd(t *testing.T) {
 	runIsolatedBatchLandingLifecycle(t, "withdraw")
 }
 
+// oldOwnerCustodySuperseded is why the old batch owner's end-to-end
+// lifecycles no longer run: under the lane design r10 K7 (unit K-d) a join
+// hands its goal to the lane's stable claim identity read from the host's
+// lane record, never to the old owner's lease, so the old owner cannot take
+// custody of a join. Unit D deletes that owner and these beds; the
+// rehearsal (unit R) is the lane's end-to-end witness.
+const oldOwnerCustodySuperseded = "the old batch owner no longer takes custody of a join (lane design r10 K7); unit D deletes it"
+
 func runIsolatedBatchLandingLifecycle(t *testing.T, scenario string) {
 	t.Helper()
+	t.Skip(oldOwnerCustodySuperseded)
 	const selector = "METASYSTEM_BATCH_LIFECYCLE_SCENARIO"
 	if os.Getenv(selector) == scenario {
 		// This dedicated child process lands through the bed's planted

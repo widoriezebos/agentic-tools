@@ -1424,9 +1424,9 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	return attempt, decision, false, err
 }
 
-// proveLaneOwnerCaller proves the caller descends from the lane's owner: the
-// process the lane checkout's lease holder recorded under the landing
-// owner's lineage, matched by its exact identity (pid, start time, boot) as
+// proveLaneOwnerCaller proves the caller descends from the lane's landing
+// agent: the process the lane checkout's lease holder recorded under the
+// agent's launch lineage (or, until the cutover, the old owner's), matched by its exact identity (pid, start time, boot) as
 // landing restart matches it. A seat whose checkout happens to be the lane
 // is not its owner (U11b).
 //
@@ -1450,8 +1450,11 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	if err != nil {
 		return err
 	}
-	if holder.OwnerLineage != batchowner.LandingOwnerLineage {
-		return fmt.Errorf("the lane checkout is held by session %s, not by its landing owner", holder.OwnerLineage)
+	// Launch descent from the landing agent is what an agent-issued kernel
+	// operation needs (lane design r10 K7). The old owner's lineage is
+	// admitted until the cutover unit deletes that owner.
+	if holder.OwnerLineage != landinglane.AgentLineage && holder.OwnerLineage != batchowner.LandingOwnerLineage {
+		return fmt.Errorf("the lane checkout is held by session %s, not by its landing agent", holder.OwnerLineage)
 	}
 	for _, announcement := range lease.AnnouncementsFor(laneRoot, holder.Pid) {
 		if announcement.MainId != holder.MainId {

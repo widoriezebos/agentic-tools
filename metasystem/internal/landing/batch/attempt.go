@@ -49,7 +49,10 @@ type ProofAttempt struct {
 	ResultPath string   `json:"resultPath"`
 	RunAttempt string   `json:"runAttempt,omitempty"`
 	RedGroups  []string `json:"redGroups,omitempty"`
-	Reason     string   `json:"reason,omitempty"`
+	// Names are the members a red attempt of subject batch names as the
+	// owners of what failed; a return as red may cite it for them (K8).
+	Names  []string `json:"names,omitempty"`
+	Reason string   `json:"reason,omitempty"`
 	// Child is the test run child's process identity, recorded when it
 	// starts (K9 reads it to settle custody).
 	Child     *identity.Ref `json:"child,omitempty"`

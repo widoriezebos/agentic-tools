@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -222,5 +223,55 @@ func TestLaneRunNamesItsLaneCheckout(t *testing.T) {
 	outside.laneAccount = func(anchor string) (string, error) { return landinglane.AccountID(anchor), nil }
 	if _, _, _, err := admitAsLaneOwner(t, repository, outside, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("a control root outside the named lane checkout: %v", err)
+	}
+}
+
+// The landing agent charges a proof to the lane by launch descent (lane
+// design r10 K7): the lane checkout's lease is held under lineage
+// landing-agent and the caller descends from that holder. A seat session
+// holding the checkout is not the agent, and a process outside the agent's
+// descent is refused.
+func TestLaneAgentDescentChargesAProofToTheLane(t *testing.T) {
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe: %s %v", state, err)
+	}
+	hold := func(lineage string) string {
+		t.Helper()
+		checkout := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(checkout, "metasystem"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(checkout, "metasystem", "go.mod"), []byte("module example\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerLane(t, home, checkout, "test", time.Now())
+		if batch.ModuleRoot(checkout) == checkout {
+			t.Fatalf("fixture is not nested: %s", checkout)
+		}
+		if _, err := lease.AnnounceWithPair(checkout, "session-"+lineage, int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-agent-test", "metasystem", lineage); err != nil {
+			t.Fatal(err)
+		}
+		if holder, err := lease.RequireHolder(checkout, int64(os.Getpid()), nil); err != nil || !holder.Holder {
+			t.Fatalf("hold the lane checkout as %s: %+v %v", lineage, holder, err)
+		}
+		return batch.ModuleRoot(checkout)
+	}
+	controlRoot := hold("steward-seat")
+	if err := proveLaneOwnerCaller(controlRoot, int64(os.Getpid())); err == nil || !strings.Contains(err.Error(), "not by its landing agent") {
+		t.Fatalf("a seat session holding the lane checkout charged the lane: %v", err)
+	}
+	controlRoot = hold(landinglane.AgentLineage)
+	if err := proveLaneOwnerCaller(controlRoot, int64(os.Getpid())); err != nil {
+		t.Fatalf("the landing agent's own proof was refused: %v", err)
+	}
+	if err := proveLaneOwnerCaller(controlRoot, 1); err == nil || !strings.Contains(err.Error(), "does not descend") {
+		t.Fatalf("a process outside the agent's descent was accepted: %v", err)
 	}
 }

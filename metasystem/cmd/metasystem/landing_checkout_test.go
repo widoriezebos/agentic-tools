@@ -24,8 +24,10 @@ func landingCheckout(t *testing.T, dir string) {
 			t.Fatalf("git init %s: %v: %s", dir, err, out)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "metasystem.conf")); err == nil {
-		return
+	for _, conf := range []string{filepath.Join(dir, "metasystem.conf"), filepath.Join(dir, "metasystem", "metasystem.conf")} {
+		if _, err := os.Stat(conf); err == nil {
+			return
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "metasystem"), 0o755); err != nil {
 		t.Fatal(err)

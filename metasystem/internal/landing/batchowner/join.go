@@ -23,8 +23,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -88,7 +88,10 @@ func ProductionBatchJoinDependencies() BatchJoinDependencies {
 		AdmissionRun:   deferredJoinAdmission,
 		Plan:           productionJoinPlan, PublishAdmission: batch.PublishJoinWithAdmission,
 		CostForecast: prepareProspectiveBatchCost, PublishForecast: batch.PublishJoinWithAdmissionForecast,
-		Handover: productionForwardHandover, Ensure: EnsureBatchOwner, Author: ProductionBatchAuthor, Prober: identity.KernelProber{},
+		// No join starts an owner or an agent: the lane's claim identity
+		// takes custody with none running, and the keeper wakes the agent
+		// for queued work (lane design r10 K7, §3).
+		Handover: productionForwardHandover, Author: ProductionBatchAuthor, Prober: identity.KernelProber{},
 	}
 }
 
@@ -307,8 +310,10 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 		}
 		return batch.Record{}, publishErr
 	}
-	if err := dependencies.Ensure(request.LandingRoot); err != nil {
-		return batch.Record{}, err
+	if dependencies.Ensure != nil {
+		if err := dependencies.Ensure(request.LandingRoot); err != nil {
+			return batch.Record{}, err
+		}
 	}
 	return store.Load(record.BatchID)
 }
@@ -460,22 +465,32 @@ func BatchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpo
 }
 
 func productionForwardHandover(request BatchJoinRequest, batchID string, source batch.Claim) error {
-	holder, err := lease.CurrentHolder(request.LandingRoot)
-	if err != nil {
-		return fmt.Errorf("the landing lane does not hold its checkout: %w", err)
+	return LaneForwardHandover(LandingLaneHome, &BatchOwnerCalls)(request, batchID, source)
+}
+
+// LaneForwardHandover hands a joining goal to the landing lane's stable
+// claim identity (lane design r10 K7): {lane machine, lineage
+// landing-lane, custody epoch of the host record}. The handover stays the
+// source seat's act, under its own process and lineage; no agent, owner or
+// lease holder of the lane checkout takes part, so a join works while no
+// agent runs.
+func LaneForwardHandover(home func() (string, error), calls *BatchOwnerCallSet) func(BatchJoinRequest, string, batch.Claim) error {
+	return func(request BatchJoinRequest, batchID string, source batch.Claim) error {
+		dir, err := home()
+		if err != nil {
+			return fmt.Errorf("this computer's landing lane record can't be found, so the goal was not handed to it: %w", err)
+		}
+		claim, err := lane.Claim(dir)
+		if err != nil {
+			return err
+		}
+		if realpath.Resolve(request.LandingRoot) != realpath.Resolve(claim.Root) {
+			return fmt.Errorf("the join lands through %s, but this computer's landing lane is %s, so the goal was not handed over", request.LandingRoot, claim.Root)
+		}
+		return calls.Handover(ownercall.FromThisProcess(source.Lineage), ownercall.HandoverRequest{Root: request.SeatRoot,
+			GoalID: request.GoalID, TargetMachine: claim.Machine, TargetLineage: claim.Lineage,
+			TargetEpoch: int64(claim.Epoch), Batch: batchID, LaneHome: dir})
 	}
-	if holder.OwnerLineage != LandingOwnerLineage || holder.ClaimEpoch < 1 {
-		return fmt.Errorf("the landing lane does not hold its checkout (held by session %s, claim %d)", holder.OwnerLineage, holder.ClaimEpoch)
-	}
-	machine, err := goal.ResolveMachine(request.LandingRoot)
-	if err != nil {
-		return err
-	}
-	// The joining seat's own process is the supplied identity, as the
-	// handover child's parent was, and the request carries the seat's lineage.
-	return BatchOwnerCalls.Handover(ownercall.FromThisProcess(source.Lineage), ownercall.HandoverRequest{Root: request.SeatRoot,
-		GoalID: request.GoalID, TargetMachine: machine, TargetLineage: LandingOwnerLineage,
-		TargetEpoch: holder.ClaimEpoch, Batch: batchID})
 }
 
 // SelectMemberReleaseSet selects, in the member's seat checkout, the goal's

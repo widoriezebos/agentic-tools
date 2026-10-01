@@ -37,6 +37,10 @@ type laneVerbBed struct {
 	held []string
 	// agent is a landing agent that runs on the lane; empty is none.
 	agent string
+	// oldClaims are the goals the ledger shows the old owner lineage
+	// (landing-m1l) holding; oldClaimsErr an unreadable ledger.
+	oldClaims    []string
+	oldClaimsErr error
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -111,6 +115,9 @@ func (bed *laneVerbBed) owners() intentOwners {
 		unset: bed.unset,
 		laneHeld: func(string) ([]string, error) {
 			return bed.held, nil
+		},
+		oldOwnerClaims: func(string) ([]string, error) {
+			return bed.oldClaims, bed.oldClaimsErr
 		},
 	}}
 }

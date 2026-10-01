@@ -71,6 +71,10 @@ type Invocation struct {
 	// go through: the landing lane's (lane runtime design r10, K3). A
 	// seat's call leaves it nil and publishes as always.
 	Ledger func(goal.Endpoint) goal.Endpoint
+	// LaneEpoch, when set, is the landing lane's custody epoch read from the
+	// host's lane record: the call acts as the lane's stable claim identity
+	// at that epoch (lane design r10 K7). Only the lane's kernel sets it.
+	LaneEpoch int64
 }
 
 // FromThisProcess is the context of an edge that replaced a child run with
@@ -84,6 +88,11 @@ type HandoverRequest struct {
 	Root, GoalID, TargetMachine, TargetLineage string
 	TargetEpoch                                int64
 	Batch, TargetRoot                          string
+	// LaneHome is the host home whose lane record authenticates a target
+	// that is the landing lane's claim identity (lineage landing-lane):
+	// the lane is live when that record registers it at TargetEpoch on
+	// TargetMachine, whether or not any agent runs.
+	LaneHome string
 }
 
 // Usage names the missing parts of a handover, or "" when it is complete.
@@ -99,6 +108,10 @@ func (r HandoverRequest) Usage() string {
 func PublishError(verb string, res goal.PublishResult, err error) error {
 	if err != nil {
 		return fmt.Errorf("goal %s: %w", verb, err)
+	}
+	if res.Unchanged {
+		// An idempotent repeat: the effect already holds.
+		return nil
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		return fmt.Errorf("goal %s: outcome=%s tip=%s detail=%s", verb, res.Outcome, res.Tip, res.Detail)

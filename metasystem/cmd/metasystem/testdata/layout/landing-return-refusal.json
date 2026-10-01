@@ -1,0 +1,42 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing return",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    },
+    {
+      "kind": "goal",
+      "id": "verbs-match-intent"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "no failing test run of this batch names verbs-match-intent, so it was not returned as red",
+  "data": {
+    "batch": "4gr18nm8t3nyev9sssda9jgtsq",
+    "member": "verbs-match-intent",
+    "disposition": "red",
+    "evidence": "",
+    "confirmed": false
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "return",
+      "verbs-match-intent",
+      "--disposition",
+      "person"
+    ],
+    "reason": "a person returns it"
+  },
+  "details": [
+    "refused because: LANE_RETURN_EVIDENCE_MISSING",
+    "a person returns it at their word: metasystem landing return MEMBER --disposition person"
+  ]
+}
+
+--
