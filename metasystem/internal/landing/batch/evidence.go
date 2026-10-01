@@ -96,8 +96,7 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 				if placed := placedBy(record, attempt, member); placed != "" {
 					return "attempt " + attempt.ID + " (" + SubjectBatch + ", placed by " + placed + ")", nil
 				}
-				message = fmt.Sprintf("the batch's tests failed in attempt %s, but nothing places the failure on %s: prove --subject member:%s, or the base and each other member, so it was not returned as red",
-					attempt.ID, member, member)
+				message = fmt.Sprintf("batch attempt %s failed, but nothing places it on %s yet, so it was not returned as red", attempt.ID, member)
 			case attempt.Status == AttemptRed:
 				return "attempt " + attempt.ID + " (" + attemptSubject(attempt) + ")", nil
 			case attempt.Status == AttemptUnavailable:

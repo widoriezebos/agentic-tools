@@ -224,7 +224,7 @@ func TestBatchRedNamesAMemberOnlyByDiagnosis(t *testing.T) {
 		}
 	}
 	record := diagnosisRecord(t, pair, [2]string{"batch", AttemptRed})
-	if _, err := ReturnEvidence(record, "goal-a", DispositionRed, ""); err == nil || !strings.Contains(err.Error(), "--subject member:goal-a") {
-		t.Errorf("an unplaced batch red's refusal = %v; want it to name the member's own proof", err)
+	if _, err := ReturnEvidence(record, "goal-a", DispositionRed, ""); err == nil || !strings.Contains(err.Error(), "nothing places it on goal-a yet") {
+		t.Errorf("an unplaced batch red's refusal = %v; want it to say triage has not placed it", err)
 	}
 }

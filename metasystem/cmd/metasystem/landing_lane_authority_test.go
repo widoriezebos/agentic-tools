@@ -370,7 +370,7 @@ func TestLandingReturnRedOnABatchRedNeedsDiagnosis(t *testing.T) {
 	store := batch.NewStore(bed.lane, nil)
 	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b1", Subject: batch.SubjectBatch, Covers: []string{"standing-validation"}}, batch.AttemptRed)
 	code, result := bed.run(t, "standing-validation", "--disposition", "red")
-	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing places the failure on standing-validation") ||
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing places it on standing-validation yet") ||
 		!strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
 		t.Fatalf("red on an undiagnosed batch red = %d %+v; the lane must still hold the goal", code, result)
 	}
