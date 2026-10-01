@@ -193,7 +193,9 @@ func (bed *kernelBed) landMain(t *testing.T) string {
 	git(bed.checkout, "add", "-A")
 	git(bed.checkout, "commit", "--quiet", "-m", "landed")
 	git(bed.checkout, "remote", "add", "origin", "file://"+origin)
-	git(bed.checkout, "push", "--quiet", "origin", "main")
+	// Seeding the bare origin is the fixture's act, not a publication: it
+	// passes the lane checkout's pre-push hook by, as a person's setup would.
+	git(bed.checkout, "push", "--quiet", "--no-verify", "origin", "main")
 	return git(bed.checkout, "rev-parse", "HEAD")
 }
 

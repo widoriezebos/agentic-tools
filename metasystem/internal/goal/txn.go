@@ -39,6 +39,33 @@ type Endpoint struct {
 	// attorney is the general grant one act's publishes re-check; set only
 	// through WithAttorneyEffect.
 	attorney *attorneyBinding
+	// casPublisher is the publication boundary this endpoint's
+	// compare-and-swap goes through; nil is the plain lease push. Set only
+	// through WithCASPublisher.
+	casPublisher CASPublisher
+}
+
+// CASPublisher publishes one ledger commit onto tip in place of the plain
+// lease push: the landing lane's publication boundary (lane runtime design
+// r10, K3). Its error may carry StopsRetry.
+type CASPublisher func(e Endpoint, tip, commit string) (CASOutcome, error)
+
+// WithCASPublisher is the endpoint whose compare-and-swap goes through
+// publisher. Only the landing lane's own ledger writes are routed so; every
+// other endpoint pushes as before.
+func (e Endpoint) WithCASPublisher(publisher CASPublisher) Endpoint {
+	e.casPublisher = publisher
+	return e
+}
+
+// StopsRetry marks a refused compare-and-swap the transaction must not
+// rebuild and push again: the publication boundary's answer goes back to
+// the caller as it is (the lane's LANE_BASE_MOVED).
+type StopsRetry interface{ StopsRetry() bool }
+
+func stopsRetry(err error) bool {
+	var stop StopsRetry
+	return errors.As(err, &stop) && stop.StopsRetry()
 }
 
 // ConfigureBlockedRecovery binds the live policy a publish on this endpoint
@@ -409,6 +436,9 @@ func classifyPushFailure(output string) CASOutcome { return ClassifyPushFailure(
 // the protocol), update-ref with the old-value assertion in local
 // mode.
 func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
+	if e.casPublisher != nil {
+		return e.casPublisher(e, tip, commit)
+	}
 	if e.Repository != nil {
 		return e.Repository.Publish(tip, commit)
 	}
@@ -923,6 +953,16 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			return PublishResult{Outcome: OutcomeConfirmed, Tip: newTip, Commit: commit}, nil
 
 		case CASRefused:
+			if stopsRetry(pushErr) {
+				// The publication boundary refused for good (the lane's
+				// base moved): nothing was pushed, and the caller, not
+				// this loop, decides what comes next.
+				if err := MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "publication refused: "+RecordText(pushErr)); err != nil {
+					return PublishResult{}, errors.Join(pushErr, err)
+				}
+				CleanupRefs(e, req.Opid)
+				return PublishResult{Outcome: OutcomeAbandoned, Tip: tip, Commit: commit, Detail: pushErr.Error(), Code: RefusalCode(pushErr)}, pushErr
+			}
 			// Someone advanced the branch. The rebuilt world decides:
 			// the loop continues inside the deadline; Mutate on the
 			// new tip classifies loss and idempotent success.

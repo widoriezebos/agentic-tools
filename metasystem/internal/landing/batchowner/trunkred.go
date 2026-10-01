@@ -48,7 +48,14 @@ func ProductionBatchLedgerOwnerWithConfig(root string, lookup func(string, strin
 	if err != nil {
 		return nil, err
 	}
-	return NewLedgerTrunkRedOwnerWithConfig(root, machine, LandingOwnerLineage, lookup)
+	owner, err := NewLedgerTrunkRedOwnerWithConfig(root, machine, LandingOwnerLineage, lookup)
+	if err != nil {
+		return nil, err
+	}
+	// The lane's trunk-red records go through its publication boundary.
+	ledger := owner.(*LedgerTrunkRedOwner)
+	ledger.Endpoint = LaneLedger()(ledger.Endpoint)
+	return ledger, nil
 }
 
 func (owner LedgerTrunkRedOwner) Request(opid string) (goal.VerbRequest, error) {

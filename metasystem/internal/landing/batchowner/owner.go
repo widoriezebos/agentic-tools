@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
@@ -471,9 +472,41 @@ type BatchOwnerCallSet struct {
 var BatchOwnerCalls BatchOwnerCallSet
 
 // LandingOwnerInvocation is the landing owner's own context: it supplies
-// itself, as its children's parent did, and its lineage.
+// itself, as its children's parent did, and its lineage; its goal writes
+// are the lane's and go through the lane's publication boundary (K3).
 func LandingOwnerInvocation() ownercall.Invocation {
-	return ownercall.FromThisProcess(LandingOwnerLineage)
+	invocation := ownercall.FromThisProcess(LandingOwnerLineage)
+	invocation.Ledger = LaneLedger()
+	return invocation
+}
+
+// LaneLedger routes the lane's own goal writes (trunk-red records, cadence
+// status) through the lane's publication boundary, as its agent.
+func LaneLedger() func(goal.Endpoint) goal.Endpoint {
+	return laneLedger(LandingLaneHome, lane.OpPublish, lane.AuthorityAgent)
+}
+
+// personCleanupInvocation is the landing owner's context for a person's
+// cleanup (landing unset): its goal writes go through the lane's boundary
+// as a person's returns, which a paused lane admits.
+func personCleanupInvocation(home string) ownercall.Invocation {
+	invocation := ownercall.FromThisProcess(LandingOwnerLineage)
+	invocation.Ledger = laneLedger(func() (string, error) { return home, nil }, lane.OpReturn, lane.AuthorityPerson)
+	return invocation
+}
+
+// laneLedger routes goal writes through the lane's publication boundary
+// under the home that names the lane, as op for authority. A host with no
+// home keeps no host state and so no lane (as LandingLaneSeams.Resolve
+// reads it): its writes are not the lane's, and publish as before.
+func laneLedger(home func() (string, error), op lane.Operation, authority lane.Authority) func(goal.Endpoint) goal.Endpoint {
+	return func(endpoint goal.Endpoint) goal.Endpoint {
+		at, err := home()
+		if err != nil {
+			return endpoint
+		}
+		return lane.LedgerEndpoint(at, endpoint, op, authority)
+	}
 }
 
 // batchEditNext rewrites a goal's next step as the landing owner.
@@ -482,12 +515,12 @@ func batchEditNext(root, goalID, next string) error {
 }
 
 func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
-	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls)
+	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls, LandingOwnerInvocation)
 }
 
 // returnSeamsAt are the return seams of the lane whose checkout is root and
 // whose installation (ledger) is controlRoot, publishing through calls, read when each is made.
-func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet) batch.ReturnSeams {
+func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet, invoke func() ownercall.Invocation) batch.ReturnSeams {
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return BatchReturnLedgerGoal(controlRoot, tree, goalID)
@@ -504,15 +537,15 @@ func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwn
 			if err != nil {
 				return err
 			}
-			return calls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
+			return calls.Handover(invoke(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
 				TargetMachine: source.Machine, TargetLineage: source.Lineage, TargetEpoch: int64(epoch),
 				Batch: record.Batch, TargetRoot: loaded.SeatRoot})
 		},
 		Release: func(goalID, next string) error {
-			if err := calls.EditNext(LandingOwnerInvocation(), controlRoot, goalID, next); err != nil {
+			if err := calls.EditNext(invoke(), controlRoot, goalID, next); err != nil {
 				return err
 			}
-			return calls.Release(LandingOwnerInvocation(), controlRoot, goalID)
+			return calls.Release(invoke(), controlRoot, goalID)
 		},
 	}
 }

@@ -161,6 +161,19 @@ var retiredWithDeletedLibrary = map[string]string{
 	"batch-buildcd-standard/TestReverseDependentsIncludeDirectTransitiveTestAndTaggedImports": "gopackages ReverseDependents",
 	"batch-buildcd-standard/TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests":   "landing/batch/goadapter JoinGatePackageSteps",
 	"goal-decision-standard/TestGoalReadItemsListJSONShape":                                   "cmd/metasystem runGoalReadItemsListWithInputs",
+	// Lane runtime design r10 K-c: the moved-base republish was deleted (a
+	// moved base is returned, never republished); its rule is held by
+	// TestBatchLandingMovedBaseReopensAndNeverRepublishes and
+	// TestBatchLandProductionSeamsReopenAMovedBase.
+	"batch-buildcd-standard/TestBatchLandingPersistsRecoveryBranchOnSecondRefusal":        "landing/batch LandSeams.RecoverPush",
+	"batch-buildcd-standard/TestBatchLandingOpensAfterThreeRecoveryPushRounds":            "landing/batch LandSeams.RecoverPush",
+	"batch-buildcd-standard/TestBatchLandingResumesPendingMovedOriginRecovery":            "landing/batch LandSeams.RecoverPush",
+	"batch-buildcd-standard/TestBatchLandingMovedInputReturnsOpenOnNewBase":               "landing/batch LandSeams.RecoverPush",
+	"batch-buildcd-standard/TestBatchLandingCountsRecoveryFailureBeforeBranchPublication": "landing/batch LandSeams.RecoverPush",
+	"batch-buildcd-standard/TestBatchLandTrunkMovedRebasesOrReopens":                      "landing/batchowner RecoverMovedBatchPushWith",
+	"batch-buildcd-standard/TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin":        "landing/batchowner RecoverMovedBatchPushWith",
+	"batch-buildcd-standard/TestBatchLandProductionSeamsBoundRecoveryAndAbandon":          "landing/batchowner BatchLandRecoverPush",
+	"batch-buildcd-standard/TestRecoveryFailureDoesNotAbortAmbientRebase":                 "landing/batchowner ReopenMovedBatchAfterRecoveryFailure",
 }
 
 var retiredWithDeletedBed = map[string]string{

@@ -21,6 +21,18 @@ func ownerSyncDependencies(invocation ownercall.Invocation) syncRequestDependenc
 	dependencies.authorityFacts.caller = invocation.Caller
 	lineage := invocation.Lineage
 	dependencies.ownerLineage = func() string { return lineage }
+	if ledger := invocation.Ledger; ledger != nil {
+		// The landing lane's own goal writes go through its publication
+		// boundary (lane runtime design r10, K3); a seat's never do.
+		resolve := dependencies.endpoint
+		dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+			endpoint, err := resolve(root)
+			if err != nil {
+				return endpoint, err
+			}
+			return ledger(endpoint), nil
+		}
+	}
 	return dependencies
 }
 

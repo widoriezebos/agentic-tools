@@ -5,7 +5,6 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -112,30 +111,6 @@ func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
 		if !errors.As(err, &refusal) || refusal.Kind != test.kind {
 			t.Fatalf("tip %s %v classified as %T %v, want %s", test.code, test.data, err, err, test.kind)
 		}
-	}
-}
-
-func TestGLEBatchRebasedPrefixTreesNamesEveryBoundary(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	base, tip := "base-commit", "rebased-tip"
-	expected := []string{"tree-a", "tree-b-one", "tree-b-two", "tree-c"}
-	readGit := func(gotRoot string, args ...string) (string, error) {
-		if gotRoot != root || !slices.Equal(args, []string{"log", "--first-parent", "--reverse", "--format=%T", base + ".." + tip}) {
-			t.Fatalf("ordered tree read root=%q args=%v", gotRoot, args)
-		}
-		return strings.Join(expected, "\n"), nil
-	}
-	units := []batch.Unit{{GoalID: "a"}, {GoalID: "b", Builds: []batch.BranchBuild{{Commit: "one"}, {Commit: "two"}}}, {GoalID: "c"}}
-	trees, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units, readGit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(trees, []string{expected[0], expected[2], expected[3]}) {
-		t.Fatalf("prefix trees=%v, want selected cumulative trees", trees)
-	}
-	if _, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units[:2], readGit); err == nil {
-		t.Fatal("incomplete unit inventory accepted a rebased range")
 	}
 }
 

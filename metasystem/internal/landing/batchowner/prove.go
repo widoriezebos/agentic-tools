@@ -299,7 +299,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		if progress := record.Landing; progress != nil {
 			if progress.ReceiptTip != "" || progress.HeldChecked || progress.PushComplete || progress.PushedTip != "" ||
 				progress.RearmComplete || progress.CleanupDone || len(progress.Commits) != 0 || len(progress.BuildCommits) != 0 ||
-				progress.RefusedOrigin != "" || progress.RefusedBase != "" || progress.PushRounds != 0 || progress.PushRejection != nil {
+				progress.RefusedOrigin != "" || progress.RefusedBase != "" || progress.PushRejection != nil {
 				return fmt.Errorf("%s: stale landing candidate has publication or receipt progress", codeProofStateRefused)
 			}
 			expected = progress.CandidateTip

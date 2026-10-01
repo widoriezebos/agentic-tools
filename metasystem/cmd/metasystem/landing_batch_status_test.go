@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -20,7 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -592,137 +590,10 @@ func TestBatchDiagnosisForwardsStoredPrefixEvidence(t *testing.T) {
 	}
 }
 
-func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
-	for _, test := range []struct {
-		name, movedPath, manifest, childFailure string
-		reopen                                  bool
-	}{
-		{name: "disjoint", movedPath: "plans/goals/ledger.md", manifest: "source/**"},
-		{name: "selected-input", movedPath: "source/input.go", manifest: "source/**", reopen: true},
-		{name: "selected-input-conflict", movedPath: "unit.txt", manifest: "unit.txt", reopen: true},
-		{name: "held-refusal", movedPath: "plans/goals/ledger.md", manifest: "source/**", childFailure: "held", reopen: true},
-		{name: "verify-refusal", movedPath: "plans/goals/ledger.md", manifest: "source/**", childFailure: "verify", reopen: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root, peer, origin, baseCommit, baseTree, tip := movedBatchGitFixture(t)
-			if err := os.WriteFile(filepath.Join(peer, filepath.FromSlash(test.movedPath)), []byte("moved\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			runBatchFixtureGit(t, peer, "add", "--", test.movedPath)
-			runBatchFixtureGit(t, peer, "commit", "-qm", "move trunk")
-			runBatchFixtureGit(t, peer, "push", "-q", "origin", "main")
-			movedCommit := strings.TrimSpace(runBatchFixtureGit(t, peer, "rev-parse", "HEAD"))
-			movedTree := strings.TrimSpace(runBatchFixtureGit(t, peer, "rev-parse", "HEAD^{tree}"))
-			candidateTree := strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", tip+"^{tree}"))
-			patch := runBatchFixtureGit(t, root, "diff", "--binary", baseCommit, tip)
-			chainDir := filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", "chain-a")
-			if err := os.MkdirAll(chainDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(chainDir, "diff.patch"), []byte(patch), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-			record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba21", State: batch.StateLanding, BaseTree: baseTree,
-				PrefixTrees: []string{candidateTree}, TipTree: candidateTree,
-				Units:   []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}},
-				Proof:   &batch.Proof{Status: "green", AttemptID: "tip-proof", SelectedGroups: []string{"selected"}, InputManifests: map[string][]string{"selected": {test.manifest}}},
-				Landing: &batch.LandingProgress{Base: baseTree, BranchTip: tip, Commits: map[string]string{}},
-				History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}},
-			}
-			store := batch.NewStore(root, nil)
-			if err := store.Create(record); err != nil {
-				t.Fatal(err)
-			}
-			originalPush := batchowner.BatchMovedEndpointPush
-			originalVerify := batchowner.BatchVerifyRebasedSeries
-			originalAuthorize := batchowner.BatchAuthorizeRebasedSeries
-			t.Cleanup(func() {
-				batchowner.BatchMovedEndpointPush, batchowner.BatchVerifyRebasedSeries, batchowner.BatchAuthorizeRebasedSeries = originalPush, originalVerify, originalAuthorize
-			})
-			batchowner.BatchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
-			var children [][]string
-			verifications := 0
-			pushes, refusedPushes := 0, 0
-			stubBatchOwnerCalls(t, func(_ ownercall.Invocation, args ...string) error {
-				children = append(children, append([]string(nil), args...))
-				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
-					return errors.New("held refusal")
-				}
-				return nil
-			})
-			batchowner.BatchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
-				verifications++
-				if len(trees) != 1 {
-					return errors.New("rebased prefix count moved")
-				}
-				if test.childFailure == "verify" {
-					return errors.New("verify refusal")
-				}
-				return nil
-			}
-			batchowner.BatchMovedEndpointPush = func(root, id, base, tip string) error {
-				pushes++
-				return originalPush(root, id, base, tip)
-			}
-			seams := batchowner.BatchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", batchowner.GitOutput, plantedBatchCommit)
-			seams.Prepare = func(string) error { return nil }
-			seams.Apply = func(batch.Unit) error { return nil }
-			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
-			seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
-			seams.Held = func(string, string) error { return nil }
-			seams.VerifySeries = nil // This fixture exercises transport; rebased verification is observed above.
-			seams.Push = func(string, string) error {
-				refusedPushes++
-				return batch.LandLandingBranch(root, record.BatchID, baseCommit, tip)
-			}
-			if err := batch.LandSeries(store, record.BatchID, "owner", time.Unix(2, 0), seams); err != nil {
-				t.Fatal(err)
-			}
-			landed, err := store.Load(record.BatchID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			mainTip := strings.TrimSpace(runBatchFixtureGit(t, origin, "rev-parse", "refs/heads/main"))
-			branchRef := "refs/heads/landing/01j5x00000000000000000ba21"
-			if test.reopen {
-				wantChildren := 0
-				if test.childFailure == "held" {
-					wantChildren = 1
-				} else if test.childFailure == "verify" {
-					wantChildren = 1
-				}
-				wantVerifications := 0
-				if test.childFailure == "verify" {
-					wantVerifications = 1
-				}
-				if landed.State != batch.StateOpen && landed.State != batch.StateDissolved || landed.BaseTree != movedTree || landed.Landing != nil || mainTip != movedCommit || len(children) != wantChildren || verifications != wantVerifications || pushes != 0 || refusedPushes != 1 {
-					t.Fatalf("input move record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
-				}
-				if test.name == "selected-input-conflict" && (landed.State != batch.StateDissolved || landed.Units[0].State != batch.UnitReturnPending || landed.Units[0].Outcome != batch.UnitEjected) {
-					t.Fatalf("conflicting unit was not ejected before dissolve: %+v", landed)
-				}
-				if landed.State == batch.StateOpen {
-					if err := batchowner.FinishBatchLanding(root, store, record.BatchID, "owner", time.Unix(2, 0)); err != nil {
-						t.Fatalf("open input-move path entered P6 recovery: %v", err)
-					}
-				}
-			} else {
-				if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || mainTip != landed.Landing.PushedTip || len(children) != 1 || children[0][0] != "landing" || verifications != 1 || pushes != 1 || refusedPushes != 1 {
-					t.Fatalf("disjoint record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
-				}
-				if err := exec.Command("git", "--git-dir", origin, "merge-base", "--is-ancestor", movedCommit, landed.Landing.PushedTip).Run(); err != nil {
-					t.Fatalf("rebased tip does not descend from moved origin: %v", err)
-				}
-			}
-			if err := exec.Command("git", "--git-dir", origin, "show-ref", "--verify", "--quiet", branchRef).Run(); err == nil {
-				t.Fatalf("candidate branch %s survived recovery", branchRef)
-			}
-		})
-	}
-}
-
-func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
+// The production landing seams return a moved base (design r10 K3): a
+// lease refused because main moved abandons the candidate and reopens the
+// batch once, and nothing is rebased or pushed again.
+func TestBatchLandProductionSeamsReopenAMovedBase(t *testing.T) {
 	root := t.TempDir()
 	baseCommit, baseTree := strings.Repeat("1", 40), strings.Repeat("2", 40)
 	tip, candidateTree := strings.Repeat("3", 40), strings.Repeat("4", 40)
@@ -760,9 +631,9 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	originalFetch, originalTree, originalAbandon, originalRecover := batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon, batchowner.BatchLandRecoverPush
+	originalFetch, originalTree, originalAbandon := batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon
 	t.Cleanup(func() {
-		batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon, batchowner.BatchLandRecoverPush = originalFetch, originalTree, originalAbandon, originalRecover
+		batchowner.BatchLandFetchOrigin, batchowner.BatchLandOriginTree, batchowner.BatchLandAbandon = originalFetch, originalTree, originalAbandon
 	})
 	origins := []string{tip, tip, baseCommit, tip}
 	originReads := 0
@@ -781,11 +652,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 		abandons++
 		return nil
 	}
-	recoveries := 0
-	batchowner.BatchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string, _ func() error) (batch.PushRecovery, error) {
-		recoveries++
-		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
-	}
+	pushes := 0
 	seams := batchowner.BatchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", batchowner.GitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
@@ -795,6 +662,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	seams.VerifySeries = nil // This fixture exercises bounded transport recovery.
 	seams.PublishBranch = func(string, string) error { return nil }
 	seams.Push = func(string, string) error {
+		pushes++
 		return &batch.EndpointPushError{Cause: errors.New("stale info"), StaleLease: true, RemoteRejected: true}
 	}
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
@@ -806,8 +674,8 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seams.LeaseBase != baseCommit || recoveries != 3 || treeReads != 1 || abandons != 1 || effects != 2 || landed.State != batch.StateOpen || landed.Landing != nil {
-		t.Fatalf("lease=%q recoveries=%d treeReads=%d abandons=%d effects=%d record=%+v", seams.LeaseBase, recoveries, treeReads, abandons, effects, landed)
+	if seams.LeaseBase != baseCommit || pushes != 1 || treeReads != 1 || abandons != 1 || effects != 2 || landed.State != batch.StateOpen || landed.Landing != nil {
+		t.Fatalf("lease=%q pushes=%d treeReads=%d abandons=%d effects=%d record=%+v", seams.LeaseBase, pushes, treeReads, abandons, effects, landed)
 	}
 	if len(landed.History) != 2 || landed.History[1].From != batch.StateLanding || landed.History[1].To != batch.StateOpen || landed.History[1].Verb != "trunk-moved" || landed.History[1].Detail != "endpoint push refused" {
 		t.Fatalf("reopen history=%+v", landed.History)
@@ -819,137 +687,6 @@ func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
 	if !batch.DecideMovedBase(record, []string{"metasystem/internal/other/x.go"}, "metasystem").Reopen {
 		t.Fatal("an engine path outside the selected manifest did not require a new proof")
 	}
-}
-
-func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
-	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", deny+string(os.PathListSeparator)+os.Getenv("PATH"))
-	deniedLog := filepath.Join(t.TempDir(), "git-denied.log")
-	t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", deniedLog)
-	t.Cleanup(func() {
-		calls, err := os.ReadFile(deniedLog)
-		if err != nil && !os.IsNotExist(err) {
-			t.Fatal(err)
-		}
-		if len(calls) != 0 {
-			t.Fatalf("moved push test invoked physical Git: %s", calls)
-		}
-	})
-	root := t.TempDir()
-	origin := filepath.Join(root, "opaque-origin-ref")
-	originBytes := []byte("origin ref sentinel; not a Git ref\n")
-	if err := os.WriteFile(origin, originBytes, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	baseCommit, tip, baseTree := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
-	readCalls, runnerCalls := 0, 0
-	readGit := func(gotRoot string, args ...string) (string, error) {
-		readCalls++
-		if gotRoot != root || !slices.Equal(args, []string{"rev-parse", baseCommit + "^{tree}"}) {
-			t.Fatalf("origin tree read: root=%q args=%q", gotRoot, args)
-		}
-		return baseTree, nil
-	}
-	runGit := func(command *exec.Cmd) error {
-		runnerCalls++
-		if command.Path != filepath.Join(deny, "git") ||
-			!slices.Equal(command.Args, []string{"git", "-C", root, "merge-base", "--is-ancestor", tip, baseCommit}) ||
-			command.Dir != "" || !slices.Equal(command.Env, gittree.ScrubbedEnviron()) {
-			t.Fatalf("ancestor command: path=%q args=%q dir=%q env=%q", command.Path, command.Args, command.Dir, command.Env)
-		}
-		err := exec.Command("sh", "-c", "exit 1").Run()
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-			t.Fatalf("construct exit-code-1 result: %v", err)
-		}
-		return err
-	}
-	originalPush := batchowner.BatchMovedEndpointPush
-	t.Cleanup(func() { batchowner.BatchMovedEndpointPush = originalPush })
-	pushes := 0
-	batchowner.BatchMovedEndpointPush = func(string, string, string, string) error {
-		pushes++
-		return nil
-	}
-	recovery, err := batchowner.RecoverMovedBatchPushWithInputs(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip, readGit, runGit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recovery.Pushed || recovery.Reopen || pushes != 0 || recovery.Origin != baseCommit || recovery.BaseTree != baseTree || readCalls != 1 || runnerCalls != 1 {
-		t.Fatalf("unchanged origin recovery=%+v pushes=%d reads=%d ancestorRuns=%d", recovery, pushes, readCalls, runnerCalls)
-	}
-	after, err := os.ReadFile(origin)
-	if err != nil || !slices.Equal(after, originBytes) {
-		t.Fatalf("opaque origin sentinel changed: bytes=%q error=%v", after, err)
-	}
-}
-
-func movedBatchGitFixture(t *testing.T) (root, peer, origin, baseCommit, baseTree, tip string) {
-	t.Helper()
-	base := t.TempDir()
-	origin, root, peer = filepath.Join(base, "origin.git"), filepath.Join(base, "landing"), filepath.Join(base, "peer")
-	// -b main is not cosmetic here. Without it the bare origin takes its initial
-	// branch from init.defaultBranch, which this host supplies and an isolated
-	// git configuration does not. The fixture then pushes main to an origin whose
-	// HEAD names master, and the clone below checks out nothing and still exits
-	// zero, so the failure surfaces later as a missing file in the peer tree.
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", "--bare", origin).CombinedOutput(); err != nil {
-		t.Fatalf("init origin: %v: %s", err, output)
-	}
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", root).CombinedOutput(); err != nil {
-		t.Fatalf("init landing: %v: %s", err, output)
-	}
-	runBatchFixtureGit(t, root, "config", "user.name", "Fixture")
-	runBatchFixtureGit(t, root, "config", "user.email", "fixture@example.com")
-	for path, contents := range map[string]string{"source/input.go": "base\n", "plans/goals/ledger.md": "base\n", "unit.txt": "base\n"} {
-		full := filepath.Join(root, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(contents), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runBatchFixtureGit(t, root, "add", ".")
-	runBatchFixtureGit(t, root, "commit", "-qm", "base")
-	runBatchFixtureGit(t, root, "remote", "add", "origin", origin)
-	runBatchFixtureGit(t, root, "push", "-q", "-u", "origin", "main")
-	baseCommit = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
-	baseTree = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD^{tree}"))
-	if output, err := exec.Command("git", "clone", "-q", origin, peer).CombinedOutput(); err != nil {
-		t.Fatalf("clone peer: %v: %s", err, output)
-	}
-	runBatchFixtureGit(t, peer, "config", "user.name", "Peer")
-	runBatchFixtureGit(t, peer, "config", "user.email", "peer@example.com")
-	if err := batch.PrepareLandingBranch(root, "01j5x00000000000000000ba21", baseCommit); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "unit.txt"), []byte("candidate\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runBatchFixtureGit(t, root, "add", "unit.txt")
-	runBatchFixtureGit(t, root, "commit", "-qm", "candidate")
-	tip = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
-	if err := batch.PublishLandingBranch(root, "01j5x00000000000000000ba21", "", tip); err != nil {
-		t.Fatal(err)
-	}
-	return root, peer, origin, baseCommit, baseTree, tip
-}
-
-func runBatchFixtureGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	commandArgs := append([]string{"-C", root}, args...)
-	if strings.HasSuffix(root, ".git") {
-		commandArgs = append([]string{"--git-dir", root}, args...)
-	}
-	output, err := exec.Command("git", commandArgs...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", commandArgs, err, output)
-	}
-	return string(output)
 }
 
 func TestBatchMovedEffectsInventoryIsComplete(t *testing.T) {

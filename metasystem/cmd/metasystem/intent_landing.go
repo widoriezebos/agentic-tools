@@ -77,6 +77,13 @@ type laneVerbOwners struct {
 	// agent names a landing agent that runs or is starting; no batch owner
 	// starts beside it (A-a).
 	agent func() (string, bool, error)
+	// evidence reads a batch's begin and proof records for landing
+	// publish; nil reads none (K-b writes them).
+	evidence lane.PublishEvidence
+	// remoteURL is the landing checkout's origin.
+	remoteURL func(root string) (string, error)
+	// publish is the lane's publication boundary for a landing.
+	publish func(home string, tuple lane.Tuple) error
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -157,6 +164,17 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.agent == nil {
 		owners.agent = batchowner.LandingAgentLive
 	}
+	if owners.remoteURL == nil {
+		owners.remoteURL = func(root string) (string, error) {
+			out, err := batchowner.GitOutput(root, "remote", "get-url", "origin")
+			return strings.TrimSpace(out), err
+		}
+	}
+	if owners.publish == nil {
+		owners.publish = func(home string, tuple lane.Tuple) error {
+			return lane.Publish(home, tuple, lane.OpPublish, lane.AuthorityAgent)
+		}
+	}
 	return owners
 }
 
@@ -233,6 +251,7 @@ func landingIntentCommands() []intentCommand {
 		landingEngineCommand(),
 		landingBeginCommand(),
 		landingProveCommand(),
+		landingPublishCommand(),
 	}
 }
 

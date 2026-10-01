@@ -67,6 +67,10 @@ type Invocation struct {
 	// Lineage is the owner lineage the request carries; it replaces the
 	// child's inherited METASYSTEM_OWNER_LINEAGE.
 	Lineage string
+	// Ledger, when set, is the publication boundary the call's goal writes
+	// go through: the landing lane's (lane runtime design r10, K3). A
+	// seat's call leaves it nil and publishes as always.
+	Ledger func(goal.Endpoint) goal.Endpoint
 }
 
 // FromThisProcess is the context of an edge that replaced a child run with

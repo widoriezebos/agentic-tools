@@ -16,6 +16,9 @@ import (
 const provingHolderEnv = "LANE_TEST_PROVING_HOLDER_HOME"
 
 func TestMain(m *testing.M) {
+	if code, ok := prePushChild(); ok {
+		os.Exit(code)
+	}
 	if home := os.Getenv(provingHolderEnv); home != "" {
 		os.Exit(runProvingHolder(home))
 	}

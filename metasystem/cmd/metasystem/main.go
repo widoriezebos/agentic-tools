@@ -80,6 +80,11 @@ func registeredTopLevelEntries() []topLevelEntry {
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
 				return runPreCommitEntry(args, stdout, stderr)
 			}},
+		{name: "pre-push", usage: "pre-push --home <home> <remote> <url>",
+			launcher: "internal/landing/lane/hook.go", evidence: "internal pre-push", required: []string{"home"},
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runPrePushEntry(args, stdout, stderr)
+			}},
 		{name: runtimes.SupervisorEntry, usage: runtimes.SupervisorEntry + " <runtime> <verb> --root <installation> [flags]",
 			launcher: "internal/delegation/owners.go", evidence: "runtimes.SupervisorArgs",
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
