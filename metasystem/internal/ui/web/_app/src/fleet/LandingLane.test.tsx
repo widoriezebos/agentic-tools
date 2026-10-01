@@ -21,7 +21,6 @@ function owner(over: Partial<LaneOwner> = {}): LaneOwner {
     state: "running",
     pid: 4242,
     since: "2026-09-29T08:10:00Z",
-    restarts: 0,
     last_exit: null,
     stopped_by: null,
     retry_hint: null,
@@ -76,10 +75,9 @@ describe("the landing lane panel", () => {
 
   const colours: [LaneOwnerState, string][] = [
     ["running", "ms-fleet-lane-state--ok"],
-    ["restarting", "ms-fleet-lane-state--warn"],
+    ["idle", "ms-fleet-lane-state--neutral"],
     ["stopped", "ms-fleet-lane-state--bad"],
-    ["given-up", "ms-fleet-lane-state--bad"],
-    ["not-started", "ms-fleet-lane-state--neutral"],
+    ["unready", "ms-fleet-lane-state--warn"],
   ];
   for (const [state, colour] of colours) {
     it(`draws the owner ${state} in its own status colour`, () => {
@@ -89,44 +87,46 @@ describe("the landing lane panel", () => {
     });
   }
 
-  it("says since when and how often a running owner restarted", () => {
-    const markup = draw(lane({ owner: owner({ restarts: 3 }) }));
+  it("says since when a running owner runs, with no restart count and no prompt", () => {
+    const markup = draw(lane());
     expect(markup).toContain(`since ${minuteTime("2026-09-29T08:10:00Z")}`);
     expect(markup).toContain("pid 4242");
-    expect(markup).toContain("3 restarts");
+    expect(markup).not.toContain("restart");
     expect(markup).not.toContain(START_COMMAND);
   });
 
-  it("gives a given-up owner its hint, last exit and the command to start it", () => {
+  it("gives an idle lane no prompt: idle is a ready lane with nothing to land", () => {
+    const markup = draw(lane({ owner: owner({ state: "idle", pid: null, since: null }), batch: null }));
+    expect(markup).toContain(">idle<");
+    expect(markup).not.toContain(START_COMMAND);
+    expect(markup).not.toContain("since unknown");
+  });
+
+  it("gives an unready lane its reason and fix, and no start prompt", () => {
     const markup = draw(
       lane({
         owner: owner({
-          state: "given-up",
+          state: "unready",
           pid: null,
-          restarts: 5,
           last_exit: "exit status 2",
-          retry_hint: "five restarts in ten minutes; read the lane log",
+          retry_hint: "the landing checkout has local changes; run metasystem landing status --verbose",
         }),
       }),
     );
-    expect(markup).toContain("five restarts in ten minutes; read the lane log");
+    expect(markup).toContain("the landing checkout has local changes; run metasystem landing status --verbose");
     expect(markup).toContain("exit status 2");
+    expect(markup).not.toContain(START_COMMAND);
+    expect(markup).not.toContain("<button");
+  });
+
+  it("names who stopped a stopped lane, why, and the command to resume it", () => {
+    const markup = draw(
+      lane({ owner: owner({ state: "stopped", pid: null, stopped_by: "wido", stopped_because: "maintenance" }) }),
+    );
+    expect(markup).toContain("Stopped by wido: maintenance.");
     expect(markup).toContain(START_COMMAND);
     expect(markup).toContain("ms-fleet-lane-command");
     expect(markup).not.toContain("<button");
-  });
-
-  it("names who stopped a stopped owner and the command to start it", () => {
-    const markup = draw(lane({ owner: owner({ state: "stopped", pid: null, stopped_by: "wido" }) }));
-    expect(markup).toContain("Stopped by wido");
-    expect(markup).toContain(START_COMMAND);
-    expect(markup).not.toContain("<button");
-  });
-
-  it("tells a not-started owner how to start it", () => {
-    const markup = draw(lane({ owner: owner({ state: "not-started", pid: null, since: null }), batch: null }));
-    expect(markup).toContain(START_COMMAND);
-    expect(markup).not.toContain("since unknown");
   });
 
   it("says there is no batch in hand when batch is null", () => {
