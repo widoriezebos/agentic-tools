@@ -49,9 +49,10 @@ A denial is two lines: what happened, then the one command to run. Take it as in
 the denied thing is what the batch really needs, stop and ask (below); never look for a way around
 the tool gate.
 
-`landing stop` takes no reason: say what repeated and what you need in the `agent ask` that
-follows it. When a step's verb refuses in a way you do not understand, `landing stop` and
-`agent ask` are the way out; do not improvise the step by hand.
+`landing stop --reason TEXT` keeps your reason with the pause, and status shows it to the person;
+say there in a few words what repeated, and in the `agent ask` that follows what you need. When a
+step's verb refuses in a way you do not understand, `landing stop` and `agent ask` are the way out;
+do not improvise the step by hand.
 
 ## The batch, step by step
 
@@ -119,7 +120,7 @@ Pause the lane and ask when something repeats instead of trying a third time:
 - a denial for something the batch truly needs;
 - the allowance close to spent, or the kernel refusing for a reason you do not understand.
 
-Run `metasystem landing stop`, then `metasystem agent ask MACHINE --text ...` to the seat or
+Run `metasystem landing stop --reason '...'`, then `metasystem agent ask MACHINE --text ...` to the seat or
 `--goal G` that can act, saying what repeated and what you need, and end the session. Only a person clears the pause. A stopped lane is not a failure; guessing on is.
 
 ## Residual risk

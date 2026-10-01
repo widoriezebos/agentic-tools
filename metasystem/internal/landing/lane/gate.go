@@ -105,16 +105,9 @@ func unknownOperationRefusal(op Operation) *Refusal {
 
 func pausedRefusal(pause Pause, op Operation) *Refusal {
 	return &Refusal{Code: CodePaused,
-		Message: fmt.Sprintf("the landing lane is stopped by %s, so %s was not started", pausedBy(pause), op),
+		Message: fmt.Sprintf("the landing lane is stopped by %s, so %s was not started", pause.Who(), op),
 		Fix:     "a person resumes it: metasystem landing start",
 		Argv:    []string{"metasystem", "landing", "start"}}
-}
-
-func pausedBy(pause Pause) string {
-	if pause.By == "" {
-		return "a person"
-	}
-	return pause.By
 }
 
 func unsettingRefusal(journal UnsetJournal) *Refusal {

@@ -67,6 +67,9 @@ type OwnerView struct {
 	Restarts  int     `json:"restarts"`
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
+	// StoppedBecause is the reason the stop was given with; absent when
+	// none was.
+	StoppedBecause *string `json:"stopped_because,omitempty"`
 	RetryHint *string `json:"retry_hint"`
 	// LastTickError is the running owner's last failed batch tick, in its
 	// words; null when its last pass ticked clean.
@@ -206,6 +209,9 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	}
 	if pause, paused := ReadPause(sources.Home); paused {
 		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
+		if pause.Reason != "" {
+			owner.StoppedBecause = text(pause.Reason)
+		}
 		owner.RetryHint = text("metasystem landing start resumes it")
 		return owner
 	}
@@ -436,7 +442,11 @@ func summary(root string, view View, recordsErr error) string {
 	case OwnerRunning:
 		owner += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
 	case OwnerStopped:
-		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
+		owner += " by " + *view.Owner.StoppedBy
+		if view.Owner.StoppedBecause != nil {
+			owner += " (" + *view.Owner.StoppedBecause + ")"
+		}
+		owner += "; metasystem landing start resumes it"
 	case OwnerGivenUp:
 		owner += fmt.Sprintf(" after %d restart%s", view.Owner.Restarts, plural(view.Owner.Restarts))
 	case OwnerRestarting:

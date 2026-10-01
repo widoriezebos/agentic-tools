@@ -191,6 +191,49 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	}
 }
 
+// landing stop --reason keeps the reason with the pause (design r10 §3,
+// the agent's stop and ask): the stop, status, a repeat and every gated
+// operation the pause holds name it on line 1; line 2 stays the command.
+func TestLandingStopRecordsItsReason(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	reason := "goal-a is red twice on its own tests"
+	code, stdout, stderr := bed.run(t, "landing", "stop", "--by", "Wido", "--reason", reason)
+	if code != 0 || !strings.Contains(oneSpaced(stdout), "stopped the landing lane for Wido ("+reason+")") {
+		t.Fatalf("stop --reason = %d %q %q", code, stdout, stderr)
+	}
+	if pause, paused := lane.ReadPause(bed.home); !paused || pause.By != "Wido" || pause.Reason != reason {
+		t.Fatalf("the recorded pause = %+v %v; want its reason", pause, paused)
+	}
+	view := bed.status(t)
+	if view.Owner.StoppedBecause == nil || *view.Owner.StoppedBecause != reason || !strings.Contains(view.Summary, reason) {
+		t.Fatalf("status after stop --reason = %+v %q", view.Owner, view.Summary)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(oneSpaced(stdout), "stopped by Wido ("+reason+")") {
+		t.Fatalf("status = %d %q", code, stdout)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "stop", "--reason", "another"); code != 0 || !strings.Contains(oneSpaced(stdout), "already stopped by Wido ("+reason+")") {
+		t.Fatalf("stop again = %d %q", code, stdout)
+	}
+	var refusal *lane.Refusal
+	err := lane.Gate(bed.home, lane.OpBegin, lane.AuthorityAgent, func(lane.Record) error { return nil })
+	if !errors.As(err, &refusal) || refusal.Code != lane.CodePaused || !strings.Contains(refusal.Message, "stopped by Wido ("+reason+")") {
+		t.Fatalf("a gated operation while stopped with a reason = %v", err)
+	}
+	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start = %d", code)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 || strings.Contains(stdout, "(") {
+		t.Fatalf("stop with no reason = %d %q", code, stdout)
+	}
+	if pause, _ := lane.ReadPause(bed.home); pause.Reason != "" {
+		t.Fatalf("a stop with no reason kept %q", pause.Reason)
+	}
+}
+
 func provingRecord(id, state string) batch.Record {
 	return batch.Record{BatchID: id, State: state, Units: []batch.Unit{{GoalID: "g1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
 		History: []batch.HistoryEntry{{At: laneTestNow.Format(time.RFC3339Nano), Verb: "seal", From: batch.StateOpen, To: state}}}

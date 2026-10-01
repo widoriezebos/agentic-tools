@@ -41,7 +41,7 @@ func TestLandingAgentSkillMatchesTheGate(t *testing.T) {
 		"--subject batch", "--subject base", "--subject member:", "could not run", "unavailable",
 		"40 lines", "Lane-Resolved", "Lane-Integration", "seam-too-large",
 		"--disposition red", "--disposition conflict", "--record-conflict",
-		"metasystem landing stop", "metasystem agent ask", "residual risk", "lane-agent-tools.json",
+		"metasystem landing stop --reason", "metasystem agent ask", "residual risk", "lane-agent-tools.json",
 	} {
 		if !strings.Contains(skill, required) {
 			t.Errorf("the skill does not say %q", required)

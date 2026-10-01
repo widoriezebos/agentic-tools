@@ -41,6 +41,9 @@ type KeeperState struct {
 type Pause struct {
 	By string `json:"by"`
 	At string `json:"at"`
+	// Reason is why it was stopped, in the stopper's words; empty when
+	// none was given.
+	Reason string `json:"reason,omitempty"`
 }
 
 func keeperPath(home string) string { return filepath.Join(HostDir(home), "landing-lane-keeper.json") }
@@ -90,8 +93,14 @@ func PauseState(home string) (Pause, bool, error) {
 
 // SetPause records a person's pause; a lane already paused is unchanged.
 func SetPause(home, by string, now time.Time) (changed bool, err error) {
+	return SetPauseBecause(home, by, "", now)
+}
+
+// SetPauseBecause records a person's pause with why it was made; a lane
+// already paused is unchanged, its first reason kept.
+func SetPauseBecause(home, by, reason string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
-		changed, err = setPauseLocked(home, by, now)
+		changed, err = setPauseLockedBecause(home, by, reason, now)
 		return err
 	})
 	return changed, err
@@ -99,10 +108,27 @@ func SetPause(home, by string, now time.Time) (changed bool, err error) {
 
 // setPauseLocked is SetPause for a caller that holds the lane flock.
 func setPauseLocked(home, by string, now time.Time) (bool, error) {
+	return setPauseLockedBecause(home, by, "", now)
+}
+
+func setPauseLockedBecause(home, by, reason string, now time.Time) (bool, error) {
 	if _, paused := ReadPause(home); paused {
 		return false, nil
 	}
-	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339)})
+	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: strings.TrimSpace(reason)})
+}
+
+// Who names who stopped the lane and why, as line 1 words: "Wido" or
+// "Wido (the same member red twice)".
+func (pause Pause) Who() string {
+	by := pause.By
+	if by == "" {
+		by = "a person"
+	}
+	if pause.Reason == "" {
+		return by
+	}
+	return by + " (" + pause.Reason + ")"
 }
 
 // ClearPause ends a pause, a readable one or not; a lane not paused is
