@@ -1,6 +1,7 @@
 import type { Suggestion } from "./api";
 import { mintKey } from "./asking";
 import type { SheetDraft } from "./drafting";
+import { RISK_ANSWERS } from "../backlog/opening";
 
 /**
  * What the human may do with the words the Partner offered, and when.
@@ -265,6 +266,12 @@ export function offeredIn(carried: readonly Carried[], marks: Marks, open: reado
       const standing = open.includes(suggestion.opening);
       cards.push({
         ...suggestion,
+        // The four risk answers are a form, and a form has no outer whitespace:
+        // the field holds the form once it is used, so the card carries it
+        // without what a transport left around it, or the card would read as
+        // typed over the instant it was used and lose its Undo (g1-s78, Sol
+        // S78-01). Every other field's words are compared exactly as written.
+        text: suggestion.field === RISK_ANSWERS ? suggestion.text.trim() : suggestion.text,
         id,
         open: standing,
         mark,

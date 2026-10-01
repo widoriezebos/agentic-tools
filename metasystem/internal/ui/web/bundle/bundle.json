@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:7694f3062b713113a3be6152c75c3579737a1bb7d816e775db38a13483ebb9d9",
+  "sourceDigest": "sha256:b5d7fbf4683c569f4b6a34e99b47e1b2160aa61b4bee2c5d496c0f7ab3838b45",
   "source": [
     {
       "path": ".npmrc",
@@ -256,7 +256,7 @@
     },
     {
       "path": "src/backlog/riskAnswers.test.tsx",
-      "sha256": "831274c2577900f62a6b3e5b435a99a7f911107ecf441d8aa617ce47ee3d7396"
+      "sha256": "66c2d539ce59b6c62882fb68819b3908aee63f3fff3809d8489035d1fb72efd8"
     },
     {
       "path": "src/backlog/showing.test.ts",
@@ -852,7 +852,7 @@
     },
     {
       "path": "src/partner/suggesting.ts",
-      "sha256": "8d6490abb62e8d125d8aa602477e43e87c6c8737ae90ff56b445f01e855ed21e"
+      "sha256": "6f59ac5b6beb972bd5b89f68a51e0a3ab6c0eb09f68cde66d364241df3919872"
     },
     {
       "path": "src/partner/suggestions.ts",
@@ -1594,7 +1594,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "fe541f035420584d2ef9dfaab23fafa37a4e3f6b6190fd984d1adbb4f93d2daa"
+      "sha256": "6c32b4cb0fe6589895a145d52c68bfce08ed7e076999b14d6cb5f7147f505ec0"
     },
     {
       "path": "assets/info-A6RAGUB7.js",

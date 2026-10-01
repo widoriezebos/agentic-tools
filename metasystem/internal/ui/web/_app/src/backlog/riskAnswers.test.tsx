@@ -10,7 +10,7 @@ import { FieldProposals } from "../partner/FieldProposals";
 import { answersIn, NOT_THE_RISK_FORM, withAnswers } from "../partner/proposing";
 import { PartnerAs } from "../partner/store";
 import { SuggestionCard } from "../partner/Suggestion";
-import { idOf, offeredIn, refusalOf, type Registered } from "../partner/suggesting";
+import { holding, idOf, offeredIn, refusalOf, undoable, used, type Registered } from "../partner/suggesting";
 
 /**
  * The Partner answers the four risk questions (g1-s78).
@@ -154,6 +154,39 @@ describe("a suggestion that is not the form", () => {
     );
     expect(markup).toContain(NOT_THE_RISK_FORM);
     expect(markup).not.toContain(">Use this<");
+  });
+});
+
+/**
+ * A valid suggestion the transport left padded (Sol S78-01): it is usable, and
+ * after Use the field holds it — so Undo stays — and Undo puts the person's
+ * previous answers back. The card's text is the form without the padding,
+ * because the form is what the field holds once it is used.
+ */
+describe("a valid suggestion with whitespace around it", () => {
+  const padded = "severity=2,novelty=3,exposure=1,accumulation=2 \n";
+
+  it("still holds after Use, and Undo restores the previous answers", () => {
+    const before: Risk = { severity: "1", novelty: "2", exposure: "3", accumulation: "1", basis: BASIS };
+    const offer: Suggestion = { opening: OPENING, editor: "New goal", field: RISK_ANSWERS, text: padded, offered: true };
+    const id = idOf("t1", 0);
+    const [card] = offeredIn([{ turn: "t1", suggestions: [offer] }], {}, [OPENING]);
+    expect(answersIn(card.text)).not.toBeNull();
+    // Use: the sheet sets the four answers and answers what it held.
+    const applied = withAnswers(before, card.text);
+    expect(applied).not.toBeNull();
+    const now = applied ?? before;
+    let marks = used({}, id, riskForm(before));
+    // The field reports what it now holds, as FieldProposals does on render.
+    let [after] = offeredIn([{ turn: "t1", suggestions: [offer] }], marks, [OPENING]);
+    marks = holding(marks, [after], OPENING, RISK_ANSWERS, riskForm(now));
+    [after] = offeredIn([{ turn: "t1", suggestions: [offer] }], marks, [OPENING]);
+    expect(after.mark.holds).toBe(true);
+    expect(undoable(after, [OPENING])).toBe(true);
+    // Undo compares the field's raw value with the card's words, then puts back
+    // what the field held.
+    expect(riskForm(now)).toBe(after.text);
+    expect(withAnswers(now, after.mark.previous ?? "")).toEqual(before);
   });
 });
 
