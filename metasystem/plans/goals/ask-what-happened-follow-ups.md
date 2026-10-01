@@ -1,13 +1,15 @@
 # ask-what-happened-follow-ups
 
 - State: approved
+- Priority: 1
+- Sequence: 1
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Three small interface corrections behind existing tests and a walkthrough; nothing recorded or written outside the page's state (severity 1, novelty 1, exposure 1, accumulation 1)."
 - Tier: 1
 - Intent: What: Three small fixes to "ask what happened", where any error on screen opens a conversation with the Partner about what went wrong. Why: First, when the Partner is busy, the waiting question is kept only in page memory, so a reload loses it even though its line stays on screen. Second, the chip on a notification-bell row names the page's section rather than the notification itself. Third, the Ask button on the failure pop-up is proved only by unit tests, never in a real browser. Pros: No lost questions, chips that say what happened, and browser proof of the Ask button. Cons: About an hour of work on cases that have not hurt yet; a first attempt on 30 September stopped at its budget limit with no output, so the next run should start with a smaller first step or a wider budget.
 - Origin: human
 - Next step: Next: Keep a waiting question where a reload finds it (the room's mark or the conversation's drafts), give the bell chip the notification's own words, and add the failure pop-up to the browser walkthrough. Done when: after a reload a waiting question is still there, ready to send; the bell chip shows the notification's text; and the browser walkthrough presses Ask on a failure pop-up and a conversation opens.
 - OpenedAt: 2026-09-29T04:53:39Z
-- Revision: 9
+- Revision: 10
 - Labels: partner, ui
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
@@ -23,4 +25,5 @@ History:
 - 2026-09-30T18:56:27Z 245J0EB1KQQ75EV0A84VQ690XW-ui-bc2fda53 unapprove actor=human:Wido targets=ask-what-happened-follow-ups reason=the backlog clean-up of 2026-09-30 rewrites the intent in plain English; approved again with the same box
 - 2026-09-30T18:56:31Z AVWWMN8EH8KK37XCZF5YZ5JE6Z-ui-bc2fda53 edit actor=human:Wido targets=ask-what-happened-follow-ups
 - 2026-09-30T18:56:36Z J2YDVV2YQ5JC8R14GGZFEPYAZZ-ui-bc2fda53 approve actor=human:Wido targets=ask-what-happened-follow-ups
-Integrity: sha256=bd90787f59ed8ccca6795b66d9cc15c2ae250c3aa62c4b8ddecb2b6c1b3ee197
+- 2026-10-01T06:20:14Z 0YN492SGGSTG6B8D1H0T1X29TS-m1e-b6a4eb0a set-priority actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=ask-what-happened-follow-ups from=unranked to=1:1 requested-sequence=1
+Integrity: sha256=973494fd84adfe50f660fa06ee32c0a4ea47a271e41b7d5388c9d40f75409aed
