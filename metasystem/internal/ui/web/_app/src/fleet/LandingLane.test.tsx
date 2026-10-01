@@ -57,8 +57,12 @@ function lane(over: Partial<Lane> = {}): Lane {
   };
 }
 
+// The fixture's day: every stamp above is on 2026-09-29, so the panel
+// writes times of day. Pinned, so the tests do not depend on today's date.
+const NOW = new Date("2026-09-29T12:00:00Z");
+
 function draw(value: Lane | null | undefined): string {
-  return renderToStaticMarkup(<LaneBlock lane={value} />);
+  return renderToStaticMarkup(<LaneBlock lane={value} now={NOW} />);
 }
 
 describe("the landing lane panel", () => {
