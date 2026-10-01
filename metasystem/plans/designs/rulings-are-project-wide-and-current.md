@@ -124,3 +124,7 @@ Bundle: every commit under internal/ui/web/_app rebundles in the same commit or 
 ## Later, when it hurts
 
 Engine messages that print archived ids (proofrun/admission.go:14 R-111-m1e, config/defaults.go:130 R-42-m0, the R-123/R-124/R-128-ui/R-105-m1e comments) say the standing id instead. `kit(topic)` reads the archive when asked about an id the register lacks. A `ruling=` field on decision records, so "became ruling" needs no text match. A `metasystem ruling add` verb (R-135-m1e) instead of editing the file. The reviewers' example id `RULING-R-124-m1u` becomes R-121-m0 on that branch. Summaries of what an archive row said, beside the verbatim text. A per-goal view of the rulings that name it.
+
+## Dispositions of Astra round 2, the failsafe (read at `c699dbf5b`)
+
+RULING-RV-01, MOVED-EFFECTS-RV-02, RV-03 and RV-04 are closed. RV-05 (accepted, fixture obligation): while the interface runs before the register migration, a ruling with no archived original keeps its current row's context in the disclosure, so operative text such as R-120-m1e's limits and token is never hidden; obligation `TestRulingsWithoutArchiveKeepsCurrentContext`. The loop closes at this failsafe round on that obligation; the implementation gets its code critique.
