@@ -51,6 +51,9 @@ func TestGateRefusesEveryBypassClass(t *testing.T) {
 	deny("git global options", "git -c core.hooksPath=/tmp commit -m x", "git -c alias.st=!sh st", "git --config-env=core.pager=X log",
 		"git --git-dir=/tmp/x status", "git --work-tree=/tmp status", "git -C /tmp status", "git --exec-path=/tmp status", "git --no-pager -c x=y log")
 	deny("git aliases and unlisted subcommands", "git st", "git lg", "git stash", "git reset --hard", "git merge x", "git update-ref refs/heads/main HEAD", "git worktree add /tmp/w", "git submodule update", "git filter-branch", "git gc")
+	deny("git attribute and diff settings", "git config diff.go.binary true", "git config merge.ours.driver true", "git config filter.x.clean sh",
+		"git config core.attributesFile /tmp/a", "git config --local attr.tree HEAD", "git -c core.attributesFile=/tmp/a diff",
+		"git checkout HEAD -- .gitattributes", "git checkout HEAD -- metasystem/.gitattributes", "git add .gitattributes")
 	deny("git config and remote writes", "git config core.hooksPath /tmp", "git config core.sshCommand sh", "git config core.pager sh", "git config --global core.fsmonitor sh", "git remote set-url origin /tmp/x")
 	deny("git push in any form", "git push", "git push origin HEAD:main", "git push --force", "git --no-pager push", "git push --no-verify")
 	deny("git checkout of protected paths", "git checkout HEAD -- .githooks/pre-push", "git checkout HEAD -- .claude/settings.json",
@@ -74,25 +77,32 @@ func TestGateRefusesEveryBypassClass(t *testing.T) {
 
 	// Edits into protected files, inside the checkout and outside it.
 	for class, path := range map[string]string{
-		"the gate's settings file":    filepath.Join(filepath.Dir(bed.checkout), "state", "launch-1", SettingsFileName),
-		"a Git hook":                  filepath.Join(bed.checkout, ".git", "hooks", "pre-push"),
-		"a tracked hook directory":    filepath.Join(bed.checkout, ".githooks", "pre-commit"),
-		"Claude settings":             filepath.Join(bed.checkout, ".claude", "settings.json"),
-		"Codex settings":              filepath.Join(bed.checkout, ".codex", "config.toml"),
-		"the engine binary":           filepath.Join(bed.module, "bin", "metasystem"),
-		"the checkout's engine":       filepath.Join(bed.checkout, "bin", "metasystem"),
-		"local configuration":         filepath.Join(bed.module, "metasystem.conf.local"),
-		"shipped configuration":       filepath.Join(bed.module, "metasystem.conf"),
-		"the pause file":              filepath.Join(home, ".metasystem", "host", "landing-lane-paused.json"),
-		"the host lane record":        filepath.Join(home, ".metasystem", "host", "landing-lane.json"),
-		"the recorded gate engine":    filepath.Join(bed.module, "artifacts", "agents", "context", "engine-path"),
-		"supervision and enrollment":  filepath.Join(bed.module, "artifacts", "agents", "supervision", "state.json"),
-		"the kernel's batch records":  filepath.Join(bed.checkout, "artifacts", "agents", "landing-batches", "b1.json"),
-		"a goal":                      filepath.Join(bed.module, "plans", "goals", "g.md"),
-		"a goal record":               filepath.Join(bed.module, "records", "goals", "g.md"),
-		"a path outside the checkout": filepath.Join(home, "x"),
-		"an escape through dots":      filepath.Join(bed.checkout, "..", "home", "x"),
-		"a relative path":             "metasystem/internal/a.go",
+		"the gate's settings file":     filepath.Join(filepath.Dir(bed.checkout), "state", "launch-1", SettingsFileName),
+		"a Git hook":                   filepath.Join(bed.checkout, ".git", "hooks", "pre-push"),
+		"a tracked hook directory":     filepath.Join(bed.checkout, ".githooks", "pre-commit"),
+		"Claude settings":              filepath.Join(bed.checkout, ".claude", "settings.json"),
+		"Codex settings":               filepath.Join(bed.checkout, ".codex", "config.toml"),
+		"the engine binary":            filepath.Join(bed.module, "bin", "metasystem"),
+		"the checkout's engine":        filepath.Join(bed.checkout, "bin", "metasystem"),
+		"local configuration":          filepath.Join(bed.module, "metasystem.conf.local"),
+		"shipped configuration":        filepath.Join(bed.module, "metasystem.conf"),
+		"the pause file":               filepath.Join(home, ".metasystem", "host", "landing-lane-paused.json"),
+		"the host lane record":         filepath.Join(home, ".metasystem", "host", "landing-lane.json"),
+		"the recorded gate engine":     filepath.Join(bed.module, "artifacts", "agents", "context", "engine-path"),
+		"supervision and enrollment":   filepath.Join(bed.module, "artifacts", "agents", "supervision", "state.json"),
+		"the kernel's batch records":   filepath.Join(bed.checkout, "artifacts", "agents", "landing-batches", "b1.json"),
+		"a goal":                       filepath.Join(bed.module, "plans", "goals", "g.md"),
+		"a goal record":                filepath.Join(bed.module, "records", "goals", "g.md"),
+		"a path outside the checkout":  filepath.Join(home, "x"),
+		"an escape through dots":       filepath.Join(bed.checkout, "..", "home", "x"),
+		"a relative path":              "metasystem/internal/a.go",
+		"Git's info attributes":        filepath.Join(bed.checkout, ".git", "info", "attributes"),
+		"Git's info exclude":           filepath.Join(bed.checkout, ".git", "info", "exclude"),
+		"Git's config":                 filepath.Join(bed.checkout, ".git", "config"),
+		"upper-case Git config":        filepath.Join(bed.checkout, ".GIT", "Config"),
+		"a root .gitattributes":        filepath.Join(bed.checkout, ".gitattributes"),
+		"a nested .gitattributes":      filepath.Join(bed.module, "internal", ".gitattributes"),
+		"an upper-case .GitAttributes": filepath.Join(bed.module, ".GitAttributes"),
 	} {
 		rows = append(rows, row{class: "edit " + class, call: edit(path)})
 	}

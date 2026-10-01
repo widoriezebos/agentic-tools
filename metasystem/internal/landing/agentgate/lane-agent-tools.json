@@ -44,7 +44,7 @@
   "shell": ["cat", "ls", "head", "tail", "wc", "grep", "cut", "jq", "pwd", "echo"],
   "protected": {
     "segments": [".git", ".claude", ".agents", ".codex", ".devin", ".githooks"],
-    "names": ["metasystem.conf", "metasystem.conf.local"],
+    "names": ["metasystem.conf", "metasystem.conf.local", ".gitattributes"],
     "_pairs": "pairs are protected from the agent's own edits only; a member's replay may carry its own goal-file change. Every other entry also holds against replays, switches and restores. Names compare without case.",
     "pairs": ["plans/goals", "records/goals"],
     "shallowDirs": ["bin", "artifacts"]
