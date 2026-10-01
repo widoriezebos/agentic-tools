@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="review process change for every critic dispatch; no product behaviour change; every seat"
 - Tier: 2
 - Intent: What: Every design critic and code critic checks the work against the standing human rulings, the project's register of Wido's decisions and the decisions recorded on the goal itself, and reports any conflict as a finding that always counts as material, naming the ruling it breaks. Why: today the critic roles are bound only by their brief, their skill and the project rules; the rulings register (175 rulings) and a goal's own human decisions reach a critic only if whoever wrote the brief happened to quote them, so a design or change can quietly contradict a ruling and still pass review. Wido, 2026-09-30: it should definitely be one of the tasks of the reviewer to check the rulings. Pros: decisions the human already made are enforced at every review instead of depending on someone remembering them. Cons: each review reads more material, and the register needs to stay findable by topic as it grows.
 - Origin: human
 - Next step: Next: Fable writes a short design (where the rulings are read from, how a critic reports the rulings it checked, how a conflict is reported), one Astra critique round, then Opus builds it into the design-critic and code-critic roles and skills with tests, Sol reviews the code, and it lands. Done when: a critic dispatched on a goal lists the rulings it checked in its return, and a planted conflict with a ruling is reported as material.
 - OpenedAt: 2026-09-30T20:38:45Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T07:54:04Z revision=9 opid=J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf authority=proven digest=2778966e6d0b60e3db4fb97e4114a58b6f96311e630eb3791470009314b1ef2c episode=9
@@ -27,4 +27,5 @@ History:
 - 2026-10-01T07:54:04Z J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf approve actor=human:Wido targets=reviewers-check-the-rulings
 - 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 claim actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
 - 2026-10-01T09:44:57Z VY7HG7MTPCRXNBZY8SZZAS620V-ui-d4023bb7 release actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings reason=made room for the lane's first hand-in (fleet-card-follows-the-simple-lane); re-claimed after it lands
-Integrity: sha256=2297cf82e997eec470dd58bfd03a330cf122a0ceafee220815d7e34f8c23b6a9
+- 2026-10-01T15:56:33Z MSKV92TY1JNDF71D6N5WS60V4B-m1e-9c612d71 set-priority actor=human:Wido targets=landing-lane-runtime-redesign,reviewers-check-the-rulings reason=priority-order subject=landing-lane-runtime-redesign from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=9af36cc7d4982900fe3db0858b478d73d25b042711f5249d7100b69938e7a835
