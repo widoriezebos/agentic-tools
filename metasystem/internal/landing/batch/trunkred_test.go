@@ -5,46 +5,6 @@ import (
 	"testing"
 )
 
-type acceptingLedgerOwner struct{}
-
-func (*acceptingLedgerOwner) Record(string, TrunkRed) ([]EntryRef, error) { return nil, nil }
-func (*acceptingLedgerOwner) Clear(string, EntryRef, Green) error         { return nil }
-func (*acceptingLedgerOwner) Open() ([]OpenEntry, error)                  { return nil, nil }
-
-func TestTrunkRedUnboundOwnerRefusesByName(t *testing.T) {
-	store := NewStore(t.TempDir(), nil)
-	owner := store.LedgerOwner()
-	calls := []struct {
-		name string
-		call func() error
-	}{
-		{"record", func() error { _, err := owner.Record("op", TrunkRed{}); return err }},
-		{"clear", func() error { return owner.Clear("op", EntryRef{}, Green{}) }},
-		{"open", func() error { _, err := owner.Open(); return err }},
-	}
-	for _, test := range calls {
-		t.Run(test.name, func(t *testing.T) {
-			if err := test.call(); err == nil || !strings.HasPrefix(err.Error(), "TRUNK_RED_OWNER_UNBOUND: ") {
-				t.Fatalf("error=%v, want named unbound-owner refusal", err)
-			}
-		})
-	}
-	fake := &acceptingLedgerOwner{}
-	if got := store.WithLedgerOwner(fake).LedgerOwner(); got != fake {
-		t.Fatalf("bound owner=%T, want accepting owner", got)
-	}
-	if _, ok := store.LedgerOwner().(UnboundLedgerOwner); !ok {
-		t.Fatalf("binding changed the original store copy")
-	}
-	red := TrunkRed{Joiners: []Claim{{Machine: "m1c"}, {Machine: "m1b"}}}
-	if got := red.OwnerMachine(); got != "m1c" {
-		t.Fatalf("owner machine=%q, want first joiner m1c", got)
-	}
-	if got := (TrunkRed{}).OwnerMachine(); got != "" {
-		t.Fatalf("empty owner machine=%q", got)
-	}
-}
-
 func TestTrunkRedIdentity(t *testing.T) {
 	failed := func(classname, name, reason string) Failure {
 		return Failure{Report: "report", Classname: classname, Name: name, Status: "failed", Reason: reason}

@@ -1,25 +1,9 @@
 package lane
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// nestedLane makes root a checkout that nests the module (root/metasystem
-// holds go.mod), as every real landing checkout of this repository does.
-func nestedLane(t *testing.T, root string) string {
-	t.Helper()
-	module := filepath.Join(root, "metasystem")
-	if err := os.MkdirAll(module, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return module
-}
 
 // A lane that cannot run (its checkout's supervision is not armed) shows
 // no landing agent started, why, and the one command a person runs.

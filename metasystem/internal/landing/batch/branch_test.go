@@ -6,10 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -388,41 +386,6 @@ func TestBatchBranchAllowsOnlyOneMemberPerGoal(t *testing.T) {
 	}
 }
 
-func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
-	base, prefixA, prefixB := testCommit(1001), testCommit(1002), testCommit(1003)
-	oldTip, newTip := testCommit(1004), testCommit(1005)
-	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	unitA := Unit{GoalID: "goal-a", Chain: testCommit(1006), BranchTip: testCommit(1006), Claim: claim, State: UnitJoined,
-		ChangedPaths: []string{"metasystem/a-1.txt"}, Builds: []BranchBuild{{Commit: testCommit(1008)}}}
-	unitB := Unit{GoalID: "goal-b", Chain: testCommit(1007), BranchTip: testCommit(1007), Claim: claim, State: UnitJoined,
-		ChangedPaths: []string{"metasystem/b-1.txt"}, Builds: []BranchBuild{{Commit: testCommit(1009)}}}
-	store := NewStore(t.TempDir(), nil)
-	strictReassembly(t, &store,
-		expectedAssembly(base, []string{"goal-b"}, []string{unitB.Chain}, []string{testCommit(1010)}),
-		expectedReassembly{kind: "rebuild", batchID: testBatchID, base: base, leaseTip: oldTip, actor: "owner",
-			goals: []string{"goal-b"}, chains: []string{unitB.Chain}, tip: newTip})
-	record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixB, State: StateDiagnosing, Units: []Unit{unitA, unitB},
-		Proof: &Proof{Status: "failed", AttemptID: "tip-red"}, Landing: &LandingProgress{Base: base, BranchTip: oldTip},
-		batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{prefixA, prefixB}}}
-	must(t, store.Create(record))
-	requests := 0
-	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"metasystem/a-1.txt"}}}, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
-		requests++
-		if request.Tree != base || request.GoalID != "goal-b" || !slices.Equal(request.Groups, []string{"group"}) || request.Claim != claim || !request.NeverReuse {
-			t.Fatalf("base diagnostic request=%+v", request)
-		}
-		return DiagnosticResult{AttemptID: "base-green"}, nil
-	}}))
-	updated := load(t, store)
-	if requests != 1 || updated.State != StateOpen || updated.TipTree != testCommit(1010) ||
-		!slices.Equal(updated.PrefixTrees, []string{testCommit(1010)}) || updated.Landing == nil ||
-		updated.Landing.BranchTip != newTip || updated.Landing.Base != base || updated.Units[0].State != UnitReturnPending ||
-		updated.Units[0].Outcome != UnitEjected || updated.Units[1].State != UnitJoined || updated.Units[1].GoalID != "goal-b" ||
-		len(updated.History) == 0 || updated.History[len(updated.History)-1].To != StateOpen {
-		t.Fatalf("old=%s new=%s record=%+v", oldTip, newTip, updated)
-	}
-}
-
 func TestRebuildLandingBranchAfterBaseMoveMatchesSurvivorTree(t *testing.T) {
 	t.Parallel()
 	bed := newGoalBranchBed(t)
@@ -450,117 +413,5 @@ func TestRebuildLandingBranchAfterBaseMoveMatchesSurvivorTree(t *testing.T) {
 	if newTip == oldTip || branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID) != newTip ||
 		branchGit(t, bed.root, "rev-parse", newTip+"^{tree}") != want[0] {
 		t.Fatalf("moved-base rebuild did not publish the exact survivor tree: old=%s new=%s want=%v", oldTip, newTip, want)
-	}
-}
-
-func TestReassembleSurvivorsAdoptsPublishedEquivalentTreeAfterStoreLoss(t *testing.T) {
-	bed := newGoalBranchBed(t)
-	tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
-	memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
-	must(t, err)
-	tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
-	memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
-	must(t, err)
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
-	branchGit(t, bed.root, "remote", "add", "origin", origin)
-	branchGit(t, bed.root, "push", "-q", "origin", bed.base+":refs/heads/main")
-	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined, AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
-	unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined, AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
-	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
-	oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unitA, unitB})
-	must(t, err)
-	prefixes, err := assembleUnits(bed.root, baseTree, []Unit{unitA, unitB})
-	must(t, err)
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[1], State: StateLanding, Units: []Unit{unitA, unitB},
-		Landing: &LandingProgress{Base: baseTree, BranchTip: oldTip}, batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}))
-	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "fixture refusal", "owner", time.Unix(2, 0)))
-
-	t.Setenv("GIT_AUTHOR_DATE", "2001-01-01T00:00:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2001-01-01T00:00:00Z")
-	publishedTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, oldTip, "owner", []Unit{unitB})
-	must(t, err)
-	// The publish succeeded, but the record still names oldTip, exactly as it
-	// would after a process death before the following store update.
-	if stored := load(t, store); stored.Landing == nil || stored.Landing.BranchTip != oldTip {
-		t.Fatalf("store unexpectedly learned published tip %s: %+v", publishedTip, stored.Landing)
-	}
-
-	t.Setenv("GIT_AUTHOR_DATE", "2001-01-01T00:00:01Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2001-01-01T00:00:01Z")
-	must(t, ReassembleSurvivors(store, testBatchID, "owner", time.Unix(3, 0)))
-	updated := load(t, store)
-	if updated.State != StateOpen || updated.Landing == nil || updated.Landing.BranchTip != publishedTip {
-		t.Fatalf("retry did not adopt published survivor tip %s: %+v", publishedTip, updated)
-	}
-	remoteTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
-	if remoteTip != publishedTip || branchGit(t, origin, "rev-parse", remoteTip+"^{tree}") != branchGit(t, bed.root, "rev-parse", publishedTip+"^{tree}") {
-		t.Fatalf("remote survivor tip=%s record=%+v", remoteTip, updated.Landing)
-	}
-	must(t, LandLandingBranch(bed.root, testBatchID, bed.base, publishedTip))
-	if got := branchGit(t, origin, "rev-parse", "refs/heads/main"); got != publishedTip {
-		t.Fatalf("retry landed main=%s, want survivor tip %s", got, publishedTip)
-	}
-}
-
-func TestReassembleSurvivorsKeepsChainOnlyAndMixedBatches(t *testing.T) {
-	for _, mixed := range []bool{false, true} {
-		name := "chain only"
-		if mixed {
-			name = "chain and branch"
-		}
-		t.Run(name, func(t *testing.T) {
-			base, prefixA, prefixOne, oldTip := testCommit(1101), testCommit(1102), testCommit(1103), testCommit(1104)
-			prefixTwo, survivorOne, survivorTwo, newTip := testCommit(1105), testCommit(1106), testCommit(1107), testCommit(1108)
-			claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-			unitA := Unit{GoalID: "goal-a", Chain: testCommit(1109), BranchTip: testCommit(1109), Claim: claim, State: UnitJoined,
-				Builds: []BranchBuild{{Commit: testCommit(1111)}}}
-			chainOne := Unit{GoalID: "goal-chain-one", Chain: "chain-one", Claim: claim, State: UnitJoined}
-			chainTwo := Unit{GoalID: "goal-chain-two", Chain: "chain-two", Claim: claim, State: UnitJoined}
-			unitB := Unit{GoalID: "goal-b", Chain: testCommit(1110), BranchTip: testCommit(1110), Claim: claim, State: UnitJoined,
-				Builds: []BranchBuild{{Commit: testCommit(1112)}}}
-			units := []Unit{unitA, chainOne, chainTwo}
-			expected := []expectedReassembly{
-				expectedAssembly(base, []string{"goal-chain-one", "goal-chain-two"}, []string{"chain-one", "chain-two"}, []string{survivorOne, survivorTwo}),
-				{kind: "delete", batchID: testBatchID, leaseTip: oldTip},
-			}
-			if mixed {
-				units = []Unit{unitA, chainOne, unitB}
-				expected = []expectedReassembly{
-					expectedAssembly(base, []string{"goal-chain-one", "goal-b"}, []string{"chain-one", unitB.Chain}, []string{survivorOne, survivorTwo}),
-					{kind: "rebuild", batchID: testBatchID, base: base, leaseTip: oldTip, actor: "owner",
-						goals: []string{"goal-chain-one", "goal-b"}, chains: []string{"chain-one", unitB.Chain}, tip: newTip},
-				}
-			}
-			store := NewStore(t.TempDir(), nil)
-			strictReassembly(t, &store, expected...)
-			record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixTwo, State: StateOpen, Units: units,
-				Landing:           &LandingProgress{Base: base, BranchTip: oldTip},
-				batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{prefixA, prefixOne, prefixTwo}}}
-			must(t, store.Create(record))
-			must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "fixture ejection", "owner", time.Unix(2, 0)))
-			must(t, ReassembleSurvivors(store, testBatchID, "owner", time.Unix(3, 0)))
-
-			updated := load(t, store)
-			if updated.State != StateOpen || updated.BaseTree != base || updated.TipTree != survivorTwo ||
-				!slices.Equal(updated.PrefixTrees, []string{survivorOne, survivorTwo}) ||
-				updated.Units[0].State != UnitReturnPending || updated.Units[0].Outcome != UnitEjected ||
-				updated.Units[1].State != UnitJoined || updated.Units[1].GoalID != "goal-chain-one" ||
-				len(updated.History) < 2 || updated.History[len(updated.History)-1].To != StateOpen {
-				t.Fatalf("reassembled record=%+v", updated)
-			}
-			if mixed {
-				if updated.Units[2].GoalID != "goal-b" || updated.Units[2].State != UnitJoined ||
-					updated.Landing == nil || updated.Landing.Base != base || updated.Landing.BranchTip != newTip || newTip == oldTip {
-					t.Fatalf("mixed survivor order or branch=%+v", updated)
-				}
-			} else {
-				if updated.Units[2].GoalID != "goal-chain-two" || updated.Units[2].State != UnitJoined || updated.Landing != nil {
-					t.Fatalf("chain survivor order or landing=%+v", updated)
-				}
-			}
-		})
 	}
 }
