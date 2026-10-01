@@ -1,6 +1,6 @@
 # ask-what-happened-follow-ups
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Three small interface corrections behind existing tests and a walkthrough; nothing recorded or written outside the page's state (severity 1, novelty 1, exposure 1, accumulation 1)."
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Next: Keep a waiting question where a reload finds it (the room's mark or the conversation's drafts), give the bell chip the notification's own words, and add the failure pop-up to the browser walkthrough. Done when: after a reload a waiting question is still there, ready to send; the bell chip shows the notification's text; and the browser walkthrough presses Ask on a failure pop-up and a conversation opens.
 - OpenedAt: 2026-09-29T04:53:39Z
-- Revision: 12
+- Revision: 13
 - Labels: partner, ui
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-30T18:56:36Z revision=9 opid=J2YDVV2YQ5JC8R14GGZFEPYAZZ-ui-bc2fda53 authority=proven digest=5ddbd3b1eb0137a66ed00d78b171aec33a9973fb4973b841b3f3b16913fd4482 episode=9
+- Claimed: machine=ui lineage=main-1790664507-87928-61899b at=2026-10-01T06:56:04Z revision=13 accountingRevision=13 episodeAt=2026-10-01T06:56:04Z episodeRevision=13
+- StopCapability: generation=13 revision=13 machine=ui claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-29T04:53:39Z QT1XCW5B3XB4D94Y71MDWHT547-ui-966d857e open actor=human:Wido targets=ask-what-happened-follow-ups
@@ -28,4 +30,5 @@ History:
 - 2026-10-01T06:20:14Z 0YN492SGGSTG6B8D1H0T1X29TS-m1e-b6a4eb0a set-priority actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=ask-what-happened-follow-ups from=unranked to=1:1 requested-sequence=1
 - 2026-10-01T06:26:13Z 8PFWTKV66HSP90320AT3YC8BFN-m1e-b6a4eb0a set-priority actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-findings-need-proof,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=critique-findings-need-proof from=1:1 to=1:2 requested-sequence=1
 - 2026-10-01T06:35:08Z RSWAE8KACJEH5AFBYA9YKEKZZM-m1e-f456f182 done actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-findings-need-proof,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:2 to=1:1
-Integrity: sha256=a69a1e9b63fa97b7aeb5a9f16e2a9016862ba0f7d54647ce474ec7604ad11d36
+- 2026-10-01T06:56:04Z P72GVYNRQCHJ3FKHMQ3M1DTRVV-ui-d4023bb7 claim actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups
+Integrity: sha256=5abb0196d74e093937c1bb92d940ceb369f5ab99157a8c50cb6b1ce3db258010
