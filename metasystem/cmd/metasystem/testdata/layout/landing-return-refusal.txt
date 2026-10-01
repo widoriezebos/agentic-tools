@@ -1,2 +1,0 @@
-✗ the return of verbs-match-intent names no reason, so nothing was returned
-  → metasystem landing return verbs-match-intent --reason TEXT  names why it goes back

@@ -119,20 +119,12 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
 		return Record{}, fmt.Errorf("seats are off here (%s=%s); set claude, codex or auto in metasystem.conf.local", SeatRuntimeKey, SeatRuntimeOff)
 	}
-	// A landing lane on a runtime its tool gate does not hold on is refused
-	// first, wherever it would run (A-b); then the lane guard (A-a).
-	if err := landingRuntimeRefusal(spec.Kind, settings.launchRuntime(spec.Kind)); err != nil {
-		return Record{}, err
-	}
 	if err := m.admitOnLane(spec); err != nil {
 		return Record{}, err
 	}
 	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
-	}
-	if spec.Kind == LandingKind && adapterName != "claude-headless" {
-		return Record{}, fmt.Errorf("the landing agent runs only on claude (its tool gate is a Claude hook); set %s=claude", LandingRuntimeKey)
 	}
 	if spec.Kind == LandingKind && model == LandingModelUnbound {
 		return Record{}, fmt.Errorf("no model is set for the landing agent here; set %s in metasystem.conf.local", LandingModelKey)
@@ -326,9 +318,6 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
 	}
 	defer releaseOutputs()
-	if record.Kind == LandingKind && record.Adapter != "claude-headless" {
-		return m.failCause(id, "command: "+refuseUngatedLanding(record, record.Adapter).Error(), nil)
-	}
 	command, err := adapter.Command(record, stateDir)
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)

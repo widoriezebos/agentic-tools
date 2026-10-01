@@ -6,33 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
-
-func TestBatchJoinAuthorComesFromApproverConfiguration(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("goal.human.wido=Wido Example <wido@example.com>\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	file := &goal.GoalFile{Approved: &goal.ApprovalRecord{By: "human:Wido"}}
-	approver, name, email, err := batchowner.ProductionBatchAuthor(root, file)
-	if err != nil || approver != "Wido" || name != "Wido Example" || email != "wido@example.com" {
-		t.Fatalf("identity=%q %q <%s> error=%v", approver, name, email, err)
-	}
-	if _, _, _, err := batchowner.ProductionBatchAuthor(root, &goal.GoalFile{Approved: &goal.ApprovalRecord{By: "human:Absent"}}); err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_AUTHOR_UNBOUND") {
-		t.Fatalf("unbound approver error=%v", err)
-	}
-}
 
 func TestLandingReceiptForwardsBothExpectedRevisions(t *testing.T) {
 	t.Parallel()
@@ -94,30 +75,5 @@ func TestLandingReceiptForwardsBothExpectedRevisions(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts")); !os.IsNotExist(err) {
 		t.Fatalf("refused run created receipt artifacts: %v", err)
-	}
-}
-
-func TestBatchMovedEffectsInventoryIsComplete(t *testing.T) {
-	page, err := os.ReadFile(filepath.Join("..", "..", "plans", "units-land-in-batches-under-one-proof-brief-b.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	report := validate.CheckMovedEffects(page, func(path string) bool {
-		_, err := os.Stat(filepath.Join("..", "..", "..", filepath.FromSlash(path)))
-		return err == nil
-	})
-	if report.Inventory != "present" || len(report.Problems) != 0 || len(report.Rows) != 14 {
-		t.Fatalf("moved effects inventory=%s problems=%v", report.Inventory, report.Problems)
-	}
-	text := string(page)
-	start, end := strings.Index(text, "| Effect | Old writer |"), strings.Index(text, "The origin/main validator")
-	if start < 0 || end <= start {
-		t.Fatal("authoritative moved-effects table is absent")
-	}
-	authoritative := text[start:end]
-	for _, effect := range []string{"Claim transfer", "Claim return", "Queue and stale-entry cleanup", "Proof lock", "Re-arm", "Proof reservation", "Receipt row", "Commit", "Push", "Fast-forward", "Goal Next edits", "Trunk-red record", "Worktree cleanup", "Reporting"} {
-		if count := strings.Count(authoritative, "| "+effect+" |"); count != 1 {
-			t.Fatalf("authoritative moved effect %q occurs %d times, want one row", effect, count)
-		}
 	}
 }

@@ -149,12 +149,6 @@ var coreSettings = []Setting{
 	// The lane steward's behaviour patterns (design
 	// steward-acts-on-behaviour-patterns, D4). Not proof inputs: they only
 	// decide what the steward reports.
-	{Key: "steward.pattern.stagnation", Default: "report", ProofInput: false,
-		Meaning: "off or report: whether the lane's steward reports a batch the lane does not move forward"},
-	{Key: "steward.pattern.stagnation.batch-hours", Default: "2", ProofInput: false,
-		Meaning: "hours of observed, not-held time an unfinished batch may take before the steward reports it"},
-	{Key: "steward.pattern.stagnation.repeat", Default: "5", ProofInput: false,
-		Meaning: "refused, unavailable or red attempts since the batch last moved forward before the steward reports it"},
 	{Key: "steward.pattern.churn", Default: "report", ProofInput: false,
 		Meaning: "off or report: whether the lane's steward fetches main into a private ref and reports one record written to it again and again"},
 	{Key: "steward.pattern.churn.commits", Default: "6", ProofInput: false,

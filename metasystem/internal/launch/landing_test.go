@@ -255,19 +255,8 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 	if settings.LandingRuntime != "codex" || settings.LandingModel != "gpt-6-sol" || settings.LandingEffort != "high" {
 		t.Fatalf("roster landing settings = %q %q %q", settings.LandingRuntime, settings.LandingModel, settings.LandingEffort)
 	}
-	// The tool gate is a Claude hook: a roster naming another runtime is
-	// refused at the start, plainly, and leaves no record.
 	checkout, module := nestedLane(t)
 	m, _ := laneManager(t, checkout, module)
-	m.Adapters["codex-exec"] = CodexExec{Binary: "/fixture/bin/codex"}
-	m.Settings = settings
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
-		!strings.Contains(err.Error(), "runs only on claude") {
-		t.Fatalf("a landing agent on codex = %v; want refused", err)
-	}
-	if records, _ := m.Store.List(); len(records) != 0 {
-		t.Fatalf("a refused landing start left records: %+v", records)
-	}
 
 	// An installation whose runtimes hold no claude still resolves every
 	// other setting; the landing agent has no model there and is refused.

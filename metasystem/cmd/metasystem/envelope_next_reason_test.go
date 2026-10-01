@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -74,7 +73,7 @@ func TestLandingRunJSONWithAnEmptyQueueCarriesTheReason(t *testing.T) {
 func TestLandingRunJSONWhileRunningCarriesTheReason(t *testing.T) {
 	t.Parallel()
 	bed, _ := landingRunBed(t)
-	bed.records = []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	bed.wake = []string{"queued"}
 	if code, stdout, stderr := bed.run(t, "landing", "run"); code != 0 {
 		t.Fatalf("landing run = %d %q %q", code, stdout, stderr)
 	}
@@ -85,7 +84,7 @@ func TestLandingRunJSONWhileRunningCarriesTheReason(t *testing.T) {
 			Reason string
 		}
 	}
-	if code != 0 || json.Unmarshal([]byte(stdout), &result) != nil || result.Next == nil || len(result.Next.Argv) != 0 || result.Next.Reason != "nothing to do; it is landing b-one" {
-		t.Fatalf("landing run --json again = %d %q %q; want the reason naming its batch", code, stdout, stderr)
+	if code != 0 || json.Unmarshal([]byte(stdout), &result) != nil || result.Next == nil || len(result.Next.Argv) != 0 || result.Next.Reason != "nothing to do; it is at work" {
+		t.Fatalf("landing run --json again = %d %q %q; want the reason", code, stdout, stderr)
 	}
 }

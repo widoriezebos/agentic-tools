@@ -92,7 +92,6 @@ func defaults(name string, thresholds ...string) map[string]string {
 // Registry is every pattern v1 runs, in the order it runs them.
 func Registry() []Pattern {
 	return []Pattern{
-		{Name: Stagnation, Defaults: defaults(Stagnation, "batch-hours", "repeat"), Detect: DetectStagnation},
 		{Name: Churn, Defaults: defaults(Churn, "commits", "window-min"), Detect: DetectChurn},
 	}
 }

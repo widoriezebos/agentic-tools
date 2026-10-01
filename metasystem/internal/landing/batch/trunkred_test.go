@@ -11,15 +11,15 @@ func TestTrunkRedIdentity(t *testing.T) {
 	}
 	skipped := Failure{Report: "report", Classname: "Class", Name: "skip", Status: "skipped"}
 	passed := Failure{Report: "report", Classname: "Class", Name: "pass", Status: "passed"}
-	leftRed := TrunkRed{AttemptID: "attempt-a", BaseTree: "tree-a", Groups: []RedGroup{{ID: "group", Failures: []Failure{failed("Class", "two", "reason 1"), failed("Class", "one", "reason 2")}}}}
-	rightRed := TrunkRed{AttemptID: "attempt-b", BaseTree: "tree-b", Groups: []RedGroup{{ID: "group", Failures: []Failure{failed("Class", "one", "changed"), failed("Class", "two", "changed")}}}}
+	leftRed := RedGroup{ID: "group", Failures: []Failure{failed("Class", "two", "reason 1"), failed("Class", "one", "reason 2")}}
+	rightRed := RedGroup{ID: "group", Failures: []Failure{failed("Class", "one", "changed"), failed("Class", "two", "changed")}}
 	tests := []struct {
 		name        string
 		left, right RedGroup
 		same        bool
 		exact       string
 	}{
-		{name: "same failing names on another tree and attempt", left: leftRed.Groups[0], right: rightRed.Groups[0], same: true},
+		{name: "same failing names on another tree and attempt", left: leftRed, right: rightRed, same: true},
 		{name: "two groups", left: RedGroup{ID: "one", Failures: []Failure{failed("Class", "test", "")}}, right: RedGroup{ID: "two", Failures: []Failure{failed("Class", "test", "")}}, same: false},
 		{name: "same name different classname", left: RedGroup{ID: "group", Failures: []Failure{failed("One", "test", "")}}, right: RedGroup{ID: "group", Failures: []Failure{failed("Two", "test", "")}}, same: false},
 		{name: "changed failure reason", left: RedGroup{ID: "group", Failures: []Failure{failed("Class", "test", "one")}}, right: RedGroup{ID: "group", Failures: []Failure{failed("Class", "test", "two")}}, same: true},

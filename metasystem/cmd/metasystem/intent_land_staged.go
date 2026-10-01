@@ -123,24 +123,13 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if request.GoalSet {
 		targets = append(targets, intentTarget{Kind: "goal", ID: request.Goal})
 	}
-	// With a landing lane on this host the change joins it (U11b); the hand
-	// path stays for a checkout with no lane, for --local (it publishes
-	// nothing) and for a recertified chain, whose proof binds a frozen origin
-	// target a batch would move.
+	// With a landing lane on this computer the change does not land by hand
+	// beside it; --local publishes nothing and a recertified chain binds a
+	// frozen origin target, so both stay the seat's own.
 	if !inv.input.switched("local") && request.Recertification == "" {
 		inv.layout = layout
-		landingRoot, configured, refused := inv.landingBatchRoot(targets)
-		if refused != nil {
+		if refused := inv.laneRegistered(targets); refused != nil {
 			return inv.render(*refused)
-		}
-		if configured {
-			result := inv.landChange(request, owners, landingRoot, targets, run)
-			if inv.input.switched("json") {
-				if data, ok := result.Data.(map[string]any); ok {
-					data["output"] = run.output()
-				}
-			}
-			return inv.render(result)
 		}
 	}
 	var status int
@@ -221,4 +210,20 @@ func landStagedLocally(request landpath.LandRequest, details, told io.Writer) in
 		DirectFix: request.DirectFix, RevertOf: request.RevertOf, Goal: request.Goal, GoalSet: request.GoalSet,
 		RootJob: request.RootJob, TestReceipt: request.TestReceipt, Recertification: request.Recertification,
 		MessageFile: message, OwnerLineage: request.OwnerLineage, AllowNewPlan: request.AllowNewPlan, Stop: request.Stop}, details, told)
+}
+
+func (owners *intentDeliveryOwners) runLandPath(path landpath.Owners, request landpath.LandRequest, stdout, stderr io.Writer) int {
+	if owners.landPath != nil {
+		return owners.landPath(path, request, stdout, stderr)
+	}
+	return landpath.Land(path, request, stdout, stderr)
+}
+
+// oneLine is text's first line; the rest is the details'.
+func oneLine(text string) string {
+	text = strings.TrimSpace(text)
+	if cut := strings.IndexByte(text, '\n'); cut >= 0 {
+		text = strings.TrimSpace(text[:cut])
+	}
+	return text
 }

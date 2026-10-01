@@ -93,30 +93,6 @@ func TestTrunkRedNamerReadsOpenEntriesAndTheCadence(t *testing.T) {
 	}
 }
 
-// A landing batch that has not landed or dissolved names its admissions,
-// proof, sources, trunk-red hold and prefix receipts; a landed one is
-// history; an unreadable record is an error.
-func TestLandingBatchNamerReadsUnlandedBatches(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	batches := filepath.Join(root, "artifacts", "agents", "landing-batches")
-	writeRecord(t, filepath.Join(batches, "b1.json"), map[string]any{"state": "proving",
-		"units":    []any{map[string]any{"admission": map[string]any{"attemptId": attemptA}}},
-		"proof":    map[string]any{"attemptId": attemptB, "sources": map[string]any{"g": map[string]any{"kind": "reused", "attempt": attemptC}}},
-		"receipts": map[string]any{"x": map[string]any{"AttemptID": attemptD}}})
-	writeRecord(t, filepath.Join(batches, "b2.json"), map[string]any{"state": "landed", "proof": map[string]any{"attemptId": "proof-e-0000000000000005"}})
-	named := namedSet(t, landingBatchNamer{Roots: []string{root}})
-	if !slices.Equal(named, []string{attemptA, attemptB, attemptC, attemptD}) {
-		t.Fatalf("named = %v", named)
-	}
-	if err := os.WriteFile(filepath.Join(batches, "b3.json"), []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := (landingBatchNamer{Roots: []string{root}}).Named(context.Background(), attemptsNow); err == nil {
-		t.Fatal("an unreadable batch record is an error")
-	}
-}
-
 // A receipt names its attempts and its result's reuse sources while it is
 // younger than the window, or while its hand landing has not landed.
 func TestLandingReceiptNamerReadsFreshAndPendingReceipts(t *testing.T) {
@@ -222,13 +198,9 @@ func TestAttemptKindsReadTheGoalRecordsOwnFields(t *testing.T) {
 	}
 }
 
-// N12: an unresolvable landing lane holds the landing batches' kind, so no
-// payload a lane batch may name is released.
-func TestLandingBatchNamerHoldsOnAnUnresolvableLane(t *testing.T) {
+// No lane configured reads no lane.
+func TestLandingLaneRootsReadNoLaneUnconfigured(t *testing.T) {
 	t.Parallel()
-	if _, err := (landingBatchNamer{Roots: []string{t.TempDir()}, LaneErr: errors.New("batch root unreadable")}).Named(context.Background(), attemptsNow); err == nil {
-		t.Fatal("an unresolvable lane is an error")
-	}
 	installation := t.TempDir()
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o600); err != nil {
 		t.Fatal(err)

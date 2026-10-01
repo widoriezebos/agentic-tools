@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -34,11 +33,10 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return laneTestNow }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return bed.home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return laneTestNow },
-		nonce: func() (string, error) { return "0011223344556677", nil },
-		hold:  func(string, launch.Record) error { return nil }}
+		nonce: func() (string, error) { return "0011223344556677", nil }}
 	bed.keeper = func(home, root string) lane.AgentKeeper {
 		keeper := newLandingAgentKeeper(root, home, agent)
-		keeper.Sources.Records = func(string) ([]batch.Record, error) { return bed.records, nil }
+		keeper.Sources.Reasons = func(string) ([]string, error) { return bed.wake, nil }
 		return keeper
 	}
 	// landing run runs its step in the lane checkout; from anywhere else
@@ -62,7 +60,7 @@ func landingLaunches(t *testing.T, store launch.Store) []launch.Record {
 func TestLandingRunStartsTheAgentOnceForQueuedWork(t *testing.T) {
 	t.Parallel()
 	bed, store := landingRunBed(t)
-	bed.records = []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	bed.wake = []string{"queued"}
 	code, stdout, stderr := bed.run(t, "landing", "run")
 	launches := landingLaunches(t, store)
 	if code != 0 || len(launches) != 1 || launches[0].Kind != launch.LandingKind {
@@ -83,8 +81,8 @@ func TestLandingRunStartsTheAgentOnceForQueuedWork(t *testing.T) {
 		t.Fatalf("a repeat started a second landing agent: %d launches", len(launches))
 	}
 	code, stdout, _ = bed.run(t, "landing", "run")
-	if code != 0 || !strings.Contains(stdout, "nothing to do; it is landing b-one") {
-		t.Fatalf("landing run while alive = %d %q; want nothing to do, naming its batch", code, stdout)
+	if code != 0 || !strings.Contains(stdout, "nothing to do; it is at work") {
+		t.Fatalf("landing run while alive = %d %q; want nothing to do", code, stdout)
 	}
 }
 
@@ -106,7 +104,7 @@ func TestLandingRunWithAnEmptyQueueHasNothingToDo(t *testing.T) {
 func TestLandingRunOnAPausedLaneIsRefused(t *testing.T) {
 	t.Parallel()
 	bed, store := landingRunBed(t)
-	bed.records = []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	bed.wake = []string{"queued"}
 	if code, _, stderr := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 {
 		t.Fatalf("stop = %d %q", code, stderr)
 	}
@@ -124,7 +122,7 @@ func TestLandingRunOnAPausedLaneIsRefused(t *testing.T) {
 func TestLandingRunAtTheHelmIsRefused(t *testing.T) {
 	t.Parallel()
 	bed, store := landingRunBed(t)
-	bed.records = []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	bed.wake = []string{"queued"}
 	bed.helmed = true
 	code, stdout, stderr := bed.run(t, "landing", "run")
 	if code == 0 || !strings.Contains(stderr, "at the helm") || !strings.Contains(oneSpaced(stderr), "metasystem helm return --repo "+bed.landingA) {

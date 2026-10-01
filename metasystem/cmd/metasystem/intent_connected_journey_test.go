@@ -10,14 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -35,7 +31,6 @@ type journeyBed struct {
 	finish       func(install, id, commit string)
 	finishWith   func(install, id, commit string, findings []any)
 	finishRound  func(install, root, id, commit string, round int, findings []any)
-	landingRoot  string
 	baseline     string
 }
 
@@ -51,8 +46,8 @@ func newJourneyBed(t *testing.T) *journeyBed {
 	// from, so the critic's own checkout closes its own chain.
 	// The same native goal bytes the bed projects become a physical
 	// accepted goal at the baseline: the backlog root syncs with origin, the
-	// goal configuration names this machine and the approver, and the batch
-	// owners find a module and a tiny committed testing contract.
+	// goal configuration names this machine and the approver, and a module
+	// and a tiny committed testing contract are found.
 	backlogPath := filepath.Join(c.root(), "plans", "goals", "backlog.md")
 	backlogBytes, err := os.ReadFile(backlogPath)
 	if err != nil {
@@ -99,8 +94,6 @@ func newJourneyBed(t *testing.T) *journeyBed {
 	if _, err := lease.AnnounceWithPair(c.root(), "connection-fixture", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "fixture", "fake", "m1"); err != nil {
 		t.Fatal(err)
 	}
-	landingRoot := filepath.Join(t.TempDir(), "landing")
-	connectionGit(t, filepath.Dir(landingRoot), "clone", "-q", c.origin, landingRoot)
 	do := func(args ...string) (int, intentResult) {
 		t.Helper()
 		command, rest, ok := resolveIntentArgv(args)
@@ -168,27 +161,23 @@ func newJourneyBed(t *testing.T) *journeyBed {
 			t.Fatalf("register advance of %s = %q, %v", id, outcome, err)
 		}
 	}
-	return &journeyBed{c: c, owners: owners, b: b, do: do, dispositions: dispositions, job: job, finish: finish, finishWith: finishWith, finishRound: finishRound, landingRoot: landingRoot, baseline: baseline}
+	return &journeyBed{c: c, owners: owners, b: b, do: do, dispositions: dispositions, job: job, finish: finish, finishWith: finishWith, finishRound: finishRound, baseline: baseline}
 }
 
 // TestIntentConnectedJourneyRealClose (VMI-10) drives one goal's units
 // through the public surface on one physical repository with a bare origin:
 // build A, review unit A, real close, collection; build B the same way; fold
-// A and review it again while B survives, and review the rewritten B commit;
-// then public land admits exactly those subjects into the actual batch join
+// A and review it again while B survives, and review the rewritten B commit,
 // on the same physical accepted goal. Each committed critic is closed by
 // the real delegate lifecycle's close over the real owners, after the
 // actual register advance of a subject-bound fake model return; nothing here
 // stamps a closure. Model launches, proof, the fast gate, the claim and the
 // commit token stay the connection bed's declared fixture effects; the lease
-// is realCloseOwner's; the batch join's goal binding,
-// claim handover, admission proof, plan and owner start are declared fixture
-// effects. Asynchronous sealing, proof and push are proved separately
-// (TestBatchLandingLifecycleEndToEnd). It sets METASYSTEM_BIN and the
-// connection bed's Git configuration environment, so it runs serially.
+// is realCloseOwner's. It sets METASYSTEM_BIN and the connection bed's Git
+// configuration environment, so it runs serially.
 func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	j := newJourneyBed(t)
-	c, owners, b, do, dispositions, job, finish, landingRoot, baseline := j.c, j.owners, j.b, j.do, j.dispositions, j.job, j.finish, j.landingRoot, j.baseline
+	c, owners, b, do, dispositions, job, finish := j.c, j.owners, j.b, j.do, j.dispositions, j.job, j.finish
 	_ = owners
 	// reviewed takes run through review unit, the fake model's completion,
 	// the printed close run by the real owner, and the collecting review.
@@ -353,125 +342,4 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if len(c.delegates) != 4 || criticB == criticB2 {
 		t.Fatalf("exactly four committed critics: %v", c.delegates)
 	}
-
-	// Public land of exactly these subjects into the actual batch join. The
-	// binding, handover, admission proof, plan and owner start are declared
-	// fixture effects; member reading, transport, assembly, the protected
-	// test gate and the batch store are production code.
-	publishedTip := connectionGit(t, c.root(), "--git-dir", c.origin, "rev-parse", "refs/heads/goal/"+c.id)
-	landOwners, counts := journeyLandOwners(t, j)
-	projected := func(root string, at time.Time) *goal.GoalFile {
-		endpoint, err := branch.MainEndpoint(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		projection, err := goal.Project(endpoint, true, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return projection.Tree.Live[c.id]
-	}
-	effects := func() [4]int { return [4]int{len(b.calls), len(c.delegates), c.commits, c.commitReads} }
-	before := effects()
-	land := func() intentResult {
-		t.Helper()
-		command, _ := findIntentCommand("work land")
-		var stdout, stderr bytes.Buffer
-		runIntentIn(command, []string{c.id, "--repo", c.root(), "--json"}, &stdout, &stderr, c.root(), landOwners)
-		var result intentResult
-		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-			t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
-		}
-		return result
-	}
-	result := land()
-	data, _ := result.Data.(map[string]any)
-	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || counts.handovers != 1 || counts.admissions != 1 {
-		t.Fatalf("public land = %+v; counts %+v", result, *counts)
-	}
-	id, _ := data["batchId"].(string)
-	record, err := batch.NewStore(landingRoot, identity.KernelProber{}).Load(id)
-	if err != nil || len(record.Units) != 1 {
-		t.Fatalf("stored batch %s = %+v, %v", id, record, err)
-	}
-	member := record.Units[0]
-	if member.State != batch.UnitJoined || member.Admission == nil || member.Admission.Status != "verified" || member.Admission.AttemptID != "connection-admission" ||
-		!member.GoalLast || member.BranchTip != publishedTip || member.Approver != "Wido" || len(member.Builds) != 2 {
-		t.Fatalf("the admitted member does not bind this goal branch: %+v admission %+v", member, member.Admission)
-	}
-	for index, want := range []struct{ commit, critic string }{{commitA2, criticA2}, {currentB, criticB2}} {
-		build := member.Builds[index]
-		if build.Commit != want.commit || build.Attestation.Source.Kind != "critic-root" || build.Attestation.Source.RootJob != want.critic {
-			t.Fatalf("member build %d = %s from %+v; want %s read by closed %s", index, build.Commit, build.Attestation.Source, want.commit, want.critic)
-		}
-		if closed := job(c.worktree, want.critic); closed["chainClosed"] != true {
-			t.Fatalf("%s's chain is not closed", want.critic)
-		}
-	}
-	again := land()
-	if again.Outcome != intentInProgress || again.Data.(map[string]any)["joinedNow"] != false || again.Data.(map[string]any)["batchId"] != id ||
-		counts.handovers != 1 || counts.admissions != 1 || effects() != before {
-		t.Fatalf("a repeat reads the stored membership and never joins again: %+v; effects %v -> %v", again, before, effects())
-	}
-	if file := projected(c.root(), time.Now()); file == nil || file.State == goal.StateDone {
-		t.Fatalf("landing admission must not conclude the goal: %+v", file)
-	}
-	if tip := connectionGit(t, c.root(), "--git-dir", c.origin, "rev-parse", "refs/heads/main"); tip != baseline {
-		t.Fatalf("origin main moved to %s; admission never seals or pushes", tip)
-	}
-}
-
-// journeyLandCounts are the declared fixture effects of a public land.
-type journeyLandCounts struct{ handovers, admissions int }
-
-// journeyLandOwners are the journey bed's owners for public land into the
-// actual batch join at its landing root. The binding, handover, admission
-// proof, plan and owner start are declared fixture effects; member reading,
-// transport, assembly, the protected test gate and the batch store are
-// production code.
-func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandCounts) {
-	c, owners := j.c, j.owners
-	counts := &journeyLandCounts{}
-	deps := batchowner.ProductionBatchJoinDependencies()
-	deps.CostForecast = nil
-	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { counts.handovers++; return nil }
-	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
-		counts.admissions++
-		if unit.State != batch.UnitJoining || unit.Admission == nil || unit.Admission.Status != "handed-over" {
-			t.Fatalf("admission ran before handover: %+v", unit)
-		}
-		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "connection-admission"}, nil
-	}
-	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
-	}
-	projected := func(root string, at time.Time) *goal.GoalFile {
-		endpoint, err := branch.MainEndpoint(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		projection, err := goal.Project(endpoint, true, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return projection.Tree.Live[c.id]
-	}
-	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
-		file := projected(root, at)
-		if file == nil || file.Claimed == nil {
-			t.Fatalf("the physical accepted goal %s is not claimed", goalID)
-		}
-		binding := dispatchcore.GoalBinding{GoalID: goalID, Revision: file.Revision, Machine: "mac-cli", Lineage: "m1", File: file}
-		binding.Capability.ClaimEpoch = 1
-		return binding, nil
-	}
-	landOwners := owners
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
-	delivery.branchRead, delivery.process = owners.delivery.branchRead, owners.delivery.process
-	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return j.landingRoot, true, nil }
-	delivery.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		return batchowner.ExecuteBatchJoin(request, deps)
-	}
-	landOwners.delivery = delivery
-	return landOwners, counts
 }

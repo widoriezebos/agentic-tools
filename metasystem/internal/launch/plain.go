@@ -17,9 +17,6 @@ type PlainBrief struct {
 }
 
 func (PlainExec) Command(record Record, stateDir string) (Command, error) {
-	if err := refuseUngatedLanding(record, "plain-exec"); err != nil {
-		return Command{}, err
-	}
 	data, err := os.ReadFile(readString(record.AdapterData, "brief"))
 	if err != nil {
 		return Command{}, err

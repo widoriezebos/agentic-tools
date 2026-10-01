@@ -9,7 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
@@ -172,16 +171,14 @@ func (inv *intentInvocation) intentBranchTip(goalID string) string {
 }
 
 // landed reports that a land result is a confirmed publication of the goal's
-// work: pushed by hand, or recorded landed by the landing lane.
+// work: pushed by hand.
 func landed(result intentResult) bool {
 	data, ok := result.Data.(map[string]any)
 	if !ok {
 		return false
 	}
-	if record, ok := data["landing"].(intentLanded); ok && record.Landing != "" {
-		return true
-	}
-	return data["unitState"] == batch.UnitLanded
+	record, ok := data["landing"].(intentLanded)
+	return ok && record.Landing != ""
 }
 
 // noteLanded writes the holder's landed line once a landing's publication is

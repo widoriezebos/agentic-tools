@@ -2,13 +2,11 @@ package main
 
 import (
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -16,19 +14,18 @@ import (
 )
 
 // statusBoard is what status reads besides the checkout's processes: the
-// host board, the landing lane, its unfinished batches and the peer message
-// counts, read once; the status view draws them.
+// host board, the landing lane and the peer message counts, read once; the
+// status view draws them.
 type statusBoard struct {
-	now     time.Time
-	view    board.View
-	lane    *lane.View
-	batches []batch.Record
-	peers   []string
+	now   time.Time
+	view  board.View
+	lane  *lane.View
+	peers []string
 }
 
 func (inv *intentInvocation) readStatusBoard() statusBoard {
 	now := inv.boardNow()
-	return statusBoard{now: now, view: inv.hostBoardView(now), lane: inv.statusLane(), batches: inv.unfinishedBatches(),
+	return statusBoard{now: now, view: inv.hostBoardView(now), lane: inv.statusLane(),
 		peers: inv.peerStatusLines(inv.layout.GitRoot)}
 }
 
@@ -93,11 +90,7 @@ func (inv *intentInvocation) statusView(checkout string, report stoptransition.R
 		if len(helpers) > 0 {
 			helperFact = textui.Count(len(helpers), "helper", "helpers")
 		}
-		changeFact := ""
-		if changes := reading.changesWaiting(); changes > 0 {
-			changeFact = textui.Count(changes, "change waiting to land", "changes waiting to land")
-		}
-		page.Headline(state, helperFact, textui.Count(len(work), "job", "jobs"), changeFact)
+		page.Headline(state, helperFact, textui.Count(len(work), "job", "jobs"))
 		if page.Verbose() {
 			page.Facts(textui.KV{Key: "checkout", Value: []textui.Span{textui.Plain(env.Path(checkout))}})
 		}
@@ -222,23 +215,10 @@ func seatState(seat board.SeatView) textui.State {
 	return state
 }
 
-// changesWaiting counts the changes in the lane's unfinished batches.
-func (b statusBoard) changesWaiting() int {
-	count, seen := 0, map[string]bool{}
-	for _, record := range b.batches {
-		seen[record.BatchID] = true
-		count += len(record.Units)
-	}
-	if b.lane != nil && b.lane.Batch != nil && !seen[b.lane.Batch.ID] {
-		count += len(b.lane.Batch.Members)
-	}
-	return count
-}
-
 // drawLane is the landing lane: its owner when it does not run (or always
-// with --verbose), and one row per unfinished batch saying why it waits.
+// with --verbose).
 func (b statusBoard) drawLane(page *textui.Page, env textui.Env) {
-	if b.lane == nil && len(b.batches) == 0 {
+	if b.lane == nil {
 		return
 	}
 	aside := ""
@@ -246,7 +226,7 @@ func (b statusBoard) drawLane(page *textui.Page, env textui.Env) {
 		aside = env.Path(*b.lane.Root)
 	}
 	table := page.Section("Landing lane", aside).Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
-	if b.lane != nil {
+	{
 		owner := b.lane.Owner
 		switch {
 		case (owner.State != lane.OwnerRunning && owner.State != lane.OwnerIdle) || strings.Contains(b.lane.Summary, "unreadable"):
@@ -263,65 +243,4 @@ func (b statusBoard) drawLane(page *textui.Page, env textui.Env) {
 			table.Row(textui.Marked(textui.Running, "owner"), textui.Plain(detail))
 		}
 	}
-	members := map[string][]lane.Member{}
-	current := ""
-	if b.lane != nil && b.lane.Batch != nil {
-		current = b.lane.Batch.ID
-		members[current] = b.lane.Batch.Members
-	}
-	rows := append([]batch.Record{}, b.batches...)
-	if current != "" && !containsBatch(rows, current) {
-		rows = append(rows, batch.Record{BatchID: current, State: b.lane.Batch.State})
-	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].BatchID == current && rows[j].BatchID != current })
-	for _, record := range rows {
-		text := batch.WaitLine(record, b.now, env.Zone)
-		if text == "" {
-			text = "batch " + record.BatchID + " · " + batchChanges(record, members[record.BatchID])
-		}
-		word := record.State
-		if record.BatchID == current {
-			word = b.lane.Batch.State
-		}
-		table.Row(textui.Marked(batchState(word), word), textui.Plain(text))
-	}
-}
-
-func containsBatch(records []batch.Record, id string) bool {
-	for _, record := range records {
-		if record.BatchID == id {
-			return true
-		}
-	}
-	return false
-}
-
-// batchChanges is a batch's changes and where they came from: 1 change
-// (533209e6d from m1e).
-func batchChanges(record batch.Record, members []lane.Member) string {
-	var named []string
-	for _, member := range members {
-		named = append(named, member.Goal+" from "+member.Seat)
-	}
-	count := len(members)
-	if len(members) == 0 {
-		count = len(record.Units)
-		for _, unit := range record.Units {
-			named = append(named, unit.GoalID)
-		}
-	}
-	text := textui.Count(count, "change", "changes")
-	if len(named) > 0 {
-		text += " (" + strings.Join(named, ", ") + ")"
-	}
-	return text
-}
-
-// batchState is a batch's word as a state: diagnosing needs a person, the
-// rest are underway.
-func batchState(word string) textui.State {
-	if word == batch.StateDiagnosing {
-		return textui.Alert
-	}
-	return textui.Running
 }

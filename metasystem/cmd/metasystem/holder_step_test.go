@@ -2,7 +2,7 @@ package main
 
 // The holder's step on its Stop path (g1-s70 D3, SOL-S70-02): the Stop takes
 // the step itself through the public command under the session's identity,
-// over the bed's own ledger; nothing is typed. A due landing joins the batch,
+// over the bed's own ledger; nothing is typed. A due landing lands,
 // a refused one is shown at every Stop while it stands, and a send-back's
 // revision is started once: its answer on the goal ends it.
 
@@ -53,10 +53,10 @@ func TestADueGoalIsAdmittedAtTheHoldersStopWithNoCommandTyped(t *testing.T) {
 	b, owners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) })
 	b.lineage = "m1"
 	verdict := holderStop(t, b.intentBed, b.deliveryOwners(), holderDue)
-	if len(owners.joins) != 1 || owners.joins[0].GoalID != bedGoal {
-		t.Fatalf("the due goal was not admitted to the batch on the Stop: %+v\n%s", owners.joins, verdict.Display)
+	if len(owners.pushes) != 1 {
+		t.Fatalf("the due goal was not admitted to the batch on the Stop: %+v\n%s", owners.pushes, verdict.Display)
 	}
-	if !strings.Contains(verdict.Display, "LANDED "+bedGoal+": joined batch b-1") || strings.Contains(verdict.Display, "metasystem work land") {
+	if !strings.Contains(verdict.Display, "LANDED "+bedGoal+": ") || strings.Contains(verdict.Display, "metasystem work land") {
 		t.Fatalf("the Stop does not say what was done: %s", verdict.Display)
 	}
 }
@@ -80,8 +80,8 @@ func TestARefusedLandingIsShownAtEveryStopAndTheHumansVerb(t *testing.T) {
 			t.Fatalf("stop %d: the step is advised rather than taken: %s", stop, verdict.Display)
 		}
 	}
-	if len(owners.joins) != 0 {
-		t.Fatalf("a held goal joined: %+v", owners.joins)
+	if len(owners.pushes) != 0 {
+		t.Fatalf("a held goal landed: %+v", owners.pushes)
 	}
 }
 
@@ -117,10 +117,10 @@ func TestADueGoalIsAdmittedAtAStopWithOpenWorkAndTheOpenWorkStillReported(t *tes
 	b, owners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) })
 	b.lineage = "m1"
 	verdict := holderStopOver(t, b.intentBed, b.deliveryOwners(), holderDue, openWorkScan)
-	if len(owners.joins) != 1 || owners.joins[0].GoalID != bedGoal {
-		t.Fatalf("the due goal was not admitted on a Stop with open work: %+v\n%s", owners.joins, verdict.Display)
+	if len(owners.pushes) != 1 {
+		t.Fatalf("the due goal was not admitted on a Stop with open work: %+v\n%s", owners.pushes, verdict.Display)
 	}
-	if !strings.Contains(verdict.Display, "LANDED "+bedGoal+": joined batch b-1") || !strings.Contains(verdict.Display, "OPEN WORK (1)") || !strings.Contains(verdict.Display, "plans/other.md: 1 open item") {
+	if !strings.Contains(verdict.Display, "LANDED "+bedGoal+": ") || !strings.Contains(verdict.Display, "OPEN WORK (1)") || !strings.Contains(verdict.Display, "plans/other.md: 1 open item") {
 		t.Fatalf("the Stop does not say both the landing and the open work: %s", verdict.Display)
 	}
 	if verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
@@ -133,10 +133,10 @@ func TestADueGoalIsAdmittedAtAStopWhileTheCheckoutIsBusy(t *testing.T) {
 	b, owners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) })
 	b.lineage = "m1"
 	verdict := holderStopOver(t, b.intentBed, b.deliveryOwners(), holderDue, busyScan)
-	if len(owners.joins) != 1 || owners.joins[0].GoalID != bedGoal {
-		t.Fatalf("the due goal was not admitted on a busy Stop: %+v\n%s", owners.joins, verdict.Display)
+	if len(owners.pushes) != 1 {
+		t.Fatalf("the due goal was not admitted on a busy Stop: %+v\n%s", owners.pushes, verdict.Display)
 	}
-	if verdict.ShouldBlock || !strings.Contains(verdict.Display, "LANDED "+bedGoal+": joined batch b-1") || !strings.Contains(verdict.Display, "STILL WORKING: a delegate job runs") {
+	if verdict.ShouldBlock || !strings.Contains(verdict.Display, "LANDED "+bedGoal+": ") || !strings.Contains(verdict.Display, "STILL WORKING: a delegate job runs") {
 		t.Fatalf("the busy Stop blocks or does not say both: %+v", verdict)
 	}
 }

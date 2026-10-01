@@ -9,14 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -604,37 +601,6 @@ func (inv *intentInvocation) boardNow() time.Time {
 		return inv.owners.delivery.now()
 	}
 	return time.Now().UTC()
-}
-
-// unfinishedBatches are the configured lane's batches that have not
-// finished, oldest first; none when no lane is configured.
-func (inv *intentInvocation) unfinishedBatches() []batch.Record {
-	batchRoot := productionIntentBatchRoot
-	if inv.owners.delivery != nil && inv.owners.delivery.batchRoot != nil {
-		batchRoot = inv.owners.delivery.batchRoot
-	}
-	landingRoot, configured, err := batchRoot(inv.layout.InstallationRoot, inv.boardNow())
-	if err != nil || !configured {
-		return nil
-	}
-	paths, err := filepath.Glob(filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", "*.json"))
-	if err != nil {
-		return nil
-	}
-	sort.Strings(paths)
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	var records []batch.Record
-	for _, path := range paths {
-		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
-		if loadErr != nil {
-			continue
-		}
-		switch record.State {
-		case batch.StateOpen, batch.StateSealed, batch.StateProving, batch.StateDiagnosing, batch.StateLanding:
-			records = append(records, record)
-		}
-	}
-	return records
 }
 
 // runTestBaseline is test baseline: --gate records the trusted refactor

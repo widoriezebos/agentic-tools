@@ -24,15 +24,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -159,20 +156,14 @@ func intentDeliveryCommands() []intentCommand {
 				"landing delivers it from this checkout's main. Repeating the request rejoins the recorded exception; a changed candidate",
 				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
 				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
-				"With a landing lane on this computer (metasystem landing status shows it), the goal branch (or the certified chain) joins the lane's batch, which proves and pushes it.",
-				"Without a lane, the read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
-				"With a lane, a selection holding a unit read from a reader record is refused with the critic read that admits it",
-				"(metasystem work review --commit SHA --goal G); it lands from this checkout only when G is the fix goal of an open trunk red on main",
-				"(metasystem incident list names it; metasystem incident claim E --goal G).",
+				"The read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
+				"While this computer has a landing lane (metasystem landing status shows it), work land refuses: the lane's hand-in isn't built yet,",
+				"and metasystem landing unset lets the seat land its own work.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
 				"--message lands a hand-made change instead: the named paths (or the staged set) are staged and committed through the commit",
-				"boundary with the landing's declarations. With a landing lane the commit is pinned and joins the lane as a change member",
-				"(change:<first 12 of the commit>): it rides on the proof of the goal members it joins, a batch of changes alone is proved on",
-				"the lane's account, and it lands with a Landing-Change trailer; the same command reads its membership until it lands, and",
-				"an ejected change is given back: its commit is undone with its changes kept, to fix and land again.",
-				"Without a lane, and with --local or --recertification, it is rebased onto origin,",
-				"proved against retained delivery proof, and pushed from this checkout.",
+				"boundary with the landing's declarations, rebased onto origin, proved against retained delivery proof, and pushed from this checkout.",
+				"While this computer has a landing lane it is refused the same way, except with --local or --recertification.",
 			},
 			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
@@ -257,25 +248,20 @@ type intentDeliveryOwners struct {
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
 	sweep         func(root, goalID, landing string) error
-	// batchUnit finds the batch member a land request names; branchTip is the
-	// live goal branch, or empty once the branch is gone.
-	batchUnit   func(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
-	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
-	batchRoot   func(root string, now time.Time) (string, bool, error)
+	publishRead   func(root, goalID, unit string) (branch.PublishReadResult, error)
+	// laneRoot reports whether this computer has a landing lane registered
+	// and, when it does, its checkout.
+	laneRoot func(root string, now time.Time) (string, bool, error)
 	// boardView reads the host board for a one-shot view of the checkout,
 	// checking its cards against the goal ledger at ledgerRoot (the state
 	// root); nil reads the host this command runs on.
 	boardView func(ledgerRoot string, now time.Time) board.View
-	batchJoin func(batchowner.BatchJoinRequest) (batch.Record, error)
 	now       func() time.Time
 	// landingGate evaluates the landing gate for a goal at a branch tip
 	// against a fresh ledger (g1-s70 D2); nil selects the production gate.
 	landingGate func(inv *intentInvocation, goalID, tip string) (string, error)
 	// branchTip reads a goal branch's tip at origin; nil reads origin.
 	branchTip func(root, goalID string) (string, error)
-	// redOnMain names the open red-on-main entry whose fix goal is goalID,
-	// or "" when the goal fixes none; nil reads the synced ledger.
-	redOnMain func(inv *intentInvocation, goalID string) (string, error)
 	// recordLanded writes the holder's landed line after a confirmed
 	// publication; nil selects the ledger's own act.
 	recordLanded func(inv *intentInvocation, goalID string) error
@@ -290,18 +276,6 @@ type intentDeliveryOwners struct {
 	// landPath runs one landing through the landing path; nil runs
 	// landpath.Land.
 	landPath func(landpath.Owners, landpath.LandRequest, io.Writer, io.Writer) int
-	// changeHeld runs held over a change's one commit on the seat; nil runs
-	// the landing path's held owner (U11b).
-	changeHeld func(root, base, commit, branch string) (string, int)
-	// changeJoin joins a change the seat committed to the landing lane; nil
-	// runs the production join.
-	changeJoin func(batchowner.ChangeJoinRequest) (batch.Record, error)
-	// changeUnit reads a change's membership in the lane's batches; nil reads
-	// the lane checkout's store, and any unreadable record is an error.
-	changeUnit func(landingRoot, id string) (batch.Record, batch.Unit, bool, error)
-	// changeAdvance moves the seat's branch onto origin after its change
-	// landed; nil fetches and advances.
-	changeAdvance func(root, branch string) error
 }
 
 // intentBranchState is the goal branch as the landing paths read it.
@@ -366,14 +340,10 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{CandidateOnly: true, Prepare: branch.PrepareLanding})
 		},
 		sweep:       goalBranchSweepLanded,
-		batchUnit:   productionIntentBatchUnit,
 		publishRead: goalBranchPublishRead,
 		landPush:    goalBranchLandPushRun,
-		batchRoot:   productionIntentBatchRoot,
-		batchJoin: func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-			return batchowner.ExecuteBatchJoin(request, batchowner.ProductionBatchJoinDependencies())
-		},
-		now: func() time.Time { return time.Now().UTC() },
+		laneRoot:    productionIntentLaneRoot,
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -436,65 +406,9 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	return state, nil
 }
 
-// productionIntentBatchUnit finds the batch member this land request names
-// in the landing checkout's store: a chain by id, a goal branch by its
-// recorded selection (the whole goal, or the prefix ending at --through).
-func productionIntentBatchUnit(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error) {
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	paths, err := filepath.Glob(filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", "*.json"))
-	if err != nil {
-		return batch.Record{}, batch.Unit{}, false, err
-	}
-	var landedRecord batch.Record
-	var landedUnit batch.Unit
-	landed := false
-	for _, path := range paths {
-		record, err := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
-		if err != nil {
-			return batch.Record{}, batch.Unit{}, false, err
-		}
-		for _, unit := range record.Units {
-			if !intentBatchMember(unit, request, branchTip) {
-				continue
-			}
-			switch unit.State {
-			case batch.UnitJoining, batch.UnitJoined, batch.UnitReturnPending:
-				return record, unit, true, nil
-			case batch.UnitLanded:
-				landedRecord, landedUnit, landed = record, unit, true
-			}
-		}
-	}
-	return landedRecord, landedUnit, landed, nil
-}
-
-// intentBatchMember reports whether a batch unit is exactly the member a
-// land request asks for. A goal-branch member records its builds (its chain
-// field is the branch tip it joined at) and its selection: the whole goal,
-// or the last unit commit of an approved prefix.
-func intentBatchMember(unit batch.Unit, request batchowner.BatchJoinRequest, branchTip string) bool {
-	if unit.GoalID != request.GoalID {
-		return false
-	}
-	if request.ChainID != "" {
-		return unit.Chain == request.ChainID
-	}
-	if len(unit.Builds) == 0 {
-		return false
-	}
-	if request.Last {
-		// A whole-goal member is this work only while the goal branch is the
-		// tip it joined at; a newer branch is fresh work. With the branch
-		// gone, the retained member is the retry's answer.
-		return unit.GoalLast && (branchTip == "" || unit.BranchTip == branchTip)
-	}
-	return !unit.GoalLast && unit.Builds[len(unit.Builds)-1].Commit == request.Through
-}
-
-// productionIntentBatchRoot reports whether this installation lands through
-// a lane and, when it does, the checkout: its own landing.batch-root against
-// the host's one landing lane (U12, landing_lane.go).
-func productionIntentBatchRoot(root string, now time.Time) (string, bool, error) {
+// productionIntentLaneRoot reports whether this computer has a landing lane
+// registered and, when it does, its checkout.
+func productionIntentLaneRoot(root string, now time.Time) (string, bool, error) {
 	return batchowner.ProductionLandingLaneSeams().BatchRoot(root, now)
 }
 
@@ -1667,19 +1581,27 @@ func runIntentLand(inv *intentInvocation) int {
 	return inv.render(inv.landGoal(args[0], inv.input.text("through")))
 }
 
-func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, bool, *intentResult) {
+// laneRegistered refuses a landing while this computer has a landing lane:
+// the lane's hand-in is not built yet, and a seat never silently lands its
+// own work beside a lane. nil lets the seat land its own work.
+func (inv *intentInvocation) laneRegistered(targets []intentTarget) *intentResult {
 	owners := inv.delivery()
-	root, configured, err := owners.batchRoot(inv.layout.InstallationRoot, owners.now())
+	_, configured, err := owners.laneRoot(inv.layout.InstallationRoot, owners.now())
 	var laneRefusal *lane.Refusal
 	if errors.As(err, &laneRefusal) {
-		return "", configured, laneRefusalResult(targets, laneRefusal)
+		return laneRefusalResult(targets, laneRefusal)
 	}
 	if err != nil {
-		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: "the landing checkout setting can't be read, so nothing was landed",
-			next:    inv.publicArgv("settings", "check"), nextReason: "names what is wrong with landing.batch-root", Details: []string{err.Error()}}
+		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: "whether this computer has a landing lane can't be read, so nothing was landed",
+			next:    inv.publicArgv("landing", "status"), nextReason: "names what is wrong with the landing lane", Details: []string{err.Error()}}
 	}
-	return root, configured, nil
+	if !configured {
+		return nil
+	}
+	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		Summary: "this computer has a landing lane, whose hand-in isn't built yet",
+		next:    inv.publicArgv("landing", "unset"), nextReason: "lets this seat land its own work"}
 }
 
 // laneRefusalResult is a lane refusal as a person reads it: its situation
@@ -1709,98 +1631,12 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 			Decision: "nothing to do; only a goal's work lands"}
 	}
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
-	landingRoot, configured, refused := inv.landingBatchRoot(targets)
-	if refused != nil {
+	if refused := inv.laneRegistered(targets); refused != nil {
 		return *refused
 	}
-	if !configured {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("job %s lands through a landing checkout, and none is set; nothing was landed", job),
-			next:    inv.publicArgv("settings", "set", "landing.batch-root", "DIR"), nextReason: "DIR is a checkout used only for landing"}
-	}
-	request := batchowner.BatchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
-	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
-		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
-	}
-	// The human's word on a chain is bound to the commit the chain publishes,
-	// the head of its candidate branch; the batch carries it to its
-	// publication gate.
-	request.ChainHead = chainHead(record)
-	if refused := inv.admitLanding(targets, goalID, request.ChainHead); refused != nil {
-		return *refused
-	}
-	return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
-}
-
-// chainHead is the commit a certified chain publishes: its job record names
-// no commit, so it is the head of the candidate branch the record names
-// (branch) in the worktree it names (workspaceRoot), or "" where that branch
-// cannot be read, which no human word can be bound to.
-func chainHead(record map[string]any) string {
-	workspace, branch := recordText(record, "workspaceRoot"), recordText(record, "branch")
-	if workspace == "" || branch == "" {
-		return ""
-	}
-	read := landingPathGit(landpath.GitCall{Dir: workspace, Args: []string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch + "^{commit}"}})
-	if read.Code != 0 {
-		return ""
-	}
-	return strings.TrimSpace(string(read.Stdout))
-}
-
-// joinBatch reads the goal's existing batch membership first: a joined unit
-// is reported where the landing lane has it, and only a goal with no live
-// membership joins. The same land command is the continuation until the
-// batch records the landing.
-func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowner.BatchJoinRequest, branchTip string) intentResult {
-	owners := inv.delivery()
-	record, unit, member, err := owners.batchUnit(request.LandingRoot, request, branchTip)
-	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing batches can't be read, so nothing was landed", Data: map[string]any{"route": "batch"},
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
-	}
-	joined := false
-	if !member {
-		request.At = owners.now()
-		record, err = owners.batchJoin(request)
-		if err != nil {
-			words, code := refusalWordsAndCode(err)
-			details := refusalCodeDetails(code)
-			if detail := refusal.Detail(err); detail != "" {
-				// The cause a planning child named, for --verbose only.
-				details = append(details, detail)
-			}
-			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: words, Data: map[string]any{"route": "batch"},
-				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches", Details: details}
-		}
-		joined, unit = true, batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
-	}
-	targets = append(targets, intentTarget{Kind: "batch", ID: record.BatchID})
-	data := map[string]any{"route": "batch", "batchId": record.BatchID, "batchState": record.State, "unitState": unit.State, "joinedNow": joined}
-	if record.Landing != nil {
-		data["landing"] = record.Landing
-	}
-	switch unit.State {
-	case batch.UnitLanded:
-		// The landing lane recorded the landing; this call only reads it, so
-		// the repeat is success that changes nothing (R-129-ui).
-		landed := ""
-		if unit.LandedCommit != "" {
-			landed = " as " + shortCommit(unit.LandedCommit)
-		}
-		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
-			Summary: fmt.Sprintf("goal %s already landed%s through batch %s; the goal stays open until done", request.GoalID, landed, record.BatchID)}
-	case batch.UnitEjected, batch.UnitWithdrawn, batch.UnitWithdrawnBudget:
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: fmt.Sprintf("goal %s left landing batch %s (%s) and did not land", request.GoalID, record.BatchID, unit.State),
-			next:    inv.publicArgv("landing", "status"), nextReason: "shows why it left the batch"}
-	}
-	summary := fmt.Sprintf("goal %s is %s in landing batch %s; the landing lane proves and pushes it", request.GoalID, unit.State, record.BatchID)
-	if joined {
-		summary = fmt.Sprintf("goal %s joined landing batch %s; the landing lane proves and pushes it", request.GoalID, record.BatchID)
-	}
-	return intentResult{Targets: targets, Outcome: intentInProgress, Data: data, Summary: summary,
-		next: inv.sameCommand(), nextReason: "reads the same batch membership until it records the landing; it never joins twice"}
+	return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		Summary: fmt.Sprintf("job %s lands through a landing checkout, and none is set; nothing was landed", job),
+		next:    inv.publicArgv("settings", "set", "landing.batch-root", "DIR"), nextReason: "DIR is a checkout used only for landing"}
 }
 
 // intentLanded is the retained typed result of one hand landing's push and
@@ -1839,8 +1675,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		return *result
 	}
 	inv.finishReleaseSets(base)
-	landingRoot, configured, refused := inv.landingBatchRoot(targets)
-	if refused != nil {
+	if refused := inv.laneRegistered(targets); refused != nil {
 		return *refused
 	}
 	state, err := owners.branchState(root, goalID)
@@ -1852,15 +1687,6 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		}
 		return refused
 	}
-	if configured {
-		// The batch may already hold, or have landed and swept, exactly this
-		// selection at this branch tip; its record answers first, including
-		// once the branch is gone.
-		request := batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}
-		if _, _, member, err := owners.batchUnit(landingRoot, request, state.BranchTip); err != nil || member {
-			return inv.joinBatch(targets, request, state.BranchTip)
-		}
-	}
 	if state.BranchTip == "" {
 		if landed, ok := latestLanded(base); ok {
 			return intentResult{Targets: targets, Outcome: intentUnchanged, Data: map[string]any{"route": "hand", "landing": landed},
@@ -1869,72 +1695,14 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
 			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
 	}
-	subject, count, refusal := handLandingSubject(targets, goalID, through, state)
+	subject, _, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
 		return *refusal
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
 		return *refused
 	}
-	if !configured {
-		return inv.landByHand(targets, goalID, through, subject, state, base, configured)
-	}
-	// With a landing lane configured, the lane is the one route. It takes
-	// only units read by a critic root; a selection holding a unit read by a
-	// reader record lands by hand only as the fix of an open red on main.
-	unread := slices.IndexFunc(state.Sources[:min(count, len(state.Sources))], func(source string) bool { return source != "critic-root" })
-	if unread < 0 || state.ReadsWaived {
-		return inv.joinBatch(targets, batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
-	}
-	entry, err := inv.redOnMainFixed(goalID)
-	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("whether goal %s fixes a red on main can't be told, so nothing was landed", goalID),
-			next:    inv.publicArgv("goal", "list", "--fetch"), nextReason: "fetches and checks the goal ledger; then repeat this command",
-			Details: []string{err.Error()}}
-	}
-	if entry == "" {
-		commit := state.Status.Units[unread].Commit
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"route": "batch", "unit": commit, "source": state.Sources[unread]},
-			Summary: fmt.Sprintf("unit %s has no critic's read, which the landing lane needs; nothing was landed", commit),
-			next:    []string{"metasystem", "work", "review", "--commit", commit, "--goal", goalID}, nextReason: "reads that unit through a critic, after which work land joins the lane",
-			Details: []string{"if this goal fixes a red on main, find the incident with metasystem incident list and claim it for the goal (metasystem incident claim E --goal " + goalID +
-				"); only the fix of an open trunk red lands by hand, not a flake or a closed incident"}}
-	}
-	result := inv.landByHand(targets, goalID, through, subject, state, base, configured)
-	if data, ok := result.Data.(map[string]any); ok {
-		data["redOnMain"] = entry
-	}
-	return result
-}
-
-// redOnMainFixed names the open red-on-main entry the goal is the fix goal
-// of, or "" when it fixes none, read from a freshly fetched ledger so an
-// incident claimed moments ago on another seat counts. Only a trunk red holds
-// landings, so only a trunk red opens the hand route beside a configured
-// landing lane.
-func (inv *intentInvocation) redOnMainFixed(goalID string) (string, error) {
-	if read := inv.delivery().redOnMain; read != nil {
-		return read(inv, goalID)
-	}
-	endpoint, err := inv.owners.dependencies.endpoint(inv.stateRoot)
-	if err != nil {
-		return "", err
-	}
-	now, err := inv.owners.commandNow(inv.stateRoot)
-	if err != nil {
-		return "", err
-	}
-	projection, err := goal.Project(endpoint, true, now)
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range projection.Tree.TrunkRed {
-		if entry.Closed == nil && entry.FixGoal == goalID && entry.EntryClass() == goal.TrunkRedClassTrunkRed {
-			return entry.ID, nil
-		}
-	}
-	return "", nil
+	return inv.landByHand(targets, goalID, through, subject, state, base)
 }
 
 // resumeSweep finishes a pushed hand landing whose merged branch was not yet
@@ -1983,11 +1751,11 @@ func latestLanded(base string) (intentLanded, bool) {
 	return latest, latest.Landing != ""
 }
 
-func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through, subject string, state intentBranchState, base string, batchConfigured bool) intentResult {
+func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through, subject string, state intentBranchState, base string) intentResult {
 	root := inv.layout.InstallationRoot
 	owners := inv.delivery()
 	dir := filepath.Join(base, shortCommit(subject)+"-"+shortCommit(state.EndpointTip))
-	data := map[string]any{"route": "hand", "subject": subject, "endpointTip": state.EndpointTip, "retained": dir, "batchConfigured": batchConfigured}
+	data := map[string]any{"route": "hand", "subject": subject, "endpointTip": state.EndpointTip, "retained": dir}
 	landedPath := filepath.Join(dir, "landed.json")
 	var landed intentLanded
 	if encoded, err := os.ReadFile(landedPath); err == nil && json.Unmarshal(encoded, &landed) == nil && landed.Landing != "" {

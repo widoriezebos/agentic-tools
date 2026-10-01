@@ -11,7 +11,7 @@ func TestViewOfALaneThatCannotStartNamesTheFix(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
 	register(t, home, root)
-	sources := viewSources(home, false, nil)
+	sources := viewSources(home, false)
 	sources.Ready = func(root string) error { return UnarmedRefusal(root) }
 	view := BuildView(sources)
 	fix := "metasystem system start --repo " + resolved(root)
@@ -28,7 +28,7 @@ func TestViewOfALaneThatCannotStartNamesTheFix(t *testing.T) {
 		}
 	}
 	// A running agent is never second-guessed.
-	sources = viewSources(home, true, nil)
+	sources = viewSources(home, true)
 	sources.Ready = func(string) error { t.Fatal("asked whether a lane whose agent runs can start"); return nil }
 	if view := BuildView(sources); view.Owner.State != OwnerRunning {
 		t.Fatalf("running agent = %+v", view.Owner)
@@ -42,7 +42,7 @@ func TestViewOfAnIdleLaneIsIdle(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
 	register(t, home, root)
-	sources := viewSources(home, false, nil)
+	sources := viewSources(home, false)
 	sources.Ready = func(string) error { return nil }
 	view := BuildView(sources)
 	if view.Owner.State != "idle" || view.Owner.RetryHint != nil || view.Owner.LastExit != nil || len(view.Owner.Fix) != 0 {

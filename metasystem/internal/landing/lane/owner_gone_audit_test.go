@@ -24,8 +24,7 @@ var retiredOwnerNames = []string{
 }
 
 // The old owner is gone (design r10 §5, unit D): no production source of
-// the module names one of its entry points, and its lineage is named only
-// where the cutover refuses while a claim under it remains.
+// the module names one of its entry points or its lineage.
 func TestTheOldBatchOwnerIsGone(t *testing.T) {
 	t.Parallel()
 	module, err := filepath.Abs(filepath.Join("..", "..", ".."))
@@ -59,8 +58,8 @@ func TestTheOldBatchOwnerIsGone(t *testing.T) {
 				t.Errorf("%s names %s, which the lane's cutover deleted with the old batch owner", relative, name)
 			}
 		}
-		if strings.Contains(source, `"`+OldOwnerLineage+`"`) && filepath.ToSlash(relative) != "internal/landing/lane/identity.go" {
-			t.Errorf("%s names the old owner's lineage %q; only lane.OldOwnerLineage may, for the cutover's refusal", relative, OldOwnerLineage)
+		if strings.Contains(source, `"landing-m1l"`) {
+			t.Errorf("%s names the old owner's lineage landing-m1l", relative)
 		}
 		return nil
 	})

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -29,8 +28,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
-	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -569,22 +566,6 @@ type proofLaunchAdmission struct {
 	ForceGroups                                                                          bool
 	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
-	// LaneID is the landing lane's accounting identity a proof is charged to
-	// instead of a goal: a batch whose members are all changes (U11b).
-	LaneID string
-	// LaneCheckout is the lane checkout the launcher named (--lane-checkout):
-	// the lane is resolved and its owner proven there, and the control root
-	// must lie inside it. Empty resolves them at the control root.
-	LaneCheckout string
-	// laneAccount resolves the lane identity of a lane checkout or control
-	// root; nil reads the host's lane record.
-	laneAccount func(root string) (string, error)
-	// laneOwner proves the caller descends from the lane's landing agent;
-	// nil proves it against the lane checkout's lease holder.
-	laneOwner func(root string, callerPID int64) error
-	// laneHome is the host home the lane is read from; nil is the
-	// user's.
-	laneHome func() (string, error)
 	// CallerPID is the supplied process the admission classifies and whose
 	// custody it authenticates (design 6.2); zero is this process's parent,
 	// the entry's own caller.
@@ -945,9 +926,6 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		return attempt, proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionExecuted, AttemptID: attempt.AttemptID}, true, nil
 	}
-	if request.LaneID != "" {
-		return admitLaneProofLaunch(request, classifiedCaller, now)
-	}
 	var reservationOwner *proofrun.ReservationOwner
 	delegateRevision := uint64(0)
 	boundAuthority := false
@@ -1307,244 +1285,9 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	return attempt, decision, false, nil
 }
 
-// admitLaneProofLaunch reserves a proof charged to the landing lane, not a
-// goal (U11b): the lane's own checkout proves a batch whose members are all
-// changes. The identity must be the host lane's and the control root inside
-// it; the attempt records the lane as its owner, and no goal's budget, claim
-// or revision is read or moved.
-func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyResult, now time.Time) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	refuse := func(format string, args ...any) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, laneAccountUnresolved(format, args...)
-	}
-	if request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || request.RequireDiagnosticHeadroom {
-		return refuse("a test run charged to the lane names no goal: --goal, --authority, --expected-goal-revision and --require-diagnostic-headroom belong to a goal's test run")
-	}
-	if os.Getenv("METASYSTEM_PROOF_RUN_ROOT") != "" || os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
-		return refuse("a governed run or a delegate runs its tests under its goal, never under the lane")
-	}
-	if !landinglane.IsAccount(request.LaneID) {
-		return refuse("%q is not a lane accounting identity", request.LaneID)
-	}
-	// The launcher names the lane checkout (design r10 K6): the lane is
-	// resolved there, the control root must be inside it, and the account
-	// must be that checkout's. Without it the control root is the anchor.
-	anchor := request.ControlRoot
-	if request.LaneCheckout != "" {
-		anchor = request.LaneCheckout
-		relative, err := filepath.Rel(realpath.Resolve(request.LaneCheckout), realpath.Resolve(request.ControlRoot))
-		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return refuse("the control root %s is not inside the lane checkout %s", request.ControlRoot, request.LaneCheckout)
-		}
-		if landinglane.AccountID(request.LaneCheckout) != request.LaneID {
-			return refuse("the lane checkout %s is not the lane %s", request.LaneCheckout, request.LaneID)
-		}
-	}
-	resolve := request.laneAccount
-	if resolve == nil {
-		resolve = func(controlRoot string) (string, error) {
-			home, err := board.Home()
-			if err != nil {
-				return "", err
-			}
-			return landinglane.ResolveAccount(home, controlRoot)
-		}
-	}
-	account, err := resolve(anchor)
-	if err != nil {
-		var coded *refusal.Coded
-		if errors.As(err, &coded) && coded.Code == landinglane.CodeAccountUnresolved {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-		}
-		return refuse("%v", err)
-	}
-	if account != request.LaneID {
-		return refuse("this checkout's landing lane is %s, not %s", account, request.LaneID)
-	}
-	if caller.Class != lease.ClassHuman {
-		prove := request.laneOwner
-		if prove == nil {
-			home := request.laneHome
-			if home == nil {
-				home = board.Home
-			}
-			tree := proofAdmissionCandidateTree(request)
-			prove = func(_ string, callerPID int64) error { return proveLaneTestRunCaller(home, callerPID, tree) }
-		}
-		if err := prove(anchor, request.callerPID()); err != nil {
-			return refuse("only the lane's landing agent, proven by its identity, or a person charges a proof to the lane: %v", err)
-		}
-	}
-	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
-	if err != nil || capValue < 1 {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run cannot be reserved: %w", err)
-	}
-	launcher, err := proofrun.CurrentProcessIdentity(nil)
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-	}
-	var context proofrun.ExecutionContext
-	if request.SharedEngine != "" {
-		context, err = proofrun.CaptureSharedExecutionContext(request.ExecutionRoot, request.ConfPath, request.Environment, request.SharedEngine, request.SharedManifestDigest)
-	} else {
-		context, err = proofrun.CaptureExecutionContext(request.ExecutionRoot, request.ConfPath, request.Environment)
-	}
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-	}
-	proofIdentity := proofrun.BindIdentityInputs(proofrun.BuildProofIdentityForContext(context, request.ScopeClass,
-		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion), request.IdentityInputs)
-	heldLane, err := goalrevision.Acquire(request.ControlRoot, revisionLockCoordinate(request.LaneID), 1, "proof-admission")
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-	}
-	defer heldLane.Release()
-	heldProof, err := proofrun.AcquireMutation(request.ControlRoot)
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-	}
-	defer heldProof.Release()
-	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
-	if fenceErr != nil || checkoutFence.State == stopfence.StateClosed {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the checkout's stop fence closed, so the test run was not reserved")
-	}
-	reservation := proofrun.AdmissionRequest{
-		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath,
-		GoalID: request.LaneID, GoalRevision: 1, AccountingRevision: 1, CandidateGoalID: request.LaneID, CandidateRevision: 1,
-		CandidateTree: proofAdmissionCandidateTree(request), ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher,
-		RetryDecisionPath: request.RetryDecision, Now: now,
-		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt, ForceGroups: request.ForceGroups,
-		SharedComponents: request.CommandClass == "testing" && len(request.ComponentIdentities) > 0,
-		ManagedCapacity:  request.ManagedCapacity,
-		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding,
-		FreshnessExpiresAt: request.FreshnessExpiresAt, FreshGroups: request.FreshGroups,
-	}
-	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
-	if err != nil || noChild {
-		return proofrun.Attempt{}, decision, false, err
-	}
-	if proofAdmissionBeforePublish != nil {
-		proofAdmissionBeforePublish(&reservation)
-	}
-	if request.BeforePublish != nil {
-		request.BeforePublish(&reservation)
-	}
-	attempt, decision, err := proofrun.ReserveLocked(reservation)
-	return attempt, decision, false, err
-}
-
-// proveLaneOwnerCaller proves the caller descends from the lane's landing
-// agent: the process the lane checkout's lease holder recorded under the
-// agent's launch lineage, matched by its exact identity (pid, start time,
-// boot). A seat whose checkout happens to be the lane is not its agent
-// (U11b), and neither is a holder under the deleted batch owner's lineage
-// (design r10 §5).
-//
-// The lease and its announcements are read where the agent's session holds
-// them: the lane's recorded installation root, not its checkout root, which
-// on a nested checkout may still carry a stale lease from an earlier lane
-// (2026-10-01).
-func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
-	return proveLaneAgentCaller(board.Home, callerPID)
-}
-
-// proveLaneTestRunCaller proves the caller of a test run of tree charged to
-// the lane is the lane's: it descends from the landing agent
-// (proveLaneAgentCaller), or it is the lane's own detached proof of that
-// tree. landing prove admitted its caller (the agent, or a person) before it
-// detached the proof; once the agent has exited the job descends from no
-// agent, and is proven instead by the running-proof record StartProof kept
-// under the lane flock: the exact process it names runs and is the caller's
-// ancestor.
-func proveLaneTestRunCaller(home func() (string, error), callerPID int64, tree string) error {
-	agentErr := proveLaneAgentCaller(home, callerPID)
-	if agentErr == nil {
-		return nil
-	}
-	jobErr := proveLaneProofJob(home, callerPID, tree)
-	if jobErr == nil {
-		return nil
-	}
-	return fmt.Errorf("%v; and it is not the lane's running test run: %v", agentErr, jobErr)
-}
-
-// proveLaneProofJob proves callerPID descends from the lane's running proof
-// of tree, by the exact process identity its record names.
-func proveLaneProofJob(homeOf func() (string, error), callerPID int64, tree string) error {
-	home, err := homeOf()
-	if err != nil {
-		return err
-	}
-	record, ok, err := landinglane.Read(home)
-	if err != nil || !ok {
-		return fmt.Errorf("no landing lane is registered on this computer (%v)", err)
-	}
-	layout, err := record.Layout()
-	if err != nil {
-		return err
-	}
-	proof, live, ok, err := kernel.ReadRunningProof(layout, identity.KernelProber{})
-	switch {
-	case err != nil:
-		return err
-	case !ok:
-		return fmt.Errorf("no test run is recorded running in the lane")
-	case live != identity.Alive:
-		return fmt.Errorf("the lane's test run %s no longer runs", proof.Attempt)
-	case tree == "" || proof.Tree != tree:
-		return fmt.Errorf("the lane's running test run %s is of tree %s, not %s", proof.Attempt, proof.Tree, tree)
-	}
-	ref, err := identity.ParseRef(proof.Process)
-	if err != nil {
-		return err
-	}
-	return proofrun.AuthenticateAncestor(callerPID, proofrun.ProcessIdentity{Pid: ref.Pid, PidStartedAt: ref.StartedAtSec,
-		PidStartedAtMicro: ref.StartedAtUnixMicro, PidStartTicks: ref.StartTicks, BootID: ref.BootID})
-}
-
-func proveLaneAgentCaller(homeOf func() (string, error), callerPID int64) error {
-	home, err := homeOf()
-	if err != nil {
-		return err
-	}
-	record, ok, err := landinglane.Read(home)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("no landing lane is registered on this computer")
-	}
-	layout, err := record.Layout()
-	if err != nil {
-		return err
-	}
-	laneRoot := string(layout.Install)
-	holder, err := lease.CurrentHolder(laneRoot)
-	if err != nil {
-		return err
-	}
-	// Launch descent from the landing agent is what an agent-issued kernel
-	// operation needs (lane design r10 K7).
-	if holder.OwnerLineage != landinglane.AgentLineage {
-		return fmt.Errorf("the lane's installation is held by session %s, not by its landing agent", holder.OwnerLineage)
-	}
-	for _, announcement := range lease.AnnouncementsFor(laneRoot, holder.Pid) {
-		if announcement.MainId != holder.MainId {
-			continue
-		}
-		return proofrun.AuthenticateAncestor(callerPID, proofrun.ProcessIdentity{Pid: announcement.Pid, PidStartedAt: announcement.PidStartedAt,
-			PidStartTicks: announcement.PidStartTicks, BootID: announcement.BootID})
-	}
-	return fmt.Errorf("the landing agent pid %d has no announcement to prove its identity", holder.Pid)
-}
-
 // revisionLockCoordinate is the revision lock a proof's owner serializes
-// on: its goal's, or for a proof charged to the lane the lane's own lock,
-// kept beside the goals' in the lane's control root and keyed by the lane
-// id (U11b).
+// on: its goal's.
 func revisionLockCoordinate(owner string) string {
-	if landinglane.IsAccount(owner) {
-		return "lane-" + strings.TrimPrefix(owner, "lane:")
-	}
 	return owner
 }
 
@@ -1788,18 +1531,14 @@ func commitProofTerminalWithReasonAndReads(completion proofrun.CompletionContext
 	if err != nil {
 		return fmt.Errorf("the clock for recording the test run's result: %w", err)
 	}
-	// A proof charged to the lane has no goal binding: its authority is the
-	// lane's own lock, held above (U11b).
-	if !landinglane.IsAccount(attempt.GoalID) {
-		var binding dispatchcore.GoalBinding
-		if reads == nil {
-			binding, err = dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
-		} else {
-			binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
-		}
-		if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
-			return fmt.Errorf("the goal changed before the test run's result was recorded")
-		}
+	var binding dispatchcore.GoalBinding
+	if reads == nil {
+		binding, err = dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
+	} else {
+		binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
+	}
+	if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
+		return fmt.Errorf("the goal changed before the test run's result was recorded")
 	}
 	result := proofrun.TerminalFailed
 	if attempt.CancellationIntent != "" {
@@ -2504,12 +2243,6 @@ func batchMemberBudgetRefused(goalID string, minutes uint64) error {
 	return &refusal.Coded{Code: "BATCH_MEMBER_BUDGET_REFUSED", Facts: fmt.Sprintf("goal=%s reservedMinutes=%d", goalID, minutes),
 		Reason: fmt.Errorf("goal %s has no room in its budget for two more test runs; a person raises it", goalID),
 		Run:    "metasystem goal budget " + goalID + " BOX"}
-}
-
-// laneAccountUnresolved refuses a test run charged to a landing lane that
-// cannot be named.
-func laneAccountUnresolved(format string, args ...any) error {
-	return &refusal.Coded{Code: landinglane.CodeAccountUnresolved, Reason: fmt.Errorf(format, args...)}
 }
 
 // proofAdmissionVerdictRefusal is a refused reservation, coded from the

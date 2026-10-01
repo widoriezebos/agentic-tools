@@ -156,129 +156,6 @@ func (n trunkRedNamer) Named(context.Context, time.Time) ([]string, error) {
 	return named, nil
 }
 
-// landingBatchRecord is the part of a landing batch record (landing/batch
-// Record) that names attempts.
-type landingBatchRecord struct {
-	State string `json:"state"`
-	Units []struct {
-		Admission *struct {
-			AttemptID string `json:"attemptId"`
-		} `json:"admission"`
-	} `json:"units"`
-	TrunkRed *struct {
-		Red struct {
-			AttemptID string `json:"attemptId"`
-		} `json:"red"`
-	} `json:"trunkRed"`
-	Proof *struct {
-		AttemptID string            `json:"attemptId"`
-		Reuse     map[string]string `json:"reuse"`
-		Sources   map[string]struct {
-			Attempt string `json:"attempt"`
-		} `json:"sources"`
-	} `json:"proof"`
-	Wait *struct {
-		For []struct {
-			Proof *struct {
-				Attempt string `json:"attempt"`
-			} `json:"proof"`
-		} `json:"for"`
-	} `json:"wait"`
-	Receipts map[string]struct {
-		AttemptID string
-		Reused    map[string]string
-	} `json:"receipts"`
-	// Early is the owner's early acts on the batch's wait (D14, U10b-3):
-	// the early proof's attempt and a red finding's attempt.
-	// Attempts are the lane kernel's prove runs (design r10 K6): each names
-	// the test run's own attempt once it ended.
-	Attempts []struct {
-		RunAttempt string `json:"runAttempt"`
-	} `json:"attempts"`
-	Early *struct {
-		Attempt string `json:"attempt"`
-		Finding *struct {
-			Attempt string `json:"attempt"`
-		} `json:"finding"`
-	} `json:"early"`
-}
-
-// landingBatchNamer: a landing batch that has not landed or dissolved
-// names the attempts of its admissions, its proof and its sources, its
-// trunk-red hold and its prefix receipts.
-type landingBatchNamer struct {
-	Roots []string
-	// LaneErr is why the landing lane's checkout could not be resolved,
-	// which holds the kind.
-	LaneErr error
-}
-
-func (landingBatchNamer) Kind() string { return "landing batches" }
-
-func (n landingBatchNamer) Named(context.Context, time.Time) ([]string, error) {
-	if n.LaneErr != nil {
-		return nil, fmt.Errorf("the landing lane's checkout cannot be resolved: %w", n.LaneErr)
-	}
-	var paths []string
-	for _, root := range n.Roots {
-		found, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))
-		if err != nil {
-			return nil, err
-		}
-		paths = append(paths, found...)
-	}
-	var named []string
-	for _, path := range paths {
-		var record landingBatchRecord
-		if err := readRecordJSON(path, &record); err != nil {
-			return nil, err
-		}
-		if record.State == "landed" || record.State == "dissolved" {
-			continue
-		}
-		for _, unit := range record.Units {
-			if unit.Admission != nil {
-				named = append(named, attemptIDs(unit.Admission.AttemptID)...)
-			}
-		}
-		if record.TrunkRed != nil {
-			named = append(named, attemptIDs(record.TrunkRed.Red.AttemptID)...)
-		}
-		if record.Proof != nil {
-			named = append(named, attemptIDs(record.Proof.AttemptID)...)
-			for _, source := range record.Proof.Sources {
-				named = append(named, attemptIDs(source.Attempt)...)
-			}
-			for _, reused := range record.Proof.Reuse {
-				named = append(named, attemptIDs(reused)...)
-			}
-		}
-		if record.Wait != nil {
-			for _, waited := range record.Wait.For {
-				if waited.Proof != nil {
-					named = append(named, attemptIDs(waited.Proof.Attempt)...)
-				}
-			}
-		}
-		if record.Early != nil {
-			named = append(named, attemptIDs(record.Early.Attempt)...)
-			if record.Early.Finding != nil {
-				named = append(named, attemptIDs(record.Early.Finding.Attempt)...)
-			}
-		}
-		for _, attempt := range record.Attempts {
-			named = append(named, attemptIDs(attempt.RunAttempt)...)
-		}
-		for _, receipt := range record.Receipts {
-			named = append(named, attemptIDs(receipt.AttemptID)...)
-			for _, reused := range receipt.Reused {
-				named = append(named, attemptIDs(reused)...)
-			}
-		}
-	}
-	return named, nil
-}
-
 // landingReceipt is the part of a landing test receipt (landing
 // TestReceipt) that names attempts.
 type landingReceipt struct {
@@ -391,7 +268,6 @@ func attemptRetention(top string, now time.Time, target int64, keep time.Duratio
 		installation = layout.InstallationRoot
 	}
 	ledger := checkoutLedger(top, now)
-	lane, laneErr := landingLaneRoots(installation, now)
 	prober := identity.KernelProber{}
 	return &proofrun.Retention{Control: top, Target: target, Keep: keep,
 		Alive: func(ref identity.Ref) identity.Liveness { return identity.AliveRef(prober, ref) },
@@ -399,16 +275,15 @@ func attemptRetention(top string, now time.Time, target int64, keep time.Duratio
 			proofrun.ScratchNamer{Control: top},
 			stopBatchNamer{Root: top, Ledger: ledger},
 			trunkRedNamer{Ledger: ledger},
-			landingBatchNamer{Roots: nonEmpty(dedupe(append([]string{top, installation}, lane...)...)...), LaneErr: laneErr},
 			landingReceiptNamer{Installation: installation, Keep: keep},
 			validationWindowNamer{Root: top},
 		}}
 }
 
-// LandingAttemptNamers are the two landing record kinds, for the
-// conformance test that marshals the landing packages' own types.
-func LandingAttemptNamers(batchRoots []string, installation string, keep time.Duration) []proofrun.AttemptNamer {
-	return []proofrun.AttemptNamer{landingBatchNamer{Roots: batchRoots}, landingReceiptNamer{Installation: installation, Keep: keep}}
+// LandingAttemptNamers are the landing record kinds, for the conformance
+// test that marshals the landing packages' own types.
+func LandingAttemptNamers(installation string, keep time.Duration) []proofrun.AttemptNamer {
+	return []proofrun.AttemptNamer{landingReceiptNamer{Installation: installation, Keep: keep}}
 }
 
 // landingLaneRoots are the landing lane's checkout, resolved through the

@@ -157,3 +157,17 @@ func (s *trunkState) watch(observations []Observation, clearTicks int) {
 		}
 	}
 }
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func stamp(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.UTC().Format(time.RFC3339Nano)
+}

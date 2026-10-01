@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -93,21 +92,13 @@ func newRoleTrunkRedBed(t *testing.T, now time.Time, entries []goal.TrunkRedEntr
 	})
 }
 
-func (b *roleHealthProjectionBed) trunkRed(resolve func(string, string, func() time.Time) (config.BatchLanding, error)) RoleVerdict {
+func (b *roleHealthProjectionBed) trunkRedWithoutBatch() RoleVerdict {
 	b.t.Helper()
 	projection, err := b.project()
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	return checkTrunkRedFromProjection(b.root, b.now, projection, nil, resolve, nil)
-}
-
-func (b *roleHealthProjectionBed) trunkRedWithoutBatch() RoleVerdict {
-	b.t.Helper()
-	return b.trunkRed(func(string, string, func() time.Time) (config.BatchLanding, error) {
-		b.t.Fatal("batch settings were resolved without a configured batch root")
-		return config.BatchLanding{}, nil
-	})
+	return checkTrunkRedFromProjection(b.root, b.now, projection, nil, nil)
 }
 
 func (r roleHealthRepository) Accepted() (string, bool, error) {

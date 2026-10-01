@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,14 +11,9 @@ import (
 	"testing"
 	"time"
 
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // wholeOwnerLanding is one claimed, approved, land-ready goal with a single
@@ -265,166 +259,6 @@ func TestIntentLandWholeOwnerGitAdapter(t *testing.T) {
 		}
 		f.assertLanded(t, prepared)
 	})
-}
-
-// batchAdmissionLanding gives the whole-owner fixture's goal branch a
-// critic-root read, so the goal branch is admissible to the landing batch.
-// The critic chain is a synthetic already-closed fixture record, as in
-// addBatchBranchUnit; public close is proved separately.
-func newBatchAdmissionLanding(t *testing.T) (*wholeOwnerLanding, string) {
-	t.Helper()
-	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
-	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
-	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
-	goalSyncMutationGit(t, root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
-	// The batch owners find a nested installation by its module file
-	// (batch.ModuleRoot); the endpoint carries one before the goal branch.
-	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "go.mod"), []byte("module fixture\n"), 0o644)
-	// The batch author owner reads the approver's identity, and the protected
-	// test gate its committed testing contract, from metasystem.conf.
-	conf := filepath.Join(f.mainRoot, "metasystem.conf")
-	confBytes, err := os.ReadFile(conf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, conf, append(confBytes, []byte("\ngoal.human.wido=Wido Approver <wido@example.invalid>\ntesting.contract=contracts/fixture.json\n")...), 0o644)
-	contract, err := json.Marshal(testpolicy.Contract{
-		SchemaVersion: 1,
-		ProjectRisk:   testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
-		Surfaces:      []testpolicy.Surface{{ID: "fixture", Paths: []string{"metasystem/**"}, Standard: []string{"go-fixture"}, Critical: []string{"go-fixture"}}},
-		Groups: []testpolicy.Group{{ID: "go-fixture", Kind: "unit", Adapter: "go", CWD: "metasystem", Inputs: []string{"metasystem/**"},
-			Obligations: []string{"go-fixture"}, Platforms: []string{"any"}, TargetMS: 1, Packages: []string{"./..."}, Tests: json.RawMessage(`"all"`)}},
-		Always: testpolicy.Always{Canary: []string{"go-fixture"}}, Unknown: []string{"go-fixture"}, Cadence: []string{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "contracts", "fixture.json"), contract, 0o644)
-	goalSyncMutationGit(t, f.mainRoot, "add", "go.mod", "metasystem.conf", "contracts/fixture.json")
-	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "module marker")
-	f.base = goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
-	goalSyncMutationGit(t, f.mainRoot, "push", "-q", "upstream", "HEAD:main")
-	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.LocalLedgerBranch, f.base)
-	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.AcceptedRef, f.base)
-	goalSyncMutationGit(t, root, "reset", "-q", "--hard", f.base)
-	// The batch member reader and the landing checkout fetch "origin".
-	goalSyncMutationGit(t, f.mainRoot, "remote", "add", "origin", upstream)
-	claim := func() error { return nil }
-	writeTestingFixtureFile(t, filepath.Join(root, "owned.go"), []byte("package fixture\n\nconst Batched = 1\n"), 0o644)
-	goalSyncMutationGit(t, root, "add", "owned.go")
-	unit, err := branch.CommitStaged(branch.CommitRequest{Repo: root, Remote: "upstream", EndpointTip: f.base,
-		GoalID: "standing-validation", Unit: "u1", OpID: "batch-unit", Kind: branch.Unit, CheckClaim: claim})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.unit = unit
-	subject, present, err := dispatchcore.ComputeReadSubject(dispatchcore.ReadSubjectRequest{RepoRoot: root, Role: "code-critic", Reviews: "commit:" + unit})
-	if err != nil || !present {
-		t.Fatalf("read subject present=%v err=%v", present, err)
-	}
-	job := "critic-u1"
-	writeBatchBranchJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{
-		"jobId": job, "role": "code-critic", "round": 1, "status": "completed", "chainClosed": true,
-		"findingRegister": []any{}, "findingRegisterRound": 1, "findingRegisterSubjectDigest": subject.Digest(),
-		"closure": map[string]any{"criticRoot": job, "round": 1, "subject": subject, "mechanism": "clean"}})
-	writeBatchBranchJSON(t, filepath.Join(root, "artifacts", "agents", job, "rounds", "1", "subject.json"), subject)
-	writeBatchBranchJSON(t, filepath.Join(root, "artifacts", "agents", job, "rounds", "1", "return.json"), map[string]any{"jobId": job, "round": 1, "reviewedTree": subject.Tree})
-	if _, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: root, Remote: "upstream", EndpointTip: f.base, GoalID: "standing-validation",
-		Unit: "u1", OpID: "batch-read", RootJob: job, GateRunID: "fast-u1", GateTree: subject.Tree, CheckClaim: claim}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := branch.Push(branch.PushRequest{Repo: root, Remote: "upstream", EndpointTip: f.base,
-		GoalID: "standing-validation", OpID: "batch-push", CheckClaim: claim}); err != nil {
-		t.Fatal(err)
-	}
-	f.branchTip = goalSyncMutationGit(t, root, "rev-parse", "refs/heads/goal/standing-validation")
-	landingRoot := filepath.Join(t.TempDir(), "landing")
-	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", upstream, landingRoot)
-	return f, landingRoot
-}
-
-// TestIntentLandBatchAdmissionGitAdapter drives public land into the actual
-// executeBatchJoin: the member reader, transport, unit assembly, protected
-// test gate, the batch store and PublishJoinWithAdmission. Fake effects are
-// the admission's proof run, the claim handover and the batch owner's start;
-// the cost forecast is not in this claim (costForecast=nil, a real branch).
-func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
-	t.Parallel()
-	f, landingRoot := newBatchAdmissionLanding(t)
-	deps := batchowner.ProductionBatchJoinDependencies()
-	deps.CostForecast = nil
-	var handovers, admissions int
-	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handovers++; return nil }
-	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
-		admissions++
-		if unit.State != batch.UnitJoining || unit.Admission == nil || unit.Admission.Status != "handed-over" {
-			t.Fatalf("admission ran before handover: %+v", unit)
-		}
-		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "batch-admission"}, nil
-	}
-	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
-	}
-	// The claim/budget binding is a fixture fact: the goal's real projected
-	// file under this fixture claim, not the stop-authority owner.
-	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
-		endpoint, err := branch.MainEndpoint(root)
-		if err != nil {
-			return dispatchcore.GoalBinding{}, err
-		}
-		projection, err := goal.Project(endpoint, true, at)
-		if err != nil {
-			return dispatchcore.GoalBinding{}, err
-		}
-		file := projection.Tree.Live[goalID]
-		if file == nil || file.Claimed == nil {
-			return dispatchcore.GoalBinding{}, fmt.Errorf("fixture goal %s is not claimed", goalID)
-		}
-		binding := dispatchcore.GoalBinding{GoalID: goalID, Revision: file.Revision, Machine: "mac-cli", Lineage: "m1", File: file}
-		binding.Capability.ClaimEpoch = 1
-		return binding, nil
-	}
-	owners := defaultIntentOwners()
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
-	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	delivery.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		return batchowner.ExecuteBatchJoin(request, deps)
-	}
-	delivery.process = func(process intentProcess) intentProcessResult {
-		t.Fatalf("the batch route ran a subprocess %v", process.argv)
-		return intentProcessResult{}
-	}
-	owners.delivery = delivery
-	command, _ := findIntentCommand("work land")
-	run := func() intentResult {
-		var stdout, stderr bytes.Buffer
-		runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
-		var result intentResult
-		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-			t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
-		}
-		return result
-	}
-	result := run()
-	data, _ := result.Data.(map[string]any)
-	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || handovers != 1 || admissions != 1 {
-		t.Fatalf("batch land = %+v; handovers %d admissions %d", result, handovers, admissions)
-	}
-	id, _ := data["batchId"].(string)
-	record, err := batch.NewStore(landingRoot, identity.KernelProber{}).Load(id)
-	if err != nil || len(record.Units) != 1 {
-		t.Fatalf("stored batch %s = %+v, %v", id, record, err)
-	}
-	unit := record.Units[0]
-	if unit.State != batch.UnitJoined || unit.Admission == nil || unit.Admission.Status != "verified" || unit.Admission.AttemptID != "batch-admission" ||
-		!unit.GoalLast || unit.BranchTip != f.branchTip || len(unit.Builds) != 1 || unit.Builds[0].Commit != f.unit || unit.Approver != "Wido" {
-		t.Fatalf("the admitted member does not bind this goal branch: %+v admission %+v", unit, unit.Admission)
-	}
-	again := run()
-	if again.Outcome != intentInProgress || again.Data.(map[string]any)["joinedNow"] != false || again.Data.(map[string]any)["batchId"] != id ||
-		handovers != 1 || admissions != 1 {
-		t.Fatalf("a repeat reads the stored membership and never joins again: %+v", again)
-	}
 }
 
 // TestIntentLandProvesTheReceiptInThisProcess is the U9a witness that the

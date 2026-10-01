@@ -2,18 +2,13 @@ package main
 
 // Idempotency rows of the landing object (R-129-ui; U12).
 
-import (
-	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-)
+import "testing"
 
 func init() {
-	registerIdempotency("landing status", idemRead, "reads the host's lane record, its keeper and its batches; changes nothing", nil)
+	registerIdempotency("landing status", idemRead, "reads the host's lane record and its keeper; changes nothing", nil)
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the lane already runs, unpaused: success, nothing written", witnessLandingStartRepeat)
 	registerIdempotency("landing stop", idemStateful, "the lane is already stopped: success, the pause untouched", witnessLandingStopRepeat)
-	registerIdempotency("landing prove", idemStateful, "that tree's proof already runs: success, no second proof started", witnessLandingProveRepeat)
 	registerIdempotency("landing run", idemStateful, "a landing agent already runs: success, no second launch and nothing written", witnessLandingRunRepeat)
 	registerIdempotency("landing unset", idemStateful, "no lane is registered any more: success, nothing written", witnessLandingUnsetRepeat)
 }
@@ -58,7 +53,7 @@ func witnessLandingUnsetRepeat(t *testing.T) {
 // for the queued work; the repeat finds it running and writes nothing.
 func witnessLandingRunRepeat(t *testing.T) {
 	bed, store := landingRunBed(t)
-	bed.records = []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	bed.wake = []string{"queued"}
 	if code, _, stderr := bed.run(t, "landing", "run"); code != 0 {
 		t.Fatalf("first landing run = %d %q", code, stderr)
 	}

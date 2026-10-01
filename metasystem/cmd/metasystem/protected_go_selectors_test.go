@@ -11,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -215,21 +214,5 @@ func TestGoalLandingGoExpansionCoversPriorChangedAndConsumers(t *testing.T) {
 	fact.assertConsumed()
 	if err == nil || !strings.Contains(err.Error(), "delivery candidate differs from relevant working-tree inputs") {
 		t.Fatalf("mismatched selected inputs accepted: %v", err)
-	}
-}
-
-func TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot(t *testing.T) {
-	t.Parallel()
-	f := newProtectedSelectorFixture(t, "base/base.go")
-	command := batchowner.BatchTreePlanCommand("metasystem", f.root, "goal-a", protectedCandidate, testpolicy.ModeAuto)
-	if command.Dir != f.module || !slices.Equal(command.Args, []string{"metasystem", "test", "plan", "--root", f.module, "--goal", "goal-a", "--tree", protectedCandidate, "--mode", "auto", "--purpose", "delivery", "--json"}) {
-		t.Fatalf("join plan root/CWD: dir=%q args=%v", command.Dir, command.Args)
-	}
-	if !slices.Equal(command.Env, gittree.ScrubbedEnviron()) {
-		t.Fatalf("join plan environment differs from scrubbed environment")
-	}
-	selected, err := f.selectPackages(command.Dir, protectedBase, protectedCandidate, nil, command.Env)
-	if err != nil || selected.Tree != protectedCandidate || selected.ModulePath != "example.invalid/protected" || !slices.Equal(selected.Packages, []string{"./base", "./consumer"}) || !slices.Contains(selected.InputDirs["./consumer"], "./base") {
-		t.Fatalf("join selection: %+v err=%v", selected, err)
 	}
 }

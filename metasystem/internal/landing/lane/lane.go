@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,10 +32,8 @@ const (
 	// CodeRecordIncomplete is a lane record an older engine wrote: it names
 	// no installation or custody epoch, so a person registers it again.
 	CodeRecordIncomplete = "LANDING_LANE_RECORD_INCOMPLETE"
-	// CodeNotRegistered is a gated operation on a computer with no lane.
-	CodeNotRegistered = "LANDING_LANE_NOT_REGISTERED"
-	// CodePaused is a gated operation refused because a person paused the
-	// lane (or its pause cannot be read).
+	// CodePaused is an operation refused because a person paused the lane
+	// (or its pause cannot be read).
 	CodePaused = "LANDING_LANE_PAUSED"
 	// CodeUnreachable is a lane checkout that can't be read, which is not
 	// taken for gone: a volume that is not mounted, a folder that can't be
@@ -45,8 +42,6 @@ const (
 	// CodeUnsetting is a join or an agent operation refused while a person
 	// unsets the lane, and a registration refused until that unset ends.
 	CodeUnsetting = "LANDING_LANE_UNSETTING"
-	// CodeAccountUnresolved leads ResolveAccount's refusals.
-	CodeAccountUnresolved = "LANE_ACCOUNT_UNRESOLVED"
 )
 
 // Record is the host's registration of its landing lane: its layout as
@@ -88,9 +83,6 @@ func RecordPath(home string) string { return filepath.Join(HostDir(home), "landi
 
 // LockPath is the flock every lane record, keeper state and pause is written under.
 func LockPath(home string) string { return filepath.Join(HostDir(home), "landing-lane.lock") }
-
-// ProvingPath is the flock the batch that proves holds.
-func ProvingPath(home string) string { return filepath.Join(HostDir(home), "landing-proving.lock") }
 
 // gone reports whether path no longer exists.
 func gone(path string) bool {
@@ -321,58 +313,4 @@ func removeIfPresent(path string) error {
 		return err
 	}
 	return nil
-}
-
-// HoldProving takes the host's proving flock for the life of the calling
-// process, waiting while another proof holds it: the process that runs a
-// batch's proof or diagnostic holds it, never the owner that launched it, so
-// an owner's pause, restart or lane move cannot strand it. The kernel
-// releases it when the process ends; release gives it back sooner.
-func HoldProving(home string) (release func() error, err error) {
-	if home == "" || !filepath.IsAbs(home) {
-		return nil, fmt.Errorf("the proving lock needs an absolute home, got %q", home)
-	}
-	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
-		return nil, err
-	}
-	held, err := lock.File(ProvingPath(home), 0o600, lock.Exclusive)
-	if err != nil {
-		return nil, err
-	}
-	// The holder's pid, written into the lock file it keeps open: the file
-	// is never removed, so its inode stays the same across holders.
-	if file := held.File(); file.Truncate(0) == nil {
-		_, _ = file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
-	}
-	return held.Release, nil
-}
-
-// ProbeProving tests the host's proving flock without keeping it: busy names
-// the proof that holds it ("pid N"). The owner probes before it starts a
-// batch, so a batch keeps collecting while another proves; a probe that
-// races a start only makes the second proof wait for the first.
-func ProbeProving(home string) (holder string, busy bool, err error) {
-	if home == "" || !filepath.IsAbs(home) {
-		return "", false, fmt.Errorf("the proving lock needs an absolute home, got %q", home)
-	}
-	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
-		return "", false, err
-	}
-	held, err := lock.File(ProvingPath(home), 0o600, lock.TryExclusive)
-	if err != nil {
-		if lock.Busy(err) {
-			return ProvingHolder(home), true, nil
-		}
-		return "", false, err
-	}
-	return "", false, held.Release()
-}
-
-// ProvingHolder names the proving flock's last holder from the pid it wrote.
-func ProvingHolder(home string) string {
-	data, err := os.ReadFile(ProvingPath(home))
-	if pid := strings.TrimSpace(string(data)); err == nil && pid != "" {
-		return "pid " + pid
-	}
-	return "a process that recorded no pid"
 }
