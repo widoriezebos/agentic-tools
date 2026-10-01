@@ -37,7 +37,7 @@ func Production(home, installation string, proving bool) custody.Probes {
 // rules, not the lane's.
 func laneLeases(installation string, inspect func(string) ([]proofrun.HostLeaseReport, error)) ([]custody.Lease, error) {
 	if installation == "" || !filepath.IsAbs(installation) {
-		return nil, fmt.Errorf("the lane's installation is not known (%q), so which proof leases are the lane's can't be read", installation)
+		return nil, fmt.Errorf("the lane's installation is not known (%q), so which test-run leases are the lane's can't be read", installation)
 	}
 	reports, err := inspect(installation)
 	if err != nil {
