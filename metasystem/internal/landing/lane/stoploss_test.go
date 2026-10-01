@@ -86,8 +86,10 @@ func TestDeadlineCancelsAndSettles(t *testing.T) {
 	if !paused || pause.By != StopLossBy || err != nil || len(store.Hits) != 1 || store.Hits[0].Kind != HitDeadline {
 		t.Fatalf("after the deadline: pause %+v %t, hits %+v %v; want the lane stopped for a person by the stop-loss", pause, paused, store.Hits, err)
 	}
-	if line := keeper.Step(); len(agent.starts) != 1 || !strings.Contains(line, "paused") {
-		t.Fatalf("after the hit: %q, starts %d; want nothing started until a person resumes", line, len(agent.starts))
+	// The cancelled session is reaped while the lane waits for a person,
+	// so its usage is reconciled before any resume.
+	if line := keeper.Step(); len(agent.starts) != 1 || !strings.Contains(line, "paused") || !slices.Equal(agent.reaped, []string{"landing-1"}) {
+		t.Fatalf("after the hit: %q, starts %d, reaped %v; want the session reaped and nothing started until a person resumes", line, len(agent.starts), agent.reaped)
 	}
 }
 

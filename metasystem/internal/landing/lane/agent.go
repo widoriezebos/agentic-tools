@@ -320,17 +320,17 @@ func (k AgentKeeper) decide(record Record) (string, AgentState, bool) {
 	if gone(root) {
 		return goneRefusal(Record{Root: root}).Message, AgentState{}, false
 	}
-	if by, paused := pausedClosed(k.Home); paused {
+	if by, paused := pausedClosed(k.Home); paused && !k.own(record) {
 		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), AgentState{}, false
 	}
 	if !k.own(record) {
 		return "", AgentState{}, false
 	}
-	if reason, stop := k.recheck(root); stop {
-		return reason, AgentState{}, false
-	}
+	// An ended launch is reaped at once, paused or not: its usage is
+	// reconciled and its end counted while the lane waits for a person
+	// (K10), so a resume never meets an end the budgets have not seen.
 	state, _ := ReadAgentState(k.Home)
-	if state.Launch != "" && state.ReapedAt == "" {
+	if _, running, err := k.Running(); err == nil && !running && state.Launch != "" && state.ReapedAt == "" {
 		for _, reap := range k.Reap {
 			if err := reap(state.Launch); err != nil {
 				return fmt.Sprintf("the landing agent at %s is not started: the end of %s could not be recorded (%v)", root, state.Launch, err), state, false
@@ -340,6 +340,13 @@ func (k AgentKeeper) decide(record Record) (string, AgentState, bool) {
 		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
 			return "the landing agent's keeper can't write its record: " + err.Error(), state, false
 		}
+	}
+	// The pause, read again: a reap may have stopped the lane (a hit).
+	if by, paused := pausedClosed(k.Home); paused {
+		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), state, false
+	}
+	if reason, stop := k.recheck(root); stop {
+		return reason, state, false
 	}
 	if reason, held := k.held(root); held {
 		return reason, state, false
