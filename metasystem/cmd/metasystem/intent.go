@@ -1469,7 +1469,7 @@ var intentActionIntents = map[string][]struct {
 	"landing": {
 		{"Read", []string{"status"}},
 		{"Shape", []string{"set", "unset"}},
-		{"Work", []string{"start", "stop", "restart"}},
+		{"Work", []string{"start", "stop"}},
 		{"Land", []string{"begin", "prove", "publish", "return", "validate", "engine"}},
 	},
 	"system": {
