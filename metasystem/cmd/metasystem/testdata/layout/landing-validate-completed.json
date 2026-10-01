@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing validate",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "main 111111111111 is already validated (run cadence-run-0); nothing ran",
+  "data": {
+    "result": "completed",
+    "key": {
+      "trunkTree": "1111111111111111111111111111111111111111",
+      "weightGeneration": 0,
+      "forcedWindowStart": ""
+    },
+    "runId": "cadence-run-0"
+  }
+}
+
+--

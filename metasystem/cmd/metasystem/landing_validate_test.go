@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
@@ -64,7 +65,7 @@ func TestLandingValidateNamesTheAuthorityGapInTwoLines(t *testing.T) {
 		t.Fatalf("exit %d, requests %+v\n%s%s", code, bed.requests, stdout, stderr)
 	}
 	text := stdout + stderr
-	for _, want := range []string{"goal standing-validation is not approved, so no landing validation runs; nothing was written to main",
+	for _, want := range []string{"goal standing-validation is not approved, so no landing validation runs; main is untouched",
 		"metasystem goal approve standing-validation"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("refusal lacks %q:\n%s", want, text)
@@ -165,5 +166,91 @@ func TestLandingEngineAdvanceForceIsAPersonsAct(t *testing.T) {
 	}
 	if code, _ := run("advance"); code != 0 || len(requests) != 2 || requests[1].Force {
 		t.Fatalf("plain advance: exit %d, requests %+v", code, requests)
+	}
+}
+
+func init() {
+	registerIdempotency("landing validate", idemStateful,
+		"the key of landed main is already validated: success with that result, nothing run, reserved or written", witnessLandingValidateRepeat)
+}
+
+// completedValidationSeams are landing validate's seams over the real
+// reservation and custody stores in home, whose ledger already holds the
+// status of the key that is due: nothing may run, launch or publish.
+func completedValidationSeams(t *testing.T, home string) gaterun.ValidateSeams {
+	tree := strings.Repeat("1", 40)
+	key := goal.CadenceClaimKey{TrunkTree: tree, WeightGeneration: 3, ForcedWindowStart: "2026-09-30T18:00:00Z"}
+	refuse := func(what string) { t.Errorf("a completed key reached %s", what) }
+	return gaterun.ValidateSeams{
+		Clock:       func() time.Time { return laneTestNow },
+		Reservation: func() (*gaterun.Validation, error) { return cadence.ReadReservation(home) },
+		Reserve:     func(v gaterun.Validation) error { refuse("reserve"); return cadence.Reserve(home, v) },
+		Record:      func(v gaterun.Validation) error { refuse("record"); return nil },
+		Clear:       func(runID string) error { return cadence.ClearReservation(home, runID) },
+		Gap:         func() error { return nil },
+		Plan: func() (gaterun.ValidationPlan, error) {
+			return gaterun.ValidationPlan{Trunk: gaterun.CadenceTrunk{Commit: strings.Repeat("2", 40), Tree: tree}, Key: key, Due: true}, nil
+		},
+		Latest: func() (*goal.CadenceStatus, error) {
+			return &goal.CadenceStatus{TrunkTree: tree, WeightGeneration: 3, ForcedWindowStart: key.ForcedWindowStart, RunID: "cadence-run-0",
+				Groups: []goal.CadenceGroupStatus{{Group: "deep", Status: "passed"}}}, nil
+		},
+		Claim:  func(time.Time) (gaterun.CadenceAuthority, error) { refuse("claim"); return gaterun.CadenceAuthority{}, nil },
+		Launch: func(gaterun.Validation) (string, error) { refuse("launch"); return "", nil },
+		Publish: func(goal.CadenceClaimKey, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error {
+			refuse("publish")
+			return nil
+		},
+	}
+}
+
+// witnessLandingValidateRepeat runs landing validate twice on an enrolled
+// lane whose key is already validated: both runs are success with the same
+// result, and the second leaves the host home as it was.
+func witnessLandingValidateRepeat(t *testing.T) {
+	bed := newValidateVerbBed(t)
+	run := func() (int, string, string) {
+		command, _ := findIntentAction("landing", "validate")
+		owners := bed.kernelBed.owners()
+		owners.landing.validation = func(request laneValidateRequest) (gaterun.ValidateOutcome, error) {
+			return gaterun.Validate(request.Force, completedValidationSeams(t, request.Home))
+		}
+		var stdout, stderr strings.Builder
+		code := runIntentIn(command, nil, &stdout, &stderr, bed.cwd, owners)
+		return code, stdout.String(), stderr.String()
+	}
+	if code, stdout, stderr := run(); code != 0 || !strings.Contains(stdout, "already validated (run cadence-run-0)") {
+		t.Fatalf("first validate = %d %q %q", code, stdout, stderr)
+	}
+	before := idemTreeDigest(t, bed.home)
+	if code, stdout, stderr := run(); code != 0 || !strings.Contains(stdout, "already validated (run cadence-run-0)") {
+		t.Fatalf("repeated validate = %d %q %q", code, stdout, stderr)
+	}
+	idemSameTree(t, "a repeated landing validate (home)", before, idemTreeDigest(t, bed.home))
+}
+
+// landing validate's layout goldens join G1b through the group hook.
+var _ = func() bool {
+	layoutGroupCases = append(layoutGroupCases, landingValidateLayoutCases)
+	return true
+}()
+
+func landingValidateLayoutCases() []layoutCase {
+	return []layoutCase{
+		{name: "landing-validate-completed", args: []string{"landing", "validate"}, bed: landingValidateLayoutBed(gaterun.ValidateOutcome{
+			Result: gaterun.ValidateCompleted, RunID: "cadence-run-0", Key: goal.CadenceClaimKey{TrunkTree: strings.Repeat("1", 40)}})},
+		{name: "landing-validate-authority", args: []string{"landing", "validate"}, bed: landingValidateLayoutBed(gaterun.ValidateOutcome{
+			Result: gaterun.ValidateUnavailable, Code: gaterun.CodeValidateAuthority,
+			Reason: "goal standing-validation is not approved, so no landing validation runs", Fix: "metasystem goal approve standing-validation"})},
+	}
+}
+
+// landingValidateLayoutBed is the running lane's bed whose engine is
+// admitted, with landing validate's outcome given.
+func landingValidateLayoutBed(outcome gaterun.ValidateOutcome) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		bed := landingEngineLayoutBed(false)(t)
+		bed.owners.landing.validation = func(laneValidateRequest) (gaterun.ValidateOutcome, error) { return outcome, nil }
+		return bed
 	}
 }

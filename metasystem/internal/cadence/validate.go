@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -398,20 +396,12 @@ func launchValidation(home, root string, owner Owner, clock func() time.Time, st
 	if err != nil || record == nil {
 		return "", fmt.Errorf("the validation run record is unreadable: %v", err)
 	}
-	self, err := os.Executable()
+	command, err := cadenceRunCommand(root, runID, nonce, record.Log, reservation.Authority.GoalID, reservation.Trunk.Tree,
+		cadenceResultPath(root, runID), reservation.ForceGroups)
 	if err != nil {
 		_ = store.FailLaunch(runID, "the engine executable can't be found: "+err.Error())
 		return "", err
 	}
-	testArgs := []string{"internal", "test", "run", "--root", root, "--goal", reservation.Authority.GoalID, "--tree", reservation.Trunk.Tree,
-		"--mode", "deep", "--purpose", "cadence", "--result", cadenceResultPath(root, runID)}
-	if reservation.ForceGroups {
-		testArgs = append(testArgs, "--force-groups")
-	}
-	wrapArgs := append([]string{"run", "wrap", "--root", root, "--id", runID, "--nonce", nonce, "--log", record.Log, "--", self}, testArgs...)
-	command := exec.Command(self, wrapArgs...)
-	command.Dir, command.Env = root, os.Environ()
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	opened, err := custody.Start(home, custody.KindValidate, custodySubject(runID), clock(), command)
 	if err != nil {
 		if command.Process == nil {

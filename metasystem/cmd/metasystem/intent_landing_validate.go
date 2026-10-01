@@ -145,7 +145,7 @@ func landingValidateResult(inv *intentInvocation, outcome gaterun.ValidateOutcom
 		result.next, result.nextReason = inv.publicArgv("landing", "validate"), "records it once the cause has passed"
 	default:
 		result.Outcome, result.code = intentRefused, 1
-		result.Summary = firstNonEmpty(outcome.Reason, "the landing validation couldn't run") + "; nothing was written to main"
+		result.Summary = firstNonEmpty(outcome.Reason, "the landing validation couldn't run") + "; main is untouched"
 		switch {
 		case outcome.Fix != "":
 			result.next, result.nextReason = strings.Fields(outcome.Fix), "then run metasystem landing validate again"

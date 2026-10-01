@@ -263,7 +263,7 @@ func TestValidateWeightRefusalsSettleReadFailuresStayPending(t *testing.T) {
 	refused := newValidateBed(t)
 	refused.reserved("cadence-run-7", true)
 	refused.outcome["cadence-run-7"] = RunOutcome{Usable: true, Result: greenResult("attempt-7")}
-	refused.discharge = &WeightRefusal{Code: WeightResetNotAllowed, Message: "not allowed"}
+	refused.discharge = &WeightRefusal{Code: WeightResetNotAllowed, Err: errors.New("not allowed")}
 	if outcome := refused.validate(false); outcome.Result != ValidateFinalized || outcome.Discharged {
 		t.Fatalf("typed refusal: outcome = %+v", outcome)
 	}
