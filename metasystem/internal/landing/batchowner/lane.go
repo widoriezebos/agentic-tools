@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -165,5 +166,5 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 // LandingLaneViewSources are the production reads of the lane's view as the
 // board shows it.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady, Wake: plain.KeeperWake(laneHome)}
 }

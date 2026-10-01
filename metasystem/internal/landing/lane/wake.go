@@ -2,8 +2,8 @@ package lane
 
 // Why the landing agent would run now. landing status --json carries it as
 // "wake", and the keeper wakes the agent on the very same read, in process:
-// no process reads another's text. An idle lane runs no model. The lane has
-// no wake source yet: until one is named, the keeper never wakes the agent.
+// no process reads another's text. An idle lane runs no model. The plain
+// lane's queue and proofs are the wake source (plain.KeeperWake).
 
 // Wake is why the landing agent would run now. Reasons empty is an idle
 // lane. Unread names each source that could not be read and why: an unread

@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // wholeOwnerLanding is one claimed, approved, land-ready goal with a single
@@ -298,5 +299,60 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 	}
 	if len(supplied) != 1 || supplied[0].Pid != int64(os.Getpid()) {
 		t.Fatalf("the receipt owner was supplied %+v, want this process %d", supplied, os.Getpid())
+	}
+}
+
+// TestWorkLandHandsInOverRealGit drives public work land over a real goal
+// branch with a clean read, pushed to origin, into a registered plain lane
+// whose checkout is a nested clone of origin: the seat's own branch reads
+// and gates run, one line with the branch's tip lands in the lane
+// installation's queue.jsonl, and a repeat appends nothing. Nothing is
+// proved or pushed by the seat.
+func TestWorkLandHandsInOverRealGit(t *testing.T) {
+	t.Parallel()
+	f := newWholeOwnerLanding(t)
+	landingRoot := filepath.Join(t.TempDir(), "landing")
+	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", f.upstream, landingRoot)
+	owners := defaultIntentOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
+	delivery.process = func(process intentProcess) intentProcessResult {
+		t.Fatalf("the hand-in ran a subprocess %v", process.argv)
+		return intentProcessResult{}
+	}
+	owners.delivery = delivery
+	command, _ := findIntentCommand("work land")
+	run := func() intentResult {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
+		var result intentResult
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Fatalf("land printed no result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		return result
+	}
+	result := run()
+	if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
+		t.Fatalf("hand-in = %+v", result)
+	}
+	// The lane is nested: its records are in the installation, not at the
+	// checkout's top.
+	install := filepath.Join(landingRoot, "metasystem")
+	if _, err := os.Stat(filepath.Join(landingRoot, "artifacts", "agents", "landing", "queue.jsonl")); err == nil {
+		t.Fatal("the hand-in wrote the queue at the checkout's top")
+	}
+	entries, err := plain.Entries(install)
+	if err != nil || len(entries) != 1 || entries[0].SHA != f.branchTip || entries[0].Branch != "goal/standing-validation" {
+		t.Fatalf("the queue line = %+v %v; want the branch tip %s", entries, err, f.branchTip)
+	}
+	if again := run(); again.Outcome != intentUnchanged || !strings.Contains(again.Summary, "waiting") {
+		t.Fatalf("a repeat = %+v", again)
+	}
+	if entries, _ := plain.Entries(install); len(entries) != 1 {
+		t.Fatalf("a repeat appended: %+v", entries)
+	}
+	if f.remote(t, "refs/heads/main") != f.base {
+		t.Fatal("a hand-in moved main")
 	}
 }

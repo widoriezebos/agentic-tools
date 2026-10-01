@@ -7,6 +7,8 @@ package plain
 import (
 	"fmt"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
 // The wake reasons of the plain lane.
@@ -50,4 +52,32 @@ func ProofHold(install string, seams ProveSeams) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("the proof of tree %s (attempt %s) runs since %s; the agent is woken when it ends", Short(running.Tree), running.Attempt, running.Since), nil
+}
+
+// KeeperWake is the lane keeper's wake source for the host lane at home:
+// WakeReasons over the lane checkout at root, against the keeper's last
+// launch of the landing agent. landing status reads the same.
+func KeeperWake(home string) lane.WakeSources {
+	return lane.WakeSources{Reasons: func(root string) ([]string, error) {
+		layout, err := lane.NewLayout(root)
+		if err != nil {
+			return nil, err
+		}
+		state, err := lane.ReadAgentState(home)
+		if err != nil {
+			return nil, err
+		}
+		launched, _ := time.Parse(time.RFC3339, state.StartedAt)
+		return WakeReasons(string(layout.Install), string(layout.Checkout), launched)
+	}}
+}
+
+// KeeperProofHold is the keeper's hold while a proof runs in the lane
+// checkout at root (ProofHold).
+func KeeperProofHold(root string) (string, error) {
+	layout, err := lane.NewLayout(root)
+	if err != nil {
+		return "", err
+	}
+	return ProofHold(string(layout.Install), ProveSeams{})
 }

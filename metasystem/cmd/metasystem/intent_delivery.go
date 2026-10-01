@@ -157,13 +157,14 @@ func intentDeliveryCommands() []intentCommand {
 				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
 				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
 				"The read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
-				"While this computer has a landing lane (metasystem landing status shows it), work land refuses: the lane's hand-in isn't built yet,",
-				"and metasystem landing unset lets the seat land its own work.",
+				"While this computer has a landing lane (metasystem landing status shows it), work land G hands the goal's branch to the lane instead:",
+				"after the same reads and gates, one line in the lane's queue, and its landing agent proves and pushes it. A repeat shows whether it",
+				"waits, landed (main contains it; then goal done G) or was returned, with the reason.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
 				"--message lands a hand-made change instead: the named paths (or the staged set) are staged and committed through the commit",
 				"boundary with the landing's declarations, rebased onto origin, proved against retained delivery proof, and pushed from this checkout.",
-				"While this computer has a landing lane it is refused the same way, except with --local or --recertification.",
+				"While this computer has a landing lane it is refused, as is work land j2:J, except with --local or --recertification.",
 			},
 			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
@@ -252,6 +253,9 @@ type intentDeliveryOwners struct {
 	// laneRoot reports whether this computer has a landing lane registered
 	// and, when it does, its checkout.
 	laneRoot func(root string, now time.Time) (string, bool, error)
+	// laneInstall is the installation of the registered lane checkout,
+	// where its queue.jsonl lives; nil resolves the checkout's layout.
+	laneInstall func(landingRoot string) (string, error)
 	// boardView reads the host board for a one-shot view of the checkout,
 	// checking its cards against the goal ledger at ledgerRoot (the state
 	// root); nil reads the host this command runs on.
@@ -1581,26 +1585,34 @@ func runIntentLand(inv *intentInvocation) int {
 	return inv.render(inv.landGoal(args[0], inv.input.text("through")))
 }
 
-// laneRegistered refuses a landing while this computer has a landing lane:
-// the lane's hand-in is not built yet, and a seat never silently lands its
-// own work beside a lane. nil lets the seat land its own work.
-func (inv *intentInvocation) laneRegistered(targets []intentTarget) *intentResult {
+// laneCheck reads whether this computer has a landing lane and, when it
+// has, its checkout; the refusal when that can't be read.
+func (inv *intentInvocation) laneCheck(targets []intentTarget) (string, bool, *intentResult) {
 	owners := inv.delivery()
-	_, configured, err := owners.laneRoot(inv.layout.InstallationRoot, owners.now())
+	root, configured, err := owners.laneRoot(inv.layout.InstallationRoot, owners.now())
 	var laneRefusal *lane.Refusal
 	if errors.As(err, &laneRefusal) {
-		return laneRefusalResult(targets, laneRefusal)
+		return "", false, laneRefusalResult(targets, laneRefusal)
 	}
 	if err != nil {
-		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		return "", false, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "whether this computer has a landing lane can't be read, so nothing was landed",
 			next:    inv.publicArgv("landing", "status"), nextReason: "names what is wrong with the landing lane", Details: []string{err.Error()}}
 	}
-	if !configured {
-		return nil
+	return root, configured, nil
+}
+
+// laneRegistered refuses a landing the landing lane takes no hand-in for
+// (a job's chain, a hand-made change) while this computer has one: a seat
+// never silently lands its own work beside a lane. nil lets the seat land
+// its own work.
+func (inv *intentInvocation) laneRegistered(targets []intentTarget) *intentResult {
+	_, configured, problem := inv.laneCheck(targets)
+	if problem != nil || !configured {
+		return problem
 	}
 	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary: "this computer has a landing lane, whose hand-in isn't built yet",
+		Summary: "this computer has a landing lane, which takes only a goal's branch (work land G)",
 		next:    inv.publicArgv("landing", "unset"), nextReason: "lets this seat land its own work"}
 }
 
@@ -1675,8 +1687,9 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		return *result
 	}
 	inv.finishReleaseSets(base)
-	if refused := inv.laneRegistered(targets); refused != nil {
-		return *refused
+	landingRoot, configured, problem := inv.laneCheck(targets)
+	if problem != nil {
+		return *problem
 	}
 	state, err := owners.branchState(root, goalID)
 	if err != nil {
@@ -1686,6 +1699,25 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 			refused.next, refused.nextReason = amend, ""
 		}
 		return refused
+	}
+	laneInstall := ""
+	if configured {
+		// The plain lane: the goal's newest hand-in at this selection
+		// answers first, including once the branch is gone.
+		install, err := inv.laneInstallOf(landingRoot)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+				Summary: "the landing lane's installation can't be found, so nothing was handed in",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's checkout", Details: []string{err.Error()}}
+		}
+		laneInstall = install
+		selected := state.BranchTip
+		if through != "" && selected != "" {
+			selected = through
+		}
+		if result := inv.laneQueueState(targets, install, goalID, selected, state.EndpointTip); result != nil {
+			return *result
+		}
 	}
 	if state.BranchTip == "" {
 		if landed, ok := latestLanded(base); ok {
@@ -1701,6 +1733,9 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
 		return *refused
+	}
+	if configured {
+		return inv.handIn(targets, laneInstall, goalID, subject, state.EndpointTip)
 	}
 	return inv.landByHand(targets, goalID, through, subject, state, base)
 }
