@@ -147,6 +147,8 @@ var Rows = []Row{
 	{Code: "LANE_ENGINE_ADVANCE_PAUSED", Owner: "internal/landing/laneengine", Site: "advance.go#admitRefusal", Shape: Question, H1: StandingGuide, Forward: "landing status"},
 	{Code: "LANE_BASE_MOVED", Owner: "internal/landing/lane", Site: "publish.go#Publish", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUBLISH_REFUSED", Owner: "internal/landing/lane", Site: "publish.go#Publish", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_ALLOWANCE_SPENT", Owner: "internal/landing/lane", Site: "stoploss.go#allowanceRefusal", Shape: Question, H1: StandingGuide, Forward: "landing start"},
+	{Code: "LANE_ONE_SESSION_PER_BATCH", Owner: "internal/landing/lane", Site: "stoploss.go#BindBatchHeld", Shape: Question, H1: StandingGuide, Forward: "landing status"},
 	{Code: "LANE_PUBLISH_UNKNOWN", Owner: "internal/landing/lane", Site: "publish.go#Publish", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_NOT_ADMITTED", Owner: "internal/landing/lane", Site: "hook.go#AdmitPush", Shape: Question, H1: StandingGuide, Forward: "landing status"},
 	{Code: "LANDING_LANE_HOOK_OCCUPIED", Owner: "internal/landing/lane", Site: "hook.go#installHook", Shape: Question, H1: StandingInput},
