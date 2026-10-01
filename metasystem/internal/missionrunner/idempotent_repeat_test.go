@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // A repeated resolution is recognized by its substance: variant, tree for a
@@ -64,7 +65,10 @@ func TestLaunchOverALiveRunnerIsAlreadyRunning(t *testing.T) {
 	writeText(t, filepath.Join(dir, "state.json"), `{"status":"running"}`)
 	writeText(t, filepath.Join(dir, "lease.json"), `{"missionId":"mr-live","pid":`+strconv.Itoa(self)+`,"pgid":1,"instanceTag":"`+tag+`","startedAt":"x","renewedAt":"x"}`)
 	armed := 0
-	engine.ArmSupervision = func([]string) (string, string, int) { armed++; return "", "", 1 }
+	engine.ArmSupervision = func([]string) (verbresult.Result, error) {
+		armed++
+		return verbresult.Result{Outcome: verbresult.Unknown}, errors.New("up printed no readable result")
+	}
 	for _, mode := range []string{"start", "resume", "resume"} {
 		err := engine.launch(mode, false)
 		var running *alreadyRunning

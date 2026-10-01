@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The group's goldens join layoutCases through its hook.
@@ -42,6 +43,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
 		{name: "landing-restart", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
 }
 
@@ -91,9 +93,7 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		alive := kind != landingLayoutNone
 		records := []batch.Record{}
 		if kind != landingLayoutNone {
-			if _, _, err := lane.Register(home, landing, "Wido", now.Add(-2*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
+			registerLane(t, home, landing, "Wido", now.Add(-2*time.Hour))
 			records = []batch.Record{
 				{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: map[bool]string{true: batch.StateLanding, false: batch.StateProving}[kind == landingLayoutPushing],
 					Units: []batch.Unit{{GoalID: "verbs-match-intent", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}},
@@ -114,7 +114,10 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		const pid = 38928
 		notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-			home: func() (string, error) { return home, nil },
+			// The lane beds keep no goal ledger: validation is never due.
+			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
+			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {
 					return lane.OwnerProbe{}, nil
@@ -155,7 +158,9 @@ func machineStartLayoutBed(already bool) func(t *testing.T) layoutBed {
 			t.Fatal(err)
 		}
 		bed.owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
-			process: func(intentProcess) intentProcessResult { return intentProcessResult{stdout: append(encoded, '\n')} }}
+			ownerEnvelope: func(_ intentProcess, verb string) (verbresult.Result, error) {
+				return verbresult.Result{SchemaVersion: 1, Verb: verb, Outcome: verbresult.Confirmed, Data: encoded}, nil
+			}}
 		return bed
 	}
 }

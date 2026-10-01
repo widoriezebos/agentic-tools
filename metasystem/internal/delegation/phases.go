@@ -9,29 +9,53 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // statusJob is status_job: the record's status on stdout and the census
-// verdict on stderr.
+// verdict on stderr. With --json, stdout is instead one envelope whose data
+// carries the status, the answer a calling process reads.
 func (s *session) statusJob(args []string) error {
+	asJSON := len(args) == 3 && args[2] == "--json"
+	if asJSON {
+		args = args[:2]
+	}
 	if len(args) != 2 || args[0] != "--job" || !validID(args[1]) {
 		return s.usageExit()
 	}
 	job := args[1]
+	answer := func(status int, err error, data any) {
+		if asJSON {
+			result := verbresult.FromError(StatusVerb, status, err, data)
+			if err == nil {
+				result.Summary = "job " + job + " is " + fmt.Sprint(data.(map[string]string)["status"])
+			}
+			_ = verbresult.Write(&s.stdout, result)
+		}
+	}
 	record := s.recordPath(job)
 	if !exists(record) {
 		s.eprintln("status: no job record for " + job)
+		answer(6, errors.New("job "+job+" has no record here"), nil)
 		return exitWith(6)
 	}
 	status := fieldOr(record, "status")
 	switch status {
 	case "pending", "running", "completed", "failed", "timeout", "cancelled":
-		s.println(status)
+		if asJSON {
+			answer(0, nil, map[string]string{"status": status})
+		} else {
+			s.println(status)
+		}
 		s.eprintln(s.censusVerdictLine())
 		return nil
 	}
+	answer(7, errors.New("job "+job+" has a status this engine does not know: "+status), nil)
 	return exitWith(7)
 }
+
+// StatusVerb is the envelope verb of status --json.
+const StatusVerb = "internal delegate status"
 
 // censusVerdictLine is surface_census_verdict.
 func (s *session) censusVerdictLine() string {

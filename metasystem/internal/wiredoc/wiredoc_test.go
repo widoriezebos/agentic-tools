@@ -1,6 +1,7 @@
 package wiredoc
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,5 +196,18 @@ func TestWriteFilePublishesTheCanonicalRendering(t *testing.T) {
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(want) {
 		t.Fatalf("published %q (%v), want %q", got, err, want)
+	}
+}
+
+// A document that parses but is not an object is ErrNotObject by type.
+func TestDecodeNotAnObjectIsTyped(t *testing.T) {
+	t.Parallel()
+	for _, data := range []string{`[1]`, `"text"`, `3`} {
+		if _, err := Decode([]byte(data)); !errors.Is(err, ErrNotObject) {
+			t.Fatalf("Decode(%s) = %v, want ErrNotObject", data, err)
+		}
+	}
+	if _, err := Decode([]byte(`{`)); err == nil || errors.Is(err, ErrNotObject) {
+		t.Fatalf("unreadable bytes = %v, want an error that is not ErrNotObject", err)
 	}
 }

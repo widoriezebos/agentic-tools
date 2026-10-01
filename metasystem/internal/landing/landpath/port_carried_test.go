@@ -151,6 +151,7 @@ func TestCarriedRedBatteryCarriesTheRedGroups(t *testing.T) {
 	c := newCarriedBed(t)
 	c.status.Past = "group:fixture-carry"
 	c.observed.Provenance = "carried opid=op1 past=group:fixture-carry ledger=" + carriedReservedTip + " by=human:wido"
+	c.observed.Carried = &landing.CarriedBinding{Opid: "op1", Past: "group:fixture-carry", Ledger: carriedReservedTip}
 	var directFix string
 	live := c.owners.Live
 	c.owners.Live = func() Judge {

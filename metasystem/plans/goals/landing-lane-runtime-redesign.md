@@ -2,20 +2,26 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The lane pushes to GitHub main for every seat on the host; today's fix-forward chain produced ten defects and two reds on main; mistakes land everyone's work wrongly or block it; design and careful build required"
 - Tier: 3
-- Intent: The host landing lane runs reliably with real processes: one design for how the lane runs (which folder is which, engine identity and re-arm, enrollment, the scheduled check's authority, failed vs unavailable vs red, how supervisor, owner and proof processes find each other), built in small units with code critiques and proven by a real end-to-end rehearsal before the lane is switched on again
+- Intent: What: The landing lane, which proves and pushes everyone's work one batch at a time, runs reliably with real processes. One design settles which folder is which, which engine version runs, how pausing works, how the scheduled check runs, and the difference between a failed test, a test that could not run, and a red. Why: The lane failed on real runs: it treated a test that could not start as a red, kept starting work after a pause, and mixed engine versions. It is paused, and today's fixes land by hand. Pros: One consistent design instead of patches, proven by a full rehearsal in the VM before the lane is switched back on. Cons: Nine build units; the lane stays paused and landings stay by hand until the rehearsal passes.
 - Origin: main
-- Next step: Read the step-back memo /Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md, write the lane runtime design revision, run Astra critique rounds until no material findings remain and both agree (Wido 2026-09-30), then build unit by unit with an independent code critique per unit; pending branches verbs-lessons (item 8) and verbs-redloop are input only
+- Next step: Next: Design revision 5 (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/lane-runtime-design.md) folds Astra round 4; run Astra rounds until no material finding is left, take your rulings on D1-D9 (section 11), then build U1-U9 by hand with one independent code critique per unit and the lane paused. Hand work: the machinery must not claim it. Done when: the U9 end-to-end rehearsal passes in the VM on the deploy commit and main is green, so the lane can be switched on.
 - OpenedAt: 2026-09-30T16:34:22Z
-- Revision: 3
+- Revision: 8
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:wido at=2026-09-30T16:35:03Z revision=3 opid=4YF0CG60BWWDPNZ9S48G5YPJZJ-m1e-b6a4eb0a authority=proven digest=6ca1f415d5d8d054afd626fff0bbe1bc639fe8eadf9812255343d1d487c78921 episode=3
+- Approved: by=human:wido at=2026-09-30T19:05:35Z revision=7 opid=1NCFN7DMKXDF4DZ6R1JC3Q9H7Z-m1e-b6a4eb0a authority=proven digest=e97a2428d9f7c53e754e09671d13cb985410975934d05648b2fd5053c3ab874d episode=7
 
 History:
 - 2026-09-30T16:34:22Z 5N2756QTTCFR80BYR8N5ART94Q-m1e-b6a4eb0a open actor=human:wido targets=landing-lane-runtime-redesign
 - 2026-09-30T16:34:46Z YXR5BXGYAKBTTMBWZMYQ377H7T-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,host-setup-from-scratch,landing-lane-runtime-redesign,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=landing-lane-runtime-redesign from=unranked to=1:1 requested-sequence=1
 - 2026-09-30T16:35:03Z 4YF0CG60BWWDPNZ9S48G5YPJZJ-m1e-b6a4eb0a approve actor=human:wido targets=landing-lane-runtime-redesign
-Integrity: sha256=b1fd761f1ebdd8e72abae5c0ddf9ef456d4c98bc4d43bd6c8bd06cbb2878cda8
+- 2026-09-30T18:11:18Z GGVJCYYEYHFRVTJ48B81EYMF7H-m1e-b6a4eb0a set-pin actor=human:wido targets=landing-lane-runtime-redesign
+- 2026-09-30T19:05:26Z 2WWCJAT4SQQ1WJFDFTXVEZNDDH-m1e-b6a4eb0a unapprove actor=human:wido targets=landing-lane-runtime-redesign reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
+- 2026-09-30T19:05:30Z 0073VRTZMVT52FEJWB7FWKP429-m1e-b6a4eb0a edit actor=human:wido targets=landing-lane-runtime-redesign
+- 2026-09-30T19:05:35Z 1NCFN7DMKXDF4DZ6R1JC3Q9H7Z-m1e-b6a4eb0a approve actor=human:wido targets=landing-lane-runtime-redesign
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=aedf652cb1fb4e792bfc543fd37678464614ea663e93c7432d6ef9d82a1d52eb

@@ -72,6 +72,8 @@ type BatchOwnerEnsureSeams struct {
 	Inspect func(string) (int64, identity.Liveness, error)
 	Wake    func(int64) error
 	Launch  func(string) error
+	// Now stamps an owner start's mark; nil is the wall clock.
+	Now func() time.Time
 }
 
 var BatchOwnerEnsure = BatchOwnerEnsureSeams{
@@ -156,10 +158,60 @@ func BatchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
 }
 
 func EnsureBatchOwner(root string) error {
+	return ensureBatchOwnerWith(root, BatchOwnerEnsure, LandingAgentLive)
+}
+
+// ensureBatchOwnerWith is EnsureBatchOwner over its seams and the landing
+// agent read.
+func ensureBatchOwnerWith(root string, seams BatchOwnerEnsureSeams, agentLive func() (string, bool, error)) error {
 	if err := LandingCheckoutPresent(root); err != nil {
 		return err
 	}
-	lockPath := filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
+	return WithOwnerEnsureLock(root, func() error {
+		pid, state, err := seams.Inspect(root)
+		if err != nil && state == identity.Unknown {
+			return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
+		}
+		switch state {
+		case identity.Alive:
+			return seams.Wake(pid)
+		case identity.Dead:
+			// A running or starting landing agent is the lane's one
+			// composition owner: no batch owner is launched beside it, and
+			// there is nothing to wake.
+			if reason, err := landingAgentHoldWith(agentLive); err != nil || reason != "" {
+				return err
+			}
+			if err := seams.Launch(root); err != nil {
+				return err
+			}
+			// The launched owner may not run yet: the mark tells a landing
+			// agent's start that one is on its way, until the owner takes
+			// its lease or OwnerStartWindow passes.
+			now := time.Now
+			if seams.Now != nil {
+				now = seams.Now
+			}
+			return os.WriteFile(ownerLaunchedPath(root), []byte(now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+		default:
+			return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
+		}
+	})
+}
+
+func ownerEnsureLockPath(root string) string {
+	return filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
+}
+
+func ownerLaunchedPath(root string) string {
+	return filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.launched")
+}
+
+// WithOwnerEnsureLock runs fn under the lane checkout's owner ensure lock,
+// the lock every batch owner start takes: a landing agent's start claim
+// taken under it can never interleave with an owner start.
+func WithOwnerEnsureLock(root string, fn func() error) error {
+	lockPath := ownerEnsureLockPath(root)
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return err
 	}
@@ -172,18 +224,48 @@ func EnsureBatchOwner(root string) error {
 		return err
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-	pid, state, err := BatchOwnerEnsure.Inspect(root)
-	if err != nil && state == identity.Unknown {
-		return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
+	return fn()
+}
+
+// OwnerStartWindow is how long an owner start's mark holds a landing agent
+// when the owner never takes its lease.
+const OwnerStartWindow = 10 * time.Minute
+
+// AcquireBatchOwnerUnlessAgent is the supervised owner component's lease,
+// taken under the ensure lock and only while no landing agent runs or is
+// starting: the lane has one composition owner. When an agent holds the lane
+// no lease is taken and reason says so. The lease clears the start mark.
+func AcquireBatchOwnerUnlessAgent(repo string, agentLive func() (string, bool, error), acquire func(string) (BatchOwnerLease, error)) (BatchOwnerLease, string, error) {
+	var lease BatchOwnerLease
+	var reason string
+	err := WithOwnerEnsureLock(repo, func() error {
+		held, err := landingAgentHoldWith(agentLive)
+		if err != nil || held != "" {
+			reason = held
+			return err
+		}
+		lease, err = acquire(repo)
+		if err != nil {
+			return err
+		}
+		if removeErr := os.Remove(ownerLaunchedPath(repo)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return removeErr
+		}
+		return nil
+	})
+	return lease, reason, err
+}
+
+// OwnerLaunchedWithin says whether an owner start was launched in the lane
+// checkout at root less than window before now: an owner on its way that
+// no probe sees yet.
+func OwnerLaunchedWithin(root string, now time.Time, window time.Duration) bool {
+	data, err := os.ReadFile(ownerLaunchedPath(root))
+	if err != nil {
+		return false
 	}
-	switch state {
-	case identity.Alive:
-		return BatchOwnerEnsure.Wake(pid)
-	case identity.Dead:
-		return BatchOwnerEnsure.Launch(root)
-	default:
-		return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
-	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	return err == nil && now.Sub(at) < window
 }
 
 func AcquireBatchOwner(root string) (BatchOwnerLease, error) {
@@ -400,7 +482,12 @@ func batchEditNext(root, goalID, next string) error {
 }
 
 func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
-	controlRoot := batch.ModuleRoot(root)
+	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls)
+}
+
+// returnSeamsAt are the return seams of the lane whose checkout is root and
+// whose installation (ledger) is controlRoot, publishing through calls, read when each is made.
+func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet) batch.ReturnSeams {
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return BatchReturnLedgerGoal(controlRoot, tree, goalID)
@@ -417,15 +504,15 @@ func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 			if err != nil {
 				return err
 			}
-			return BatchOwnerCalls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
+			return calls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
 				TargetMachine: source.Machine, TargetLineage: source.Lineage, TargetEpoch: int64(epoch),
 				Batch: record.Batch, TargetRoot: loaded.SeatRoot})
 		},
 		Release: func(goalID, next string) error {
-			if err := batchEditNext(controlRoot, goalID, next); err != nil {
+			if err := calls.EditNext(LandingOwnerInvocation(), controlRoot, goalID, next); err != nil {
 				return err
 			}
-			return BatchOwnerCalls.Release(LandingOwnerInvocation(), controlRoot, goalID)
+			return calls.Release(LandingOwnerInvocation(), controlRoot, goalID)
 		},
 	}
 }

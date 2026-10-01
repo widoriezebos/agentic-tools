@@ -40,9 +40,7 @@ func TestKeeperDoesNothingWithoutALane(t *testing.T) {
 func TestKeeperRestartsDeadOwner(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{alive: true}
 	keeper := owner.keeper(home, &clock)
@@ -67,9 +65,7 @@ func TestKeeperRestartsDeadOwner(t *testing.T) {
 func TestKeeperTwoStewardsStartOnce(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	first, second := owner.keeper(home, &clock), owner.keeper(home, &clock)
@@ -89,9 +85,7 @@ func TestKeeperTwoStewardsStartOnce(t *testing.T) {
 func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)
@@ -138,9 +132,7 @@ func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
 func TestKeeperKeepsStartError(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{fail: errors.New("up refused")}
 	keeper := owner.keeper(home, &clock)
@@ -154,9 +146,7 @@ func TestKeeperKeepsStartError(t *testing.T) {
 func TestKeeperHonoursPause(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)
@@ -178,5 +168,45 @@ func TestKeeperHonoursPause(t *testing.T) {
 	}
 	if keeper.Step(); len(owner.starts) != 1 {
 		t.Fatalf("resumed: %d starts; want one", len(owner.starts))
+	}
+}
+
+// TestOwnerNotRelaunchedWhileAnAgentRuns (A-a, critique F-1): the lane has
+// one composition owner. An owner that died is not restarted while a landing
+// agent launch has not ended, not even once its backoff has passed; a hold
+// that cannot be read holds too; once the agent ended the owner restarts.
+func TestOwnerNotRelaunchedWhileAnAgentRuns(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	register(t, home, root)
+	clock := laneNow
+	owner := &fakeOwner{}
+	keeper := owner.keeper(home, &clock)
+	keeper.Step() // death 1: restarted
+	clock = clock.Add(90 * time.Second)
+	keeper.Step() // death 2: its restart waits for the backoff
+	agent := "landing-0011"
+	var holdErr error
+	keeper.Hold = func(string) (string, error) {
+		if agent != "" {
+			return "landing agent " + agent + " is running", holdErr
+		}
+		return "", holdErr
+	}
+	for i := 0; i < 3; i++ {
+		clock = clock.Add(10 * time.Minute)
+		if line := keeper.Step(); len(owner.starts) != 1 || !strings.Contains(line, "landing-0011") {
+			t.Fatalf("an agent runs: %q, starts %d; want no owner relaunch", line, len(owner.starts))
+		}
+	}
+	agent, holdErr = "", errors.New("launches unreadable")
+	clock = clock.Add(10 * time.Minute)
+	if line := keeper.Step(); len(owner.starts) != 1 || !strings.Contains(line, "launches unreadable") {
+		t.Fatalf("an unreadable hold: %q, starts %d", line, len(owner.starts))
+	}
+	holdErr = nil
+	clock = clock.Add(10 * time.Minute)
+	if keeper.Step(); len(owner.starts) != 2 {
+		t.Fatalf("the agent ended: %d starts; want the owner restarted", len(owner.starts))
 	}
 }

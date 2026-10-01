@@ -21,6 +21,10 @@ func init() {
 	}
 	batchowner.BatchOwnerCalls = batchowner.BatchOwnerCallSet{Handover: goalHandoverOwner, EditNext: goalEditNextOwner, Release: goalReleaseOwner, Held: landingHeld}
 	batchowner.BatchCommitBoundary = landingPathCommit
+	// No batch owner starts while a landing agent runs (A-a, one
+	// composition owner).
+	agent := newLandingAgent()
+	batchowner.LandingAgentLive = agent.liveOrStarting(batchowner.LandingLaneHome)
 }
 
 // runProductionCadenceTick runs one cadence tick under the held landing

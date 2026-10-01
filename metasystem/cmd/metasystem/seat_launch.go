@@ -9,7 +9,7 @@ package main
 // internal/seat/launch, and every step belongs to the owner it runs.
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // seatLaunchPresenceTicks is how many of the new machine's ticks the presence
@@ -42,13 +43,27 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	resume := flags.String("resume", "", "continue the launch with this id: verify each done step and redo what does not hold")
 	recordPath := pathFlag(flags, "record", "", "the record file this launch writes (default: one per launch under artifacts/agents/ui/launches)")
-	asJSON := flags.Bool("json", false, "print the record as JSON")
+	asJSON := flags.Bool("json", false, "print one result envelope for a calling process, the launch record its data")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	// answer ends the launch: the words on stderr for a person and, under
+	// --json, the one envelope a parent reads, the record as its data.
+	answer := func(status int, err error, record any) int {
+		if err != nil {
+			fmt.Fprintln(stderr, "seat launch:", err)
+		}
+		if *asJSON {
+			result := verbresult.FromError(seatLaunchVerb, status, err, record)
+			if err == nil {
+				result.Summary = "the machine is launched and supervised"
+			}
+			_ = verbresult.Write(stdout, result)
+		}
+		return status
+	}
 	if err := humanauthority.ValidateTemporaryWordPair(*word, *reviewBy); err != nil {
-		fmt.Fprintln(stderr, "seat launch:", err)
-		return 2
+		return answer(2, err, nil)
 	}
 
 	request := launch.Request{
@@ -62,29 +77,23 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 	if *recordPath == "" {
 		if launched, already, err := launch.Launched(request.From, request); err == nil && already {
 			if *asJSON {
-				encoded, err := json.MarshalIndent(additiveData(launched, map[string]any{"alreadyLaunched": true}), "", "  ")
-				if err == nil {
-					stdout.Write(append(encoded, '\n'))
-				}
-			} else {
-				fmt.Fprintf(stdout, "machine %s is already launched (launch %s, %s at %s)\n", launched.Machine, launched.Launch, launched.Outcome, launched.Destination)
-				fmt.Fprint(stdout, seatLaunchReport(launched))
+				return answer(0, nil, additiveData(launched, map[string]any{"alreadyLaunched": true}))
 			}
+			fmt.Fprintf(stdout, "machine %s is already launched (launch %s, %s at %s)\n", launched.Machine, launched.Launch, launched.Outcome, launched.Destination)
+			fmt.Fprint(stdout, seatLaunchReport(launched))
 			return 0
 		}
 	}
 	record, path, err := seatLaunchRecord(request, *recordPath)
 	if err != nil {
-		fmt.Fprintln(stderr, "seat launch:", err)
-		return 1
+		return answer(1, err, nil)
 	}
 	// A record a signed-in session enrolled is authoritative for its machine
 	// and destination, on a fresh invocation as on a resume, and the pair
 	// does not travel beside it (g1-s72 S72-01, D4). This is judged before
 	// the record is touched: a refusal here leaves it exactly as it was.
 	if err := launch.Admit(request, record); err != nil {
-		fmt.Fprintln(stderr, "seat launch:", err)
-		return 1
+		return answer(1, err, nil)
 	}
 	// A resume takes the machine and the destination from the record it
 	// names: they are what this launch created, and a resume that took them
@@ -99,14 +108,12 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if request.Machine == "" {
-		fmt.Fprintln(stderr, "seat launch: --machine is required")
-		return 2
+		return answer(2, errors.New("--machine is required"), nil)
 	}
 	if request.Destination == "" {
 		proposed, err := seatLaunchDestination(request.From, request.Machine)
 		if err != nil {
-			fmt.Fprintln(stderr, "seat launch:", err)
-			return 1
+			return answer(1, err, nil)
 		}
 		request.Destination = proposed
 	}
@@ -118,7 +125,6 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 	// rather than the refusal it actually was.
 	record.Process = launch.Identify(os.Getpid())
 	stop := func(err error) int {
-		fmt.Fprintln(stderr, "seat launch:", err)
 		record.Outcome = launch.OutcomeFailed
 		ended := time.Now().UTC().Format(time.RFC3339)
 		record.EndedAt = &ended
@@ -126,7 +132,7 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 			Step: launch.StepClone, Outcome: launch.StepFailed, At: ended, Words: err.Error(),
 		})
 		_ = launch.SaveAt(path, record, request.From)
-		return 1
+		return answer(1, err, record)
 	}
 
 	facts, err := seatLaunchFacts(request, record)
@@ -184,20 +190,17 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 	}
 	record.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	finished, runErr := sequencer.Run(record)
-	if *asJSON {
-		encoded, err := json.MarshalIndent(finished, "", "  ")
-		if err == nil {
-			stdout.Write(append(encoded, '\n'))
-		}
-	} else {
+	if !*asJSON {
 		fmt.Fprint(stdout, seatLaunchReport(finished))
 	}
 	if runErr != nil {
-		fmt.Fprintln(stderr, "seat launch:", runErr)
-		return 1
+		return answer(1, runErr, finished)
 	}
-	return 0
+	return answer(0, nil, finished)
 }
+
+// seatLaunchVerb is the envelope verb machine start reads.
+const seatLaunchVerb = "internal seat launch"
 
 // seatLaunchRecord is the record this run writes and where it writes it: the
 // one a resume names, the one the interface already wrote, or a fresh one.

@@ -566,7 +566,7 @@ func nearestGitTop(path string) (string, error) {
 			return dir, nil
 		}
 		if filepath.Dir(dir) == dir {
-			return "", fmt.Errorf("state root: installation is not inside a Git repository: %s", absolute)
+			return "", fmt.Errorf("state root: installation %w: %s", stateroot.ErrNotInRepository, absolute)
 		}
 	}
 }

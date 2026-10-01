@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -342,11 +343,18 @@ func isClaudeCriticRole(record map[string]any) bool {
 // coarse dollar bound. A set budget is validated, and a malformed value is the
 // invalid_native_budget protocol error. The turn limit defaults to 150, and a
 // malformed value is the invalid_native_turn_limit protocol error.
+// ErrInvalidNativeBudget and ErrInvalidNativeTurnLimit are ClaudeBudget's
+// refusals; their words are the protocol error the round fails pending with.
+var (
+	ErrInvalidNativeBudget    = errors.New("invalid_native_budget")
+	ErrInvalidNativeTurnLimit = errors.New("invalid_native_turn_limit")
+)
+
 func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, err error) {
 	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_BUDGET_USD"); ok {
 		budget = value
 		if !regexp.MustCompile(`^[0-9]+([.][0-9]+)?$`).MatchString(budget) || budget == "0" || budget == "0.0" {
-			return "", "", fmt.Errorf("invalid_native_budget")
+			return "", "", ErrInvalidNativeBudget
 		}
 	}
 	turns = "150"
@@ -354,7 +362,7 @@ func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, 
 		turns = value
 	}
 	if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(turns) {
-		return "", "", fmt.Errorf("invalid_native_turn_limit")
+		return "", "", ErrInvalidNativeTurnLimit
 	}
 	return budget, turns, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // evidenceVerbBed is a disk bed whose checkout has an evidence root with one
@@ -153,7 +153,7 @@ func witnessEvidenceDisposeRepeat(t *testing.T, bed *evidenceVerbBed) {
 	if _, err := os.Stat(bed.chain); err != nil {
 		t.Fatal("the preview removed nothing")
 	}
-	bed.person = errors.New("not the enrolled terminal")
+	bed.person = humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "not the enrolled terminal")
 	if code, out := bed.run("evidence", "dispose"); code == 0 || !strings.Contains(out, "metasystem system enroll --name NAME") {
 		t.Fatalf("an agent does not execute a plan = %d:\n%s", code, out)
 	}

@@ -61,26 +61,52 @@ func ResetKeeper(home string) error {
 	return withLock(home, func() error { return removeIfPresent(keeperPath(home)) })
 }
 
-// ReadPause is the person's pause; false when the lane is not paused.
+// unreadablePauseBy names who paused a lane whose pause record cannot be read.
+const unreadablePauseBy = "an unreadable pause record"
+
+// ReadPause is the person's pause; false only when no pause record exists.
+// The pause fails closed (design r10 K2): a record that is there but cannot
+// be read, for any reason, reads as paused.
 func ReadPause(home string) (Pause, bool) {
 	var pause Pause
 	ok, err := readJSON(pausePath(home), &pause)
-	return pause, ok && err == nil
+	if err != nil {
+		return Pause{By: unreadablePauseBy}, true
+	}
+	return pause, ok
+}
+
+// PauseState is ReadPause for a reader that must tell an unreadable pause
+// from none: the error is set when the pause record exists but cannot be
+// read or decoded.
+func PauseState(home string) (Pause, bool, error) {
+	var pause Pause
+	ok, err := readJSON(pausePath(home), &pause)
+	if err != nil {
+		return Pause{}, false, err
+	}
+	return pause, ok, nil
 }
 
 // SetPause records a person's pause; a lane already paused is unchanged.
 func SetPause(home, by string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
-		if _, paused := ReadPause(home); paused {
-			return nil
-		}
-		changed = true
-		return writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339)})
+		changed, err = setPauseLocked(home, by, now)
+		return err
 	})
 	return changed, err
 }
 
-// ClearPause ends a pause; a lane not paused is unchanged.
+// setPauseLocked is SetPause for a caller that holds the lane flock.
+func setPauseLocked(home, by string, now time.Time) (bool, error) {
+	if _, paused := ReadPause(home); paused {
+		return false, nil
+	}
+	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339)})
+}
+
+// ClearPause ends a pause, a readable one or not; a lane not paused is
+// unchanged.
 func ClearPause(home string) (changed bool, err error) {
 	err = withLock(home, func() error {
 		if _, paused := ReadPause(home); !paused {
@@ -104,6 +130,11 @@ type Keeper struct {
 	Inspect func(root string) (bool, error)
 	Start   func(root string) error
 	Ready   func(root string) error
+	// Hold names why no owner may start now, empty when one may: a landing
+	// agent launch that has not ended is the lane's one composition owner,
+	// and no batch owner starts beside it. An error holds too. nil holds
+	// nothing.
+	Hold func(root string) (string, error)
 }
 
 // UnarmedRefusal is a lane whose checkout's supervision is not armed:
@@ -177,6 +208,15 @@ func (k Keeper) step(record Record) string {
 	if k.Ready != nil {
 		if err := k.Ready(root); err != nil {
 			return notReadyLine(root, err)
+		}
+	}
+	if k.Hold != nil {
+		reason, err := k.Hold(root)
+		if err != nil {
+			return fmt.Sprintf("landing lane owner at %s is down and was not restarted: whether a landing agent runs can't be read (%v)", root, err)
+		}
+		if reason != "" {
+			return fmt.Sprintf("landing lane owner at %s is down and was not restarted: %s, and no batch owner runs beside it", root, reason)
 		}
 	}
 	if state.GaveUp != "" {

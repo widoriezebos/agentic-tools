@@ -389,8 +389,9 @@ func TestStandaloneReadStopEndsTheSequence(t *testing.T) {
 	}
 	retry := fixture.request
 	retry.Retry = 1
-	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_RUNNING") {
-		t.Fatalf("retry before proof err=%v", err)
+	// The running attempt's read is named by the result, not by the words.
+	if refused, err := fixture.runner.StartRead(retry); ErrorCode(err) != "READ_RETRY_RUNNING" || refused.Ref != started.Ref {
+		t.Fatalf("retry before proof ref=%q err=%v", refused.Ref, err)
 	}
 	waited, err := fixture.runner.AdvanceRead(started.Ref, 0)
 	if err != nil || waited.Attempt.State != readAttemptRunning || !waited.Stopping || len(fixture.starter.ids) != 1 {

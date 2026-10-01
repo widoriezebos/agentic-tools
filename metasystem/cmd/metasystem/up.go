@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func canonicalPath(path string) (string, error) {
@@ -72,6 +74,39 @@ func printUpResult(result up.Result, stdout io.Writer) int {
 	for _, line := range result.Lines() {
 		fmt.Fprintln(stdout, line)
 	}
+	return result.ExitCode()
+}
+
+// upVerb is the envelope verb of up --json, the answer a parent reads.
+const upVerb = "up"
+
+// upEnvelope is up's result as the one envelope a parent reads: its outcome
+// and the component it stopped at are typed data, never its words.
+func upEnvelope(result up.Result) verbresult.Result {
+	envelope := verbresult.FromError(upVerb, result.ExitCode(), nil, result.Data())
+	if result.ExitCode() == 0 {
+		envelope.Summary = "supervision is " + result.Outcome
+		return envelope
+	}
+	step := result.Failed
+	if step == "" {
+		step = result.Outcome
+	}
+	envelope.Summary = "starting supervision stopped at " + step
+	if result.Remedy != "" {
+		envelope.Details = []string{result.Remedy}
+	}
+	return envelope
+}
+
+// answerUp prints up's result: its lines for a person, and under --json
+// those lines on stderr and the envelope alone on stdout.
+func answerUp(result up.Result, asJSON bool, stdout, stderr io.Writer) int {
+	if !asJSON {
+		return printUpResult(result, stdout)
+	}
+	printUpResult(result, stderr)
+	_ = verbresult.Write(stdout, upEnvelope(result))
 	return result.ExitCode()
 }
 
@@ -150,12 +185,21 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 	retire := flags.Bool("retire", false, "retire this session announcement (internal compatibility option)")
 	shutdown := flags.Bool("shutdown", false, "stop supervision (internal fixture compatibility option)")
 	_ = flags.Bool("rearm", false, "deprecated compatibility spelling; ordinary up replaces an older generation automatically")
+	asJSON := flags.Bool("json", false, "print one result envelope on stdout for a calling process; up's lines go to stderr")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	// refuse answers a refusal before up ran: the words on stderr and, under
+	// --json, the envelope a parent reads.
+	refuse := func(status int, reason string) int {
+		fmt.Fprintln(stderr, reason)
+		if *asJSON {
+			_ = verbresult.Write(stdout, verbresult.FromError(upVerb, status, errors.New(reason), nil))
+		}
+		return status
+	}
 	if flags.NArg() != 0 || *maxCap < 0 || (*runtimeSession != "" && *noRuntimeSession) {
-		fmt.Fprintln(stderr, "up: flags are invalid")
-		return 2
+		return refuse(2, "up: flags are invalid")
 	}
 	modeCount := 0
 	for _, selected := range []bool{*printScheduler, *recoverOnly, *retire, *shutdown} {
@@ -164,33 +208,27 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 		}
 	}
 	if modeCount > 1 || (*ifDown && !*recoverOnly) {
-		fmt.Fprintln(stderr, "choose one of: print the schedule, recover, retire or shut down; --if-down needs --recover-only")
-		return 2
+		return refuse(2, "choose one of: print the schedule, recover, retire or shut down; --if-down needs --recover-only")
 	}
 	root, err := upMetasystemRoot(*metasystemRoot)
 	if err != nil {
-		fmt.Fprintln(stderr, "up:", err)
-		return 2
+		return refuse(2, "up: "+err.Error())
 	}
 	scope, err := upRepositoryScopeWith(*repo, repositoryTop)
 	if err != nil {
-		fmt.Fprintln(stderr, "up:", err)
-		return 2
+		return refuse(2, "up: "+err.Error())
 	}
 	binary, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(stderr, "up:", err)
-		return 1
+		return refuse(1, "up: "+err.Error())
 	}
 	binary, err = canonicalPath(binary)
 	if err != nil {
-		fmt.Fprintln(stderr, "up:", err)
-		return 1
+		return refuse(1, "up: "+err.Error())
 	}
 	scale := upWaitScale()
 	if scale == 0 {
-		fmt.Fprintf(stderr, "the test time scale %s is not a whole number above zero\n", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
-		return 2
+		return refuse(2, fmt.Sprintf("the test time scale %s is not a whole number above zero", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"))
 	}
 	options := up.Options{
 		Root: scope, MetasystemRoot: root, Scope: scope, Binary: binary, Session: *session, Pid: *pid,
@@ -209,10 +247,10 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 	// repository so census still observes application processes and sources.
 	options.Root = root
 	if *retire {
-		return printUpResult(up.Retire(options), stdout)
+		return answerUp(up.Retire(options), *asJSON, stdout, stderr)
 	}
 	if *shutdown {
-		return printUpResult(up.Shutdown(options), stdout)
+		return answerUp(up.Shutdown(options), *asJSON, stdout, stderr)
 	}
-	return printUpResult(up.Run(options), stdout)
+	return answerUp(up.Run(options), *asJSON, stdout, stderr)
 }

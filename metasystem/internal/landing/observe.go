@@ -100,7 +100,21 @@ type Observation struct {
 	Refusal        string   `json:"refusal,omitempty"`
 	Detail         string   `json:"detail,omitempty"`
 	GoalRevision   uint64   `json:"goalRevision,omitempty"`
-	frozenTarget   string
+	// Carried is what a carried landing's observation binds, as typed
+	// facts: the word, the refusal it carries, the seat, the ledger tip and
+	// the judge. A caller checks the binding here, never in Provenance.
+	Carried      *CarriedBinding `json:"carried,omitempty"`
+	frozenTarget string
+}
+
+// CarriedBinding is the carried word, refusal, seat, ledger tip and judge a
+// human-carried observation decided.
+type CarriedBinding struct {
+	Opid   string `json:"opid"`
+	Past   string `json:"past"`
+	Seat   string `json:"seat"`
+	Ledger string `json:"ledger"`
+	Judge  string `json:"judge"`
 }
 
 // observationReader supplies the tree facts used by declaration and register

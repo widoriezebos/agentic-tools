@@ -166,6 +166,20 @@ func refuse(code int, format string, args ...any) *OpError {
 	return &OpError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
+// withRun sets the refusal's line 2: the one command that resolves the
+// refusal or shows what it is about.
+func (e *OpError) withRun(command string) *OpError {
+	e.Run = command
+	return e
+}
+
+// jobStatusRun shows one job's record: the line 2 of a refusal about it.
+func jobStatusRun(job string) string { return "metasystem work status j2:" + job }
+
+// runningJobsRun lists this repository's running jobs: the line 2 of a
+// refusal about a job that has no record yet.
+const runningJobsRun = "metasystem work status"
+
 // silentRefusal reports a refusal whose only signal is the exit code.
 func silentRefusal(code int) *OpError { return &OpError{Code: code} }
 
@@ -292,7 +306,7 @@ var freshRoundSuffixRe = regexp.MustCompile(`-r([0-9]+)$`)
 func RecordCreate(root, job, sourcePath string) error {
 	record, err := readObject(sourcePath)
 	if err != nil {
-		return refuse(1, "invalid initial record for %s: %v", job, err)
+		return refuse(1, "invalid initial record for %s: %v", job, err).withRun(runningJobsRun)
 	}
 	// An indexed reservation (a record born with a session key) takes
 	// the occupancy path: the session's one-publication order decides
@@ -301,7 +315,7 @@ func RecordCreate(root, job, sourcePath string) error {
 	// byte-identical.
 	if sessionKey := asString(record["sessionKey"]); sessionKey != "" {
 		if asString(record["proofLevel"]) != "proven" {
-			return refuse(1, "indexed reservation %s must carry proven custody", job)
+			return refuse(1, "indexed reservation %s must carry proven custody", job).withRun(runningJobsRun)
 		}
 		store := IndexedSessionOccupancyReader{}
 		prepared, prepErr := store.Prepare(root, sessionKey)
@@ -314,12 +328,12 @@ func RecordCreate(root, job, sourcePath string) error {
 	}
 	return withRecordLock(root, job, func(recordPath string) error {
 		if _, err := os.Stat(recordPath); err == nil {
-			return refuse(1, "job id collision: %s", job)
+			return refuse(1, "job id collision: %s", job).withRun(jobStatusRun(job))
 		} else if !os.IsNotExist(err) {
-			return refuse(1, "cannot reserve job record %s: %v", job, err)
+			return refuse(1, "cannot reserve job record %s: %v", job, err).withRun(runningJobsRun)
 		}
 		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
-			return refuse(1, "invalid initial record identity or status for %s", job)
+			return refuse(1, "invalid initial record identity or status for %s", job).withRun(runningJobsRun)
 		}
 		// A FRESH chain root must not be named like a later round:
 		// round identity is the record's, never the id's, and a new
@@ -334,7 +348,7 @@ func RecordCreate(root, job, sourcePath string) error {
 				// overflow literal matches the regex, errs in Atoi, and
 				// would walk straight through the guard.
 				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
-					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job)
+					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job).withRun(jobStatusRun(strings.TrimSuffix(job, m[0])))
 				}
 			}
 		}
@@ -348,25 +362,25 @@ func RecordCreate(root, job, sourcePath string) error {
 func recordCreateLocked(root, job string, record map[string]any, occupancy SessionOccupancy, transaction *SessionIndexTransaction) error {
 	return withRecordLock(root, job, func(recordPath string) error {
 		if _, statErr := os.Stat(recordPath); statErr == nil {
-			return refuse(1, "job id collision: %s", job)
+			return refuse(1, "job id collision: %s", job).withRun(jobStatusRun(job))
 		} else if !os.IsNotExist(statErr) {
-			return refuse(1, "cannot reserve job record %s: %v", job, statErr)
+			return refuse(1, "cannot reserve job record %s: %v", job, statErr).withRun(runningJobsRun)
 		}
 		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
-			return refuse(1, "invalid initial record identity or status for %s", job)
+			return refuse(1, "invalid initial record identity or status for %s", job).withRun(runningJobsRun)
 		}
 		if record["parentJob"] == nil {
 			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
 				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
-					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job)
+					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job).withRun(jobStatusRun(strings.TrimSuffix(job, m[0])))
 				}
 			}
 		}
 		if occupancy.Unprovable != nil {
-			return refuse(1, "session occupancy is unprovable: %s", occupancy.Unprovable.Reason)
+			return refuse(1, "session occupancy is unprovable: %s", occupancy.Unprovable.Reason).withRun(runningJobsRun)
 		}
 		if occupancy.Busy != nil {
-			return refuse(1, "session is busy with %s", occupancy.Busy.OpID)
+			return refuse(1, "session is busy with %s", occupancy.Busy.OpID).withRun(runningJobsRun)
 		}
 		record["sessionOccupancyEvidence"] = sessionOccupancyEvidenceObjects(occupancy.FreeEvidence)
 		record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
@@ -392,11 +406,11 @@ func RecordSetup(root, job, sourcePath string) error {
 	err := withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		current, err := readObject(recordPath)
 		if err != nil {
-			return refuse(1, "cannot complete setup for job record %s: %v", job, err)
+			return refuse(1, "cannot complete setup for job record %s: %v", job, err).withRun(jobStatusRun(job))
 		}
 		record, err := readObject(sourcePath)
 		if err != nil {
-			return refuse(1, "cannot complete setup for job record %s: %v", job, err)
+			return refuse(1, "cannot complete setup for job record %s: %v", job, err).withRun(jobStatusRun(job))
 		}
 		if asString(current["status"]) != "pending-setup" ||
 			asString(record["jobId"]) != job ||
@@ -413,7 +427,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["approvedRef"], current["approvedRef"]) ||
 			!sameValue(record["sliceApprovalClaim"], current["sliceApprovalClaim"]) ||
 			!sameValue(record["capMin"], current["capMin"]) {
-			return refuse(1, "invalid setup transition for %s", job)
+			return refuse(1, "invalid setup transition for %s", job).withRun(jobStatusRun(job))
 		}
 		// The reservation's session and custody evidence survive the
 		// husk swap, and the occupancy index hears the status change
@@ -437,7 +451,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			}
 		}
 		if err := captureProgressLaunch(record); err != nil {
-			return refuse(1, "cannot complete progress setup for %s: %v", job, err)
+			return refuse(1, "cannot complete progress setup for %s: %v", job, err).withRun(jobStatusRun(job))
 		}
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
@@ -509,17 +523,17 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 	err := withRecordLock(root, job, func(recordPath string) error {
 		record, err := readObject(recordPath)
 		if err != nil {
-			return refuse(1, "cannot record protocol error for %s: %v", job, err)
+			return refuse(1, "cannot record protocol error for %s: %v", job, err).withRun(jobStatusRun(job))
 		}
 		if violation == "" && violationFile != "" {
 			data, readErr := os.ReadFile(violationFile)
 			if readErr != nil {
-				return refuse(1, "cannot read protocol violation for %s: %v", job, readErr)
+				return refuse(1, "cannot read protocol violation for %s: %v", job, readErr).withRun(jobStatusRun(job))
 			}
 			violation = strings.TrimSpace(string(data))
 		}
 		if violation == "" {
-			return refuse(1, "protocol violation text is empty for %s", job)
+			return refuse(1, "protocol violation text is empty for %s", job).withRun(jobStatusRun(job))
 		}
 		key := violationKey(job, record["round"], violation)
 		if asString(record["status"]) == "failed" && asString(record["error"]) == "protocol_error" {
@@ -579,11 +593,11 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
-			return refuse(1, "cannot update job record %s: %v", job, readErr)
+			return refuse(1, "cannot update job record %s: %v", job, readErr).withRun(jobStatusRun(job))
 		}
 		patchValue, patchErr := readJSON(patchPath)
 		if patchErr != nil {
-			return refuse(1, "cannot update job record %s: %v", job, patchErr)
+			return refuse(1, "cannot update job record %s: %v", job, patchErr).withRun(jobStatusRun(job))
 		}
 		current := asString(record["status"])
 		if current != expect {
@@ -610,33 +624,33 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		}
 		metadataUpdate := current == target
 		if !metadataUpdate && !statusTransitions[current][target] {
-			return refuse(1, "illegal job transition: %s to %s", current, target)
+			return refuse(1, "illegal job transition: %s to %s", current, target).withRun(jobStatusRun(job))
 		}
 		patch, ok := patchValue.(map[string]any)
 		if !ok {
-			return refuse(1, "record patch must be an object and cannot contain status")
+			return refuse(1, "record patch must be an object and cannot contain status").withRun(jobStatusRun(job))
 		}
 		if _, has := patch["status"]; has {
-			return refuse(1, "record patch must be an object and cannot contain status")
+			return refuse(1, "record patch must be an object and cannot contain status").withRun(jobStatusRun(job))
 		}
 		if _, has := patch["endedAt"]; has {
-			return refuse(1, "record patch cannot contain endedAt; the terminal transition stamps it")
+			return refuse(1, "record patch cannot contain endedAt; the terminal transition stamps it").withRun(jobStatusRun(job))
 		}
 		if validationErr := validateOwnershipPatch(record, patch); validationErr != nil {
-			return refuse(1, "%v", validationErr)
+			return refuse(1, "%v", validationErr).withRun(jobStatusRun(job))
 		}
 		for field := range patch {
 			if immutableFields[field] {
-				return refuse(1, "record patch attempts to change immutable identity")
+				return refuse(1, "record patch attempts to change immutable identity").withRun(jobStatusRun(job))
 			}
 			if dedicatedMetadataFields[field] {
-				return refuse(1, "record patch attempts to change metadata owned by a dedicated operation")
+				return refuse(1, "record patch attempts to change metadata owned by a dedicated operation").withRun(jobStatusRun(job))
 			}
 		}
 		if terminalStatuses[current] && metadataUpdate {
 			for field := range patch {
 				if !terminalMetadataFields[field] {
-					return refuse(1, "terminal record metadata is final except mirror, closure, and aggregate usage")
+					return refuse(1, "terminal record metadata is final except mirror, closure, and aggregate usage").withRun(jobStatusRun(job))
 				}
 			}
 		}
@@ -834,7 +848,7 @@ func RepairClaim(root, job string) (observed string, err error) {
 	err = withRecordLock(root, job, func(recordPath string) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
-			return refuse(1, "cannot read job record %s: %v", job, readErr)
+			return refuse(1, "cannot read job record %s: %v", job, readErr).withRun(jobStatusRun(job))
 		}
 		status := asString(record["status"])
 		if status != "running" {

@@ -3,19 +3,22 @@
 - State: approved
 - Risk: severity=2 novelty=2 exposure=1 accumulation=2 basis="Reports on and releases shared local resources; a wrong release could free a live holder, so every release needs proof of death; recurring machinery."
 - Tier: 2
-- Intent: The steward sees and names shared capacity that work is waiting on: a proof, run or job that has waited more than 10 minutes on a proof-admission lease, proof lock, landing queue, VM or suite lock, or a process that outlived its run is reported with what it waits on, who holds it, whether the holder is alive, and the exact command to settle it; provably dead holders are released by their owners; nothing waits silently.
+- Intent: What: The steward, the background supervisor, notices when work has waited more than 10 minutes on a shared resource (a proof lease, the proof lock, the landing queue, the VM or suite lock, or a process left over from a finished run) and reports what waits, who holds it, whether the holder is alive, and the exact command to free it; holders that are provably dead are released by their owners. Why: between 2026-09-27 and 2026-09-29 work stalled silently several times: dead leases twice, an orphaned watchdog holding the VM suite lock, a queue mix-up, and a full disk. A disk report with a clean-up command already exists and is reused, not rebuilt. Pros: stalls show up within minutes with the fix attached. Cons: one more report to keep accurate, and releasing a lock wrongly could break a live run, so only provably dead holders are released.
 - Origin: human
-- Next step: Design from the 2026-09-27/28/29 incidents (dead heavy leases twice, the orphaned watchdog holding the VM suite lock, the proof-queue aliasing HM8-01, the 2026-09-29 disk-full with ~200 GB of unregistered private caches); include a machine-wide disk health role reporting the top consumers, registered and unregistered, with reclaim commands, kept on report-only at the helm, and language-generic across toolchain caches (brief additions: evidence steward-capacity-20260929/brief-additions.md); one Astra round; build after the lease-reclaim fix is on main.
+- Next step: Next: write a short design for the capacity-wait report that reuses the existing disk report, and give it one round with the design critic. Done when: the design is accepted after that round; the dead-lease fix it waited on is already on main, so building can start right after.
 - OpenedAt: 2026-09-28T08:23:19Z
-- Revision: 3
+- Revision: 6
 - Labels: efficiency, steward
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- NormApproval: approvedRef=16GEZK3EHFYPX730B5TWWE3X4G-m1e-c6925449 minutes=1200 reviewRounds=3 goalRevision=1
-- Approved: by=human:Wido at=2026-09-28T08:24:24Z revision=2 opid=16GEZK3EHFYPX730B5TWWE3X4G-m1e-c6925449 authority=proven digest=e0f7898e0bfcdbbe2efa440f32b4f43ddf3a886c5d65a07a258bcff4fde5fed8 episode=2
+- NormApproval: approvedRef=G8XNMCH1VENMV7VEDC63N8JK2K-ui-bc2fda53 minutes=1200 reviewRounds=3 goalRevision=5
+- Approved: by=human:Wido at=2026-09-30T18:57:51Z revision=6 opid=G8XNMCH1VENMV7VEDC63N8JK2K-ui-bc2fda53 authority=proven digest=f65887da9f3cb431f83c1f1702c2be1299a3b9cf04f45d78fabce2c7707d3a38 episode=6
 
 History:
 - 2026-09-28T08:23:19Z 5JNGWCSGXH8ENQRMH2A3RPNG8D-m1e-c6925449 open actor=human:Wido targets=steward-sees-stuck-capacity
 - 2026-09-28T08:24:24Z 16GEZK3EHFYPX730B5TWWE3X4G-m1e-c6925449 approve actor=human:Wido targets=landing-proof-records-are-written,steward-sees-stuck-capacity
 - 2026-09-28T13:01:58Z AWEWACJW9HCJ61FV4W58GRYWZH-m1e-c6925449 edit actor=m1e+main-1788680071-18713-e76d5d targets=steward-sees-stuck-capacity
-Integrity: sha256=568dae478b5239e4723a364a5c2f7918a9944377116ce0b97937ae296ad92a24
+- 2026-09-30T18:57:41Z 27D0V8SAZJJTHTYCFV3RMQ0G16-ui-bc2fda53 unapprove actor=human:Wido targets=steward-sees-stuck-capacity reason=the backlog clean-up of 2026-09-30 rewrites the intent in plain English; approved again with the same box
+- 2026-09-30T18:57:46Z JVEEVJRNMSPHJVTJA56JNRWQCB-ui-bc2fda53 edit actor=human:Wido targets=steward-sees-stuck-capacity
+- 2026-09-30T18:57:51Z G8XNMCH1VENMV7VEDC63N8JK2K-ui-bc2fda53 approve actor=human:Wido targets=steward-sees-stuck-capacity
+Integrity: sha256=0d8958302ec69e2ac5528eb4939d8672e674d28793dd43a6cac95c1ddb990d39

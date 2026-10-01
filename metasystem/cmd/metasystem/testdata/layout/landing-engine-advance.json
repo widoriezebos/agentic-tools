@@ -1,0 +1,22 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing engine",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "the landing lane's engine is already landed main's build 4b825dc642cb",
+  "data": {
+    "Changed": false,
+    "Commit": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "PreviousGeneration": 7,
+    "Generation": 7
+  }
+}
+
+--

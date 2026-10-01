@@ -13,6 +13,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // changeLaneBed is a delivery bed whose seat is a real repository with one
@@ -210,5 +212,41 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 	expectOutcome(t, "no lane", code, result, intentConfirmed)
 	if len(hand.lands) != 1 || hand.lands[0].CommitOnly || len(hand.joins) != 0 {
 		t.Fatalf("no lane: lands=%+v joins=%+v", hand.lands, hand.joins)
+	}
+}
+
+// Design r10 §1 and §6 step 10 (no-lane mode): after a person's landing
+// unset, a seat whose landing.batch-root still names the old lane lands its
+// own work through the hand path; nothing refuses it, nothing joins, and
+// nothing registers the lane again. The lane resolution and the unset are
+// the real ones over a real host home and a nested landing checkout.
+func TestWorkLandAfterUnsetLandsOnTheSeat(t *testing.T) {
+	t.Parallel()
+	b := newChangeLaneBed(t, true)
+	base := t.TempDir()
+	home, landing := filepath.Join(base, "home"), filepath.Join(base, "landing")
+	registerLane(t, home, landing, "Wido", time.Now())
+	landing = realpath.Resolve(landing)
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf.local"), []byte("landing.batch-root="+landing+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seams := batchowner.LandingLaneSeams{Home: func() (string, error) { return home, nil },
+		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
+	b.owners.batchRoot = seams.BatchRoot
+	steps := batchowner.ProductionUnsetLane(home, "Wido")
+	steps.Probe = func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil }
+	steps.End = func(string) (int64, error) { return 0, nil }
+	report, err := lane.Unset(home, "Wido", time.Now(), false, steps.Seams())
+	if err != nil || !report.Unregistered {
+		t.Fatalf("unset = %+v %v", report, err)
+	}
+	b.edit("one\nafter the lane\n")
+	code, result := b.land()
+	expectOutcome(t, "no lane after unset", code, result, intentConfirmed)
+	if len(b.lands) != 1 || b.lands[0].CommitOnly || len(b.joins) != 0 {
+		t.Fatalf("after unset: lands=%+v joins=%+v; want the seat's own landing", b.lands, b.joins)
+	}
+	if _, ok, err := lane.Read(home); ok || err != nil {
+		t.Fatalf("landing after unset registered a lane again: %v %v", ok, err)
 	}
 }

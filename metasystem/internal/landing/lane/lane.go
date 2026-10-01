@@ -30,13 +30,34 @@ const (
 	CodeRegisterInvalid = "LANDING_LANE_REGISTER_INVALID"
 	CodeUnarmed         = "LANDING_LANE_UNARMED"
 	CodeNoMachine       = "LANDING_LANE_NO_MACHINE"
+	// CodeRecordIncomplete is a lane record an older engine wrote: it names
+	// no installation or custody epoch, so a person registers it again.
+	CodeRecordIncomplete = "LANDING_LANE_RECORD_INCOMPLETE"
+	// CodeNotRegistered is a gated operation on a computer with no lane.
+	CodeNotRegistered = "LANDING_LANE_NOT_REGISTERED"
+	// CodePaused is a gated operation refused because a person paused the
+	// lane (or its pause cannot be read).
+	CodePaused = "LANDING_LANE_PAUSED"
+	// CodeUnreachable is a lane checkout that can't be read, which is not
+	// taken for gone: a volume that is not mounted, a folder that can't be
+	// read.
+	CodeUnreachable = "LANDING_LANE_UNREACHABLE"
+	// CodeUnsetting is a join or an agent operation refused while a person
+	// unsets the lane, and a registration refused until that unset ends.
+	CodeUnsetting = "LANDING_LANE_UNSETTING"
 	// CodeAccountUnresolved leads ResolveAccount's refusals.
 	CodeAccountUnresolved = "LANE_ACCOUNT_UNRESOLVED"
 )
 
-// Record is the host's registration of its landing lane.
+// Record is the host's registration of its landing lane: its layout as
+// landing set resolved it, and the custody epoch that registration took.
 type Record struct {
-	Root         string `json:"root"`
+	Root string `json:"root"`
+	// Install is the lane's installation (Layout.Install).
+	Install string `json:"install,omitempty"`
+	// CustodyEpoch is the lane's claim epoch: every registration takes a
+	// greater one than any before it on this computer.
+	CustodyEpoch uint64 `json:"custodyEpoch,omitempty"`
 	RegisteredBy string `json:"registeredBy"`
 	At           string `json:"at"`
 }
@@ -50,14 +71,13 @@ type Refusal struct {
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Message }
 
-// Resolution is the lane a caller lands through: empty Root when neither the
-// seat nor the host names one. Registered says this call wrote the record;
-// FromHost that the seat named none and the host's record decided.
+// Resolution is the lane a caller lands through: empty Root when the host
+// has none registered. FromHost says the seat named none and the host's
+// record decided.
 type Resolution struct {
-	Root       string
-	Record     Record
-	Registered bool
-	FromHost   bool
+	Root     string
+	Record   Record
+	FromHost bool
 }
 
 // HostDir is the host directory under home, shared with the board.
@@ -78,6 +98,27 @@ func gone(path string) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
+// checkoutGone reports whether path was removed from a folder that is still
+// there: only then is the checkout gone. Any other failure to read it (a
+// volume that is not mounted, a folder that cannot be read) is returned as
+// an error, never taken for gone.
+func checkoutGone(path string) (bool, error) {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return false, nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return false, err
+	}
+	if info, parentErr := os.Stat(filepath.Dir(path)); parentErr != nil || !info.IsDir() {
+		if parentErr == nil {
+			parentErr = fmt.Errorf("%s is not a folder", filepath.Dir(path))
+		}
+		return false, fmt.Errorf("the folder that held it can't be reached: %w", parentErr)
+	}
+	return true, nil
+}
+
 func resolved(path string) string { return realpath.Resolve(filepath.Clean(path)) }
 
 // withLock runs fn under the lane flock, creating the host directory.
@@ -96,14 +137,43 @@ func withLock(home string, fn func() error) error {
 	return fn()
 }
 
-// Read returns the host's lane record; false when none is registered.
+// Read returns the host's lane record; false when none is registered. A
+// record without its layout or custody epoch (an older engine's) is
+// returned with a CodeRecordIncomplete refusal naming landing set.
 func Read(home string) (Record, bool, error) {
 	var record Record
 	ok, err := readJSON(RecordPath(home), &record)
 	if ok && record.Root == "" {
 		return Record{}, false, fmt.Errorf("the landing lane record %s names no checkout; register it with metasystem landing set", RecordPath(home))
 	}
+	if ok && err == nil {
+		if _, layoutErr := record.Layout(); layoutErr != nil || record.CustodyEpoch == 0 {
+			return record, true, incompleteRefusal(record)
+		}
+	}
 	return record, ok, err
+}
+
+// ReadGuarded is Read for a guard that must hold on the lane whoever wrote
+// its record, such as "the landing lane never starts a seat": a record an
+// older engine wrote still names its checkout, so it is returned registered,
+// with its CodeRecordIncomplete refusal as incomplete for the readers that
+// act on the lane (the landing agent is not started on it). Any other error
+// is returned as Read returns it.
+func ReadGuarded(home string) (record Record, registered bool, incomplete *Refusal, err error) {
+	record, registered, err = Read(home)
+	var refusal *Refusal
+	if errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete && record.Root != "" {
+		return record, true, refusal, nil
+	}
+	return record, registered, nil, err
+}
+
+func incompleteRefusal(record Record) *Refusal {
+	return &Refusal{Code: CodeRecordIncomplete,
+		Message: fmt.Sprintf("this computer's landing lane record for %s names no installation or custody epoch (an older engine wrote it), so nothing was done", record.Root),
+		Fix:     "a person registers the lane again: metasystem landing set " + record.Root,
+		Argv:    []string{"metasystem", "landing", "set", record.Root}}
 }
 
 func readJSON(path string, into any) (bool, error) {
@@ -130,46 +200,33 @@ func writeJSON(home, path string, value any) error {
 }
 
 // Resolve decides the lane a seat lands through from its own
-// landing.batch-root (seatRoot, empty when unset) and the host's record:
+// landing.batch-root (seatRoot, empty when unset) and the host's record.
+// Only a person's landing set registers a lane (design r10 §1); a seat's
+// setting never does:
 //
-//   - seat set, record empty: the seat's root is registered (when register)
-//     and used;
-//   - both set and the same checkout: used;
-//   - both set and different: refused, LANDING_LANE_MISMATCH;
-//   - seat unset: the record's root;
-//   - neither: no lane.
+//   - record set, seat unset or naming the same checkout: the record's root;
+//   - record set, seat naming another checkout: refused, LANDING_LANE_MISMATCH;
+//   - no record: no lane, whatever the seat names; the seat lands itself.
 //
 // A registered root that no longer exists is refused, LANDING_LANE_GONE, and
 // never replaced by the seat's setting.
-func Resolve(home, seatRoot, by string, now time.Time, register bool) (Resolution, error) {
+func Resolve(home, seatRoot string) (Resolution, error) {
 	seatRoot = strings.TrimSpace(seatRoot)
 	var result Resolution
 	err := withLock(home, func() error {
 		record, ok, err := Read(home)
-		if err != nil {
+		if err != nil || !ok {
 			return err
 		}
-		if ok {
-			result.Record = record
-			if gone(record.Root) {
-				return goneRefusal(record)
-			}
-			if seatRoot != "" && resolved(seatRoot) != resolved(record.Root) {
-				return mismatchRefusal(record, resolved(seatRoot))
-			}
-			result.Root, result.FromHost = record.Root, seatRoot == ""
-			return nil
+		result.Record = record
+		if gone(record.Root) {
+			return goneRefusal(record)
 		}
-		if seatRoot == "" {
-			return nil
+		if seatRoot != "" && resolved(seatRoot) != resolved(record.Root) {
+			return mismatchRefusal(record, resolved(seatRoot))
 		}
-		result.Root = resolved(seatRoot)
-		if !register {
-			return nil
-		}
-		result.Record = Record{Root: result.Root, RegisteredBy: by, At: now.UTC().Format(time.RFC3339)}
-		result.Registered = true
-		return writeJSON(home, RecordPath(home), result.Record)
+		result.Root, result.FromHost = record.Root, seatRoot == ""
+		return nil
 	})
 	return result, err
 }
@@ -194,33 +251,61 @@ func registeredText(record Record) string {
 	return text
 }
 
-// Register makes root the host's lane at a person's word. The same checkout
-// again changes nothing (changed false); a move returns the previous record.
-// The keeper's restart count starts over with a new lane.
-func Register(home, root, by string, now time.Time) (previous Record, changed bool, err error) {
-	root = strings.TrimSpace(root)
-	if !filepath.IsAbs(root) {
-		return Record{}, false, &Refusal{Code: CodeRegisterInvalid, Message: fmt.Sprintf("the landing lane must be an absolute path, got %q; nothing was registered", root),
+// Register makes layout the host's lane at a person's word (landing set).
+// The same layout again changes nothing (changed false); anything else
+// writes a record with a custody epoch greater than any this computer has
+// used, and returns the previous record. It is refused while an unset is
+// under way. The keeper's restart count starts over with a new lane.
+func Register(home string, layout Layout, by string, now time.Time) (previous Record, changed bool, err error) {
+	if layout.Checkout == "" || layout.Install == "" {
+		return Record{}, false, &Refusal{Code: CodeRegisterInvalid, Message: "no landing checkout was resolved; nothing was registered",
 			Fix: "name the landing checkout by its full path: metasystem landing set /path/to/landing-checkout"}
 	}
-	if info, statErr := os.Stat(root); statErr != nil || !info.IsDir() {
-		return Record{}, false, &Refusal{Code: CodeRegisterInvalid, Message: fmt.Sprintf("%s is not an existing directory; nothing was registered", root),
-			Fix: "create or restore the landing checkout first, then run metasystem landing set again"}
-	}
-	root = resolved(root)
 	err = withLock(home, func() error {
-		// An unreadable record is replaced at a person's word.
-		current, ok, _ := Read(home)
-		if ok && resolved(current.Root) == root {
+		if journal, fenced, _ := ReadUnset(home); fenced {
+			return unsettingRefusal(journal)
+		}
+		// An unreadable or older record is replaced at a person's word.
+		current, ok, readErr := Read(home)
+		if ok && readErr == nil && current.Root == string(layout.Checkout) && current.Install == string(layout.Install) {
 			return nil
 		}
+		used, err := readEpoch(home)
+		if err != nil {
+			return err
+		}
+		if ok && current.CustodyEpoch > used {
+			used = current.CustodyEpoch
+		}
 		previous, changed = current, true
-		if err := writeJSON(home, RecordPath(home), Record{Root: root, RegisteredBy: by, At: now.UTC().Format(time.RFC3339)}); err != nil {
+		record := Record{Root: string(layout.Checkout), Install: string(layout.Install), CustodyEpoch: used + 1, RegisteredBy: by, At: now.UTC().Format(time.RFC3339)}
+		// The epoch is spent before the record names it, so a crash between
+		// the two never hands the same epoch to two registrations.
+		if err := writeJSON(home, epochPath(home), epochRecord{CustodyEpoch: record.CustodyEpoch}); err != nil {
+			return err
+		}
+		if err := writeJSON(home, RecordPath(home), record); err != nil {
 			return err
 		}
 		return removeIfPresent(keeperPath(home))
 	})
 	return previous, changed, err
+}
+
+// epochRecord is the greatest custody epoch this computer's lane has used;
+// it outlives every unset, so no epoch is used twice.
+type epochRecord struct {
+	CustodyEpoch uint64 `json:"custodyEpoch"`
+}
+
+func epochPath(home string) string { return filepath.Join(HostDir(home), "landing-lane-epoch.json") }
+
+func readEpoch(home string) (uint64, error) {
+	var epoch epochRecord
+	if _, err := readJSON(epochPath(home), &epoch); err != nil {
+		return 0, fmt.Errorf("the landing lane's registration count can't be read, so nothing was registered: %w", err)
+	}
+	return epoch.CustodyEpoch, nil
 }
 
 func removeIfPresent(path string) error {

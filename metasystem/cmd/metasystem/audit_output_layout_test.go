@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -185,7 +184,10 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 		home, landing = realpath.Resolve(home), realpath.Resolve(landing)
 		records := []batch.Record{}
 		owners.landing = laneVerbOwners{
-			home: func() (string, error) { return home, nil },
+			// The lane beds keep no goal ledger: validation is never due.
+			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
+			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				return lane.OwnerProbe{Alive: true, PID: 38928, Since: layoutNow.Add(-5 * time.Minute)}, nil
 			},
@@ -194,9 +196,7 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 		}
 		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 		if busy {
-			if _, _, err := lane.Register(home, landing, "Wido", layoutNow.Add(-2*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
+			registerLane(t, home, landing, "Wido", layoutNow.Add(-2*time.Hour))
 			collecting := batch.Record{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: batch.StateOpen,
 				Units:   []batch.Unit{{GoalID: "533209e6d", Chain: "c", SeatRoot: root, State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
 				History: []batch.HistoryEntry{{At: layoutNow.Add(-time.Minute).Format(time.RFC3339Nano), Verb: "open", To: batch.StateOpen}}}
@@ -257,10 +257,17 @@ func grantListLayoutBed(count int, revoke bool) func(t *testing.T) layoutBed {
 	}
 }
 
+// notInRepository is a fake repository lookup's refusal: its words are the
+// fake's, its type stateroot.ErrNotInRepository's, as the real lookup's.
+type notInRepository struct{ words string }
+
+func (e notInRepository) Error() string      { return e.words }
+func (notInRepository) Is(target error) bool { return target == stateroot.ErrNotInRepository }
+
 // outsideLayoutBed runs from the file system's root, which is no
 // repository.
 func outsideLayoutBed(t *testing.T) layoutBed {
-	notARepository := func(string) (string, error) { return "", errors.New("not a git repository") }
+	notARepository := func(string) (string, error) { return "", notInRepository{"not a git repository"} }
 	b := newIntentBed(t, false, nil)
 	owners := b.owners()
 	owners.resolver = stateroot.NewResolver(notARepository, noExecutable)

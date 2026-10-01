@@ -67,9 +67,7 @@ func runLaneChargedProofEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lane.Register(home, fixture.root, "Wido", now); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, home, fixture.root, "Wido", now)
 	account := lane.AccountID(fixture.root)
 	// This process is the lane's owner: the fixture's checkout is held under
 	// the landing owner's lineage, as the batch owner holds its lane.

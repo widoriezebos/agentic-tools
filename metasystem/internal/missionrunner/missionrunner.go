@@ -148,7 +148,7 @@ func decodeJSONDoc(data []byte) (map[string]any, error) {
 	// from unreadable bytes (E1).
 	doc, err := wiredoc.Decode(data)
 	if err != nil {
-		if err.Error() == "not a JSON object" {
+		if errors.Is(err, wiredoc.ErrNotObject) {
 			return nil, errNotJSONObject
 		}
 		return nil, err

@@ -19,14 +19,13 @@ var _ = enforceMessages(
 	"internal/authority",
 	"internal/capability",
 	"internal/census",
-	// internal/config/context.go keeps CONTEXT_CONFIG_INVALID in its error:
-	// the steward's health line and the context design read that code.
 	"internal/config/attention.go",
 	"internal/config/autoruntime.go",
 	"internal/config/board.go",
 	"internal/config/budget.go",
 	"internal/config/conf.go",
 	"internal/config/confidentity.go",
+	"internal/config/context.go",
 	"internal/config/defaults.go",
 	"internal/config/disk.go",
 	"internal/config/disksettings.go",

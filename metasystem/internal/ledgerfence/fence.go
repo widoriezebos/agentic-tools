@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -57,7 +58,10 @@ func Ensure(root string) error {
 		// Exit 128 alone is not proof: a malformed configuration in a
 		// VALID repository exits 128 too, and reading that as "no
 		// repository" would skip the fence while goal writes proceed.
-		if strings.Contains(string(probeOut), "not a git repository") {
+		// No .git at the root or above it is the proof, read from the
+		// filesystem rather than from git's words.
+		var ran *exec.ExitError
+		if errors.As(probeErr, &ran) && gittree.OutsideRepository(absRoot) {
 			return nil
 		}
 		return fmt.Errorf("the target's repository shape cannot be proven: %v (%s)", probeErr, strings.TrimSpace(string(probeOut)))

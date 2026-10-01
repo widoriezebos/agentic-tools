@@ -622,7 +622,7 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	var rebuiltIn, upInstallation, upScope string
 	locked := 0
 	previousFastForward, previousRebuild, previousUp, previousOpen, previousLock := landedRearmFastForward, landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock
-	upResult := UpOutcome{Line: "up outcome=armed authority=writer re-armed=\"generation=2 previous=1\"", Outcome: "armed"}
+	upResult := UpOutcome{Summary: "supervision is armed", Outcome: "armed", ReArmed: "generation=2 previous=1"}
 	var upErr error
 	enrolledGeneration := 2
 	landedRearmRebuild = func(_ context.Context, installation string) error { rebuiltIn = installation; return nil }
@@ -656,12 +656,12 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 		t.Fatalf("the rebuild or the re-arm ran elsewhere: rebuild=%s up=%s scope=%s", rebuiltIn, upInstallation, upScope)
 	}
 	if record == nil || record.SourceCommit != head || record.LandedTip != facts.Tip || record.PreviousGeneration != 1 || record.Generation != 2 ||
-		record.ReArmed != upResult.Line || record.UpOutcome != "armed" || record.At == "" {
+		record.ReArmed != upResult.ReArmed || record.UpOutcome != "armed" || record.At == "" {
 		t.Fatalf("the re-arm record is incomplete: %+v", record)
 	}
 	// up mints first and proves the session after: a detached run gets a
 	// failed up over an enrollment that did advance, and continues on it.
-	upResult = UpOutcome{Line: "up outcome=failed failed=session-identity remedy=no runtime ancestor", Outcome: "failed", Failed: true}
+	upResult = UpOutcome{Summary: "starting supervision stopped at session-identity", Outcome: "failed", Failed: "session-identity"}
 	upErr = errors.New("bin/metasystem up --repo x: exit status 1: no runtime ancestor")
 	enrolledGeneration = 3
 	record, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 2)

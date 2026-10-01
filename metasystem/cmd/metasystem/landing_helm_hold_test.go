@@ -23,9 +23,7 @@ import (
 func TestLandingStatusNamesABatchHeldForASeatAtTheHelm(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
-	if _, _, err := lane.Register(bed.home, bed.landingA, "Wido", laneTestNow); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
 	bed.alive = true
 	checkout := realpath.Resolve(t.TempDir())
 	installation := filepath.Join(checkout, "metasystem")

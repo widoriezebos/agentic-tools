@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
@@ -125,7 +126,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 			t.Fatalf("ejection failure %q lacks %q", reassembled.Units[0].Failure, want)
 		}
 	}
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(3, 0), returns))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(3, 0), returns))
 	if ejected := load(t, store).Units[0]; ejected.State != UnitEjected || ejected.ReturnDisposition != ReturnHandedBack {
 		t.Fatalf("ejected custody=%+v", ejected)
 	}
@@ -160,7 +161,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 		Rearm:   func(string) error { return nil },
 		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
 	}))
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))
 	landed := load(t, store)
 	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitLanded || !landed.Units[1].P6Done || finalized != 1 || handBacks != 2 {
 		t.Fatalf("final landed batch=%+v finalized=%d handbacks=%d", landed, finalized, handBacks)
@@ -818,7 +819,8 @@ func TestRedEvidenceWithoutIdentitiesNeverQualifies(t *testing.T) {
 		{"(c) collection incomplete", []RedGroup{with(func(red *RedGroup) { red.CollectionComplete = false })}, "collection complete false"},
 		{"(d) invalid", []RedGroup{with(func(red *RedGroup) { red.Status, red.NotRunReason = "invalid", "unparseable collection" })}, "status invalid"},
 		{"(e) a stall", []RedGroup{with(func(red *RedGroup) {
-			red.Status, red.Failures, red.NotRunReason = "unavailable", nil, "suite stalled in section s (silent); evidence preserved before kill at /ev (note)"
+			red.Status, red.Failures, red.NotRunReason = "unavailable", nil, "the suite stopped making progress"
+			red.Stall = &proofrun.GroupStall{Section: "s", Reason: "silent", EvidenceDir: "/ev", Dump: "note"}
 		})}, "status unavailable"},
 		{"(f) the build terminal", []RedGroup{with(func(red *RedGroup) { red.Failures = unidentified.Failures })}, "0 of 1 identified"},
 		{"(g) a section red", []RedGroup{with(func(red *RedGroup) { red.ID, red.Adapter = "section/land-fixtures", "section" })}, "reports no test identities"},
@@ -885,10 +887,28 @@ func TestSecondRedReturnsEveryMemberWithTheUnionText(t *testing.T) {
 	}
 }
 
+// A stall is the result's typed stall (structured-output U2, T9), never
+// words in its reason: a group whose reason only reads like the watchdog's
+// is not a hang.
+func TestStallIsTheTypedFieldNotTheReasonWords(t *testing.T) {
+	t.Parallel()
+	words := RedGroup{ID: "g", Status: "unavailable",
+		NotRunReason: "suite stalled in section land-fixtures (silence); evidence preserved before kill at /ev/stall (dump: captured)"}
+	if stalled(words) {
+		t.Fatal("a reason that reads like a stall was taken for one")
+	}
+	typed := RedGroup{ID: "g", Status: "unavailable", Stall: &proofrun.GroupStall{Section: "land-fixtures", EvidenceDir: "/ev/stall"}}
+	if !stalled(typed) || hangEvidence(typed).Section != "land-fixtures" || hangEvidence(typed).EvidenceDir != "/ev/stall" ||
+		hangEvidence(typed).Dump != "dump: unavailable (not requested)" {
+		t.Fatalf("typed stall read as %v %+v", stalled(typed), hangEvidence(typed))
+	}
+}
+
 func TestStalledGroupOpensAHangEntryAndNeverCarriesALanding(t *testing.T) {
 	t.Parallel()
 	stall := RedGroup{ID: "fake-affected/payments", Status: "unavailable", Adapter: "fake", LogPath: "logs/stall.log", LongestSilentSeconds: 412,
-		LongestZeroCPUSeconds: 400, NotRunReason: "suite stalled in section land-fixtures (silence); evidence preserved before kill at /ev/stall (dump: captured)",
+		LongestZeroCPUSeconds: 400, NotRunReason: "the suite stopped making progress",
+		Stall:   &proofrun.GroupStall{Section: "land-fixtures", Reason: "silence", EvidenceDir: "/ev/stall", Dump: "dump: captured"},
 		Missing: []Failure{{Classname: "com.example.PaymentTest", Name: "settles", Status: "missing-terminal"}}}
 	for _, test := range []struct {
 		name      string

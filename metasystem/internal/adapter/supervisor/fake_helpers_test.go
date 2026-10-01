@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The fake runtime's test installation: a real artifacts tree in
@@ -102,8 +103,9 @@ func (r fakeRecordingDispatcher) Run(stdout, _ io.Writer, args ...string) int {
 	}
 	status := r.Statuses[args[0]]
 	if status == 0 && args[0] == "status" {
-		// The lifecycle's status: the job record's status line, "unknown"
-		// when there is no record (a self-test's poll).
+		// The lifecycle's status --json: an envelope whose data is the job
+		// record's status, "unknown" when there is no record (a self-test's
+		// poll).
 		answer := "unknown"
 		data, readErr := os.ReadFile(filepath.Join(r.Root, "artifacts", "agents", "jobs", flagValue(args, "--job")+".json"))
 		var record map[string]any
@@ -112,7 +114,8 @@ func (r fakeRecordingDispatcher) Run(stdout, _ io.Writer, args ...string) int {
 				answer = value
 			}
 		}
-		io.WriteString(stdout, answer+"\n")
+		_ = verbresult.Write(stdout, verbresult.Result{Verb: delegateStatusVerb, Outcome: verbresult.Confirmed,
+			Summary: "job status", Data: json.RawMessage(`{"status":"` + answer + `"}`)})
 		return 0
 	}
 	if status == 0 && args[0] == "__handshake" && !r.KeepSession {

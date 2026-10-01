@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -23,7 +22,7 @@ const personEnrollCommand = "metasystem system enroll --name NAME"
 
 func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 	t.Parallel()
-	notReached := errors.New(humanauthority.OutcomeTerminalMissing)
+	notReached := humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 	disk := func(act string) func() string {
 		return func() string {
 			owners := diskOwners{person: func(string) (string, error) { return "", notReached }}
@@ -161,7 +160,7 @@ func sendsToEnrolledTerminal(text string) bool {
 // command with the person's name filled in, never NAME when a name is known.
 func TestSessionStopRefusalIsTwoLinesWithTheNameFilledIn(t *testing.T) {
 	t.Parallel()
-	got := sessionStopRefusal("", "Wido", errors.New(humanauthority.OutcomeTerminalMissing))
+	got := sessionStopRefusal("", "Wido", humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil))
 	lines := strings.Split(got, "\n")
 	if len(lines) != 2 || strings.Contains(got, "NAME") || strings.HasPrefix(lines[0], "session stop refused") ||
 		!strings.Contains(lines[0], "only a person can stop a session quietly") || !strings.HasPrefix(lines[1], "run: metasystem system enroll --name Wido") {
@@ -172,7 +171,7 @@ func TestSessionStopRefusalIsTwoLinesWithTheNameFilledIn(t *testing.T) {
 			t.Fatalf("line longer than the page: %q", line)
 		}
 	}
-	agent := sessionStopRefusal("", "Wido", errors.New(humanauthority.OutcomeAgent))
+	agent := sessionStopRefusal("", "Wido", humanauthority.Refused(humanauthority.OutcomeAgent, nil))
 	if !strings.Contains(agent, "run: metasystem session stop --by Wido") {
 		t.Fatalf("an agent's shell is told the same command, in a terminal the person opened:\n%s", agent)
 	}

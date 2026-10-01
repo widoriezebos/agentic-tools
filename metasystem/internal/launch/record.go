@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,9 +137,13 @@ func (s Store) root() (string, error) {
 	}
 	return DefaultRoot()
 }
+
+// ErrInvalidID refuses a launch id that is not one this store makes.
+var ErrInvalidID = errors.New("invalid launch id")
+
 func (s Store) StateDir(id string) (string, error) {
 	if !idPattern.MatchString(id) {
-		return "", fmt.Errorf("invalid launch id %q", id)
+		return "", fmt.Errorf("%w %q", ErrInvalidID, id)
 	}
 	root, err := s.root()
 	if err != nil {

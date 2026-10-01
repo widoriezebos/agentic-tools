@@ -53,15 +53,17 @@ func (inv *intentInvocation) personRefusal(target string, err error, typed strin
 }
 
 // refusalCause is the innermost refusal behind err, codes included: the
-// detail --verbose shows.
+// detail --verbose shows. A proof's outcome code leads it when the
+// innermost error does not carry the outcome itself.
 func refusalCause(err error) string {
-	for {
-		inner := errors.Unwrap(err)
-		if inner == nil {
-			return err.Error()
-		}
+	outcome, _ := humanauthority.OutcomeOf(err)
+	for inner := errors.Unwrap(err); inner != nil; inner = errors.Unwrap(err) {
 		err = inner
 	}
+	if carried, _ := humanauthority.OutcomeOf(err); outcome != "" && carried == "" {
+		return outcome + ": " + err.Error()
+	}
+	return err.Error()
 }
 
 // eitherRefusal is personRefusal for an act a person or the agent session

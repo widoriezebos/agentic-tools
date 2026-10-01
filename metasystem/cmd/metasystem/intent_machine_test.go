@@ -169,9 +169,7 @@ func newMachineBed(t *testing.T) *machineBed {
 	if err := registry.AppendFrame(b.registry, exited); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lane.Register(b.home, b.landing, "Wido", machineBedNow.Add(-24*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, b.home, b.landing, "Wido", machineBedNow.Add(-24*time.Hour))
 	// One launch of this user works in this checkout.
 	supervisor := identity.Ref{Pid: 555, StartedAtSec: 555}
 	if err := (launch.Store{Root: b.launchDir}).Create(launch.Record{ID: "l-1", Kind: "build", Goal: "g-1", WorkingDirectory: filepath.Join(b.this, "work"),
@@ -188,7 +186,7 @@ func (b *machineBed) top(path string) (string, error) {
 			return checkout, nil
 		}
 	}
-	return "", fmt.Errorf("fatal: not a git repository: %s", path)
+	return "", notInRepository{"fatal: not a git repository: " + path}
 }
 
 // git answers git worktree list --porcelain for each fixture checkout: the
@@ -277,7 +275,10 @@ func (b *machineBed) owners() intentOwners {
 			},
 		},
 		landing: laneVerbOwners{
-			home: func() (string, error) { return b.home, nil },
+			// The lane beds keep no goal ledger: validation is never due.
+			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
+			home:       func() (string, error) { return b.home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !b.laneAlive {
 					return lane.OwnerProbe{}, nil

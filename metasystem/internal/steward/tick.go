@@ -69,7 +69,12 @@ type TickConfig struct {
 	Stopping func() bool
 	// Seat starts and reads the steward's seat launches (g1-s77); nil starts
 	// no seat and keeps today's notification for ready work.
-	Seat              SeatLauncher
+	Seat SeatLauncher
+	// Patterns is the behaviour-pattern pass (design
+	// steward-acts-on-behaviour-patterns): it reports and decides nothing.
+	// It runs after the tick's health pass and, as a report, under the helm
+	// too (D2). The command layer supplies it; nil runs no pattern.
+	Patterns          func(repoRoot string, now time.Time) error
 	narrationLocation *time.Location
 }
 
@@ -208,7 +213,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// A seat at the helm is the person's: the tick publishes presence,
 	// completes its attempt as HELM and decides nothing (HM-7). The check
 	// sits after the attempt exists and before the completion defer, so no
-	// health, alert or narration pass runs either.
+	// health, alert or narration pass runs either; helmTick makes the one
+	// report-only pattern call (D2).
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
@@ -218,6 +224,9 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			if healthErr := completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now); healthErr != nil && returnErr == nil {
 				returnErr = healthErr
 			}
+		}
+		if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && returnErr == nil {
+			returnErr = patternErr
 		}
 		if tickCompleted {
 			return
@@ -258,8 +267,9 @@ const VerdictHelm Verdict = "helm"
 
 // helmTick is the whole tick of a seat at the helm: presence is still
 // published (the fleet sees the seat alive) and the tick attempt completes
-// with outcome HELM. No breach stop, reap, ledger attention, decision,
-// narration or notification runs.
+// with outcome HELM. No breach stop, reap, ledger attention, decision or
+// narration runs; the one notification it may send is the pattern pass's
+// report (D2).
 func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.Ref, attemptSeq int64, state helm.State) (TickResult, error) {
 	reason := "human at the helm: " + state.By
 	result := TickResult{Decision: Decision{VerdictHelm, ActNone, reason}}
@@ -269,7 +279,25 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 		ComponentOK, "HELM", reason, nil, cfg.now()); err != nil {
 		return result, fmt.Errorf("record helm tick completion: %w", err)
 	}
+	// The one exception to HM-7 (design D2): the pattern pass reports under
+	// the helm, because the person at the helm is who needs the report. A
+	// report is not a decision. It runs after the attempt completed, so a
+	// slow fetch never reads as a stuck tick.
+	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
+		presenceErr = patternErr
+	}
 	return result, presenceErr
+}
+
+// runPatterns is the tick's report-only behaviour-pattern pass.
+func runPatterns(repoRoot string, cfg TickConfig) error {
+	if cfg.Patterns == nil {
+		return nil
+	}
+	if err := cfg.Patterns(repoRoot, cfg.now()); err != nil {
+		return fmt.Errorf("behaviour patterns: %w", err)
+	}
+	return nil
 }
 
 // seatPresenceComponent runs the seat-presence component with its own

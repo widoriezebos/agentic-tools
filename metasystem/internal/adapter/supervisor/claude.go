@@ -138,7 +138,7 @@ func ClaudeCommand(d Deps, record, model, schemaPath, settings, session, outputM
 	})
 	if err != nil {
 		fmt.Fprintln(log, err)
-		if err.Error() == "invalid_native_turn_limit" {
+		if errors.Is(err, adapter.ErrInvalidNativeTurnLimit) {
 			return nil, "invalid_native_turn_limit"
 		}
 		return nil, "invalid_native_budget"

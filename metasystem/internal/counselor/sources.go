@@ -639,15 +639,15 @@ func readGitLandingHistory(root string) (rawLandingHistory, error) {
 	workspace := gittree.Workspace{Dir: root}
 	top, err := workspace.TopLevel()
 	if err != nil {
-		return rawLandingHistory{}, errors.New(gitResolutionFailure("repository top-level resolution", err))
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("repository top-level resolution", root, err))
 	}
 	prefix, err := workspace.Prefix()
 	if err != nil {
-		return rawLandingHistory{}, errors.New(gitResolutionFailure("checkout prefix resolution", err))
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("checkout prefix resolution", root, err))
 	}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil {
-		return rawLandingHistory{}, errors.New(gitResolutionFailure("current branch tip resolution", err))
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("current branch tip resolution", root, err))
 	}
 	if unborn {
 		return rawLandingHistory{prefix: prefix, unborn: true}, nil
@@ -732,11 +732,11 @@ func parseGitLog(log, prefix string) ([]LandingObservation, int) {
 	return landings, rejected
 }
 
-func gitResolutionFailure(scope string, err error) string {
-	detail := sanitizeEvidenceDetail(err.Error())
-	if strings.Contains(detail, "not a git repository") {
+func gitResolutionFailure(scope, root string, err error) string {
+	if gittree.OutsideRepository(root) {
 		return scope + " failed because the supplied root is not inside a Git worktree"
 	}
+	detail := sanitizeEvidenceDetail(err.Error())
 	if detail == "" {
 		return scope + " failed"
 	}

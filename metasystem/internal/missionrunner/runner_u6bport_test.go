@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The mission-runner scenario of dispatch-fixtures.sh drove the real runner
@@ -318,9 +319,10 @@ func TestU6bPortUnverifiedStartParksThenResumesWithReconciliation(t *testing.T) 
 	// Resume re-arms supervision before its run: the launcher's arming
 	// step runs the armer again and requires its armed outcome.
 	armed := 0
-	engine.ArmSupervision = func([]string) (string, string, int) {
+	answer := upAnswered(t, "armed", 0)
+	engine.ArmSupervision = func([]string) (verbresult.Result, error) {
 		armed++
-		return "up outcome=armed authority=writer\n", "", 0
+		return answer, nil
 	}
 	engine.SupervisionFingerprint = func(string) (string, error) { return "fixture-fingerprint", nil }
 	if err := engine.armAndPreflight("resume"); err != nil {

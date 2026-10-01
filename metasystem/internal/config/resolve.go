@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -411,8 +412,13 @@ func getLayered(p GetParams) (value string, code int, err error) {
 	if p.DefaultSet {
 		return p.Default, 0, nil
 	}
-	return "", 1, fmt.Errorf("no value configured for %s", p.Key)
+	return "", 1, fmt.Errorf("%w for %s", ErrNoValue, p.Key)
 }
+
+// ErrNoValue is Get's refusal of a key that is set nowhere and has no
+// default: a caller that treats an unset key as empty decides on it with
+// errors.Is, never on the words.
+var ErrNoValue = errors.New("no value configured")
 
 // ConfLookup reads exactly one setting from a metasystem.conf-format file with
 // strict duplicate detection. A line is a setting when it is non-blank, not a

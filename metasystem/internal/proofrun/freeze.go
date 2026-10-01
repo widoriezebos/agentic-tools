@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -39,20 +40,34 @@ func Freeze(root string) (result FrozenExport, err error) {
 }
 
 func FreezeCandidate(root, candidateTree string) (result FrozenExport, err error) {
-	custodyRoot, err := frozenCustodyRoot()
-	if err != nil {
-		return FrozenExport{}, err
-	}
-	return freezeCandidateWithHookAt(root, candidateTree, custodyRoot, nil)
+	return freezeCandidateWithHook(root, candidateTree, nil)
 }
 
 func freezeWithHook(root string, afterExport func(projectRoot string)) (result FrozenExport, err error) {
-	custodyRoot, err := frozenCustodyRoot()
-	if err != nil {
-		return FrozenExport{}, err
-	}
-	return freezeCandidateWithHookAt(root, "", custodyRoot, afterExport)
+	return freezeCandidateWithHook(root, "", afterExport)
 }
+
+// freezeCandidateWithHook allocates the private owner as a counted use of
+// this process's scratch root and holds that use until CleanupFrozenExport:
+// the end of any dispatch in this process releases an idle root, and an
+// uncounted owner was removed under a freeze still copying or a gate still
+// reading it (flaky TestFrozenPublicVersionOneCorpusNormalizesSupportedSource
+// Layouts, 2026-09-30).
+func freezeCandidateWithHook(root, candidateTree string, afterExport func(projectRoot string)) (result FrozenExport, err error) {
+	return freezeCandidateInOwner(root, candidateTree, func() (string, func(), error) {
+		owner, done, err := diskstore.ScratchDir(frozenOwnerPrefix)
+		if err != nil {
+			return "", nil, fmt.Errorf("create private frozen-export directory: %w", err)
+		}
+		return owner, done, nil
+	}, afterExport)
+}
+
+const frozenOwnerPrefix = "metasystem-witness-freeze-"
+
+// frozenScratchUses holds, per published owner, the scratch use its freeze
+// took; CleanupFrozenExport ends it after removing the owner.
+var frozenScratchUses sync.Map
 
 // frozenCustodyRoot is the one directory a frozen export's private owner is
 // allocated in and the one CleanupFrozenExport accepts it from: this
@@ -72,27 +87,40 @@ func freezeWithHookAt(root, temporaryRoot string, afterExport func(projectRoot s
 }
 
 func freezeCandidateWithHookAt(root, candidateTree, temporaryRoot string, afterExport func(projectRoot string)) (result FrozenExport, err error) {
+	return freezeCandidateInOwner(root, candidateTree, func() (string, func(), error) {
+		owner, err := os.MkdirTemp(temporaryRoot, frozenOwnerPrefix)
+		if err != nil {
+			return "", nil, fmt.Errorf("create private frozen-export directory: %w", err)
+		}
+		return owner, func() {}, nil
+	}, afterExport)
+}
+
+func freezeCandidateInOwner(root, candidateTree string, allocate func() (string, func(), error), afterExport func(projectRoot string)) (result FrozenExport, err error) {
 	before, location, err := readCompleteManifest(root)
 	if err != nil {
 		return FrozenExport{}, err
 	}
-	rawParent, err := os.MkdirTemp(temporaryRoot, "metasystem-witness-freeze-")
+	rawParent, done, err := allocate()
 	if err != nil {
-		return FrozenExport{}, fmt.Errorf("create private frozen-export directory: %w", err)
+		return FrozenExport{}, err
 	}
 	parent, err := filepath.EvalSymlinks(rawParent)
 	if err != nil {
 		_ = os.RemoveAll(rawParent)
+		done()
 		return FrozenExport{}, fmt.Errorf("resolve private frozen-export directory: %w", err)
 	}
 	if err := os.Chmod(parent, 0700); err != nil {
 		os.RemoveAll(parent)
+		done()
 		return FrozenExport{}, fmt.Errorf("protect frozen-export directory: %w", err)
 	}
 	published := false
 	defer func() {
 		if !published {
 			_ = os.RemoveAll(parent)
+			done()
 		}
 	}()
 
@@ -147,6 +175,7 @@ func freezeCandidateWithHookAt(root, candidateTree, temporaryRoot string, afterE
 	if err := writeFrozenCustody(parent, snapshotRoot, executionRoot); err != nil {
 		return FrozenExport{}, err
 	}
+	frozenScratchUses.Store(parent, done)
 	published = true
 	return FrozenExport{Digest: beforeDigest, Root: executionRoot, ProjectRoot: snapshotRoot, SnapshotRoot: snapshotRoot}, nil
 }
@@ -200,7 +229,7 @@ func CleanupFrozenExport(snapshotRoot string) error {
 	}
 	ownerInfo, ownerErr := os.Lstat(owner)
 	if tempErr != nil || filepath.Dir(owner) != custodyRoot ||
-		!strings.HasPrefix(filepath.Base(owner), "metasystem-witness-freeze-") ||
+		!strings.HasPrefix(filepath.Base(owner), frozenOwnerPrefix) ||
 		(filepath.Base(canonical) != "project" && filepath.Base(canonical) != "tree") ||
 		ownerErr != nil || !ownerInfo.IsDir() || ownerInfo.Mode().Perm() != 0o700 {
 		return fmt.Errorf("frozen snapshot cleanup root is outside private custody: %s", canonical)
@@ -224,6 +253,9 @@ func CleanupFrozenExport(snapshotRoot string) error {
 	}
 	if err := os.RemoveAll(owner); err != nil {
 		return fmt.Errorf("remove frozen snapshot %s: %w", owner, err)
+	}
+	if done, held := frozenScratchUses.LoadAndDelete(owner); held {
+		done.(func())()
 	}
 	return nil
 }

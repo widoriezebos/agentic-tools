@@ -557,7 +557,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("resolve landed build: %w", err)
 			}
-			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
+			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %w", ErrEnrollmentDrift, prior.InstallPath, err)
 		}
 		landedCommit, err := deps.checkoutHead(installationRoot)
 		if err != nil {
@@ -861,25 +861,25 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		return outcome, nil
 	}
 	if !deps.notifyAvailable(top) {
-		return outcome, errNoNotifyChannel
+		return outcome, &ArmStepError{Step: ArmStepNotify, Err: errNoNotifyChannel}
 	}
 	runnerPath := runnerDir(top)
 	if err := os.MkdirAll(runnerPath, 0o755); err != nil {
-		return outcome, fmt.Errorf("create runner directory %s: %w", runnerPath, err)
+		return outcome, &ArmStepError{Step: ArmStepRunnerDirectory, Err: fmt.Errorf("create runner directory %s: %w", runnerPath, err)}
 	}
 	// One arm at a time. Every field and eligibility fact is read inside the
 	// lock, and neither a refusal nor a no-op touches a live runner.
 	armLockPath := filepath.Join(runnerPath, "arm.flock")
 	armLock, err := os.OpenFile(armLockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return outcome, fmt.Errorf("open arm lock %s: %w", armLockPath, err)
+		return outcome, &ArmStepError{Step: ArmStepLock, Err: fmt.Errorf("open arm lock %s: %w", armLockPath, err)}
 	}
 	defer armLock.Close()
 	if beforeArmLock != nil {
 		beforeArmLock()
 	}
 	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
-		return outcome, fmt.Errorf("take arm lock %s: %w", armLockPath, err)
+		return outcome, &ArmStepError{Step: ArmStepLock, Err: fmt.Errorf("take arm lock %s: %w", armLockPath, err)}
 	}
 	if _, err := readOpenFence(top, "the steward runner"); err != nil {
 		return outcome, err
@@ -895,7 +895,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		if _, markerErr := os.Stat(identityDurabilityPendingPath(identityPath)); markerErr == nil {
 			durable, publishErr := publishIdentity(identityPath, prior)
 			if publishErr != nil {
-				return outcome, fmt.Errorf("re-publish identity with durability pending: %w", publishErr)
+				return outcome, &ArmStepError{Step: ArmStepIdentity, Err: fmt.Errorf("re-publish identity with durability pending: %w", publishErr)}
 			}
 			outcome.DurabilityPending = !durable
 		}
@@ -1339,4 +1339,22 @@ func readJSON(path string, v any) error {
 }
 
 // errNoNotifyChannel refuses a watchdog nobody would hear.
+// ArmStepError is an arm that failed before the mint at Step; up names the
+// repair for the step, never from the words.
+type ArmStepError struct {
+	Step string
+	Err  error
+}
+
+func (e *ArmStepError) Error() string { return e.Err.Error() }
+func (e *ArmStepError) Unwrap() error { return e.Err }
+
+// The arm steps an ArmStepError names.
+const (
+	ArmStepNotify          = "notify"
+	ArmStepRunnerDirectory = "runner-directory"
+	ArmStepLock            = "arm-lock"
+	ArmStepIdentity        = "identity-publication"
+)
+
 var errNoNotifyChannel = errors.New("no way to notify the operator is set, so the steward would watch unheard\nrun: metasystem settings set metasystem.steward.notify-command <command>")

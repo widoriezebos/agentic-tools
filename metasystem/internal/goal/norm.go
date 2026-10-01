@@ -98,6 +98,11 @@ func RecordedNormApproval(repoRoot string, tree *TreeGoals, ref, goalID string) 
 	return 0, 0, 0, false, false, nil
 }
 
+// ApprovedRefRefusedCode refuses an --approved-ref that does not cover the
+// act: it names nothing, covers another revision or a smaller box, or the
+// act takes none. A caller names the remedy from the code, never the words.
+const ApprovedRefRefusedCode = "GOAL_APPROVED_REF_REFUSED"
+
 func refuseGoalNorm(id string, budget, box Budget) error {
 	return coded("GOAL_NORM_REFUSED", fmt.Errorf("goal %s asks for %dm and %d review rounds, over its tier's %dm and %d; split it, or pass --approved-ref",
 		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit))
@@ -113,7 +118,7 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		return nil, err
 	}
 	if approvedRef != strings.TrimSpace(approvedRef) {
-		return nil, coded("GOAL_NORM_REFUSED", errors.New("--approved-ref must name a ruling or a person's goal act exactly, without spaces"))
+		return nil, coded(ApprovedRefRefusedCode, errors.New("--approved-ref must name a ruling or a person's goal act exactly, without spaces"))
 	}
 	if approvedRef == "" {
 		if budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ReviewRoundLimit > box.ReviewRoundLimit {
@@ -132,19 +137,19 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		return nil, err
 	}
 	if !exists {
-		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s names no ruling or person's goal act", approvedRef))
+		return nil, coded(ApprovedRefRefusedCode, fmt.Errorf("--approved-ref %s names no ruling or person's goal act", approvedRef))
 	}
 	if !proven {
-		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s doesn't say goal=<id> minutes=<n> reviewRounds=<n> goalRevision=<r>", approvedRef))
+		return nil, coded(ApprovedRefRefusedCode, fmt.Errorf("--approved-ref %s doesn't say goal=<id> minutes=<n> reviewRounds=<n> goalRevision=<r>", approvedRef))
 	}
 	if revision != file.Revision {
-		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s covers goal %s at revision %d, but it is now %d; approve it again", approvedRef, file.Id, revision, file.Revision))
+		return nil, coded(ApprovedRefRefusedCode, fmt.Errorf("--approved-ref %s covers goal %s at revision %d, but it is now %d; approve it again", approvedRef, file.Id, revision, file.Revision))
 	}
 	if minutes < budget.ReservedJobMinutesLimit {
-		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("%dm of job time is more than --approved-ref %s approved (%dm)", budget.ReservedJobMinutesLimit, approvedRef, minutes))
+		return nil, coded(ApprovedRefRefusedCode, fmt.Errorf("%dm of job time is more than --approved-ref %s approved (%dm)", budget.ReservedJobMinutesLimit, approvedRef, minutes))
 	}
 	if rounds < budget.ReviewRoundLimit {
-		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("%d review rounds are more than --approved-ref %s approved (%d)", budget.ReviewRoundLimit, approvedRef, rounds))
+		return nil, coded(ApprovedRefRefusedCode, fmt.Errorf("%d review rounds are more than --approved-ref %s approved (%d)", budget.ReviewRoundLimit, approvedRef, rounds))
 	}
 	if budget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && budget.ReviewRoundLimit <= box.ReviewRoundLimit {
 		return nil, nil

@@ -121,7 +121,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), alertIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -580,6 +580,8 @@ type intentOwners struct {
 	disk diskOwners
 	// landing are the landing verbs' seams; the zero value is production.
 	landing laneVerbOwners
+	// alerts are the alert verbs' seams; the zero value is production.
+	alerts alertOwners
 	// machines are the machine verbs' seams; the zero value is production.
 	machines machineOwners
 	// textEnv is the text layout of one output stream; nil detects it
@@ -748,18 +750,14 @@ func (inv *intentInvocation) knownPerson() string {
 // notAnInstallation says why path is not a metasystem installation in plain
 // words: it does not exist, it is not inside a Git repository, or the
 // repository has no installation. The resolver's own wording is kept only
-// for a cause none of these names.
+// for a cause none of these names. The cause is err's type, never its words.
 func notAnInstallation(path string, err error) string {
 	shown := shellCommand([]string{path})
 	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
 		return shown + " does not exist; nothing was done"
 	}
-	text := err.Error()
-	switch {
-	case strings.Contains(text, "not inside a Git repository"), strings.Contains(text, "not a git repository"):
+	if errors.Is(err, stateroot.ErrNotInRepository) {
 		return shown + " is not inside a Git repository; nothing was done"
-	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
-		return shown + " is not inside a repository with a metasystem installation; nothing was done"
 	}
 	return shown + " is not inside a repository with a metasystem installation; nothing was done"
 }
@@ -1287,7 +1285,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "machine", "disk", "evidence", "app", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "alert", "machine", "disk", "evidence", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -1308,9 +1306,10 @@ var intentObjectSummaries = map[string]string{
 	"mission":    "autonomous missions",
 	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt, completion",
 	"landing":    "the landing lane on this computer: where every seat's work is proved and pushed",
+	"alert":      "what the steward reported and a person should see: list, acknowledge and clear",
 	"machine":    "the fleet's machines",
 	"disk":       "what MetaSystem keeps on this computer's disk, and reclaiming it",
-	"evidence":   "durable evidence outside the checkout: its bound, verified exports, and a person's disposal",
+	"evidence":   "evidence outside the checkout: its bound, verified exports, and a person's disposal",
 	"app":        "the application this project builds, under its launch contract",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",

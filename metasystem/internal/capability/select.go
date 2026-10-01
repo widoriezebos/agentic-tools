@@ -45,6 +45,13 @@ type snapshotEntry struct {
 
 // Select performs the whole selection and writes the result JSON to outputPath.
 // The role's capability requirements are the ones compiled into this engine.
+// SnapshotMiss is Select's refusal when no snapshot matches the runtime's
+// configuration or the newest match is stale: a fresh probe heals it. Any
+// other refusal is policy, which a probe must not launder.
+type SnapshotMiss struct{ Reason string }
+
+func (e *SnapshotMiss) Error() string { return e.Reason }
+
 func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, outputPath string) error {
 	requirements, err := protocol.RoleRequirements(role)
 	if err != nil {
@@ -80,14 +87,14 @@ func selectWith(root, runtime, role string, requirementBytes []byte, identityJSO
 	}
 	if len(candidates) == 0 {
 		suffix := changedKeySuffix(currentHashes, all)
-		return fmt.Errorf("no capability snapshot matches %s %s %s%s; run %s adapter probe",
-			runtime, version, configHash, suffix, runtime)
+		return &SnapshotMiss{Reason: fmt.Sprintf("no capability snapshot matches %s %s %s%s; run %s adapter probe",
+			runtime, version, configHash, suffix, runtime)}
 	}
 
 	best := newest(candidates)
 	ageDays := now().UTC().Sub(best.captured.UTC()).Seconds() / 86400
 	if ageDays > float64(maxAge) {
-		return fmt.Errorf("capability snapshot is stale (%.1f days); re-run %s adapter probe", ageDays, runtime)
+		return &SnapshotMiss{Reason: fmt.Sprintf("capability snapshot is stale (%.1f days); re-run %s adapter probe", ageDays, runtime)}
 	}
 
 	var requirements map[string]any

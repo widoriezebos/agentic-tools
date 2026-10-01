@@ -335,7 +335,7 @@ func TestIntentAbandonWithSuccessor(t *testing.T) {
 	}
 	notPerson := bed.owners()
 	notPerson.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New("process 42 is not the enrolled terminal")
+		return humanauthority.Proof{}, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "process 42 is not the enrolled terminal")
 	}
 	if code, result := bed.runJSON(notPerson, "goal", "abandon", "old-goal", "--reason", "superseded", "--successor", "new-goal", "--lineage", "m1"); code == 0 || result.Outcome == intentConfirmed {
 		t.Fatalf("an abandonment without a person's authority: code=%d %+v", code, result)

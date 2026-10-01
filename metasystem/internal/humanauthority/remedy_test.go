@@ -28,30 +28,36 @@ func TestRemedyForNamesTheReasonAndTheOneCommand(t *testing.T) {
 		err                error
 		want               Remedy
 	}{
-		{"not enrolled, the helm holder's name", bare, "wido", fmt.Errorf("%s: human authority has no readable terminal enrollment: nope", OutcomeNotEnrolled),
+		{"not enrolled, the helm holder's name", bare, "wido", Refusedf(OutcomeNotEnrolled, "human authority has no readable terminal enrollment: nope"),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "wido"}, Then: "then repeat this command"}},
-		{"not enrolled, in plain words, no one known", bare, "", errors.New("only a person may run this: no terminal is enrolled on this machine"),
+		{"not enrolled, in plain words, no one known", bare, "", fmt.Errorf("only a person may run this: %w", Plain(Refused(OutcomeNotEnrolled, nil))),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "NAME"}, Then: "then repeat this command"}},
-		{"another terminal is enrolled, its person's name", enrolled, "", errors.New(OutcomeTerminalMissing),
+		{"another terminal is enrolled, its person's name", enrolled, "", Refused(OutcomeTerminalMissing, nil),
 			Remedy{Kind: RemedyOtherTerminal, Reason: "this terminal isn't enrolled (" + enrollment.Human + " enrolled another one)", Argv: []string{"metasystem", "system", "enroll", "--name", enrollment.Human}, Then: "moves the enrollment here; then repeat this command"}},
-		{"an agent started the shell", enrolled, "wido", fmt.Errorf("%s: claude", OutcomeAgent),
+		{"an agent started the shell", enrolled, "wido", AgentRefused("claude"),
 			Remedy{Kind: RemedyAgent, Reason: "an agent (claude) started this shell", Argv: retry, Then: "in a terminal you opened yourself"}},
-		{"an agent, in plain words", enrolled, "wido", errors.New("this shell was started by an agent (codex)"),
+		{"an agent, in plain words", enrolled, "wido", Plain(AgentRefused("codex")),
 			Remedy{Kind: RemedyAgent, Reason: "an agent (codex) started this shell", Argv: retry, Then: "in a terminal you opened yourself"}},
-		{"no terminal above the shell, and none enrolled", bare, "wido", errors.New(OutcomeTerminalMissing),
+		{"no terminal above the shell, and none enrolled", bare, "wido", Refused(OutcomeTerminalMissing, nil),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "wido"}, Then: "then repeat this command"}},
-		{"no enrolled terminal above the shell, none enrolled", bare, "", errors.New("no enrolled terminal among this process's ancestors"),
+		{"no enrolled terminal above the shell, none enrolled", bare, "", Refusedf(OutcomeTerminalMissing, "no enrolled terminal among this process's ancestors"),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "NAME"}, Then: "then repeat this command"}},
-		{"no enrolled terminal above the shell, another enrolled", enrolled, "", errors.New("no enrolled terminal among this process's ancestors"),
+		{"no enrolled terminal above the shell, another enrolled", enrolled, "", Refusedf(OutcomeTerminalMissing, "no enrolled terminal among this process's ancestors"),
 			Remedy{Kind: RemedyOtherTerminal, Reason: "this terminal isn't enrolled (" + enrollment.Human + " enrolled another one)", Argv: []string{"metasystem", "system", "enroll", "--name", enrollment.Human}, Then: "moves the enrollment here; then repeat this command"}},
-		{"not the enrolled terminal, none enrolled", bare, "", errors.New("not the enrolled terminal"),
+		{"not the enrolled terminal, none enrolled", bare, "", Refusedf(OutcomeTerminalMissing, "not the enrolled terminal"),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "NAME"}, Then: "then repeat this command"}},
-		{"the enrollment has no name", enrolled, "wido", errors.New("the enrolled terminal has no recorded name"),
+		{"the enrollment has no name", enrolled, "wido", ErrEnrollmentUnnamed,
 			Remedy{Kind: RemedyNotEnrolled, Reason: "the enrolled terminal has no recorded name", Argv: []string{"metasystem", "system", "enroll", "--name", "wido"}, Then: "records your name; then repeat this command"}},
 		{"another cause names no command", enrolled, "wido", errors.New("goal budget fixture authority does not combine with a temporary human word"),
 			Remedy{Reason: "goal budget fixture authority does not combine with a temporary human word"}},
-		{"unreadable ancestry", enrolled, "wido", errors.New(OutcomeChanged),
+		{"unreadable ancestry", enrolled, "wido", Refused(OutcomeChanged, nil),
 			Remedy{Kind: RemedyUnreadable, Reason: "the processes behind this shell couldn't be read", Argv: retry, Then: "try again"}},
+		// The cause is the refusal's type, never its words: an untyped
+		// error that spells an outcome or its plain words is another cause.
+		{"an outcome in words only", enrolled, "wido", errors.New(OutcomeAgent + ": claude"),
+			Remedy{Reason: OutcomeAgent + ": claude"}},
+		{"plain words only", enrolled, "wido", errors.New("no terminal is enrolled on this machine"),
+			Remedy{Reason: "no terminal is enrolled on this machine"}},
 	} {
 		if got := RemedyFor(test.root, test.err, test.person, retry); !reflect.DeepEqual(got, test.want) {
 			t.Errorf("%s:\n got  %+v\n want %+v", test.name, got, test.want)

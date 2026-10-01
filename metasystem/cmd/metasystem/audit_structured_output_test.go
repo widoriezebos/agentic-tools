@@ -25,39 +25,27 @@ import (
 // presumed to be our own engine.
 
 // structuredOutputExceptions are the narrow file:function captures of a
-// program held in a variable that are not our engine's human text: retained
-// machine protocols and ordinary tool wrappers. Each names its reason.
+// program held in a variable that are not our engine's human text: other
+// tools (git, go, vm_stat, runtime and application CLIs, an adopter's
+// adapter) and the few machine protocols of our engine that are already
+// structured, where the words are at most quoted to a person. There is no
+// baseline: every other capture of our engine reads its --json envelope.
+// Each entry names its reason.
 var structuredOutputExceptions = map[string]string{
 	"cmd/metasystem/app.go:toolVersionLine":                      "an application tool's --version line, shown to a person",
-	"cmd/metasystem/brain_boot.go:composeBrainBootWith":          "the reader's stderr is quoted to a person; its result is its output file",
-	"cmd/metasystem/goal_branch.go:readGate":                     "go run ./cmd/devgate static: the exit decides, the last line is quoted",
-	"cmd/metasystem/steward_verbs.go:stewardRevive":              "the revival's exit decides; its output is only quoted in the error",
-	"cmd/metasystem/test_protection.go:runFrozenWorkerProbe":     "retained machine protocol: the worker's --result file",
+	"cmd/metasystem/test_protection.go:runFrozenWorkerProbe":     "our engine's test worker: its --result file is the answer; its words are quoted only when a probe fails",
 	"internal/adapter/supervisor/identity.go:Deps.cliVersion":    "a runtime CLI's --version",
 	"internal/candidateengine/engine.go:Build":                   "go build",
 	"internal/candidateengine/engine.go:commitTree":              "git commit-tree through scratchGitCommand",
 	"internal/candidateengine/engine.go:projectionTree":          "git plumbing through scratchGitCommand",
+	"internal/landing/laneengine/advance.go:ProductionSteps":     "go run ./cmd/devgate build: the exit decides, the output's tail is only quoted in the error",
 	"internal/goal/attention.go:captureLocalTipBounded":          "git rev-parse --verify",
-	"internal/hookswitch/switch.go:accepts":                      "internal hook --accepts: the exit decides, the output is quoted",
 	"internal/hostload/memory.go:AvailableMemory":                "vm_stat and getconf",
-	"internal/ledgerfence/fence.go:Ensure":                       "the hook's nonce ack protocol",
-	"internal/proofrun/resource_custody.go:startResourceCustody": "the --ready-fd protocol; stderr kept only for a person",
-	"internal/proofrun/watchdog.go:preserveWithBound":            "proof-run preserve: the exit decides",
+	"internal/ledgerfence/fence.go:Ensure":                       "the git hook chain (adopter-extensible scripts) answering the guard's nonce ack with exit 42",
+	"internal/proofrun/resource_custody.go:startResourceCustody": "our custodian: the --ready-fd protocol is the answer; its stderr is quoted only in a failure",
 	"internal/runtimes/external/external.go:Adapter.Call":        "an adopter's external adapter JSON protocol",
-	"internal/seat/launch/host.go:OSRunner.Run":                  "seat launch steps: the exit decides, the words are quoted",
-	"internal/stateroot/stateroot.go:runCommand":                 "git repository discovery",
-	"internal/testrun/rearm.go:landedRearmRebuild":               "go run ./cmd/devgate build: the exit decides",
-	"internal/testrun/worker.go:RequireWorkerCapabilities":       "retained machine protocol: the worker-capabilities JSON, stdout only",
-}
-
-// structuredOutputBaseline are the captures of our engine's text the second
-// unit (U2) converts: rows T4-T11 of the design. The list only shrinks; U2
-// deletes it.
-var structuredOutputBaseline = map[string]string{
-	"cmd/metasystem/intent_delivery.go:runIntentOwnerProcess": "T8 seat launch --json: envelope summary and code",
-	"cmd/metasystem/landing_path.go:landingPathBaseJudge":     "T7 landing observe typed provenance, T11 landing workspace --json",
-	"internal/missionrunner/launch.go:runCaptured":            "T5 up --json for mission arm",
-	"internal/testrun/rearm.go:landedRearmUp":                 "T4 up --json for the landed re-arm",
+	"internal/seat/launch/host.go:OSRunner.Run":                  "seat launch steps (git and our engine): the exit decides, the words are quoted into the launch record",
+	"internal/testrun/worker.go:RequireWorkerCapabilities":       "our engine's worker handshake: one typed JSON answer on stdout, not words",
 }
 
 // structuredCapture is one capture of a child's output the audit judged.
@@ -370,7 +358,7 @@ func TestAuditNoProcessReadsAnotherProcessText(t *testing.T) {
 	var refused []string
 	for _, capture := range captures {
 		seen[capture.Site] = true
-		if structuredOutputExceptions[capture.Site] != "" || structuredOutputBaseline[capture.Site] != "" {
+		if structuredOutputExceptions[capture.Site] != "" {
 			continue
 		}
 		refused = append(refused, capture.Site+" (line "+strconv.Itoa(capture.Line)+", program "+capture.Program+")")
@@ -387,11 +375,6 @@ func TestAuditNoProcessReadsAnotherProcessText(t *testing.T) {
 			"read the child through internal/verbresult.Run, or, for a program that is not our engine, add its file:function "+
 			"with a reason to structuredOutputExceptions in cmd/metasystem/audit_structured_output_test.go",
 			len(refused), strings.Join(refused, "\n  "))
-	}
-	for site := range structuredOutputBaseline {
-		if !seen[site] {
-			t.Errorf("baseline site %s no longer captures a child's text: delete it from structuredOutputBaseline", site)
-		}
 	}
 	for site := range structuredOutputExceptions {
 		if !seen[site] {

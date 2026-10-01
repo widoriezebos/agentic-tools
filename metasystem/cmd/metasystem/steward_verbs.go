@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -247,9 +248,11 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 			// classifies STEWARD identically whether the tick came
 			// from the runner, a cron, or an operator's shell.
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return fmt.Errorf("delegate revival: %v (%s)", err, strings.TrimSpace(string(out)))
+			// The revival's exit decides; what it says goes to this
+			// caller's stderr, never read here.
+			cmd.Stdout, cmd.Stderr = stderr, stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("delegate revival: %v", err)
 			}
 			return nil
 		})
@@ -307,8 +310,12 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
-	// The steward keeps the host landing lane's owner alive (U12).
-	tickConfig.KeepLandingLane = batchowner.LandingLaneKeeper(batchowner.LandingLaneHome)
+	// The steward keeps the host landing lane's owner alive (U12), and the
+	// lane checkout's own steward wakes its landing agent on demand (A-a).
+	tickConfig.KeepLandingLane = landingLaneSteps(batchowner.LandingLaneKeeper(batchowner.LandingLaneHome), landingAgentStep(*repo))
+	// The lane's steward reports behaviour patterns; every other steward's
+	// pass finds it is not the lane's and does nothing (D6).
+	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run
 	wireStewardSeat(&tickConfig)
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {

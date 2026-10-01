@@ -89,6 +89,14 @@ type AlertEpisode struct {
 	Cleared         bool                 `json:"cleared"`
 	ClearedAt       time.Time            `json:"clearedAt,omitempty"`
 	SeatIdle        *SeatIdleIncident    `json:"seatIdle,omitempty"`
+	// Evidence, Suppressed, CleanCount, Standing and ClearedBy belong to the
+	// episodes OpenAlert opens (behaviour patterns, design §1); an older
+	// engine reading the record ignores them.
+	Evidence   []AlertEvidence `json:"evidence,omitempty"`
+	Suppressed bool            `json:"suppressed,omitempty"`
+	CleanCount int             `json:"cleanCount,omitempty"`
+	Standing   string          `json:"standing,omitempty"`
+	ClearedBy  *AlertInvoker   `json:"clearedBy,omitempty"`
 }
 
 func alertDir(repoRoot string) string {
@@ -142,6 +150,9 @@ func loadAlertEpisode(path string) (AlertEpisode, error) {
 	if episode.Owner == string(RoleSpendFence) &&
 		(episode.ScopeID == "" || (episode.Ceiling != "tokens" && episode.Ceiling != "money") || episode.Multiple < 1) {
 		return AlertEpisode{}, fmt.Errorf("alert episode %s has incomplete spend identity", filepath.Base(path))
+	}
+	if IsPatternOwner(episode.Owner) && episode.ScopeID == "" {
+		return AlertEpisode{}, fmt.Errorf("alert episode %s has no work identity", filepath.Base(path))
 	}
 	if episode.Owner == seatIdleAlertOwner &&
 		(episode.SeatIdle == nil || episode.SeatIdle.SessionID == "" ||
@@ -245,6 +256,11 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
 				return AlertEpisode{}, err
 			}
+			return episodes[index], nil
+		}
+		if episodes[index].Owner == seatIdleAlertOwner && episodes[index].Digest == digest && episodes[index].Suppressed {
+			// A person cleared this idle interval; its digest names the
+			// backlog, so a changed backlog is new work.
 			return episodes[index], nil
 		}
 	}
@@ -353,7 +369,10 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			if episodes[index].Owner != "" {
 				continue
 			}
-			changed := false
+			// A healthy reading is the condition clearing once: a person's
+			// clear no longer holds the finding back.
+			changed := episodes[index].Suppressed
+			episodes[index].Suppressed = false
 			if !episodes[index].Resolved {
 				episodes[index].Resolved = true
 				episodes[index].ResolvedAt = now.UTC()
@@ -378,6 +397,19 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 	for index := range episodes {
 		if episodes[index].Owner != "" {
 			continue
+		}
+		if episodes[index].Suppressed && episodes[index].Digest != health.FindingDigest {
+			episodes[index].Suppressed = false
+			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
+				unlockAlerts(lock)
+				return AlertEpisode{}, err
+			}
+		}
+		if episodes[index].Suppressed {
+			// A person cleared this finding while it stood: it opens and
+			// notifies nothing until it has cleared once.
+			unlockAlerts(lock)
+			return episodes[index], nil
 		}
 		if !episodes[index].Cleared && episodes[index].Digest != health.FindingDigest && !episodes[index].Resolved {
 			episodes[index].Resolved = true
@@ -503,10 +535,18 @@ func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now 
 	}
 	for index := range episodes {
 		episode := &episodes[index]
-		if episode.Owner != string(RoleSpendFence) || episode.Cleared {
+		if episode.Owner != string(RoleSpendFence) {
 			continue
 		}
-		if current[episode.ScopeID+"\x00"+episode.Ceiling] >= episode.Multiple {
+		standing := current[episode.ScopeID+"\x00"+episode.Ceiling] >= episode.Multiple
+		if episode.Cleared && episode.Suppressed && !standing {
+			// The crossing went away once: a person's clear stops holding it.
+			episode.Suppressed = false
+			if err := saveAlertEpisode(repoRoot, *episode); err != nil {
+				return err
+			}
+		}
+		if episode.Cleared || standing {
 			continue
 		}
 		episode.Resolved = true
@@ -520,14 +560,21 @@ func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now 
 	for _, crossing := range observation.Crossings {
 		digest := spendCrossingDigest(crossing)
 		var episode *AlertEpisode
+		suppressed := false
 		for index := range episodes {
 			candidate := &episodes[index]
 			if candidate.Owner == string(RoleSpendFence) && candidate.Digest == digest &&
 				candidate.ScopeID == crossing.ScopeID && candidate.Ceiling == crossing.Ceiling &&
-				candidate.Multiple == crossing.Multiple && !candidate.Cleared {
-				episode = candidate
-				break
+				candidate.Multiple == crossing.Multiple {
+				if !candidate.Cleared {
+					episode = candidate
+					break
+				}
+				suppressed = suppressed || candidate.Suppressed
 			}
+		}
+		if episode == nil && suppressed {
+			continue
 		}
 		if episode == nil {
 			created := AlertEpisode{

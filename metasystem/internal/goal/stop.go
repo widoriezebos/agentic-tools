@@ -441,7 +441,7 @@ func Resume(r ResumeRequest) (PublishResult, error) {
 		return PublishResult{}, errors.New("only a person resumes a goal, from their own terminal or with a recorded relayed word")
 	}
 	if r.ApprovedRef != "" {
-		return PublishResult{}, errors.New("resume keeps the approved budget; drop --approved-ref")
+		return PublishResult{}, coded(ApprovedRefRefusedCode, errors.New("resume keeps the approved budget; drop --approved-ref"))
 	}
 	if err := r.Budget.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid fresh budget: %w", err)

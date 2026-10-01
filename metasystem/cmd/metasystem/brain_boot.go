@@ -115,8 +115,7 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 	if err := diskstore.PrepareChild(cmd); err != nil {
 		return brainBootOutput{}, err
 	}
-	var childErr bytes.Buffer
-	cmd.Stderr = &childErr
+	// The reader answers through its output files; its words are not read.
 	if err := cmd.Start(); err != nil {
 		return brainBootOutput{}, fmt.Errorf("start optional-input reader: %w", err)
 	}

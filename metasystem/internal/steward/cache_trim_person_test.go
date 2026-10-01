@@ -2,6 +2,7 @@ package steward
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -98,5 +99,28 @@ func TestPersonTrimStopsAtThePersonBudget(t *testing.T) {
 	}
 	if reports[0].Cache != "engine-go-build" || reports[0].EndedBy != "budget" || reports[0].Phase != "measure" {
 		t.Fatalf("final engine report = %+v", reports[0])
+	}
+}
+
+// A disk setting the trim cannot read is a SettingsError by type, so disk
+// clean tells a person's setting from a failed pass without its words; a
+// failed pass is not one.
+func TestPersonTrimSettingRefusalIsTyped(t *testing.T) {
+	t.Parallel()
+	bed := newPersonTrimBed(t, "disk.cache-trim-budget-sec=0\n")
+	var setting *CacheSettingsError
+	if _, err := TrimMachineCachesForPerson(context.Background(), CacheTrimRun{
+		Top: bed.top, Clock: func() time.Time { return bed.now }, Pass: bed.pass(0),
+	}, nil); !errors.As(err, &setting) {
+		t.Fatalf("an invalid disk setting = %v, want a CacheSettingsError", err)
+	}
+	good := newPersonTrimBed(t, "disk.cache-trim-budget-sec=10\ndisk.cache-trim-person-budget-sec=300\n")
+	failing := func(context.Context, []string, time.Time, time.Duration) ([]gocache.TrimReport, error) {
+		return nil, errors.New("disk.cache: the pass failed")
+	}
+	if _, err := TrimMachineCachesForPerson(context.Background(), CacheTrimRun{
+		Top: good.top, Clock: func() time.Time { return good.now }, Pass: failing,
+	}, nil); err == nil || errors.As(err, &setting) {
+		t.Fatalf("a failed pass = %v, want an error that is no setting refusal", err)
 	}
 }

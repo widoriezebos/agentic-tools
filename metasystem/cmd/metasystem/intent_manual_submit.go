@@ -330,7 +330,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		args = append(args, "--selected-installation", original)
 	}
 	result := inv.commitReview(targets, install, id, commit, args)
-	if result.Outcome == intentRefused && strings.Contains(result.Summary, "already started with another brief") {
+	if data, _ := result.Data.(map[string]any); result.Outcome == intentRefused && data["code"] == branch.ReadBriefChangedCode {
 		// The read owner binds a version's read to the brief it was first
 		// read with; a new brief is a new version, never the same read.
 		result.Decision = fmt.Sprintf("version %s of work %s is read against the brief it was first submitted with: repeat with that brief, or correct the work so the new version is read against this brief: %s",

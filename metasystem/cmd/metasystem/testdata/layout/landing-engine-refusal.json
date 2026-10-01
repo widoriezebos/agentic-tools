@@ -1,0 +1,30 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing engine",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "this metasystem isn't the landing lane's enrolled engine, so nothing was done",
+  "next": {
+    "argv": [
+      "/Users/wido/GitHub/agentic-tools-landing/metasystem/bin/metasystem",
+      "landing",
+      "engine",
+      "advance",
+      "--json"
+    ],
+    "reason": "runs it on the lane's enrolled engine"
+  },
+  "details": [
+    "refused because: LANE_ENGINE_NOT_ENROLLED: this metasystem isn't the landing lane's enrolled engine, so nothing was done",
+    "running sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; enrolled engine number 7 is sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ]
+}
+
+--

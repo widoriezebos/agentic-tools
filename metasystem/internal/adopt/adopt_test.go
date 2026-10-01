@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -236,13 +238,25 @@ func TestHookPreflightReadsWithoutExecuting(t *testing.T) {
 	if exists(marker) {
 		t.Fatal("the preflight executed a hook")
 	}
-	notGit := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: errors.New("fatal: not a git repository (or any of the parent directories): .git")}}
+	// A git that ran and exited 128, as it does outside any repository.
+	exited := exec.Command("sh", "-c", "exit 128").Run()
+	notGit := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: fmt.Errorf("git rev-parse --is-inside-work-tree: %w", exited)}}
 	if refusal := hookPreflight(Deps{Git: newFakeGit(t, notGit).run}, t.TempDir()); refusal != nil {
 		t.Fatalf("a target without git: %+v", refusal)
 	}
+	// A repository is told by its .git on the filesystem, never by git's
+	// words: a target that has one is a repository whatever git said, and
+	// its failure is a malformed setup the preflight refuses.
+	repository := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	broken := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: errors.New("fatal: bad config line 1")}}
-	if refusal := hookPreflight(Deps{Git: newFakeGit(t, broken).run}, t.TempDir()); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
+	if refusal := hookPreflight(Deps{Git: newFakeGit(t, broken).run}, repository); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
 		t.Fatalf("a malformed repository: %+v", refusal)
+	}
+	if refusal := hookPreflight(Deps{Git: newFakeGit(t, notGit).run}, repository); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
+		t.Fatalf("a repository whose git said it is none: %+v", refusal)
 	}
 }
 

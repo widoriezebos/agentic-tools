@@ -21,6 +21,14 @@ func TestGitAdapterAdoptionHeadTracking(t *testing.T) {
 	outside := t.TempDir()
 	check(outside, false)
 
+	// A checkout whose .git git cannot follow is a repository it cannot
+	// read, never "no repository": the probe fails closed.
+	unreadable := t.TempDir()
+	writeFile(t, filepath.Join(unreadable, ".git"), "gitdir: "+filepath.Join(unreadable, "missing")+"\n")
+	if tracked, err := headTracksLedgerWithEnvironment(unreadable, nil); err == nil || tracked {
+		t.Fatalf("an unreadable checkout read as untracked: tracked=%v err=%v", tracked, err)
+	}
+
 	unborn := t.TempDir()
 	gitOK(t, unborn, "init", "-q")
 	check(unborn, false)

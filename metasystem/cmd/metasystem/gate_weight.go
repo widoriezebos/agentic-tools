@@ -4,27 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strconv"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-const weightThresholdKey = "validation.weight-threshold"
-
-func weightThreshold(root string) int64 {
-	value, code, _ := config.Get(config.GetParams{Key: weightThresholdKey, ConfPath: filepath.Join(root, "metasystem.conf")})
-	if code != 0 {
-		return int64(config.MustIntDefault(weightThresholdKey))
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || parsed < 0 {
-		return 60
-	}
-	return parsed
-}
+// weightThreshold is the installation's validation weight threshold.
+func weightThreshold(root string) int64 { return gaterun.WeightThreshold(root) }
 
 // gateWeightAddTo folds one landing's numstat into the validation weight and
 // prints the accumulator on the caller's streams.

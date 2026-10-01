@@ -131,6 +131,9 @@ func TestBytesAndCountsAreHumanised(t *testing.T) {
 		{SHA("f9747c8"), "f9747c8"},
 		{Command([]string{"metasystem", "grant", "revoke", "YY6-m1e"}), "metasystem grant revoke YY6-m1e"},
 		{Command([]string{"metasystem", "work", "build", "--check", "go test ./...", "it's"}), `metasystem work build --check 'go test ./...' 'it'"'"'s'`},
+		// A page's home path (Env.Path) stays pasteable: its ~/ expands.
+		{Command([]string{"~/GitHub/lane/metasystem/bin/metasystem", "landing"}), "~/GitHub/lane/metasystem/bin/metasystem landing"},
+		{Command([]string{"~/my dir/x", "~user/x"}), `'~/my dir/x' '~user/x'`},
 	} {
 		if c.got != c.want {
 			t.Errorf("got %q, want %q", c.got, c.want)

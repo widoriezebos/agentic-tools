@@ -478,6 +478,7 @@ type decision struct {
 	provenance, verdict, code, mode, refusal string
 	refusesAgent                             bool
 	goalRevision                             string
+	carried                                  *landing.CarriedBinding
 }
 
 func decisionOf(observed observationView) (decision, bool) {
@@ -487,7 +488,7 @@ func decisionOf(observed observationView) (decision, bool) {
 		return decision{}, false
 	}
 	out := decision{provenance: observed.Provenance, verdict: observed.VerdictTrailer, code: observed.Code,
-		mode: observed.Mode, refusal: observed.Refusal, refusesAgent: refuses}
+		mode: observed.Mode, refusal: observed.Refusal, refusesAgent: refuses, carried: observed.Carried}
 	if observed.GoalRevision > 0 {
 		out.goalRevision = strconv.FormatUint(observed.GoalRevision, 10)
 	}
@@ -503,6 +504,7 @@ type observationView struct {
 	VerdictTrailer string
 	Refusal        string
 	GoalRevision   uint64
+	Carried        *landing.CarriedBinding
 }
 
 func (b *boundary) observeRequest(tree, settledTree, actor string) ObserveRequest {
@@ -614,5 +616,5 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 func view(observed landing.Observation) observationView {
 	return observationView{Mode: observed.Mode, RefusesAgent: observed.RefusesAgent, Code: observed.Code,
 		Provenance: observed.Provenance, VerdictTrailer: observed.VerdictTrailer, Refusal: observed.Refusal,
-		GoalRevision: observed.GoalRevision}
+		GoalRevision: observed.GoalRevision, Carried: observed.Carried}
 }

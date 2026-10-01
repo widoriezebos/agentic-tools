@@ -92,26 +92,26 @@ func TestAuditMessagesTracedSeesTheBlindSpots(t *testing.T) {
 	messageTraceFixtureChecks(t, direct, traced)
 }
 
-// TestAuditMessagesTracedEnforcesAGroupsPaths: a path a group enforces
-// with enforceTracedMessages is judged in enforce mode. It runs before the
+// TestAuditMessagesTracedEnforcesAGroupsPaths: every traced path is
+// enforced, except one a modes file excludes, with why. It runs before the
 // parallel audits and removes its fixture key again.
 func TestAuditMessagesTracedEnforcesAGroupsPaths(t *testing.T) {
 	module := messageTraceFixtureModule(t)
-	enforceTracedMessages("internal/x/x.go#summaryLine")
+	messageTracedModes["internal/x/x.go#summaryLine"] = "excluded"
 	defer delete(messageTracedModes, "internal/x/x.go#summaryLine")
-	enforced := 0
+	excluded := 0
 	for _, source := range messageTraceScan(t, module, messageScan(t, module)) {
-		want := auditReport
+		want := auditEnforce
 		if source.Function == "summaryLine" {
-			want = auditEnforce
-			enforced++
+			want = "excluded"
+			excluded++
 		}
 		if source.Mode != want {
 			t.Errorf("%s %q: mode %q, want %q", source.Function, source.Text, source.Mode, want)
 		}
 	}
-	if enforced == 0 {
-		t.Error("no source of the enforced function was found")
+	if excluded == 0 {
+		t.Error("no source of the excluded function was found")
 	}
 }
 
@@ -187,8 +187,8 @@ func messageTraceFixtureChecks(t *testing.T, direct []messageSource, traced []me
 		}
 	}
 	for _, source := range traced {
-		if source.Mode != auditReport {
-			t.Errorf("%s:%d %q: mode %q; a traced message is reported until its group enforces it", source.File, source.Line, source.Text, source.Mode)
+		if source.Mode != auditEnforce {
+			t.Errorf("%s:%d %q: mode %q; a traced message is enforced unless a modes file excludes it", source.File, source.Line, source.Text, source.Mode)
 		}
 	}
 }
@@ -212,6 +212,24 @@ func refuseBlank(format string, args ...any) error {
 	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...), Run: ""}
 }
 
+func refuseLater(format string, args ...any) *OpError {
+	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...)}
+}
+
+// run sets the refusal's line 2, chained onto the refusal it completes.
+func (e *OpError) run(command string) *OpError {
+	e.Run = command
+	return e
+}
+
+func chained(id string) error {
+	return refuseLater("the lease %s was taken over", id).run("metasystem machine list")
+}
+
+func chainedBlank(id string) error {
+	return refuseLater("the seat %s left its lane", id).run("")
+}
+
 func refuseRun(run, format string, args ...any) error {
 	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...), Run: run}
 }
@@ -227,8 +245,8 @@ func blank(id string) error { return refuseBlank("the hazard ledger has an unkno
 
 // TestAuditMessagesTracedJudgesAnEmptyRemedy: a refusal whose type has a
 // remedy field is no-command when a literal leaves that field empty, and
-// resolves when it fills it. Until those remedies are filled, the finding is
-// reported even on an enforced path.
+// resolves when it fills it or a remedy setter is chained onto it with a
+// command; the finding is enforced.
 func TestAuditMessagesTracedJudgesAnEmptyRemedy(t *testing.T) {
 	module := t.TempDir()
 	dir := filepath.Join(module, "internal", "y")
@@ -250,19 +268,19 @@ func TestAuditMessagesTracedJudgesAnEmptyRemedy(t *testing.T) {
 	for _, source := range messageTraceScan(t, module, messageScan(t, module)) {
 		noCommand := slices.Contains(source.Violations, "no-command")
 		switch source.Text {
-		case "the batch … is sealed, so nothing was joined":
+		case "the batch … is sealed, so nothing was joined", "the lease … was taken over":
 			seen++
 			if noCommand {
 				t.Errorf("a filled Run resolves: %v", source.Violations)
 			}
-		case "the dispatch record … was replaced while it was read", "the hazard ledger has an unknown entry …":
+		case "the dispatch record … was replaced while it was read", "the hazard ledger has an unknown entry …", "the seat … left its lane":
 			seen++
-			if !noCommand || source.Mode != auditReport {
-				t.Errorf("%q: violations %v mode %q; an empty Run is no-command, reported", source.Text, source.Violations, source.Mode)
+			if !noCommand || source.Mode != auditEnforce {
+				t.Errorf("%q: violations %v mode %q; an empty Run is no-command, enforced", source.Text, source.Violations, source.Mode)
 			}
 		}
 	}
-	if seen != 3 {
-		t.Fatalf("the traced scan saw %d of the three refusals", seen)
+	if seen != 5 {
+		t.Fatalf("the traced scan saw %d of the five refusals", seen)
 	}
 }

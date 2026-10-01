@@ -2534,11 +2534,11 @@ func runIntentStartMachine(inv *intentInvocation) int {
 			args = append(args, pair[1], inv.input.text(pair[0]))
 		}
 	}
-	ran, problem := inv.engineVerb(args...)
+	owner, problem, readErr := inv.engineVerb(seatLaunchVerb, args...)
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	result := ownerVerbResult(ran, []intentTarget{{Kind: "machine", ID: name}}, "machine "+name+" is launched and supervised", nil)
+	result := ownerEnvelopeResult(owner, readErr, []intentTarget{{Kind: "machine", ID: name}}, "machine "+name+" is launched and supervised")
 	if owner, _ := result.Data.(map[string]any)["owner"].(map[string]any); result.Outcome == intentConfirmed && owner["alreadyLaunched"] == true {
 		result.Outcome = intentUnchanged
 		result.Summary = fmt.Sprintf("machine %s is already launched (launch %v, %v at %v)", name, owner["launch"], owner["outcome"], owner["destination"])

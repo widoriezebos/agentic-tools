@@ -131,6 +131,7 @@ func newCarriedBed(t *testing.T) *carriedBed {
 func carriedObservationFor(word string) landing.Observation {
 	return landing.Observation{Mode: "observe", Code: "human-carried",
 		Provenance:     "carried opid=" + word + " past=missing-declaration ledger=" + carriedReservedTip + " by=human:wido",
+		Carried:        &landing.CarriedBinding{Opid: word, Past: "missing-declaration", Ledger: carriedReservedTip},
 		VerdictTrailer: "pass carried code=missing-declaration", GoalRevision: 3}
 }
 

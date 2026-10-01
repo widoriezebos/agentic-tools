@@ -146,6 +146,25 @@ var coreSettings = []Setting{
 		Meaning: "seconds a steward tick may take before the resident runner is considered stuck"},
 	{Key: "steward.stop-slow-sec", Default: "15", ProofInput: true,
 		Meaning: "a Stop using this many seconds of its sixty-second budget is unhealthy"},
+	// The lane steward's behaviour patterns (design
+	// steward-acts-on-behaviour-patterns, D4). Not proof inputs: they only
+	// decide what the steward reports.
+	{Key: "steward.pattern.stagnation", Default: "report", ProofInput: false,
+		Meaning: "off or report: whether the lane's steward reports a batch the lane does not move forward"},
+	{Key: "steward.pattern.stagnation.batch-hours", Default: "2", ProofInput: false,
+		Meaning: "hours of observed, not-held time an unfinished batch may take before the steward reports it"},
+	{Key: "steward.pattern.stagnation.repeat", Default: "5", ProofInput: false,
+		Meaning: "refused, unavailable or red attempts since the batch last moved forward before the steward reports it"},
+	{Key: "steward.pattern.churn", Default: "report", ProofInput: false,
+		Meaning: "off or report: whether the lane's steward fetches main into a private ref and reports one record written to it again and again"},
+	{Key: "steward.pattern.churn.commits", Default: "6", ProofInput: false,
+		Meaning: "commits by one machine and lineage to one path inside the window that the steward reports"},
+	{Key: "steward.pattern.churn.window-min", Default: "10", ProofInput: false,
+		Meaning: "minutes of committer time the churn window spans"},
+	{Key: "steward.pattern.clear-ticks", Default: "2", ProofInput: false,
+		Meaning: "steward cycles in a row a pattern must read clear before its report clears"},
+	{Key: "steward.pattern.max-gap-sec", Computed: "pattern.MaxGap", ProofInput: false,
+		Meaning: "the longest gap between two steward cycles that still counts as observed time; unset is the steward cadence plus half"},
 	// The steward's machine cache trimmer (disk-lifetimes A12). Not proof
 	// inputs: they bound the machine's caches, never what a proof proves.
 	{Key: DiskGoCacheCapGiBKey, Default: "30", ProofInput: false,
@@ -320,6 +339,18 @@ var coreSettings = []Setting{
 		Meaning: "a steward-started seat main's model on any runtime; empty takes launch.build.model.<runtime>"},
 	{Key: "launch.seat.effort", Default: "xhigh", ProofInput: true,
 		Meaning: "a steward-started seat main's effort, translated by the runtime adapter"},
+	// The landing agent the keeper wakes in the host's landing lane (one per
+	// computer, started on demand): its runtime, model and effort are roster
+	// keys (landing-lane-runtime-redesign D2), named in the lane checkout's
+	// metasystem.conf.local. The documented default is claude (the only
+	// runtime its tool gate, a Claude hook, can hold), the build lane's model
+	// for it, and effort xhigh.
+	{Key: "launch.landing.runtime", Default: "claude", ProofInput: true,
+		Meaning: "the landing agent's runtime; claude, the default, is the only one its tool gate holds"},
+	{Key: "launch.landing.model", Default: "", ProofInput: true,
+		Meaning: "the landing agent's model on any runtime; empty (the default) takes launch.build.model.<runtime>"},
+	{Key: "launch.landing.effort", Default: "xhigh", ProofInput: true,
+		Meaning: "the landing agent's effort, translated by the runtime adapter"},
 	{Key: "launch.build.window.tokens", Default: "0", ProofInput: true,
 		Meaning: "the build lane's context window cap in tokens; 0 imposes none"},
 	{Key: "launch.design.window.tokens", Default: "0", ProofInput: true,

@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The armed-preflight fixture: a real
@@ -251,8 +252,15 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 		if werr := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); werr != nil {
 			t.Fatal(werr)
 		}
-		stdout, stderr, code := runCaptured(root, nil,
-			filepath.Join(root, "bin", "metasystem"), "mission", "seal", contractPath, "--json")
+		seal := exec.Command(filepath.Join(root, "bin", "metasystem"), "mission", "seal", contractPath, "--json")
+		seal.Dir, seal.Env = root, gittree.ScrubbedEnviron()
+		var sealOut, sealErr strings.Builder
+		seal.Stdout, seal.Stderr = &sealOut, &sealErr
+		code := 0
+		if err := seal.Run(); err != nil {
+			code = -1
+		}
+		stdout, stderr := sealOut.String(), sealErr.String()
 		var sealed struct {
 			Data struct {
 				ContractSha256 string `json:"contractSha256"`
@@ -321,7 +329,7 @@ func supervisionForSubprocess(t *testing.T, engine *Engine) []string {
 		}
 	}
 	armer := filepath.Join(t.TempDir(), "fixture-arming-engine")
-	script := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf 'up outcome=armed authority=writer\\n'; exit 0; fi\nexec '" +
+	script := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' '" + upArmedEnvelope + "'; exit 0; fi\nexec '" +
 		filepath.Join(root, "bin", "metasystem") + "' \"$@\"\n"
 	if err := testexec.WriteFile(armer, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -337,9 +345,8 @@ func writeFreshSupervision(t *testing.T, engine *Engine) {
 	// The stub armer: the typed armed outcome for arming and a fixed
 	// fingerprint for preflight — agreement with the state below by
 	// construction, without launching supervision.
-	engine.ArmSupervision = func([]string) (string, string, int) {
-		return "up outcome=armed authority=writer\n", "", 0
-	}
+	answer := upAnswered(t, "armed", 0)
+	engine.ArmSupervision = func([]string) (verbresult.Result, error) { return answer, nil }
 	engine.SupervisionFingerprint = func(string) (string, error) { return "fixture-fingerprint", nil }
 	root := engine.Root
 	stableNow := time.Now().UTC().Truncate(time.Second)

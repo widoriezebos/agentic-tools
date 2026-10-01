@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,7 +95,7 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
-		cause := error(errors.New(humanauthority.OutcomeTerminalMissing))
+		cause := humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 		if proof != nil {
 			_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", now)
 			if walk := proof.WalkRefusal(); walk != nil {

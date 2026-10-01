@@ -81,7 +81,7 @@ func personRemedy(values *humanVerbValues, cause error) humanVerbRemedy {
 	if remedy.Kind == "" {
 		// A cause the remedy cannot read is still this shell not proven to
 		// be the person: enrolling it is what resolves that.
-		remedy = humanauthority.RemedyFor(values.root, fmt.Errorf("%s: %w", humanauthority.OutcomeTerminalMissing, cause), values.by, retry)
+		remedy = humanauthority.RemedyFor(values.root, humanauthority.Refused(humanauthority.OutcomeTerminalMissing, cause), values.by, retry)
 	}
 	if len(remedy.Argv) > 0 {
 		return humanVerbRemedy{command: shellCommand(remedy.Argv)}

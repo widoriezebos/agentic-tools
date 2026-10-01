@@ -39,6 +39,9 @@ type RedGroup struct {
 	Adapter               string    `json:"adapter,omitempty"`
 	LongestSilentSeconds  int64     `json:"longestSilentSeconds,omitempty"`
 	LongestZeroCPUSeconds int64     `json:"longestZeroCpuSeconds,omitempty"`
+	// Stall is the result's typed stall of the group, when the watchdog
+	// stalled it.
+	Stall *proofrun.GroupStall `json:"stall,omitempty"`
 }
 
 // RedGroupFromResult is the red evidence of one group that did not pass.
@@ -55,7 +58,7 @@ func RedGroupFromResult(group proofrun.GroupResult) RedGroup {
 	return RedGroup{ID: group.ID, Status: group.Status, NotRunReason: group.NotRunReason, LogPath: group.LogPath, LogDigest: group.LogDigest,
 		InputManifest: slices.Clone(group.InputManifest), Failures: failures(group.Observed, true), CollectionComplete: group.CollectionComplete,
 		Missing: failures(group.Missing, false), Unexpected: failures(group.Unexpected, false), NativeExitStatus: group.NativeExitStatus,
-		LongestSilentSeconds: group.LongestSilentSeconds, LongestZeroCPUSeconds: group.LongestZeroCPUSeconds}
+		LongestSilentSeconds: group.LongestSilentSeconds, LongestZeroCPUSeconds: group.LongestZeroCPUSeconds, Stall: group.Stall}
 }
 
 // TrunkRed describes proof failures observed on a batch base tree.

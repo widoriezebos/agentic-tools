@@ -176,10 +176,29 @@ func buildSize(spec StartSpec) ([]UnitSize, int64, error) {
 		return nil, 0, err
 	}
 	units, size, err := sizesFromTable(string(data), spec.Units)
-	if spec.UnitsPage == "" && err != nil && strings.Contains(ErrorDetail(err), "missing=units-table") {
+	if spec.UnitsPage == "" && UnsizedMissing(err) == "units-table" {
 		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=declared-size", errors.New("the brief declares no size for this build: give it a units table with a size column"))
 	}
 	return units, size, err
+}
+
+// UnsizedError is a LAUNCH_BUILD_UNSIZED refusal's reason: Missing names
+// what the page lacks (units-table, size-column, row, integer).
+type UnsizedError struct {
+	Missing string
+	Err     error
+}
+
+func (e *UnsizedError) Error() string { return e.Err.Error() }
+func (e *UnsizedError) Unwrap() error { return e.Err }
+
+// UnsizedMissing is what an unsized refusal says the page lacks, or "".
+func UnsizedMissing(err error) string {
+	var unsized *UnsizedError
+	if errors.As(err, &unsized) {
+		return unsized.Missing
+	}
+	return ""
 }
 
 func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
@@ -206,9 +225,9 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	}
 	if header < 0 {
 		if tableFound {
-			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=size-column", errors.New("the units table has no size column (lines, size, alloc or cap), so the build has no size"))
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=size-column", &UnsizedError{Missing: "size-column", Err: errors.New("the units table has no size column (lines, size, alloc or cap), so the build has no size")})
 		}
-		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", errors.New("the page has no units table, so the build has no size"))
+		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", &UnsizedError{Missing: "units-table", Err: errors.New("the page has no units table, so the build has no size")})
 	}
 	wants := map[string]bool{}
 	for _, name := range wanted {
@@ -241,7 +260,7 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 		cell := cells[sizeColumn]
 		first := firstInteger.FindString(cell)
 		if first == "" {
-			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+matched+" missing=integer", fmt.Errorf("unit %s has no number in its size column, so the build has no size", matched))
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+matched+" missing=integer", &UnsizedError{Missing: "integer", Err: fmt.Errorf("unit %s has no number in its size column, so the build has no size", matched)})
 		}
 		lines, _ := strconv.ParseInt(first, 10, 64)
 		if witness := witnessInteger.FindStringSubmatch(cell); len(witness) == 2 {
@@ -253,7 +272,7 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	}
 	for _, name := range wanted {
 		if !seen[name] {
-			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+name+" missing=row", fmt.Errorf("the units table has no row for unit %s, so the build has no size", name))
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+name+" missing=row", &UnsizedError{Missing: "row", Err: fmt.Errorf("the units table has no row for unit %s, so the build has no size", name)})
 		}
 	}
 	var total int64

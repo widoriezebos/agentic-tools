@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -86,9 +87,9 @@ type Engine struct {
 	// command by name.
 	Delegate func(args ...string) (stdout, stderr string, code int)
 	// ArmSupervision replaces arming this engine's checkout (the engine's
-	// `up` entry) for this engine only; nil execs the checkout's engine.
-	// Fixtures without live supervision set it.
-	ArmSupervision func(args []string) (stdout, stderr string, code int)
+	// `up --json` entry, read as its envelope) for this engine only; nil
+	// execs the checkout's engine. Fixtures without live supervision set it.
+	ArmSupervision func(args []string) (verbresult.Result, error)
 	// SupervisionFingerprint replaces computing the checkout's live
 	// supervision fingerprint at contract preflight for this engine only;
 	// nil computes census.Fingerprint.

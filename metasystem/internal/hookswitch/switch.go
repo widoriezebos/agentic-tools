@@ -258,16 +258,14 @@ func git(args ...string) (string, error) {
 	return string(out), err
 }
 
+// accepts runs the engine's hook --accepts: its exit decides, and what it
+// says goes to this process's stderr for a person, never read here.
 func accepts(engine string) error {
 	command := exec.Command(engine, "internal", "hook", "--accepts")
 	command.Env = ledgerfence.EnvironWithoutGitSteering()
-	output, err := command.CombinedOutput()
-	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail == "" {
-			return err
-		}
-		return fmt.Errorf("%v: %s", err, detail)
+	command.Stdout, command.Stderr = os.Stderr, os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("%s does not accept hooks (%v); what it said is above", engine, err)
 	}
 	return nil
 }
