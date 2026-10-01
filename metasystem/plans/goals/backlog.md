@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 108
+- Revision: 109
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -15,7 +15,8 @@ PowerOfAttorney:
 - HN63XDTBD11WDD5B24PCPK89Z6-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-13T20:46:45Z expires=2026-09-19
 - STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-16T00:06:45Z expires=2026-09-22
 - FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-16T07:34:02Z expires=2026-09-20
-- YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a by=human:wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-09-30T08:56:58Z until=2026-10-01T08:56:00Z
+- YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a by=human:wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-09-30T08:56:58Z until=2026-10-01T08:56:00Z revoked=2026-10-01T07:08:06Z revokedBy=human:Wido
+- C7QKWNXVF5C7Z60W7H5CE8W16F-m1e-10c6b8fe by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-01T07:08:06Z until=2026-10-01T18:00:00Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
@@ -141,4 +142,5 @@ History:
 - 2026-10-01T03:32:31Z Z12HCBR7GFBKK5MK9SSY936S7N-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=test-environment-edges-are-closed displaced=m1e+main-1790454088-93948-21671b@2026-09-30T13:25:28Z ack
 - 2026-10-01T03:32:31Z Z12HCBR7GFBKK5MK9SSY936S7N-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=switch-on-trial displaced=m1e+main-1790454088-93948-21671b@2026-09-30T08:58:05Z ack
 - 2026-10-01T06:56:04Z P72GVYNRQCHJ3FKHMQ3M1DTRVV-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-09-30T14:56:00Z ack
-Integrity: sha256=116b56130419a4316c6f98c61039879d688b3b2af33e6a6d882db825df4807e4
+- 2026-10-01T07:08:06Z C7QKWNXVF5C7Z60W7H5CE8W16F-m1e-10c6b8fe grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-01T18:00:00Z
+Integrity: sha256=280b8c062580b9defcac7eb642c0324f43386b57e9c3d3e91d517b10bc2eb1ec
