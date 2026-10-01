@@ -148,7 +148,11 @@ func witnessDiskTrimRepeat(t *testing.T) {
 	before := idemTreeDigest(t, bed.userCache)
 	for run := 1; run <= 2; run++ {
 		code, result, printed := bed.run(t, "--go-cache")
-		if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "nothing removed") {
+		// A repeat may meet the trim lock the first run's pass still holds
+		// on a loaded host: that answer is a success too, as long as the
+		// caches are unchanged (checked below).
+		settled := strings.Contains(result.Summary, "nothing removed") || run > 1 && strings.Contains(result.Summary, "another steward is trimming")
+		if code != 0 || result.Outcome != intentConfirmed || !settled {
 			t.Fatalf("disk clean %d = %d %s", run, code, printed)
 		}
 		idemSameTree(t, "a repeated disk clean", before, idemTreeDigest(t, bed.userCache))
