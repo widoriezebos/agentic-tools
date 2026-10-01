@@ -49,10 +49,9 @@ A denial is two lines: what happened, then the one command to run. Take it as in
 the denied thing is what the batch really needs, stop and ask (below); never look for a way around
 the gate.
 
-Verbs the design names that this engine may not have yet: `landing begin`, `prove`, `publish`,
-`return`, `validate` and `engine advance`, and `--reason` on `landing stop`, arrive with the kernel
-units. When one is missing, `landing stop` and `agent ask` are the way out; do not improvise the
-step by hand.
+`landing stop` takes no reason: say what repeated and what you need in the `agent ask` that
+follows it. When a step's verb refuses in a way you do not understand, `landing stop` and
+`agent ask` are the way out; do not improvise the step by hand.
 
 ## The batch, step by step
 
@@ -76,8 +75,9 @@ step by hand.
    `artifacts/` and the like), and a restore of a directory or by pattern: name files one by one.
    A member that changes such a path is for a person: stop and ask.
    A conflict you cannot resolve within the cap: abort the pick, record it with
-   `metasystem landing begin --record-conflict`, and return the member as `conflict`.
-4. **Begin.** `metasystem landing begin --members M1,M2 --base B --head C` durably records the
+   `metasystem landing begin --batch ID --record-conflict M --base B --onto C` (C is the series
+   commit M failed to apply on), and return the member as `conflict`.
+4. **Begin.** `metasystem landing begin --batch ID --members M1,M2 --base B --head C` durably records the
    series before anything runs. What is proven is what is published: after `begin` you do not
    change the series; a changed series is a new `begin`.
 5. **Prove.** `metasystem landing prove --batch ID --subject batch` runs the lane-charged proof on
@@ -119,9 +119,8 @@ Pause the lane and ask when something repeats instead of trying a third time:
 - a denial for something the batch truly needs;
 - the allowance close to spent, or the kernel refusing for a reason you do not understand.
 
-Run `metasystem landing stop --reason "WHAT REPEATED AND WHAT YOU NEED"`, then
-`metasystem agent ask MACHINE --text ...` to the seat or `--goal G` that can act, and end the
-session. Only a person clears the pause. A stopped lane is not a failure; guessing on is.
+Run `metasystem landing stop`, then `metasystem agent ask MACHINE --text ...` to the seat or
+`--goal G` that can act, saying what repeated and what you need, and end the session. Only a person clears the pause. A stopped lane is not a failure; guessing on is.
 
 ## Residual risk
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -231,5 +232,49 @@ func TestLandingAgentWritesItsToolGateIntoTheLaunchState(t *testing.T) {
 	}
 	if _, err := agent.gateSettings(launch.Store{Root: filepath.Join(module, "launches")}, "landing-0011223344556677", checkout, module); err == nil {
 		t.Fatal("gate settings were written inside the lane checkout, where the agent may edit them")
+	}
+}
+
+// The landing-agent skill (A-b) is the agent's brief: every metasystem
+// landing or agent command it spells is a command this engine declares,
+// with options that command takes, and a kernel verb over a batch names
+// it with --batch. A brief that spells a form the engine refuses sends the
+// agent into a denial or a usage error at the step it describes.
+func TestLandingAgentSkillUsesTheVerbsAsDeclared(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "skills", "landing-agent", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spans := strings.Split(string(data), "`")
+	checked := 0
+	for index := 1; index < len(spans); index += 2 {
+		words := strings.Fields(spans[index])
+		if len(words) < 3 || words[0] != "metasystem" || (words[1] != "landing" && words[1] != "agent") {
+			continue
+		}
+		command, ok := findIntentAction(words[1], words[2])
+		if !ok {
+			t.Errorf("the skill spells %q, which this engine does not declare", spans[index])
+			continue
+		}
+		checked++
+		named := map[string]bool{}
+		for _, word := range words[3:] {
+			if !strings.HasPrefix(word, "--") {
+				continue
+			}
+			name, _, _ := strings.Cut(strings.TrimPrefix(word, "--"), "=")
+			named[name] = true
+			if _, ok := command.lookupFlag(name); !ok {
+				t.Errorf("the skill spells %q, but %s takes no --%s", spans[index], command.name, name)
+			}
+		}
+		if slices.Contains([]string{"begin", "prove", "publish"}, words[2]) && len(named) > 0 && !named["batch"] {
+			t.Errorf("the skill spells %q without the --batch it acts on", spans[index])
+		}
+	}
+	if checked == 0 {
+		t.Fatal("the skill spells no landing or agent command")
 	}
 }
