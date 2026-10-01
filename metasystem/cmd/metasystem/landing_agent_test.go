@@ -64,7 +64,7 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
 		nonce: func() (string, error) { return "0011223344556677", nil },
-		gateSettings: func(asked string) (string, error) {
+		gateSettings: func(_ launch.Store, _, _, asked string) (string, error) {
 			if asked != module {
 				t.Errorf("the gate settings were asked for %s, want the lane installation %s", asked, module)
 			}
@@ -186,5 +186,50 @@ func TestNoOwnerStartsWhileTheAgentStarts(t *testing.T) {
 	homeless := agent.liveOrStarting(func() (string, error) { return "", errors.New("no home") })
 	if _, _, err := homeless(); err == nil {
 		t.Fatal("no lane home read as no agent")
+	}
+}
+
+// TestLandingAgentWritesItsToolGateIntoTheLaunchState (integration of A-a
+// and A-b): the production landing agent passes the tool gate to every
+// landing launch. Its settings file is written by agentgate in the launch's
+// own state directory, outside the lane checkout the agent may edit, and
+// its hook runs the lane installation's engine in the lane checkout.
+func TestLandingAgentWritesItsToolGateIntoTheLaunchState(t *testing.T) {
+	t.Parallel()
+	base := resolvedPath(t.TempDir())
+	checkout := filepath.Join(base, "landing")
+	module := filepath.Join(checkout, "metasystem")
+	if err := os.MkdirAll(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := launch.Store{Root: filepath.Join(base, "launches")}
+	agent := newLandingAgent()
+	if agent.gateSettings == nil {
+		t.Fatal("the production landing agent passes no tool gate, so the launcher refuses every landing session")
+	}
+	path, err := agent.gateSettings(store, "landing-0011223344556677", checkout, module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := store.StateDir("landing-0011223344556677")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(path) != dir {
+		t.Fatalf("the gate settings are at %s; want them in the launch's state directory %s", path, dir)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(module, "bin", "metasystem")
+	if !strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data), "'"+engine+"' internal hook claude tool") || !strings.Contains(string(data), "cd '"+checkout+"'") {
+		t.Fatalf("gate settings = %s; want a PreToolUse hook running %s in %s", data, engine, checkout)
+	}
+	if _, err := agent.gateSettings(store, "landing-0011223344556677", checkout, module); err != nil {
+		t.Fatalf("a second write over the same launch: %v", err)
+	}
+	if _, err := agent.gateSettings(launch.Store{Root: filepath.Join(module, "launches")}, "landing-0011223344556677", checkout, module); err == nil {
+		t.Fatal("gate settings were written inside the lane checkout, where the agent may edit them")
 	}
 }

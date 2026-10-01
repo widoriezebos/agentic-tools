@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/agentgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -62,16 +63,28 @@ type landingAgent struct {
 	now      func() time.Time
 	nonce    func() (string, error)
 	// gateSettings writes the Claude settings file that holds the landing
-	// agent's tool gate for the lane installation at module and returns its
-	// path, which the launch records as "settings" (the launcher refuses a
-	// landing launch without it). The gate is unit A-b's
-	// (internal/landing/agentgate); the integration wires it here. nil
-	// passes none.
-	gateSettings func(module string) (string, error)
+	// agent's tool gate for launch id of store in the lane checkout root, whose
+	// installation is module, and returns its path, which the launch records
+	// as "settings" (the launcher refuses a landing launch without it). The
+	// gate is unit A-b's (internal/landing/agentgate). nil passes none.
+	gateSettings func(store launch.Store, id, root, module string) (string, error)
 }
 
 func newLandingAgent() landingAgent {
-	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce}
+	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce,
+		gateSettings: landingToolGate}
+}
+
+// landingToolGate writes launch id's tool gate (unit A-b) in the
+// launch's own state directory, outside the lane checkout root the agent
+// may edit: a PreToolUse hook that runs the lane installation's engine in
+// the lane checkout and denies when it cannot.
+func landingToolGate(store launch.Store, id, root, module string) (string, error) {
+	dir, err := store.StateDir(id)
+	if err != nil {
+		return "", err
+	}
+	return agentgate.WriteClaudeSettings(dir, filepath.Join(module, "bin", "metasystem"), root)
 }
 
 func landingNonce() (string, error) {
@@ -141,7 +154,7 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	manager.Settings, manager.SettingsError = settings, nil
 	spec := launch.StartSpec{ID: id, Kind: launch.LandingKind, WorkingDirectory: root, FenceRoot: module, Brief: brief, Tag: nonce}
 	if a.gateSettings != nil {
-		path, err := a.gateSettings(module)
+		path, err := a.gateSettings(manager.Store, id, root, module)
 		if err != nil {
 			return "", errors.Join(err, os.Remove(brief))
 		}
