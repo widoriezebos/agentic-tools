@@ -3,14 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
 	refusalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -36,30 +33,6 @@ func testRunEnvelopeLine(t *testing.T, exit int, code, summary string, data any)
 		t.Fatal(err)
 	}
 	return out.String()
-}
-
-// testRunEnvelopeScript is a fake internal test run: it says stderr words
-// for a person, prints its envelope on stdout and exits.
-func testRunEnvelopeScript(t *testing.T, exit int, code, summary string, data any, stderr string) string {
-	t.Helper()
-	return fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' %s >&2\nprintf '%%s' %s\nexit %d\n",
-		shellquote.Quote(stderr), shellquote.Quote(testRunEnvelopeLine(t, exit, code, summary, data)), exit)
-}
-
-// withTestRunEnvelope makes a fake test run script print the envelope its
-// final "exit N" stands for, on stdout, before it exits.
-func withTestRunEnvelope(t *testing.T, script string) string {
-	t.Helper()
-	trimmed := strings.TrimRight(script, "\n")
-	at := strings.LastIndex(trimmed, "\nexit ")
-	if at < 0 {
-		t.Fatalf("fake test run script has no final exit: %q", script)
-	}
-	exit, err := strconv.Atoi(strings.TrimSpace(trimmed[at+len("\nexit "):]))
-	if err != nil {
-		t.Fatalf("fake test run script's final exit: %v", err)
-	}
-	return trimmed[:at] + "\nprintf '%s' " + shellquote.Quote(testRunEnvelopeLine(t, exit, "", "", nil)) + trimmed[at:] + "\n"
 }
 
 // planOfEnvelope reads a test plan --json answer: one envelope of verb whose

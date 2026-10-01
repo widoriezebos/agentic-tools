@@ -147,44 +147,6 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	}
 }
 
-// The owner serves only the host's lane: the checkout a person registered
-// serves it; another checkout naming itself is refused and does not run; a
-// checkout with no setting serves the lane when it is the lane.
-func TestLandingOwnerServesOnlyTheHostLane(t *testing.T) {
-	t.Parallel()
-	bed := newLaneBed(t)
-	home := bed.seams.Home
-	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
-	for _, landing := range []string{bed.landingA, bed.landingB} {
-		if err := os.WriteFile(filepath.Join(landing, "metasystem.conf"), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	bed.setRoot(t, bed.landingA, bed.landingA)
-	root, paused, err := batchowner.LandingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow)
-	if err != nil || root != bed.landingA || paused {
-		t.Fatalf("lane A's own owner = %q %v %v", root, paused, err)
-	}
-	bed.setRoot(t, bed.landingB, bed.landingB)
-	_, _, err = batchowner.LandingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow)
-	var refusal *lane.Refusal
-	if !errors.As(err, &refusal) || refusal.Code != lane.CodeMismatch {
-		t.Fatalf("lane B's owner = %v; want %s so a second owner never runs", err, lane.CodeMismatch)
-	}
-	if err := os.Remove(filepath.Join(bed.landingB, "metasystem.conf.local")); err != nil {
-		t.Fatal(err)
-	}
-	if root, _, err = batchowner.LandingOwnerLaneRoot(home, bed.landingB, bed.landingB, laneTestNow); err != nil || root != bed.landingA {
-		t.Fatalf("unset owner B = %q %v; want the host's lane A, which is not B, so B does not run", root, err)
-	}
-	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
-		t.Fatal(err)
-	}
-	if _, paused, _ = batchowner.LandingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow); !paused {
-		t.Fatalf("a person's pause is not seen by the owner")
-	}
-}
-
 // With no home for the lane, a seat keeps its own setting, as before U12:
 // there is no host state, so nothing is registered, gated or kept.
 func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
@@ -193,14 +155,16 @@ func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bed.landingA, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	bed.setRoot(t, bed.landingA, bed.landingA)
+	bed.setRoot(t, bed.seatA, bed.landingA)
 	noHome := func() (string, error) { return "", errors.New("no home") }
-	root, paused, err := batchowner.LandingOwnerLaneRoot(noHome, bed.landingA, bed.landingA, laneTestNow)
-	if err != nil || paused || realpath.Resolve(root) != bed.landingA {
-		t.Fatalf("owner without a lane home = %q %v %v", root, paused, err)
+	seams := batchowner.LandingLaneSeams{Home: noHome, Validate: bed.seams.Validate}
+	root, configured, err := seams.Resolve(bed.seatA, laneTestNow)
+	if err != nil || !configured || realpath.Resolve(root) != bed.landingA {
+		t.Fatalf("seat without a lane home = %q %v %v; want its own setting", root, configured, err)
 	}
-	if batchowner.LandingLaneProving(noHome) != nil || batchowner.LandingLaneKeeper(noHome) != nil {
-		t.Fatalf("a host without a lane home gates proofs or keeps an owner")
+	rest, release, err := batchowner.HoldHostProvingFor(noHome, []string{"internal", "test", "run", batchowner.HoldHostProvingFlag})
+	if err != nil || len(rest) != 3 || release() != nil {
+		t.Fatalf("a host without a lane home gates proofs: %v %v", rest, err)
 	}
 }
 
@@ -234,19 +198,14 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 	}
 }
 
-// The one launcher of a batch's proof and diagnostic children asks each
-// child to hold the host's proving flock for its life; only a spare launch
-// (the early proof) goes without it.
+// The one launcher of a batch's proof children asks each child to hold the
+// host's proving flock for its life.
 func TestBatchProofLauncherAsksTheChildToHoldTheProvingLock(t *testing.T) {
 	t.Parallel()
 	args := []string{"internal", "test", "run", "--root", "/r"}
-	held := batchowner.BatchProofCommand("/bin/metasystem", args, false)
+	held := batchowner.BatchProofCommand("/bin/metasystem", args)
 	if !slices.Contains(held.Args, batchowner.HoldHostProvingFlag) {
 		t.Fatalf("a proof child launched without the proving lock: %v", held.Args)
-	}
-	spare := batchowner.BatchProofCommand("/bin/metasystem", args, true)
-	if slices.Contains(spare.Args, batchowner.HoldHostProvingFlag) {
-		t.Fatalf("a spare launch holds the proving lock: %v", spare.Args)
 	}
 	if len(args) != 5 {
 		t.Fatalf("the launcher changed its caller's arguments: %v", args)
@@ -281,26 +240,9 @@ func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
 	}
 }
 
-// F-4: starting the owner of a landing checkout that is gone is refused
-// before anything is created or launched (ensureBatchOwner's first check;
-// the test never reaches a launch).
-func TestEnsureBatchOwnerRefusesAGoneLane(t *testing.T) {
-	t.Parallel()
-	gone := filepath.Join(t.TempDir(), "gone-landing")
-	err := batchowner.LandingCheckoutPresent(gone)
-	var refusal *lane.Refusal
-	if !errors.As(err, &refusal) || refusal.Code != lane.CodeGone || !strings.Contains(refusal.Fix, "metasystem landing set PATH") {
-		t.Fatalf("ensure a gone lane = %v", err)
-	}
-	if _, statErr := os.Stat(gone); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("the gone lane was recreated: %v", statErr)
-	}
-}
-
 // Only a person's landing set registers a lane (design r10 §1): a seat whose
 // landing.batch-root names a checkout, on a computer with no registered
-// lane, writes no host record and lands its own work; the lane's would-be
-// owner there does not run either.
+// lane, writes no host record and lands its own work.
 func TestSeatSettingNeverRegisters(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
@@ -311,17 +253,6 @@ func TestSeatSettingNeverRegisters(t *testing.T) {
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
 		t.Fatalf("a seat's landing.batch-root registered the host's lane")
-	}
-	if err := os.WriteFile(filepath.Join(bed.landingA, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bed.setRoot(t, bed.landingA, bed.landingA)
-	root, _, err = batchowner.LandingOwnerLaneRoot(bed.seams.Home, bed.landingA, bed.landingA, laneTestNow)
-	if err != nil || root != "" {
-		t.Fatalf("a landing checkout naming itself = %q %v; want no lane: it registers nothing and its owner serves none", root, err)
-	}
-	if _, ok, _ := lane.Read(bed.home); ok {
-		t.Fatalf("the owner of a checkout naming itself registered the host's lane")
 	}
 }
 

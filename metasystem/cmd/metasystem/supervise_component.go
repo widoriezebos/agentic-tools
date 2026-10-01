@@ -8,18 +8,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -41,7 +37,7 @@ import (
 // it down deliberately by signal, or replaces it when its heartbeat goes stale.
 func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 	flags := newFlagSet("supervise component", stdout, stderr)
-	component := flags.String("component", "", "watcher | reaper | landing-owner")
+	component := flags.String("component", "", "watcher | reaper")
 	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
@@ -66,7 +62,7 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintln(stderr, "supervise component: --component, --tag, --heartbeat required")
 		return 2
 	}
-	if *component == "watcher" || *component == "reaper" || *component == "landing-owner" {
+	if *component == "watcher" || *component == "reaper" {
 		if *repo == "" {
 			fmt.Fprintln(stderr, "supervise component: --repo is required for the "+*component)
 			return 2
@@ -119,9 +115,6 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 	beat := heartbeatWriter(*heartbeat, *component, self, *tag, *intervalSec, *capMin)
 
 	var work func() error
-	// The landing owner alone subscribes to the host board's bridge; every
-	// other component's nudges are nil and never deliver.
-	var nudges *batchowner.BridgeNudges
 	switch *component {
 	case "watcher":
 		release, pass, ok := setupWatcher(stderr, *metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
@@ -136,19 +129,6 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 			reaperPass()
 			return nil
 		}
-	case "landing-owner":
-		release, pass, ok := setupLandingOwner(stderr, *metasystemRoot, landingOwnerCheckoutRoot(*repo, *scope))
-		if !ok {
-			return 1
-		}
-		defer func() {
-			if releaseCode := reportLandingOwnerRelease(stderr, release); releaseCode != 0 {
-				code = 1
-			}
-		}()
-		work = landingOwnerReportedPass(*repo, pass)
-		nudges = batchowner.NewBridgeNudges(stderr)
-		defer nudges.Close()
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
 		// observable rather than a silent no-op.
@@ -184,8 +164,7 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 			fmt.Fprintln(stderr, "supervise component:", err)
 		}
 	}
-	nudges.Ensure()
-	signalled := superviseLoop(stop, ticker.C, wake, nudges, func() bool {
+	signalled := superviseLoop(stop, ticker.C, wake, func() bool {
 		if rootGone() {
 			fmt.Fprintln(stderr, "supervise component: checkout root is gone; exiting")
 			return false
@@ -200,12 +179,9 @@ func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
 }
 
 // superviseLoop is the component's one loop: a stop signal ends it; the
-// ticker runs tick (false ends the loop) and then connects the bridge when
-// no subscription is live; a SIGUSR1 wake and a bridge event each run the
-// work at once, as on a tick (batch-lane design D14-r2, R25). A lost
-// subscription is dropped, and the tick reads the board directly. It
-// reports whether a stop signal ended it.
-func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os.Signal, nudges *batchowner.BridgeNudges, tick func() bool, run func()) bool {
+// ticker runs tick (false ends the loop); a SIGUSR1 wake runs the work at
+// once, as on a tick. It reports whether a stop signal ended it.
+func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os.Signal, tick func() bool, run func()) bool {
 	for {
 		select {
 		case <-stop:
@@ -214,178 +190,10 @@ func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os
 			if !tick() {
 				return false
 			}
-			nudges.Ensure()
 		case <-wake:
 			run()
-		case _, open := <-nudges.Events():
-			if !open {
-				nudges.Lost()
-				continue
-			}
-			run()
 		}
 	}
-}
-
-// landingOwnerCheckoutRoot picks the checkout root the batch landing owner
-// operates on. On a repository that nests the module the steward launches every
-// component with --repo naming the installation (…/checkout/metasystem) and
-// --scope naming the git toplevel (…/checkout). The batch landing root is the
-// toplevel: config.ResolveBatchLanding refuses any value whose
-// `git rev-parse --show-toplevel` is not itself, and the batch store, the
-// control root and the owner inputs are all derived from the toplevel by
-// batch.ModuleRoot. Comparing the configured root against the installation
-// instead made the owner's activation test fail on every tick, silently, so
-// batches were joined and never sealed. --scope defaults to --repo, so a flat
-// checkout is unchanged.
-func landingOwnerCheckoutRoot(repo, scope string) string {
-	if scope == "" {
-		return repo
-	}
-	return scope
-}
-
-func setupLandingOwner(stderr io.Writer, metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithCadence(stderr, metasystemRoot, repo, batchowner.NewBatchOwnerCadence())
-}
-
-func setupLandingOwnerWithCadence(stderr io.Writer, metasystemRoot, repo string, cadence *batchowner.BatchOwnerCadence) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithInputs(stderr, metasystemRoot, repo, cadence, batchowner.ResolveProductionBatchOwnerInputs)
-}
-
-func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, cadence *batchowner.BatchOwnerCadence, resolveInputs func(string) (batchowner.ProductionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
-	var activePass func() error
-	var held *batchowner.BatchOwnerLease
-	var announced *batchowner.BatchOwnerLease
-	var settings config.BatchLanding
-	var inputs batchowner.ProductionBatchOwnerInputs
-	clock := batchowner.CadenceProductionClock
-	// Supervision discards the component's standard error: every owner line
-	// also goes to its bounded log, and its last tick error stays for
-	// landing status.
-	stderr = io.MultiWriter(stderr, batchowner.NewOwnerLog(repo))
-	ticks := batchowner.NewTickErrors(repo)
-	release = func() error {
-		cadence.Stop()
-		if announced != nil {
-			return announced.Retire()
-		}
-		return nil
-	}
-	pass = func() error {
-		// The owner serves only the host's one landing lane (U12), and
-		// stands down while a person has paused it (landing stop).
-		laneRoot, paused, err := batchowner.LandingOwnerLaneRoot(batchowner.LandingLaneHome, metasystemRoot, repo, clock())
-		if err != nil {
-			return err
-		}
-		if laneRoot == "" || realpath.Resolve(laneRoot) != realpath.Resolve(repo) || paused {
-			return nil
-		}
-		if activePass != nil {
-			return activePass()
-		}
-		conf := filepath.Join(metasystemRoot, "metasystem.conf")
-		rawWait, _, err := config.Get(config.GetParams{Key: config.BatchMaxWaitKey, ConfPath: conf,
-			Default: config.DefaultBatchMaxWait.String(), DefaultSet: true})
-		if err != nil {
-			return err
-		}
-		wait, err := time.ParseDuration(strings.TrimSpace(rawWait))
-		if err != nil {
-			return fmt.Errorf("invalid batch wait: %w", err)
-		}
-		settings, err = config.NewBatchLanding(repo, wait, clock)
-		if err != nil {
-			return err
-		}
-		inputs, err = resolveInputs(repo)
-		if err != nil {
-			return err
-		}
-		inputs.Log, inputs.TickErrors = stderr, ticks
-		if held == nil {
-			// A landing agent that runs or is starting holds the lane: the
-			// owner takes no lease beside it and stands down this pass.
-			acquired, yielded, err := batchowner.AcquireBatchOwnerUnlessAgent(repo, batchowner.LandingAgentLive, batchowner.AcquireBatchOwnerForComponent)
-			if err == nil && yielded != "" {
-				line, _ := json.Marshal(map[string]any{"component": "landing-owner", "yield": yielded})
-				fmt.Fprintln(stderr, string(line))
-				return nil
-			}
-			if acquired.Announced {
-				announced = &acquired
-			}
-			if err != nil {
-				return err
-			}
-			held = &acquired
-			announced = held
-		}
-		owner, err := batchowner.BatchOwnerConstruct(settings, *held, inputs, clock)
-		if err != nil {
-			return err
-		}
-		// A new owner sweeps the retained-verification worktrees a prior
-		// owner left; a failure is reported and never stops the owner.
-		if err := batchowner.BatchOwnerSweepSources(repo); err != nil {
-			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
-			fmt.Fprintln(stderr, string(line))
-		}
-		activePass = func() error {
-			if err := batchowner.BatchOwnerRequire(*held); err != nil {
-				activePass = nil
-				held = nil
-				return err
-			}
-			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence, ticks)
-			return nil
-		}
-		return activePass()
-	}
-	return release, pass, true
-}
-
-func landingOwnerErrorPath(repo string) string {
-	return filepath.Join(supervise.SupervisionDir(repo), "landing-owner.last-error")
-}
-
-func writeLandingOwnerError(repo string, passErr error) (bool, error) {
-	path := landingOwnerErrorPath(repo)
-	if passErr == nil {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return false, err
-		}
-		return false, nil
-	}
-	want := passErr.Error() + "\n"
-	if current, err := os.ReadFile(path); err == nil && string(current) == want {
-		return false, nil
-	}
-	durable, err := atomicfile.WriteText(path, want, repo)
-	if err != nil {
-		return false, err
-	}
-	if !durable {
-		return true, fmt.Errorf("landing owner error record durability is unknown")
-	}
-	return true, nil
-}
-
-func landingOwnerReportedPass(repo string, pass func() error) func() error {
-	return func() error {
-		passErr := pass()
-		_, recordErr := writeLandingOwnerError(repo, passErr)
-		return errors.Join(passErr, recordErr)
-	}
-}
-
-func reportLandingOwnerRelease(stderr io.Writer, release func() error) int {
-	if err := release(); err != nil {
-		fmt.Fprintln(stderr, "supervise component landing-owner release:", err)
-		return 1
-	}
-	return 0
 }
 
 // heartbeatWriter returns a never-failing closure that rewrites the component's

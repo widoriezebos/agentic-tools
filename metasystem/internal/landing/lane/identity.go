@@ -16,6 +16,12 @@ const (
 	AgentLineage = "landing-agent"
 )
 
+// OldOwnerLineage is the lineage the deleted batch owner held claims under
+// (design r10 §5, migration step 0, Astra R9-01). Nothing acts under it any
+// more: it is named only so the cutover refuses while the ledger still
+// shows a goal claimed under it, and a person releases each such goal.
+const OldOwnerLineage = "landing-m1l"
+
 // CodeClaimUnnamed is a lane whose checkout has no machine nickname, so no
 // claim can name it.
 const CodeClaimUnnamed = "LANDING_LANE_UNNAMED"
@@ -31,7 +37,7 @@ type ClaimIdentity struct {
 	Epoch   uint64
 }
 
-// Actor is the lane's actor on batch records and in LandSeries, lane:<id>;
+// Actor is the lane's actor on batch records and on what it lands, lane:<id>;
 // a session id is audit only.
 func (identity ClaimIdentity) Actor() string { return AccountID(identity.Root) }
 

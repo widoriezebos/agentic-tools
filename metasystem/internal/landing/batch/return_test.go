@@ -13,71 +13,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
-
-func TestBatchLedgerReadersHonorNestedModuleRoot(t *testing.T) {
-	t.Parallel()
-	repository := t.TempDir()
-	module := filepath.Join(repository, "metasystem")
-	ledgerPath := filepath.Join(module, "plans", "goals", "goal-a.md")
-	ledgerBytes := goalBed("goal-a")
-	must(t, os.MkdirAll(filepath.Join(module, "plans", "goals"), 0o755))
-	must(t, os.WriteFile(ledgerPath, ledgerBytes, 0o644))
-	tree := strings.Repeat("a", 40)
-	blobHeader := []byte(fmt.Sprintf("blob %d\x00", len(ledgerBytes)))
-	blob := sha1.Sum(append(blobHeader, ledgerBytes...))
-	blobID := fmt.Sprintf("%x", blob)
-	const goalPath = "metasystem/plans/goals/goal-a.md"
-	answers := []struct {
-		args   []string
-		stdout []byte
-	}{
-		{[]string{"rev-parse", "--show-prefix"}, []byte("metasystem/\n")},
-		{[]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", goalPath}, []byte(fmt.Sprintf("100644 blob %s\t%s\x00", blobID, goalPath))},
-		{[]string{"cat-file", "blob", blobID}, ledgerBytes},
-	}
-	prefix := append([]string{"-C", module}, []string{
-		"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
-		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
-		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
-	}...)
-	calls := 0
-	workspace := gittree.Workspace{Dir: module, RawSource: func(request gittree.RawRequest) gittree.RawResult {
-		t.Helper()
-		live, err := os.ReadFile(ledgerPath)
-		if err != nil || !bytes.Equal(live, ledgerBytes) {
-			t.Fatalf("nested ledger bytes changed: %q, %v", live, err)
-		}
-		if calls >= 2*len(answers) {
-			t.Fatalf("unexpected extra raw request: %+v", request)
-		}
-		want := answers[calls%len(answers)]
-		if request.Dir != module || request.Stdin != nil || !slices.Equal(request.Env, gittree.ScrubbedEnviron()) ||
-			!slices.Equal(request.Args, append(slices.Clone(prefix), want.args...)) || request.Operation != "git "+strings.Join(want.args, " ") {
-			t.Fatalf("raw request %d = %+v, want %q", calls, request, want.args)
-		}
-		calls++
-		return gittree.RawResult{Stdout: bytes.Clone(want.stdout)}
-	}}
-	claim, err := claimAtWithReader(ModuleRoot(module), tree, testBatchID, "goal-a", func(root, readTree, goalID string) ([]byte, bool, error) {
-		if root != module || readTree != tree || goalID != "goal-a" {
-			t.Fatalf("claim reader requested (%q, %q, %q)", root, readTree, goalID)
-		}
-		return readCommittedGoalWithWorkspace(workspace, readTree, goalID)
-	})
-	if err != nil || claim.Machine != "seat" || claim.Lineage != "goal-a" || claim.Revision != 2 || claim.AccountingRevision != 1 {
-		t.Fatalf("nested claim=%+v error=%v", claim, err)
-	}
-	ledger, err := readReturnLedgerGoalWithWorkspace(workspace, tree, "goal-a")
-	if err != nil || !ledger.Claimed || ledger.Machine != "landing" || ledger.Batch != testBatchID {
-		t.Fatalf("nested return ledger=%+v error=%v", ledger, err)
-	}
-	if calls != 2*len(answers) {
-		t.Fatalf("raw calls = %d, want %d", calls, 2*len(answers))
-	}
-}
 
 func returnBed(t *testing.T) Store {
 	store := NewStore(t.TempDir(), scriptedProber{})
@@ -174,44 +111,6 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 			witness(t, unit.State == UnitEjected && unit.ReturnDisposition == test.wantDisposition && handBacks == test.wantHandBack && releases == test.wantRelease && string(contents(t, path)) == before, "unit=%+v hand-backs=%d releases=%d second tick changed=%v", unit, handBacks, releases, string(contents(t, path)) != before)
 		})
 	}
-}
-
-func TestBatchTerminalStateRequiresReturnPending(t *testing.T) {
-	store := returnBed(t)
-	err := store.Update(testBatchID, func(record *Record) error {
-		record.Units[0].State, record.Units[0].Outcome, record.Units[0].ReturnDisposition = UnitEjected, UnitEjected, ReturnReleased
-		return nil
-	})
-	witness(t, err != nil, "direct terminal write was accepted")
-	err = store.Update(testBatchID, func(record *Record) error {
-		unit := record.Units[0]
-		unit.GoalID, unit.Chain, unit.State = "goal-b", "chain-b", UnitLanded
-		record.Units = append(record.Units, unit)
-		return nil
-	})
-	witness(t, err != nil, "new terminal unit was accepted")
-	unit := load(t, store).Units[0]
-	unit.State, unit.Outcome, unit.ReturnDisposition = UnitLanded, UnitLanded, ReturnReleased
-	witness(t, NewStore(t.TempDir(), scriptedProber{}).Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{unit}}) != nil, "new record started with a terminal unit")
-	for _, fields := range []unitRecordFields{{Failure: "reason"}, {Outcome: UnitEjected}, {Outcome: UnitEjected, Failure: "reason", ReturnDisposition: ReturnReleased}} {
-		err = store.Update(testBatchID, func(record *Record) error {
-			record.Units[0].State, record.Units[0].unitRecordFields = UnitReturnPending, fields
-			return nil
-		})
-		witness(t, err != nil, "malformed return-pending unit was accepted: %+v", fields)
-	}
-	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "reason", "landing+owner", time.Unix(1, 0)))
-	for name, change := range map[string]func(*Unit){"missing disposition": func(unit *Unit) { unit.State = unit.Outcome }, "unknown disposition": func(unit *Unit) { unit.State, unit.ReturnDisposition = unit.Outcome, "other" }, "wrong outcome": func(unit *Unit) { unit.State, unit.ReturnDisposition = UnitLanded, ReturnReleased }} {
-		err = store.Update(testBatchID, func(record *Record) error { change(&record.Units[0]); return nil })
-		witness(t, err != nil, "%s was accepted", name)
-	}
-	must(t, store.Update(testBatchID, func(record *Record) error { record.Units[0].State = UnitJoining; return nil }))
-	handBacks := 0
-	store.seams.publish = func(string) error { handBacks++; return nil }
-	must(t, ReconcileJoins(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), func(string, string, string, string) (Claim, error) { return Claim{}, os.ErrNotExist }))
-	must(t, ReconcileJoins(store, testBatchID, "tree-a", "landing+owner", time.Unix(3, 0), nil))
-	unit = load(t, store).Units[0]
-	witness(t, unit.State == UnitReturnPending && unit.Outcome == UnitEjected && unit.Failure == "join-incomplete" && unit.ReturnDisposition == "" && handBacks == 0, "join failure returned instead of pending: %+v", unit)
 }
 
 func TestBatchFailedHandbackSeesOccupiedSourceOnNextTick(t *testing.T) {
@@ -327,5 +226,89 @@ func TestReturnUnitsListsEveryMemberItCouldNotReturn(t *testing.T) {
 				t.Fatalf("a listed member settled as %s", unit.State)
 			}
 		})
+	}
+}
+
+func TestBatchLedgerReadersHonorNestedModuleRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	ledgerPath := filepath.Join(module, "plans", "goals", "goal-a.md")
+	ledgerBytes := goalBed("goal-a")
+	must(t, os.MkdirAll(filepath.Join(module, "plans", "goals"), 0o755))
+	must(t, os.WriteFile(ledgerPath, ledgerBytes, 0o644))
+	tree := strings.Repeat("a", 40)
+	blobHeader := []byte(fmt.Sprintf("blob %d\x00", len(ledgerBytes)))
+	blob := sha1.Sum(append(blobHeader, ledgerBytes...))
+	blobID := fmt.Sprintf("%x", blob)
+	const goalPath = "metasystem/plans/goals/goal-a.md"
+	answers := []struct {
+		args   []string
+		stdout []byte
+	}{
+		{[]string{"rev-parse", "--show-prefix"}, []byte("metasystem/\n")},
+		{[]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", goalPath}, []byte(fmt.Sprintf("100644 blob %s\t%s\x00", blobID, goalPath))},
+		{[]string{"cat-file", "blob", blobID}, ledgerBytes},
+	}
+	prefix := append([]string{"-C", module}, []string{
+		"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+	}...)
+	calls := 0
+	workspace := gittree.Workspace{Dir: module, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		t.Helper()
+		live, err := os.ReadFile(ledgerPath)
+		if err != nil || !bytes.Equal(live, ledgerBytes) {
+			t.Fatalf("nested ledger bytes changed: %q, %v", live, err)
+		}
+		if calls >= len(answers) {
+			t.Fatalf("unexpected extra raw request: %+v", request)
+		}
+		want := answers[calls%len(answers)]
+		if request.Dir != module || request.Stdin != nil || !slices.Equal(request.Env, gittree.ScrubbedEnviron()) ||
+			!slices.Equal(request.Args, append(slices.Clone(prefix), want.args...)) || request.Operation != "git "+strings.Join(want.args, " ") {
+			t.Fatalf("raw request %d = %+v, want %q", calls, request, want.args)
+		}
+		calls++
+		return gittree.RawResult{Stdout: bytes.Clone(want.stdout)}
+	}}
+	ledger, err := readReturnLedgerGoalWithWorkspace(workspace, tree, "goal-a")
+	if err != nil || !ledger.Claimed || ledger.Machine != "landing" || ledger.Batch != testBatchID {
+		t.Fatalf("nested return ledger=%+v error=%v", ledger, err)
+	}
+	if calls != len(answers) {
+		t.Fatalf("raw calls = %d, want %d", calls, len(answers))
+	}
+}
+
+func TestBatchTerminalStateRequiresReturnPending(t *testing.T) {
+	store := returnBed(t)
+	err := store.Update(testBatchID, func(record *Record) error {
+		record.Units[0].State, record.Units[0].Outcome, record.Units[0].ReturnDisposition = UnitEjected, UnitEjected, ReturnReleased
+		return nil
+	})
+	witness(t, err != nil, "direct terminal write was accepted")
+	err = store.Update(testBatchID, func(record *Record) error {
+		unit := record.Units[0]
+		unit.GoalID, unit.Chain, unit.State = "goal-b", "chain-b", UnitLanded
+		record.Units = append(record.Units, unit)
+		return nil
+	})
+	witness(t, err != nil, "new terminal unit was accepted")
+	unit := load(t, store).Units[0]
+	unit.State, unit.Outcome, unit.ReturnDisposition = UnitLanded, UnitLanded, ReturnReleased
+	witness(t, NewStore(t.TempDir(), scriptedProber{}).Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{unit}}) != nil, "new record started with a terminal unit")
+	for _, fields := range []unitRecordFields{{Failure: "reason"}, {Outcome: UnitEjected}, {Outcome: UnitEjected, Failure: "reason", ReturnDisposition: ReturnReleased}} {
+		err = store.Update(testBatchID, func(record *Record) error {
+			record.Units[0].State, record.Units[0].unitRecordFields = UnitReturnPending, fields
+			return nil
+		})
+		witness(t, err != nil, "malformed return-pending unit was accepted: %+v", fields)
+	}
+	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "reason", "landing+owner", time.Unix(1, 0)))
+	for name, change := range map[string]func(*Unit){"missing disposition": func(unit *Unit) { unit.State = unit.Outcome }, "unknown disposition": func(unit *Unit) { unit.State, unit.ReturnDisposition = unit.Outcome, "other" }, "wrong outcome": func(unit *Unit) { unit.State, unit.ReturnDisposition = UnitLanded, ReturnReleased }} {
+		err = store.Update(testBatchID, func(record *Record) error { change(&record.Units[0]); return nil })
+		witness(t, err != nil, "%s was accepted", name)
 	}
 }

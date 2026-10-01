@@ -217,38 +217,6 @@ func ChangeLandingMessage(message, id string) string {
 	return message + separator + LandingChangeTrailer + ": " + id + "\n"
 }
 
-// ReplayChange lands a change member's commit on the landing branch checked
-// out in root: its patch applied with the assembly's own apply and contract
-// checks, then one commit that keeps the asker's message, trailers, author
-// and committer and adds the Landing-Change trailer. It returns the commit.
-func ReplayChange(root string, unit Unit) (string, error) {
-	if unit.Change == nil {
-		return "", fmt.Errorf("%s: unit %s is not a change", codeChangeUnreadable, unit.GoalID)
-	}
-	if _, err := batchMergeDriverArgs(); err != nil {
-		return "", err
-	}
-	before, err := landingGitOutput(root, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	if err := applyBranchCommit(root, root, unit.Change.Commit); err != nil {
-		return "", err
-	}
-	tree, err := landingGitOutput(root, "write-tree")
-	if err != nil {
-		return "", err
-	}
-	commit, err := commitChange(root, unit, tree, before)
-	if err != nil {
-		return "", err
-	}
-	if _, err := landingGitOutput(root, "update-ref", "-m", "replay "+unit.GoalID, "HEAD", commit, before); err != nil {
-		return "", fmt.Errorf("replay %s: move the landing branch: %w", unit.GoalID, err)
-	}
-	return commit, nil
-}
-
 // commitChange writes the replay commit object of a change on parent.
 func commitChange(root string, unit Unit, tree, parent string) (string, error) {
 	message, err := branchCommitMessage(root, unit.Change.Commit)
@@ -278,8 +246,8 @@ func UnitClosure(root, baseTree, tree string) *adapter.Closure {
 }
 
 // ChargeUnit is the member a batch's proofs are keyed to: its last goal
-// member, else its last member, a change, whose proofs the lane owner
-// charges to the lane itself (U11b). The zero unit when units is empty.
+// member, else its last member, a change, whose proofs the lane charges to
+// itself (U11b). The zero unit when units is empty.
 func ChargeUnit(units []Unit) Unit {
 	if charge, ok := ChargeMember(units); ok {
 		return charge
@@ -299,19 +267,6 @@ type HeldCommitRefusal struct {
 
 func (refusal *HeldCommitRefusal) Error() string { return refusal.Cause.Error() }
 func (refusal *HeldCommitRefusal) Unwrap() error { return refusal.Cause }
-
-// RecordHold writes why a batch cannot proceed now (a lane that cannot be
-// named, an engine that cannot plan on the lane) where every reader shows
-// it: one "hold" history entry per distinct reason, the batch's state kept.
-func RecordHold(store Store, id, actor, reason string, at time.Time) error {
-	return store.Update(id, func(record *Record) error {
-		if last := lastHistory(*record); last.Verb == "hold" && last.Detail == reason {
-			return nil
-		}
-		record.Transition(record.State, at, "hold", actor, reason)
-		return nil
-	})
-}
 
 // HoldReason is the plain reason a batch holds, when its last word is a hold
 // or a refused proof admission; empty otherwise.

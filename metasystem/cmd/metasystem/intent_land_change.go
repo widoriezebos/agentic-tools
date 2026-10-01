@@ -215,18 +215,6 @@ func (inv *intentInvocation) joinChangeToLane(request landpath.LandRequest, land
 	}
 	owners := inv.delivery()
 	record, err := owners.joinChange(batchowner.ChangeJoinRequest{SeatRoot: request.Root, LandingRoot: landingRoot, Commit: head, GateTip: gateTip, At: owners.now()})
-	var ownerless *batchowner.ChangeOwnerStartError
-	if errors.As(err, &ownerless) {
-		// Joined; only the lane's owner did not start: nothing is given back.
-		record = ownerless.Record
-		targets = append(targets, intentTarget{Kind: "batch", ID: record.BatchID})
-		why, details := personLaneText(ownerless.Cause.Error())
-		return intentResult{Outcome: intentInProgress, Targets: targets,
-			Data:    map[string]any{"route": "lane", "change": id, "batchId": record.BatchID, "batchState": record.State, "unitState": batch.UnitJoined, "joinedNow": true},
-			Summary: fmt.Sprintf("change %s joined landing batch %s, but the lane couldn't be started: %s", id, record.BatchID, oneLine(why)),
-			next:    inv.publicArgv("landing", "start"), nextReason: "starts the lane, which tests and pushes the batch",
-			Details: details}
-	}
 	var stacked *batch.StackedChangeRefusal
 	if errors.As(err, &stacked) {
 		// The parent lands first; the seat keeps both commits and the pin.

@@ -248,29 +248,3 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 	changed.CandidateTree = strings.Repeat("d", 40)
 	assertReused("changed-tree", changed, 1)
 }
-
-// TestTickRefusesBeforeRunningByCode: a trunk that cannot be fetched is the
-// fetch refusal, and a trunk fetched where no goal ledger resolves is the
-// unreadable-ledger refusal; neither prepares, claims or runs anything.
-func TestTickRefusesBeforeRunningByCode(t *testing.T) {
-	t.Parallel()
-	prepared := 0
-	owner := Owner{Lineage: "landing-test", Require: func() error { return nil },
-		FetchOrigin:     func(string) (string, string, error) { return "", "", errors.New("origin unreachable") },
-		WeightThreshold: func(string) int64 { return 1 },
-		Prepare: func(testrun.SelectionRequest) (testrun.Preparation, error) {
-			prepared++
-			return testrun.Preparation{}, nil
-		}}
-	var refusal Refusal
-	if _, err := RunTick(t.TempDir(), owner, time.Now); !errors.As(err, &refusal) || refusal.Code != FetchRefused ||
-		strings.Contains(err.Error(), FetchRefused) || !strings.Contains(err.Error(), "origin unreachable") ||
-		refusal.RefusalCode() != FetchRefused || refusal.RefusalDetail() != FetchRefused+": origin unreachable" {
-		t.Fatalf("unfetchable trunk = %v, want the fetch refusal", err)
-	}
-	owner.FetchOrigin = func(string) (string, string, error) { return strings.Repeat("a", 40), strings.Repeat("b", 40), nil }
-	output, err := RunTick(t.TempDir(), owner, time.Now)
-	if !errors.As(err, &refusal) || refusal.Code != cadenceLedgerUnreadable || output.Trunk.Tree != "" || prepared != 0 {
-		t.Fatalf("ledgerless trunk = %+v, %v (prepared %d), want the unreadable-ledger refusal before preparation", output, err, prepared)
-	}
-}

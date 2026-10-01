@@ -29,7 +29,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -579,7 +578,7 @@ type proofLaunchAdmission struct {
 	// laneAccount resolves the lane identity of a lane checkout or control
 	// root; nil reads the host's lane record.
 	laneAccount func(root string) (string, error)
-	// laneOwner proves the caller descends from the lane's owner process;
+	// laneOwner proves the caller descends from the lane's landing agent;
 	// nil proves it against the lane checkout's lease holder.
 	laneOwner func(root string, callerPID int64) error
 	// CallerPID is the supplied process the admission classifies and whose
@@ -1363,7 +1362,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 			prove = proveLaneOwnerCaller
 		}
 		if err := prove(anchor, request.callerPID()); err != nil {
-			return refuse("only the lane's owner process, proven by its identity, or a person charges a proof to the lane: %v", err)
+			return refuse("only the lane's landing agent, proven by its identity, or a person charges a proof to the lane: %v", err)
 		}
 	}
 	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
@@ -1426,13 +1425,14 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 
 // proveLaneOwnerCaller proves the caller descends from the lane's landing
 // agent: the process the lane checkout's lease holder recorded under the
-// agent's launch lineage (or, until the cutover, the old owner's), matched by its exact identity (pid, start time, boot) as
-// landing restart matches it. A seat whose checkout happens to be the lane
-// is not its owner (U11b).
+// agent's launch lineage, matched by its exact identity (pid, start time,
+// boot). A seat whose checkout happens to be the lane is not its agent
+// (U11b), and neither is a holder under the deleted batch owner's lineage
+// (design r10 §5).
 //
-// The lease is read where the owner holds it: the registered lane checkout
-// (the toplevel the owner component runs on), not the control root, which on
-// a checkout that nests the module is the module inside it.
+// The lease is read where the agent holds it: the registered lane checkout
+// (its toplevel), not the control root, which on a checkout that nests the
+// module is the module inside it.
 func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	home, err := board.Home()
 	if err != nil {
@@ -1451,9 +1451,8 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 		return err
 	}
 	// Launch descent from the landing agent is what an agent-issued kernel
-	// operation needs (lane design r10 K7). The old owner's lineage is
-	// admitted until the cutover unit deletes that owner.
-	if holder.OwnerLineage != landinglane.AgentLineage && holder.OwnerLineage != batchowner.LandingOwnerLineage {
+	// operation needs (lane design r10 K7).
+	if holder.OwnerLineage != landinglane.AgentLineage {
 		return fmt.Errorf("the lane checkout is held by session %s, not by its landing agent", holder.OwnerLineage)
 	}
 	for _, announcement := range lease.AnnouncementsFor(laneRoot, holder.Pid) {
@@ -1463,7 +1462,7 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 		return proofrun.AuthenticateAncestor(callerPID, proofrun.ProcessIdentity{Pid: announcement.Pid, PidStartedAt: announcement.PidStartedAt,
 			PidStartTicks: announcement.PidStartTicks, BootID: announcement.BootID})
 	}
-	return fmt.Errorf("the landing owner pid %d has no announcement to prove its identity", holder.Pid)
+	return fmt.Errorf("the landing agent pid %d has no announcement to prove its identity", holder.Pid)
 }
 
 // revisionLockCoordinate is the revision lock a proof's owner serializes

@@ -70,10 +70,6 @@ type AgentKeeper struct {
 	// Cancel stops a launch that started while the lane was paused
 	// meanwhile; nil leaves it to the pause's own reach.
 	Cancel func(id string) error
-	// Exclusive runs the start's claim under the batch owner's ensure lock
-	// of the lane at root, the lock every owner start takes; nil runs it
-	// as is.
-	Exclusive func(root string, fn func() error) error
 }
 
 // AgentCooldown is how long the keeper waits before it wakes a fresh agent
@@ -133,30 +129,23 @@ func (k AgentKeeper) Step() string {
 			line = "the landing agent at " + root + " is not started: the lane changed while its wake was read"
 			return err
 		}
-		exclusive := k.Exclusive
-		if exclusive == nil {
-			exclusive = func(_ string, fn func() error) error { return fn() }
+		// The holds are read again and the claim is recorded under the
+		// flock, so two stewards never both start an agent.
+		if reason, stop := k.recheck(root); stop {
+			line = reason
+			return nil
 		}
-		// Under the owner's own ensure lock: the holds (the batch owner
-		// among them) are read again and the claim is recorded before any
-		// owner start can look, so an owner and the agent never both start.
-		return exclusive(root, func() error {
-			if reason, stop := k.recheck(root); stop {
-				line = reason
-				return nil
-			}
-			if reason, held := k.held(root); held {
-				line = reason
-				return nil
-			}
-			current, err := ReadAgentState(k.Home)
-			if err != nil {
-				return err
-			}
-			current.StartingAt = k.Now().UTC().Format(time.RFC3339)
-			claimed = true
-			return writeJSON(k.Home, agentStatePath(k.Home), current)
-		})
+		if reason, held := k.held(root); held {
+			line = reason
+			return nil
+		}
+		current, err := ReadAgentState(k.Home)
+		if err != nil {
+			return err
+		}
+		current.StartingAt = k.Now().UTC().Format(time.RFC3339)
+		claimed = true
+		return writeJSON(k.Home, agentStatePath(k.Home), current)
 	}); err != nil {
 		return "the landing agent's keeper can't claim the start: " + err.Error()
 	}
@@ -266,8 +255,7 @@ func (k AgentKeeper) held(root string) (string, bool) {
 }
 
 // AgentStarting says whether the keeper claimed a landing agent start that
-// has not finished, and since when: an owner start honours it as it honours
-// a running agent. A keeper record that cannot be read is an error naming
+// has not finished, and since when. A keeper record that cannot be read is an error naming
 // the file and its repair, which every caller holds on.
 func AgentStarting(home string, now time.Time) (time.Time, bool, error) {
 	state, err := ReadAgentState(home)

@@ -38,12 +38,6 @@ func ProductionPipeline(stall time.Duration, claims func() (map[string]string, e
 		Prober: identity.KernelProber{}, stall: stall}
 }
 
-// Board reads the picture afresh.
-func (source HostPipeline) Board(now time.Time) batch.BoardPicture {
-	_, picture := source.read(now)
-	return picture
-}
-
 // View is the board as a one-shot command shows it (D14-r2, R23): the same
 // direct read and classification the lane decides from, grouped by seat,
 // with the bridge's state from its socket's presence. It never connects to

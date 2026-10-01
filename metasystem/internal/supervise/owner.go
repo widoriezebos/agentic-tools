@@ -18,12 +18,21 @@ import (
 type Component string
 
 const (
-	Watcher      Component = "watcher"
-	Reaper       Component = "reaper"
-	LandingOwner Component = "landing-owner"
+	Watcher Component = "watcher"
+	Reaper  Component = "reaper"
+	// LegacyLandingOwner is the batch landing owner an older engine's
+	// supervision launched; no supervision launches it any more (lane
+	// design r10 §5). It is named only so a takeover or a shutdown finds
+	// such a component an older engine left running and stops it.
+	LegacyLandingOwner Component = "landing-owner"
 )
 
-var productionComponentSet = [...]Component{Watcher, Reaper, LandingOwner}
+// productionComponentSet is what supervision launches and keeps healthy.
+var productionComponentSet = [...]Component{Watcher, Reaper}
+
+// recordedComponentSet is what a takeover or a shutdown stops: the
+// production set and the legacy landing owner an older engine launched.
+var recordedComponentSet = [...]Component{Watcher, Reaper, LegacyLandingOwner}
 
 // Held is what the owner HOLDS IN MEMORY about a component it
 // launched: teardown uses exactly this, never a re-read state file
@@ -83,7 +92,7 @@ type WatcherRepairRequests interface {
 type Ledger interface {
 	// AppendRelaunched is the GATING write-ahead: if it
 	// fails, nothing launches this cycle.
-	AppendRelaunched(generation int64, watcherTag, reaperTag, landingOwnerTag string, retiredThrough int64) error
+	AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error
 	// AppendLaunched records one component's identity; failures are
 	// retried at every observation.
 	AppendLaunched(held Held) error
@@ -407,7 +416,7 @@ func (o *Owner) relaunchSet() error {
 	}
 	// WRITE-AHEAD GATES THE LAUNCH: an owner that cannot
 	// record intent must not create processes.
-	if err := o.Ledger.AppendRelaunched(next, tags[Watcher], tags[Reaper], tags[LandingOwner], o.retiredThrough); err != nil {
+	if err := o.Ledger.AppendRelaunched(next, tags[Watcher], tags[Reaper], o.retiredThrough); err != nil {
 		return fmt.Errorf("write-ahead refused, launching nothing: %w", err)
 	}
 	o.generation = next

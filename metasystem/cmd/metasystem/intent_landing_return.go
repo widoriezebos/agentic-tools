@@ -140,7 +140,7 @@ func (inv *intentInvocation) landingReturn(owners laneVerbOwners, home string, r
 	}
 	report, err := owners.returnMember(batchowner.MemberReturn{Home: home, Checkout: record.Root, Install: installation,
 		BatchID: strings.TrimSpace(inv.input.text("batch")), Member: member, Disposition: disposition, Person: person,
-		Reason: strings.TrimSpace(inv.input.text("reason")), Actor: actor, Now: owners.now(), Calls: &batchowner.BatchOwnerCalls})
+		Reason: strings.TrimSpace(inv.input.text("reason")), Actor: actor, Now: owners.now(), Calls: &batchowner.LaneCalls})
 	var returnRefusal *batch.ReturnRefusal
 	var laneRefusal *lane.Refusal
 	switch {
@@ -161,9 +161,16 @@ func (inv *intentInvocation) landingReturn(owners laneVerbOwners, home string, r
 			Summary: "the return of " + member + " could not be made: " + oneLine(err.Error()), retry: "tries again", Details: []string{err.Error()}})
 	}
 	if !report.Confirmed {
-		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: report,
+		result := intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: report,
 			Summary: "asked to return " + member + " from batch " + report.Batch + " as " + disposition + ", not confirmed yet: " + oneLine(report.Unresolved),
-			retry:   "continues the return", Details: []string{"evidence: " + report.Evidence}})
+			retry:   "continues the return", Details: []string{"evidence: " + report.Evidence}}
+		// An unresolved return that names a person's command (its line 2,
+		// "run: ...") offers that command instead of a retry that cannot
+		// settle it, such as the release of a goal the lane does not hold.
+		if _, command, found := strings.Cut(report.Unresolved, "\nrun: "); found {
+			result.retry, result.next, result.nextReason = "", strings.Fields(command), "settles it at a person's word"
+		}
+		return inv.render(result)
 	}
 	summary := "returned " + member + " from batch " + report.Batch + " as " + disposition + " (" + report.Evidence + ")"
 	outcome := intentConfirmed

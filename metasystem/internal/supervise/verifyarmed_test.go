@@ -21,7 +21,6 @@ func armedFixture(t *testing.T, mutate func(state, last, hbWatcher, hbReaper map
 
 	hbW := map[string]any{"observedAtEpoch": watchdogNow - 5, "loadedCapMin": 330}
 	hbR := map[string]any{"observedAtEpoch": watchdogNow - 5}
-	hbL := map[string]any{"observedAtEpoch": watchdogNow - 5}
 	state := map[string]any{
 		"fingerprint": "fp-1", "generation": 3, "derivedWatcherCapMin": 330,
 		"components": map[string]any{
@@ -29,8 +28,6 @@ func armedFixture(t *testing.T, mutate func(state, last, hbWatcher, hbReaper map
 				"heartbeat": filepath.Join(supervision, "hb-watcher.json")},
 			"reaper": map[string]any{"pid": self, "pidStartedAt": 100, "instanceTag": "",
 				"heartbeat": filepath.Join(supervision, "hb-reaper.json")},
-			"landing-owner": map[string]any{"pid": self, "pidStartedAt": 100, "instanceTag": "",
-				"heartbeat": filepath.Join(supervision, "hb-landing-owner.json")},
 		},
 	}
 	last := map[string]any{
@@ -42,7 +39,7 @@ func armedFixture(t *testing.T, mutate func(state, last, hbWatcher, hbReaper map
 	}
 	for name, value := range map[string]map[string]any{
 		"state.json": state, "last-census.json": last,
-		"hb-watcher.json": hbW, "hb-reaper.json": hbR, "hb-landing-owner.json": hbL,
+		"hb-watcher.json": hbW, "hb-reaper.json": hbR,
 	} {
 		writeSupervisionFile(t, repo, name, jsonLine(t, value))
 	}
@@ -80,8 +77,8 @@ func TestArmedNowVerdicts(t *testing.T) {
 			components := state["components"].(map[string]any)
 			components["reaper"].(map[string]any)["pid"] = int64(999999)
 		}},
-		{"missing landing owner refuses", func(state, _, _, _ map[string]any) {
-			delete(state["components"].(map[string]any), "landing-owner")
+		{"missing reaper refuses", func(state, _, _, _ map[string]any) {
+			delete(state["components"].(map[string]any), "reaper")
 		}},
 	}
 	for _, c := range cases {

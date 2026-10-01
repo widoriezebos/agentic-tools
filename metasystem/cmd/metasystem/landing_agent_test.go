@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -151,43 +150,6 @@ func resolvedPath(path string) string {
 		return path
 	}
 	return resolved
-}
-
-// TestNoOwnerStartsWhileTheAgentStarts (A-a, re-review 1): the read every
-// batch owner start makes names a landing agent whose start the keeper has
-// claimed and not finished, as it names one that runs.
-func TestNoOwnerStartsWhileTheAgentStarts(t *testing.T) {
-	t.Parallel()
-	base := t.TempDir()
-	home := filepath.Join(base, "home")
-	if err := os.MkdirAll(lane.HostDir(home), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
-	manager := &launch.Manager{Store: launch.Store{Root: filepath.Join(base, "launches")}}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return now }}
-	live := agent.liveOrStarting(func() (string, error) { return home, nil })
-	if _, running, err := live(); err != nil || running {
-		t.Fatalf("no agent: running=%t err=%v", running, err)
-	}
-	claim := `{"startingAt":"` + now.Add(-time.Minute).Format(time.RFC3339) + `"}`
-	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte(claim), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if id, running, err := live(); err != nil || !running || !strings.Contains(id, "starting") || strings.Contains(id, "T1") {
-		t.Fatalf("a claimed start: %q running=%t err=%v; want it named, with no raw stamp", id, running, err)
-	}
-	// Unknown holds: an unreadable keeper record, or no lane home.
-	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte("{torn"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := live(); err == nil || !strings.Contains(err.Error(), "metasystem landing start") {
-		t.Fatalf("an unreadable keeper record: err %v; want a hold naming the repair", err)
-	}
-	homeless := agent.liveOrStarting(func() (string, error) { return "", errors.New("no home") })
-	if _, _, err := homeless(); err == nil {
-		t.Fatal("no lane home read as no agent")
-	}
 }
 
 // TestLandingAgentWritesItsToolGateIntoTheLaunchState (integration of A-a

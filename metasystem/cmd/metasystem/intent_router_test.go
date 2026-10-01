@@ -217,6 +217,12 @@ func TestIntentRouterSuggestsTheCurrentCommand(t *testing.T) {
 			t.Errorf("%v = %d %q %q; want %q", row.args, code, stdout, stderr, row.want)
 		}
 	}
+	// A retired action says it was removed and why, and names the one
+	// command that does the work now, instead of a guess by spelling.
+	if code, stdout, stderr := routeWith(registered, "landing", "restart"); code != 2 || stdout != "" ||
+		stderr != "metasystem landing restart was removed; the lane has no owner to restart now; nothing was done\nrun: metasystem landing start\n" {
+		t.Errorf("landing restart = %d %q %q", code, stdout, stderr)
+	}
 	// Every suggestion is a current public command: it routes to its own
 	// descriptor.
 	for _, word := range []string{"approve", "review", "list", "goel", "wrk", "sync", "finsh"} {

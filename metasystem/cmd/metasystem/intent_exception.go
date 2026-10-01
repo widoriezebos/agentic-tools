@@ -17,7 +17,7 @@ import (
 )
 
 // Exceptional landing is a person's explicit act: the goal's whole-project
-// landing candidate is computed by the landing owner, the person's exception
+// landing candidate is computed by the landing path, the person's exception
 // is recorded by the carry owner (with its enrolled proof, lifetime, one
 // exception and replacement rules), and the existing carried landing
 // transaction (landpath.Land with Carried, with its proof token, reservation and

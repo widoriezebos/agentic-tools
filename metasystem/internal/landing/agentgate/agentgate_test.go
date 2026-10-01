@@ -121,7 +121,6 @@ func TestGateAdmitsTheListedCallsOnly(t *testing.T) {
 		"landing set":             bash(t, bed.checkout, "metasystem landing set /elsewhere"),
 		"landing unset":           bash(t, bed.checkout, "metasystem landing unset"),
 		"landing start":           bash(t, bed.checkout, "metasystem landing start"),
-		"landing restart":         bash(t, bed.checkout, "metasystem landing restart"),
 		"up":                      bash(t, bed.checkout, "metasystem up"),
 		"system stop":             bash(t, bed.checkout, "metasystem system stop"),
 		"goal done":               bash(t, bed.checkout, "metasystem goal done g"),
@@ -329,7 +328,7 @@ func TestEntriesListTheWholeAllowlist(t *testing.T) {
 	}
 	for _, entry := range entries {
 		if entry.Kind == "verb" && (strings.HasPrefix(entry.Name, "test run") || entry.Name == "landing set" ||
-			entry.Name == "landing unset" || entry.Name == "landing start" || entry.Name == "landing restart") {
+			entry.Name == "landing unset" || entry.Name == "landing start") {
 			t.Fatalf("%s is on the allowlist", entry.Name)
 		}
 	}

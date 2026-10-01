@@ -118,7 +118,7 @@ func (bed laneAuthorityBed) join(t *testing.T) (batch.Record, error) {
 		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "join-admission"}, nil
 	}
 	// The production handover, reading this bed's host home.
-	dependencies.Handover = batchowner.LaneForwardHandover(func() (string, error) { return bed.home, nil }, &batchowner.BatchOwnerCalls)
+	dependencies.Handover = batchowner.LaneForwardHandover(func() (string, error) { return bed.home, nil }, &batchowner.LaneCalls)
 	return batchowner.ExecuteBatchJoin(batchowner.BatchJoinRequest{SeatRoot: bed.seat, LandingRoot: bed.lane,
 		GoalID: "standing-validation", ChainID: "chain-a", At: laneAuthorityNow}, dependencies)
 }
@@ -437,7 +437,7 @@ func TestOldOwnerClaimsAreReadFromTheLedger(t *testing.T) {
 		t.Fatalf("a seat's claim read as the old owner's: %v %v", held, err)
 	}
 	amendSyncedGoalFixture(t, seat, "the old owner holds it", func(file *goal.GoalFile) {
-		file.Claimed.Machine, file.Claimed.Lineage = "landing", batchowner.LandingOwnerLineage
+		file.Claimed.Machine, file.Claimed.Lineage = "landing", lane.OldOwnerLineage
 		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "mac-cli", FromLineage: "m1", FromEpoch: 1, Batch: "01j5x00000000000000000kd09"}
 		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing", ClaimEpoch: 1}
 	})
@@ -578,7 +578,7 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 	tree := func() string {
 		return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}"))
 	}
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.LaneCalls); err != nil {
 		t.Fatalf("renewal: %v", err)
 	}
 	file := bed.ledger(t)
@@ -586,64 +586,11 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 		t.Fatalf("renewed claim = %+v %+v", file.Claimed, file.StopCapability)
 	}
 	before := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.LaneCalls); err != nil {
 		t.Fatalf("second renewal: %v", err)
 	}
 	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != before {
 		t.Fatalf("a second renewal wrote the ledger")
-	}
-}
-
-// While an older engine's lane is still recorded, landing set names the
-// person's return through it for each goal the old owner holds; and that
-// return runs on the older record, under the old owner's own authority,
-// and gives the goal back (design r10 §5, R9-01).
-func TestOldOwnerClaimsReturnThroughTheOldAuthority(t *testing.T) {
-	t.Parallel()
-	verbs := newLaneVerbBed(t)
-	verbs.oldClaims = []string{"goal-a"}
-	if err := os.MkdirAll(lane.HostDir(verbs.home), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lane.RecordPath(verbs.home), []byte(`{"root": "`+verbs.landingB+`", "registeredBy": "Wido", "at": "2026-09-29T10:00:00Z"}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, stderr := verbs.run(t, "landing", "set", verbs.landingA, "--json")
-	var refused intentResult
-	if err := json.Unmarshal([]byte(stdout+stderr), &refused); err != nil {
-		t.Fatal(err)
-	}
-	if code == 0 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "landing", "return", "goal-a", "--disposition", "person"}) {
-		t.Fatalf("set with an old lane recorded = %d %+v", code, refused)
-	}
-
-	bed := newLaneReturnBed(t)
-	// The ledger's entry as the join left it, now held under the old
-	// owner's lineage.
-	if err := os.WriteFile(filepath.Join(bed.seat, "plans", "goals", "standing-validation.md"), goal.RenderFile(bed.ledger(t)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	amendSyncedGoalFixture(t, bed.seat, "the old owner holds it", func(file *goal.GoalFile) {
-		file.Claimed.Lineage = batchowner.LandingOwnerLineage
-	})
-	record := bed.record
-	data, err := json.Marshal(map[string]any{"root": record.Root, "registeredBy": "Wido", "at": record.At})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lane.RecordPath(bed.home), append(data, '\n'), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := lane.Read(bed.home); err == nil {
-		t.Fatal("the bed's record is not an older engine's")
-	}
-	bed.person = nil
-	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the lane changes owner")
-	if code != 0 || result.Outcome != intentConfirmed {
-		t.Fatalf("a person's return through the older lane = %d %+v", code, result)
-	}
-	if file := bed.ledger(t); file.Claimed != nil && file.Claimed.Lineage == batchowner.LandingOwnerLineage {
-		t.Fatalf("the old owner still holds the goal: %+v", file.Claimed)
 	}
 }
 

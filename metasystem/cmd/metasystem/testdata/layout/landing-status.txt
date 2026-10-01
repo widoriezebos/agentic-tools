@@ -1,4 +1,4 @@
-The landing lane is running · 2 changes proving · 1 change collecting next
+The landing lane's agent is at work · 2 changes proving · 1 change collecting next
 
 Batches
   ● proving      batch 4gr18nm8t3nyev9sssda9jgtsq since 10:55

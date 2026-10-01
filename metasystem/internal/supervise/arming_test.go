@@ -228,11 +228,6 @@ func armingOwnerHelper(args []string) error {
 	}); err != nil {
 		return err
 	}
-	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "landing-owner.heartbeat.json"), map[string]any{
-		"observedAtEpoch": now,
-	}); err != nil {
-		return err
-	}
 	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "last-census.json"), map[string]any{
 		"verdict": "SUCCESS", "fingerprint": fingerprint, "generation": generation, "completedAtEpoch": now,
 	}); err != nil {
@@ -268,13 +263,17 @@ func armingOptions(root string) EnsureOptions {
 	}
 }
 
-func TestProductionArmingTakeoverStopsAndRelaunchesLandingOwner(t *testing.T) {
+// An older engine's supervision launched the batch landing owner, which the
+// lane's hard cutover deletes (lane design r10 §5): a takeover stops that
+// owner with the rest of the older set, and the new supervision never
+// launches one again.
+func TestProductionArmingTakeoverStopsAnOlderEnginesLandingOwnerAndNeverRelaunchesIt(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(SupervisionDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	document := stateDocument{SchemaVersion: 1, Generation: 1, Components: map[string]stateComponent{}}
-	for index, component := range productionComponentSet {
+	for index, component := range recordedComponentSet {
 		document.Components[string(component)] = stateComponent{Pid: int64(41 + index), PidStartedAt: int64(101 + index), InstanceTag: "old-" + string(component)}
 	}
 	payload, err := json.Marshal(document)
@@ -307,7 +306,7 @@ func TestProductionArmingTakeoverStopsAndRelaunchesLandingOwner(t *testing.T) {
 		}
 	}
 	stopped, err := stopTakeoverComponents(root, root, "", 1, false)
-	if err != nil || len(stopped) != len(productionComponentSet) {
+	if err != nil || len(stopped) != len(recordedComponentSet) {
 		t.Fatalf("production takeover stopped=%+v err=%v", stopped, err)
 	}
 	landingStopped := false
@@ -323,8 +322,13 @@ func TestProductionArmingTakeoverStopsAndRelaunchesLandingOwner(t *testing.T) {
 	if exit := owner.Cycle(time.Unix(20, 0)); exit != nil {
 		t.Fatalf("production relaunch exited: %+v", exit)
 	}
-	if !slices.ContainsFunc(world.launched, func(held Held) bool { return held.Component == LandingOwner && held.Generation == 2 }) {
-		t.Fatalf("production relaunch omitted landing owner: %+v", world.launched)
+	if slices.ContainsFunc(world.launched, func(held Held) bool { return held.Component == LegacyLandingOwner }) {
+		t.Fatalf("supervision launched the deleted landing owner: %+v", world.launched)
+	}
+	for _, component := range productionComponentSet {
+		if !slices.ContainsFunc(world.launched, func(held Held) bool { return held.Component == component && held.Generation == 2 }) {
+			t.Fatalf("production relaunch omitted %s: %+v", component, world.launched)
+		}
 	}
 }
 
@@ -368,7 +372,7 @@ func appendPreviousOwnerRows(t *testing.T, path, checkoutPath string, result Ens
 		tags[component.Component] = component.Tag
 	}
 	ledger := previousOwnerLedger(t, path, checkoutPath, result.Owner)
-	if err := ledger.AppendRelaunched(result.Generation, tags[Watcher], tags[Reaper], tags[LandingOwner], 0); err != nil {
+	if err := ledger.AppendRelaunched(result.Generation, tags[Watcher], tags[Reaper], 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, component := range held {
@@ -381,7 +385,7 @@ func appendPreviousOwnerRows(t *testing.T, path, checkoutPath string, result Ens
 func appendPreviousOwnerRelaunched(t *testing.T, path, checkoutPath string, owner ArmingOwner, generation int64) {
 	t.Helper()
 	ledger := previousOwnerLedger(t, path, checkoutPath, owner)
-	if err := ledger.AppendRelaunched(generation, owner.InstanceTag+"-watcher-1", owner.InstanceTag+"-reaper-1", owner.InstanceTag+"-landing-owner-1", 0); err != nil {
+	if err := ledger.AppendRelaunched(generation, owner.InstanceTag+"-watcher-1", owner.InstanceTag+"-reaper-1", 0); err != nil {
 		t.Fatal(err)
 	}
 }

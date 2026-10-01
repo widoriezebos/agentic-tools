@@ -13,6 +13,7 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
 // K4 with the metadata producers moved before begin (design r10, Astra r9
@@ -59,7 +60,7 @@ func TestOrdinaryGoalLandingAndRecovery(t *testing.T) {
 	if out, err := exec.Command("git", "init", "-q", "-b", "main", checkout).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
-	const actor = "m1e+" + LandingOwnerLineage
+	const actor = "m1e+" + lane.ClaimLineage
 	const goalID = "ordinary"
 	write(".gitignore", "/artifacts/\n")
 	write("metasystem/metasystem.conf", "metasystem.template=true\n")
@@ -72,7 +73,7 @@ func TestOrdinaryGoalLandingAndRecovery(t *testing.T) {
 	}
 	ledger := goal.RenderFile(&goal.GoalFile{Id: goalID, State: goal.StateClaimed, Intent: "Fixture goal.", Origin: goal.OriginMain,
 		NextStep: "Land it.", OpenedAt: "2026-09-30T08:00:00Z", Revision: 3,
-		Claimed: &goal.ClaimRecord{Machine: "m1e", Lineage: LandingOwnerLineage, At: history[2].At, Revision: 3, AccountingRevision: 3}, History: history})
+		Claimed: &goal.ClaimRecord{Machine: "m1e", Lineage: lane.ClaimLineage, At: history[2].At, Revision: 3, AccountingRevision: 3}, History: history})
 	if _, problems := goal.ParseFile(ledger); len(problems) != 0 {
 		t.Fatalf("invalid goal: %v", problems)
 	}
@@ -164,10 +165,9 @@ func TestOrdinaryGoalLandingAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	finalized := map[string]string{}
-	seams := BatchRecoverySeamsWithGit(checkout, store, id, at, GitOutput)
+	seams := RecoverySeams(checkout, batch.ModuleRoot(checkout), "", store, id, at, GitOutput, &LaneCalls, nil)
 	seams.SweepGoalBranch = func(batch.Unit, string) error { return nil }
 	seams.Finalize = func(unit batch.Unit, landed string) error { finalized[unit.GoalID] = landed; return nil }
-	seams.Rearm = func(string) error { return nil }
 	seams.Cleanup = func() error { return nil }
 	seams.Release = func(batch.Unit, *diskstore.ReleaseSet) {}
 	if err := batch.RecoverPushedSeries(store, id, actor, at, seams); err != nil {

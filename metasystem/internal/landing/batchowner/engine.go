@@ -1,15 +1,12 @@
 package batchowner
 
 import (
-	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-// EngineCalls are the engine's own functions the landing batch owner calls:
+// EngineCalls are the engine's own functions the landing path calls:
 // each one needs the engine's command configuration (its proof limits,
 // worker policy, validation weight and goal-branch holder), which this
 // package does not own.
@@ -20,13 +17,11 @@ type EngineCalls struct {
 	// ForecastTestingSelection forecasts one selection's proof cost without
 	// running it.
 	ForecastTestingSelection func(root string, selection testrun.CostSelection, proofCapMinutes uint64) (testrun.CostEvidence, error)
-	// CadenceTick runs one cadence tick under the held landing owner lease.
-	CadenceTick func(root string, held BatchOwnerLease, clock func() time.Time) (cadence.TickOutput, error)
 	// BranchClaimCheck proves, before each goal-branch write, that this
 	// checkout still holds the goal's claim.
 	BranchClaimCheck func(root, goalID string, endpoint goal.Endpoint) func() error
 }
 
-// Engine is set once by the engine at start, with BatchOwnerCalls and
+// Engine is set once by the engine at start, with LaneCalls and
 // BatchCommitBoundary, before any landing owner runs.
 var Engine EngineCalls

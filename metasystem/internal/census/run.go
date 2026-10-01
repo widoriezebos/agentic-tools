@@ -487,9 +487,10 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	if state.Generation == nil || *state.Generation < 1 {
 		return nil, 0, "", fmt.Errorf("supervision state names no valid run of supervision")
 	}
-	// The owner launches watcher, reaper and landing-owner. A state written by
-	// an owner from before the landing owner carries only the first two, so the
-	// landing owner is verified when present and no other component is accepted.
+	// The owner launches watcher and reaper. A state an older engine's owner
+	// wrote may also carry its batch landing owner (deleted by lane design
+	// r10 §5), which is verified when present; no other component is
+	// accepted.
 	for name := range state.Components {
 		if !supervisionComponent(name) {
 			return nil, 0, "", fmt.Errorf("supervision state has no complete instance set")
@@ -522,7 +523,8 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	return ids, *state.Generation, hex.EncodeToString(sum[:]), nil
 }
 
-// supervisionComponentOrder is the owner's component set in launch order.
+// supervisionComponentOrder is the owner's component set in launch order,
+// with an older engine's landing owner last.
 var supervisionComponentOrder = []string{"watcher", "reaper", "landing-owner"}
 
 func supervisionComponent(name string) bool {

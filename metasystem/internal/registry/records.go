@@ -48,7 +48,9 @@ var ReapReasons = map[string]bool{
 	"shutdown-escalated":   true,
 }
 
-// Components a `launched` record may name.
+// Components a `launched` record may name: the watcher and the reaper, and
+// the batch landing owner an older engine launched, which the append-only
+// registry still holds (lane design r10 §5 deleted that owner).
 var Components = map[string]bool{"watcher": true, "reaper": true, "landing-owner": true}
 
 // Record is one validated registry event. Numeric fields are int64
@@ -68,10 +70,9 @@ type Record struct {
 	Generation        int64
 
 	// relaunched
-	WatcherTag      string
-	ReaperTag       string
-	LandingOwnerTag string
-	RetiredThrough  int64
+	WatcherTag     string
+	ReaperTag      string
+	RetiredThrough int64
 
 	// launched
 	Component    string
@@ -157,11 +158,10 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 		}
 		record.WatcherTag, _ = raw["watcherTag"].(string)
 		record.ReaperTag, _ = raw["reaperTag"].(string)
-		record.LandingOwnerTag, _ = raw["landingOwnerTag"].(string)
-		// landingOwnerTag stays optional on read: the registry is append-only and
-		// every engine reduces all of it, including the relaunched records written
-		// before the landing owner component existed. Requiring the tag would make
-		// every such registry unreadable.
+		// An older engine's relaunched record also names its batch landing
+		// owner's tag (landingOwnerTag): the registry is append-only and
+		// every engine reduces all of it, so that key is read past, never
+		// required.
 		if record.WatcherTag == "" || record.ReaperTag == "" {
 			return nil, fmt.Errorf("relaunched %s: missing component tags", record.OwnerTag)
 		}

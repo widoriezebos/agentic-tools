@@ -267,7 +267,6 @@ func sideBySideJoinBed(t *testing.T, base *string) (batchowner.BatchJoinRequest,
 			return nil
 		})
 	}
-	dependencies.Ensure = func(string) error { return nil }
 	return request, dependencies, store
 }
 

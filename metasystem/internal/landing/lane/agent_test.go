@@ -267,55 +267,6 @@ func TestWakeReasonsFromLaneState(t *testing.T) {
 	}
 }
 
-// TestOwnerStartedInTheWindowStopsTheAgent (A-a, re-review 1): an owner
-// started by a person between the keeper's decision and its claim is seen
-// by the holds read again under the owner's ensure lock, so the agent does
-// not start; and once the claim is recorded an owner start sees the agent
-// as starting.
-func TestOwnerStartedInTheWindowStopsTheAgent(t *testing.T) {
-	t.Parallel()
-	home, _, module := nestedLaneDirs(t)
-	clock := laneNow
-	ownerRuns := false
-	var locked []string
-	sources := WakeSources{Records: noBatches, Validation: func(string, time.Time) (bool, error) {
-		// The wake read runs outside the flock: a person starts the owner
-		// here, between the decision and the claim.
-		ownerRuns = true
-		return true, nil
-	}}
-	agent := &fakeAgent{}
-	keeper := agent.keeper(home, module, &clock, sources)
-	keeper.Holds = []func(string) (string, error){func(string) (string, error) {
-		if ownerRuns {
-			return "the lane's batch owner still runs", nil
-		}
-		return "", nil
-	}}
-	keeper.Exclusive = func(root string, fn func() error) error { locked = append(locked, root); return fn() }
-	if line := keeper.Step(); len(agent.starts) != 0 || !strings.Contains(line, "batch owner still runs") || len(locked) != 1 {
-		t.Fatalf("owner started in the window: %q, starts %d, exclusive %v; want no agent", line, len(agent.starts), locked)
-	}
-
-	// The claim recorded, the start in flight: an owner start sees it.
-	ownerRuns = false
-	sources.Validation = func(string, time.Time) (bool, error) { return true, nil }
-	keeper.Sources = sources
-	start := keeper.Start
-	var seen bool
-	keeper.Start = func(root string, wake Wake) (string, error) {
-		_, seen, _ = AgentStarting(home, clock)
-		return start(root, wake)
-	}
-	keeper.Step()
-	if !seen || len(agent.starts) != 1 {
-		t.Fatalf("an owner start during the agent's start saw it starting=%t, starts %d", seen, len(agent.starts))
-	}
-	if _, starting, err := AgentStarting(home, clock); starting || err != nil {
-		t.Fatal("the start claim outlived the start")
-	}
-}
-
 // TestUnreadableKeeperRecordHoldsUntilAPersonStarts (A-a, re-review 2
 // NB-1): a landing agent keeper record that cannot be read holds every
 // start (the agent's and, through AgentStarting, the owner's) with a line

@@ -24,18 +24,16 @@ func LaneInvocation(claim lane.ClaimIdentity) ownercall.Invocation {
 	return invocation
 }
 
-// claimAuthority is the authority a lane act on goalID runs under, chosen by
-// who the ledger shows holding it: the lane's claim identity (renewed to the
-// host record's custody epoch first when the ledger holds an older one), or
-// for a claim the old owner lineage holds, that owner's own authority: its
-// claims are settled through the old authority (design r10 §5, R9-01).
-// invoke is the act's own context: the old owner's authority as it is, and
-// for the lane's claim identity the publication boundary (K3) its goal
-// writes go through.
-func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, calls *BatchOwnerCallSet, home func() (string, error), invoke func() ownercall.Invocation) (ownercall.Invocation, error) {
-	act := invoke()
+// claimAuthority is the authority a lane act on goalID runs under: the
+// lane's claim identity, renewed to the host record's custody epoch first
+// when the ledger holds an older one. The lane acts on no other claim: a
+// goal the ledger shows held by anyone else, the deleted batch owner's
+// lineage included (design r10 §5, R9-01), is refused with a person's
+// release as the way forward. boundary is the publication boundary (K3)
+// the act's goal writes go through.
+func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, calls *LaneCallSet, home func() (string, error), boundary func(goal.Endpoint) goal.Endpoint) (ownercall.Invocation, error) {
 	if ledger.Lineage != lane.ClaimLineage {
-		return act, nil
+		return ownercall.Invocation{}, notLaneHeld(goalID, ledger)
 	}
 	dir, err := home()
 	if err != nil {
@@ -45,19 +43,29 @@ func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 	if err != nil {
 		return ownercall.Invocation{}, err
 	}
-	if err := renewLaneClaim(controlRoot, goalID, ledger, claim, dir, calls, act.Ledger); err != nil {
+	if err := renewLaneClaim(controlRoot, goalID, ledger, claim, dir, calls, boundary); err != nil {
 		return ownercall.Invocation{}, err
 	}
 	invocation := LaneInvocation(claim)
-	invocation.Ledger = act.Ledger
+	invocation.Ledger = boundary
 	return invocation, nil
+}
+
+// notLaneHeld refuses a lane act on a goal the lane does not hold, in two
+// lines: the situation, then the release a person runs.
+func notLaneHeld(goalID string, ledger batch.ReturnLedgerGoal) error {
+	holder := ledger.Machine + "+" + ledger.Lineage
+	if ledger.Lineage == lane.OldOwnerLineage {
+		holder = "the old landing owner (" + holder + ")"
+	}
+	return fmt.Errorf("goal %s is held by %s, not by this landing lane, so it was not given back\nrun: metasystem goal release %s --reason TEXT", goalID, holder, goalID)
 }
 
 // renewLaneClaim moves a lane-held claim to the lane's current custody
 // epoch; a claim already there is left as it is. A claim held on another
 // machine, or at a later epoch than the host record's, is not this lane's.
 // The renewal is a lane goal write and goes through boundary (K3).
-func renewLaneClaim(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, claim lane.ClaimIdentity, home string, calls *BatchOwnerCallSet, boundary func(goal.Endpoint) goal.Endpoint) error {
+func renewLaneClaim(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, claim lane.ClaimIdentity, home string, calls *LaneCallSet, boundary func(goal.Endpoint) goal.Endpoint) error {
 	switch {
 	case ledger.Machine != claim.Machine:
 		return fmt.Errorf("goal %s is held by the landing lane on %s, not by this computer's lane on %s", goalID, ledger.Machine, claim.Machine)
@@ -77,7 +85,7 @@ func renewLaneClaim(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 // record's (lane design r10 K7): landing begin runs it before it records
 // the series, so every claim the batch lands under is the lane's current
 // one. A change member holds no claim.
-func RenewLaneClaims(home, checkout, install, batchID, tree string, calls *BatchOwnerCallSet) error {
+func RenewLaneClaims(home, checkout, install, batchID, tree string, calls *LaneCallSet) error {
 	claim, err := lane.Claim(home)
 	if err != nil {
 		return err

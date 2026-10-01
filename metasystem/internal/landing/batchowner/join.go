@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"context"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -58,7 +59,6 @@ type BatchJoinDependencies struct {
 	CostForecast     func(string, batch.Record, batch.Unit, time.Time, func(string, string, string) (testpolicy.Plan, error), func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error)
 	PublishForecast  func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error
 	Handover         func(BatchJoinRequest, string, batch.Claim) error
-	Ensure           func(string) error
 	Author           func(string, *goal.GoalFile) (string, string, string, error)
 	Prober           identity.Prober
 	// ReleaseSet selects, in the seat checkout, the goal's workspaces whose
@@ -68,7 +68,6 @@ type BatchJoinDependencies struct {
 }
 
 var BatchJoinDependenciesForCommand = ProductionBatchJoinDependencies
-var BatchJoinClock = fixtureauth.GoalNow
 var BatchTreePlanExecutable = os.Executable
 
 func ProductionBatchJoinDependencies() BatchJoinDependencies {
@@ -275,9 +274,6 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 				if err := batch.CloseAdmissionForCost(store, record.BatchID, actor, costNow, forecast); err != nil {
 					return batch.Record{}, err
 				}
-				if dependencies.Ensure != nil {
-					refused = errors.Join(refused, dependencies.Ensure(request.LandingRoot))
-				}
 			}
 			return batch.Record{}, refused
 		}
@@ -304,16 +300,9 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	}
 	if publishErr != nil {
 		// A failed admission may already have handed over the goal and
-		// requested its return. The durable owner must still settle custody.
-		if dependencies.Ensure != nil {
-			publishErr = errors.Join(publishErr, dependencies.Ensure(request.LandingRoot))
-		}
+		// requested its return: the member stays return-pending in the
+		// batch record, where the lane's agent settles it.
 		return batch.Record{}, publishErr
-	}
-	if dependencies.Ensure != nil {
-		if err := dependencies.Ensure(request.LandingRoot); err != nil {
-			return batch.Record{}, err
-		}
 	}
 	return store.Load(record.BatchID)
 }
@@ -341,7 +330,7 @@ func fetchLandingBaseTree(root string) (string, error) {
 }
 
 // ProductionBatchProtectedTests asks the testing owner to check base-listed
-// Go tests before join hands the member to the batch owner. The installed
+// Go tests before join hands the member to the landing lane. The installed
 // contract path and each group's cwd are independent of the repository root.
 func ProductionBatchProtectedTests(root, baseTree, candidateTree string) error {
 	return ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, nil)
@@ -432,9 +421,12 @@ func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode tes
 	if len(groups) != 0 {
 		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument(groups))
 	}
-	verb := testPlanVerb
+	// The planning child answers with the --json envelope (internal/verbresult,
+	// design structured-output.md U1): its outcome and code are read, never
+	// its words.
+	verb := "test plan"
 	if lane.IsAccount(goalID) {
-		verb = laneTestPlanVerb
+		verb = "internal test plan"
 	}
 	child, err := verbresult.Run(command, verb)
 	if err != nil {
@@ -465,7 +457,7 @@ func BatchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpo
 }
 
 func productionForwardHandover(request BatchJoinRequest, batchID string, source batch.Claim) error {
-	return LaneForwardHandover(LandingLaneHome, &BatchOwnerCalls)(request, batchID, source)
+	return LaneForwardHandover(LandingLaneHome, &LaneCalls)(request, batchID, source)
 }
 
 // LaneForwardHandover hands a joining goal to the landing lane's stable
@@ -474,7 +466,7 @@ func productionForwardHandover(request BatchJoinRequest, batchID string, source 
 // source seat's act, under its own process and lineage; no agent, owner or
 // lease holder of the lane checkout takes part, so a join works while no
 // agent runs.
-func LaneForwardHandover(home func() (string, error), calls *BatchOwnerCallSet) func(BatchJoinRequest, string, batch.Claim) error {
+func LaneForwardHandover(home func() (string, error), calls *LaneCallSet) func(BatchJoinRequest, string, batch.Claim) error {
 	return func(request BatchJoinRequest, batchID string, source batch.Claim) error {
 		dir, err := home()
 		if err != nil {

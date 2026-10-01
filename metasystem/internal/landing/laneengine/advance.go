@@ -51,8 +51,8 @@ type AdvanceOutcome struct {
 // Hold takes. Each answers the blocking thing in words, "" when it does not
 // block; an error blocks too.
 type Conditions struct {
-	// Hold takes, without waiting, the host's proving lock (the batch
-	// owner's proofs hold it until unit D deletes that owner), then the host
+	// Hold takes, without waiting, the host's proving lock (landing prove's
+	// proofs hold it), then the host
 	// flock every gated operation reads the pause under (K2),
 	// and keeps both until release. The second check, the install and the
 	// re-arm all run inside one Hold, so no proof or begin starts on either

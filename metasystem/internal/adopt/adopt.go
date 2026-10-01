@@ -654,7 +654,7 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	if refusal := dropTemplateProjectState(stage); refusal != nil {
 		return refusal
 	}
-	// The landing owner selects required authority and preserves the
+	// The landing path selects required authority and preserves the
 	// application's own rulings.
 	rulings, err := landing.AdoptionRulings(target)
 	if err != nil {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,16 +13,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The application in this fixture has text inputs and command/JUnit checks.
@@ -99,7 +94,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 	fixture.git("update-ref", "refs/remotes/origin/main", base)
 	fixture.git("update-ref", goal.LocalLedgerBranch, base)
 	fixture.git("update-ref", goal.AcceptedRef, base)
-	engine := &batchE2EEngine{path: fixture.engine}
+	engine := &fixturePolicyEngine{path: fixture.engine}
 	if baselineSource != "" {
 		if got := fixture.gitSource("rev-parse", "HEAD"); got != "9498700a9e246f09395213f8539d22e0ea196731" {
 			t.Fatalf("baseline source is %s, want frozen 9498700a9 source", got)
@@ -112,8 +107,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 		}
 		engine.commit = base
 	}
-	batchFixture := &batchE2EFixture{t: t, landing: root, now: time.Now().UTC()}
-	batchFixture.enrollPolicyEngine(base, engine)
+	enrollFixturePolicyEngine(t, root, time.Now().UTC(), base, engine)
 	if baselineSource != "" {
 		pinned, err := steward.OpenEnrolledBinary(root)
 		if err != nil {
@@ -130,7 +124,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 	if fixture.holderLineage == "" {
 		fixture.holderLineage = "portable-lineage"
 	}
-	batchFixture.announce(root, fixture.holderLineage)
+	announceFixtureHolder(t, root, fixture.holderLineage)
 	holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil)
 	if err != nil || !holder.Holder {
 		t.Fatalf("fixture checkout has no active lease holder: %+v %v", holder, err)
@@ -251,16 +245,6 @@ func (fixture *portableProofFixture) gitBytes(args ...string) []byte {
 		fixture.t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
 	}
 	return output
-}
-
-func portableGitAt(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
 }
 
 func (fixture *portableProofFixture) commit(message string) string {
@@ -645,408 +629,6 @@ func TestCommandApplicationLegacyBaselineCohort(t *testing.T) {
 	}
 	t.Run("current", func(t *testing.T) { runPortablePublicProofReuse(newPortableProofFixture(t)) })
 	t.Run("frozen", func(t *testing.T) { runPortablePublicProofReuse(newPortableProofFixtureWithSource(t, source)) })
-}
-
-func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
-	batchE2EProcessEnvironment.Lock()
-	t.Cleanup(batchE2EProcessEnvironment.Unlock)
-	fixture := newPortableProofFixture(t)
-	previousPlannerExecutable := batchowner.BatchTreePlanExecutable
-	batchowner.BatchTreePlanExecutable = func() (string, error) { return fixture.engine, nil }
-	t.Cleanup(func() { batchowner.BatchTreePlanExecutable = previousPlannerExecutable })
-	baseTree := fixture.git("rev-parse", "HEAD^{tree}")
-	baseCommit := fixture.git("rev-parse", "HEAD")
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	if output, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
-		t.Fatalf("create disposable origin: %v: %s", err, output)
-	}
-	fixture.git("remote", "add", "origin", origin)
-	fixture.git("push", "-q", "origin", baseCommit+":refs/heads/main")
-	fixture.write("app/a.txt", "green a first\n", 0o644)
-	firstTree := fixture.commit("first portable unit")
-	firstCommit := fixture.git("rev-parse", "HEAD")
-	groupB := fixture.group("app-b", "b")
-	groupB.Inputs = append(groupB.Inputs, "app/shared-b.txt")
-	fixture.contract.Groups = append(fixture.contract.Groups, groupB)
-	fixture.contract.Surfaces[0].Standard = append(fixture.contract.Surfaces[0].Standard, "app-b")
-	fixture.contract.Cadence = append(fixture.contract.Cadence, "app-b")
-	fixture.write("app/b.txt", "green b\n", 0o644)
-	fixture.writeContract()
-	secondTree := fixture.commit("second portable unit")
-	secondCommit := fixture.git("rev-parse", "HEAD")
-	fixture.contract.Groups = append(fixture.contract.Groups, fixture.group("app-c", "c"))
-	fixture.contract.Surfaces[0].Standard = append(fixture.contract.Surfaces[0].Standard, "app-c")
-	fixture.contract.Cadence = append(fixture.contract.Cadence, "app-c")
-	fixture.write("app/c.txt", "green c\n", 0o644)
-	fixture.writeContract()
-	thirdTree := fixture.commit("third portable unit")
-	thirdCommit := fixture.git("rev-parse", "HEAD")
-	for _, member := range []struct{ chain, from, to string }{
-		{"portable-goal-a", baseCommit, firstCommit},
-		{"portable-goal-b", firstCommit, secondCommit},
-		{"portable-goal-c", secondCommit, thirdCommit},
-	} {
-		fixture.writeBytes("artifacts/agents/landing-batches/chains/"+member.chain+"/diff.patch",
-			fixture.gitBytes("diff", "--binary", member.from, member.to), 0o644)
-	}
-	trees := []string{firstTree, secondTree, thirdTree}
-	units := []batch.Unit{}
-	seal := map[string]batch.Claim{}
-	for index, id := range []string{"goal-a", "goal-b", "goal-c"} {
-		claim := batch.Claim{Machine: "portable", Lineage: "portable-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}
-		selected := []string{"app-a", "app-b", "app-c"}[index]
-		units = append(units, batch.Unit{GoalID: id, Chain: "portable-" + id, Claim: claim, State: batch.UnitJoined, SelectedGroups: []string{selected}})
-		seal[id] = claim
-	}
-	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
-	tipArgs := []string{"internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", thirdTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath}
-	started := time.Now()
-	fixture.requireCommand(tipArgs...)
-	tipOutput, err := os.ReadFile(tipResultPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tip proofrun.TestResult
-	if err := json.Unmarshal(tipOutput, &tip); err != nil || !tip.Delivery.Sufficient {
-		t.Fatalf("real native tip proof is incomplete: %+v err=%v", tip.Delivery, err)
-	}
-	reportOutput := fixture.requireCommand("test", "status", "--result", tipResultPath, "--expensive-ms", "1", "--json")
-	var cost proofrun.TestCostSummary
-	if err := json.Unmarshal([]byte(reportOutput), &cost); err != nil || cost.NativeTestGroups != 3 || cost.LaunchCounts.Test != 3 {
-		t.Fatalf("read-only public cost report=%+v err=%v", cost, err)
-	}
-	fixture.observe("three-prefix-tip", thirdTree, started)
-	inputManifests := map[string][]string{}
-	for _, group := range tip.Groups {
-		inputManifests[group.ID] = append([]string(nil), group.InputManifest...)
-	}
-	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba01", State: batch.StateLanding, BaseTree: baseTree, TipTree: thirdTree,
-		PrefixTrees: trees, Units: units, Seal: seal, SelectedGroups: []string{"app-a", "app-b", "app-c"},
-		Proof: &batch.Proof{Status: "green", Tree: thirdTree, AttemptID: tip.AttemptID, BaseCommit: baseCommit, BaseTree: baseTree,
-			SelectedGroups: []string{"app-a", "app-b", "app-c"}, InputManifests: inputManifests}}
-	store := batch.NewStore(fixture.root, nil)
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	seams := batch.PrefixReceiptSeams{
-		Plan: func(prefix []batch.Unit, tree string) (batch.PrefixDecision, error) {
-			return batchowner.ProductionPrefixDecision(fixture.root, prefix, tree)
-		},
-		ExecuteDecision: func(goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
-			var unit batch.Unit
-			for _, candidate := range units {
-				if candidate.GoalID == goalID {
-					unit = candidate
-					break
-				}
-			}
-			return fixture.runPrefixCommand(unit, tree, decision)
-		},
-		Verify: func(unit batch.Unit, tree string, decision batch.PrefixDecision) error {
-			return batchowner.BatchVerifyPrefixEvidence(fixture.root, unit, tree, decision)
-		},
-	}
-	started = time.Now()
-	if err := batch.ComposePrefixReceipts(store, record.BatchID, "portable", time.Now().UTC(), seams); err != nil {
-		t.Fatalf("compose real prefix receipts: %v", err)
-	}
-	fixture.observe("three-prefix-receipts", thirdTree, started)
-	retained, err := store.Load(record.BatchID)
-	if err != nil || len(retained.Receipts) != 2 || retained.Receipts["goal-a"].Reused["app-a"] == "" ||
-		retained.Receipts["goal-b"].Reused["app-b"] == "" || len(retained.Receipts["goal-a"].Executed) != 0 ||
-		len(retained.Receipts["goal-b"].Executed) != 0 {
-		t.Fatalf("prefix receipts=%+v err=%v", retained.Receipts, err)
-	}
-	if err := batchowner.VerifyBatchSeries(fixture.root, retained, trees); err != nil {
-		t.Fatalf("final three-prefix consumer refused real evidence: %v", err)
-	}
-	_, native := fixture.counts()
-	if native["a"] != 1 || native["b"] != 1 || native["c"] != 1 {
-		t.Fatalf("unchanged prefix evidence was reexecuted: %v", native)
-	}
-	buildsBeforeRestart, nativeBeforeRestart := fixture.counts()
-	restartedStore := batch.NewStore(fixture.root, nil)
-	restarted, err := restartedStore.Load(record.BatchID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A fresh CLI process must recover the exact retained green tip before
-	// the reconstructed receipt consumer examines its own durable state.
-	fixture.requireReusableRun(tipArgs...)
-	restartedSeams := batch.PrefixReceiptSeams{
-		Plan: func(prefix []batch.Unit, tree string) (batch.PrefixDecision, error) {
-			return batchowner.ProductionPrefixDecision(fixture.root, prefix, tree)
-		},
-		ExecuteDecision: func(goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
-			for _, unit := range restarted.Units {
-				if unit.GoalID == goalID {
-					return fixture.runPrefixCommand(unit, tree, decision)
-				}
-			}
-			return batch.PrefixRunResult{}, fmt.Errorf("unknown restarted prefix member %s", goalID)
-		},
-		Verify: func(unit batch.Unit, tree string, decision batch.PrefixDecision) error {
-			return batchowner.BatchVerifyPrefixEvidence(fixture.root, unit, tree, decision)
-		},
-	}
-	started = time.Now()
-	if err := batch.ComposePrefixReceipts(restartedStore, record.BatchID, "portable-restart", time.Now().UTC(), restartedSeams); err != nil {
-		t.Fatalf("restarted receipt consumer refused retained evidence: %v", err)
-	}
-	restarted, err = restartedStore.Load(record.BatchID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verifyErr := batchowner.VerifyBatchSeries(fixture.root, restarted, trees)
-	if !reflect.DeepEqual(restarted.Receipts, retained.Receipts) || verifyErr != nil {
-		t.Fatalf("restarted receipt consumer changed durable receipts: %+v err=%v", restarted.Receipts, verifyErr)
-	}
-	fixture.observe("three-prefix-restart", thirdTree, started)
-	buildsAfterRestart, nativeAfterRestart := fixture.counts()
-	if buildsAfterRestart != buildsBeforeRestart || !reflect.DeepEqual(nativeAfterRestart, nativeBeforeRestart) {
-		t.Fatalf("restarted consumer relaunched work: before=(%d,%v) after=(%d,%v)",
-			buildsBeforeRestart, nativeBeforeRestart, buildsAfterRestart, nativeAfterRestart)
-	}
-
-	// The disposable remote advances only the declared shared input consumed
-	// by B. Replay the original member patches through the production batch
-	// assembler, then require new proof and receipts on every moved prefix.
-	movedWorktree := filepath.Join(t.TempDir(), "moved-base")
-	fixture.git("worktree", "add", "--detach", movedWorktree, baseCommit)
-	t.Cleanup(func() { fixture.git("worktree", "remove", "--force", movedWorktree) })
-	if err := testexec.WriteFile(filepath.Join(movedWorktree, "app", "shared-b.txt"), []byte("shared b v2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	portableGitAt(t, movedWorktree, "add", "app/shared-b.txt")
-	portableGitAt(t, movedWorktree, "commit", "-qm", "move shared B input on trunk")
-	movedBaseCommit := portableGitAt(t, movedWorktree, "rev-parse", "HEAD")
-	movedBaseTree := portableGitAt(t, movedWorktree, "rev-parse", "HEAD^{tree}")
-	fixture.git("push", "-q", "origin", movedBaseCommit+":refs/heads/main")
-	fetchedCommit, fetchedTree, err := batchowner.FetchBatchOrigin(fixture.root)
-	if err != nil || fetchedCommit != movedBaseCommit || fetchedTree != movedBaseTree {
-		t.Fatalf("disposable endpoint did not move to shared input: fetched=(%s,%s) want=(%s,%s) err=%v",
-			fetchedCommit, fetchedTree, movedBaseCommit, movedBaseTree, err)
-	}
-	changed := strings.Fields(fixture.git("diff", "--name-only", baseCommit, movedBaseCommit))
-	if !batch.DecideMovedBase(restarted, changed, "").Reopen {
-		t.Fatalf("declared input move did not invalidate tip proof: changed=%v manifests=%v", changed, restarted.Proof.InputManifests)
-	}
-	movedTrees, err := batch.AssembleUnits(fixture.root, movedBaseTree, restarted.Units)
-	if err != nil || len(movedTrees) != 3 || reflect.DeepEqual(movedTrees, trees) {
-		t.Fatalf("production reassembly did not produce three moved prefixes: trees=%v err=%v", movedTrees, err)
-	}
-	if err := batchowner.VerifyBatchSeries(fixture.root, restarted, movedTrees); err == nil || !strings.Contains(err.Error(), "BATCH_PREFIX_DECISION_MOVED") {
-		t.Fatalf("old receipts authorized moved series, or refused for wrong reason: %v", err)
-	}
-	started = time.Now()
-	reopenedForMove, err := batchowner.ReopenBatchBeforeReceiptsWhenProofBaseMoved(fixture.root, restartedStore,
-		record.BatchID, "portable", time.Now().UTC(), restarted)
-	if err != nil || !reopenedForMove {
-		t.Fatalf("production moved-trunk guard did not reopen declared input move: reopened=%t err=%v", reopenedForMove, err)
-	}
-	reopened, err := restartedStore.Load(record.BatchID)
-	if err != nil || reopened.State != batch.StateOpen || reopened.Proof != nil || len(reopened.Receipts) != 0 ||
-		reopened.BaseTree != movedBaseTree || !reflect.DeepEqual(reopened.PrefixTrees, movedTrees) {
-		t.Fatalf("moved-trunk reopen retained stale evidence or wrong series: %+v err=%v", reopened, err)
-	}
-	fixture.observe("moved-trunk-reassembled", movedTrees[2], started)
-	var tipDecision batch.PrefixDecision
-	for index := range reopened.Units {
-		decision, planErr := batchowner.ProductionPrefixDecision(fixture.root, reopened.Units[:index+1], movedTrees[index])
-		if planErr != nil || len(decision.Groups) == 0 {
-			t.Fatalf("moved prefix %d did not replan: %+v err=%v", index, decision, planErr)
-		}
-		tipDecision = decision
-	}
-	started = time.Now()
-	movedTip, err := fixture.runPrefixCommand(reopened.Units[2], movedTrees[2], tipDecision)
-	if err != nil || len(movedTip.Red) != 0 || movedTip.AttemptID == "" {
-		t.Fatalf("moved tip did not produce native green proof: %+v err=%v", movedTip, err)
-	}
-	if err := batchowner.BatchVerifyPrefixEvidence(fixture.root, reopened.Units[2], movedTrees[2], tipDecision); err != nil {
-		t.Fatalf("moved tip evidence refused: %v", err)
-	}
-	fixture.observe("moved-trunk-tip", movedTrees[2], started)
-	_, movedNative := fixture.counts()
-	if movedNative["a"] != 1 || movedNative["b"] != 2 || movedNative["c"] != 1 {
-		t.Fatalf("moved shared input did not rerun only B: %v", movedNative)
-	}
-	if err := restartedStore.Update(record.BatchID, func(current *batch.Record) error {
-		current.Seal = seal
-		current.SelectedGroups = append([]string(nil), tipDecision.Groups...)
-		current.Proof = &batch.Proof{Status: "green", Tree: movedTrees[2], AttemptID: movedTip.AttemptID,
-			BaseCommit: movedBaseCommit, BaseTree: movedBaseTree, SelectedGroups: append([]string(nil), tipDecision.Groups...)}
-		current.Transition(batch.StateLanding, time.Now().UTC(), "portable-tip-proof", "portable", "")
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	started = time.Now()
-	if err := batch.ComposePrefixReceipts(restartedStore, record.BatchID, "portable-moved", time.Now().UTC(), restartedSeams); err != nil {
-		t.Fatalf("moved prefix receipt consumer: %v", err)
-	}
-	movedRecord, err := restartedStore.Load(record.BatchID)
-	if err != nil || len(movedRecord.Receipts) != 2 {
-		t.Fatalf("moved series retained no full receipts: %+v err=%v", movedRecord.Receipts, err)
-	}
-	if err := batchowner.VerifyBatchSeries(fixture.root, movedRecord, movedTrees); err != nil {
-		t.Fatalf("moved final series refused: %v", err)
-	}
-	fixture.observe("moved-trunk-receipts", movedTrees[2], started)
-	_, movedNative = fixture.counts()
-	if movedNative["a"] != 1 || movedNative["b"] != 2 || movedNative["c"] != 1 {
-		t.Fatalf("moved receipt consumer relaunched unaffected checks: %v", movedNative)
-	}
-}
-
-func TestCommandApplicationRedEarlierPrefixBlocksReceipt(t *testing.T) {
-	batchE2EProcessEnvironment.Lock()
-	t.Cleanup(batchE2EProcessEnvironment.Unlock)
-	fixture := newPortableProofFixture(t)
-	previousPlannerExecutable := batchowner.BatchTreePlanExecutable
-	batchowner.BatchTreePlanExecutable = func() (string, error) { return fixture.engine, nil }
-	t.Cleanup(func() { batchowner.BatchTreePlanExecutable = previousPlannerExecutable })
-	baseTree := fixture.git("rev-parse", "HEAD^{tree}")
-	fixture.write("app/a.txt", "green a first\n", 0o644)
-	firstTree := fixture.commit("first portable unit")
-	fixture.contract.Groups = append(fixture.contract.Groups, fixture.group("app-b", "b"))
-	fixture.contract.Surfaces[0].Standard = append(fixture.contract.Surfaces[0].Standard, "app-b")
-	fixture.write("app/b.txt", "red b\n", 0o644)
-	fixture.writeContract()
-	redTree := fixture.commit("second unit is red")
-	fixture.contract.Groups = append(fixture.contract.Groups, fixture.group("app-c", "c"))
-	fixture.contract.Surfaces[0].Standard = append(fixture.contract.Surfaces[0].Standard, "app-c")
-	fixture.write("app/b.txt", "green b repaired\n", 0o644)
-	fixture.write("app/c.txt", "green c\n", 0o644)
-	fixture.writeContract()
-	tipTree := fixture.commit("third unit repairs the tip")
-	claim := batch.Claim{Machine: "portable", Lineage: "portable-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}
-	units := []batch.Unit{}
-	seal := map[string]batch.Claim{}
-	for index, id := range []string{"goal-a", "goal-b", "goal-c"} {
-		units = append(units, batch.Unit{GoalID: id, Chain: "portable-" + id, Claim: claim, State: batch.UnitJoined,
-			SelectedGroups: []string{[]string{"app-a", "app-b", "app-c"}[index]}})
-		seal[id] = claim
-	}
-	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
-	started := time.Now()
-	fixture.requireCommand("internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", tipTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath)
-	data, err := os.ReadFile(tipResultPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tip proofrun.TestResult
-	if err := json.Unmarshal(data, &tip); err != nil || !tip.Delivery.Sufficient {
-		t.Fatalf("repaired native tip is not green: %+v err=%v", tip.Delivery, err)
-	}
-	fixture.observe("red-earlier-green-tip", tipTree, started)
-	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba02", State: batch.StateLanding, BaseTree: baseTree, TipTree: tipTree,
-		PrefixTrees: []string{firstTree, redTree, tipTree}, Units: units, Seal: seal, SelectedGroups: []string{"app-a", "app-b", "app-c"},
-		Proof: &batch.Proof{Status: "green", Tree: tipTree, AttemptID: tip.AttemptID, SelectedGroups: []string{"app-a", "app-b", "app-c"}}}
-	store := batch.NewStore(fixture.root, nil)
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	seams := batch.PrefixReceiptSeams{
-		Plan: func(prefix []batch.Unit, tree string) (batch.PrefixDecision, error) {
-			return batchowner.ProductionPrefixDecision(fixture.root, prefix, tree)
-		},
-		ExecuteDecision: func(goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
-			for _, unit := range units {
-				if unit.GoalID == goalID {
-					return fixture.runPrefixCommand(unit, tree, decision)
-				}
-			}
-			return batch.PrefixRunResult{}, fmt.Errorf("unknown prefix member %s", goalID)
-		},
-		Verify: func(unit batch.Unit, tree string, decision batch.PrefixDecision) error {
-			return batchowner.BatchVerifyPrefixEvidence(fixture.root, unit, tree, decision)
-		},
-	}
-	started = time.Now()
-	err = batch.ComposePrefixReceipts(store, record.BatchID, "portable", time.Now().UTC(), seams)
-	fixture.observe("red-earlier-prefix-refusal", redTree, started)
-	var red *batch.PrefixRedError
-	if !errors.As(err, &red) || red.GoalID != "goal-b" {
-		t.Fatalf("green tip hid the red earlier prefix: %v", err)
-	}
-	retained, err := store.Load(record.BatchID)
-	if err != nil || retained.State != batch.StateDiagnosing || retained.Proof == nil || retained.Proof.Status != "prefix-red" ||
-		retained.Proof.PrefixGoal != "goal-b" || retained.Receipts["goal-b"].Tree != "" {
-		t.Fatalf("red prefix did not stop receipt publication: record=%+v err=%v", retained, err)
-	}
-	controlRoot, err := canonicalProofRoot(fixture.root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempts, err := proofrun.ReadAttempts(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	completeRed := false
-	for _, attempt := range attempts {
-		if attempt.TestResult == nil || attempt.TestResult.CandidateTree != redTree {
-			continue
-		}
-		for _, group := range attempt.TestResult.Groups {
-			completeRed = completeRed || group.ID == "app-b" && group.Status == "failed" && group.NativeLaunched && group.CollectionComplete
-		}
-	}
-	if !completeRed {
-		t.Fatal("red earlier prefix has no complete native JUnit failure")
-	}
-}
-
-func (fixture *portableProofFixture) runPrefixCommand(unit batch.Unit, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
-	fixture.t.Helper()
-	detached, err := (gittree.Workspace{Dir: fixture.root}).NewDetachedWorktree(tree)
-	if err != nil {
-		return batch.PrefixRunResult{}, err
-	}
-	defer detached.Close()
-	resultPath := filepath.Join(fixture.t.TempDir(), unit.GoalID+"-result.json")
-	args := batchowner.BatchPrefixReceiptArgsWithFresh(detached.Workspace().Dir, fixture.root, unit.GoalID, tree, resultPath,
-		decision.Groups, unit.Claim, decision.FreshEpisode, decision.FreshExpiresAt)
-	command := fixture.proofCommand.command(fixture.commandEnvironment(), fixture.engine, args...)
-	command.Dir = detached.Workspace().Dir
-	output, runErr := command.CombinedOutput()
-	reusedSuccess := false
-	if exit, ok := runErr.(*exec.ExitError); ok && exit.ExitCode() == proofrun.ExitReusableSuccess {
-		reusedSuccess, runErr = true, nil
-	}
-	data, readErr := os.ReadFile(resultPath)
-	if readErr != nil {
-		return batch.PrefixRunResult{}, fmt.Errorf("prefix command %s: %v; output=%s", unit.GoalID, readErr, output)
-	}
-	var result proofrun.TestResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return batch.PrefixRunResult{}, err
-	}
-	fixture.t.Logf("PREFIX_RESULT goal=%s reusable=%t attempt=%q groups=%d", unit.GoalID, reusedSuccess, result.AttemptID, len(result.Groups))
-	out := batch.PrefixRunResult{AttemptID: result.AttemptID, ResultPath: resultPath, Reused: map[string]string{}}
-	for _, group := range result.Groups {
-		if group.NativeLaunched && !reusedSuccess {
-			out.Executed = append(out.Executed, group.ID)
-		}
-		if group.ReuseAttempt != "" {
-			out.Reused[group.ID] = group.ReuseAttempt
-		}
-		if group.Status != "passed" && group.Status != "reused" {
-			out.Red = append(out.Red, batch.RedGroup{ID: group.ID, Status: group.Status, NotRunReason: group.NotRunReason})
-		}
-	}
-	if len(out.Red) != 0 {
-		return out, nil
-	}
-	if runErr != nil {
-		return out, fmt.Errorf("prefix command %s: %v; output=%s", unit.GoalID, runErr, output)
-	}
-	if !result.Delivery.Sufficient {
-		return out, fmt.Errorf("prefix command %s retained insufficient evidence", unit.GoalID)
-	}
-	return out, nil
 }
 
 func TestCommandApplicationGreenTipCannotHideRedPrefix(t *testing.T) {

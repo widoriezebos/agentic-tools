@@ -352,7 +352,7 @@ type Probes struct {
 	// proofrun's HostLease{Live,Unknown,...}; nil reads none.
 	Leases func() ([]Lease, error)
 	// Proving says whether the host's proving lock is held, and by whom:
-	// the batch owner's proofs hold it until unit D deletes that owner.
+	// landing prove's proof children hold it.
 	// nil reads nothing.
 	Proving func() (holder string, busy bool, err error)
 	Now     func() time.Time

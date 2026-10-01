@@ -1,5 +1,5 @@
 {
-  "_comment": "The landing agent's tool allowlist (goal landing-lane-runtime-redesign, design section 3). Everything not listed here is denied, and a gate that cannot decide denies. Test runners, builds, pushes, goal mutations and lane set/unset/start/restart are deliberately absent. No listed shell command has an option that runs a program or writes a file (sort and date were removed for theirs).",
+  "_comment": "The landing agent's tool allowlist (goal landing-lane-runtime-redesign, design section 3). Everything not listed here is denied, and a gate that cannot decide denies. Test runners, builds, pushes, goal mutations and lane set/unset/start are deliberately absent. No listed shell command has an option that runs a program or writes a file (sort and date were removed for theirs).",
   "tools": {
     "Read": "read",
     "Skill": "read",

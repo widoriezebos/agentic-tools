@@ -461,18 +461,6 @@ var (
 	}
 )
 
-// RebuildLandedEngine is the re-arm's rebuild of the engine at installation,
-// admitted as heavy host work.
-func RebuildLandedEngine(ctx context.Context, installation string) error {
-	return landedRearmRebuild(ctx, installation)
-}
-
-// UpLandedEngine runs the rebuilt engine's own up for projectRoot and
-// returns what it said.
-func UpLandedEngine(ctx context.Context, installation, projectRoot string) (UpOutcome, error) {
-	return landedRearmUp(ctx, installation, projectRoot)
-}
-
 // engineRearmEnv carries the record of a re-arm across the re-exec, and is
 // the loop guard: a run that finds it never re-arms again.
 const engineRearmEnv = "METASYSTEM_ENGINE_REARM"

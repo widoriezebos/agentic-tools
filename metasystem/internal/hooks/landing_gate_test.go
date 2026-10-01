@@ -137,7 +137,6 @@ func TestGateEntriesThroughRealHook(t *testing.T) {
 		"landing set":      landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem landing set /elsewhere"}),
 		"landing unset":    landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem landing unset"}),
 		"landing start":    landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem landing start"}),
-		"landing restart":  landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem landing restart"}),
 		"arm":              landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem up"}),
 		"goal mutation":    landingCall(t, bed.repo, "Bash", map[string]any{"command": "metasystem goal done g"}),
 		"config edit":      landingCall(t, bed.repo, "Bash", map[string]any{"command": "git config core.hooksPath /tmp"}),

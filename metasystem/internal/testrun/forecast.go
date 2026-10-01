@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"path/filepath"
 	"slices"
 	"time"
+
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"

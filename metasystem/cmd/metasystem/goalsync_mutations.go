@@ -656,7 +656,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	}
 	configureCarriedCounselor(&e)
 	// A publish blocked by a provably dead owner's pushed entry recovers it
-	// (the batch owner's handover included) under the same live policy
+	// (a landing lane's handover included) under the same live policy
 	// `goal sync --recover` carries, at the command's clock, read only when
 	// that recovery runs.
 	e.ConfigureBlockedRecovery(blockedRecoveryAtCommandClock{root: root, commandNow: commandNow})

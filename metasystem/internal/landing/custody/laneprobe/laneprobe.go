@@ -18,7 +18,7 @@ import (
 // Production is the host's reads for the lane whose installation is
 // installation: the kernel prober, group membership by signal 0, and the
 // lane's proof leases as proofrun classifies them (read only: nothing is
-// reclaimed). proving adds the host proving lock, which the batch owner's
+// reclaimed). proving adds the host proving lock, which landing prove's
 // proofs hold; a caller holding that lock itself (landing engine advance)
 // leaves it out. An installation that is not known fails closed: the
 // leases read as an error, so custody reads unknown.

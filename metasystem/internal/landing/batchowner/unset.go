@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -28,11 +29,11 @@ type UnsetLane struct {
 	By   string
 	Now  func() time.Time
 	// Calls publish the returns' goal changes.
-	Calls BatchOwnerCallSet
-	// Probe reads whether the lane's owner runs; End ends it by its
-	// recorded identity.
-	Probe func(root string) (lane.OwnerProbe, error)
-	End   func(root string) (int64, error)
+	Calls LaneCallSet
+	// Agent names the landing agent launch that runs on this computer, if
+	// one does; StopAgent asks it to end. nil reads none.
+	Agent     func() (id string, live bool, err error)
+	StopAgent func(id string) error
 	// Custody are the custody barrier's reads for a layout; nil reads the
 	// host.
 	Custody func(lane.Layout) custody.Probes
@@ -40,8 +41,7 @@ type UnsetLane struct {
 
 // ProductionUnsetLane is landing unset for the person by, on this host.
 func ProductionUnsetLane(home, by string) UnsetLane {
-	return UnsetLane{Home: home, By: by, Now: func() time.Time { return time.Now().UTC() }, Calls: BatchOwnerCalls,
-		Probe: LandingLaneOwnerProbe, End: EndLaneOwner}
+	return UnsetLane{Home: home, By: by, Now: func() time.Time { return time.Now().UTC() }, Calls: LaneCalls}
 }
 
 // Seams are the unset's steps.
@@ -60,43 +60,31 @@ func (u UnsetLane) records(layout lane.Layout) ([]batch.Record, error) {
 	return u.store(layout).Records()
 }
 
-// settle lets a publication the owner is making finish, then ends the
-// owner, and reads the lane's custody store, proof leases and the host's
-// proving flock, which a running proof holds.
-// The pause the fence set keeps the keeper from starting another.
+// settle stops the landing agent, then reads the lane's one custody
+// barrier (K9): every execution the kernel launched, the installation's
+// proof leases, and the host's proving flock, which a running proof holds.
+// A publication admitted before the fence finished under the host flock
+// the fence took, and the fence holds every gated lane operation from here
+// on (K2), so nothing new starts while it settles.
 func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	var settlement lane.Settlement
-	checkout := string(layout.Checkout)
-	probe, err := u.Probe(checkout)
-	if err != nil {
-		settlement.Unknown = append(settlement.Unknown, "whether the lane's owner runs is unknown: "+err.Error())
-	}
-	if probe.Alive {
-		records, err := u.records(layout)
-		if err != nil {
-			return settlement, err
-		}
-		for _, record := range records {
-			if record.State == batch.StateLanding {
-				settlement.Live = append(settlement.Live, "batch "+record.BatchID+" is publishing to main")
+	if u.Agent != nil {
+		id, live, err := u.Agent()
+		switch {
+		case err != nil:
+			settlement.Unknown = append(settlement.Unknown, "whether the landing agent runs is unknown: "+err.Error())
+		case live && u.StopAgent == nil:
+			settlement.Live = append(settlement.Live, "the landing agent "+id+" runs")
+		case live:
+			if err := u.StopAgent(id); err != nil {
+				settlement.Unknown = append(settlement.Unknown, "the landing agent "+id+" could not be asked to end: "+err.Error())
+			} else if after, still, err := u.Agent(); err != nil {
+				settlement.Unknown = append(settlement.Unknown, "whether the landing agent ended is unknown: "+err.Error())
+			} else if still {
+				settlement.Live = append(settlement.Live, "the landing agent "+after+" still runs after it was asked to end")
 			}
 		}
-		if len(settlement.Live) == 0 {
-			if _, err := u.End(checkout); err != nil {
-				settlement.Unknown = append(settlement.Unknown, "the lane's owner could not be ended: "+err.Error())
-			} else if after, err := u.Probe(checkout); err != nil {
-				settlement.Unknown = append(settlement.Unknown, "whether the lane's owner ended is unknown: "+err.Error())
-			} else if after.Alive {
-				settlement.Live = append(settlement.Live, "the lane's owner still runs after it was asked to end")
-			}
-			// A publication the owner began between the first read and its
-			// end is not finishing any more: reconciliation reads main for
-			// it, member by member.
-		}
 	}
-	// The lane's one custody barrier (K9): every execution the kernel
-	// launched, the installation's proof leases, and the host proving lock
-	// the batch owner's proofs hold.
 	held, err := custody.Settle(u.Home, u.probes(layout))
 	if err != nil {
 		settlement.Unknown = append(settlement.Unknown, "whether landing work runs is unknown: "+err.Error())
@@ -104,6 +92,23 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	settlement.Live = append(settlement.Live, held.Live...)
 	settlement.Unknown = append(settlement.Unknown, held.Unknown...)
 	return settlement, nil
+}
+
+// personCleanup is the authority a person's unset acts under on the lane's
+// goals: the lane's claim identity, with its goal writes through the lane's
+// publication boundary as a person's cleanup, which a paused lane admits.
+func (u UnsetLane) personCleanup() (ownercall.Invocation, error) {
+	claim, err := lane.Claim(u.Home)
+	if err != nil {
+		return ownercall.Invocation{}, err
+	}
+	invocation := LaneInvocation(claim)
+	invocation.Ledger = u.cleanupBoundary()
+	return invocation, nil
+}
+
+func (u UnsetLane) cleanupBoundary() func(goal.Endpoint) goal.Endpoint {
+	return laneLedger(u.home, lane.OpReturn, lane.AuthorityPerson)
 }
 
 func (u UnsetLane) probes(layout lane.Layout) custody.Probes {
@@ -134,7 +139,7 @@ func member(unit batch.Unit) bool {
 // reconcile finalizes the members of a batch that are on main
 // (landed-trailer recovery, design r10 §1 step 3), read from origin's main
 // fetched now. A batch whose push reached main without the record saying
-// so (its owner died between the two) is recorded pushed when every joined
+// so (the process that pushed died between the two) is recorded pushed when every joined
 // member's trailer is on main, and finalized. When only some are, those
 // are listed and the batch kept: returning one on main would undo a
 // landing, and landing the rest is not the unset's to do.
@@ -150,10 +155,7 @@ func (u UnsetLane) reconcile(layout lane.Layout, record batch.Record) ([]lane.Un
 	store := u.store(layout)
 	// Only commits after the batch's base count: an earlier landing of the
 	// same member, reverted since, is not this batch's push.
-	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls,
-		func() ownercall.Invocation { return personCleanupInvocation(u.Home) })
-	// The lane is going away: its checkout's engine is left as it is.
-	seams.Rearm = func(string) error { return nil }
+	seams := RecoverySeams(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls, u.personCleanup)
 	if record.Landing != nil && record.Landing.PushComplete {
 		return nil, batch.RecoverPushedSeries(store, record.BatchID, u.By, u.Now(), seams)
 	}
@@ -247,8 +249,7 @@ func (u UnsetLane) returnBatch(layout lane.Layout, record batch.Record, reason s
 	if err != nil {
 		return nil, err
 	}
-	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls,
-		func() ownercall.Invocation { return personCleanupInvocation(u.Home) }, u.home)
+	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls, u.cleanupBoundary(), u.home)
 	failures, returnErr := batch.ReturnUnits(store, record.BatchID, tree, u.By, at, seams)
 	var unresolved []lane.Unresolved
 	for _, failure := range failures {

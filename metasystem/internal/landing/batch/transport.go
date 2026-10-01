@@ -6,9 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 // EndpointPushError preserves whether git named a stale lease or another
@@ -21,11 +19,6 @@ type EndpointPushError struct {
 
 func (err *EndpointPushError) Error() string { return err.Cause.Error() }
 func (err *EndpointPushError) Unwrap() error { return err.Cause }
-
-func IsNonLeaseEndpointRejection(err error) bool {
-	var push *EndpointPushError
-	return errors.As(err, &push) && push.RemoteRejected && !push.StaleLease
-}
 
 func IsStaleEndpointLease(err error) bool {
 	var push *EndpointPushError
@@ -69,13 +62,6 @@ func pushPorcelain(root, code string, args ...string) error {
 }
 
 func landingBranchRef(id string) string { return "refs/heads/landing/" + id }
-
-// PrepareLandingBranch rebuilds the local assembly branch at the exact base.
-// The landing checkout is dedicated to the owner, so resetting this named
-// branch is the recoverable local half of the series transaction.
-func PrepareLandingBranch(root, id, baseCommit string) error {
-	return runLandingGit(root, "BATCH_LANDING_BRANCH_PREP_REFUSED", "checkout", "-B", "landing/"+id, baseCommit)
-}
 
 // PublishLandingBranch exposes the exact candidate commit under a leased
 // batch ref. An empty expected tip means the ref must still be absent.
@@ -180,37 +166,6 @@ func commitForTreeInRef(root, ref, tree string) (string, error) {
 	return "", fmt.Errorf("%s: no %s commit has base tree %s", codeLandTrunkMoved, ref, tree)
 }
 
-// LandLandingBranch performs the only endpoint update and deletes the
-// candidate branch in the same atomic remote transaction. Both refs are
-// leased, so a moved endpoint or candidate writes neither ref.
-func LandLandingBranch(root, id, baseCommit, tip string) error {
-	return pushPorcelain(root, codeLandPushRefused, "--atomic", "origin",
-		tip+":refs/heads/main", ":"+landingBranchRef(id),
-		"--force-with-lease=refs/heads/main:"+baseCommit,
-		"--force-with-lease="+landingBranchRef(id)+":"+tip)
-}
-
-// AbandonLandingBranch removes an unlanded candidate against its exact tip
-// before a proof-input-changing trunk move returns the batch to open.
-func AbandonLandingBranch(root, id, expectedTip, detachAt string) error {
-	present, err := remoteLandingBranchPresent(root, id)
-	if err != nil {
-		return err
-	}
-	if !present {
-		return CleanupLandingBranch(root, id, detachAt)
-	}
-	if err := runLandingGit(root, "BATCH_LANDING_BRANCH_MOVED", "push", "origin", ":"+landingBranchRef(id),
-		"--force-with-lease="+landingBranchRef(id)+":"+expectedTip); err != nil {
-		present, lookupErr := remoteLandingBranchPresent(root, id)
-		if lookupErr == nil && !present {
-			return CleanupLandingBranch(root, id, detachAt)
-		}
-		return err
-	}
-	return CleanupLandingBranch(root, id, detachAt)
-}
-
 func remoteLandingBranchPresent(root, id string) (bool, error) {
 	_, present, err := remoteLandingBranchTip(root, id)
 	return present, err
@@ -268,84 +223,9 @@ func runLandingGit(root, code string, args ...string) error {
 	return nil
 }
 
-// CommitDeclaration is the landing declaration a unit commits under.
-type CommitDeclaration struct {
-	chain, attested, snapshot, base string
-}
-
-func ChainDeclaration(chain string) CommitDeclaration {
-	return CommitDeclaration{chain: chain}
-}
-
-func AttestedDeclaration(commit, snapshot, base string) CommitDeclaration {
-	return CommitDeclaration{attested: commit, snapshot: snapshot, base: base}
-}
-
-// CommitBoundary runs the commit boundary (landpath.Commit) for one request
-// and returns what it printed and its exit status.
-type CommitBoundary func(landpath.CommitRequest) (string, int)
-
-func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary, readGit func(root string, args ...string) (string, error)) error {
-	if authorName == "" || authorEmail == "" {
-		return fmt.Errorf("%s: goal %s has no configured approver identity", codeLandAuthorUnbound, goalID)
-	}
-	before, err := readGit(root, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	// The message lives outside the work tree: an untracked file there is a
-	// working-tree byte the commit would not record, which the boundary
-	// refuses.
-	messageFile, done, err := diskstore.ScratchFile("metasystem-batch-commit-message-*")
-	if err != nil {
-		return err
-	}
-	name := messageFile.Name()
-	defer done()
-	if _, err := messageFile.WriteString(message); err != nil {
-		messageFile.Close()
-		return err
-	}
-	if err := messageFile.Close(); err != nil {
-		return err
-	}
-	request := landpath.CommitRequest{Root: root, Chain: declaration.chain, Attested: declaration.attested,
-		AttestedSnapshot: declaration.snapshot, AttestedBase: declaration.base, Goal: goalID, GoalSet: true,
-		TestReceipt: receipt, MessageFile: name, OwnerLineage: lineage, LandedBy: landedBy,
-		Env: []string{"GIT_AUTHOR_NAME=" + authorName, "GIT_AUTHOR_EMAIL=" + authorEmail,
-			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail}}
-	if output, status := commit(request); status != 0 {
-		return fmt.Errorf("commit boundary for goal %s exited %d: %s", goalID, status, strings.TrimSpace(output))
-	}
-	after, err := readGit(root, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	if after == before {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("landing goal %s did not add exactly one commit; metasystem landing status shows the batch", goalID))
-	}
-	parent, err := readGit(root, "rev-parse", after+"^")
-	if err != nil || parent != before {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("landing goal %s did not add exactly one commit; metasystem landing status shows the batch", goalID))
-	}
-	return nil
-}
-
 func landingGitOutput(root string, args ...string) (string, error) {
 	command := realGit(root, args...)
 	command.Env = realObjectsEnviron()
 	output, err := command.Output()
 	return strings.TrimSpace(string(output)), err
-}
-
-func RequirePassingCommitVerdictWithRead(root, goalID, commit string, readGit func(root string, args ...string) (string, error)) error {
-	output, err := readGit(root, "show", "-s", "--format=%(trailers:key=Landing-Provenance-Verdict,valueonly)", commit)
-	verdict := strings.TrimSpace(output)
-	if err != nil {
-		verdict = "unreadable"
-	}
-	if verdict != "pass" && !strings.HasPrefix(verdict, "pass ") {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit %s was not checked as landable (%s); metasystem landing status shows the batch", goalID, commit, verdict))
-	}
-	return nil
 }

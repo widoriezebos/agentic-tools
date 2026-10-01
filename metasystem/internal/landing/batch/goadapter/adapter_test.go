@@ -18,9 +18,6 @@ func TestGoAdapterIsBoundToTheGoGroups(t *testing.T) {
 	if _, ok := bound.(Adapter); !ok {
 		t.Fatalf("go groups bind %T", bound)
 	}
-	if _, ok := bound.(adapter.UnitGate); !ok {
-		t.Fatal("the Go adapter has no unit gate")
-	}
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/detect\n"), 0o644); err != nil {
 		t.Fatal(err)

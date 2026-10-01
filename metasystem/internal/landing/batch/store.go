@@ -18,18 +18,16 @@ import (
 )
 
 type batchSeams struct {
-	prober      identity.Prober
-	flock       func(int, int) error
-	publish     func(string) error
-	updated     func(Record)
-	ledgerOwner LedgerOwner
+	prober  identity.Prober
+	flock   func(int, int) error
+	publish func(string) error
+	updated func(Record)
 }
 type Store struct {
 	root           string
 	seams          batchSeams
 	reassembly     reassemblyOperations
 	planJoinedUnit joinedUnitPlanner
-	committedGoal  func(string, string, string) ([]byte, bool, error)
 }
 
 type joinedUnitPlanner func(string, Unit, string, func(string, string, string) (testpolicy.Plan, error)) (testpolicy.Plan, error)
@@ -47,8 +45,7 @@ func NewStore(root string, prober identity.Prober) Store {
 		prober = identity.KernelProber{}
 	}
 	return Store{
-		root:          root,
-		committedGoal: readCommittedGoal,
+		root: root,
 		planJoinedUnit: func(baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
 			return planJoinedUnit(root, baseTree, unit, unitTree, plan)
 		},
@@ -61,14 +58,6 @@ func NewStore(root string, prober identity.Prober) Store {
 			},
 		},
 	}
-}
-
-// WithReassembly returns a store using the supplied repository effects.
-func (store Store) WithReassembly(assemble func(string, []Unit) ([]string, error), remove func(string, string) error, rebuild func(string, string, string, string, []Unit) (string, error)) Store {
-	store.reassembly.assemble = assemble
-	store.reassembly.delete = remove
-	store.reassembly.rebuild = rebuild
-	return store
 }
 
 func (s Store) Liveness(p identity.Ref) identity.Liveness {

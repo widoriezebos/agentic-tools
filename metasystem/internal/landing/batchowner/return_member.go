@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -25,7 +24,7 @@ type MemberReturn struct {
 	// landing agent asks.
 	Person, Reason, Actor string
 	Now                   time.Time
-	Calls                 *BatchOwnerCallSet
+	Calls                 *LaneCallSet
 	// Fetch fetches origin's main into the lane checkout and names its tree.
 	Fetch func(checkout string) (string, error)
 }
@@ -100,12 +99,7 @@ func ReturnMember(request MemberReturn) (MemberReturnReport, error) {
 	// The return's goal writes are the lane's and go through its
 	// publication boundary (K3) as this return: a person's, which a paused
 	// lane admits, or the agent's.
-	invoke := func() ownercall.Invocation {
-		invocation := ownercall.FromThisProcess(LandingOwnerLineage)
-		invocation.Ledger = laneLedger(home, lane.OpReturn, authority)
-		return invocation
-	}
-	seams := returnSeamsAt(request.Checkout, request.Install, func() string { return tree }, request.Calls, invoke, home)
+	seams := returnSeamsAt(request.Checkout, request.Install, func() string { return tree }, request.Calls, laneLedger(home, lane.OpReturn, authority), home)
 	failures, returnErr := batch.ReturnUnits(store, batchID, tree, request.Actor, request.Now, seams)
 	for _, failure := range failures {
 		if failure.GoalID == request.Member {

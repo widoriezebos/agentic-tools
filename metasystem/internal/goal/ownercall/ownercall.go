@@ -10,7 +10,7 @@
 // The supplied identity is fixed per call edge (VOA-02-R2): an edge that
 // replaced a child supplies the current process, because that is the parent
 // the child observed; a process entry supplies its own caller, as it always
-// did; the landing owner supplies itself.
+// did; the landing lane supplies itself.
 package ownercall
 
 import (

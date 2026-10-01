@@ -1,11 +1,12 @@
 package gaterun
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func TestRegisterThenRunningIsTrueForLiveGate(t *testing.T) {
