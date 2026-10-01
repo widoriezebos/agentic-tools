@@ -1453,6 +1453,11 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			currentEpoch := f.StopCapability.ClaimEpoch
 			samePair := f.Claimed.Machine == targetMachine && f.Claimed.Lineage == targetLineage
 			if samePair {
+				if r.EpochAuthority == EpochAuthorityLane && rebindEpoch == targetClaimEpoch && targetClaimEpoch == currentEpoch && batch == f.Claimed.HandedOver.Batch {
+					// The lane's renewal another call already made: the
+					// claim is at the asked epoch (R-129-ui).
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s already holds claim %d", id, currentEpoch)}
+				}
 				if rebindEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
 					return nil, fmt.Errorf("goal %s: a handover to the same session must renew its claim (%d is not after %d)", id, targetClaimEpoch, currentEpoch)
 				}

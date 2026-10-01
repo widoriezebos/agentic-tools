@@ -105,6 +105,10 @@ func PublishError(verb string, res goal.PublishResult, err error) error {
 	if err != nil {
 		return fmt.Errorf("goal %s: %w", verb, err)
 	}
+	if res.Unchanged {
+		// An idempotent repeat: the effect already holds.
+		return nil
+	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		return fmt.Errorf("goal %s: outcome=%s tip=%s detail=%s", verb, res.Outcome, res.Tip, res.Detail)
 	}

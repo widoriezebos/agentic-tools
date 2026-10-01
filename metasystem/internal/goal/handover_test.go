@@ -453,6 +453,12 @@ func TestLaneEpochAuthorityRenewsOnlyTheLanesClaim(t *testing.T) {
 	if res, err := Handover(lane, "lane-held", "lane-host", LaneClaimLineage, 4, "batch-l", alive); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("lane renewal at its new epoch: %+v %v", res, err)
 	}
+	// A concurrent renewal to the same epoch finds it done: unchanged.
+	again := lane
+	again.Ulid = "01J5X00000000000000000HM06"
+	if res, err := Handover(again, "lane-held", "lane-host", LaneClaimLineage, 4, "batch-l", alive); err != nil || !res.Unchanged {
+		t.Fatalf("a repeated lane renewal at its epoch: %+v %v", res, err)
+	}
 	tree, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if got := tree.Live["lane-held"]; got.StopCapability.ClaimEpoch != 4 || got.Claimed.HandedOver.Batch != "batch-l" || got.Claimed.HandedOver.FromMachine != "mac-studio" {
 		t.Fatalf("renewed claim = %+v %+v", got.Claimed, got.StopCapability)

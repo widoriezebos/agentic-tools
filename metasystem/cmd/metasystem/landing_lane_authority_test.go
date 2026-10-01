@@ -184,6 +184,9 @@ type laneReturnBed struct {
 	person      error
 	agent       error
 	engineCalls int
+	// installationRoot is the lane's installation; empty is the seat's
+	// own ledger checkout standing in for it.
+	installationRoot string
 }
 
 func newLaneReturnBed(t *testing.T) *laneReturnBed {
@@ -238,8 +241,13 @@ func (bed *laneReturnBed) run(t *testing.T, words ...string) (int, intentResult)
 			}
 			return "Wido", nil
 		},
-		agent:        func(string) error { return bed.agent },
-		installation: func(string) (string, error) { return bed.seat, nil },
+		agent: func(string) error { return bed.agent },
+		installation: func(string) (string, error) {
+			if bed.installationRoot != "" {
+				return bed.installationRoot, nil
+			}
+			return bed.seat, nil
+		},
 		engine: func(string, string, []string) (laneengine.Identity, error) {
 			bed.engineCalls++
 			return laneengine.Identity{Running: "enrolled"}, nil
@@ -315,9 +323,14 @@ func TestLandingReturnRedNeedsItsRedAttemptAndHonoursThePause(t *testing.T) {
 	if file := bed.ledger(t); file.Claimed != nil && file.Claimed.Lineage == lane.ClaimLineage {
 		t.Fatalf("the ledger still shows the lane holding the goal: %+v", file.Claimed)
 	}
+	// A repeat finds the effect holding: unchanged, even while paused,
+	// since it starts no lane work.
+	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
 	again, repeat := bed.run(t, "standing-validation", "--disposition", "red", "--reason", "its own test fails")
 	if again != 0 || repeat.Outcome != intentUnchanged {
-		t.Fatalf("a repeat of a confirmed return = %d %+v", again, repeat)
+		t.Fatalf("a repeat of a confirmed return while paused = %d %+v", again, repeat)
 	}
 }
 
@@ -335,7 +348,11 @@ func TestAPersonsReturnRunsOnAnyEngineWhilePaused(t *testing.T) {
 		t.Fatalf("a person's return with no person proven = %d %+v", code, result)
 	}
 	bed.person = nil
-	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the design changes first")
+	if code, result := bed.run(t, "standing-validation", "--disposition", "person", "--by", "Someone"); code == 0 || result.Outcome != intentRefused ||
+		!strings.Contains(result.Summary, "enrolled for Wido, not Someone") || !bed.laneHolds(t) {
+		t.Fatalf("a return in another person's name = %d %+v", code, result)
+	}
+	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the design changes first", "--by", "Wido")
 	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
 		t.Fatalf("a person's return while paused = %d %+v", code, result)
 	}
@@ -548,5 +565,106 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 	}
 	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != before {
 		t.Fatalf("a second renewal wrote the ledger")
+	}
+}
+
+// While an older engine's lane is still recorded, landing set names the
+// person's return through it for each goal the old owner holds; and that
+// return runs on the older record, under the old owner's own authority,
+// and gives the goal back (design r10 §5, R9-01).
+func TestOldOwnerClaimsReturnThroughTheOldAuthority(t *testing.T) {
+	t.Parallel()
+	verbs := newLaneVerbBed(t)
+	verbs.oldClaims = []string{"goal-a"}
+	if err := os.MkdirAll(lane.HostDir(verbs.home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lane.RecordPath(verbs.home), []byte(`{"root": "`+verbs.landingB+`", "registeredBy": "Wido", "at": "2026-09-29T10:00:00Z"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := verbs.run(t, "landing", "set", verbs.landingA, "--json")
+	var refused intentResult
+	if err := json.Unmarshal([]byte(stdout+stderr), &refused); err != nil {
+		t.Fatal(err)
+	}
+	if code == 0 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "landing", "return", "goal-a", "--disposition", "person"}) {
+		t.Fatalf("set with an old lane recorded = %d %+v", code, refused)
+	}
+
+	bed := newLaneReturnBed(t)
+	// The ledger's entry as the join left it, now held under the old
+	// owner's lineage.
+	if err := os.WriteFile(filepath.Join(bed.seat, "plans", "goals", "standing-validation.md"), goal.RenderFile(bed.ledger(t)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	amendSyncedGoalFixture(t, bed.seat, "the old owner holds it", func(file *goal.GoalFile) {
+		file.Claimed.Lineage = batchowner.LandingOwnerLineage
+	})
+	record := bed.record
+	data, err := json.Marshal(map[string]any{"root": record.Root, "registeredBy": "Wido", "at": record.At})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lane.RecordPath(bed.home), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Read(bed.home); err == nil {
+		t.Fatal("the bed's record is not an older engine's")
+	}
+	bed.person = nil
+	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the lane changes owner")
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("a person's return through the older lane = %d %+v", code, result)
+	}
+	if file := bed.ledger(t); file.Claimed != nil && file.Claimed.Lineage == batchowner.LandingOwnerLineage {
+		t.Fatalf("the old owner still holds the goal: %+v", file.Claimed)
+	}
+}
+
+// A member whose seat session still runs is handed back to that session,
+// under the lane's claim identity, through the real ledger: the lane acts
+// from its own installation (a worktree of the seat's repository, named
+// lane-host, sharing the ledger), and the seat's live holder takes the
+// claim back at its own epoch.
+func TestLaneHandsAClaimBackToALiveSeat(t *testing.T) {
+	t.Parallel()
+	base := newLaneAuthorityBed(t)
+	if _, err := base.join(t); err != nil {
+		t.Fatal(err)
+	}
+	bed := &laneReturnBed{laneAuthorityBed: base}
+	install := filepath.Join(filepath.Dir(base.lane), "lane-install")
+	goalSyncMutationGit(t, base.seat, "config", "extensions.worktreeConfig", "true")
+	goalSyncMutationGit(t, base.seat, "worktree", "add", "-q", "--detach", install, "HEAD")
+	goalSyncMutationGit(t, install, "config", "--worktree", "metasystem.goal.machine", "lane-host")
+	pinProofBinaryFixture(t, install)
+	plantFenceEngine(t, install)
+	// The seat's session that joined still runs: this process, holding the
+	// seat checkout under the seat's lineage.
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe: %s %v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(base.seat, "session-m1", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-return-test", "metasystem", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := lease.RequireHolder(base.seat, int64(os.Getpid()), nil)
+	if err != nil || !holder.Holder || holder.ClaimEpoch == nil {
+		t.Fatalf("the seat's session holds its checkout: %+v %v", holder, err)
+	}
+	bed.person = nil
+	bed.installationRoot = install
+	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "back to its seat")
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("return to a live seat = %d %+v", code, result)
+	}
+	file := base.ledger(t)
+	if file.Claimed == nil || file.Claimed.Machine != "mac-cli" || file.Claimed.Lineage != "m1" || file.Claimed.HandedOver != (goal.HandedOver{}) ||
+		file.StopCapability.ClaimEpoch != *holder.ClaimEpoch {
+		t.Fatalf("the claim handed back = %+v %+v; want mac-cli+m1 at the seat's epoch %d", file.Claimed, file.StopCapability, *holder.ClaimEpoch)
+	}
+	record, err := batch.NewStore(base.lane, nil).Load(laneAuthorityBatch)
+	if err != nil || record.Units[0].ReturnDisposition != batch.ReturnHandedBack {
+		t.Fatalf("the member's return = %+v %v; want handed back", record.Units, err)
 	}
 }

@@ -923,12 +923,26 @@ func (inv *intentInvocation) oldOwnerHolds(owners laneVerbOwners, layout lane.La
 	if len(held) == 0 {
 		return nil
 	}
-	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root),
-		Summary:    fmt.Sprintf("the old landing owner still holds %s (%s), so nothing was registered", textui.Count(len(held), "goal", "goals"), strings.Join(held, ", ")),
+	summary := fmt.Sprintf("the old landing owner still holds %s (%s), so nothing was registered", textui.Count(len(held), "goal", "goals"), strings.Join(held, ", "))
+	details := []string{"refused because: " + codeLandingOldOwnerHolds + ": the new lane's claim identity activates only once every claim of lineage " + batchowner.LandingOwnerLineage + " is landed or returned"}
+	if home, err := owners.home(); err == nil {
+		if older, ok, _ := lane.Read(home); ok && older.Root != "" {
+			// The old lane's checkout is still recorded: a person returns
+			// each member through it, under the old owner's own authority,
+			// which hands the goal back to its seat and settles its batch.
+			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root), Summary: summary,
+				next:       inv.publicArgv("landing", "return", held[0], "--disposition", batch.DispositionPerson),
+				nextReason: "returns it through the old owner to its seat; the same for each goal named, then run landing set again",
+				Details:    append(details, "the old lane is "+older.Root)}
+		}
+	}
+	// No lane is recorded any more, so no batch can give the goal back:
+	// releasing it is what is left, and it says what that loses.
+	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root), Summary: summary,
 		next:       inv.publicArgv("goal", "release", held[0], "--reason", "the landing lane changes owner"),
-		nextReason: "gives it back; the same for each goal named, then run metasystem landing set " + root + " again",
-		Details: []string{"refused because: " + codeLandingOldOwnerHolds + ": the new lane's claim identity activates only once every claim of lineage " + batchowner.LandingOwnerLineage + " is landed or returned",
-			"a person gives each back: metasystem goal release G --reason TEXT"}}
+		nextReason: "frees it for its seat to claim again (no lane is recorded to hand it back); the same for each goal named",
+		Details: append(details, "a person gives each back: metasystem goal release G --reason TEXT",
+			"a release leaves the goal unclaimed: its seat claims it again to land it")}
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person

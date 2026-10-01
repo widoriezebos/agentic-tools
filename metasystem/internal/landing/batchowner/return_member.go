@@ -7,7 +7,6 @@ package batchowner
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -64,10 +63,21 @@ func ReturnMember(request MemberReturn) (MemberReturnReport, error) {
 		batchID = found
 	}
 	report.Batch = batchID
+	fetch := request.Fetch
+	if fetch == nil {
+		fetch = fetchLandingBaseTree
+	}
 	if record, err := store.Load(batchID); err == nil {
-		report.Repeat = slices.ContainsFunc(record.Units, func(unit batch.Unit) bool {
-			return unit.GoalID == request.Member && unit.Disposition == request.Disposition && unit.ReturnDisposition != ""
-		})
+		for _, unit := range record.Units {
+			if unit.GoalID == request.Member && unit.Disposition == request.Disposition && unit.ReturnDisposition != "" {
+				report.Repeat, report.Evidence = true, unit.Evidence
+			}
+		}
+	}
+	if report.Repeat {
+		// The return already settled: a repeat only reads it back, so a
+		// pause, which holds new lane work, does not refuse it.
+		return confirmMemberReturn(store, request, report, fetch)
 	}
 	authority := lane.AuthorityAgent
 	if request.Person != "" {
@@ -79,10 +89,6 @@ func ReturnMember(request MemberReturn) (MemberReturnReport, error) {
 		return err
 	}); err != nil {
 		return report, err
-	}
-	fetch := request.Fetch
-	if fetch == nil {
-		fetch = fetchLandingBaseTree
 	}
 	tree, err := fetch(request.Checkout)
 	if err != nil {

@@ -17,7 +17,7 @@ func evidenceStore(t *testing.T) Store {
 	t.Helper()
 	store := NewStore(t.TempDir(), nil)
 	var units []Unit
-	for _, member := range []string{"m-red", "m-unavailable", "m-green", "m-conflict", "m-seam", "m-person"} {
+	for _, member := range []string{"m-red", "m-unavailable", "m-green", "m-conflict", "m-seam", "m-person", "m-flaky", "m-recovered"} {
 		units = append(units, Unit{GoalID: member, Chain: "chain-" + member, SeatRoot: "/seat", State: UnitJoined,
 			Claim: Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}})
 	}
@@ -28,6 +28,10 @@ func evidenceStore(t *testing.T) Store {
 		{ID: "a3", Subject: SubjectBatch, Outcome: AttemptUnavailable, Names: []string{"m-unavailable", "m-green"}},
 		{ID: "a4", Subject: MemberSubject("m-green"), Outcome: AttemptGreen},
 		{ID: "a5", Subject: SubjectBase, Outcome: AttemptRed},
+		{ID: "a6", Subject: MemberSubject("m-flaky"), Outcome: AttemptRed},
+		{ID: "a7", Subject: MemberSubject("m-flaky"), Outcome: AttemptGreen},
+		{ID: "a8", Subject: SubjectBatch, Outcome: AttemptRed, Names: []string{"m-recovered"}},
+		{ID: "a9", Subject: MemberSubject("m-recovered"), Outcome: AttemptUnavailable},
 	} {
 		must(t, RecordProofAttempt(store, evidenceBatch, attempt, "lane:test", evidenceNow))
 	}
@@ -61,6 +65,10 @@ func TestReturnEvidencePerDisposition(t *testing.T) {
 		{"m-person", DispositionPerson, "", "", CodeReturnEvidenceMissing},
 		{"m-person", DispositionPerson, "Wido", "person Wido", ""},
 		{"m-red", "flaky", "", "", CodeReturnDispositionUnknown},
+		// The newest attempt naming the member speaks for it: a red then a
+		// green is not red now, nor a red then a run that could not start.
+		{"m-flaky", DispositionRed, "", "", CodeReturnEvidenceMissing},
+		{"m-recovered", DispositionRed, "", "", CodeReturnEvidenceMissing},
 		{"m-absent", DispositionPerson, "Wido", "", CodeReturnMemberAbsent},
 	} {
 		evidence, err := ReturnEvidence(record, row.member, row.disposition, row.person)

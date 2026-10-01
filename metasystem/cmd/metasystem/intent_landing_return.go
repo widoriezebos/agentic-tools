@@ -74,8 +74,17 @@ func runIntentLandingReturn(inv *intentInvocation) int {
 // engine identity asked for.
 func (inv *intentInvocation) personReturn() int {
 	owners, home, record, problem := inv.laneContext(true)
+	var incomplete *lane.Refusal
 	if problem != nil {
-		return inv.render(*problem)
+		// An older engine's lane record still names its checkout: a person
+		// returns its members through it, each under the authority that
+		// holds it (the old owner's own), which is how its claims settle
+		// before a new registration (design r10 §5, R9-01).
+		older, ok, err := lane.Read(home)
+		if !ok || !errors.As(err, &incomplete) || incomplete.Code != lane.CodeRecordIncomplete || older.Root == "" {
+			return inv.render(*problem)
+		}
+		record = older
 	}
 	targets := laneTargets(record.Root)
 	member, usage := inv.returnMember(targets, batch.DispositionPerson)
@@ -89,8 +98,10 @@ func (inv *intentInvocation) personReturn() int {
 		refused.Summary = "only a person gives a member back at their word, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was returned"
 		return inv.render(*refused)
 	}
-	if named := strings.TrimSpace(inv.input.text("by")); named != "" {
-		person = named
+	if named := strings.TrimPrefix(strings.TrimSpace(inv.input.text("by")), "human:"); named != "" && named != person {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "this terminal is enrolled for " + person + ", not " + named + ", so nothing was returned",
+			next:    withoutOption(inv.typedArgv(), "by"), nextReason: "the enrolled name is filled in"})
 	}
 	installation, err := owners.installation(record.Root)
 	if err != nil {

@@ -172,7 +172,10 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 		}
 		return "person " + strings.TrimSpace(person), nil
 	case DispositionRed:
-		unavailable := false
+		// Only the newest attempt that names the member speaks for it: a
+		// red followed by a green, or by a run that could not start, is
+		// not evidence that the member fails now.
+		message := fmt.Sprintf("no failing test run of this batch names %s, so it was not returned as red", member)
 		for index := len(record.Attempts) - 1; index >= 0; index-- {
 			attempt := record.Attempts[index]
 			if !names(attempt, member) {
@@ -182,12 +185,11 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 			case AttemptRed:
 				return "attempt " + attempt.ID + " (" + attempt.Subject + ")", nil
 			case AttemptUnavailable:
-				unavailable = true
+				message = fmt.Sprintf("the tests of %s could not run, which is not its failure, so it was not returned as red", member)
+			default:
+				message = fmt.Sprintf("the newest test run of %s passed, so it was not returned as red", member)
 			}
-		}
-		message := fmt.Sprintf("no failing test run of this batch names %s, so it was not returned as red", member)
-		if unavailable {
-			message = fmt.Sprintf("the tests of %s could not run, which is not its failure, so it was not returned as red", member)
+			break
 		}
 		return refuse(CodeReturnEvidenceMissing, message)
 	}
