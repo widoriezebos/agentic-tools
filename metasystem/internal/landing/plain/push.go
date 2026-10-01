@@ -95,7 +95,7 @@ func provenGreen(install, tree string) *Refusal {
 	result, ok, err := ResultFor(install, tree)
 	switch {
 	case err != nil:
-		return &Refusal{Code: CodeUnproven, Reason: "the proof results can't be read (" + err.Error() + "), so nothing was pushed", Next: "landing prove"}
+		return &Refusal{Code: CodeUnproven, Reason: "the results of landing prove can't be read (" + err.Error() + "), so nothing was pushed", Next: "landing prove"}
 	case !ok:
 		return &Refusal{Code: CodeUnproven, Reason: "HEAD's tree " + Short(tree) + " was never proven, so nothing was pushed", Next: "landing prove"}
 	case result.Result != Green:

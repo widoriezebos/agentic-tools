@@ -17,6 +17,7 @@ var _ = enforceMessages(
 	"cmd/metasystem/intent_manual_submit.go",
 	"cmd/metasystem/landing_gate.go",
 	"cmd/metasystem/landing_path.go",
+	"cmd/metasystem/landing_plain.go",
 	"cmd/metasystem/landing_stop.go",
 	"cmd/metasystem/landing_verbs.go",
 	"internal/landing",

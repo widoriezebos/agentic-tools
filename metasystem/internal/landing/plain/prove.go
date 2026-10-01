@@ -177,7 +177,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		log := filepath.Join(logs, id+".log")
 		pid, err := seams.Launch([]string{executable, "landing", "prove", "--wait", "--attempt", id}, checkout, log)
 		if err != nil {
-			return fmt.Errorf("start the proof of tree %s: %w", Short(tree), err)
+			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
 		}
 		started = Running{Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
 		return writeRunning(install, started)

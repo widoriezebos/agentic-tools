@@ -510,7 +510,7 @@ type retiredIntentAction struct{ why, next string }
 
 var retiredIntentActions = map[string]retiredIntentAction{
 	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
-	"landing publish": {why: "the lane's landing is being rebuilt", next: "metasystem landing status"},
+	"landing publish": {why: "landing push puts a proven HEAD on main", next: "metasystem landing push"},
 }
 
 // writeUnknownIntentAction refuses an action the object does not have.

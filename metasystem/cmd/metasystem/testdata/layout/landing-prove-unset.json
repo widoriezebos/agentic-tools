@@ -1,0 +1,26 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing prove",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "this landing lane has no command that proves HEAD, so nothing was proven",
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "set",
+      "landing.prove.command",
+      "COMMAND"
+    ],
+    "reason": "run in the lane checkout"
+  }
+}
+
+--

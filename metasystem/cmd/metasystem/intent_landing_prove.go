@@ -92,13 +92,13 @@ func (owners laneVerbOwners) proveSeams() plain.ProveSeams {
 
 func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
-		object: "landing", action: "prove", audience: "both", summary: "run the project's proof command over the landing checkout's HEAD",
+		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
 		usage: []string{"metasystem landing prove [--wait]"},
 		details: []string{"Runs the shell command set as landing.prove.command in the lane checkout at HEAD, with LANDING_TREE and LANDING_COMMIT naming what it proves; exit 0 is green, anything else red.",
-			"The proof starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
-			"Asked again while that tree's proof runs, it starts nothing; while another tree's proof runs, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--wait runs the proof in this command and says its result. Refused while the lane is stopped."},
-		flags: []intentFlag{{name: "wait", usage: "run the proof here and wait for its result"},
+			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
+			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
+			"--wait proves in this command and says the result. Refused while the lane is stopped."},
+		flags: []intentFlag{{name: "wait", usage: "prove here and wait for the result"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
 		examples: []string{"metasystem landing prove"},
@@ -113,8 +113,8 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	command, _, err := config.Get(config.GetParams{Key: proveCommandKey, ConfPath: filepath.Join(admitted.installation, "metasystem.conf"), Default: "", DefaultSet: true})
 	if err != nil || strings.TrimSpace(command) == "" {
 		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "this landing lane has no proof command, so nothing was proven",
-			next:    inv.publicArgv("settings", "set", proveCommandKey, "COMMAND"), nextReason: "in the lane checkout: the shell command that proves HEAD"}
+			Summary: "this landing lane has no command that proves HEAD, so nothing was proven",
+			next:    inv.publicArgv("settings", "set", proveCommandKey, "COMMAND"), nextReason: "run in the lane checkout"}
 		if err != nil {
 			result.Details = []string{err.Error()}
 		}
@@ -142,11 +142,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		// as a detached proof does; this command's own output is its result.
 		logs := filepath.Join(plain.Dir(admitted.installation), "proofs")
 		if err := os.MkdirAll(logs, 0o755); err != nil {
-			return inv.render(landingLaneFailure(targets, "the proof's log can't be created, so nothing was proven", err))
+			return inv.render(landingLaneFailure(targets, "the log of landing prove can't be created, so nothing was proven", err))
 		}
 		file, err := os.Create(filepath.Join(logs, time.Now().UTC().Format("20060102T150405.000000000Z")+".log"))
 		if err != nil {
-			return inv.render(landingLaneFailure(targets, "the proof's log can't be created, so nothing was proven", err))
+			return inv.render(landingLaneFailure(targets, "the log of landing prove can't be created, so nothing was proven", err))
 		}
 		defer file.Close()
 		output = file
@@ -157,11 +157,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Green {
-		summary := "the proof of " + words + " is green; landing push may put it on main"
+		summary := words + " is proven green; landing push may put it on main"
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: result,
-		Summary: "the proof of " + words + " is red; its log is " + result.Log,
+		Summary: words + " is proven red; its log is " + result.Log,
 		next:    inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), nextReason: "gives the goal that broke it back to its seat"})
 }
 
@@ -172,7 +172,7 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: busy.Error(),
 			next: inv.publicArgv("landing", "status"), nextReason: "shows when it ends"}
 	}
-	return landingLaneFailure(targets, "the proof could not run: "+oneLine(err.Error()), err)
+	return landingLaneFailure(targets, "landing.prove.command could not run: "+oneLine(err.Error()), err)
 }
 
 func landingLaneFailure(targets []intentTarget, summary string, err error) intentResult {
@@ -225,8 +225,8 @@ func withRunningProof(view func(*textui.Page), running *landingRunningProof) fun
 		}
 		words := "proving tree " + shortLandingID(running.Tree) + " as attempt " + running.Attempt + ", " + since
 		if running.State == "died" {
-			words = "the proof of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next landing prove runs it again"
+			words = "proving tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next landing prove runs it again"
 		}
-		page.Section("Proof", "").Text(words)
+		page.Section("Proving", "").Text(words)
 	}
 }

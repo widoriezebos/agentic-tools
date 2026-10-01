@@ -51,7 +51,7 @@ func ProofHold(install string, seams ProveSeams) (string, error) {
 	if err != nil || !recorded || !alive {
 		return "", err
 	}
-	return fmt.Sprintf("the proof of tree %s (attempt %s) runs since %s; the agent is woken when it ends", Short(running.Tree), running.Attempt, running.Since), nil
+	return fmt.Sprintf("tree %s is being proven (attempt %s, since %s); the agent is woken when it ends", Short(running.Tree), running.Attempt, running.Since), nil
 }
 
 // KeeperWake is the lane keeper's wake source for the host lane at home:

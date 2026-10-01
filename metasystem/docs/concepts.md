@@ -142,13 +142,21 @@ nothing else touches. A seat's checkout is full of half-built work,
 worktrees and records in flight; the lane's checkout holds only what it
 is landing, so a landing never depends on the state of anyone's seat.
 
-**What it does now.** The lane's hand-in is being rebuilt. While a lane
-is registered, `metasystem work land` refuses and names
-`metasystem landing unset`, which lets each seat land its own work; no
-seat silently lands beside a lane. The lane checkout's steward keeps one
-landing agent: it starts it when the lane has work, the lane is not
-stopped, no landing agent runs and no hold stands. The lane has no source
-of work yet, so no agent starts.
+**What it does now.** The agent is in charge; the lane gives it only
+what it can't do alone. While a lane is registered, `metasystem work land G`
+runs the seat's own reads and gates, then hands the goal's branch to the
+lane: one line in `artifacts/agents/landing/queue.jsonl` of the lane's
+installation. The lane checkout's steward wakes one landing agent when a
+line is neither returned nor in main, or when a proof ended since its last
+start; it holds while a proof runs. The agent merges the waiting branches
+on latest main itself, runs `landing prove` (the project's own
+`landing.prove.command`, detached, so it outlives the session), and
+`landing push` puts HEAD on main only when its exact tree is green and the
+push is a fast-forward. A branch that breaks the tree goes back with
+`landing return GOAL --reason TEXT`. A line is landed when main contains
+its commit; the seat sees it at its next `work land G` and concludes the
+goal itself. A job's chain (`work land j2:J`) and a hand-made change
+(`--message`) are refused beside a lane.
 
 **Stopped is not gone.** A stopped lane (`metasystem landing stop`)
 starts no landing agent. A pause that cannot be read counts as a pause,

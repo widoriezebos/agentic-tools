@@ -125,7 +125,7 @@ func landingIntentCommands() []intentCommand {
 			object: "landing", action: "set", audience: "both", summary: "register or move this computer's landing lane",
 			usage: []string{"metasystem landing set PATH [--by NAME]"},
 			details: []string{"A person's act at an enrolled terminal: only landing set registers a lane, never a seat's landing.batch-root.",
-				"PATH is a dedicated landing checkout, the top folder of a git clone whose MetaSystem installation is PATH or PATH/metasystem; while it is registered, work land refuses on every seat of this computer until the lane's hand-in is rebuilt (landing unset lets each seat land its own work).",
+				"PATH is a dedicated landing checkout, the top folder of a git clone whose MetaSystem installation is PATH or PATH/metasystem; while it is registered, work land G on every seat of this computer hands the goal's branch to it (landing unset lets each seat land its own work).",
 				"PATH must have a machine nickname (git -C PATH config metasystem.goal.machine NAME): the lane's claims name it, so a checkout without it is refused.",
 				"Each registration takes a new custody epoch. The same PATH again changes nothing."},
 			flags:    []intentFlag{byFlag},
@@ -329,7 +329,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		}
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
-			section.KV("proof", textui.Plain(proof.Result+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+			section.KV("proven", textui.Plain(proof.Result+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))

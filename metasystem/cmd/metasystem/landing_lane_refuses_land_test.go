@@ -17,7 +17,7 @@ import (
 // a goal's branch, so a seat never silently lands its own work beside it;
 // line 2 is the one command.
 const (
-	laneRefusalLine1 = "✗ this computer has a landing lane, which takes only a goal's branch (work land G)"
+	laneRefusalLine1 = "✗ this computer has a landing lane, which lands only a goal's branch; nothing was landed"
 	laneRefusalLine2 = "  → metasystem landing unset  lets this seat land its own work"
 )
 

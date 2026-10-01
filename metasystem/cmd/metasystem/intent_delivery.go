@@ -157,9 +157,7 @@ func intentDeliveryCommands() []intentCommand {
 				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
 				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
 				"The read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
-				"While this computer has a landing lane (metasystem landing status shows it), work land G hands the goal's branch to the lane instead:",
-				"after the same reads and gates, one line in the lane's queue, and its landing agent proves and pushes it. A repeat shows whether it",
-				"waits, landed (main contains it; then goal done G) or was returned, with the reason.",
+				"While this computer has a landing lane (metasystem landing status shows it), work land G hands the goal's branch to the lane instead, after the same reads and gates: one line in the lane's queue, which its landing agent proves and pushes. A repeat shows whether it waits, landed (main contains it; then goal done G) or was returned, with the reason.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
 				"--message lands a hand-made change instead: the named paths (or the staged set) are staged and committed through the commit",
@@ -1612,7 +1610,7 @@ func (inv *intentInvocation) laneRegistered(targets []intentTarget) *intentResul
 		return problem
 	}
 	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary: "this computer has a landing lane, which takes only a goal's branch (work land G)",
+		Summary: "this computer has a landing lane, which lands only a goal's branch; nothing was landed",
 		next:    inv.publicArgv("landing", "unset"), nextReason: "lets this seat land its own work"}
 }
 
