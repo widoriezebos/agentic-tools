@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -95,7 +96,7 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	probes := u.Custody
 	if probes == nil {
 		probes = func(layout lane.Layout) custody.Probes {
-			return custody.ProductionProbes(u.Home, string(layout.Install), true)
+			return laneprobe.Production(u.Home, string(layout.Install), true)
 		}
 	}
 	held, err := custody.Settle(u.Home, probes(layout))

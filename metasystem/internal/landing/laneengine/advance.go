@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -65,7 +66,7 @@ type Conditions struct {
 	BatchInFlight func() (string, error)
 	// Custody reads the lane's one custody barrier (K9): every execution
 	// the kernel launched and the installation's proof leases.
-	Custody func() (lane.Settlement, error)
+	Custody func() (custody.Settlement, error)
 	// Override records a person's word past the custody records that read
 	// unknown.
 	Override func(by string) ([]string, error)
@@ -94,18 +95,20 @@ func pausePath(home string) string {
 // ProductionConditions holds the host's proving lock and flock, and reads the
 // host's pause and the lane checkout's batch records.
 func ProductionConditions(home, checkout string) Conditions {
-	installation := checkout
+	// The lease filter needs the lane's installation; a layout that can't be
+	// read leaves it unknown, which reads the leases as unknown custody.
+	installation := ""
 	if layout, err := lane.NewLayout(checkout); err == nil {
 		installation = string(layout.Install)
 	}
 	return Conditions{
 		// The advance holds the proving lock itself, so custody reads the
 		// store and the leases only.
-		Custody: func() (lane.Settlement, error) {
-			return custody.Settle(home, custody.ProductionProbes(home, installation, false))
+		Custody: func() (custody.Settlement, error) {
+			return custody.Settle(home, laneprobe.Production(home, installation, false))
 		},
 		Override: func(by string) ([]string, error) {
-			return custody.Override(home, by, custody.ProductionProbes(home, installation, false))
+			return custody.Override(home, by, laneprobe.Production(home, installation, false))
 		},
 		Hold: func() (func(), error) {
 			if err := os.MkdirAll(lane.HostDir(home), 0o700); err != nil {

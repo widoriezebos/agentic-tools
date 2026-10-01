@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -47,7 +48,7 @@ func productionLaneValidate(request laneValidateRequest) (gaterun.ValidateOutcom
 	if err := gate(func() error { return nil }); err != nil {
 		return gaterun.ValidateOutcome{}, err
 	}
-	probes := custody.ProductionProbes(request.Home, request.Installation, true)
+	probes := laneprobe.Production(request.Home, request.Installation, true)
 	if request.Force {
 		if _, err := custody.Override(request.Home, request.By, probes); err != nil {
 			return gaterun.ValidateOutcome{}, err

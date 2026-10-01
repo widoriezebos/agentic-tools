@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -65,7 +64,7 @@ func TestStartRecordsChildAndGroupAndSettlesAfterItEnds(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
 	pid := int64(command.Process.Pid)
-	if record.Child == "" || len(record.Groups) != 1 || record.Groups[0] != pid {
+	if record.Child == "" || len(record.Groups) != 1 || record.Groups[0].ID != pid || record.Groups[0].Leader != record.Child {
 		t.Fatalf("record = %+v; want the child and its own group %d", record, pid)
 	}
 	if group, err := syscall.Getpgid(int(pid)); err != nil || int64(group) != pid {
@@ -125,14 +124,14 @@ func TestJudgeReadsProcessesNotRunRecords(t *testing.T) {
 	}{
 		{"starting", Record{Issuer: self}, Probes{}, Live},
 		{"launcher died before binding", Record{Issuer: gone}, Probes{}, Unknown},
-		{"child alive", Record{Issuer: self, Child: self, Groups: []int64{9}}, Probes{Group: groupProbe(nil, nil)}, Live},
-		{"child ended, group empty", Record{Issuer: self, Child: gone, Groups: []int64{9}}, Probes{Group: groupProbe(nil, nil)}, Dead},
-		{"child ended, group still has members", Record{Issuer: self, Child: gone, Groups: []int64{9}}, Probes{Group: groupProbe(map[int64]bool{9: true}, nil)}, Live},
-		{"group membership unreadable", Record{Issuer: self, Child: gone, Groups: []int64{9}}, Probes{Group: groupProbe(nil, map[int64]bool{9: true})}, Unknown},
+		{"child alive", Record{Issuer: self, Child: self, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(nil, nil)}, Live},
+		{"child ended, group empty", Record{Issuer: self, Child: gone, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(nil, nil)}, Dead},
+		{"child ended, group still has members", Record{Issuer: self, Child: gone, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(map[int64]bool{9: true}, nil)}, Live},
+		{"group membership unreadable", Record{Issuer: self, Child: gone, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(nil, map[int64]bool{9: true})}, Unknown},
 		{"child identity garbled", Record{Issuer: self, Child: "not-a-ref"}, Probes{}, Unknown},
 		{"in-process work running", Record{Issuer: self, Child: self, InProcess: true}, Probes{}, Live},
-		{"in-process work ended", Record{Issuer: self, Child: self, InProcess: true, Ended: true, Groups: []int64{9}}, Probes{Group: groupProbe(nil, nil)}, Dead},
-		{"in-process work ended, its child group runs", Record{Issuer: self, Child: self, InProcess: true, Ended: true, Groups: []int64{9}}, Probes{Group: groupProbe(map[int64]bool{9: true}, nil)}, Live},
+		{"in-process work ended", Record{Issuer: self, Child: self, InProcess: true, Ended: true, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(nil, nil)}, Dead},
+		{"in-process work ended, its child group runs", Record{Issuer: self, Child: self, InProcess: true, Ended: true, Groups: []Group{{ID: 9}}}, Probes{Group: groupProbe(map[int64]bool{9: true}, nil)}, Live},
 		{"cancelled", Record{Issuer: gone, Cancelled: true}, Probes{}, Dead},
 	}
 	for _, tc := range cases {
@@ -234,31 +233,6 @@ func TestOverrideSettlesOnlyUnknownInThePersonsName(t *testing.T) {
 	}
 }
 
-// The lane's leases are those taken for its installation, plus any whose
-// record can't be read; another installation's leases and an older
-// engine's are not the lane's.
-func TestLaneLeasesAreTheInstallationsAndTheUnreadable(t *testing.T) {
-	t.Parallel()
-	installation := filepath.Join(t.TempDir(), "lane", "metasystem")
-	reports := []proofrun.HostLeaseReport{
-		{Lease: "lease-heavy-lane", Owner: proofrun.ProcessIdentity{Pid: 5}, Conf: filepath.Join(installation, "metasystem.conf"), State: proofrun.HostLeaseLive},
-		{Lease: "lease-heavy-seat", Owner: proofrun.ProcessIdentity{Pid: 6}, Conf: "/seat/metasystem/metasystem.conf", State: proofrun.HostLeaseLive},
-		{Lease: "lease-heavy-older", Owner: proofrun.ProcessIdentity{Pid: 7}, State: proofrun.HostLeaseLive},
-		{Lease: "lease-heavy-torn", State: proofrun.HostLeaseUnknown, Reason: "unreadable"},
-	}
-	leases, err := laneLeases(installation, func(string) ([]proofrun.HostLeaseReport, error) { return reports, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, lease := range leases {
-		names = append(names, lease.Name)
-	}
-	if strings.Join(names, ",") != "lease-heavy-lane,lease-heavy-torn" {
-		t.Fatalf("lane leases = %q", names)
-	}
-}
-
 // The barrier a new execution passes: live custody holds it, force or not;
 // unknown custody holds it unless a person forced it.
 func TestClearHoldsNewWorkWhileCustodyIsLiveOrUnknown(t *testing.T) {
@@ -283,8 +257,9 @@ func TestClearHoldsNewWorkWhileCustodyIsLiveOrUnknown(t *testing.T) {
 	}
 }
 
-// A group bound after the start (work the execution runs in a session of
-// its own) holds custody after the child has ended.
+// A group bound after the start (a proof launcher's suite, led by the
+// suite) holds custody after the work's own process has ended, while its
+// leader runs; once the leader has ended and the group is empty it settles.
 func TestBoundGroupHoldsAfterTheChildEnds(t *testing.T) {
 	t.Parallel()
 	home := testHome(t)
@@ -292,23 +267,124 @@ func TestBoundGroupHoldsAfterTheChildEnds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := BindGroup(home, record.ID, 1); err == nil {
+	if err := BindGroup(home, record.ID, identity.Ref{Pid: 1}); err == nil {
 		t.Fatal("process group 1 was bound")
 	}
 	if err := BindSelf(home, record.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := BindGroup(home, record.ID, 4242); err != nil {
+	suite := exec.Command("sleep", "120")
+	suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := suite.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = suite.Process.Kill(); _ = suite.Wait() })
+	leader, _, err := (identity.KernelProber{}).Probe(int64(suite.Process.Pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := BindGroup(home, record.ID, leader.Ref()); err != nil {
 		t.Fatal(err)
 	}
 	if err := End(home, record.ID); err != nil {
 		t.Fatal(err)
 	}
-	busy := Probes{Group: groupProbe(map[int64]bool{4242: true}, nil)}
-	if state, _ := Probe(home, record.ID, busy); state.State != Live {
+	if state, _ := Probe(home, record.ID, Probes{}); state.State != Live {
 		t.Fatalf("ended in-process work whose bound group runs = %+v; want live", state)
 	}
-	if state, _ := Probe(home, record.ID, Probes{Group: groupProbe(nil, nil)}); state.State != Dead {
-		t.Fatalf("ended in-process work with an empty group = %+v; want dead", state)
+	_ = suite.Process.Kill()
+	_ = suite.Wait()
+	if state, _ := Probe(home, record.ID, Probes{}); state.State != Dead {
+		t.Fatalf("ended in-process work with its bound group ended = %+v; want dead", state)
+	}
+}
+
+// F-1: a group whose leader has ended while its pid now belongs to an
+// unrelated process (after a crash or a reboot) is gone, although the
+// reused id's own group has members: the record settles instead of
+// holding the lane forever. Real processes: the "reused" pid is a live
+// process leading its own group; the record names an earlier process with
+// that pid.
+func TestReusedGroupPidSettles(t *testing.T) {
+	t.Parallel()
+	home := testHome(t)
+	unrelated := exec.Command("sleep", "120")
+	unrelated.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := unrelated.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unrelated.Process.Kill(); _ = unrelated.Wait() })
+	exact, _, err := (identity.KernelProber{}).Probe(int64(unrelated.Process.Pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier := exact.Ref()
+	earlier.StartedAtSec -= 3600
+	if earlier.StartedAtUnixMicro != 0 {
+		earlier.StartedAtUnixMicro -= 3600 * 1_000_000
+	}
+	if earlier.StartTicks != 0 {
+		earlier.StartTicks -= 360_000
+	}
+	record, err := Open(home, KindValidate, "validation cadence-run-1", custodyNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := BindChild(home, record.ID, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if members, err := GroupMembers(earlier.Pid); err != nil || !members {
+		t.Fatalf("the reused id's group = %v %v; want members (the hazard)", members, err)
+	}
+	state, err := Probe(home, record.ID, Probes{})
+	if err != nil || state.State != Dead {
+		t.Fatalf("a record whose group pid was reused = %+v %v; want dead", state, err)
+	}
+	if settlement, err := Settle(home, Probes{}); err != nil || !settlement.Settled(false) {
+		t.Fatalf("settlement = %+v %v", settlement, err)
+	}
+}
+
+// The environment a kernel launch carries binds a group to its record; work
+// no kernel verb launched binds nothing; a half-set environment is an
+// error.
+func TestBindFromEnvironment(t *testing.T) {
+	t.Parallel()
+	home := testHome(t)
+	record, err := Open(home, KindProve, "batch b1", custodyNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environ := Environment([]string{"PATH=/bin", EnvID + "=stale"}, home, record.ID)
+	lookup := func(env []string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			for _, entry := range env {
+				if key, value, _ := strings.Cut(entry, "="); key == name {
+					return value, true
+				}
+			}
+			return "", false
+		}
+	}
+	if strings.Count(strings.Join(environ, "\n"), EnvID+"=") != 1 {
+		t.Fatalf("environment = %q; want the stale id replaced", environ)
+	}
+	self, _, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader := self.Ref()
+	if bound, err := BindFromEnvironment(lookup(environ), leader); !bound || err != nil {
+		t.Fatalf("bind = %v %v", bound, err)
+	}
+	stored, _, _ := Read(home, record.ID)
+	if len(stored.Groups) != 1 || stored.Groups[0].ID != leader.Pid || stored.Groups[0].Leader == "" {
+		t.Fatalf("groups = %+v", stored.Groups)
+	}
+	if bound, err := BindFromEnvironment(lookup([]string{"PATH=/bin"}), leader); bound || err != nil {
+		t.Fatalf("no custody environment: bound %v %v", bound, err)
+	}
+	if bound, err := BindFromEnvironment(lookup([]string{EnvID + "=x"}), leader); !bound || err == nil {
+		t.Fatalf("half-set environment: bound %v %v", bound, err)
 	}
 }

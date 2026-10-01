@@ -35,7 +35,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 )
@@ -72,8 +71,9 @@ type Record struct {
 	// For work in the issuer's own process it is the issuer.
 	Child string `json:"child,omitempty"`
 	// Groups are the process groups the execution runs in: the child's own
-	// (it is started as a group leader) and any bound later.
-	Groups []int64 `json:"groups,omitempty"`
+	// (it is started as a group leader) and any bound later (the suite and
+	// watchdog groups a proof launcher makes), each with its leader.
+	Groups []Group `json:"groups,omitempty"`
 	// InProcess is work inside the issuer (the retained verifier); it holds
 	// custody until Ended or the issuer dies.
 	InProcess bool `json:"inProcess,omitempty"`
@@ -89,6 +89,29 @@ type Record struct {
 	Forced string `json:"forced,omitempty"`
 }
 
+// Group is one process group of an execution and the exact identity of the
+// process that leads it (the group id is its pid). The leader tells a group
+// that still runs from a group id a later, unrelated process reuses: the
+// kernel does not hand out a pid while a group of that id exists, so a pid
+// held by another process means the recorded group is gone.
+type Group struct {
+	ID     int64  `json:"id"`
+	Leader string `json:"leader,omitempty"`
+}
+
+// Settlement is what custody found still running: Live work waited for,
+// and Unknown state only a person may go past.
+type Settlement struct {
+	Live    []string `json:"live,omitempty"`
+	Unknown []string `json:"unknown,omitempty"`
+}
+
+// Settled reports whether nothing live remains and nothing unknown, or a
+// person forced past the unknown.
+func (s Settlement) Settled(force bool) bool {
+	return len(s.Live) == 0 && (len(s.Unknown) == 0 || force)
+}
+
 // State is one record's custody as read now.
 type State struct {
 	Record Record `json:"record"`
@@ -98,10 +121,14 @@ type State struct {
 	Why string `json:"why,omitempty"`
 }
 
-// Dir is the custody store in the host lane state.
-func Dir(home string) string { return filepath.Join(lane.HostDir(home), "landing-custody") }
+// hostDir is the host lane state (lane.HostDir; this package sits below
+// lane, which reaches it through proofrun, so it names the folder itself).
+func hostDir(home string) string { return filepath.Join(home, "host") }
 
-func lockPath(home string) string { return filepath.Join(lane.HostDir(home), "landing-custody.lock") }
+// Dir is the custody store in the host lane state.
+func Dir(home string) string { return filepath.Join(hostDir(home), "landing-custody") }
+
+func lockPath(home string) string { return filepath.Join(hostDir(home), "landing-custody.lock") }
 
 func recordPath(home, id string) string { return filepath.Join(Dir(home), id+".json") }
 
@@ -125,7 +152,7 @@ func write(home string, record Record) error {
 	if err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteFile(recordPath(home, record.ID), append(data, '\n'), 0o600, lane.HostDir(home))
+	_, err = atomicfile.WriteFile(recordPath(home, record.ID), append(data, '\n'), 0o600, hostDir(home))
 	return err
 }
 
@@ -202,7 +229,7 @@ func Open(home, kind, subject string, now time.Time) (Record, error) {
 
 // BindChild records the started child: its exact identity, and its own
 // process group (the child is started as a group leader, so its group is
-// its pid).
+// its pid and it leads it).
 func BindChild(home, id string, child identity.Ref) error {
 	encoded, err := identity.EncodeRef(child)
 	if err != nil {
@@ -210,19 +237,24 @@ func BindChild(home, id string, child identity.Ref) error {
 	}
 	_, err = update(home, id, func(record *Record) error {
 		record.Child = encoded
-		record.Groups = appendGroup(record.Groups, child.Pid)
+		record.Groups = appendGroup(record.Groups, Group{ID: child.Pid, Leader: encoded})
 		return nil
 	})
 	return err
 }
 
-// BindGroup adds a process group the execution runs work in.
-func BindGroup(home, id string, group int64) error {
-	if group <= 1 {
-		return fmt.Errorf("process group %d can't hold custody", group)
+// BindGroup adds a process group the execution runs work in, led by
+// leader.
+func BindGroup(home, id string, leader identity.Ref) error {
+	if leader.Pid <= 1 {
+		return fmt.Errorf("process group %d can't hold custody", leader.Pid)
 	}
-	_, err := update(home, id, func(record *Record) error {
-		record.Groups = appendGroup(record.Groups, group)
+	encoded, err := identity.EncodeRef(leader)
+	if err != nil {
+		return err
+	}
+	_, err = update(home, id, func(record *Record) error {
+		record.Groups = appendGroup(record.Groups, Group{ID: leader.Pid, Leader: encoded})
 		return nil
 	})
 	return err
@@ -260,7 +292,7 @@ func Cancel(home, id string) error {
 	return err
 }
 
-func appendGroup(groups []int64, group int64) []int64 {
+func appendGroup(groups []Group, group Group) []Group {
 	for _, existing := range groups {
 		if existing == group {
 			return groups
@@ -284,6 +316,11 @@ func Start(home, kind, subject string, now time.Time, command *exec.Cmd) (Record
 	if !command.SysProcAttr.Setsid {
 		command.SysProcAttr.Setpgid, command.SysProcAttr.Pgid = true, 0
 	}
+	environ := command.Env
+	if environ == nil {
+		environ = os.Environ()
+	}
+	command.Env = Environment(environ, home, record.ID)
 	if err := command.Start(); err != nil {
 		return record, errors.Join(err, Cancel(home, record.ID))
 	}
@@ -400,18 +437,48 @@ func Judge(record Record, probes Probes) State {
 		}
 	}
 	for _, group := range record.Groups {
-		members, err := probes.Group(group)
-		if err != nil {
-			state.State, state.Why = Unknown, fmt.Sprintf("whether process group %d still has members can't be read: %v", group, err)
-			return state
-		}
-		if members {
-			state.State, state.Why = Live, fmt.Sprintf("process group %d still has members", group)
+		if groupState, why := judgeGroup(group, probes); groupState != Dead {
+			state.State, state.Why = groupState, why
 			return state
 		}
 	}
 	state.State = Dead
 	return state
+}
+
+// judgeGroup reads whether a recorded process group still has members. A
+// leader that still runs keeps it live. A leader that has ended while its
+// pid is held by another process means the group ended before the pid was
+// handed out again: it is gone, whatever the reused id's group now holds.
+// Otherwise the group id is asked for members.
+func judgeGroup(group Group, probes Probes) (string, string) {
+	if group.Leader != "" {
+		leader, err := identity.ParseRef(group.Leader)
+		if err != nil {
+			return Unknown, fmt.Sprintf("process group %d's leader is recorded as %s, which is not a process identity", group.ID, group.Leader)
+		}
+		switch identity.LiveRef(probes.Prober, leader) {
+		case identity.Alive:
+			return Live, fmt.Sprintf("process group %d's leader (pid %d) still runs", group.ID, leader.Pid)
+		case identity.Unknown:
+			return Unknown, fmt.Sprintf("whether process group %d's leader (pid %d) still runs can't be read", group.ID, leader.Pid)
+		}
+		exact, liveness, probeErr := probes.Prober.Probe(group.ID)
+		switch {
+		case probeErr != nil || liveness == identity.Unknown:
+			return Unknown, fmt.Sprintf("whether pid %d is still process group %d's leader can't be read: %v", group.ID, group.ID, probeErr)
+		case liveness == identity.Alive && !identity.SameIdentity(exact, leader):
+			return Dead, ""
+		}
+	}
+	members, err := probes.Group(group.ID)
+	if err != nil {
+		return Unknown, fmt.Sprintf("whether process group %d still has members can't be read: %v", group.ID, err)
+	}
+	if members {
+		return Live, fmt.Sprintf("process group %d still has members", group.ID)
+	}
+	return Dead, ""
 }
 
 // Records lists every record; an unreadable one is returned as an error
@@ -476,9 +543,9 @@ func settle(home, id string, probes Probes) (Record, error) {
 // proof leases and the host proving lock. Live lists what still runs;
 // Unknown what can't be read (a person may go past it, never past live).
 // Proven settlements are persisted.
-func Settle(home string, probes Probes) (lane.Settlement, error) {
+func Settle(home string, probes Probes) (Settlement, error) {
 	probes = probes.defaults()
-	var settlement lane.Settlement
+	var settlement Settlement
 	records, unreadable, err := Records(home)
 	if err != nil {
 		settlement.Unknown = append(settlement.Unknown, "the custody store can't be read: "+err.Error())
@@ -613,4 +680,40 @@ func Clear(home string, probes Probes, force bool) error {
 		return &Held{Live: settlement.Live}
 	}
 	return &Held{Unknown: settlement.Unknown}
+}
+
+// The environment a kernel-launched execution carries, so that a process
+// inside it which makes a process group of its own (a proof launcher's
+// suite and watchdog) binds that group to the execution's record.
+const (
+	EnvHome = "METASYSTEM_LANE_CUSTODY_HOME"
+	EnvID   = "METASYSTEM_LANE_CUSTODY_ID"
+)
+
+// Environment is environ with the record's custody added (any inherited
+// custody replaced).
+func Environment(environ []string, home, id string) []string {
+	out := make([]string, 0, len(environ)+2)
+	for _, entry := range environ {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != EnvHome && name != EnvID {
+			out = append(out, entry)
+		}
+	}
+	return append(out, EnvHome+"="+home, EnvID+"="+id)
+}
+
+// BindFromEnvironment binds a process group led by leader to the record the
+// lookup's environment names; false when it names none (work no kernel
+// verb launched).
+func BindFromEnvironment(lookup func(string) (string, bool), leader identity.Ref) (bool, error) {
+	home, homeSet := lookup(EnvHome)
+	id, idSet := lookup(EnvID)
+	if !homeSet && !idSet {
+		return false, nil
+	}
+	if home == "" || id == "" {
+		return true, fmt.Errorf("the landing custody environment is incomplete (%s=%q, %s=%q)", EnvHome, home, EnvID, id)
+	}
+	return true, BindGroup(home, id, leader)
 }

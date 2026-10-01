@@ -61,7 +61,7 @@ func TestUnsetWaitsForAValidationGroupThatOutlivesItsLeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := json.Marshal(map[string]any{"schema": 1, "id": "validate-00000000000000aa", "kind": "validate", "subject": "validation cadence-run-1",
-		"openedAt": unsetNow.Format(time.RFC3339), "issuer": encoded, "child": encoded, "groups": []int64{leader.Pid}})
+		"openedAt": unsetNow.Format(time.RFC3339), "issuer": encoded, "child": encoded, "groups": []map[string]any{{"id": leader.Pid, "leader": encoded}}})
 	if err != nil {
 		t.Fatal(err)
 	}

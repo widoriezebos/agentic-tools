@@ -122,7 +122,7 @@ type ValidateSeams struct {
 	// launch did not get to record it, by the run id it was opened for.
 	Custody func(Validation) (state, why string)
 	// Barrier reads the lane's whole custody before a new run launches:
-	// live and unknown lists (lane.Settlement).
+	// live and unknown lists (custody.Settlement).
 	Barrier func() (live, unknown []string, err error)
 	// Wait blocks while the run's custody is live.
 	Wait func(Validation) error

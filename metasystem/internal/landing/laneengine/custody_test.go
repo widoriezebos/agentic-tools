@@ -51,7 +51,7 @@ func writeCustodyRecord(t *testing.T, home, id, kind string, issuer, child ident
 	record := map[string]any{"schema": 1, "id": id, "kind": kind, "subject": "validation cadence-run-1",
 		"openedAt": "2026-09-30T18:00:00Z", "issuer": encode(issuer)}
 	if child.Pid != 0 {
-		record["child"], record["groups"] = encode(child), []int64{child.Pid}
+		record["child"], record["groups"] = encode(child), []map[string]any{{"id": child.Pid, "leader": encode(child)}}
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
