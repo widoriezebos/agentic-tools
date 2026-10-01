@@ -26,16 +26,23 @@ type PushedSettlement struct {
 	Home, Checkout, Install string
 	Commit, Actor           string
 	Now                     time.Time
+	// Calls are the goal-ledger calls; nil is the production LaneCalls.
+	Calls *LaneCallSet
 }
 
 // SettlePushed records every queued member whose head request.Commit
-// contains as landed and concludes it; it names them. A repeat finds them
-// landed and changes nothing.
+// contains as landed and concludes it; it names them. A member an earlier
+// settlement recorded landed but could not conclude is concluded now. A
+// repeat finds them landed and changes nothing.
 func SettlePushed(request PushedSettlement) ([]string, error) {
 	store := batch.NewStore(request.Checkout, identity.KernelProber{})
 	records, err := store.Records()
 	if err != nil {
 		return nil, err
+	}
+	calls := request.Calls
+	if calls == nil {
+		calls = &LaneCalls
 	}
 	home := func() (string, error) { return request.Home, nil }
 	boundary := laneLedger(home, lane.OpPublish, lane.AuthorityAgent)
@@ -52,7 +59,14 @@ func SettlePushed(request PushedSettlement) ([]string, error) {
 	var problems []error
 	for _, record := range records {
 		var contained []string
+		pushed := record.Landing != nil && record.Landing.PushComplete
 		for _, unit := range record.Units {
+			// A member an earlier push recorded landed but did not settle
+			// (its finalization or return failed) is settled again.
+			if pushed && unit.State == batch.UnitReturnPending && unit.Outcome == batch.UnitLanded {
+				contained = append(contained, unit.GoalID)
+				continue
+			}
 			if unit.State != batch.UnitJoined {
 				continue
 			}
@@ -76,7 +90,7 @@ func SettlePushed(request PushedSettlement) ([]string, error) {
 		}); err != nil {
 			return landed, err
 		}
-		seams := RecoverySeams(request.Checkout, request.Install, "", store, record.BatchID, request.Now, GitOutput, &LaneCalls, invoke)
+		seams := RecoverySeams(request.Checkout, request.Install, "", store, record.BatchID, request.Now, GitOutput, calls, invoke)
 		onMain := func(unit batch.Unit) (string, bool, error) {
 			return request.Commit, slices.Contains(contained, unit.GoalID), nil
 		}
@@ -93,7 +107,7 @@ func SettlePushed(request PushedSettlement) ([]string, error) {
 			problems = append(problems, err)
 			continue
 		}
-		returns := returnSeamsAt(request.Checkout, request.Install, func() string { return tree }, &LaneCalls, boundary, home)
+		returns := returnSeamsAt(request.Checkout, request.Install, func() string { return tree }, calls, boundary, home)
 		if _, err := batch.ReturnUnits(store, record.BatchID, tree, request.Actor, request.Now, returns); err != nil {
 			problems = append(problems, err)
 			continue
