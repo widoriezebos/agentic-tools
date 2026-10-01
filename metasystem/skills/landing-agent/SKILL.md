@@ -80,7 +80,9 @@ do not improvise the step by hand.
    commit M failed to apply on), and return the member as `conflict`.
 4. **Begin.** `metasystem landing begin --batch ID --members M1,M2 --base B --head C` durably records the
    series before anything runs. What is proven is what is published: after `begin` you do not
-   change the series; a changed series is a new `begin`.
+   change the series; a changed series is a new `begin`. When the lane was registered again since
+   a member joined, `begin` first renews the lane's claim on it, which moves main; it then records
+   nothing and says so: fetch, compose again on the new main, and `begin` again.
 5. **Prove.** `metasystem landing prove --batch ID --subject batch` runs the lane-charged proof on
    this host. Its answer is typed: green, red or unavailable.
 6. **Triage a red** before returning anyone, within the batch's allowance (4 executions, 2 hours):

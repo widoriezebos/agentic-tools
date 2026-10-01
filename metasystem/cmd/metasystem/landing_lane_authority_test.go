@@ -625,19 +625,19 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 	// The lane's goal acts run in its own installation, whose machine is
 	// the lane's; this bed's one ledger stands in for it.
 	goalSyncMutationGit(t, bed.seat, "config", "metasystem.goal.machine", "lane-host")
-	tree := func() string {
-		return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}"))
+	tree := func() (string, error) {
+		return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}")), nil
 	}
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
-		t.Fatalf("renewal: %v", err)
+	if renewed, err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree, &batchowner.BatchOwnerCalls); err != nil || !slices.Equal(renewed, []string{"standing-validation"}) {
+		t.Fatalf("renewal = %q %v", renewed, err)
 	}
 	file := bed.ledger(t)
 	if file.StopCapability.ClaimEpoch != 4 || file.Claimed.Lineage != lane.ClaimLineage || file.Claimed.HandedOver.Batch != laneAuthorityBatch || file.Claimed.HandedOver.FromMachine != "mac-cli" {
 		t.Fatalf("renewed claim = %+v %+v", file.Claimed, file.StopCapability)
 	}
 	before := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
-		t.Fatalf("second renewal: %v", err)
+	if renewed, err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree, &batchowner.BatchOwnerCalls); err != nil || len(renewed) != 0 {
+		t.Fatalf("second renewal = %q %v", renewed, err)
 	}
 	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != before {
 		t.Fatalf("a second renewal wrote the ledger")

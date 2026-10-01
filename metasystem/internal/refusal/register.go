@@ -159,6 +159,7 @@ var Rows = []Row{
 	{Code: "LANE_BEGIN_CONFLICT", Owner: "internal/landing/batch", Site: "begin.go#PlanOpening", Shape: Question, H1: StandingInput},
 	{Code: "LANE_BEGIN_SEAM_TOO_LARGE", Owner: "internal/landing/batch", Site: "begin.go#PlanOpening", Shape: Question, H1: StandingInput},
 	{Code: "LANE_PROVE_REFUSED", Owner: "internal/landing/kernel", Site: "prove.go#proveRefused", Shape: Question, H1: StandingInput},
+	{Code: "LANE_BEGIN_BASE_MOVED", Owner: "internal/landing/kernel", Site: "begin.go#Begin", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_ENGINE_ADVANCE_CUSTODY_UNKNOWN", Owner: "internal/landing/laneengine", Site: "advance.go#check", Shape: Question, H1: StandingGuide, Forward: "landing engine"},
 	{Code: "LANE_ENGINE_ADVANCE_NOT_LANDED", Owner: "internal/landing/laneengine", Site: "advance.go#Advance", Shape: Question, H1: StandingGuide, Forward: "landing engine"},
 	{Code: "LANE_ENGINE_ADVANCE_RUNNER_DOWN", Owner: "internal/landing/laneengine", Site: "advance.go#afterFailedReArm", Shape: Question, H1: StandingGuide, Forward: "system start"},

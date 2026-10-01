@@ -72,36 +72,57 @@ func renewLaneClaim(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 		TargetMachine: claim.Machine, TargetLineage: claim.Lineage, TargetEpoch: int64(claim.Epoch), Batch: ledger.Batch, LaneHome: home})
 }
 
-// RenewLaneClaims renews every goal member of the batch that the ledger at
-// tree shows the lane holding at an older custody epoch to the host
-// record's (lane design r10 K7): landing begin runs it before it records
-// the series, so every claim the batch lands under is the lane's current
-// one. A change member holds no claim.
-func RenewLaneClaims(home, checkout, install, batchID, tree string, calls *BatchOwnerCallSet) error {
+// RenewLaneClaims renews every goal member of the batch that the ledger on
+// main (tree reads it, fetched once and only when the batch has a goal
+// member) shows the lane holding at an older custody epoch to the host
+// record's (lane design r10 K7), and names the members it renewed. landing
+// begin runs it before it records the series: a renewal is a lane goal
+// write on main (K3), so the series is composed again on the new main. A
+// change member holds no claim.
+func RenewLaneClaims(home, checkout, install, batchID string, tree func() (string, error), calls *BatchOwnerCallSet) ([]string, error) {
+	record, err := batch.NewStore(checkout, nil).Load(batchID)
+	if err != nil {
+		return nil, err
+	}
+	var goals []batch.Unit
+	for _, unit := range record.Units {
+		if unit.State == batch.UnitJoined && !unit.IsChange() {
+			goals = append(goals, unit)
+		}
+	}
+	if len(goals) == 0 {
+		return nil, nil
+	}
 	claim, err := lane.Claim(home)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	at, err := tree()
+	if err != nil {
+		return nil, fmt.Errorf("the ledger on main can't be read before the lane's claims are renewed: %w", err)
 	}
 	// The renewal is the lane's own goal write, made at begin (K3).
 	boundary := laneLedger(func() (string, error) { return home, nil }, lane.OpBegin, lane.AuthorityAgent)
-	record, err := batch.NewStore(checkout, nil).Load(batchID)
-	if err != nil {
-		return err
-	}
-	for _, unit := range record.Units {
-		if unit.State != batch.UnitJoined || unit.IsChange() {
-			continue
-		}
-		ledger, err := BatchReturnLedgerGoal(install, tree, unit.GoalID)
+	var renewed []string
+	for _, unit := range goals {
+		ledger, err := BatchReturnLedgerGoal(install, at, unit.GoalID)
 		if err != nil {
-			return fmt.Errorf("goal %s's ledger entry can't be read before its claim is renewed: %w", unit.GoalID, err)
+			return renewed, fmt.Errorf("goal %s's ledger entry can't be read before its claim is renewed: %w", unit.GoalID, err)
 		}
 		if !ledger.Claimed || ledger.Lineage != lane.ClaimLineage || ledger.Batch != batchID {
-			return fmt.Errorf("goal %s is not held by the landing lane for batch %s (the ledger shows %s+%s)", unit.GoalID, batchID, ledger.Machine, ledger.Lineage)
+			return renewed, fmt.Errorf("goal %s is not held by the landing lane for batch %s (the ledger shows %s+%s)", unit.GoalID, batchID, ledger.Machine, ledger.Lineage)
+		}
+		if ledger.Machine == claim.Machine && ledger.ClaimEpoch == claim.Epoch {
+			continue
 		}
 		if err := renewLaneClaim(install, unit.GoalID, ledger, claim, home, calls, boundary); err != nil {
-			return err
+			return renewed, err
 		}
+		renewed = append(renewed, unit.GoalID)
 	}
-	return nil
+	return renewed, nil
 }
+
+// FetchLaneMainTree fetches origin's main into the lane checkout and names
+// its tree: where the lane reads the ledger it renews against.
+func FetchLaneMainTree(checkout string) (string, error) { return fetchLandingBaseTree(checkout) }

@@ -179,8 +179,14 @@ func (bed *kernelBed) begin() (BeginOutcome, error) {
 
 func (bed *kernelBed) beginAuthorized(authorize func(string, batch.Record, batch.Unit) error) (BeginOutcome, error) {
 	bed.t.Helper()
+	return bed.beginWith(BeginSeams{Authorize: authorize, Renew: func(BeginRequest) ([]string, error) { return nil, nil }})
+}
+
+func (bed *kernelBed) beginWith(seams BeginSeams) (BeginOutcome, error) {
+	bed.t.Helper()
+	seams.Now, seams.NewID = func() time.Time { return kernelAt }, bed.newID
 	return Begin(BeginRequest{Home: bed.home, Layout: bed.layout, BatchID: bed.batchID, Members: []string{bed.goalID, bed.changeID},
-		Base: bed.base, Head: bed.head, Actor: kernelActor}, BeginSeams{Now: func() time.Time { return kernelAt }, NewID: bed.newID, Authorize: authorize})
+		Base: bed.base, Head: bed.head, Actor: kernelActor}, seams)
 }
 
 // fakeChild is the test run child as a program: it records its argv, writes
@@ -436,5 +442,60 @@ func TestBeginAuthorizesEveryMember(t *testing.T) {
 	}
 	if len(asked) == 0 || asked[0] != bed.goalID {
 		t.Fatalf("authorized %v; want every member asked", asked)
+	}
+}
+
+// K7 renewal before the base is fixed: begin renews every claim the lane
+// holds at an older custody epoch first. A renewal writes the ledger on
+// main, so the base the series was composed on is no longer main: begin
+// then records nothing and says to compose on the new main. With nothing
+// to renew, begin records the series. Renewal runs before any member is
+// authorized or any series is checked.
+func TestBeginRenewsBeforeItRecordsTheBase(t *testing.T) {
+	t.Parallel()
+	if ProductionBeginSeams().Renew == nil {
+		t.Fatalf("the production begin renews no claim")
+	}
+	bed := newKernelBed(t)
+	var calls []string
+	renewed := []string{bed.goalID}
+	seams := BeginSeams{
+		Renew: func(request BeginRequest) ([]string, error) {
+			calls = append(calls, "renew")
+			if request.BatchID != bed.batchID || request.Home != bed.home || request.Layout != bed.layout {
+				return nil, fmt.Errorf("renewal asked for %+v", request)
+			}
+			return renewed, nil
+		},
+		Authorize: func(string, batch.Record, batch.Unit) error { calls = append(calls, "authorize"); return nil },
+	}
+	_, err := bed.beginWith(seams)
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Code != CodeBeginBaseMoved || !strings.Contains(refusal.Reason, bed.goalID) || !strings.Contains(refusal.Next, "compose") {
+		t.Fatalf("begin after a renewal = %v; want it refused for the moved base", err)
+	}
+	if !slices.Equal(calls, []string{"renew"}) {
+		t.Fatalf("begin after a renewal ran %v; want only the renewal", calls)
+	}
+	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
+		t.Fatalf("begin after a renewal recorded %+v, %v", record.Openings, err)
+	}
+	if out, err := exec.Command("git", "-C", string(bed.layout.Checkout), "rev-parse", "--verify", "--quiet", CandidateRef(bed.batchID)).CombinedOutput(); err == nil {
+		t.Fatalf("begin after a renewal kept a candidate: %s", out)
+	}
+	failing := seams
+	failing.Renew = func(BeginRequest) ([]string, error) { return nil, errors.New("the ledger can't be read") }
+	if _, err := bed.beginWith(failing); err == nil {
+		t.Fatal("begin went on past a renewal that failed")
+	}
+	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
+		t.Fatalf("begin after a failed renewal recorded %+v, %v", record.Openings, err)
+	}
+	renewed, calls = nil, nil
+	if outcome, err := bed.beginWith(seams); err != nil || !outcome.Changed {
+		t.Fatalf("begin with every claim current: %+v %v", outcome, err)
+	}
+	if len(calls) < 2 || calls[0] != "renew" {
+		t.Fatalf("begin ran %v; want the renewal first", calls)
 	}
 }
