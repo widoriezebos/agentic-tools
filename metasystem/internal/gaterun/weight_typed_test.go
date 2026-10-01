@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 // landing validate's Finalize tells a discharge the run or the policy
@@ -52,4 +55,77 @@ func TestWeightDischargeRefusalsAreTyped(t *testing.T) {
 			t.Fatalf("an unreadable weight state = %v; want an untyped read failure", err)
 		}
 	})
+}
+
+// F-2: a read that fails while a green run's discharge is judged (its run
+// record, the correlation policy) is not a refusal. Through landing
+// validate's Finalize with the real weight code, the green run stays
+// pending with its reservation kept, and its reset happens once the read
+// works again.
+func TestDischargeReadFailuresKeepTheGreenRunPending(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		break_ func(t *testing.T, root string) (restore func())
+	}{
+		{"run record unreadable", func(t *testing.T, root string) func() {
+			path := run.RecordPath(root, "green-proof")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return func() {
+				if err := os.WriteFile(path, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
+		{"correlation policy unreadable", func(t *testing.T, root string) func() {
+			path := filepath.Join(root, "metasystem.conf")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(append([]byte(nil), data...), []byte("metasystem.governance.correlation-policy=Z\n")...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return func() {
+				if err := os.WriteFile(path, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bed, now := weightAuthorityBed(t)
+			completeWeightProof(t, bed, "green-proof", now, 0, nil)
+			state, err := loadWeight(bed.root, *now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restore := tc.break_(t, bed.root)
+			validate := newValidateBed(t)
+			validate.reserved("green-proof", true)
+			validate.reservation.Key.WeightGeneration = state.Generation
+			validate.reservation.Authority = CadenceAuthority{GoalID: "bounded", ObligationRevision: 3}
+			validate.outcome["green-proof"] = RunOutcome{Usable: true, Result: greenResult("attempt-green")}
+			seams := validate.seams()
+			seams.Weight = func() (WeightState, error) { return loadWeight(bed.root, *now) }
+			seams.Discharge = func(authority CadenceAuthority, runID string, at time.Time) error {
+				_, err := bed.discharge(authority.GoalID, authority.ObligationRevision, runID, *now)
+				return err
+			}
+			outcome, err := Validate(false, seams)
+			if err != nil || outcome.Result != ValidatePending || validate.reservation == nil || len(validate.published) != 0 {
+				t.Fatalf("a read that failed = %+v %v, reservation %+v, published %d; want pending", outcome, err, validate.reservation, len(validate.published))
+			}
+			restore()
+			outcome, err = Validate(false, seams)
+			if err != nil || outcome.Result != ValidateFinalized || !outcome.Discharged {
+				t.Fatalf("after the read works again = %+v %v; want finalized with the reset", outcome, err)
+			}
+		})
+	}
 }

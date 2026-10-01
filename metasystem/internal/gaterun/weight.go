@@ -363,7 +363,11 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 		return result, writeWeight(root, state)
 	}
 	policy, policyErr := config.CorrelationPolicy(root)
-	if policyErr != nil || policy == "" || obligation.ReviewPolicy != policy ||
+	if policyErr != nil {
+		// A read that failed, not the policy's answer: it may read later.
+		return result, fmt.Errorf("the validation weight was not reset: the review policy can't be read: %w", policyErr)
+	}
+	if policy == "" || obligation.ReviewPolicy != policy ||
 		!resetDecision.Apply || !dischargeDecision.Apply {
 		return result, weightRefusal(WeightResetNotAllowed, fmt.Errorf("the validation weight was not reset: the goal's obligation and the review policy do not allow it"))
 	}
@@ -372,7 +376,10 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 		return result, fmt.Errorf("the validation weight was not reset: the goal's test-run budget cannot be read (%s: %s)", projection.Unknown.Record, projection.Unknown.Reason)
 	}
 	record, err := (&run.Store{Root: root}).Read(runID)
-	if err != nil || record == nil || record.Status != run.StatusGreen || record.GoalId != goalID || record.Governed == nil ||
+	if err != nil || record == nil {
+		return result, fmt.Errorf("the validation weight was not reset: run %s's record can't be read: %v", runID, err)
+	}
+	if record.Status != run.StatusGreen || record.GoalId != goalID || record.Governed == nil ||
 		record.Governed.ObligationRevision != obligationRevision || record.Governed.WeightGeneration == nil ||
 		record.Governed.Observation == nil || record.Governed.Observation.AssumptionState != run.AssumptionMatch || record.Governed.Exhausted {
 		return result, weightRefusal(WeightRunNotGreen, fmt.Errorf("the validation weight was not reset: run %s is not a green validation run of this goal", runID))
@@ -388,6 +395,12 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	if contract, present, lookupErr := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), "testing.contract"); lookupErr != nil {
 		return result, fmt.Errorf("the validation weight was not reset: metasystem.conf cannot say which testing contract applies: %w", lookupErr)
 	} else if present && strings.TrimSpace(contract) != "" {
+		// The attempt store that can't be read is a read that failed; what
+		// it says about the run (no attempt, not a success, not sufficient)
+		// is the run's answer.
+		if _, readErr := proofrun.ReadAttempts(root); readErr != nil {
+			return result, fmt.Errorf("the validation weight was not reset: run %s's test attempts can't be read: %w", runID, readErr)
+		}
 		attempt, testingResult, proofErr := proofrun.GovernedTestResult(root, runID)
 		if proofErr != nil || attempt.GoalID != goalID || attempt.GoalRevision != binding.Revision || attempt.ReservationOwner == nil ||
 			attempt.ReservationOwner.RunGeneration != record.Generation || attempt.ReservationOwner.ObligationRevision != obligationRevision ||
