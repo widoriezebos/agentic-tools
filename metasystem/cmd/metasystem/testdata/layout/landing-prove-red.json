@@ -7,27 +7,19 @@ exit 1
     {
       "kind": "landing-lane",
       "id": "/Users/wido/GitHub/agentic-tools-landing"
-    },
-    {
-      "kind": "batch",
-      "id": "01j5x00000000000000000vb01"
     }
   ],
   "outcome": "failed",
-  "summary": "tests of goal-a on the base of batch 01j5x00000000000000000vb01 failed: app-standard",
+  "summary": "tests of 222222222222 (tree 4b825dc642cb) failed: app-standard",
   "data": {
-    "id": "a1",
-    "opId": "",
-    "subject": "member",
-    "member": "goal-a",
-    "tree": "",
-    "purpose": "",
-    "actor": "",
+    "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "commit": "2222222222222222222222222222222222222222",
+    "attempt": "a1",
     "status": "red",
-    "resultPath": "",
     "redGroups": [
       "app-standard"
     ],
+    "resultPath": "",
     "startedAt": ""
   },
   "next": {
@@ -37,7 +29,7 @@ exit 1
       "status",
       "--verbose"
     ],
-    "reason": "shows the batch and its recorded runs"
+    "reason": "shows the waiting members; return the one that broke it"
   }
 }
 

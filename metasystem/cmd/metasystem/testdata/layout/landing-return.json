@@ -14,7 +14,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "returned verbs-match-intent from batch 4gr18nm8t3nyev9sssda9jgtsq as person (person Wido)",
+  "summary": "returned verbs-match-intent from batch 4gr18nm8t3nyev9sssda9jgtsq to its seat (person Wido)",
   "data": {
     "batch": "4gr18nm8t3nyev9sssda9jgtsq",
     "member": "verbs-match-intent",

@@ -363,7 +363,7 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		landPush:    goalBranchLandPushRun,
 		batchRoot:   productionIntentBatchRoot,
 		batchJoin: func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-			return batchowner.ExecuteBatchJoin(request, batchowner.BatchJoinDependenciesForCommand())
+			return batchowner.ExecuteBatchJoin(request, batchowner.ProductionBatchJoinDependencies())
 		},
 		now: func() time.Time { return time.Now().UTC() },
 	}

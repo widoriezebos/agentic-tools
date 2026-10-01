@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -29,70 +28,6 @@ func runStore(root string) *run.Store {
 		}
 		return view.ClaimEpoch, true
 	})
-}
-
-func runRunWrap(args []string, stdout, stderr io.Writer) int {
-	flags := newFlagSet("run wrap", stdout, stderr)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "run id")
-	nonce := flags.String("nonce", "", "launch nonce (in argv by design: the third identity factor)")
-	logPath := flags.String("log", "", "log path")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	command := flags.Args()
-	if len(command) == 0 {
-		fmt.Fprintln(stderr, "run wrap requires -- <command...>")
-		return 2
-	}
-	store := runStore(*root)
-	self := int64(os.Getpid())
-	// A setsid leader's pgid is its own pid.
-	if err := store.Bind(*id, *nonce, self, self); err != nil {
-		fmt.Fprintln(stderr, "bind failed:", err)
-		return 1
-	}
-	logFile, err := os.OpenFile(*logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		fmt.Fprintln(stderr, "log unwritable:", err)
-		_ = store.WriteSidecar(*id, 1, *nonce, 127)
-		return 1
-	}
-	defer logFile.Close()
-	workload := exec.Command(command[0], command[1:]...)
-	workload.Env = os.Environ()
-	bound, boundErr := store.Read(*id)
-	if boundErr != nil || bound == nil {
-		fmt.Fprintln(stderr, "bound run record unreadable before workload launch")
-		_ = store.WriteSidecar(*id, 1, *nonce, 127)
-		return 1
-	}
-	if bound.Governed != nil {
-		workload.Env = append(workload.Env,
-			"METASYSTEM_PROOF_RUN_ROOT="+*root,
-			"METASYSTEM_PROOF_RUN_ID="+*id,
-		)
-	}
-	workload.Stdout = logFile
-	workload.Stderr = logFile
-	exitCode := int64(0)
-	if err := workload.Run(); err != nil {
-		exitCode = 1
-		if exit, ok := err.(*exec.ExitError); ok {
-			exitCode = int64(exit.ExitCode())
-		}
-	}
-	record, readErr := store.Read(*id)
-	generation := 1
-	if readErr == nil && record != nil {
-		generation = record.Generation
-	}
-	// The sidecar is the wrapper's LAST act.
-	if err := store.WriteSidecar(*id, generation, *nonce, exitCode); err != nil {
-		fmt.Fprintln(stderr, "sidecar write failed:", err)
-		return 1
-	}
-	return int(exitCode)
 }
 
 func runRunWatch(args []string, stdout, stderr io.Writer) int {

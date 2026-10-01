@@ -17,8 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -34,9 +32,6 @@ type UnsetLane struct {
 	// one does; StopAgent asks it to end. nil reads none.
 	Agent     func() (id string, live bool, err error)
 	StopAgent func(id string) error
-	// Custody are the custody barrier's reads for a layout; nil reads the
-	// host.
-	Custody func(lane.Layout) custody.Probes
 }
 
 // ProductionUnsetLane is landing unset for the person by, on this host.
@@ -46,7 +41,7 @@ func ProductionUnsetLane(home, by string) UnsetLane {
 
 // Seams are the unset's steps.
 func (u UnsetLane) Seams() lane.UnsetSeams {
-	return lane.UnsetSeams{Settle: u.settle, Override: u.override, Records: u.records, Reconcile: u.reconcile, Return: u.returnBatch, Confirm: u.confirm}
+	return lane.UnsetSeams{Settle: u.settle, Records: u.records, Reconcile: u.reconcile, Return: u.returnBatch, Confirm: u.confirm}
 }
 
 // home is the host home the unset works on, for the lane's claim identity.
@@ -60,12 +55,10 @@ func (u UnsetLane) records(layout lane.Layout) ([]batch.Record, error) {
 	return u.store(layout).Records()
 }
 
-// settle stops the landing agent, then reads the lane's one custody
-// barrier (K9): every execution the kernel launched, the installation's
-// proof leases, and the host's proving flock, which a running proof holds.
-// A publication admitted before the fence finished under the host flock
-// the fence took, and the fence holds every gated lane operation from here
-// on (K2), so nothing new starts while it settles.
+// settle stops the landing agent. A publication admitted before the fence
+// finished under the host flock the fence took, and the fence holds every
+// gated lane operation from here on (K2), so nothing new starts while it
+// settles.
 func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	var settlement lane.Settlement
 	if u.Agent != nil {
@@ -85,12 +78,6 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 			}
 		}
 	}
-	held, err := custody.Settle(u.Home, u.probes(layout))
-	if err != nil {
-		settlement.Unknown = append(settlement.Unknown, "whether landing work runs is unknown: "+err.Error())
-	}
-	settlement.Live = append(settlement.Live, held.Live...)
-	settlement.Unknown = append(settlement.Unknown, held.Unknown...)
 	return settlement, nil
 }
 
@@ -109,20 +96,6 @@ func (u UnsetLane) personCleanup() (ownercall.Invocation, error) {
 
 func (u UnsetLane) cleanupBoundary() func(goal.Endpoint) goal.Endpoint {
 	return laneLedger(u.home, lane.OpReturn, lane.AuthorityPerson)
-}
-
-func (u UnsetLane) probes(layout lane.Layout) custody.Probes {
-	if u.Custody != nil {
-		return u.Custody(layout)
-	}
-	return laneprobe.Production(u.Home, string(layout.Install), true)
-}
-
-// override records the person's --force past unknown custody against each
-// record it went past.
-func (u UnsetLane) override(layout lane.Layout) error {
-	_, err := custody.Override(u.Home, u.By, u.probes(layout))
-	return err
 }
 
 // open reports whether the batch may still hold members to settle.

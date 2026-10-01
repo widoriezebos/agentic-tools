@@ -24,7 +24,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -181,9 +180,8 @@ func TestLaneHandoverRefusesAStaleLaneIdentity(t *testing.T) {
 // batch store is the lane checkout's, and the verb's seams are this bed's.
 type laneReturnBed struct {
 	laneAuthorityBed
-	person      error
-	agent       error
-	engineCalls int
+	person error
+	agent  error
 	// installationRoot is the lane's installation; empty is the seat's
 	// own ledger checkout standing in for it.
 	installationRoot string
@@ -248,10 +246,6 @@ func (bed *laneReturnBed) run(t *testing.T, words ...string) (int, intentResult)
 			}
 			return bed.seat, nil
 		},
-		engine: func(string, string, []string) (laneengine.Identity, error) {
-			bed.engineCalls++
-			return laneengine.Identity{Running: "enrolled"}, nil
-		},
 		returnMember: func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
 			// The bed's one ledger stands in for the lane installation's on
 			// both paths: the agent's kernel admission names the recorded
@@ -276,74 +270,48 @@ func (bed *laneReturnBed) run(t *testing.T, words ...string) (int, intentResult)
 	return code, result
 }
 
-// recordLaneAttempt records a finished member:standing-validation attempt
-// of the bed's batch through landing prove's own writers, on the series a
-// begin recorded.
-func recordLaneAttempt(t *testing.T, store batch.Store, id, status string) {
-	t.Helper()
-	err := store.Update(laneAuthorityBatch, func(record *batch.Record) error {
-		if _, ok := record.CurrentOpening(); !ok {
-			record.Openings = append(record.Openings, batch.Opening{OpID: "op-1", Actor: "lane:test"})
-		}
-		return nil
-	})
-	if err == nil {
-		err = batch.StartAttempt(store, laneAuthorityBatch, batch.ProofAttempt{ID: id, OpID: "op-1", Subject: batch.SubjectMember, Member: "standing-validation"})
-	}
-	if err == nil {
-		err = batch.FinishAttempt(store, laneAuthorityBatch, id, status, "", "", nil, laneAuthorityNow)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func (bed *laneReturnBed) laneHolds(t *testing.T) bool {
 	t.Helper()
 	file := bed.ledger(t)
 	return file.Claimed != nil && file.Claimed.Lineage == lane.ClaimLineage && file.Claimed.HandedOver.Batch == laneAuthorityBatch
 }
 
-// The landing agent returns a member as red only on a red attempt of its
-// batch that names it; a proof that could not run is refused and nothing
-// moves; a pause holds the agent's return; once admitted, the member is
-// given back under the lane's claim identity and read back from the ledger.
-func TestLandingReturnRedNeedsItsRedAttemptAndHonoursThePause(t *testing.T) {
+// The landing agent decides which member broke the batch: its return
+// needs the member and its reason, no recorded proof. Only the agent's
+// launch or a proven person returns; a pause holds the agent's return;
+// once admitted, the member is given back under the lane's claim identity
+// and read back from the ledger, and a repeat changes nothing.
+func TestLandingAgentReturnNeedsOnlyItsReasonAndHonoursThePause(t *testing.T) {
 	t.Parallel()
 	bed := newLaneReturnBed(t)
 	store := batch.NewStore(bed.lane, nil)
-	recordLaneAttempt(t, store, "p1", batch.AttemptUnavailable)
-	code, result := bed.run(t, "standing-validation", "--disposition", "red")
+	code, result := bed.run(t, "standing-validation")
 	if code == 0 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
-		t.Fatalf("red on an unavailable proof = %d %+v; the lane must still hold the goal", code, result)
+		t.Fatalf("an agent's return without a reason = %d %+v; the lane must still hold the goal", code, result)
 	}
-	if bed.engineCalls == 0 {
-		t.Fatal("the agent's return ran without its engine check")
-	}
-	recordLaneAttempt(t, store, "p2", batch.AttemptRed)
 	bed.agent = errors.New("the lane checkout is held by session steward-seat, not by its landing agent")
-	if code, result := bed.run(t, "standing-validation", "--disposition", "red"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
+	if code, result := bed.run(t, "standing-validation", "--reason", "its own test fails"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
 		t.Fatalf("a return by neither the agent nor a person = %d %+v", code, result)
 	}
 	bed.agent = nil
 	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
 		t.Fatal(err)
 	}
-	if code, result := bed.run(t, "standing-validation", "--disposition", "red"); code == 0 || !strings.Contains(strings.Join(result.Details, " "), lane.CodePaused) || !bed.laneHolds(t) {
+	if code, result := bed.run(t, "standing-validation", "--reason", "its own test fails"); code == 0 || !strings.Contains(strings.Join(result.Details, " "), lane.CodePaused) || !bed.laneHolds(t) {
 		t.Fatalf("the agent's return while paused = %d %+v", code, result)
 	}
 	if _, err := lane.ClearPause(bed.home); err != nil {
 		t.Fatal(err)
 	}
-	code, result = bed.run(t, "standing-validation", "--disposition", "red", "--reason", "its own test fails")
+	code, result = bed.run(t, "standing-validation", "--reason", "its own test fails")
 	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
-		t.Fatalf("red return with its red attempt = %d %+v", code, result)
+		t.Fatalf("the agent's return with its reason = %d %+v", code, result)
 	}
 	record, err := store.Load(laneAuthorityBatch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unit := record.Units[0]; unit.State != batch.UnitEjected || unit.Disposition != batch.DispositionRed || unit.Evidence != "attempt p2 (member:standing-validation)" || unit.ReturnDisposition == "" {
+	if unit := record.Units[0]; unit.State != batch.UnitEjected || unit.Disposition != batch.DispositionRed || !strings.Contains(unit.Failure, "its own test fails") || unit.ReturnDisposition == "" {
 		t.Fatalf("returned member = %+v", unit)
 	}
 	if file := bed.ledger(t); file.Claimed != nil && file.Claimed.Lineage == lane.ClaimLineage {
@@ -354,86 +322,32 @@ func TestLandingReturnRedNeedsItsRedAttemptAndHonoursThePause(t *testing.T) {
 	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
 		t.Fatal(err)
 	}
-	again, repeat := bed.run(t, "standing-validation", "--disposition", "red", "--reason", "its own test fails")
+	again, repeat := bed.run(t, "standing-validation", "--reason", "its own test fails")
 	if again != 0 || repeat.Outcome != intentUnchanged {
 		t.Fatalf("a repeat of a confirmed return while paused = %d %+v", again, repeat)
 	}
 }
 
-// A red of the whole batch backs the agent's red return of a member only
-// once diagnosis places it there (K8): on its own it is refused and the
-// lane keeps the goal; with the base green (the member is the batch's only
-// one) the member is returned on the batch's red.
-func TestLandingReturnRedOnABatchRedNeedsDiagnosis(t *testing.T) {
-	t.Parallel()
-	bed := newLaneReturnBed(t)
-	store := batch.NewStore(bed.lane, nil)
-	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b1", Subject: batch.SubjectBatch, Covers: []string{"standing-validation"}}, batch.AttemptRed, "app-standard")
-	code, result := bed.run(t, "standing-validation", "--disposition", "red")
-	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing places it on standing-validation yet") ||
-		!strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
-		t.Fatalf("red on an undiagnosed batch red = %d %+v; the lane must still hold the goal", code, result)
-	}
-	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b2", Subject: batch.SubjectBase, Groups: []string{"app-standard"}}, batch.AttemptGreen)
-	code, result = bed.run(t, "standing-validation", "--disposition", "red")
-	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
-		t.Fatalf("red on a batch red the green base places = %d %+v", code, result)
-	}
-	record, err := store.Load(laneAuthorityBatch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if unit := record.Units[0]; unit.Disposition != batch.DispositionRed || unit.Evidence != "attempt b1 (batch, placed by the green base in attempt b2)" {
-		t.Fatalf("returned member = %+v", unit)
-	}
-}
-
-// recordLaneSubjectAttempt records one finished attempt of the bed's batch,
-// as landing prove does.
-func recordLaneSubjectAttempt(t *testing.T, store batch.Store, attempt batch.ProofAttempt, status string, redGroups ...string) {
-	t.Helper()
-	err := store.Update(laneAuthorityBatch, func(record *batch.Record) error {
-		if _, ok := record.CurrentOpening(); !ok {
-			record.Openings = append(record.Openings, batch.Opening{OpID: "op-1", Actor: "lane:test", Members: []string{"standing-validation"}})
-		}
-		return nil
-	})
-	attempt.OpID = "op-1"
-	if err == nil {
-		err = batch.StartAttempt(store, laneAuthorityBatch, attempt)
-	}
-	if err == nil {
-		err = batch.FinishAttempt(store, laneAuthorityBatch, attempt.ID, status, "", "", redGroups, laneAuthorityNow)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// A person's return is cleanup (K2, K8): it needs the person at an enrolled
-// terminal and no other evidence, it is admitted while the lane is paused,
-// and it runs on whatever engine the person's seat has (humans are never
-// denied a verb; the engine identity guards the agent's acts).
-func TestAPersonsReturnRunsOnAnyEngineWhilePaused(t *testing.T) {
+// A person's return is cleanup: it needs the person at an enrolled
+// terminal and no other evidence, and it is admitted while the lane is
+// paused.
+func TestAPersonsReturnIsAdmittedWhilePaused(t *testing.T) {
 	t.Parallel()
 	bed := newLaneReturnBed(t)
 	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
 		t.Fatal(err)
 	}
-	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
-		t.Fatalf("a person's return with no person proven = %d %+v", code, result)
+	if code, result := bed.run(t, "standing-validation", "--reason", "the design changes first"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
+		t.Fatalf("a return while paused with no person proven = %d %+v", code, result)
 	}
 	bed.person = nil
-	if code, result := bed.run(t, "standing-validation", "--disposition", "person", "--by", "Someone"); code == 0 || result.Outcome != intentRefused ||
+	if code, result := bed.run(t, "standing-validation", "--by", "Someone"); code == 0 || result.Outcome != intentRefused ||
 		!strings.Contains(result.Summary, "enrolled for Wido, not Someone") || !bed.laneHolds(t) {
 		t.Fatalf("a return in another person's name = %d %+v", code, result)
 	}
-	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the design changes first", "--by", "Wido")
+	code, result := bed.run(t, "standing-validation", "--reason", "the design changes first", "--by", "Wido")
 	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
 		t.Fatalf("a person's return while paused = %d %+v", code, result)
-	}
-	if bed.engineCalls != 0 {
-		t.Fatalf("a person's return checked the lane's engine %d times", bed.engineCalls)
 	}
 	record, err := batch.NewStore(bed.lane, nil).Load(laneAuthorityBatch)
 	if err != nil {
@@ -544,7 +458,7 @@ func TestAPersonReleasesAGoalTheLaneHolds(t *testing.T) {
 }
 
 func init() {
-	registerIdempotency("landing return", idemStateful, "the member is already returned with that disposition: success, nothing written", witnessLandingReturnRepeat)
+	registerIdempotency("landing return", idemStateful, "the member is already returned: success, nothing written", witnessLandingReturnRepeat)
 }
 
 // witnessLandingReturnRepeat runs a person's return twice: the second is
@@ -552,11 +466,11 @@ func init() {
 func witnessLandingReturnRepeat(t *testing.T) {
 	bed := newLaneReturnBed(t)
 	bed.person = nil
-	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := bed.run(t, "standing-validation"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("first return = %d %+v", code, result)
 	}
 	store, ledger := idemTreeDigest(t, filepath.Join(bed.lane, "artifacts")), goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
-	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code != 0 || result.Outcome != intentUnchanged {
+	if code, result := bed.run(t, "standing-validation"); code != 0 || result.Outcome != intentUnchanged {
 		t.Fatalf("repeated return = %d %+v", code, result)
 	}
 	idemSameTree(t, "a repeated landing return", store, idemTreeDigest(t, filepath.Join(bed.lane, "artifacts")))
@@ -573,31 +487,35 @@ var _ = func() bool {
 
 func landingReturnLayoutCases() []layoutCase {
 	return []layoutCase{
-		{name: "landing-return", args: []string{"landing", "return", "verbs-match-intent", "--disposition", "person", "--reason", "the design changes first"}, bed: landingReturnLayoutBed},
-		{name: "landing-return-refusal", args: []string{"landing", "return", "verbs-match-intent", "--disposition", "red"}, bed: landingReturnLayoutBed},
+		{name: "landing-return", args: []string{"landing", "return", "verbs-match-intent", "--reason", "the design changes first"}, bed: landingReturnLayoutBed(false)},
+		{name: "landing-return-refusal", args: []string{"landing", "return", "verbs-match-intent"}, bed: landingReturnLayoutBed(true)},
 	}
 }
 
 // landingReturnLayoutBed is the running lane's bed whose returns answer as
-// the batch's records do: a person's return confirmed, a red refused for
-// want of a failing test run.
-func landingReturnLayoutBed(t *testing.T) layoutBed {
-	bed := landingLayoutBed(landingLayoutRunning)(t)
-	bed.owners.landing.installation = func(root string) (string, error) { return filepath.Join(root, "metasystem"), nil }
-	bed.owners.landing.engine = func(string, string, []string) (laneengine.Identity, error) {
-		return laneengine.Identity{Running: "sha256:" + strings.Repeat("b", 64)}, nil
-	}
-	bed.owners.landing.agentCaller = func(string) error { return nil }
-	bed.owners.landing.returnMember = func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
-		report := batchowner.MemberReturnReport{Batch: "4gr18nm8t3nyev9sssda9jgtsq", Member: request.Member, Disposition: request.Disposition}
-		if request.Disposition != batch.DispositionPerson {
-			return report, &batch.ReturnRefusal{Code: batch.CodeReturnEvidenceMissing, Member: request.Member, Disposition: request.Disposition,
-				Message: "no failing test run of this batch names " + request.Member + ", so it was not returned as red"}
+// the batch's records do: a person's return confirmed, or, with no person
+// proven, the agent's return refused for want of a reason.
+func landingReturnLayoutBed(agent bool) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		bed := landingLayoutBed(landingLayoutRunning)(t)
+		bed.owners.landing.installation = func(root string) (string, error) { return filepath.Join(root, "metasystem"), nil }
+		bed.owners.landing.agentCaller = func(string) error { return nil }
+		if agent {
+			bed.owners.landing.person = func(string) (string, error) {
+				return "", humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
+			}
 		}
-		report.Evidence, report.Settled, report.Confirmed = "person "+request.Person, batch.ReturnReleased, true
-		return report, nil
+		bed.owners.landing.returnMember = func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
+			report := batchowner.MemberReturnReport{Batch: "4gr18nm8t3nyev9sssda9jgtsq", Member: request.Member, Disposition: request.Disposition}
+			if request.Disposition != batch.DispositionPerson && request.Reason == "" {
+				return report, &batch.ReturnRefusal{Code: batch.CodeReturnEvidenceMissing, Member: request.Member, Disposition: request.Disposition,
+					Message: "the return of " + request.Member + " names no reason, so nothing was returned"}
+			}
+			report.Evidence, report.Settled, report.Confirmed = "person "+request.Person, batch.ReturnReleased, true
+			return report, nil
+		}
+		return bed
 	}
-	return bed
 }
 
 // A lane registered again takes a new custody epoch; landing begin renews
@@ -677,7 +595,7 @@ func TestLaneHandsAClaimBackToALiveSeat(t *testing.T) {
 	}
 	bed.person = nil
 	bed.installationRoot = install
-	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "back to its seat")
+	code, result := bed.run(t, "standing-validation", "--reason", "back to its seat")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("return to a live seat = %d %+v", code, result)
 	}

@@ -72,7 +72,7 @@ func TestCutoverRefusedWithOldOwnerClaims(t *testing.T) {
 			file.Claimed.Lineage = oldOwnerLineage
 		})
 		bed.person = nil
-		code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the lane changes owner")
+		code, result := bed.run(t, "standing-validation", "--reason", "the lane changes owner")
 		if code == 0 || result.Outcome == intentConfirmed || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "goal release standing-validation") {
 			t.Fatalf("a person's return of an old-owner claim = %d %+v; want it unconfirmed, naming a person's release", code, result)
 		}

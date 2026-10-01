@@ -41,32 +41,6 @@ type GoalCadenceLedger struct {
 	MintULID func() (string, error)
 }
 
-func (ledger GoalCadenceLedger) request(now time.Time) (goal.VerbRequest, error) {
-	mint := ledger.MintULID
-	if mint == nil {
-		mint = goal.NewOperationULID
-	}
-	ulid, err := mint()
-	return goal.VerbRequest{Endpoint: ledger.Endpoint, Actor: ledger.Actor, Ulid: ulid, Now: now}, err
-}
-
-func (ledger GoalCadenceLedger) Claim(now time.Time, key goal.CadenceClaimKey, lease time.Duration) (goal.CadenceClaimResult, error) {
-	request, err := ledger.request(now)
-	if err != nil {
-		return goal.CadenceClaimResult{}, err
-	}
-	return goal.ClaimCadence(request, key, lease)
-}
-
-func (ledger GoalCadenceLedger) Publish(now time.Time, claim string, status goal.CadenceStatus, groups []goal.TrunkRedRecordGroup) error {
-	request, err := ledger.request(now)
-	if err != nil {
-		return err
-	}
-	_, err = goal.PublishCadence(request, goal.CadencePublishArgs{ClaimOpid: claim, Status: status, Groups: groups})
-	return err
-}
-
 // cadenceForcedWindow is the forced-window rule: no cadence status yet, or a
 // window that has run CadenceForcedInterval, forces a run in a window that
 // starts now; otherwise the latest window holds.

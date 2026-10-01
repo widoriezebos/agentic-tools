@@ -80,11 +80,6 @@ func registeredTopLevelEntries() []topLevelEntry {
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
 				return runPreCommitEntry(args, stdout, stderr)
 			}},
-		{name: "pre-push", usage: "pre-push --home <home> <remote> <url>",
-			launcher: "internal/landing/lane/hook.go", evidence: "internal pre-push", required: []string{"home"},
-			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
-				return runPrePushEntry(args, stdout, stderr)
-			}},
 		{name: runtimes.SupervisorEntry, usage: runtimes.SupervisorEntry + " <runtime> <verb> --root <installation> [flags]",
 			launcher: "internal/delegation/owners.go", evidence: "runtimes.SupervisorArgs",
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
@@ -220,12 +215,6 @@ func registeredFamilies() []family {
 			verbs: []verb{
 				{name: "run", summary: "the steward's resident runner", run: runStewardRun, launcher: "internal/steward/runner.go", evidence: "\"steward\", \"run\"", required: []string{"repo"}},
 				{name: "arm", summary: "enroll a new machine's steward on its own engine", run: runStewardArm, launcher: "internal/seat/launch/sequence.go", evidence: "\"steward\", \"arm\"", required: []string{"repo"}},
-			},
-		},
-		{
-			name: "run", summary: "the cadence run's detached leader",
-			verbs: []verb{
-				{name: "wrap", summary: "the detached leader of landing validate's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
 			},
 		},
 		{
@@ -521,6 +510,7 @@ type retiredIntentAction struct{ why, next string }
 
 var retiredIntentActions = map[string]retiredIntentAction{
 	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
+	"landing publish": {why: "it is landing push now", next: "metasystem landing push"},
 }
 
 // writeUnknownIntentAction refuses an action the object does not have.

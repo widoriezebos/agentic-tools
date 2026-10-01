@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -24,7 +22,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -59,46 +56,25 @@ type laneVerbOwners struct {
 	// its batch whole.
 	helm func(seatRoot string) helm.State
 	// installation is the metasystem installation of a lane checkout: the
-	// module root, where the lane's enrollment lives.
+	// module root.
 	installation func(root string) (string, error)
-	// engine admits this process as the lane's enrolled engine (K5): every
-	// kernel verb calls it first.
-	engine func(checkout, installation string, retry []string) (laneengine.Identity, error)
-	// advance moves the lane to landed main's engine.
-	advance func(laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error)
-	// begin records a batch's canonical series (K4); prove runs one
-	// subject of it (K6).
-	begin func(kernel.BeginRequest) (kernel.BeginOutcome, error)
-	prove func(kernel.ProveRequest) (batch.ProofAttempt, error)
+	// prove runs the tests of the lane checkout's tree; push puts its
+	// proven HEAD on main (rail 1).
+	prove func(kernel.ProveRequest) (kernel.TreeProof, error)
+	push  func(kernel.PushRequest) (kernel.PushOutcome, error)
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
-	// validation reads whether the standing validation is due, one of the
-	// landing agent's wake reasons (A-a).
-	validation func(root string, now time.Time) (bool, error)
-	// finalization reads whether a reserved validation run awaits its
-	// finalization in the host lane state at home, the landing agent's
-	// finalization-pending wake reason (K-f).
-	finalization func(home string) (bool, error)
-	// evidence reads a batch's begin and proof records for landing
-	// publish; nil reads none (K-b writes them).
-	evidence lane.PublishEvidence
-	// remoteURL is the landing checkout's origin.
-	remoteURL func(root string) (string, error)
-	// publish is the lane's publication boundary for a landing.
-	publish func(home string, tuple lane.Tuple) error
 	// oldOwnerClaims lists the goals the ledger, read from an
 	// installation, shows claimed by the old owner lineage (R9-01).
 	oldOwnerClaims func(installation string) ([]string, error)
 	// agent proves the caller descends from the landing agent's launch that
 	// holds the lane checkout (K7).
 	agentCaller func(checkout string) error
-	// returnMember runs one typed return (K8).
+	// returnMember runs one return.
 	returnMember func(batchowner.MemberReturn) (batchowner.MemberReturnReport, error)
-	// validateRun runs one landing validate (K-f).
-	validateRun func(laneValidateRequest) (gaterun.ValidateOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -130,29 +106,20 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.helm == nil {
 		owners.helm = helm.Active
 	}
-	if owners.engine == nil {
-		owners.engine = laneengine.RequireSelf
-	}
 	if owners.installation == nil {
 		owners.installation = func(root string) (string, error) {
 			layout, err := inv.owners.resolver.ResolveLayout(root)
 			return layout.InstallationRoot, err
 		}
 	}
-	if owners.advance == nil {
-		owners.advance = func(request laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error) {
-			return laneengine.Advance(request, laneengine.ProductionConditions(request.Home, request.Checkout),
-				laneengine.ProductionSteps(request.Checkout, request.Installation))
-		}
-	}
-	if owners.begin == nil {
-		owners.begin = func(request kernel.BeginRequest) (kernel.BeginOutcome, error) {
-			return kernel.Begin(request, kernel.ProductionBeginSeams())
-		}
-	}
 	if owners.prove == nil {
-		owners.prove = func(request kernel.ProveRequest) (batch.ProofAttempt, error) {
+		owners.prove = func(request kernel.ProveRequest) (kernel.TreeProof, error) {
 			return kernel.Prove(request, kernel.ProductionProveSeams())
+		}
+	}
+	if owners.push == nil {
+		owners.push = func(request kernel.PushRequest) (kernel.PushOutcome, error) {
+			return kernel.Push(request, kernel.ProductionPushSeams())
 		}
 	}
 	if owners.laneHeld == nil {
@@ -166,26 +133,6 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 			agent := newLandingAgent()
 			steps.Now, steps.Agent, steps.StopAgent = now, agent.running, agent.cancel
 			return lane.Unset(home, by, now(), force, steps.Seams())
-		}
-	}
-	if owners.validation == nil {
-		owners.validation = lane.ValidationDue
-	}
-	if owners.finalization == nil {
-		owners.finalization = cadence.FinalizationPending
-	}
-	if owners.validateRun == nil {
-		owners.validateRun = productionLaneValidate
-	}
-	if owners.remoteURL == nil {
-		owners.remoteURL = func(root string) (string, error) {
-			out, err := batchowner.GitOutput(root, "remote", "get-url", "origin")
-			return strings.TrimSpace(out), err
-		}
-	}
-	if owners.publish == nil {
-		owners.publish = func(home string, tuple lane.Tuple) error {
-			return lane.Publish(home, tuple, lane.OpPublish, lane.AuthorityAgent)
 		}
 	}
 	if owners.oldOwnerClaims == nil {
@@ -259,12 +206,9 @@ func landingIntentCommands() []intentCommand {
 			examples: []string{"metasystem landing unset", "metasystem landing unset --force"},
 			run:      runIntentLandingUnset,
 		},
-		landingEngineCommand(),
-		landingBeginCommand(),
 		landingProveCommand(),
-		landingPublishCommand(),
+		landingPushCommand(),
 		landingReturnCommand(),
-		landingValidateCommand(),
 	}
 }
 
@@ -299,8 +243,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm,
-		Validation: owners.validation, Finalization: func(string) (bool, error) { return owners.finalization(home) }}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
@@ -319,8 +262,8 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	view := inv.laneView(owners, home)
-	_, _, unreadable := lane.Read(home)
-	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: view, view: inv.landingStatusView(view, unreadable != nil)}
+	record, _, unreadable := lane.Read(home)
+	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: landingStatus(owners, home, record, view), view: inv.landingStatusView(view, unreadable != nil)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -328,6 +271,62 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
 	}
 	return inv.render(result)
+}
+
+// landingStatusData is landing status --json: the lane's view, and what the
+// landing agent reads to do its work: whether the lane is paused and its
+// agent alive, the queue (each waiting member, its head and state), the
+// last proof (its tree and result) and the last push.
+type landingStatusData struct {
+	lane.View
+	Paused     bool              `json:"paused"`
+	AgentAlive bool              `json:"agent_alive"`
+	Queue      []landingQueued   `json:"queue"`
+	LastProof  *kernel.TreeProof `json:"last_proof"`
+	LastPush   *lane.Publication `json:"last_push"`
+}
+
+// landingQueued is one member in the lane that has not landed or gone back.
+type landingQueued struct {
+	Batch  string `json:"batch"`
+	Member string `json:"member"`
+	Seat   string `json:"seat"`
+	Head   string `json:"head"`
+	State  string `json:"state"`
+}
+
+func landingStatus(owners laneVerbOwners, home string, record lane.Record, view lane.View) landingStatusData {
+	_, paused := lane.ReadPause(home)
+	data := landingStatusData{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []landingQueued{}}
+	layout, err := record.Layout()
+	if err != nil {
+		return data
+	}
+	read := owners.records
+	if read == nil {
+		read = func(root string) ([]batch.Record, error) { return batch.NewStore(root, nil).Records() }
+	}
+	if records, err := read(record.Root); err == nil {
+		for _, batchRecord := range records {
+			for _, unit := range batchRecord.Units {
+				if unit.State == batch.UnitJoining || unit.State == batch.UnitJoined || unit.State == batch.UnitReturnPending {
+					data.Queue = append(data.Queue, landingQueued{Batch: batchRecord.BatchID, Member: unit.GoalID, Seat: unit.SeatRoot, Head: unit.Head(), State: unit.State})
+				}
+			}
+		}
+	}
+	if proof, ok, err := kernel.LastTreeProof(layout); err == nil && ok {
+		data.LastProof = &proof
+	}
+	if published, err := lane.ReadPublications(home); err == nil {
+		for index := len(published) - 1; index >= 0; index-- {
+			if published[index].Kind == lane.KindLanding {
+				data.LastPush = &published[index]
+				break
+			}
+		}
+	}
+	return data
 }
 
 // landingStatusView is landing status's page (output-style §6.5): the
@@ -684,13 +683,8 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 			Details: []string{"refused because: " + lane.CodeUnsetting}}
 	}
 	pause, paused := lane.ReadPause(home)
-	// A spent allowance is granted afresh only by a person (K10).
-	spentBatch, spent, _ := lane.AllowanceSpent(home)
-	if !paused && !spent {
-		return nil
-	}
 	if !paused {
-		pause.By = "its stop-loss (batch " + spentBatch + " spent its allowance)"
+		return nil
 	}
 	proveAt := inv.cwd
 	if inv.resolveLayout() == nil {
@@ -705,27 +699,18 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 	return nil
 }
 
-// startLane ends a person's pause and forgets the last landing agent's
-// cooldown, so the keeper wakes the agent at once when there is work (design
-// r10 §3); unchanged when the lane was not paused. A lane that can't run is
+// startLane ends a person's pause and repairs an unreadable keeper record,
+// so the keeper wakes the agent at once when there is work; unchanged when
+// the lane was not paused. A lane that can't run is
 // refused with its fix before anything is written.
 func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, record lane.Record) intentResult {
 	targets := laneTargets(record.Root)
 	if refused := inv.laneNotReady(owners, record.Root); refused != nil {
 		return *refused
 	}
-	_, spent, spentErr := lane.AllowanceSpent(home)
 	resumed, err := lane.ClearPause(home)
-	if err == nil && spentErr != nil {
-		err = spentErr
-	}
-	if err == nil && (resumed || spent) {
-		// A person's resume grants the lane a fresh allowance (K10); the
-		// budgets' history is kept.
-		err = lane.Grant(home, inv.landingActor(owners), owners.now())
-	}
 	if err == nil {
-		err = lane.ClearAgentCooldown(home)
+		err = lane.RepairAgentRecord(home)
 	}
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",
@@ -973,8 +958,8 @@ func (inv *intentInvocation) statusLane() *lane.View {
 }
 
 // sayWhenTheLaneLockIsHeld prints one plain line before a stop waits for the
-// host flock: a landing engine advance holds it while it re-arms, and the
-// stop takes effect only when that finishes.
+// host flock: another lane step (a push to main among them) holds it, and
+// the stop takes effect only when that finishes.
 func (inv *intentInvocation) sayWhenTheLaneLockIsHeld(home string) {
 	held, err := lock.File(lane.LockPath(home), 0o600, lock.TryExclusive)
 	if err == nil {
@@ -983,7 +968,7 @@ func (inv *intentInvocation) sayWhenTheLaneLockIsHeld(home string) {
 	}
 	if lock.Busy(err) && !inv.input.switched("json") {
 		page := textui.New(inv.textEnv(inv.stderr))
-		page.Mark(textui.Running, "the lane's engine is being changed; the stop takes effect when that finishes")
+		page.Mark(textui.Running, "another landing step holds the lane; the stop takes effect when it finishes")
 		_, _ = io.WriteString(inv.stderr, page.String())
 	}
 }

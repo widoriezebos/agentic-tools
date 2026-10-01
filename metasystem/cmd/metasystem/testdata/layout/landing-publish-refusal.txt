@@ -1,2 +1,0 @@
-✗ batch 4gr18nm8t3nyev9sssda9jgtsq has no readable begin record, so nothing was published
-  → metasystem landing status --verbose  shows the batch and what it waits for

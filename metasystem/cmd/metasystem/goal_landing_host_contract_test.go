@@ -325,6 +325,12 @@ var retiredWithDeletedLibrary = map[string]string{
 	"landing-command-standard/TestTrunkRedRecordOutcomeDistinguishesAlreadyFromMovedOn":             "landing/batchowner and landing/batch old batch owner",
 	"landing-command-standard/TestTrunkRedRefusalLeavesHeldWithEmptyEntries":                        "landing/batchowner and landing/batch old batch owner",
 	"landing-command-standard/TestTrunkRedUnboundOwnerRefusesByName":                                "landing/batchowner and landing/batch old batch owner",
+	// The simple lane deleted landing validate and with it internal/cadence,
+	// the validation cadence these tests checked.
+	"landing-command-standard/TestCadencePreparationDoesNotRequireClaimedGoal":                "internal/cadence (landing validate's cadence)",
+	"landing-command-standard/TestCadenceRunStoreRereadsLandingOwnerEpoch":                    "internal/cadence (landing validate's cadence)",
+	"landing-command-standard/TestCadenceRevalidationDefersMissingEngineBuildUntilClaimedRun": "internal/cadence (landing validate's cadence)",
+	"landing-command-standard/TestCadenceRevalidationDoesNotBuildBeforeClaim":                 "internal/cadence (landing validate's cadence)",
 }
 
 var retiredWithDeletedBed = map[string]string{

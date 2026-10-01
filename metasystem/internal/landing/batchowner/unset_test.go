@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -69,6 +68,13 @@ func unsetGoalFile(id string, claimed *goal.ClaimRecord) []byte {
 }
 
 func newUnsetBed(t *testing.T) *unsetBed {
+	t.Helper()
+	return newUnsetBedWithTip(t, nil)
+}
+
+// newUnsetBedWithTip is newUnsetBed whose goal-a member's branch tip is
+// what tip returns once origin and the publisher exist; nil records none.
+func newUnsetBedWithTip(t *testing.T, tip func(*unsetBed) string) *unsetBed {
 	t.Helper()
 	base := t.TempDir()
 	bed := &unsetBed{home: filepath.Join(base, "home"), origin: filepath.Join(base, "origin.git"), publisher: filepath.Join(base, "publisher"),
@@ -127,8 +133,12 @@ func newUnsetBed(t *testing.T) *unsetBed {
 	pending.State = batch.UnitJoined
 	bed.fix, bed.pendingChange = change.GoalID, pending.GoalID
 	bed.store = batch.NewStore(string(layout.Checkout), nil)
+	goalATip := ""
+	if tip != nil {
+		goalATip = tip(bed)
+	}
 	if err := bed.store.Create(batch.Record{Schema: 1, BatchID: unsetBatchID, State: batch.StateOpen, Units: []batch.Unit{
-		{GoalID: "goal-a", Chain: "chain-a", SeatRoot: bed.seat, Claim: batch.Claim{Machine: "seat", Lineage: "lineage-a", Epoch: 4, Revision: 2, AccountingRevision: 1}, State: batch.UnitJoined},
+		{GoalID: "goal-a", Chain: "chain-a", SeatRoot: bed.seat, Claim: batch.Claim{Machine: "seat", Lineage: "lineage-a", Epoch: 4, Revision: 2, AccountingRevision: 1}, State: batch.UnitJoined, BranchTip: goalATip},
 		change, pending,
 	}}); err != nil {
 		t.Fatal(err)
@@ -395,8 +405,7 @@ func TestUnsetSettleRereadsTheAgentAfterStoppingIt(t *testing.T) {
 			bed.agentReads++
 			return "landing-0123456789abcdef", true, nil
 		},
-		StopAgent: func(string) error { bed.stops++; return nil },
-		Custody:   func(lane.Layout) custody.Probes { return custody.Probes{} }}
+		StopAgent: func(string) error { bed.stops++; return nil }}
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || bed.stops != 1 || bed.agentReads != 2 {
 		t.Fatalf("settle with an agent that outlives its stop = %+v %v (stops %d, reads %d); want live work", settlement, err, bed.stops, bed.agentReads)

@@ -315,8 +315,8 @@ the engine's `metasystem goal` family (`internal/goal`).
   in thirty days force a fix goal.
 - **Landing batch** — an ordered set of goal units and changes whose claims
   have been handed to the landing lane's claim identity. The lane's landing
-  agent composes them into one series on main (`landing begin`), proves it
-  (`landing prove`), and publishes it with one push (`landing publish`); a
+  agent merges them onto main in the lane's checkout, proves the result
+  (`landing prove`), and puts it on main with one push (`landing push`); a
   member that breaks the proof goes back to its seat (`landing return`), and
   the survivors keep their order.
 - **Landing lane** — the one checkout per computer where every seat's work
@@ -329,9 +329,9 @@ the engine's `metasystem goal` family (`internal/goal`).
   `docs/concepts.md`, "Landing lane"; how to run it:
   `docs/working-with-agents.md`.
 - **Landing agent** — the one agent session per computer that works the
-  landing lane through its kernel verbs (`landing begin`, `prove`,
-  `publish`, `return`, `validate`). The steward of the lane's checkout wakes
-  it only when there is work; `landing stop` and `landing start` are a
+  landing lane through its verbs (`landing status`, `prove`, `push`,
+  `return`), following the landing-agent skill. The steward of the lane's
+  checkout wakes it only when there is work; `landing stop` and `landing start` are a
   person's controls. It replaced the lane owner, the batch owner process that
   earlier engines ran in the lane's checkout.
 - **The seat lands it itself** — the route when the computer has no landing

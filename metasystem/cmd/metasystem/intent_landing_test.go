@@ -6,14 +6,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -62,9 +58,7 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-		// The lane beds keep no goal ledger: validation is never due.
-		validation: func(string, time.Time) (bool, error) { return false, nil },
-		home:       func() (string, error) { return bed.home, nil },
+		home: func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil
@@ -592,8 +586,7 @@ func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 
 // TestLandingStartWithALandingAgentRunning (A-a, re-review 2 and 3): a
 // person's landing start while a landing agent runs starts nothing beside
-// it; and the start forgets the last agent's cooldown, so work wakes one at
-// once.
+// it, and keeps the keeper's record of that agent.
 func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -605,7 +598,7 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	cooled := filepath.Join(lane.HostDir(bed.home), "landing-agent-keeper.json")
-	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reasons":["validation-due"],"reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
+	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, stdout, stderr := bed.run(t, "landing", "start")
@@ -613,39 +606,7 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 		t.Fatalf("landing start with an agent running = %d %q %q", code, stdout, stderr)
 	}
 	state, err := lane.ReadAgentState(bed.home)
-	if err != nil || len(state.Reasons) != 0 || state.Launch != "landing-0010" {
-		t.Fatalf("after a person's start the keeper record is %+v %v; want the cooldown reasons forgotten, the launch kept", state, err)
-	}
-}
-
-// A validation run that is reserved and whose custody has ended awaits its
-// finalization (integration of A-a and K-f): landing status --json names
-// it as a wake reason, and the keeper wakes the landing agent on the same
-// read, so landing validate finalizes it or runs it again.
-func TestLandingWakesForAPendingFinalization(t *testing.T) {
-	t.Parallel()
-	bed := newLaneVerbBed(t)
-	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
-	if view := bed.status(t); view.Wake == nil || slices.Contains(view.Wake.Reasons, lane.WakeFinalizationPending) {
-		t.Fatalf("a lane with no validation reserved wakes for %+v", view.Wake)
-	}
-	reservation, err := json.Marshal(gaterun.Validation{RunID: "run-1", Key: goal.CadenceClaimKey{TrunkTree: strings.Repeat("a", 40)}, ReservedAt: laneTestNow.Format(time.RFC3339Nano)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cadence.ReservationPath(bed.home), reservation, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if view := bed.status(t); view.Wake == nil || !slices.Contains(view.Wake.Reasons, lane.WakeFinalizationPending) {
-		t.Fatalf("a reserved validation that runs no more wakes for %+v; want %s", view.Wake, lane.WakeFinalizationPending)
-	}
-	keeper := newLandingAgentKeeper(filepath.Join(bed.landingA, "metasystem"), bed.home, newLandingAgent())
-	record, _, err := lane.Read(bed.home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keeper.Sources.Validation = nil
-	if wake := lane.ReadWake(record, laneTestNow, keeper.Sources); !slices.Contains(wake.Reasons, lane.WakeFinalizationPending) {
-		t.Fatalf("the keeper's wake = %+v; want %s", wake, lane.WakeFinalizationPending)
+	if err != nil || state.Launch != "landing-0010" {
+		t.Fatalf("after a person's start the keeper record is %+v %v; want the launch kept", state, err)
 	}
 }

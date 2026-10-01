@@ -216,8 +216,7 @@ func TestWorkLandAfterUnsetLandsOnTheSeat(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf.local"), []byte("landing.batch-root="+landing+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	seams := batchowner.LandingLaneSeams{Home: func() (string, error) { return home, nil },
-		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
+	seams := batchowner.LandingLaneSeams{Home: func() (string, error) { return home, nil }}
 	b.owners.batchRoot = seams.BatchRoot
 	steps := batchowner.ProductionUnsetLane(home, "Wido")
 	steps.Agent = func() (string, bool, error) { return "", false, nil }

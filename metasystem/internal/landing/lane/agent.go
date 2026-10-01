@@ -1,21 +1,17 @@
 package lane
 
-// The keeper's landing-agent step (landing-lane-runtime-redesign §3, unit
-// A-a; D1: one landing agent per computer, started on demand). One Step per
-// steward cycle: the agent is started when the lane is registered and not
-// paused, no hold stands, and a wake reason holds; an idle lane runs no
-// model. Only the lane checkout's own steward starts it, so the lane's own
-// engine supervises the lane's agent. The budget, usage and custody gates
-// (K-g, K-f) join as Holds, and each ended launch is reaped once through
-// Reap (the outage feed, and its usage reconciled into the budget store).
-// The keeper also keeps the session's deadline (K10): it cancels a session
-// whose clock ran out and settles the work it left (stoploss.go).
+// The keeper's landing-agent step (simple lane §1, rail 2): one landing
+// agent per computer, started on demand. One Step per steward cycle: the
+// agent is started when the lane is registered and not paused, its queue is
+// not empty, no hold stands and none is alive; an idle lane runs no model.
+// Only the lane checkout's own steward starts it, so the lane's own engine
+// supervises the lane's agent. Each ended launch is reaped once through Reap
+// (the outage feed).
 
 import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 )
@@ -23,9 +19,8 @@ import (
 // AgentState is what the keeper remembers of the landing agent it last
 // started, shared by every steward of the host under the lane flock.
 type AgentState struct {
-	Launch    string   `json:"launch,omitempty"`
-	StartedAt string   `json:"startedAt,omitempty"`
-	Reasons   []string `json:"reasons,omitempty"`
+	Launch    string `json:"launch,omitempty"`
+	StartedAt string `json:"startedAt,omitempty"`
 	// ReapedAt is when the launch's end was reaped; empty while it runs or
 	// before its reap.
 	ReapedAt string `json:"reapedAt,omitempty"`
@@ -72,24 +67,7 @@ type AgentKeeper struct {
 	// Cancel stops a launch that started while the lane was paused
 	// meanwhile; nil leaves it to the pause's own reach.
 	Cancel func(id string) error
-	// Settle ends the landing work a cancelled session left running (the
-	// kernel executions the custody store holds, K9) and reads custody
-	// settled; an error is custody not settled.
-	Settle func(root string) error
-	// Alert opens the alert a stop-loss hit owes (the steward's OpenAlert
-	// at the lane installation); nil opens none.
-	Alert func(root string, hit Hit) error
 }
-
-// AgentCooldown is how long the keeper waits before it wakes a fresh agent
-// for the very reasons the last one ended with: an agent that ended while
-// its reasons still hold would otherwise be relaunched every cycle. Changed
-// reasons wake at once. (The full budget is K-g's.)
-const AgentCooldown = time.Hour
-
-// PushGrace bounds how long the keeper's deadline cancel waits for a push
-// to main that is in flight.
-const PushGrace = 10 * time.Minute
 
 // startClaim bounds a start in progress that another step honours: a start
 // the launcher never finished is taken over after it.
@@ -102,87 +80,8 @@ const startClaim = 10 * time.Minute
 // landing stop never waits for them, and the start is re-checked under the
 // flock before and after.
 func (k AgentKeeper) Step() string {
-	lines := []string{}
-	if line := k.deadline(); line != "" {
-		lines = append(lines, line)
-	}
-	if line := k.step(); line != "" {
-		lines = append(lines, line)
-	}
-	if record, ok, err := Read(k.Home); err == nil && ok && k.Alert != nil && !gone(record.Root) && k.own(record) {
-		if line := DeliverHits(k.Home, k.Now(), func(hit Hit) error { return k.Alert(record.Root, hit) }); line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// deadline is the keeper's deadline (K10): a running landing session whose
-// clock ran out is cancelled through launch cancellation, the landing work
-// it left running is ended and its custody settled (K9), and the hit pauses
-// the lane. It acts whether or not the lane is paused, and only in the lane
-// checkout's own steward. Empty when nothing ran out.
-func (k AgentKeeper) deadline() string {
-	var root, id string
-	var at time.Time
-	due, waiting := false, false
-	if err := withLock(k.Home, func() error {
-		record, ok, err := Read(k.Home)
-		if err != nil || !ok || gone(record.Root) || !k.own(record) {
-			return nil
-		}
-		state, err := ReadAgentState(k.Home)
-		if err != nil || state.Launch == "" || state.ReapedAt != "" {
-			return nil
-		}
-		deadline, ok, err := SessionDeadlineHeld(k.Home, state.Launch)
-		if err != nil || !ok || k.Now().Before(deadline) {
-			return err
-		}
-		running, live, err := k.Running()
-		if err != nil || !live || running != state.Launch {
-			return err
-		}
-		// A push to main in flight is not cut in half: the cancel waits
-		// for it, at most PushGrace past the deadline.
-		if publishInFlight(k.Home) && k.Now().Before(deadline.Add(PushGrace)) {
-			waiting = true
-			return nil
-		}
-		root, id, at, due = record.Root, state.Launch, deadline, true
-		return nil
-	}); err != nil {
-		return "the landing agent's deadline can't be read: " + err.Error()
-	}
-	if waiting {
-		return "the landing session ran out of its time while it pushes to main; it is stopped once the push ends"
-	}
-	if !due {
-		return ""
-	}
-	cancelErr := errors.New("this keeper can't stop a landing session")
-	if k.Cancel != nil {
-		cancelErr = k.Cancel(id)
-	}
-	settleErr := errors.New("this keeper can't end the landing work a session left")
-	if k.Settle != nil {
-		settleErr = k.Settle(root)
-	}
-	problem := errors.Join(cancelErr, settleErr)
-	if err := withLock(k.Home, func() error { return DeadlineHitHeld(k.Home, id, at, k.Now(), problem) }); err != nil {
-		return fmt.Sprintf("the landing session %s ran out of its time at %s, and the lane's stop could not be recorded: %v", id, localClock(at), err)
-	}
-	if problem != nil {
-		return fmt.Sprintf("the landing session %s ran out of its time at %s; the lane is stopped, and its work could not all be ended: %v", id, localClock(at), problem)
-	}
-	return fmt.Sprintf("the landing session %s ran out of its time at %s; it was stopped, its test runs ended, and the lane is stopped until a person resumes it", id, localClock(at))
-}
-
-// step is one wake decision: reap, hold, start.
-func (k AgentKeeper) step() string {
 	var root, line string
 	var registered Record
-	var state AgentState
 	proceed := false
 	if err := withLock(k.Home, func() error {
 		record, ok, err := Read(k.Home)
@@ -190,7 +89,7 @@ func (k AgentKeeper) step() string {
 			return err
 		}
 		root, registered = record.Root, record
-		line, state, proceed = k.decide(record)
+		line, proceed = k.decide(record)
 		return nil
 	}); err != nil {
 		return "the landing agent's keeper can't read the lane: " + err.Error()
@@ -206,15 +105,6 @@ func (k AgentKeeper) step() string {
 			line += " (unread: " + strings.Join(wake.Unread, "; ") + ")"
 		}
 		return line
-	}
-	// A session that took up a batch ended its batch's work: the next
-	// batch gets a fresh session at once (one fresh session per batch).
-	store, _ := ReadStopLoss(k.Home)
-	ended, err := time.Parse(time.RFC3339, state.ReapedAt)
-	tookUp := LaunchTookUpBatch(store, state.Launch) && !slices.Contains(wake.Reasons, WakeUnfinishedBatch)
-	if err == nil && !tookUp && slices.Equal(state.Reasons, wake.Reasons) && now.Sub(ended) < AgentCooldown {
-		return fmt.Sprintf("the landing agent at %s is not started again yet: the last one ended at %s with the same reasons (%s); it wakes when they change or at %s",
-			root, LocalText(state.ReapedAt), strings.Join(wake.Reasons, ", "), localClock(ended.Add(AgentCooldown)))
 	}
 	// Claim the start under the flock, re-checking what may have changed
 	// while the wake was read.
@@ -257,28 +147,12 @@ func (k AgentKeeper) step() string {
 		current.StartingAt = ""
 		if startErr != nil {
 			line = fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr)
-			// A recovery start that failed counts toward the breaker.
-			return errors.Join(FailedStartHeld(k.Home, wake.Reasons, k.Now(), startErr.Error()), writeJSON(k.Home, agentStatePath(k.Home), current))
-		}
-		startedAt := k.Now()
-		current = AgentState{Launch: id, StartedAt: startedAt.UTC().Format(time.RFC3339), Reasons: wake.Reasons}
-		// The session's clock and its spend record start with it (K10).
-		// A session whose budget can't be kept does not run.
-		if err := StartLaunchHeld(k.Home, id, wake.Reasons, startedAt); err != nil {
-			current.Reasons = nil
-			line = fmt.Sprintf("the landing agent %s started at %s, and its budget could not be recorded (%v), so it was stopped again", id, root, err)
-			if k.Cancel == nil {
-				line = fmt.Sprintf("the landing agent %s started at %s, and its budget could not be recorded (%v); run: metasystem work stop %s", id, root, err, id)
-			} else if cancelErr := k.Cancel(id); cancelErr != nil {
-				line = fmt.Sprintf("the landing agent %s started at %s, and its budget could not be recorded (%v) nor the agent stopped (%v); run: metasystem work stop %s", id, root, err, cancelErr, id)
-			}
 			return writeJSON(k.Home, agentStatePath(k.Home), current)
 		}
+		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339)}
 		line = fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))
-		// A pause that came while it started ends it at once; its reasons
-		// then hold no cooldown.
+		// A pause that came while it started ends it at once.
 		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
-			current.Reasons = nil
 			if err := k.Cancel(id); err != nil {
 				line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and could not be stopped: %v; run: metasystem work stop %s", id, root, by, err, id)
 			} else {
@@ -317,43 +191,40 @@ func (k AgentKeeper) recheck(root string) (string, bool) {
 
 // decide is the step's part under the flock: whether this steward may start
 // the agent now, after reaping an ended launch and reading the holds.
-func (k AgentKeeper) decide(record Record) (string, AgentState, bool) {
+func (k AgentKeeper) decide(record Record) (string, bool) {
 	root := record.Root
 	if gone(root) {
-		return goneRefusal(Record{Root: root}).Message, AgentState{}, false
+		return goneRefusal(Record{Root: root}).Message, false
 	}
 	if by, paused := pausedClosed(k.Home); paused && !k.own(record) {
-		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), AgentState{}, false
+		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), false
 	}
 	if !k.own(record) {
-		return "", AgentState{}, false
+		return "", false
 	}
-	// An ended launch is reaped at once, paused or not: its usage is
-	// reconciled and its end counted while the lane waits for a person
-	// (K10), so a resume never meets an end the budgets have not seen.
+	// An ended launch is reaped at once, paused or not.
 	state, _ := ReadAgentState(k.Home)
 	if _, running, err := k.Running(); err == nil && !running && state.Launch != "" && state.ReapedAt == "" {
 		for _, reap := range k.Reap {
 			if err := reap(state.Launch); err != nil {
-				return fmt.Sprintf("the landing agent at %s is not started: the end of %s could not be recorded (%v)", root, state.Launch, err), state, false
+				return fmt.Sprintf("the landing agent at %s is not started: the end of %s could not be recorded (%v)", root, state.Launch, err), false
 			}
 		}
 		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
 		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
-			return "the landing agent's keeper can't write its record: " + err.Error(), state, false
+			return "the landing agent's keeper can't write its record: " + err.Error(), false
 		}
 	}
-	// The pause, read again: a reap may have stopped the lane (a hit).
 	if by, paused := pausedClosed(k.Home); paused {
-		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), state, false
+		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), false
 	}
 	if reason, stop := k.recheck(root); stop {
-		return reason, state, false
+		return reason, false
 	}
 	if reason, held := k.held(root); held {
-		return reason, state, false
+		return reason, false
 	}
-	return "", state, true
+	return "", true
 }
 
 // held reads the holds: the first that holds, or cannot be read, stops the
@@ -392,26 +263,32 @@ func UnreadableAgentRecord(home string) string {
 	return "the landing agent's keeper record " + agentStatePath(home) + " can't be read, so nothing starts\nrun: metasystem landing start"
 }
 
-// ClearAgentCooldown forgets the reasons the last agent ended with: a
-// person's landing start wakes the agent at once when work is there. A
-// record that cannot be read is replaced at the person's word, keeping
-// nothing (its launch, if any, is left to the launch store).
-func ClearAgentCooldown(home string) error {
+// RepairAgentRecord replaces a keeper record that cannot be read, at a
+// person's landing start, keeping nothing (its launch, if any, is left to
+// the launch store); a readable record is left as it is.
+func RepairAgentRecord(home string) error {
 	return withLock(home, func() error {
-		state, err := ReadAgentState(home)
-		if err != nil {
+		if _, err := ReadAgentState(home); err != nil {
 			return writeJSON(home, agentStatePath(home), AgentState{})
 		}
-		if len(state.Reasons) == 0 {
-			return nil
-		}
-		state.Reasons = nil
-		return writeJSON(home, agentStatePath(home), state)
+		return nil
 	})
 }
 
 // own says whether this steward keeps the registered lane (ownsLane).
 func (k AgentKeeper) own(record Record) bool { return ownsLane(k.Self, record) }
+
+// ownsLane says whether the steward of self keeps the registered lane: its
+// checkout is the lane's checkout or its installation, as landing set
+// recorded them (K-a), never guessed.
+func ownsLane(self string, record Record) bool {
+	layout, err := record.Layout()
+	if self == "" || err != nil {
+		return false
+	}
+	here := resolved(self)
+	return here == resolved(string(layout.Checkout)) || here == resolved(string(layout.Install))
+}
 
 // pausedClosed reads the pause failing closed (K2): a pause record that
 // cannot be read counts as a pause.

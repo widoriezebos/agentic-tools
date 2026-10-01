@@ -97,12 +97,6 @@ func observeGovernedRunWithReads(repoRoot string, record *run.Record, now time.T
 		activeJobs, uint64(now.Sub(started)/time.Second), now)
 }
 
-// SettledSpendAtConclusion projects every spend owner except the run whose
-// terminal record is being written.
-func SettledSpendAtConclusion(repoRoot string, record *run.Record, now time.Time) (run.SpendSnapshot, string) {
-	return settledSpendAtConclusionWithReads(repoRoot, record, now, concreteGoalAdmissionReads())
-}
-
 func settledSpendAtConclusionWithReads(repoRoot string, record *run.Record, now time.Time, reads goalAdmissionReads) (run.SpendSnapshot, string) {
 	binding, err := resolveGoalBindingWithReads(repoRoot, record.GoalId, now, reads)
 	if err != nil {
@@ -147,12 +141,6 @@ func newConcludingRunStoreWithReads(root string, currentEpoch func() (*int64, bo
 			return settledSpendAtConclusionWithReads(root, record, now, reads)
 		},
 	}
-}
-
-// EvaluateGovernedRunAdmission binds authorization and the complete existing
-// budget projection to the exact obligation revision about to be launched.
-func EvaluateGovernedRunAdmission(repoRoot string, request run.GovernedAdmissionRequest, now time.Time) (run.GovernedAdmissionResult, error) {
-	return evaluateGovernedRunAdmissionWithReads(repoRoot, request, now, concreteGoalAdmissionReads())
 }
 
 func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.GovernedAdmissionRequest, now time.Time, reads goalAdmissionReads) (run.GovernedAdmissionResult, error) {

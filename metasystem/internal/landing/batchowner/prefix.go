@@ -9,7 +9,6 @@ import (
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -17,35 +16,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
-
-// A retained proof does not retain the right to land. Recheck the live
-// handed-over claim and elapsed admission fence before consuming it.
-func AuthorizeBatchMember(root string, record batch.Record, unit batch.Unit) error {
-	controlRoot, now, projection, err := batchAuthorityProjection(root)
-	if err != nil {
-		return err
-	}
-	return AuthorizeBatchMemberInProjection(controlRoot, now, record, unit, projection)
-}
-
-func batchAuthorityProjection(root string) (string, time.Time, goal.Projection, error) {
-	controlRoot := batch.ModuleRoot(root)
-	now, err := fixtureauth.GoalNow(controlRoot)
-	if err != nil {
-		return "", time.Time{}, goal.Projection{}, err
-	}
-	endpoint, err := goal.ResolveEndpoint(controlRoot)
-	if err != nil {
-		return "", time.Time{}, goal.Projection{}, err
-	}
-	// A handover or fence can advance the canonical ledger from another seat
-	// while this checkout's accepted ref still names the previous claim.
-	projection, err := goal.Project(endpoint, true, now)
-	if err != nil {
-		return "", time.Time{}, goal.Projection{}, err
-	}
-	return controlRoot, now, projection, nil
-}
 
 func AuthorizeBatchMemberInProjection(controlRoot string, now time.Time, record batch.Record, unit batch.Unit, projection goal.Projection) error {
 	if unit.IsChange() {

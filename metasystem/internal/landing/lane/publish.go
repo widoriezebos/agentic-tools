@@ -1,21 +1,16 @@
 package lane
 
-// The lane's one publication boundary (design r10 §2, K3): every
-// lane-scoped write to main, a batch landing or one of the lane's own goal
-// ledger transactions, is published by Publish and nothing else. Publish
-// mints a token bound to the exact tuple under the lane flock (the gate,
-// K2), pushes with an explicit lease on the expected old commit, and the
-// pre-push hook installed in the lane checkout admits exactly that one ref
-// update against the token (hook.go). A moved base is never republished:
-// it comes back as LANE_BASE_MOVED, and the agent recomposes.
+// The lane's one publication boundary: every lane-scoped write to main, a
+// landing push or one of the lane's own goal ledger transactions, is
+// published by Publish. Publish passes the gate (the lane is registered, is
+// this checkout, is not paused or being unset), records the publication,
+// and pushes with an explicit lease on the expected old commit. A moved
+// base is never republished: it comes back as LANE_BASE_MOVED.
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,24 +35,17 @@ const (
 	// main: nothing was published, and the lane recomposes on the new main.
 	CodeBaseMoved = "LANE_BASE_MOVED"
 	// CodePublishRefused is a publication main did not take for a reason
-	// other than a moved base (the tuple is malformed, the hook refused).
+	// other than a moved base (the tuple is malformed, main refused it).
 	CodePublishRefused = "LANE_PUBLISH_REFUSED"
 	// CodePublishUnknown is a push whose outcome could not be read back.
 	CodePublishUnknown = "LANE_PUBLISH_UNKNOWN"
-	// CodePushNotAdmitted is the hook's refusal of a push from the lane
-	// checkout that no publication token admits.
-	CodePushNotAdmitted = "LANE_PUSH_NOT_ADMITTED"
 )
-
-// TokenEnv carries a publication's token to the lane checkout's pre-push
-// hook, through git push's environment.
-const TokenEnv = "METASYSTEM_LANE_PUBLISH_TOKEN"
 
 // Tuple is one lane publication, exactly (K3): the repository and remote it
 // pushes to, the one ref it updates, the expected old commit (the lease),
 // the exact new commit and its tree, what kind of write it is, the batch or
-// ledger operation it belongs to, the proof attempt a landing publishes, and
-// the lane engine's generation.
+// ledger operation it belongs to, the proof attempt a landing publishes, and,
+// for a ledger write, the lane installation's enrolled generation.
 type Tuple struct {
 	Repo         string `json:"repo"`
 	RemoteURL    string `json:"remoteUrl"`
@@ -68,7 +56,7 @@ type Tuple struct {
 	Kind         string `json:"kind"`
 	Op           string `json:"op"`
 	ProofAttempt string `json:"proofAttempt,omitempty"`
-	Generation   int    `json:"generation"`
+	Generation   int    `json:"generation,omitempty"`
 }
 
 var objectID = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
@@ -89,8 +77,6 @@ func (t Tuple) problem() string {
 		return "it names no batch or operation"
 	case t.Kind == KindLanding && t.ProofAttempt == "":
 		return "a landing names the test attempt it publishes"
-	case t.Generation < 1:
-		return "it names no lane engine number"
 	}
 	return ""
 }
@@ -131,48 +117,9 @@ func IsBaseMoved(err error) bool {
 	return errors.As(err, &refused) && refused.Code == CodeBaseMoved
 }
 
-// token is the minted admission of one tuple, kept in host state (outside
-// every checkout) for the hook to find by its nonce.
-type token struct {
-	Tuple     Tuple     `json:"tuple"`
-	Operation Operation `json:"operation"`
-	Authority Authority `json:"authority"`
-	Pid       int       `json:"pid"`
-}
-
-var nonceShape = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-func tokenDir(home string) string { return filepath.Join(HostDir(home), "landing-publish-tokens") }
-
-func tokenPath(home, nonce string) string { return filepath.Join(tokenDir(home), nonce+".json") }
-
-// mint writes the token of tuple and returns its nonce; the caller holds the
-// lane flock (it runs inside the gate).
-func mint(home string, tuple Tuple, op Operation, authority Authority) (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	nonce := hex.EncodeToString(raw)
-	if err := os.MkdirAll(tokenDir(home), 0o700); err != nil {
-		return "", err
-	}
-	// A token outlives no process: the tokens of ended processes go.
-	if entries, err := os.ReadDir(tokenDir(home)); err == nil {
-		for _, entry := range entries {
-			var stale token
-			path := filepath.Join(tokenDir(home), entry.Name())
-			if _, err := readJSON(path, &stale); err != nil || !processAlive(stale.Pid) {
-				_ = removeIfPresent(path)
-			}
-		}
-	}
-	return nonce, writeJSON(home, tokenPath(home, nonce), token{Tuple: tuple, Operation: op, Authority: authority, Pid: os.Getpid()})
-}
-
-// Publish publishes tuple as op for authority (K3). It checks the tuple
-// against the repository, passes the gate (K2: the lane is registered, is
-// this checkout, is not paused or being unset) and mints the tuple's token
+// Publish publishes tuple as op for authority. It checks the tuple against
+// the repository, passes the gate (the lane is registered, is this
+// checkout, is not paused or being unset) and records the publication
 // there, pushes with the lease on tuple.Old, and reads main back. Main
 // that moved past tuple.Old is a *PublishError with CodeBaseMoved and the
 // main it found; it is never republished.
@@ -187,27 +134,19 @@ func Publish(home string, tuple Tuple, op Operation, authority Authority) error 
 			Message: "the commit to publish is not the tree the publication names, so nothing was published",
 			Detail:  fmt.Sprintf("commit %s has tree %q, the publication names %s: %v", tuple.New, tree, tuple.Tree, err)}
 	}
-	var nonce string
 	err = Gate(home, op, authority, func(record Record) error {
 		if resolved(record.Root) != resolved(tuple.Repo) {
 			return &PublishError{Code: CodePublishRefused, Expected: tuple.Old,
 				Message: "only the landing checkout " + record.Root + " publishes for the lane, so nothing was published",
 				Detail:  "the publication names " + tuple.Repo}
 		}
-		minted, err := mint(home, tuple, op, authority)
-		nonce = minted
-		if err != nil {
-			return err
-		}
-		// The publication is recorded before it is pushed: the lane watch
-		// (K10) finds every lane-trailed commit on main in one of these.
+		// The publication is recorded before it is pushed.
 		return recordPublication(home, tuple, time.Now())
 	})
 	if err != nil {
 		return err
 	}
-	defer removeIfPresent(tokenPath(home, nonce))
-	output, pushErr := laneGit(tuple.Repo, []string{TokenEnv + "=" + nonce},
+	output, pushErr := laneGit(tuple.Repo, nil,
 		"push", "--porcelain", "--force-with-lease="+tuple.Ref+":"+tuple.Old, tuple.RemoteURL, tuple.New+":"+tuple.Ref)
 	current, readErr := remoteMain(tuple)
 	switch {
@@ -258,7 +197,7 @@ func gitSteering(name string) bool {
 	case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES",
 		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
 		"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
-		"GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE", TokenEnv:
+		"GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE":
 		return true
 	}
 	return strings.HasPrefix(name, "GIT_CONFIG_KEY_") || strings.HasPrefix(name, "GIT_CONFIG_VALUE_")
@@ -289,19 +228,6 @@ func laneGitInput(dir string, extra []string, input string, args ...string) (str
 		return strings.TrimSpace(stdout.String() + "\n" + stderr.String()), fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
-}
-
-// readToken reads the token of nonce; false when there is none.
-func readToken(home, nonce string) (token, bool, error) {
-	var minted token
-	if !nonceShape.MatchString(nonce) {
-		return token{}, false, nil
-	}
-	ok, err := readJSON(tokenPath(home, nonce), &minted)
-	if errors.Is(err, fs.ErrNotExist) {
-		return token{}, false, nil
-	}
-	return minted, ok, err
 }
 
 // Publication is one lane publication as the boundary recorded it before
@@ -351,20 +277,4 @@ func ReadPublications(home string) ([]Publication, error) {
 		return nil, err
 	}
 	return record.Publications, nil
-}
-
-// publishInFlight says whether a lane publication's push runs now: a token
-// whose minting process still lives. The caller holds the lane flock.
-func publishInFlight(home string) bool {
-	entries, err := os.ReadDir(tokenDir(home))
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		var minted token
-		if _, err := readJSON(filepath.Join(tokenDir(home), entry.Name()), &minted); err == nil && processAlive(minted.Pid) {
-			return true
-		}
-	}
-	return false
 }

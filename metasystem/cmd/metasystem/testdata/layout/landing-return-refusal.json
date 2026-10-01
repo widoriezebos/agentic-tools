@@ -14,7 +14,7 @@ exit 1
     }
   ],
   "outcome": "refused",
-  "summary": "no failing test run of this batch names verbs-match-intent, so it was not returned as red",
+  "summary": "the return of verbs-match-intent names no reason, so nothing was returned",
   "data": {
     "batch": "4gr18nm8t3nyev9sssda9jgtsq",
     "member": "verbs-match-intent",
@@ -28,14 +28,14 @@ exit 1
       "landing",
       "return",
       "verbs-match-intent",
-      "--disposition",
-      "person"
+      "--reason",
+      "TEXT"
     ],
-    "reason": "a person returns it"
+    "reason": "names why it goes back"
   },
   "details": [
     "refused because: LANE_RETURN_EVIDENCE_MISSING",
-    "a person returns it at their word: metasystem landing return MEMBER --disposition person"
+    "a return names why the member goes back: metasystem landing return MEMBER --reason TEXT"
   ]
 }
 
