@@ -454,13 +454,6 @@ func Build(ctx context.Context, workspace gittree.Workspace, installationPrefix,
 	return build, nil
 }
 
-// BuildIdentity is the synthetic commit naming the candidate's engine
-// projection, toolchain closure, build environment and platform, through
-// the real Git seams.
-func BuildIdentity(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (string, error) {
-	return BuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, Native())
-}
-
 // BuildIdentityUsing is BuildIdentity through io's Git seam.
 func BuildIdentityUsing(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, io IO) (string, error) {
 	policy, err := behaviorsurface.Load()

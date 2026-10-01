@@ -699,9 +699,9 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 	return nil
 }
 
-// startLane ends a person's pause and forgets the last landing agent's
-// cooldown, so the keeper wakes the agent at once when there is work (design
-// r10 §3); unchanged when the lane was not paused. A lane that can't run is
+// startLane ends a person's pause and repairs an unreadable keeper record,
+// so the keeper wakes the agent at once when there is work; unchanged when
+// the lane was not paused. A lane that can't run is
 // refused with its fix before anything is written.
 func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, record lane.Record) intentResult {
 	targets := laneTargets(record.Root)
@@ -710,7 +710,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	}
 	resumed, err := lane.ClearPause(home)
 	if err == nil {
-		err = lane.ClearAgentCooldown(home)
+		err = lane.RepairAgentRecord(home)
 	}
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",

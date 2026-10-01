@@ -15,7 +15,6 @@ const (
 	codeJoinRevisionMoved        = "BATCH_JOIN_REVISION_MOVED"
 	codeJoinTestDropped          = "BATCH_JOIN_TEST_DROPPED"
 	codeJoinUnread               = "BATCH_JOIN_UNREAD"
-	codeLandPushRefused          = "BATCH_LAND_PUSH_REFUSED"
 	codePrefixAuthorityRefused   = "BATCH_PREFIX_AUTHORITY_REFUSED"
 	codePrefixPlanRefused        = "BATCH_PREFIX_PLAN_REFUSED"
 )

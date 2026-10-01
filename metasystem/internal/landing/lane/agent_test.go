@@ -56,20 +56,26 @@ func (a *fakeAgent) keeper(home, self string, clock *time.Time, sources WakeSour
 // noBatches is a lane with no batch records, read without the disk.
 func noBatches(string) ([]batch.Record, error) { return nil, nil }
 
-// TestKeeperWakesForDueValidation (A-a, §3 Wake): an idle lane with no
-// batch runs no model; when validation falls due the keeper starts the
-// landing agent on the lane checkout, once, naming the reason, and starts no
-// second one while it runs. A pause, a hold and a steward that is not the
+// TestKeeperWakesForQueuedWork (A-a, simple lane §1): an idle lane with no
+// batch runs no model; when work is queued the keeper starts the landing
+// agent on the lane checkout, once, naming the reason, and starts no second
+// one while it runs. A pause, a hold and a steward that is not the
 // lane's own start nothing; an ended agent is reaped once, before the next
 // start.
-func TestKeeperWakesForDueValidation(t *testing.T) {
+func TestKeeperWakesForQueuedWork(t *testing.T) {
 	t.Parallel()
 	home, checkout, module := nestedLaneDirs(t)
 	clock := laneNow
 	due := false
 	var askedRoot string
-	sources := WakeSources{Records: noBatches,
-		Validation: func(root string, _ time.Time) (bool, error) { askedRoot = root; return due, nil }}
+	queued := []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	sources := WakeSources{Records: func(root string) ([]batch.Record, error) {
+		askedRoot = root
+		if due {
+			return queued, nil
+		}
+		return nil, nil
+	}}
 	agent := &fakeAgent{}
 	keeper := agent.keeper(home, module, &clock, sources)
 
@@ -78,17 +84,17 @@ func TestKeeperWakesForDueValidation(t *testing.T) {
 	}
 	due = true
 	line := keeper.Step()
-	if len(agent.starts) != 1 || !slices.Equal(agent.starts[0].Reasons, []string{WakeValidationDue}) || agent.roots[0] != checkout {
-		t.Fatalf("validation due: %q, starts %+v on %v; want one start on %s for %s", line, agent.starts, agent.roots, checkout, WakeValidationDue)
+	if len(agent.starts) != 1 || !slices.Equal(agent.starts[0].Reasons, []string{WakeQueued}) || agent.roots[0] != checkout {
+		t.Fatalf("work queued: %q, starts %+v on %v; want one start on %s for %s", line, agent.starts, agent.roots, checkout, WakeQueued)
 	}
-	if askedRoot != module || !strings.Contains(line, "validation") {
+	if askedRoot != checkout || !strings.Contains(line, WakeQueued) {
 		t.Fatalf("the due read asked %q, line %q", askedRoot, line)
 	}
 	if line := keeper.Step(); len(agent.starts) != 1 || !strings.Contains(line, "running") {
 		t.Fatalf("a running agent: %q, starts %d; want no second start", line, len(agent.starts))
 	}
 
-	// The agent ended with validation still due: it is reaped once, and a
+	// The agent ended with work still queued: it is reaped once, and a
 	// fresh agent starts.
 	agent.running = ""
 	clock = clock.Add(time.Minute)
@@ -158,8 +164,8 @@ func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 	home, _, module := nestedLaneDirs(t)
 	clock := laneNow
 	reasons := []batch.Record{}
-	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return reasons, nil },
-		Validation: func(string, time.Time) (bool, error) { return true, nil }}
+	reasons = []batch.Record{{BatchID: "b-held", State: batch.StateHeldTrunkRed, Units: []batch.Unit{{GoalID: "g-zero", State: batch.UnitJoined}}}}
+	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return reasons, nil }}
 	agent := &fakeAgent{}
 	keeper := agent.keeper(home, module, &clock, sources)
 	var cancelled []string
@@ -192,19 +198,19 @@ func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 		t.Fatalf("after the resume: %q, starts %d; want a fresh agent", line, len(agent.starts))
 	}
 	agent.running = ""
-	reasons = []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	reasons = append(reasons, batch.Record{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}})
 	agent.fail = errors.New("the launcher refused")
 	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "the launcher refused") {
 		t.Fatalf("a failed start: %q", line)
 	}
 	agent.fail = nil
-	if line := keeper.Step(); len(agent.starts) != 3 || !slices.Equal(agent.starts[2].Reasons, []string{WakeQueued, WakeValidationDue}) {
+	if line := keeper.Step(); len(agent.starts) != 3 || !slices.Equal(agent.starts[2].Reasons, []string{WakeQueued, WakeUnfinishedBatch}) {
 		t.Fatalf("the next step after a failed start: %q, starts %+v; want a start at once", line, agent.starts)
 	}
 }
 
 // TestWakeReasonsFromLaneState (A-a, §3 Wake): queued work, an unfinished
-// batch, due validation and a pending finalization are each a reason; a
+// batch are each a reason; a
 // source that cannot be read is named and is no reason; the reasons are the
 // ones landing status --json carries as "wake".
 func TestWakeReasonsFromLaneState(t *testing.T) {
@@ -216,33 +222,26 @@ func TestWakeReasonsFromLaneState(t *testing.T) {
 		{BatchID: "b-empty", State: batch.StateOpen},
 		{BatchID: "b-landed", State: batch.StateLanded, Units: []batch.Unit{joined}},
 	}
-	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return records, nil },
-		Validation:   func(string, time.Time) (bool, error) { return false, nil },
-		Finalization: func(string) (bool, error) { return false, nil }}
+	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return records, nil }}
 	if wake := ReadWake(registered, laneNow, sources); len(wake.Reasons) != 0 || len(wake.Unread) != 0 {
 		t.Fatalf("an empty open batch and a landed one wake nothing: %+v", wake)
 	}
 	records = append(records, batch.Record{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{joined}},
 		batch.Record{BatchID: "b-held", State: batch.StateHeldTrunkRed, Units: []batch.Unit{joined}})
-	sources.Validation = func(string, time.Time) (bool, error) { return true, nil }
-	sources.Finalization = func(string) (bool, error) { return true, nil }
 	wake := ReadWake(registered, laneNow, sources)
-	if !slices.Equal(wake.Reasons, []string{WakeQueued, WakeUnfinishedBatch, WakeValidationDue, WakeFinalizationPending}) {
+	if !slices.Equal(wake.Reasons, []string{WakeQueued, WakeUnfinishedBatch}) {
 		t.Fatalf("reasons = %v", wake.Reasons)
 	}
 	sources.Records = func(string) ([]batch.Record, error) { return nil, errors.New("batch store unreadable") }
-	sources.Validation = func(string, time.Time) (bool, error) { return false, errors.New("ledger unreadable") }
-	sources.Finalization = nil
 	wake = ReadWake(registered, laneNow, sources)
-	if len(wake.Reasons) != 0 || len(wake.Unread) != 2 || !strings.Contains(strings.Join(wake.Unread, "; "), "ledger unreadable") {
+	if len(wake.Reasons) != 0 || len(wake.Unread) != 1 || !strings.Contains(strings.Join(wake.Unread, "; "), "batch store unreadable") {
 		t.Fatalf("unread sources: %+v", wake)
 	}
 
 	// landing status --json carries the same reasons as "wake".
 	view := BuildView(ViewSources{Home: home, Now: laneNow, Owner: func(string) (OwnerProbe, error) { return OwnerProbe{}, nil },
-		Records:    func(string) ([]batch.Record, error) { return records, nil },
-		Validation: func(string, time.Time) (bool, error) { return true, nil }})
-	if view.Wake == nil || !slices.Equal(view.Wake.Reasons, []string{WakeQueued, WakeUnfinishedBatch, WakeValidationDue}) {
+		Records: func(string) ([]batch.Record, error) { return records, nil }})
+	if view.Wake == nil || !slices.Equal(view.Wake.Reasons, []string{WakeQueued, WakeUnfinishedBatch}) {
 		t.Fatalf("view wake = %+v", view.Wake)
 	}
 }
@@ -251,14 +250,16 @@ func TestWakeReasonsFromLaneState(t *testing.T) {
 // NB-1): a landing agent keeper record that cannot be read holds every
 // start (the agent's and, through AgentStarting, the owner's) with a line
 // naming the file and the command that repairs it; landing status shows it;
-// a person's landing start (ClearAgentCooldown) replaces it and the hold
+// a person's landing start (RepairAgentRecord) replaces it and the hold
 // ends.
 func TestUnreadableKeeperRecordHoldsUntilAPersonStarts(t *testing.T) {
 	t.Parallel()
 	home, _, module := nestedLaneDirs(t)
 	clock := laneNow
 	agent := &fakeAgent{}
-	keeper := agent.keeper(home, module, &clock, WakeSources{Records: noBatches, Validation: func(string, time.Time) (bool, error) { return true, nil }})
+	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) {
+		return []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}, nil
+	}})
 	if err := os.WriteFile(agentStatePath(home), []byte("{torn"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +274,7 @@ func TestUnreadableKeeperRecordHoldsUntilAPersonStarts(t *testing.T) {
 	if view.Wake == nil || !strings.Contains(strings.Join(view.Wake.Unread, "; "), "run: metasystem landing start") {
 		t.Fatalf("landing status does not show the unreadable record: %+v", view.Wake)
 	}
-	if err := ClearAgentCooldown(home); err != nil {
+	if err := RepairAgentRecord(home); err != nil {
 		t.Fatal(err)
 	}
 	if keeper.Step(); len(agent.starts) != 1 {

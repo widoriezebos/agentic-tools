@@ -59,19 +59,6 @@ func batchSeriesOnEndpointWithRunner(root, origin, tip string, runGit func(*exec
 	}
 	return false, err
 }
-func FetchBatchOrigin(root string) (string, string, error) {
-	command := exec.Command("git", "-C", root, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		return "", "", fmt.Errorf("%s: fetch origin/main: %s: %w", codeLandPushRefused, strings.TrimSpace(string(output)), err)
-	}
-	commit, err := GitOutput(root, "rev-parse", "refs/remotes/origin/main")
-	if err != nil {
-		return "", "", err
-	}
-	tree, err := GitOutput(root, "rev-parse", commit+"^{tree}")
-	return commit, tree, err
-}
 
 // RecoverySeams are the landed-trailer recovery seams of the lane whose
 // checkout is root and whose installation is controlRoot, editing goals

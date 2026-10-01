@@ -19,9 +19,8 @@ import (
 // AgentState is what the keeper remembers of the landing agent it last
 // started, shared by every steward of the host under the lane flock.
 type AgentState struct {
-	Launch    string   `json:"launch,omitempty"`
-	StartedAt string   `json:"startedAt,omitempty"`
-	Reasons   []string `json:"reasons,omitempty"`
+	Launch    string `json:"launch,omitempty"`
+	StartedAt string `json:"startedAt,omitempty"`
 	// ReapedAt is when the launch's end was reaped; empty while it runs or
 	// before its reap.
 	ReapedAt string `json:"reapedAt,omitempty"`
@@ -150,7 +149,7 @@ func (k AgentKeeper) Step() string {
 			line = fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr)
 			return writeJSON(k.Home, agentStatePath(k.Home), current)
 		}
-		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Reasons: wake.Reasons}
+		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339)}
 		line = fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))
 		// A pause that came while it started ends it at once.
 		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
@@ -264,21 +263,15 @@ func UnreadableAgentRecord(home string) string {
 	return "the landing agent's keeper record " + agentStatePath(home) + " can't be read, so nothing starts\nrun: metasystem landing start"
 }
 
-// ClearAgentCooldown forgets the reasons the last agent ended with: a
-// person's landing start wakes the agent at once when work is there. A
-// record that cannot be read is replaced at the person's word, keeping
-// nothing (its launch, if any, is left to the launch store).
-func ClearAgentCooldown(home string) error {
+// RepairAgentRecord replaces a keeper record that cannot be read, at a
+// person's landing start, keeping nothing (its launch, if any, is left to
+// the launch store); a readable record is left as it is.
+func RepairAgentRecord(home string) error {
 	return withLock(home, func() error {
-		state, err := ReadAgentState(home)
-		if err != nil {
+		if _, err := ReadAgentState(home); err != nil {
 			return writeJSON(home, agentStatePath(home), AgentState{})
 		}
-		if len(state.Reasons) == 0 {
-			return nil
-		}
-		state.Reasons = nil
-		return writeJSON(home, agentStatePath(home), state)
+		return nil
 	})
 }
 

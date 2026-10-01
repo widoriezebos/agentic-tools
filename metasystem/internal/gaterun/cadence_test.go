@@ -12,10 +12,7 @@ func TestCadencePackagesUseNoWallClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths = append(paths,
-		filepath.Join("..", "proofrun", "reuse_policy.go"),
-		filepath.Join("..", "cadence", "tick.go"),
-	)
+	paths = append(paths, filepath.Join("..", "proofrun", "reuse_policy.go"))
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue

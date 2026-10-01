@@ -586,8 +586,7 @@ func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 
 // TestLandingStartWithALandingAgentRunning (A-a, re-review 2 and 3): a
 // person's landing start while a landing agent runs starts nothing beside
-// it; and the start forgets the last agent's cooldown, so work wakes one at
-// once.
+// it, and keeps the keeper's record of that agent.
 func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -599,7 +598,7 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	cooled := filepath.Join(lane.HostDir(bed.home), "landing-agent-keeper.json")
-	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reasons":["validation-due"],"reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
+	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, stdout, stderr := bed.run(t, "landing", "start")
@@ -607,7 +606,7 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 		t.Fatalf("landing start with an agent running = %d %q %q", code, stdout, stderr)
 	}
 	state, err := lane.ReadAgentState(bed.home)
-	if err != nil || len(state.Reasons) != 0 || state.Launch != "landing-0010" {
-		t.Fatalf("after a person's start the keeper record is %+v %v; want the cooldown reasons forgotten, the launch kept", state, err)
+	if err != nil || state.Launch != "landing-0010" {
+		t.Fatalf("after a person's start the keeper record is %+v %v; want the launch kept", state, err)
 	}
 }

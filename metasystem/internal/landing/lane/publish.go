@@ -278,9 +278,3 @@ func ReadPublications(home string) ([]Publication, error) {
 	}
 	return record.Publications, nil
 }
-
-// publishInFlight says whether a lane publication's push runs now. No push
-// holds a token any more, so none is seen in flight; it stays only until the
-// keeper's session deadline (agent.go, unit B of the simple lane) no longer
-// asks.
-func publishInFlight(string) bool { return false }

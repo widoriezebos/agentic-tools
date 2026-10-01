@@ -351,11 +351,6 @@ var coreSettings = []Setting{
 		Meaning: "the landing agent's model on any runtime; empty (the default) takes launch.build.model.<runtime>"},
 	{Key: "launch.landing.effort", Default: "xhigh", ProofInput: true,
 		Meaning: "the landing agent's effort, translated by the runtime adapter"},
-	// The landing agent's daily token ceiling (landing-lane-runtime-redesign
-	// K10): its sessions' reconciled usage since local midnight, or since a
-	// person's latest resume; reaching it stops the lane for a person.
-	{Key: "launch.landing.daily.tokens", Default: "100000000", ProofInput: false,
-		Meaning: "the landing agent's daily token ceiling, counted from local midnight; 0 imposes none"},
 	{Key: "launch.build.window.tokens", Default: "0", ProofInput: true,
 		Meaning: "the build lane's context window cap in tokens; 0 imposes none"},
 	{Key: "launch.design.window.tokens", Default: "0", ProofInput: true,

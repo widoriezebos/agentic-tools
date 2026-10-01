@@ -218,12 +218,6 @@ func registeredFamilies() []family {
 			},
 		},
 		{
-			name: "run", summary: "the cadence run's detached leader",
-			verbs: []verb{
-				{name: "wrap", summary: "the detached leader of landing validate's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
-			},
-		},
-		{
 			name: "mission", summary: "a mission's detached loop",
 			verbs: []verb{
 				{name: "run-loop", summary: "a started mission's detached loop", run: runMissionRunnerRunLoop, launcher: "internal/missionrunner/launch.go", evidence: "\"mission\", \"run-loop\""},

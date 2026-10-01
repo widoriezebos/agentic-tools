@@ -143,10 +143,6 @@ type ViewSources struct {
 	// Helm reads whether a unit's seat is at the helm, which holds a batch
 	// whole (batch.HelmHeldSeat); nil asks nothing.
 	Helm func(seatRoot string) helm.State
-	// Validation and Finalization are the wake's reads beyond the batches
-	// (WakeSources); nil reads nothing for that reason.
-	Validation   func(root string, now time.Time) (bool, error)
-	Finalization func(root string) (bool, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -175,8 +171,7 @@ func BuildView(sources ViewSources) View {
 		}
 	}
 	records, recordsErr := readRecords(sources, record.Root)
-	wake := wakeOf(record, sources.Now, records, recordsErr,
-		WakeSources{Validation: sources.Validation, Finalization: sources.Finalization})
+	wake := wakeOf(records, recordsErr)
 	if _, err := ReadAgentState(sources.Home); err != nil {
 		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
 	}

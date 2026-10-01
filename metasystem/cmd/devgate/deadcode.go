@@ -25,25 +25,7 @@ var deadCodePlatforms = []string{"darwin", "linux"}
 // file.go#Name (a method is Type.Method) with the reason each stays. An entry
 // needs a reason a reader can check; a function merely not wired yet is not
 // one.
-var deadCodeAllowed = map[string]string{
-	"internal/cadence/tick.go#cadenceRequest":               simpleLaneValidateGone,
-	"internal/cadence/tick.go#claimCadenceAuthority":        simpleLaneValidateGone,
-	"internal/cadence/tick.go#cadenceRunCommand":            simpleLaneValidateGone,
-	"internal/cadence/validate.go#cadenceResultPath":        simpleLaneValidateGone,
-	"internal/cadence/validate.go#RunOutcome":               simpleLaneValidateGone,
-	"internal/cadence/validate.go#ValidateLane.Seams":       simpleLaneValidateGone,
-	"internal/cadence/validate.go#planValidation":           simpleLaneValidateGone,
-	"internal/cadence/validate.go#launchValidation":         simpleLaneValidateGone,
-	"internal/gaterun/cadence.go#GoalCadenceLedger.request": simpleLaneValidateGone,
-	"internal/gaterun/cadence.go#GoalCadenceLedger.Claim":   simpleLaneValidateGone,
-	"internal/gaterun/cadence.go#GoalCadenceLedger.Publish": simpleLaneValidateGone,
-	"internal/landing/batchowner/land.go#FetchBatchOrigin":  simpleLaneValidateGone,
-	"internal/gaterun/weight.go#WeightDischargeAt":          simpleLaneValidateGone,
-}
-
-// simpleLaneValidateGone is why the validate path stays until the simple
-// lane's integration deletes it.
-const simpleLaneValidateGone = "landing validate went in the simple lane (unit A); its last callers are in internal/cadence/validate.go, unit B's file, and the integrator deletes these with it"
+var deadCodeAllowed = map[string]string{}
 
 type deadCodeFinding struct {
 	line string

@@ -39,7 +39,6 @@ const (
 	LandingRuntimeKey           = "launch.landing.runtime"
 	LandingModelKey             = "launch.landing.model"
 	LandingEffortKey            = "launch.landing.effort"
-	LandingDailyTokensKey       = "launch.landing.daily.tokens"
 )
 
 // SeatOwnerLineage is the owner lineage every steward-started seat main runs
