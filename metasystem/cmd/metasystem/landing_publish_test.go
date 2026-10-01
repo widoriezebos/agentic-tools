@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -313,5 +314,19 @@ func TestLandingPublishReadsTheLaneBatchRecords(t *testing.T) {
 	before := bed.main(t)
 	if code, result := run(); code == 0 || !strings.Contains(result.Summary, "no longer verifies") || bed.main(t) != before {
 		t.Fatalf("publish of a recorded proof without retained verification = %d %+v; want it read and refused at verification, main unchanged", code, result)
+	}
+}
+
+// A publish whose retained verification is held by the custody barrier
+// (K9) says other landing work runs, not that the proof failed to verify.
+func TestLandingPublishWaitsForLiveCustody(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	bed.evidence.verified = &custody.Held{Live: []string{"prove prove-01 (pid 7)"}}
+	code, stdout, stderr := bed.publish(t, "--json")
+	var result intentResult
+	if err := json.Unmarshal([]byte(stdout+stderr), &result); err != nil || code != 1 || result.Outcome != intentInProgress ||
+		strings.Contains(result.Summary, "no longer verifies") || !strings.Contains(result.Summary, "other landing work still runs") {
+		t.Fatalf("publish held by custody = %d %+v %v\n%s%s", code, result, err, stdout, stderr)
 	}
 }

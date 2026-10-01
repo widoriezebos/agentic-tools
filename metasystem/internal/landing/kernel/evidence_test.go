@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -22,7 +23,7 @@ import (
 func TestPublishEvidenceReadsWhatBeginAndProveRecorded(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
-	evidence := PublishEvidence{Layout: bed.layout}
+	evidence := PublishEvidence{Layout: bed.layout, Home: bed.home}
 	if _, err := evidence.Begin(bed.batchID); err == nil {
 		t.Fatal("a batch with no begin read as begun")
 	}
@@ -99,5 +100,50 @@ func TestPublishEvidenceReadsWhatBeginAndProveRecorded(t *testing.T) {
 	}
 	if err := (PublishEvidence{Layout: bed.layout}).Verify(proof); err == nil {
 		t.Fatal("an evidence reader with no verifier verified")
+	}
+}
+
+// K9 (integration of K-c and K-f): the retained verification inside
+// landing publish passes the custody barrier and is custodied while it
+// runs in the publishing process: live landing work holds it before the
+// verifier is asked anything, and once it has run its record is ended.
+func TestPublishVerificationIsCustodied(t *testing.T) {
+	t.Parallel()
+	bed := newKernelBed(t)
+	outcome, err := bed.begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := lane.ProofAttempt{Batch: bed.batchID, Attempt: "a1", Subject: lane.SubjectBatch, Outcome: lane.OutcomeGreen, Base: outcome.Opening.Base,
+		Commit: outcome.Opening.Candidate, Tree: outcome.Opening.Tree}
+	var during []custody.Record
+	evidence := PublishEvidence{Layout: bed.layout, Home: bed.home, Verifier: func(testrun.SelectionRequest) (proofrun.TestResult, error) {
+		during, _, _ = custody.Records(bed.home)
+		verdict := proofrun.TestResult{CandidateTree: outcome.Opening.Tree}
+		verdict.Delivery.Sufficient = true
+		return verdict, nil
+	}}
+	if err := evidence.Verify(proof); err != nil {
+		t.Fatal(err)
+	}
+	if len(during) != 1 || during[0].Kind != custody.KindVerify || !during[0].InProcess || during[0].Ended {
+		t.Fatalf("custody while verifying = %+v; want one live in-process verify record", during)
+	}
+	after, _, err := custody.Records(bed.home)
+	if err != nil || len(after) != 1 || !after[0].Ended {
+		t.Fatalf("custody after verifying = %+v %v; want the record ended", after, err)
+	}
+
+	live, err := custody.Open(bed.home, custody.KindProve, "a proof", kernelAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := custody.BindSelf(bed.home, live.ID); err != nil {
+		t.Fatal(err)
+	}
+	during = nil
+	var held *custody.Held
+	if err := evidence.Verify(proof); !errors.As(err, &held) || during != nil {
+		t.Fatalf("verify while landing work runs = %v (verifier saw %+v); want it held before the verifier runs", err, during)
 	}
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
@@ -67,6 +69,9 @@ type ProveSeams struct {
 	Prober identity.Prober
 	Now    func() time.Time
 	NewID  func() (string, error)
+	// Custody is the custody barrier's reads for the lane at home whose
+	// installation is install; nil reads the production probes.
+	Custody func(home, install string) custody.Probes
 }
 
 // ProductionProveSeams are the production effects.
@@ -138,13 +143,29 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 		if err != nil || layout.Checkout != request.Layout.Checkout || layout.Install != request.Layout.Install {
 			return proveRefused("the landing lane moved while the test run was prepared, so nothing was started", "run the same command again")
 		}
+		// The one custody barrier (K9): nothing starts while landing work
+		// still runs or can't be read.
+		probes := laneprobe.Production(request.Home, string(request.Layout.Install), true)
+		if seams.Custody != nil {
+			probes = seams.Custody(request.Home, string(request.Layout.Install))
+		}
+		if err := custody.Clear(request.Home, probes, false); err != nil {
+			return err
+		}
 		if err := batch.StartAttempt(store, request.BatchID, attempt); err != nil {
 			return err
 		}
-		if err := command.Start(); err != nil {
-			reason := "the test run could not start: " + err.Error()
-			return errors.Join(err, batch.FinishAttempt(store, request.BatchID, id, batch.AttemptUnavailable, "", reason, nil, seams.Now()))
+		// The child is custodied from its start: a record opened before it,
+		// bound to its exact identity and its own process group, and the
+		// groups the proof launcher makes inside it bind to the same record.
+		_, startErr := custody.Start(request.Home, custody.KindProve, "batch "+request.BatchID+" attempt "+id+" "+request.Subject, seams.Now(), command)
+		if command.Process == nil {
+			reason := "the test run could not start: " + startErr.Error()
+			return errors.Join(startErr, batch.FinishAttempt(store, request.BatchID, id, batch.AttemptUnavailable, "", reason, nil, seams.Now()))
 		}
+		// A child whose custody could not be bound still runs to its end;
+		// its record then reads unknown and holds the lane until a person
+		// goes past it.
 		started = true
 		return nil
 	})

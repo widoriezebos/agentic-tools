@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	landingkernel "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
@@ -66,7 +67,7 @@ func runIntentLandingPublish(inv *intentInvocation, kernel laneKernel) int {
 		if err != nil {
 			evidence = lane.NoEvidence{}
 		} else {
-			evidence = landingkernel.PublishEvidence{Layout: layout, Verifier: verifyRetainedTesting}
+			evidence = landingkernel.PublishEvidence{Layout: layout, Home: kernel.home, Verifier: verifyRetainedTesting}
 		}
 	}
 	status := inv.publicArgv("landing", "status", "--verbose")
@@ -93,6 +94,10 @@ func runIntentLandingPublish(inv *intentInvocation, kernel laneKernel) int {
 		return inv.render(laneEngineResult(err, targets))
 	}
 	if err := evidence.Verify(proof); err != nil {
+		var held *custody.Held
+		if errors.As(err, &held) {
+			return inv.render(landingKernelRefusal(inv, targets, err))
+		}
 		return unproven("batch "+batchID+"'s retained proof no longer verifies for its tree, so nothing was published", reprove, "shows the batch; prove the series again", err.Error())
 	}
 	held, err := landing.HeldLane(kernel.installation, begin.Base, begin.Head, "origin", lane.MainRef, begin.LaneCommits)

@@ -3,9 +3,12 @@ package kernel
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
@@ -18,6 +21,11 @@ import (
 // store (K3, K4, K6): what is proven is what is published.
 type PublishEvidence struct {
 	Layout lane.Layout
+	// Home is the host lane state whose custody barrier (K9) the retained
+	// verification passes and is recorded in.
+	Home string
+	// Custody is the barrier's reads; nil reads the production probes.
+	Custody func(home, install string) custody.Probes
 	// Verifier is test verify's retained verification of one selection;
 	// nil verifies nothing, so nothing is published.
 	Verifier func(testrun.SelectionRequest) (proofrun.TestResult, error)
@@ -87,6 +95,30 @@ func (e PublishEvidence) Verify(proof lane.ProofAttempt) error {
 	if e.Verifier == nil {
 		return errors.New("this engine has no retained verification for the lane, so the proof can't be verified")
 	}
+	if e.Home == "" {
+		return errors.New("the lane's host state is not named, so the retained verification can't be custodied")
+	}
+	probes := laneprobe.Production(e.Home, string(e.Layout.Install), true)
+	if e.Custody != nil {
+		probes = e.Custody(e.Home, string(e.Layout.Install))
+	}
+	// The one custody barrier (K9): the verification is a kernel execution,
+	// run in this process, custodied until it ends.
+	if err := custody.Clear(e.Home, probes, false); err != nil {
+		return err
+	}
+	record, err := custody.Open(e.Home, custody.KindVerify, "batch "+proof.Batch+" attempt "+proof.Attempt+" tree "+proof.Tree, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := custody.BindSelf(e.Home, record.ID); err != nil {
+		return errors.Join(err, custody.End(e.Home, record.ID))
+	}
+	err = e.verify(proof)
+	return errors.Join(err, custody.End(e.Home, record.ID))
+}
+
+func (e PublishEvidence) verify(proof lane.ProofAttempt) error {
 	checkout := string(e.Layout.Checkout)
 	detached, err := (gittree.Workspace{Dir: checkout}).NewDetachedWorktree(proof.Tree)
 	if err != nil {

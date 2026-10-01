@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -161,6 +162,18 @@ func landingKernelRefusal(inv *intentInvocation, targets []intentTarget, err err
 	var laneRefusal *lane.Refusal
 	if errors.As(err, &laneRefusal) {
 		return *laneRefusalResult(targets, laneRefusal)
+	}
+	// The custody barrier (K9): live landing work is waited for; work whose
+	// state can't be read holds the lane until a person has checked it.
+	var held *custody.Held
+	if errors.As(err, &held) {
+		status := inv.publicArgv("landing", "status", "--verbose")
+		if len(held.Live) > 0 {
+			return intentResult{Outcome: intentInProgress, code: 1, Targets: targets, Summary: "other landing work still runs, so nothing was started",
+				next: status, nextReason: "shows what runs; run the same command again once it has ended", Details: held.Live}
+		}
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "whether other landing work still runs can't be read, so nothing was started",
+			next: status, nextReason: "shows what can't be read, for a person to check", Details: held.Unknown}
 	}
 	var composition *batch.CompositionRefusal
 	if errors.As(err, &composition) {

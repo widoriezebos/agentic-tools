@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -82,6 +83,27 @@ func TestLandingBeginAndProveVerbs(t *testing.T) {
 	code, text = bed.runWith(t, owners, "landing", "prove", "--batch", kernelVerbBatch, "--subject", "batch")
 	if code != 1 || !strings.Contains(text, "stopped by Wido") || !strings.Contains(text, "landing start") || strings.Contains(text, lane.CodePaused) {
 		t.Fatalf("a paused prove = %d\n%s", code, text)
+	}
+
+	// The custody barrier (K9) holds a prove while landing work runs: in
+	// progress, not failed, and line 2 shows what runs.
+	owners.landing.prove = func(request kernel.ProveRequest) (batch.ProofAttempt, error) {
+		return batch.ProofAttempt{}, &custody.Held{Live: []string{"validate validate-01 (pid 7)"}}
+	}
+	code, text = bed.runWith(t, owners, "landing", "prove", "--batch", kernelVerbBatch, "--subject", "batch", "--json")
+	result = intentResult{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil || code != 1 || result.Outcome != intentInProgress ||
+		!strings.Contains(result.Summary, "other landing work still runs") || result.Next == nil || !strings.Contains(strings.Join(result.Details, " "), "validate-01") {
+		t.Fatalf("a prove held by live custody = %d %+v %v\n%s", code, result, err, text)
+	}
+	owners.landing.prove = func(request kernel.ProveRequest) (batch.ProofAttempt, error) {
+		return batch.ProofAttempt{}, &custody.Held{Unknown: []string{"prove prove-02: the child can't be probed"}}
+	}
+	code, text = bed.runWith(t, owners, "landing", "prove", "--batch", kernelVerbBatch, "--subject", "batch", "--json")
+	result = intentResult{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil || code != 1 || result.Outcome != intentRefused ||
+		!strings.Contains(result.Summary, "can't be read") || result.Next == nil {
+		t.Fatalf("a prove held by unknown custody = %d %+v %v\n%s", code, result, err, text)
 	}
 
 	// The production kernel behind the verb: a batch the lane does not hold
