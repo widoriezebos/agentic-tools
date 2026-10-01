@@ -262,6 +262,9 @@ type intentDeliveryOwners struct {
 	batchUnit   func(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
 	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
 	batchRoot   func(root string, now time.Time) (string, bool, error)
+	// laneInstall is the installation of the registered lane checkout,
+	// where its queue.jsonl lives; nil resolves the checkout's layout.
+	laneInstall func(landingRoot string) (string, error)
 	// boardView reads the host board for a one-shot view of the checkout,
 	// checking its cards against the goal ledger at ledgerRoot (the state
 	// root); nil reads the host this command runs on.
@@ -1852,13 +1855,24 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		}
 		return refused
 	}
+	laneInstall := ""
 	if configured {
-		// The batch may already hold, or have landed and swept, exactly this
-		// selection at this branch tip; its record answers first, including
-		// once the branch is gone.
-		request := batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}
-		if _, _, member, err := owners.batchUnit(landingRoot, request, state.BranchTip); err != nil || member {
-			return inv.joinBatch(targets, request, state.BranchTip)
+		// The plain lane (plain-lane r2): the goal's newest hand-in at this
+		// selection answers first, including once the branch is gone. The
+		// older lane's batch records are not read.
+		install, err := inv.laneInstallOf(landingRoot)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+				Summary: "the landing lane's installation can't be found, so nothing was handed in",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's checkout", Details: []string{err.Error()}}
+		}
+		laneInstall = install
+		selected := state.BranchTip
+		if through != "" && selected != "" {
+			selected = through
+		}
+		if result := inv.laneQueueState(targets, install, goalID, selected); result != nil {
+			return *result
 		}
 	}
 	if state.BranchTip == "" {
@@ -1884,7 +1898,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	// reader record lands by hand only as the fix of an open red on main.
 	unread := slices.IndexFunc(state.Sources[:min(count, len(state.Sources))], func(source string) bool { return source != "critic-root" })
 	if unread < 0 || state.ReadsWaived {
-		return inv.joinBatch(targets, batchowner.BatchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
+		return inv.handIn(targets, laneInstall, goalID, subject)
 	}
 	entry, err := inv.redOnMainFixed(goalID)
 	if err != nil {
