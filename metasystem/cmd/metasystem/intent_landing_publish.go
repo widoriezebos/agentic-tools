@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	landingkernel "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 )
@@ -59,11 +60,18 @@ func runIntentLandingPublish(inv *intentInvocation, kernel laneKernel) int {
 	}
 	evidence := kernel.owners.evidence
 	if evidence == nil {
-		evidence = lane.NoEvidence{}
+		// The lane's own records: the series landing begin kept and the
+		// proofs landing prove kept, re-verified by test verify.
+		layout, err := kernel.record.Layout()
+		if err != nil {
+			evidence = lane.NoEvidence{}
+		} else {
+			evidence = landingkernel.PublishEvidence{Layout: layout, Verifier: verifyRetainedTesting}
+		}
 	}
 	status := inv.publicArgv("landing", "status", "--verbose")
-	// The proof to run again is landing prove's (unit K-b); until that verb
-	// is on this engine, line 2 is the lane's status, which names it.
+	// The proof to run again is landing prove's; line 2 is the lane's
+	// status, which names the batch to prove.
 	reprove := status
 	unproven := func(summary string, next []string, reason string, details ...string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,

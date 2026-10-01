@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 // publishEvidence is the fixture of K-b's begin and proof records: what
@@ -258,4 +261,57 @@ func landingPublishLayoutBed(t *testing.T) layoutBed {
 	bed := landingEngineLayoutBed(false)(t)
 	bed.owners.landing.evidence = lane.NoEvidence{}
 	return bed
+}
+
+// With no reader injected, landing publish reads the lane's own batch
+// records (integration of K-b and K-c): the series landing begin recorded
+// and the latest batch proof landing prove recorded, then re-verifies the
+// proof's retained result. A batch with no begin is refused by that
+// reader; a recorded, green proof with no retained verification behind it
+// gets as far as verification and is refused there, and main is unchanged.
+func TestLandingPublishReadsTheLaneBatchRecords(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	bed.evidence = nil
+	run := func() (int, intentResult) {
+		t.Helper()
+		command, _ := findIntentAction("landing", "publish")
+		owners := bed.kernelBed.owners()
+		var stdout, stderr bytes.Buffer
+		code := runIntentIn(command, []string{"--batch", publishBatch, "--json"}, &stdout, &stderr, bed.cwd, owners)
+		var result intentResult
+		if err := json.Unmarshal([]byte(stdout.String()+stderr.String()), &result); err != nil {
+			t.Fatalf("landing publish = %d %v\n%s%s", code, err, stdout.String(), stderr.String())
+		}
+		return code, result
+	}
+	if code, result := run(); code == 0 || strings.Contains(strings.Join(result.Details, " "), lane.ErrEvidenceUnavailable.Error()) || !strings.Contains(result.Summary, "no readable begin record") {
+		t.Fatalf("publish of a batch with no begin = %d %+v; want the lane's own reader to refuse it", code, result)
+	}
+	store := batch.NewStore(bed.checkout, nil)
+	tree := bed.git(t, bed.checkout, "rev-parse", "HEAD^{tree}")
+	if err := store.Create(batch.Record{Schema: 1, BatchID: publishBatch, State: batch.StateSealed,
+		Openings: []batch.Opening{{OpID: "op-1", Actor: "lane:test", Members: []string{"ship-widget"}, Base: bed.base, Head: bed.head, Candidate: bed.head, Tree: tree,
+			Series: []batch.SeriesCommit{{Commit: bed.head, Kind: batch.SeriesIntegration}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	enrolled, err := laneengine.Enrollment(bed.installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	data, _ := json.Marshal(proofrun.TestResult{AttemptID: "run-1", CandidateTree: tree, PolicyEngineDigest: enrolled.InstallDigest})
+	if err := os.WriteFile(resultPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.StartAttempt(store, publishBatch, batch.ProofAttempt{ID: "a1", OpID: "op-1", Subject: batch.SubjectBatch, Commit: bed.head, Tree: tree, ResultPath: resultPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.FinishAttempt(store, publishBatch, "a1", batch.AttemptGreen, "run-1", "", nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	before := bed.main(t)
+	if code, result := run(); code == 0 || !strings.Contains(result.Summary, "no longer verifies") || bed.main(t) != before {
+		t.Fatalf("publish of a recorded proof without retained verification = %d %+v; want it read and refused at verification, main unchanged", code, result)
+	}
 }
