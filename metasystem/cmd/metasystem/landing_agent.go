@@ -233,6 +233,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return "", nil
 			},
 		},
+		Settle:  lane.SettleMemberless,
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 

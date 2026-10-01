@@ -6,6 +6,8 @@ package lane
 // process reads another's text. An idle lane runs no model.
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -55,7 +57,9 @@ func wakeOf(records []batch.Record, recordsErr error) Wake {
 
 // batchReasons reads the batch records: queued is a batch collecting with a
 // member joined; unfinished is a batch past collecting that has neither
-// landed nor dissolved (proving, landing, diagnosing, or held).
+// landed nor dissolved (proving, landing, diagnosing, or held) and still
+// has a member: a memberless one is the keeper's to settle, not the
+// agent's.
 func batchReasons(records []batch.Record) (queued, unfinished bool) {
 	for _, record := range records {
 		switch record.State {
@@ -65,8 +69,40 @@ func batchReasons(records []batch.Record) (queued, unfinished bool) {
 				queued = true
 			}
 		default:
-			unfinished = true
+			if !batch.Memberless(record) {
+				unfinished = true
+			}
 		}
 	}
 	return queued, unfinished
+}
+
+// keeperActor is the actor a keeper's settlement records in a batch's
+// history.
+const keeperActor = "landing-keeper"
+
+// SettleMemberless settles as dissolved each batch of the lane at root that
+// is past collecting and has no member left (batch.Memberless): nothing in
+// it can be proven, pushed or returned, so no agent is woken for it. It
+// lists the batches it settled; a batch it could not settle is in the error,
+// and the rest are still settled.
+func SettleMemberless(root string, now time.Time) ([]string, error) {
+	records, err := readRecords(ViewSources{}, root)
+	store := batch.NewStore(root, nil)
+	settled := []string{}
+	var failed []error
+	for _, record := range records {
+		if !batch.Memberless(record) {
+			continue
+		}
+		done, settleErr := batch.DissolveMemberless(store, record.BatchID, keeperActor, now)
+		if settleErr != nil {
+			failed = append(failed, fmt.Errorf("batch %s: %w", record.BatchID, settleErr))
+			continue
+		}
+		if done {
+			settled = append(settled, record.BatchID)
+		}
+	}
+	return settled, errors.Join(append([]error{err}, failed...)...)
 }

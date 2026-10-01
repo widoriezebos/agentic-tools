@@ -1,6 +1,7 @@
 package lane
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -318,5 +319,53 @@ func TestKeeperLaunchesOnlyForAQueueNotPausedNoneAlive(t *testing.T) {
 	}
 	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "paused") {
 		t.Fatalf("paused: %q, starts %d; want no launch", line, len(agent.starts))
+	}
+}
+
+// TestMemberlessBatchIsSettledDissolved (2026-10-01): a batch past
+// collecting whose every member was withdrawn or returned (here by landing
+// unset) has nothing the agent can prove, push or return. It wakes no
+// agent, and the keeper's step settles it as dissolved, so it never wakes
+// one again.
+func TestMemberlessBatchIsSettledDissolved(t *testing.T) {
+	t.Parallel()
+	home, checkout, _ := nestedLaneDirs(t)
+	registered := Record{Root: checkout}
+	withdrawn := batch.Unit{GoalID: "change:533209e6d6c1", Chain: "change:533209e6d6c1", State: batch.UnitWithdrawn,
+		Claim: batch.Claim{Machine: "ui", Lineage: "seat-ui", Epoch: 1, Revision: 1, AccountingRevision: 1}}
+	withdrawn.Outcome, withdrawn.ReturnDisposition = batch.UnitWithdrawn, batch.ReturnRecorded
+	memberless := batch.Record{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: batch.StateDiagnosing, Units: []batch.Unit{withdrawn}}
+	inMemory := WakeSources{Records: func(string) ([]batch.Record, error) {
+		return []batch.Record{memberless, {BatchID: "b-proving", State: batch.StateProving}}, nil
+	}}
+	if wake := ReadWake(registered, laneNow, inMemory); len(wake.Reasons) != 0 {
+		t.Fatalf("memberless batches woke the agent: %+v", wake)
+	}
+
+	data, err := json.Marshal(memberless)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(checkout, "artifacts", "agents", "landing-batches")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, memberless.BatchID+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clock := laneNow
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, checkout, &clock, WakeSources{})
+	keeper.Settle = SettleMemberless
+	if run := keeper.Run(); run.Outcome != AgentIdle || len(agent.starts) != 0 {
+		t.Fatalf("keeper over a memberless batch = %+v, starts %d; want idle and none", run, len(agent.starts))
+	}
+	settled, err := batch.NewStore(checkout, nil).Load(memberless.BatchID)
+	if err != nil || settled.State != batch.StateDissolved {
+		t.Fatalf("memberless batch after the keeper's step = %q %v; want %s", settled.State, err, batch.StateDissolved)
+	}
+	last := settled.History[len(settled.History)-1]
+	if last.From != batch.StateDiagnosing || last.To != batch.StateDissolved {
+		t.Fatalf("settlement history = %+v", last)
 	}
 }
