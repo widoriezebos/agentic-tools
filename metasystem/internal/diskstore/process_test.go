@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -58,7 +57,7 @@ func processScratchHelper() (code int, handled bool) {
 		if err := child.Start(); err != nil {
 			return fail(err)
 		}
-		fmt.Println("ready")
+		fmt.Printf("child=%d\nready\n", child.Process.Pid)
 		wait := make(chan os.Signal, 1)
 		signal.Notify(wait, syscall.SIGTERM)
 		<-wait
@@ -264,12 +263,21 @@ func (b scratchBed) onlyRecord(t *testing.T) Record {
 	return records[0]
 }
 
-// sweep runs a pass with the kernel's use census; an unreadable process
-// with no metasystem ancestor is not a holder (the census's ancestry
-// rule), and a test bed records no metasystem process.
-func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
+// sweep runs a pass with the kernel's use census of the bed's own
+// processes, the pids its test started (helpers' children and grandchildren
+// included), never the whole host: a host-wide census also reads the other
+// parallel tests' processes, and a child another test forks holds a copy of
+// this binary's descriptors until it execs. An unreadable process with no
+// metasystem ancestor is not a holder (the census's ancestry rule), and a
+// test bed records no metasystem process.
+func (b scratchBed) sweep(t *testing.T, prober identity.Prober, bed ...int) Report {
 	t.Helper()
 	reader := KernelCensusReader(uint32(os.Getuid()))
+	pids := make([]int64, 0, len(bed))
+	for _, pid := range bed {
+		pids = append(pids, int64(pid))
+	}
+	reader.Pids = func() ([]int64, error) { return pids, nil }
 	// No process of a test bed is the metasystem's, so by the census's
 	// ancestry rule every unreadable process (a zombie another test has
 	// not reaped yet, whose parent chain the kernel no longer answers) is
@@ -323,7 +331,12 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	for lines.Scan() && lines.Text() != "ready" {
 		printed = append(printed, lines.Text())
 	}
-	root := helperValue(t, strings.Join(printed, "\n"), "root")
+	output := strings.Join(printed, "\n")
+	root := helperValue(t, output, "root")
+	child, err := strconv.Atoi(helperValue(t, output, "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
@@ -345,29 +358,23 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Keep {
 		t.Fatalf("with the child alive the proof says %+v; want keep", verdict)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, child)
 	if _, err := os.Lstat(root); err != nil {
 		t.Fatalf("a sweep removed a root its child still holds: %v", err)
 	}
-	// Closing the pipe ends cat. A blocking LOCK_EX through a description
-	// of the test's own returns exactly when cat's inherited copy closed.
+	// Closing the pipe ends cat. Its writer lock frees when its files
+	// close, before the kernel marks it exited, and it stays a member of
+	// the owner's session until init reaps it: its end is awaited on the
+	// kernel's process table, never inferred from the lock.
 	_ = stdin.Close()
-	waiter, err := os.Open(filepath.Join(root, WriterLockName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := unix.Flock(int(waiter.Fd()), unix.LOCK_EX); err != nil {
-		t.Fatal(err)
-	}
-	_ = unix.Flock(int(waiter.Fd()), unix.LOCK_UN)
-	_ = waiter.Close()
+	awaitGone(t, child)
 	if free, err := ProbeWriterLock(record); err != nil || !free {
 		t.Fatalf("after the child exited the writer lock probe = free %v, %v; want free", free, err)
 	}
 	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Release {
 		t.Fatalf("after the child exited the proof says %+v; want release", verdict)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, child)
 	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the sweep left the dead process's root: %v", err)
 	}
@@ -591,6 +598,38 @@ func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 	}
 }
 
+// A child another test of this binary forks holds a copy of every
+// descriptor the binary had open until it execs, so a census of the whole
+// host can read that copy as a holder of a file in this bed's root and keep
+// a dead owner's root ("the dead owner's root stayed",
+// TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot). The bed's
+// census reads only the processes the bed itself started. The stand-in for
+// the other test's child is a process outside the bed holding the root's
+// payload open.
+func TestProcessScratchBedCensusReadsOnlyTheBedsProcesses(t *testing.T) {
+	t.Parallel()
+	bed, record := deadScratch(t)
+	payload, err := os.Open(filepath.Join(record.Path, "payload"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := exec.Command("/bin/sh", "-c", "read line || true")
+	foreign.ExtraFiles = []*os.File{payload}
+	stdin, err := foreign.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := foreign.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = payload.Close()
+	t.Cleanup(func() { _ = stdin.Close(); _ = foreign.Wait() })
+	report := bed.sweep(t, fixedProber{state: identity.Dead})
+	if _, err := os.Lstat(record.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a process outside the bed kept the dead owner's root: %v\nkept %+v\npending %+v", err, report.Kept, report.Pending)
+	}
+}
+
 // Fail-closed rule 4: a removal cut short stays releasing, and every retry
 // re-checks use: a writer lock held again keeps it, an owner alive keeps
 // it, and only a free lock and a dead owner finish it.
@@ -726,7 +765,7 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			if free, err := ProbeWriterLock(record); err != nil || !free {
 				t.Fatalf("the child never inherited the lock, yet the probe = free %v, %v", free, err)
 			}
-			bed.sweep(t, identity.KernelProber{})
+			bed.sweep(t, identity.KernelProber{}, child)
 			if _, err := os.Lstat(root); err != nil {
 				t.Fatalf("the sweeper removed a root a live child uses (%s): %v", mode, err)
 			}
@@ -736,13 +775,8 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			// Closing the pipe ends the child; its end is awaited on the
 			// kernel's process table, never on a clock.
 			_ = stdin.Close()
-			for unix.Kill(child, 0) == nil {
-				if t.Context().Err() != nil {
-					t.Fatal("the child did not end")
-				}
-				runtime.Gosched()
-			}
-			bed.sweep(t, identity.KernelProber{})
+			awaitGone(t, child)
+			bed.sweep(t, identity.KernelProber{}, child)
 			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("after the child ended the root stayed: %v", err)
 			}

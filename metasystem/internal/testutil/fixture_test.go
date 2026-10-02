@@ -351,7 +351,10 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 		t.Fatalf("helper error=%v output=%q", err, line+string(rest))
 	}
 	waitForFixtureExit(t, child.Ref(), fixtureProcessWaitBound(t))
-	if err := syscall.Kill(-helperGroup, 0); !errors.Is(err, syscall.ESRCH) {
+	// The exit wait ends at the child's exit; reparented, it stays a zombie
+	// member of the group until init reaps it, so the group's end is awaited,
+	// never read once.
+	if err := testenv.AwaitProcessTargetGone(-helperGroup); err != nil {
 		t.Fatalf("helper process group %d still exists: %v", helperGroup, err)
 	}
 }

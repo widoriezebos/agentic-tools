@@ -414,11 +414,14 @@ func (f *scratchPublicFixture) records() map[string]scratchRecordView {
 	return records
 }
 
-// requireGroupsDrained: no captured custodian group has a live member.
+// requireGroupsDrained: no captured custodian group has a member left. The
+// custodian's drain ends when no member is live; a killed member may still
+// be exiting or a zombie awaiting its reap, so the group's end is awaited,
+// never read once.
 func (f *scratchPublicFixture) requireGroupsDrained() {
 	f.t.Helper()
 	for group := range f.captured {
-		if err := unix.Kill(-int(group), 0); !errors.Is(err, unix.ESRCH) {
+		if err := testenv.AwaitProcessTargetGone(-int(group)); err != nil {
 			f.t.Errorf("custodian group %d still has members: %v", group, err)
 		}
 	}
@@ -471,7 +474,9 @@ func (f *scratchPublicFixture) requireClean(paths map[string]string, keep ...str
 	if list := f.git("worktree", "list", "--porcelain"); strings.Count(list, "worktree ") != 1 {
 		f.t.Errorf("registered worktrees remain:\n%s", list)
 	}
-	if err := unix.Kill(f.workloadPID(), 0); !errors.Is(err, unix.ESRCH) {
+	// The run's drain kills the workload; its exit and reap follow that
+	// kill, so they are awaited, never read once.
+	if err := testenv.AwaitProcessTargetGone(f.workloadPID()); err != nil {
 		f.t.Errorf("workload %d still alive: %v", f.workloadPID(), err)
 	}
 }
