@@ -25,7 +25,7 @@ func TestAwaitReturnsOnTheObservedEventWhateverItTook(t *testing.T) {
 	await(recorder, "the third observation", func() bool {
 		observations++
 		return observations == 3
-	}, func() { pauses++ }, remaining)
+	}, func() { pauses++ }, remaining, nil)
 	if len(recorder.failures) != 0 || observations != 3 || pauses != 2 {
 		t.Fatalf("failures=%q observations=%d pauses=%d, want none, 3 and 2", recorder.failures, observations, pauses)
 	}
@@ -44,7 +44,7 @@ func TestAwaitFailsOnlyAtTheTestBinaryDeadline(t *testing.T) {
 	await(recorder, "the release file", func() bool {
 		observations++
 		return false
-	}, func() {}, remaining)
+	}, func() {}, remaining, nil)
 	if observations != 3 || len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "the release file") || !strings.Contains(recorder.failures[0], "deadline") {
 		t.Fatalf("observations=%d failures=%q, want 3 and one failure naming the awaited event and the deadline", observations, recorder.failures)
 	}
@@ -57,8 +57,19 @@ func TestAwaitWithoutADeadlineNeverGivesUp(t *testing.T) {
 	await(recorder, "the thousandth observation", func() bool {
 		observations++
 		return observations == 1000
-	}, func() {}, func() (time.Duration, bool) { return 0, false })
+	}, func() {}, func() (time.Duration, bool) { return 0, false }, nil)
 	if len(recorder.failures) != 0 || observations != 1000 {
 		t.Fatalf("failures=%q observations=%d, want none and 1000", recorder.failures, observations)
+	}
+}
+
+func TestAwaitOrReportsWhatItsGiveUpGathers(t *testing.T) {
+	t.Parallel()
+	recorder := &awaitRecorder{}
+	gathered := 0
+	await(recorder, "the launcher's exit", func() bool { return false }, func() {}, func() (time.Duration, bool) { return awaitReserve, true },
+		func() string { gathered++; return "goroutine dump" })
+	if gathered != 1 || len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "goroutine dump") {
+		t.Fatalf("gathered=%d failures=%q, want the give-up's report in the one failure", gathered, recorder.failures)
 	}
 }

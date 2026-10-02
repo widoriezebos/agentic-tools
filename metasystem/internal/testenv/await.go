@@ -1,9 +1,6 @@
 package testenv
 
-import (
-	"testing"
-	"time"
-)
+import "time"
 
 // AwaitPause paces Await's observations. It spaces two looks at a fact so a
 // wait does not spin; it never decides whether the wait succeeds.
@@ -14,8 +11,9 @@ const AwaitPause = 10 * time.Millisecond
 // test's cleanups still run before go test's timeout panic.
 const awaitReserve = 30 * time.Second
 
-// awaitTB is the part of testing.TB Await reports through.
-type awaitTB interface {
+// AwaitTB is the part of testing.TB Await reports through; a *testing.T
+// also hands it the test binary's deadline (Deadline).
+type AwaitTB interface {
 	Helper()
 	Fatalf(format string, args ...any)
 }
@@ -28,7 +26,15 @@ type awaitTB interface {
 // bound is the test binary's own deadline (go test -timeout, read through
 // t.Deadline): when less than awaitReserve of it is left, Await fails naming
 // what it awaited. A t without a deadline waits for the event alone.
-func Await(t testing.TB, what string, observed func() bool) {
+func Await(t AwaitTB, what string, observed func() bool) {
+	t.Helper()
+	AwaitOr(t, what, observed, nil)
+}
+
+// AwaitOr is Await whose failure also carries what giveUp gathers when the
+// wait gives up, such as a hung process's goroutine dump; giveUp runs once,
+// only then.
+func AwaitOr(t AwaitTB, what string, observed func() bool, giveUp func() string) {
 	t.Helper()
 	remaining := func() (time.Duration, bool) { return 0, false }
 	if bounded, ok := t.(interface{ Deadline() (time.Time, bool) }); ok {
@@ -36,14 +42,18 @@ func Await(t testing.TB, what string, observed func() bool) {
 			remaining = func() (time.Duration, bool) { return time.Until(deadline), true }
 		}
 	}
-	await(t, what, observed, func() { time.Sleep(AwaitPause) }, remaining)
+	await(t, what, observed, func() { time.Sleep(AwaitPause) }, remaining, giveUp)
 }
 
-func await(t awaitTB, what string, observed func() bool, pause func(), remaining func() (time.Duration, bool)) {
+func await(t AwaitTB, what string, observed func() bool, pause func(), remaining func() (time.Duration, bool), giveUp func() string) {
 	t.Helper()
 	for !observed() {
 		if left, bounded := remaining(); bounded && left <= awaitReserve {
-			t.Fatalf("still awaiting %s with %s left before the test binary's deadline", what, left.Round(time.Millisecond))
+			report := ""
+			if giveUp != nil {
+				report = "; " + giveUp()
+			}
+			t.Fatalf("still awaiting %s with %s left before the test binary's deadline%s", what, left.Round(time.Millisecond), report)
 			return
 		}
 		pause()

@@ -96,7 +96,7 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if accepted.Obligation == nil || accepted.Obligation.State != goal.ObligationEnforced || string(acceptedBytes) != string(localBytes) {
 		t.Fatal("accepted goal-a bytes differ from the enforced local obligation")
 	}
-	started := time.Now().UTC().Add(-3 * time.Minute)
+	started := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	weightGeneration := uint64(0)
 	store := &run.Store{Root: root, Now: func() time.Time { return started },
 		AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {

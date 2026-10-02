@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -1027,17 +1028,10 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 		result, status, err := RunTestPlan(context.Background(), consumerRequest)
 		consumerDone <- outcome{result, status, err}
 	}()
-	deadline := time.After(10 * time.Second)
-	for {
-		if data, err := os.ReadFile(counter); err == nil && len(data) > 0 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("native producer never launched")
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
+	testenv.Await(t, "the native producer's launch", func() bool {
+		data, err := os.ReadFile(counter)
+		return err == nil && len(data) > 0
+	})
 	select {
 	case got := <-consumerDone:
 		t.Fatalf("consumer finished before producer terminal: %+v", got)
@@ -1046,24 +1040,14 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 	if err := os.WriteFile(release, []byte("go"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var first outcome
-	select {
-	case first = <-producerDone:
-	case <-time.After(20 * time.Second):
-		t.Fatal("native producer did not finish")
-	}
+	first := <-producerDone
 	if first.err != nil || first.status != 0 || first.result.LaunchCounts.Test != 1 {
 		t.Fatalf("producer result: %+v", first)
 	}
 	if _, err := FinalizeAttemptWithTestResultLocked(f.root, producer.AttemptID, TerminalSuccess, 0, "native complete", nil, &first.result, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	var second outcome
-	select {
-	case second = <-consumerDone:
-	case <-time.After(20 * time.Second):
-		t.Fatal("consumer did not observe terminal producer")
-	}
+	second := <-consumerDone
 	if second.err != nil || second.status != 0 || second.result.LaunchCounts.Test != 0 || second.result.LaunchCounts.ReusedTest != 1 || second.result.Groups[0].ReuseAttempt != producer.AttemptID {
 		t.Fatalf("consumer result: %+v", second)
 	}

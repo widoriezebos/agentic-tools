@@ -2052,12 +2052,11 @@ func (phase frozenCorpusPhase) context() (context.Context, context.CancelFunc) {
 // fail names the phase and whether its deadline, not the child, ended it.
 func (phase frozenCorpusPhase) fail(ctx context.Context, err error, output []byte) {
 	phase.phases.t.Helper()
-	elapsed := time.Since(phase.started).Round(time.Millisecond)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		phase.phases.t.Fatalf("frozen corpus phase %s overran its deadline (package timeout less %s cleanup reserve) after %s: %v\n%s",
-			phase.name, frozenCorpusCleanupReserve, elapsed, err, output)
+			phase.name, frozenCorpusCleanupReserve, time.Since(phase.started).Round(time.Millisecond), err, output)
 	}
-	phase.phases.t.Fatalf("frozen corpus phase %s failed after %s: %v\n%s", phase.name, elapsed, err, output)
+	phase.phases.t.Fatalf("frozen corpus phase %s failed after %s: %v\n%s", phase.name, time.Since(phase.started).Round(time.Millisecond), err, output)
 }
 
 func countFrozenCorpusEntries(t *testing.T, root string) int {

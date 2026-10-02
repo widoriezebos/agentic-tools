@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -497,16 +498,11 @@ func countLines(t *testing.T, path string) int {
 	return len(strings.Fields(string(data)))
 }
 
+// eventuallyTrue waits for done to hold: the fact is the event, bounded only
+// by the test binary's deadline.
 func eventuallyTrue(t *testing.T, what string, done func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if done() {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	testenv.Await(t, what, done)
 }
 
 // --goal G is sugar for the goal branch's tip, and a moved tip makes the
@@ -747,6 +743,30 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 	}
 }
 
+// followTurns is the context a follow runs under in TestAppLogFollow. A
+// follow asks for Done each time it has read to the log's end: the first
+// time it has opened the log and reached its end, so a line appended then is
+// written after the follow began; the second time it has read that line, so
+// the follow ends. Nothing waits on the clock.
+type followTurns struct {
+	context.Context
+	ends       int
+	atFirstEnd func()
+	ended      chan struct{}
+}
+
+func (turns *followTurns) Done() <-chan struct{} {
+	turns.ends++
+	switch turns.ends {
+	case 1:
+		turns.atFirstEnd()
+		return nil
+	case 2:
+		close(turns.ended)
+	}
+	return turns.ended
+}
+
 // log --follow prints the captured tail and then what the application writes
 // after it, until it is interrupted.
 func TestAppLogFollow(t *testing.T) {
@@ -757,17 +777,18 @@ func TestAppLogFollow(t *testing.T) {
 	}
 	previous := appFollowContext
 	appFollowContext = func() (context.Context, context.CancelFunc) {
-		return context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	}
-	t.Cleanup(func() { appFollowContext = previous })
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		log, err := os.OpenFile(applaunch.DefaultLogPath(bed.installation, applaunch.StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
-		if err == nil {
+		turns := &followTurns{Context: context.Background(), ended: make(chan struct{}), atFirstEnd: func() {
+			log, err := os.OpenFile(applaunch.DefaultLogPath(bed.installation, applaunch.StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
+			if err != nil {
+				t.Errorf("append to the followed log: %v", err)
+				return
+			}
 			fmt.Fprintln(log, "written after the follow began")
 			_ = log.Close()
-		}
-	}()
+		}}
+		return turns, func() {}
+	}
+	t.Cleanup(func() { appFollowContext = previous })
 	code, out := bed.run("app", "log", "--follow")
 	if code != 0 {
 		t.Fatalf("app log --follow: %d\n%s", code, out)

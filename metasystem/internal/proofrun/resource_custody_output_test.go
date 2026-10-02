@@ -197,7 +197,7 @@ func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 	}
 	// The launcher writes .done only after the direct child has exited and
 	// exec.Cmd.Wait has completed. Keep the first public write gated until then.
-	waitCustodyFileWhile(t, logPath+".done", 0, ended, func() error { return errors.New("the gated suite launcher returned") })
+	waitCustodyFileWhile(t, logPath+".done", ended, func() error { return errors.New("the gated suite launcher returned") })
 	releaseOnce.Do(func() { close(output.release) })
 	if status := <-finished; status != 0 {
 		t.Fatalf("gated suite status=%d", status)
@@ -241,7 +241,7 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 		<-ended
 	})
 	// The shell creates the pid file before it writes the line; wait for the line.
-	waitCustodyBarrier(t, pidPath, 0, ended, func() error { return errors.New("the borrowed custody launcher returned") },
+	waitCustodyBarrier(t, pidPath, ended, func() error { return errors.New("the borrowed custody launcher returned") },
 		func() bool { return completeCustodyRecord(pidPath) })
 	pidText, err := os.ReadFile(pidPath)
 	if err != nil {

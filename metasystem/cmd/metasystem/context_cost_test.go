@@ -55,10 +55,13 @@ type contextCostReaderWork struct {
 	SampleWrites    int   `json:"sampleWrites"`
 }
 
+// contextCostProcess is one process of the bed. Its start and its exit are
+// stamped as they happen; the time between them is reported, never judged.
 type contextCostProcess struct {
 	command *exec.Cmd
 	cancel  context.CancelFunc
 	started time.Time
+	ended   time.Time
 	output  bytes.Buffer
 	done    chan struct{}
 	err     error
@@ -1063,6 +1066,7 @@ func startContextCostProcess(t *testing.T, directory string, environment []strin
 	}
 	go func() {
 		process.err = command.Wait()
+		process.ended = time.Now()
 		close(process.done)
 	}()
 	return process
@@ -1070,7 +1074,7 @@ func startContextCostProcess(t *testing.T, directory string, environment []strin
 
 func waitContextCostProcess(process *contextCostProcess) (string, time.Duration, error) {
 	<-process.done
-	elapsed := time.Since(process.started)
+	elapsed := process.ended.Sub(process.started)
 	process.cancel()
 	return process.output.String(), elapsed, process.err
 }
@@ -1115,6 +1119,7 @@ func startContextCostCoordinatedProcess(t *testing.T, directory string, environm
 	releaseRead.Close()
 	go func() {
 		process.err = command.Wait()
+		process.ended = time.Now()
 		close(process.done)
 	}()
 	return &contextCostBarrierProcess{process: process, ready: readyRead, release: releaseWrite}
