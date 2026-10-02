@@ -2,6 +2,7 @@ package diskstore
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -52,10 +53,7 @@ func processScratchHelper() (code int, handled bool) {
 		// reads the parent test's pipe, so it ends when the test closes it.
 		child := exec.Command("cat")
 		child.Stdin, child.Stdout = os.Stdin, os.Stdout
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		if err := child.Start(); err != nil {
+		if err := StartChild(child); err != nil {
 			return fail(err)
 		}
 		fmt.Printf("child=%d\nready\n", child.Process.Pid)
@@ -95,17 +93,14 @@ func processScratchHelper() (code int, handled bool) {
 		// G and ends while G runs.
 		child := exec.Command(os.Args[0])
 		child.Stdin = os.Stdin
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-"+strings.TrimPrefix(mode, "grand-"))
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=grand-child-"+strings.TrimPrefix(mode, "grand-"))
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
 		fmt.Printf("child-%s", output)
 		if os.Getenv("DISKSTORE_SCRATCH_EXIT") == "" {
-			if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+			if err := ReleaseProcessScratch(context.Background()); err != nil {
 				fmt.Printf("parent-release=%v\n", err)
 			}
 		}
@@ -116,11 +111,8 @@ func processScratchHelper() (code int, handled bool) {
 		// to the child's root (the reader's parent-extra probe).
 		child := exec.Command(os.Args[0])
 		child.Stdin = os.Stdin
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-bare")
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=grand-child-bare")
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
@@ -159,14 +151,11 @@ func processScratchHelper() (code int, handled bool) {
 			}
 			grandchild.ExtraFiles = []*os.File{read}
 		}
-		if err := PrepareChild(grandchild); err != nil {
-			return fail(err)
-		}
-		if err := grandchild.Start(); err != nil {
+		if err := StartChild(grandchild); err != nil {
 			return fail(err)
 		}
 		fmt.Printf("grandchild=%d\ngrandchild-dir=%s\n", grandchild.Process.Pid, dir)
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			fmt.Printf("child-release=%v\n", err)
 		}
 		return 0, true
@@ -184,33 +173,42 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(err)
 		}
 		done()
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	case "nested":
 		child := exec.Command(os.Args[0])
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=nested-child")
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=nested-child")
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
 		fmt.Printf("child-%s", output)
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	case "nested-child":
 		fmt.Printf("tmpdir=%s\n", os.Getenv("TMPDIR"))
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	}
 	return fail(fmt.Errorf("unknown helper mode %q", mode))
+}
+
+// startedOutput is cmd.Output through the seam: it starts cmd with
+// StartChild and returns its standard output once it has exited.
+func startedOutput(cmd *exec.Cmd) ([]byte, error) {
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := StartChild(cmd); err != nil {
+		return nil, err
+	}
+	err := cmd.Wait()
+	return output.Bytes(), err
 }
 
 // scratchBed is a helper process's TMPDIR and home state root, both inside

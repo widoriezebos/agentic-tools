@@ -111,12 +111,9 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 	cmd := deps.inputsCommand(executable, "brain", "boot-inputs", "--root", root, "--repo", repo, "--dir", dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// The reader is an engine child writing into this process's scratch: it
-	// inherits the writer lock and takes its own scratch nested in ours.
-	if err := diskstore.PrepareChild(cmd); err != nil {
-		return brainBootOutput{}, err
-	}
-	// The reader answers through its output files; its words are not read.
-	if err := cmd.Start(); err != nil {
+	// holds a writer lock of its own and takes its own scratch nested in
+	// ours. It answers through its output files; its words are not read.
+	if err := diskstore.StartChild(cmd); err != nil {
 		return brainBootOutput{}, fmt.Errorf("start optional-input reader: %w", err)
 	}
 	waited := make(chan error, 1)

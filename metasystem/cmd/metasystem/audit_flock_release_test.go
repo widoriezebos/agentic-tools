@@ -35,7 +35,7 @@ import (
 // without unlocking it, with the reason. Only locks meant to be inherited
 // belong here: LOCK_UN would release every child that holds the description.
 var auditFlockReleaseAllowance = map[string]string{
-	"internal/diskstore/process.go:closeWriter":         "the process scratch writer lock is one description every child started through PrepareChild inherits; LOCK_UN would release the root under a live child (fork copies are waited out by WriterDrain)",
+	"internal/diskstore/process.go:startChild":          "closes the parent's copy of the child's own description; LOCK_UN would free the child",
 	"internal/proofrun/scratch.go:Cleanup":              "the scratch writer lock is one description every root-writing child inherits; LOCK_UN would release the root under a live worker (fork copies are waited out by scratchDrain)",
 	"internal/testenv/testenv.go:startFixtureCustodian": "the custodian log lock is held by the custodian through its stderr, which inherits the description; LOCK_UN would release it while the custodian lives",
 }
