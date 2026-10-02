@@ -9,8 +9,7 @@
 - Origin: main
 - Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern Switch-on path (Wido 2026-10-01): extend patterns to SEATS before any unattended night: seat-stuck (no progress 45 min / 120 min total) and seat-spend (per launch / per seat per day), per the 2026-10-01 seat-patterns proposal (evidence behaviour-patterns-20260930/seat-patterns-proposal.md).
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 37
-- Pinned: m1i
+- Revision: 38
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T16:35:13Z revision=3 opid=8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a authority=proven digest=38868745f2bb242da1e3ec3e6a05667d783dbafad3c08781fd6245f9f4e9397a episode=3
@@ -55,4 +54,5 @@ History:
 - 2026-10-02T21:02:39Z BJWGJBCEEKDP2C4C1A0QB6TKJ6-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:04:39Z 0WHHWWZBDM376WF0G36NDVMZE3-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:04:56Z ZBVW5R48ABZVHEDW2QCHKNH8MF-m1i-71c5cb39 claim actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
-Integrity: sha256=d4691feabe655154086ef1036c72fc8d64bfcf84b3bd7f00d492daa66685718b
+- 2026-10-02T21:05:49Z QH6BN98BX7YVCVDS2JJ1GNTAF8-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
+Integrity: sha256=040f2952019576cc1bfcf76cf5fc940b52eaa412c94683b842a35d9d7adde81c
