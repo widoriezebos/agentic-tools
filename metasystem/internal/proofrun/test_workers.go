@@ -72,7 +72,14 @@ func acquireTestWorkers(ctx context.Context, workers int) (release func(), err e
 // failed attempt registers one pending request and returns the pool change
 // that makes retrying useful. The caller owns stopWaiting until it either
 // retries or abandons the request.
-func tryAcquireTestWorkers(ctx context.Context, workers int) (release func(), changed <-chan struct{}, stopWaiting func(), acquired bool, err error) {
+//
+// olderRefusedAt is the pool change an older request in the same admission
+// scan was refused against, or nil. When capacity was released since then,
+// a request that would now fit is refused without registering, and the
+// already-closed change is returned: the freed capacity belongs to the older
+// request, which the caller's next scan tries first. The check and the grant
+// share one critical section, so a release can never land between them.
+func tryAcquireTestWorkers(ctx context.Context, workers int, olderRefusedAt <-chan struct{}) (release func(), changed <-chan struct{}, stopWaiting func(), acquired bool, err error) {
 	pool, err := testWorkerPoolForRequest(ctx, workers)
 	if err != nil {
 		return nil, nil, nil, false, err
@@ -81,6 +88,10 @@ func tryAcquireTestWorkers(ctx context.Context, workers int) (release func(), ch
 	if err := ctx.Err(); err != nil {
 		pool.mu.Unlock()
 		return nil, nil, nil, false, err
+	}
+	if pool.available >= workers && olderRefusedAt != nil && olderRefusedAt != (<-chan struct{})(pool.changed) {
+		pool.mu.Unlock()
+		return nil, olderRefusedAt, func() {}, false, nil
 	}
 	if pool.available >= workers {
 		pool.available -= workers
