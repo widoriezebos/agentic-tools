@@ -317,11 +317,9 @@ func (s *session) requireGoalTierLadder(subj *subject) error {
 		if isReviewRole(subj.role) || subj.reviews != "" {
 			return s.die(1, fmt.Sprintf("tier 1 goal %s refuses critic roles and --reviews; raise it first with goal edit --tier 2", subj.goal))
 		}
-	case 2:
-		if subj.role == "design-critic" {
-			return s.die(1, fmt.Sprintf("tier 2 goal %s refuses the design-critic role; raise it first with goal edit --tier 3", subj.goal))
-		}
-	case 3:
+	case 2, 3:
+		// Design review is allowed from tier 2 (Wido 2026-10-01); only
+		// tier 1 has none.
 	default:
 		return s.die(1, fmt.Sprintf("goal %s has no usable claimed-revision tier", subj.goal))
 	}
