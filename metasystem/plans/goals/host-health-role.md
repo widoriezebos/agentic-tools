@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 4
+- Sequence: 3
 - Intent: What: The steward watches the machine itself: load, swap use and the top CPU and memory users, against named limits. When a limit is crossed it raises an alert naming the process, whether it is ours, and the fix; otherwise it stays quiet. Why: on 2026-09-02 a macOS file-indexing service had run at full CPU with 17 GB of memory for 17 days, swap was 94 percent full and 488 leaked test processes had piled up, and nothing noticed. Already done: a first design and its critique with 7 findings; a small reader of load averages exists. Pros: machine trouble surfaces in minutes, not weeks. Cons: limits need tuning or it cries wolf, and reading the process list costs a little on each tick.
 - Origin: main
 - Next step: Next: fold the 7 critique findings into a second revision of the design as the fold brief lays out, reusing the existing load reader. Done when: the revised design passes one critique round with no serious findings and is ready to build with a test fed the recorded 2026-09-02 snapshot.
 - OpenedAt: 2026-09-02T16:28:16Z
-- Revision: 21
+- Revision: 22
 - Labels: robustness
 - BudgetExceptions: 0
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T18:19:20Z
@@ -34,4 +34,5 @@ History:
 - 2026-09-30T18:49:59Z P1NBQ0J5KTW7XP5H9HA7MGD5Y3-ui-bc2fda53 edit actor=human:Wido targets=host-health-role
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:6 to=3:5
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:5 to=3:4
-Integrity: sha256=0cc1e37c128510049c399dab932782e277b1171aa3bc883a504f9b9d019bc042
+- 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:4 to=3:3
+Integrity: sha256=0ddb2babab22dcbad8c3c6c59b4a67f2112f2756169f8cf34c9642b0101df1e8

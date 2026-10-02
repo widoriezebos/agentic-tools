@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 23
+- Sequence: 22
 - Intent: What: An adopted app's own patterns, architecture choices and conventions are written down as its doctrine and keep evolving as the app grows. The first version exists: the inception interview writes a starting doctrine file. What is left: make the doctrine a binding input to every critique of changes to the app, let the counselor flag when the doctrine no longer matches the code, and decide who changes it (any seat proposes and a person ratifies, or a dedicated architect role). Why: Today the doctrine is written once and then nothing reads or updates it, so it goes stale and critics ignore the app's own rules. Pros: Critiques judge against the app's own rules, and drift gets noticed. Cons: One more input to maintain, the ownership question may add a new role, and there is nothing to test against until an app has lived past inception.
 - Origin: human
 - Next step: Next: Write the design: how the doctrine enters every critique brief automatically, how the counselor detects drift, and who owns doctrine changes, with that last answer brought to Wido. Done when: Wido has accepted a design that answers all three.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 98
+- Revision: 99
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:20Z because=Parked until an adopted app has lived past inception and its doctrine needs its first change. This goal was always meant to come last, and without such an app there is nothing real to design against.
 
@@ -110,4 +110,5 @@ History:
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
 - 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
-Integrity: sha256=cb37e96dcf8fc06bb49f763fab6d04a3518b18a74262b27f97024d1aaf588125
+- 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
+Integrity: sha256=effb1a0869f626813c70549e709b9e5b42abd4b6c4617590ed9025637bab4006

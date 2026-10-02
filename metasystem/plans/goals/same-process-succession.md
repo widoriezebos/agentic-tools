@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 3
+- Sequence: 2
 - Intent: What: a session is never locked out of its own work by a stale copy of its own identity: when a session retires and then re-registers from the same live process, the system recognises it as the same process instead of 'owned elsewhere'. The fix is on main (a05a15409 and df9fc161c compare a process by its id, start time and boot, and reconcile a re-registration from the same process); what is missing is proof on today's engine that the failure seen on 2026-08-24 cannot recur, and closing the known-issue record that still lists it as open. Why: twice a session was blocked from its own claimed work, which stops a seat until a person untangles it. Pros: closes an old failure with evidence instead of assumption. Cons: small; the fixture costs a little time.
 - Origin: main
 - Next step: Next: run a fixture on current origin/main that retires a session and re-registers it from the same shell, then tries the gated goal commands. Done when: the gated commands still treat the session as the owner; then conclude citing a05a15409 and df9fc161c and mark the known issue fixed.
 - OpenedAt: 2026-08-25T06:08:23Z
-- Revision: 18
+- Revision: 19
 - BudgetExceptions: 0
 
 History:
@@ -29,4 +29,5 @@ History:
 - 2026-09-30T18:53:05Z PBB5EDA5GEVK543SNDMP85B56K-ui-bc2fda53 edit actor=human:Wido targets=same-process-succession
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:5 to=3:4
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:4 to=3:3
-Integrity: sha256=db981810ef7354d0de52283346e7a0054619ba1e55c914dd0049c16ec67ce80c
+- 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:3 to=3:2
+Integrity: sha256=91dd7efaf152a6f03452604773e83f0dbe0176c35e1116cf3db81bb30cf2fa5d
