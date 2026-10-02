@@ -25,14 +25,21 @@ func peerOwnership(root, home string, tipOf func(string) (string, bool, error), 
 	if !resolved {
 		return board.Ownership{Live: map[string]string{}, Concluded: map[string]string{}}, nil
 	}
-	if ownership, ok := board.ReadOwnershipCache(home, tip); ok {
+	// An ownership with no goal at all is never shared. It is what a root
+	// that does not hold the ledger reads at any tip, and the cache is keyed
+	// by the tip alone: shared, it would tell every seat of the host that no
+	// goal exists.
+	shared := func(ownership board.Ownership) bool { return len(ownership.Live)+len(ownership.Concluded) > 0 }
+	if ownership, ok := board.ReadOwnershipCache(home, tip); ok && shared(ownership) {
 		return ownership, nil
 	}
 	ownership, err := project(root, tip)
 	if err != nil {
 		return board.Ownership{}, err
 	}
-	_ = board.WriteOwnershipCache(home, tip, ownership)
+	if shared(ownership) {
+		_ = board.WriteOwnershipCache(home, tip, ownership)
+	}
 	return ownership, nil
 }
 

@@ -152,9 +152,21 @@ func (inv *intentInvocation) agentSeat() (agentSeat, *intentResult) {
 	return agentSeat{owners: owners, root: root, machine: machine, lineage: lineage, home: home, now: owners.now().UTC()}, nil
 }
 
+// ownership is the goals' ownership as a checkout's ledger records it. The
+// ledger lives at the installation's state root, which lies below the
+// checkout's top when the installation is a subdirectory of it; read at the
+// top, such a checkout has no goal at all.
+func (o agentOwners) ownership(checkout string) (board.Ownership, error) {
+	root, err := goal.ResolveStateRoot(checkout)
+	if err != nil {
+		return board.Ownership{}, err
+	}
+	return o.ledger(root)
+}
+
 // claims is the lazy ledger read the ownership rule asks for.
 func (seat agentSeat) claims() (board.Ownership, error) {
-	return seat.owners.ledger(seat.root)
+	return seat.owners.ownership(seat.root)
 }
 
 const agentIsNotAPerson = "An agent ask reaches an agent working on this host, never a person; a question for a person is metasystem question ask."
@@ -265,7 +277,7 @@ func runAgentAsk(inv *intentInvocation) int {
 		}
 		request.To = board.Address{Machine: machine}
 	} else {
-		ledger, err := seat.owners.ledger(seat.root)
+		ledger, err := seat.owners.ownership(seat.root)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1,
 				Summary:  "the goal list cannot be read, so goal " + goalID + " cannot be checked; nothing was sent",
@@ -695,7 +707,7 @@ func (inv *intentInvocation) peerStatusLines(checkout string) []string {
 	if err != nil || !board.SafeName(machine) {
 		return nil
 	}
-	claims := func() (board.Ownership, error) { return owners.ledger(checkout) }
+	claims := func() (board.Ownership, error) { return owners.ownership(checkout) }
 	counts, err := board.Count(home, machine, claims, owners.now().UTC())
 	if err != nil {
 		return []string{"peer messages: the board cannot be read (" + err.Error() + ")"}
