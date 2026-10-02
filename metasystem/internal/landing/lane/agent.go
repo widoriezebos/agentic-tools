@@ -324,6 +324,11 @@ func RepairAgentRecord(home string) error {
 // own says whether this steward keeps the registered lane (ownsLane).
 func (k AgentKeeper) own(record Record) bool { return ownsLane(k.Self, record) }
 
+// OwnsLane says whether the steward of self keeps the registered lane, as
+// the keeper decides it: the steward's lane-silent signal reads the lane
+// only there.
+func OwnsLane(self string, record Record) bool { return ownsLane(self, record) }
+
 // ownsLane says whether the steward of self keeps the registered lane: its
 // checkout is the lane's checkout or its installation, as landing set
 // recorded them (K-a), never guessed.
