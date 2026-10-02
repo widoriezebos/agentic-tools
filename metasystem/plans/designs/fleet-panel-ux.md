@@ -44,13 +44,13 @@ Wido's screenshot (2026-10-02) showed: the table is liked; below it a stale lane
 │  "Plain lane landing" came back: the full test run is red. [Open] │
 ├ The fleet (the table Wido likes; Running becomes Doing) ─────────┤   ← (J3, J5)
 │ MACHINE STANDING    SEEN      DOING                      HOLDS     │
-│ m1f     reachable  1 min ago building · unit 2 of 5 · 42m  One folder…│
+│ m1f     reachable  1 min ago building · 42 min  One folder…│
 │ ui      reachable  now       reviewing · round 1 · 9 min   Work review…│
 │ wr-m1   unreachable 3 d ago  —                [Forget]                 │
 │   (expanded row: engine, generation, [Stop] [Talk])                   │
 ├ Landing lane  ● Running                     [Pause] [Land now]   ┤   ← (J4, J5)
 │  Waiting   Seat path lands without help  · m1g · 4 min            │
-│  Proving   Plain lane fix  · started 6 min ago (usually ~17 min) │
+│  Proving   Plain lane fix  · started 6 min ago │
 │  Landed today                                                    │
 │   21:54  Stuck agents now ask you on Telegram and wait.          │   ← (J6) the delivered sentence
 │   18:54  The fleet card can land work now.                       │
@@ -70,7 +70,7 @@ Wido's screenshot (2026-10-02) showed: the table is liked; below it a stale lane
    - an open question for the person → [Answer] (link to where it is answered).
    Empty means the section is not shown at all.
 3. **Seats: the fleet table, kept and completed.** Wido likes the table (screenshot 2026-10-02); it stays the one place for machines, and the "This host" text list below it is removed (it repeats the table in worse words and shows stale cards, e.g. "m1g: one-folder-deployed-and-evolved unknown: claim moved to m1f"). Changes to the table:
-   - the Running column becomes **Doing**, filled from the board and the seat records: "building · unit 2 of 5 · 12 min", "reviewing · round 3 of 20", "waiting to land", "idle". Today it says "idle" for seats that are working (m1f in revise round 3, ui building): a data bug, fixed here;
+   - the Running column becomes **Doing**, filled from the board and the seat records: "building · 12 min", "reviewing · round 3 of 20", "waiting to land", "idle". Today it says "idle" for seats that are working (m1f in revise round 3, ui building): a data bug, fixed here;
    - Holds shows the goal's title, with the id in the link;
    - Engine collapses to the short version; the generation number moves into the expanded row;
    - per-row actions in the expanded row: [Stop] for a running seat; [Talk] when ui-connects-to-a-running-agent lands; [Forget] for an unreachable seat (e.g. wr-m1, 3 days) when fleet-forgets-an-unreachable-seat lands;
@@ -81,6 +81,15 @@ Wido's screenshot (2026-10-02) showed: the table is liked; below it a stale lane
 ### Data: nothing new to invent
 
 All facts exist: plain lane status (queue, running_proof, last_proof, last_push; internal/landing/plain/status.go), board seat views (internal/board/view.go), steward seat records and signals, questions (`question list`), goal titles (ledger). The work is presentation plus three small server additions: goal titles in the board and lane payload, the delivered sentence per landed entry (slice C stores it in the queue line), and endpoints for Pause/Resume/Stop that call the existing verbs (`landing stop/start`, `work stop`).
+
+
+### Folded from critique round 1 (Codex Astra, 5 material)
+
+- **Authority (R1-01):** every action button (Pause, Resume, Stop, Land now) goes through the same signed-in person path as today's Land now (internal/ui/httpd/landnow.go): no sign-in, no act; the verb runs as that person. Calling a verb from the server is never enough on its own.
+- **Stop's target (R1-02):** [Stop] on a machine row stops that machine's MetaSystem (`metasystem machine stop NAME`), which ends its seat and keeps the steward from starting a successor; stopping a single launch or goal is not offered here.
+- **Landing times (R1-03):** "Landed today" derives each entry's landing time from the lane's pushes record (pushes.jsonl, one line per push with time and commit): the first push whose commit contains the entry's SHA. No new timestamp is invented.
+- **No invented facts (R1-04):** progress shows only what the board records (review round N of M, proof sections done of total) and the proof's elapsed time; no build-unit counts, no "usual duration".
+- **Verdict honesty (R1-05):** the verdict is "All good" only when every section read succeeded and Needs you is empty; a failed read makes the verdict "Can't read <section>" (and lane status must surface its queue/result read errors instead of swallowing them).
 
 ### Step 1 and Deferred
 
