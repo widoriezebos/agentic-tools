@@ -517,3 +517,58 @@ func TestReadyWorkerAdmissionKeepsPerformanceExclusive(t *testing.T) {
 		t.Fatalf("performance stage leaked capacity: available=%d waiters=%d", available, waiters)
 	}
 }
+
+// Capacity freed by a finishing group while the scheduler is between an older
+// group's refusal and a younger group's try belongs to the older group: the
+// younger group must not take what the older one would now fit into.
+func TestReadyWorkerAdmissionKeepsOldestAheadOfCapacityFreedMidScan(t *testing.T) {
+	t.Parallel()
+
+	ids := []string{"wide-old", "wide-young"}
+	groups := map[string]testpolicy.Group{
+		"wide-old": {ID: "wide-old", Kind: "unit", Adapter: "command", TargetMS: 2,
+			Resources: testpolicy.GroupResources{Workers: readyAdmissionWorkers(4)}},
+		"wide-young": {ID: "wide-young", Kind: "unit", Adapter: "command", TargetMS: 1,
+			Resources: testpolicy.GroupResources{Workers: readyAdmissionWorkers(4)}},
+	}
+	ctx := withTestWorkerPool(context.Background(), 4)
+	pool := testWorkerPoolFromContext(t, ctx)
+	releaseBlocker, err := acquireTestWorkers(ctx, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseBlocker()
+
+	started := make(chan string, len(ids))
+	freedMidScan := false
+	ctx = withStageGroupDependencies(ctx, stageGroupDependencies{
+		beforeAcquire: func(id string) {
+			// Runs on the scheduler goroutine: the first try of the younger
+			// group follows the older group's refusal in the same scan.
+			if id == "wide-young" && !freedMidScan {
+				freedMidScan = true
+				releaseBlocker()
+			}
+		},
+		runGroup: func(_ context.Context, _ TestRunRequest, group testpolicy.Group) GroupResult {
+			started <- group.ID
+			return readyAdmissionResult(group, "passed")
+		},
+	})
+	results, _, err := runStageGroups(ctx, TestRunRequest{Workers: 4, Concurrency: 2}, groups, ids, &progressWriter{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !freedMidScan {
+		t.Fatal("capacity was never freed between the two admission tries")
+	}
+	if first := <-started; first != "wide-old" {
+		t.Fatalf("first admission=%q want wide-old: the younger group took capacity freed after the older one's refusal", first)
+	}
+	if len(results) != len(ids) || results[0].Status != "passed" || results[1].Status != "passed" {
+		t.Fatalf("results changed: %+v", results)
+	}
+	if available, waiters := testWorkerPoolState(pool); available != 4 || waiters != 0 {
+		t.Fatalf("stage leaked worker capacity: available=%d waiters=%d", available, waiters)
+	}
+}
