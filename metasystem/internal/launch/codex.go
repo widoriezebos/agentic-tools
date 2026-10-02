@@ -24,6 +24,7 @@ type ProcessScanner interface{ Scan() ([]Process, error) }
 type ProcessSignaler interface {
 	Signal(int64, syscall.Signal) error
 }
+
 // KernelProcessScanner lists the live processes with readable argv in
 // Table, the kernel's when nil; a test passes the processes it started.
 type KernelProcessScanner struct {

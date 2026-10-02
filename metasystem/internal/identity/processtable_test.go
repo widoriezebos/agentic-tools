@@ -25,7 +25,7 @@ func TestKernelProcessTableReadsThisProcess(t *testing.T) {
 		t.Fatalf("group of this process = %d, %v; want %d", group, err, syscall.Getpgrp())
 	}
 	session, err := table.Session(self)
-	if want, wantErr := syscall.Getsid(0); err != nil || wantErr != nil || session != int64(want) {
+	if want, wantErr := unix.Getsid(0); err != nil || wantErr != nil || session != int64(want) {
 		t.Fatalf("session of this process = %d, %v; want %d, %v", session, err, want, wantErr)
 	}
 	if parent, known := table.Parent(self); !known || parent != int64(os.Getppid()) {
