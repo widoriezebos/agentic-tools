@@ -685,10 +685,11 @@ func TestCustodianWaitsForDeadOwnerAndExcludesItself(t *testing.T) {
 	environmentChild.Environ, environmentChild.EnvironKnown = []string{fixtureWord(t, key)}, true
 	argvChild.Argv, argvChild.ArgvKnown = []string{fixtureWord(t, key)}, true
 	processes := fixtureTable{700: fixtureExact(700, 70), 701: self, 702: environmentChild, 703: argvChild}
-	installFixtureScanTable(t, processes)
+	source := fixtureScanSource(processes)
 	var signaled []int64
 	var log strings.Builder
 	runtime := custodianRuntime{prober: processes, self: self.Ref(), poll: time.Millisecond, bound: 2 * time.Millisecond,
+		scan: source.survivorsOfDeadOwner,
 		sender: func(pid int, _ syscall.Signal) error {
 			signaled = append(signaled, int64(pid))
 			delete(processes, int64(pid))
@@ -1262,10 +1263,11 @@ func TestCustodianKeepsSeparateProofAndCleanupBudgets(t *testing.T) {
 	key := FixtureKey{Owner: owner, Test: t.Name(), Nonce: "00000001"}
 	child.Environ, child.EnvironKnown = []string{fixtureWord(t, key)}, true
 	processes := fixtureTable{702: child}
-	installFixtureScanTable(t, processes)
+	source := fixtureScanSource(processes)
 	prober := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Unknown, Unknown, Dead}}
 	var signaled []int64
 	runtime := custodianRuntime{prober: prober, poll: time.Millisecond, bound: 60 * time.Millisecond,
+		scan:  source.survivorsOfDeadOwner,
 		clock: newManualCustodianClock(),
 		sender: func(pid int, _ syscall.Signal) error {
 			signaled = append(signaled, int64(pid))
