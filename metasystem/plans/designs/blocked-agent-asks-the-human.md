@@ -21,6 +21,9 @@ Our own agents and operators make mistakes: an agent asks too often or too vague
 | Turning a channel answer into an automatic authority act | Nothing acts on an answer by itself. Answers reach the agent that asked; steward signals are notices with the one command a person (or the agent the person tells) runs. |
 | An agent that asks too often | The rule's threshold: ask only after the one obvious next step was tried and failed. Identical open questions are already de-duplicated (`internal/channel/question.go:219`). |
 | Goal-less questions turning into a new store | They are ordinary question records with `about` set; same directory, same poll, same list. |
+| Rebuilding all of the accepted gateway design (about 2,000 lines) for two installations on one computer | Decision 8 builds only receive, commit, confirm and local matching; every other section is listed under Deferred. |
+| A gateway, a lease or a leader | Ruled out by Wido (FCG-PRINCIPLE-01): every installation polls, the ledger push race decides, and a 409 is the ordinary sound of two pollers. |
+| Per-installation bots | One bot token for the fleet (Wido's standing ruling); no per-installation token, chat or config step. |
 | Rewriting the Stop hook | One predicate, "a question this session asked is open", read by the branches that would otherwise refuse. |
 
 ## Step 1 and what it reuses
@@ -79,6 +82,16 @@ Wido: "I want to have the IM (telegram/slack/...) channel as silent as possible 
 2. A landing on main posts one line per landing: the goal and the short SHA ("landed: G at SHA"). Producers: the lane's `landing push` after a successful push, and a seat that lands its own work. Once per SHA.
 3. Every other channel message asks for a response: a question, or a notice whose second line is the act the human takes (Decision 4's signals). A message that only informs does not go to the channel.
 
+## Decision 8: one bot, the ledger inbox, first commit wins (Wido 2026-10-02)
+
+Wido: "We will use ONLY ONE BOT TOKEN and we will keep track of the last message read and place the message in the ledger (or central place)." This is step 1 of the accepted design `plans/fleet-channel-gateway-design.md` (revision 4) for today's case: one computer, two installations (the seat `agentic-tools-m1e` and the lane `agentic-tools-landing`), one bot, one ledger. Its binding words: "one bot, one git inbox, FIRST COME FIRST SERVED - no leases"; "receive -> commit to the shared git inbox -> confirm". Today each installation polls with its own cursor (`internal/channel/poll.go:140-148`), Telegram confirms the offset for the whole token, and the first poller files the other installation's reply in its own `unmatched.jsonl` (`poll.go:169-177`), where it is lost.
+
+1. **One token, every installation polls.** Both installations carry the same token and chat (local config only). Each keeps its steward's channel duty and `question wait` poll as they are. There is no lock, lease or leader, and a 409 is retried on the next poll (FCG-PRINCIPLE-01). Receive sends no offset, so Telegram returns every unconfirmed update (FCG-RECEIVE-03).
+2. **Commit, then confirm (FCG-RECEIVE-03, FCG-INBOX-02).** For each update, in update order, the receiving installation builds one inbox record, `plans/channel/inbox/<destination>/telegram-<message id>.json`, and publishes it through `goal.Publish`. The record's path makes the write idempotent by message id. A record already on the tip under another opid is the ordinary lost-to-winner (`goal.LostToCompetitor`, `internal/goal/txn.go:561`; `TrailerPresent`, `:476`). After a confirmed or lost publish the installation calls `Provider.Confirm` with the update's `Ack`, and never before the commit is durable. A poller that dies before committing has confirmed nothing, so the update comes again.
+3. **The committing installation checks sender and code (FCG-COMMIT-05).** The checks run in order: user id, code present, not stale, TOTP at `sentAt`. The code is removed from the text, and the outcome is written in the record. The replay check moves into the publish: a step already on another message at the tip makes this one `replayed`. Step 1 writes `question: "unmatched"`, because question records are not on the ledger yet.
+4. **Each installation matches its own questions from the ledger inbox (FCG-MATCH-06).** Every poll then reads the inbox records at the tip that it has not handled. It matches a `verified` record against its own open questions: threaded first (the `replyTo` is the question's thread, or one of its rejection posts), then by token for an unthreaded message, and never a stray. A match records the answer exactly as today, and `poll.go:357` and the local record are unchanged. A record that names none of its questions is left for the other installation. So lane questions work with the lane's own steward and no per-installation bot.
+5. **What survives and is reused.** `internal/goal/channel.go` (742 lines) keeps the inbox, question and listener schemas (`ChannelInbound`, `:82`) and `ValidateChannelTree`, which every ledger validation already runs (`internal/goal/validate.go:682`, `validatedread.go:51`). The provider contract already has `Ack`, `UpdateID` and `Confirm` (`internal/channel/channel.go:24-25,45`, Telegram `telegram.go:262`). The fake bot (`internal/channel/fake/fake.go`) serves named listeners, a shared confirmed offset (`:541-575`) and scripted 409s (`:229-240`). The deleted receive library (`3f52b2ff7`, recoverable from `57c310a1e`) is not restored: step 1 needs only the publish Mutate above.
+
 ## Moved effects
 
 | Effect | From | To | Code |
@@ -91,6 +104,10 @@ Wido: "I want to have the IM (telegram/slack/...) channel as silent as possible 
 | Telling the human a goal was breach-stopped | tick report only | channel notice episode | `metasystem/internal/steward/tick.go:247` |
 | Telling the human the lane is silent | no signal today | `lane-silent` episode | `metasystem/internal/steward/tick.go:546-551`, `metasystem/internal/landing/plain/queue.go:42-45` |
 | Recording a goal-less answer | goal ledger answer act | the question record alone | `metasystem/internal/channel/poll.go:357` |
+| Recording an inbound reply | the poller's local files: the answer on its own question record, anything else in `unmatched.jsonl` | one ledger inbox record per message, first commit wins | `metasystem/internal/channel/poll.go:151-253`, `metasystem/internal/channel/poll.go:169-177` |
+| Confirming the Telegram offset | the next `getUpdates` sent the saved per-installation cursor | `Confirm` after the inbox commit is durable; `cursor.json` is no longer read | `metasystem/internal/channel/poll.go:140-148`, `metasystem/internal/channel/poll.go:258` |
+| Checking sender and code, and refusing a replayed code | the poller, against its local `totp-consumed` register | the committing installation, against the inbox at the ledger tip | `metasystem/internal/channel/poll.go:184-195` |
+| Matching a reply to its question | the poller, against its own threads only | each installation, against its own open questions, from the ledger inbox | `metasystem/internal/channel/poll.go:122-138`, `metasystem/internal/channel/telegram/telegram.go:205-222` |
 
 ## Tests
 
@@ -101,7 +118,8 @@ Wido: "I want to have the IM (telegram/slack/...) channel as silent as possible 
 5. Alerts, each through its real producer with a fake provider: the third idle refusal posts once; a spend crossing posts once; a breach-stop posts once per stopped goal revision, the first report included, and the next tick posts no duplicate (`TestBreachStopNoticeOnNewStop`); a second tick posts nothing; no channel configured keeps today's path.
 6. Lane silent: 19 minutes without progress no episode, 20 minutes one; a proof that ended 30 minutes ago with work still queued and no push opens one; a proof running, a pause or an open lane question, none.
 7. `question list --answered --since`: grouping, counts, `--verbose`, open questions excluded.
-8. End to end (`cmd/metasystem`, fixture seat): the session asks; `question wait` runs in the background; the Stop hook allows the turn to end; the fake provider delivers a TOTP-valid reply; the wait exits 0 printing the answer; `question list --answered` shows it.
+8. One bot, two installations (fixture seat and fixture lane on one ledger, one fake Telegram bot, `internal/channel/fake`): each asks a question; both stewards poll at once, the fake scripting a 409 for one of them; the reply to the lane's question is recorded in the lane and the reply to the seat's in the seat; each reply has exactly one inbox record on the ledger, the loser of the commit race confirms without a second record, and no reply is lost; a poller killed after its commit and before Confirm leaves the update to be received again and lost to its own record; a code reused on a second message is committed `replayed`.
+9. End to end (`cmd/metasystem`, fixture seat): the session asks; `question wait` runs in the background; the Stop hook allows the turn to end; the fake provider delivers a TOTP-valid reply; the wait exits 0 printing the answer; `question list --answered` shows it.
 
 ## Deferred (step 2)
 
@@ -111,4 +129,5 @@ Wido: "I want to have the IM (telegram/slack/...) channel as silent as possible 
 | Free-form human-to-seat messages | the agent inbox (`cmd/metasystem/intent_agent.go:163-215`) |
 | Waking an idle seat when its answer arrives | the `human` wait row's question and the seat's session id |
 | Claimed-goal delivery and stuck-pattern notices | health episodes split per role (`alert_episode.go:435-439`); pattern episodes' `deliverTo` (`pattern_episode.go:205`) |
+| The rest of the accepted gateway design (`plans/fleet-channel-gateway-design.md`) | step 1's inbox records: question records on the ledger (FCG-INBOX-02 question table) and commit-time matching against them (FCG-MATCH-06 on the committing machine), the intent-post-ref posting protocol (FCG-POST-08), the resident long-poll listener and its jitter (FCG-POLL-04), listener status and heartbeats (FCG-STATUS-09), migration of local question records (FCG-MIGRATE-10), the two-step budget approval (FCG-ANSWER-11), the poison-update `channel skip` verb (FCG-RECEIVE-03), a second computer |
 | Runtimes other than Claude Code resuming on wait exit | the wait's exit and the session start's question read |
