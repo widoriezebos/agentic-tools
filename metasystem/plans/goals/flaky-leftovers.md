@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 26
+- Sequence: 1
 - Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="Production lock hand-off in diskstore and fixture custody: a wrong release can drop a writer's scratch or leave a child unowned (severity 2); a new lock hand-off mechanism (novelty 2); engine-internal, no adopter surface (exposure 1); a one-time cleanup (accumulation 1)"
 - Tier: 2
 - Intent: Retire the three flaky-test leftovers: WriterDrain's wall-clock re-probe of fork-inherited writer locks, the eight fixture-custody exit bounds, and the single-pid seams still swapped in sequential tests
 - Origin: main
 - Next step: Design page, Astra critique under the materiality stop rule, then build and code critique
 - OpenedAt: 2026-10-02T10:06:58Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=5
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-10-02T10:07:22Z JKP2211RSXVGR48HBWQADSZ8SJ-m1e-9c612d71 set-pin actor=human:Wido targets=flaky-leftovers
 - 2026-10-02T10:16:27Z D2VVM51K6YGVSFX2CXP5K6KMG6-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=flaky-leftovers
 - 2026-10-02T10:31:11Z DC1D6XXEK6S7T8J6TQ7MVNSQKM-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=flaky-leftovers
-Integrity: sha256=4013fc6a8e45f60afa04015b570e22e0eb3641ad51cca40952e55462a0b045ba
+- 2026-10-02T11:18:55Z 12MX4NHKB4BQ0HJPWDFNCMDCPR-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,flaky-leftovers,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=flaky-leftovers from=1:26 to=1:1 requested-sequence=1
+Integrity: sha256=b138173d50956223d98eb2c17f86982432c018d24459a7b109d6b82dccc0e0eb
