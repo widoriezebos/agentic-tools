@@ -1,4 +1,5 @@
 import type { Landed, Page, Problem } from "./api";
+import { dateAndTime, day, UNKNOWN } from "../backlog/format";
 
 /**
  * What the Application page says, as statements a test can point at.
@@ -219,20 +220,14 @@ export function firstSentence(text: string): string {
 
 /** The local calendar day of a recorded instant, or "" where none was. */
 export function dayOf(stamp: string): string {
-  const at = parse(stamp);
-  if (at === null) {
-    return "";
-  }
-  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+  const said = day(stamp);
+  return said === UNKNOWN ? "" : said;
 }
 
 /** The local day and clock to the minute, for the engine's own tick. */
 export function dayAndMinute(stamp: string): string {
-  const at = parse(stamp);
-  if (at === null) {
-    return "";
-  }
-  return `${dayOf(stamp)} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const said = dateAndTime(stamp);
+  return said === UNKNOWN ? "" : said;
 }
 
 /* ------------------------------------------------------ known problems -- */

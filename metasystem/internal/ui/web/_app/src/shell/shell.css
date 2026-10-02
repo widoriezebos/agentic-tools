@@ -542,9 +542,11 @@ body {
   font-weight: 600;
 }
 
+/* The field keeps a width a question can be typed in; what stands beside it
+   is what gives way. */
 .ms-drawer-field {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 220px;
   height: 32px;
   padding: 0 12px;
   box-sizing: border-box;
@@ -575,7 +577,6 @@ body {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   line-height: 16px;
@@ -585,6 +586,16 @@ body {
 .ms-drawer-about b {
   font-weight: 500;
   color: var(--ms-text-2);
+}
+
+/* The chip is the line's whole content, so the cut is the chip's own: it is
+   as wide as the line has room for and ends in an ellipsis. */
+.ms-drawer-about .ms-seeing-chip {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /*
@@ -1138,6 +1149,19 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* What stands behind a fact for whoever maintains the workspace: quieter than
+   the fact, and shut until it is opened. */
+.ms-fact-details {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-fact-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
 .ms-card-link {
   display: inline-block;
   margin-top: 16px;
@@ -1359,11 +1383,56 @@ body {
     gap: 4px 0;
   }
 
+  /* The header on a phone. The section's name is how a human knows where
+     they are, so it keeps its whole width and the workspace's identity gives
+     way instead: the mode chip is not shown, because the coloured line along
+     the top already marks a self-hosted workspace, and the note an adopted
+     one carries goes the same way; the rule beside them goes too, because a
+     rule beside nothing divides nothing; and the subject is cut to what is
+     left, with an ellipsis rather than mid-word. The controls on the right stay, closer together:
+     at 390 px the name with its help and refresh needs every pixel the
+     spacing gives back. */
+  .ms-header {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .ms-header-left,
+  .ms-header-right {
+    gap: 4px;
+  }
+
+  .ms-header-name {
+    gap: 2px;
+  }
+
+  .ms-header-left > .ms-icon-button,
+  .ms-header-name {
+    flex: 0 0 auto;
+  }
+
+  .ms-header-left > .ms-identity {
+    flex: 0 1 auto;
+    overflow: hidden;
+  }
+
+  .ms-header-rule,
+  .ms-identity > .ms-chip,
+  .ms-identity > .ms-identity-note {
+    display: none;
+  }
+
   /* The bar keeps the composer and the toggle; what the page is about is on
      the page, and in the open panel's own header. */
   .ms-drawer-bar {
     gap: 8px;
     padding: 0 12px;
+  }
+
+  /* The about line is not shown here, so the field has nothing to hold its
+     width against and takes what the bar has. */
+  .ms-drawer-field {
+    min-width: 0;
   }
 
   /* The help goes with the name it explains: a question mark beside nothing

@@ -55,12 +55,13 @@ import {
   type SiblingRail,
   REFRESH,
 } from "./pane";
-import { dateOf, ownership, timeOf } from "./ProjectPane";
+import { ownership } from "./ProjectPane";
 import "./reading.css";
 import { nextStepFor, outcomeParagraph } from "./sections";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { STATUSES } from "./writing";
 import { loadBacklog, type Backlog } from "../backlog/api";
+import { clockTime, day } from "../backlog/format";
 import { OpenSheet } from "../backlog/OpenSheet";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
@@ -898,9 +899,9 @@ function PlainFacts({
         <span className="ms-mono">{document.path}</span>
         <FileActions path={document.path} document={document} onEdit={onEdit} onNewGoal={null} busy="" />
         <Chip>{ownership(document.owner)}</Chip>
-        <span>changed {dateOf(document.modifiedAt)}</span>
+        <span>changed {day(document.modifiedAt)}</span>
         {document.revision !== "" && <span className="ms-mono">{shortRevision(document.revision)}</span>}
-        <IconButton label={REFRESH} hint={`Read at ${timeOf(document.readAt)} · ${REFRESH}`} onClick={onReload}>
+        <IconButton label={REFRESH} hint={`Read at ${clockTime(document.readAt)} · ${REFRESH}`} onClick={onReload}>
           <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
         </IconButton>
         {saved !== "" && <span role="status">{saved}</span>}
@@ -973,9 +974,9 @@ function RecordFacts({
           busy={working?.busy ?? ""}
         />
         <span>
-          changed {dateOf(document.modifiedAt)}
+          changed {day(document.modifiedAt)}
         </span>
-        <IconButton label={REFRESH} hint={`Read at ${timeOf(document.readAt)} · ${REFRESH}`} onClick={onReload}>
+        <IconButton label={REFRESH} hint={`Read at ${clockTime(document.readAt)} · ${REFRESH}`} onClick={onReload}>
           <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
         </IconButton>
         {saved !== "" && <span role="status">{saved}</span>}

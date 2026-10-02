@@ -25,6 +25,7 @@ import {
   listedIn,
   newActionFor,
   NO_SLICE_PLAN,
+  otherFiles,
   noMatchLine,
   nothingLine,
   pageSections,
@@ -71,6 +72,7 @@ import {
 } from "../backlog/api";
 import { editable, editReason } from "../backlog/editing";
 import { EditSheet } from "../backlog/EditSheet";
+import { clockTime, day } from "../backlog/format";
 import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
 import { Help } from "../help/Help";
@@ -573,7 +575,7 @@ function Columns({
               {newButton(trailing.newAction)}
               <IconButton
                 label={trailing.refresh}
-                hint={`Read at ${timeOf(pane.readAt)} · ${trailing.refresh}`}
+                hint={`Read at ${clockTime(pane.readAt)} · ${trailing.refresh}`}
                 onClick={onReload}
               >
                 <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -618,7 +620,7 @@ function Columns({
               {count(briefing.checkout.records, "record")} in {count(briefing.checkout.homes, "home")} ·{" "}
               {count(briefing.checkout.goals, "ledger goal")} · {count(briefing.checkout.problems, "problem")}
             </p>
-            <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
+            <p className="ms-briefing-note-line">Read at {clockTime(pane.readAt)}</p>
           </section>
         </aside>
         {sheet !== null && (
@@ -1290,7 +1292,7 @@ function Slices({ plan }: { plan: SlicePlan }) {
         <p className="ms-project-note">Slicing has not started on this goal.</p>
       ) : (
         <p className="ms-project-note">
-          Slicing started {dateOf(plan.started.at)}, by <span className="ms-mono">{plan.started.machine}</span>
+          Slicing started {day(plan.started.at)}, by <span className="ms-mono">{plan.started.machine}</span>
           {plan.started.lineage === "" ? "" : ` (${plan.started.lineage})`}. Once it has, the goal can only advance
           through a split.
         </p>
@@ -1478,7 +1480,7 @@ function RecordRow({ row, action, chips = false }: { row: Row; action?: ReactNod
  */
 function Documents({ groups, total }: { groups: DocumentGroup[]; total: number }) {
   return (
-    <Block title={DOCUMENTS_TITLE} note={`${String(total)} files, no kind claimed`}>
+    <Block title={DOCUMENTS_TITLE} note={otherFiles(total)}>
       {groups.length === 0 ? (
         <p className="ms-project-none">Nothing recorded yet.</p>
       ) : (
@@ -1544,17 +1546,6 @@ export function ownership(owner: string): string {
     default:
       return "ownership unknown";
   }
-}
-
-/** A recorded instant, shown in the reader's own locale, never reinterpreted. */
-export function dateOf(stamp: string): string {
-  const at = new Date(stamp);
-  return Number.isNaN(at.getTime()) ? stamp : at.toLocaleDateString();
-}
-
-export function timeOf(stamp: string): string {
-  const at = new Date(stamp);
-  return Number.isNaN(at.getTime()) ? stamp : at.toLocaleTimeString();
 }
 
 /**

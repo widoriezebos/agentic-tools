@@ -1,5 +1,5 @@
 import type { Box, ChainMember, Health, Machine, Page, Role, Running, ThisSeat, Working, WorkingJob } from "./api";
-import { ageBetween, dateAndTime, minuteTime, UNKNOWN } from "../backlog/format";
+import { ageBetween, dateAndTime, minuteTime, shortTip, UNKNOWN } from "../backlog/format";
 
 /**
  * The words the Fleet page says, kept apart from the elements that show them.
@@ -37,7 +37,15 @@ function claimsLine(page: Page): string {
   if (page.claims.tip === "") {
     return "no accepted ledger this seat could read";
   }
-  return `claims from the ledger at ${page.claims.tip.slice(0, 7)}`;
+  return "claims from the accepted ledger";
+}
+
+/**
+ * Which commit of the ledger the claims were read at, for the provenance
+ * line's own title: a maintainer compares it, and the line reads without it.
+ */
+export function claimsTitle(page: Page): string | undefined {
+  return page.claims.tip === "" ? undefined : `The accepted ledger at ${shortTip(page.claims.tip)}`;
 }
 
 /** The copy's own trouble, in the server's words, or "". */

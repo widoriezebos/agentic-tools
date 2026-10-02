@@ -89,7 +89,7 @@ export type Question = { id: string; opened: string; question: string; goals: st
 /** One refusal the check verb would print, anchored where a human can act. */
 export type Problem = { path: string; line: number; message: string };
 
-/** One of the checkout's other documents, by path, with no kind claimed. */
+/** One of the checkout's other documents, by path, that no kind names. */
 export type DocumentFile = { path: string; title: string };
 
 /**

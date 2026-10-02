@@ -131,9 +131,18 @@ function settled(moved: Row, placement: Placement, band: readonly Row[]): Placem
   return placement;
 }
 
-/** A rank as a card wears it, and as the note after a re-rank reads it. */
+/** What a rank reads as where a goal has none and a rank must still be said. */
+export const NO_PRIORITY = "no priority";
+
+/**
+ * A rank as a card wears it, as the rank sheet reads it and as the note after
+ * a re-rank says it: the priority band in words, then the goal's place in it.
+ */
 export function rankOf(row: { priority: number; sequence: number }): string {
-  return `${String(row.priority)}:${String(row.sequence)}`;
+  if (row.priority <= 0 || row.sequence <= 0) {
+    return NO_PRIORITY;
+  }
+  return `priority ${String(row.priority)} · #${String(row.sequence)}`;
 }
 
 /**

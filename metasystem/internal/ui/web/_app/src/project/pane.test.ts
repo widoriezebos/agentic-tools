@@ -23,6 +23,7 @@ import {
   marksDone,
   newActionFor,
   NO_SLICE_PLAN,
+  otherFiles,
   nothingLine,
   noMatchLine,
   pageSections,
@@ -764,10 +765,15 @@ describe("a goal's slice plan", () => {
     expect(sliceCount(slicePlan(pane, "old-idea"))).toBe(0);
   });
 
-  // The line the tab shows when nothing is recorded names the gap and where
-  // its owner comes from, rather than implying a plan that is merely empty.
-  it("names the missing owner in one line", () => {
-    expect(NO_SLICE_PLAN).toBe("No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)");
+  // The line the tab shows when nothing is recorded says so, rather than
+  // implying a plan that is merely empty.
+  it("says in one line that no plan is recorded", () => {
+    expect(NO_SLICE_PLAN).toBe("No slice plan is recorded.");
+  });
+
+  it("counts the Documents block's files as the other files", () => {
+    expect(otherFiles(1407)).toBe("1407 other files");
+    expect(otherFiles(1)).toBe("1 other file");
   });
 
   // The whole project has no one plan: a tab showing every design's list at

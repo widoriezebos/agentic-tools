@@ -1,6 +1,9 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { ageBetween, clockTime, dateAndTime, shortTip, UNKNOWN } from "./format";
+import { ageBetween, clockTime, dateAndTime, day, minuteTime, shortTip, UNKNOWN } from "./format";
 
 /**
  * Times a human reads.
@@ -22,6 +25,14 @@ describe("times on the page", () => {
     expect(clockTime("2026-09-21T18:39:42Z")).toMatch(/^\d{2}:\d{2}:\d{2}$/);
   });
 
+  it("write a time as HH:mm, a day as YYYY-MM-DD, and the two together as both", () => {
+    const stamp = "2026-09-21T18:39:42Z";
+    expect(minuteTime(stamp)).toMatch(/^\d{2}:\d{2}$/);
+    expect(day(stamp)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(dateAndTime(stamp)).toBe(`${day(stamp)} ${minuteTime(stamp)}`);
+    expect(day("")).toBe(UNKNOWN);
+  });
+
   it("move with the instant", () => {
     const [earlyDate, earlyClock] = dateAndTime("2026-09-21T18:00:00Z").split(" ");
     const [lateDate, lateClock] = dateAndTime("2026-09-21T18:01:00Z").split(" ");
@@ -34,6 +45,38 @@ describe("times on the page", () => {
       expect({ absent, rendered: dateAndTime(absent) }).toEqual({ absent, rendered: UNKNOWN });
       expect({ absent, rendered: clockTime(absent) }).toEqual({ absent, rendered: UNKNOWN });
     }
+  });
+});
+
+/**
+ * One file writes a time. A page that asked the browser's locale instead
+ * would write the same instant another way — twelve-hour here, a month's name
+ * there — beside the times every other page shows.
+ */
+describe("the one owner of a time's format", () => {
+  const SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..");
+  const OWNER = "backlog/format.ts";
+  const LOCALE = /\.toLocale(Time|Date)?String\(/;
+
+  function shipped(relative = ""): string[] {
+    const found: string[] = [];
+    for (const entry of readdirSync(path.join(SRC, relative), { withFileTypes: true })) {
+      const next = relative === "" ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) {
+        found.push(...shipped(next));
+      } else if (/\.tsx?$/.test(next) && !/\.test\.tsx?$/.test(next)) {
+        found.push(next);
+      }
+    }
+    return found.sort();
+  }
+
+  it("is the only shipped file that could ask the locale, and it does not", () => {
+    const files = shipped();
+    expect(files).toContain(OWNER);
+    expect(files.length).toBeGreaterThan(50);
+    const asking = files.filter((file) => LOCALE.test(readFileSync(path.join(SRC, file), "utf8")));
+    expect(asking.filter((file) => file !== OWNER)).toEqual([]);
   });
 });
 

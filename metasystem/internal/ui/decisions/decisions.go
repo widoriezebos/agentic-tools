@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
@@ -1034,11 +1035,13 @@ func landings(rows []backlog.Row) []Need {
 	return needs
 }
 
+// holderOf is the seat a goal waiting to land is held by, named the way a
+// person knows a seat: by its machine.
 func holderOf(row backlog.Row) string {
 	if row.Claim == nil {
 		return "the seat that holds it"
 	}
-	return row.Claim.Machine + "+" + row.Claim.Lineage
+	return row.Claim.Machine
 }
 
 // stopped is the goals a breach fence closed.
@@ -1542,10 +1545,11 @@ func mentionable(rows, closed []backlog.Row, records []project.Record) map[strin
 
 /* ----------------------------------------------------------------- the small -- */
 
-// titleOf is what a goal is called: the first sentence of its intent, or its
-// id where the record states none.
+// titleOf is what a goal is called: the first sentence of its intent, read
+// without the label an intent opens with, or its id where the record states
+// none.
 func titleOf(row backlog.Row) string {
-	if lede := firstSentence(row.Intent); lede != "" {
+	if lede := firstSentence(snapshot.IntentWords(row.Intent)); lede != "" {
 		return lede
 	}
 	return row.ID

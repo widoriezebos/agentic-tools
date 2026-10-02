@@ -702,7 +702,7 @@ func waiting(rows []backlog.Row) Waiting {
 	})
 	oldest := held[0]
 	block.ID, block.Title, block.Since = oldest.ID, lede(oldest.Intent), since(oldest)
-	block.Reason = lede(reasonFor(oldest))
+	block.Reason = snapshot.Lede(reasonFor(oldest), ledeRunes)
 	return block
 }
 
@@ -1082,24 +1082,9 @@ func stamp(at time.Time) string {
 // a row is one line, so it carries the first sentence, and no more than this.
 const ledeRunes = 140
 
-// lede is the first sentence of a text, cut at a sentence end and then at the
-// last word boundary before ledeRunes, with an ellipsis where it was cut. The
-// whole text is one click away on the goal's page.
-func lede(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	if at := strings.Index(text, ". "); at >= 0 {
-		text = text[:at+1]
-	}
-	runes := []rune(text)
-	if len(runes) <= ledeRunes {
-		return text
-	}
-	cut := ledeRunes
-	for cut > 0 && runes[cut] != ' ' {
-		cut--
-	}
-	if cut == 0 {
-		cut = ledeRunes
-	}
-	return strings.TrimRight(string(runes[:cut]), " ,;:") + "…"
+// lede is what a row calls a goal: the title the ledger's reader makes of its
+// intent, in no more than ledeRunes. The whole text is one click away on the
+// goal's page.
+func lede(intent string) string {
+	return snapshot.GoalTitle(intent, ledeRunes)
 }

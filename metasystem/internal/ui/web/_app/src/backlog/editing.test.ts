@@ -163,7 +163,7 @@ describe("which goal may be edited here", () => {
           claim: { machine: "mac-b", lineage: "lin-1", at: "", landingAt: "" },
         }),
       ),
-    ).toBe("claimed by mac-b+lin-1: edit at a terminal");
+    ).toBe("claimed by mac-b: edit at a terminal");
     // An approval survives a claim and a park, so the state is read first or
     // a goal a seat holds would be told to withdraw an approval instead.
     expect(editReason(row({ state: "parked", approved: approval }))).toBe(

@@ -1,6 +1,7 @@
 import type { CapturedSticky, Page } from "./api";
 import type { SheetDraft } from "./drafting";
 import type { Chosen } from "./subject";
+import { dateAndTime, minuteTime, UNKNOWN } from "../backlog/format";
 import { activeSection } from "../routes";
 import type { Subject } from "../shell/about";
 
@@ -192,37 +193,25 @@ export function readingMoved(last: Page | null, page: Subject): boolean {
   return (last.tip ?? "") !== tip || (last.observedAt ?? "") !== observed;
 }
 
-/** The one line the "Seeing:" chip shows, from the capture it will send. */
+/**
+ * The one line the "Seeing:" chip shows, from the capture it will send: the
+ * page, and the goal or record open on it.
+ *
+ * The chip stands beside the place a question is typed, so it says where the
+ * human is and no more. The view, the tab, how many rows are shown, the
+ * filters and the reading the page rendered from all travel with the question
+ * and are all in the sheet the chip opens; none of them is in the chip.
+ */
 export function seeingLine(capture: Page): string {
   const parts: string[] = [];
   if (capture.section !== "") {
     parts.push(capture.section);
-  }
-  if (capture.view !== undefined && capture.view !== "") {
-    parts.push(capture.view);
-  }
-  if (capture.tab !== undefined && capture.tab !== "") {
-    parts.push(capture.tab);
-  }
-  const rows = shownRows(capture);
-  if (rows > 0) {
-    parts.push(`${String(rows)} goals shown`);
-  }
-  if (capture.records !== undefined && capture.records.length > 0) {
-    parts.push(`${String(capture.records.length)} records shown`);
-  }
-  if (capture.filters !== undefined && capture.filters.length > 0) {
-    parts.push(`filters ${capture.filters.join(", ")}`);
   }
   if (capture.subject !== undefined && capture.subject !== "") {
     parts.push(capture.subject);
   }
   if (capture.quote !== undefined && capture.quote !== "") {
     parts.push("a selected passage");
-  }
-  const reading = readingOf(capture);
-  if (reading !== "") {
-    parts.push(reading);
   }
   // Last, because it is the newest thing to be true and the one a human is
   // looking at while they read this line.
@@ -250,26 +239,13 @@ export function shownRows(capture: Page): number {
   return (capture.lanes ?? []).reduce((total, lane) => total + lane.total, 0);
 }
 
-/** The reading, short: the tip and the time of day it was observed at. */
-function readingOf(capture: Page): string {
-  const tip = capture.tip ?? "";
-  if (tip === "") {
-    return "";
-  }
-  const at = clockOf(capture.observedAt ?? "");
-  return at === "" ? `tip ${shortTip(tip)}` : `tip ${shortTip(tip)}, ${at}`;
-}
-
 /** The time of day an instant was observed at, in this browser's own clock. */
 export function clockOf(at: string): string {
   if (at === "") {
     return "";
   }
-  const when = new Date(at);
-  if (Number.isNaN(when.getTime())) {
-    return "";
-  }
-  return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const clock = minuteTime(at);
+  return clock === UNKNOWN ? "" : clock;
 }
 
 /* ----------------------------------------------------- a stamp, shortened -- */
@@ -314,7 +290,7 @@ export function shortTip(tip: string): string {
 
 /**
  * When something happened, in this browser's own clock: the time of day, with
- * the date before it only where it was not today.
+ * the day before it only where it was not today.
  *
  * Almost everything a conversation stamps happened minutes ago, and a date on
  * every line of it is a date nobody reads; a date on the one line that needs
@@ -333,7 +309,7 @@ export function whenOf(at: string, now: Date = new Date()): string {
   if (today) {
     return clock;
   }
-  return `${when.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${clock}`;
+  return dateAndTime(at);
 }
 
 /**

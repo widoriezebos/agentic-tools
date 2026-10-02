@@ -100,7 +100,7 @@ export type SlicePlan = {
 };
 
 /** What the tab says when no governing design records a plan. */
-export const NO_SLICE_PLAN = "No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)";
+export const NO_SLICE_PLAN = "No slice plan is recorded.";
 
 /**
  * The block a goal page opens with: the goal's own id, its state and the
@@ -201,6 +201,11 @@ export const FINISHED = ["done", "superseded"];
  */
 export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
+
+/** How the Documents block counts what it lists: the files no other tab names. */
+export function otherFiles(total: number): string {
+  return `${String(total)} other ${total === 1 ? "file" : "files"}`;
+}
 export const SLICES_TITLE = "Slices";
 export const SITTINGS_TITLE = "Sittings";
 

@@ -162,7 +162,7 @@ export function editReason(row: Row): string {
   // would otherwise be said to need its approval withdrawn when what stands
   // in the way is the claim.
   if (row.state === "claimed") {
-    return `claimed by ${pairOf(row)}: edit at a terminal`;
+    return `claimed by ${holderOf(row)}: edit at a terminal`;
   }
   if (row.state === "parked") {
     return "parked: return it to the queue to edit";
@@ -173,9 +173,9 @@ export function editReason(row: Row): string {
   return "";
 }
 
-/** The pair holding a claim, as the engine names one, or the word for none. */
-function pairOf(row: Row): string {
-  return row.claim === undefined ? "another pair" : `${row.claim.machine}+${row.claim.lineage}`;
+/** The seat holding a claim, by its machine's name, or the word for none. */
+function holderOf(row: Row): string {
+  return row.claim === undefined ? "another seat" : row.claim.machine;
 }
 
 /** What the sheet says the act will do, and what it will leave alone. */

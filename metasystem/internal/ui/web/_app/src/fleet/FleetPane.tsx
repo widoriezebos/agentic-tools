@@ -23,6 +23,7 @@ import {
   capWords,
   chainWhen,
   chainWords,
+  claimsTitle,
   copyLine,
   copyProblem,
   emptyFleetWords,
@@ -427,7 +428,9 @@ function TheFleet({
           </tbody>
         </table>
       )}
-      <p className="ms-fleet-provenance">{copyLine(page, now)}</p>
+      <p className="ms-fleet-provenance" title={claimsTitle(page)}>
+        {copyLine(page, now)}
+      </p>
       {problem !== "" && <Trouble text={problem} />}
       {/* The Partner's own file, where this server could not write it. The
           page is fine and the tool's reading of it is not, which is a

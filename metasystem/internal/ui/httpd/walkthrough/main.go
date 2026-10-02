@@ -847,7 +847,10 @@ func newLedger(calm bool) *ledger {
 	add(ranked(walkthroughGoal("g1-s17", goal.StateQueued, "Decisions are recorded from the browser"), 2, 4))
 	add(ranked(walkthroughGoal("g1-s18", goal.StateQueued, "The application section reads the build"), 1, 1))
 
-	ready := add(ranked(walkthroughGoal("g1-s14", goal.StateApproved, "The Fleet section reads the seats"), 2, 5))
+	// One goal states its intent the way most records do, under its label, so
+	// the pages have a title to cut from one.
+	ready := add(ranked(walkthroughGoal("g1-s14", goal.StateApproved,
+		"What: The Fleet section reads the seats. Why: a person sees which seat holds what."), 2, 5))
 	ready.Approved = &goal.ApprovalRecord{By: "human:Wido", At: "2026-09-20T09:00:00Z", Authority: goal.ApprovalAuthorityProven, Revision: 3}
 	ready.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 

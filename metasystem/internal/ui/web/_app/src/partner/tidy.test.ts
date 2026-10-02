@@ -76,8 +76,9 @@ describe("when something happened", () => {
   it("puts a date before the clock where it was not today", () => {
     const now = new Date("2026-09-25T21:00:00Z");
     const said = whenOf(AT, now);
-    expect(said).toContain(clockOf(AT));
-    expect(said.length).toBeGreaterThan(clockOf(AT).length);
+    expect(said).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(said.endsWith(` ${clockOf(AT)}`)).toBe(true);
+    expect(clockOf(AT)).toMatch(/^\d{2}:\d{2}$/);
   });
 
   it("says nothing about an instant it cannot read", () => {

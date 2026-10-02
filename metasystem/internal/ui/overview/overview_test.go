@@ -658,6 +658,7 @@ func TestLedeIsTheFirstSentenceAndNeverLong(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{
 		{"Finish these repairs. Then push.", "Finish these repairs."},
+		{"What: finish these repairs. Why: they are red.", "finish these repairs."},
 		{"One line with no stop", "One line with no stop"},
 		{"Spread   over\nlines. Next.", "Spread over lines."},
 		{strings.Repeat("word ", 40) + "end", strings.TrimRight(strings.Repeat("word ", 28), " ") + "…"},

@@ -46,11 +46,21 @@ describe("the capture a board makes", () => {
     });
   });
 
-  it("says in one line what it is showing, with the reading it rendered from", () => {
+  it("says in one line where the human is: the page, and the goal or record open on it", () => {
     const capture = captureOf({ pathname: "/backlog", page: board, chosen: null, label: "" });
     expect(shownRows(capture)).toBe(15);
-    expect(seeingLine(capture)).toContain("Backlog · board · 15 goals shown");
-    expect(seeingLine(capture)).toContain("tip 6984cde");
+    expect(seeingLine(capture)).toBe("Backlog");
+    expect(seeingLine({ ...capture, subject: "work-review-starts-its-critic" })).toBe(
+      "Backlog · work-review-starts-its-critic",
+    );
+  });
+
+  it("leaves the view, the tab, the counts, the filters and the reading to the sheet and to what is sent", () => {
+    const capture = captureOf({ pathname: "/backlog", page: board, chosen: null, label: "" });
+    const line = seeingLine({ ...capture, tab: "designs", records: ["plans/a.md"], filters: ["tier 2"] });
+    expect(line).toBe("Backlog");
+    expect(capture.view).toBe("board");
+    expect(capture.tip).toBe(board.tip);
   });
 
   // The Done window is on every board, narrowed or not, so it says nothing

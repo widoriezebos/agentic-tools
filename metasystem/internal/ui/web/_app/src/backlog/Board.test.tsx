@@ -150,12 +150,13 @@ describe("the lanes the board renders", () => {
 describe("what stands under the lanes", () => {
   const board = markup();
 
-  it("is the closed items and the goals this build cannot place, in that order", () => {
+  it("is the abandoned goals, named after what the number counts, and the goals this build cannot place, in that order", () => {
     const lanes = board.indexOf('class="ms-board"');
     const below = board.indexOf('class="ms-board-below"');
     expect(below).toBeGreaterThan(lanes);
-    expect(board.indexOf("closed items")).toBeGreaterThan(below);
-    expect(board.indexOf("this build cannot place")).toBeGreaterThan(board.indexOf("closed items"));
+    expect(board.indexOf("Show abandoned goals (0)")).toBeGreaterThan(below);
+    expect(board.indexOf("this build cannot place")).toBeGreaterThan(board.indexOf("Show abandoned goals"));
+    expect(board).not.toContain("closed items");
   });
 
   it("names the count the disclosure opens to, and the goal in it", () => {
