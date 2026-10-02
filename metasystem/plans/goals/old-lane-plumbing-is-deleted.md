@@ -1,6 +1,6 @@
 # old-lane-plumbing-is-deleted
 
-- State: approved
+- State: parked
 - Priority: 2
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Deletion of unused lane machinery; plain lane must be proven first"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: After landing-lane-runtime-redesign passes the thorough run: list every package/file only the old lane path reaches, delete it with its tests in one unit, one review, one VM run Also: once seat-works-without-a-person is proven, the lane becomes a normal seat (landing seat): its agent is a seat main with the landing skill started by the steward's StartSeat when the queue has unsettled lines; delete the keeper, the landing launch kind/lineage, the stop-hook exception, lease-at-launch, landing PATH setup and special proof admission (Wido 2026-10-01: 'In what way is the lane agent more complex or different from the agent on a normal seat'). Updated 2026-10-02 (coordinator m1e): its precondition goal landing-lane-runtime-redesign was ABANDONED (superseded by the plain lane, plans/designs/plain-lane.md); the precondition no longer applies. Done already: kill-plumbing commits 461c0e537, 9918246ec, 9b37e04a9, c9013e09d. Left: the remaining internal/landing/batch and batchowner code the plain lane does not use, and the 'Also' half (keeper, landing-agent lineage, stop-hook exception) only where the plain lane no longer needs it. Coordinate with seat-path-lands-without-help (m1g), which deletes the old self-land plumbing: don't touch the same files concurrently.
 - OpenedAt: 2026-10-01T20:39:26Z
-- Revision: 22
+- Revision: 23
+- BlockedBy: seat-path-lands-without-help
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T20:39:33Z revision=2 opid=00SWRD7T2S89P51T8JM41WAWZ1-m1e-9c612d71 authority=proven digest=d63aa2fbe20cd5f6fe9d05da4af5e1557da8c05dbd0f95ccfe51ecb89085e18e episode=2
+- Parked: by=human:Wido at=2026-10-02T21:02:56Z blocker=seat-path-lands-without-help because=blocked by seat-path-lands-without-help; returns when it is done
 
 History:
 - 2026-10-01T20:39:26Z A2FE8KN15THX9YBNJYVTT5VD48-m1e-9c612d71 open actor=human:Wido targets=old-lane-plumbing-is-deleted
@@ -37,4 +39,5 @@ History:
 - 2026-10-02T20:52:44Z TGEDA81PVXQW048ZWTAYYRBRQ1-m1e-9c612d71 abandon actor=human:Wido targets=landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,landing-deploys-the-engine,steward-acts-on-behaviour-patterns,system-start-launches-your-agent,host-setup-from-scratch,transport-remote-absent-refuses-every-landing,enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:2 to=2:1
 - 2026-10-02T20:56:14Z 01ATZR2XYQNEAJSNWWJ77GX2SN-m1e-9c612d71 edit actor=human:Wido targets=old-lane-plumbing-is-deleted
 - 2026-10-02T21:02:46Z DQ9C60Y1RET53K5Z3R3TE297PY-m1e-9c612d71 set-pin actor=human:Wido targets=old-lane-plumbing-is-deleted
-Integrity: sha256=0f599093790ef8eda3d873bf7b6f0cd92d0580c8cb4c03cce76d08c88e8cae37
+- 2026-10-02T21:02:56Z 4B40G0SDPB7APD2QSB5TWTE0DR-m1e-9c612d71 block actor=human:Wido targets=old-lane-plumbing-is-deleted reason=blocked by seat-path-lands-without-help; returns when it is done
+Integrity: sha256=6370fbaaf31d2ca28d3b96212e00aac1c7f4059505099f6b3a9edad07241f607
