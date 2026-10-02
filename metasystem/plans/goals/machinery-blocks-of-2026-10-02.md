@@ -1,6 +1,6 @@
 # machinery-blocks-of-2026-10-02
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="Each block stops an agent but the escape hatch asks the human (severity 1); known defects with traced causes (novelty 1); every seat (exposure 2); recurs on every run (accumulation 2)"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Wait for the unblock log after switch-on; fix the most frequent block first, one at a time, by subtraction Added 2026-10-02 night (coordinator m1e), fix each by the smallest change with a test, by frequency: (9) agent ask --goal G says 'not open (no goal by that id)' for a goal claimed and in progress (worked around with agent ask MACHINE); (10) question withdraw refuses the channel:<id> form that question list prints; (11) landing run prints 'started the landing agent ... for queued' (a word is missing); (12) the goal edit of an approved intent and prioritize of a non-open goal print 'the goals changed meanwhile; try again' instead of the true remedy; (13) work status in one checkout lists every machine's jobs without saying so (label it 'on this host'); (14) a fresh seat set up by hand does not fetch the goal ledger. Items (1)-(8) above stay. Already fixed tonight: the seat claim fallback (3681afe27). (15) machine start does not register the testing.json merge driver (system setup) in the new clone; (16) machine start copies the launching checkout's conf.local as-is, so a seat launched from a non-seat checkout gets launch.seat.runtime off: a new seat should get the seat settings it needs (or the launch should ask). (17) machine start's resume asks for a signed-in approval or --temporary-human-word even from Wido's enrolled terminal.
 - OpenedAt: 2026-10-02T12:29:50Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=16
 - Approved: by=human:Wido at=2026-10-02T21:26:21Z revision=17 opid=G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 authority=proven digest=32cd38ee0eaa6cd59329b1e6929c61fe7179b954e8106c38f762b0e56742c57d episode=17
+- Claimed: machine=m1j lineage=steward-seat at=2026-10-02T21:56:55Z revision=19 accountingRevision=19 episodeAt=2026-10-02T21:56:55Z episodeRevision=19
+- StopCapability: generation=19 revision=19 machine=m1j claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-02T12:29:50Z 2R9JM2HYAZY2AZW272ZF1ZEV2X-m1e-9c612d71 open actor=human:Wido targets=machinery-blocks-of-2026-10-02
@@ -34,4 +36,5 @@ History:
 - 2026-10-02T21:26:09Z R2HYT0B7AQQAFK3RXJAFY14GW8-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,machinery-blocks-of-2026-10-02,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order subject=machinery-blocks-of-2026-10-02 from=2:39 to=1:3 requested-sequence=3
 - 2026-10-02T21:26:21Z G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 approve actor=human:Wido targets=machinery-blocks-of-2026-10-02
 - 2026-10-02T21:55:52Z ZQP32RKPDTGM0YS80BA0CR82RK-m1e-9c612d71 edit actor=human:Wido targets=machinery-blocks-of-2026-10-02
-Integrity: sha256=18944515d5bdf32daa041bcb8de04eb2cf0c993523c73b98aa49171d42ae526d
+- 2026-10-02T21:56:55Z SV56T4T14J1WNPV6AQ4CH0PBZK-m1j-71c5cb39 claim actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02
+Integrity: sha256=9d4ab91b1abef7ff2b13d0087a5f6150a3bd731a93ba3d3a4afe8b10f2023b62
