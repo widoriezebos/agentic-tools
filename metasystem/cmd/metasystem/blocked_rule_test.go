@@ -14,8 +14,9 @@ const blockedRule = "**When you are blocked, ask.** If a refusal or failure stop
 // blockedDelegateLine is what a delegate does instead: its seat asks.
 const blockedDelegateLine = "When blocked, stop and return `BLOCKED:` with the refusal's first line, what you tried and the decision needed; your seat asks."
 
-// TestBlockedAgentRuleIsWhereItBelongs: every command the blocked-agent
-// rule spells is declared with its flags; the landing agent's skill names
+// TestBlockedAgentRuleIsWhereItBelongs: the guide for working with agents
+// carries the blocked-agent rule and AGENTS.md the short line pointing to
+// it; every command the rule spells is declared with its flags; the landing agent's skill names
 // case 8; both delegate brief templates carry the delegate's line.
 func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 	t.Parallel()
@@ -26,6 +27,12 @@ func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 			t.Fatal(err)
 		}
 		return string(data)
+	}
+	if guide := read("docs", "working-with-agents.md"); !strings.Contains(guide, "\n"+blockedRule+"\n") {
+		t.Error("docs/working-with-agents.md does not carry the blocked-agent rule as one paragraph")
+	}
+	if agents := read("AGENTS.md"); !strings.Contains(agents, "`metasystem question ask`") || !strings.Contains(agents, "docs/working-with-agents.md") {
+		t.Error("AGENTS.md does not carry the short ask-on-block line pointing to the guide")
 	}
 	for _, spelled := range blockedRuleCommands(blockedRule) {
 		words := strings.Fields(spelled)
