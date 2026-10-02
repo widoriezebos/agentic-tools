@@ -49,10 +49,9 @@ func TestTaggedProcessCensusPreservesUnreadableArgv(t *testing.T) {
 		known: map[int64]bool{41: false},
 	}
 	result := ScanTaggedProcesses(tag, TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{41}, nil },
-		Signal: func(int64) error { return nil },
-		PGID:   func(int64) (int64, error) { return 41, nil },
-		Reader: reader,
+		Processes: identity.FixedProcessTable{{Pid: 41, Group: 41}},
+		Signal:    func(int64) error { return nil },
+		Reader:    reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return len(argv) == 2 && argv[1] == wanted
 		},
@@ -78,9 +77,9 @@ func TestTaggedProcessCensusExcludesOldSignalableUnknownByReservationAge(t *test
 		known: map[int64]bool{43: false},
 	}
 	result := ScanTaggedProcesses("metasystem-job-old-daemon-nonce", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{43}, nil },
-		Signal: func(int64) error { return nil },
-		Reader: reader,
+		Processes: identity.FixedProcessTable{{Pid: 43, Group: 43}},
+		Signal:    func(int64) error { return nil },
+		Reader:    reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return false
 		},
@@ -104,9 +103,9 @@ func TestTaggedProcessCensusKeepsPostReservationUnknownWithinUniverse(t *testing
 		known: map[int64]bool{44: false},
 	}
 	result := ScanTaggedProcesses("metasystem-job-new-worker-nonce", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{44}, nil },
-		Signal: func(int64) error { return nil },
-		Reader: reader,
+		Processes: identity.FixedProcessTable{{Pid: 44, Group: 44}},
+		Signal:    func(int64) error { return nil },
+		Reader:    reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return false
 		},
@@ -120,9 +119,9 @@ func TestTaggedProcessCensusKeepsPostReservationUnknownWithinUniverse(t *testing
 func TestTaggedProcessCensusPreservesButExcludesForeignUnknowns(t *testing.T) {
 	reader := taggedTestReader{}
 	result := ScanTaggedProcesses("metasystem-job-foreign-nonce", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{302}, nil },
-		Signal: func(int64) error { return unix.EPERM },
-		Reader: reader,
+		Processes: identity.FixedProcessTable{{Pid: 302, Group: 302}},
+		Signal:    func(int64) error { return unix.EPERM },
+		Reader:    reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return false
 		},
@@ -137,9 +136,9 @@ func TestTaggedProcessCensusPreservesButExcludesForeignUnknowns(t *testing.T) {
 
 func TestTaggedProcessCensusKeepsSignalableUnreadableIdentityUnknown(t *testing.T) {
 	result := ScanTaggedProcesses("metasystem-job-identity-nonce", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{42}, nil },
-		Signal: func(int64) error { return nil },
-		Reader: unreadableTaggedTestReader{},
+		Processes: identity.FixedProcessTable{{Pid: 42, Group: 42}},
+		Signal:    func(int64) error { return nil },
+		Reader:    unreadableTaggedTestReader{},
 		MatchesTag: func(argv []string, wanted string) bool {
 			return false
 		},
@@ -152,7 +151,7 @@ func TestTaggedProcessCensusKeepsSignalableUnreadableIdentityUnknown(t *testing.
 
 func TestTaggedProcessCensusPreservesEnumerationFailure(t *testing.T) {
 	result := ScanTaggedProcesses("metasystem-job-enumeration-nonce", TaggedScanDependencies{
-		PIDs: func() ([]int64, error) { return nil, errors.New("process table denied") },
+		Processes: identity.ScriptedProcessTable{PidsErr: errors.New("process table denied")},
 	})
 	if result.Complete() || result.EnumerationError == "" {
 		t.Fatalf("enumeration failure was normalized to absence: %+v", result)
@@ -167,10 +166,9 @@ func TestTaggedProcessCensusReturnsVerifiedProcess(t *testing.T) {
 		known:  map[int64]bool{41: true},
 	}
 	result := ScanTaggedProcesses("job-tag", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{41}, nil },
-		Signal: func(int64) error { return nil },
-		PGID:   func(int64) (int64, error) { return 700, nil },
-		Reader: reader,
+		Processes: identity.FixedProcessTable{{Pid: 41, Group: 700}},
+		Signal:    func(int64) error { return nil },
+		Reader:    reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return len(argv) == 3 && argv[2] == wanted
 		},
@@ -180,9 +178,10 @@ func TestTaggedProcessCensusReturnsVerifiedProcess(t *testing.T) {
 	}
 
 	result = ScanTaggedProcesses("job-tag", TaggedScanDependencies{
-		PIDs:   func() ([]int64, error) { return []int64{41}, nil },
+		Processes: identity.ScriptedProcessTable{
+			Rows: identity.FixedProcessTable{{Pid: 41, Group: 41}}, GroupErr: map[int64]error{41: os.ErrPermission},
+		},
 		Signal: func(int64) error { return nil },
-		PGID:   func(int64) (int64, error) { return 0, os.ErrPermission },
 		Reader: reader,
 		MatchesTag: func(argv []string, wanted string) bool {
 			return len(argv) == 3 && argv[2] == wanted

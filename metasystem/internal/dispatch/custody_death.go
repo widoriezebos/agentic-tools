@@ -28,9 +28,10 @@ type CustodyDeathResult struct {
 // proof. Reapers inject this decision as one predicate and retain no signal
 // authority.
 type CustodyDeathDependencies struct {
-	Reader     identity.VerificationReader
-	PIDs       func() ([]int64, error)
-	PGID       func(pid int64) (int64, error)
+	Reader identity.VerificationReader
+	// Processes is the process table the proof reads the primary group's
+	// members from; nil is the kernel's.
+	Processes  identity.ProcessTable
 	TaggedScan func(tag string) census.TaggedProcessCensus
 	MatchesTag func(argv []string, tag string) bool
 	// ExpireMarker expires a pre-fork marker the proof found bound to a dead
@@ -57,20 +58,14 @@ func custodyDeathDependenciesWithDefaults(dependencies CustodyDeathDependencies)
 	if dependencies.Reader == nil {
 		dependencies.Reader = identity.KernelProber{}
 	}
-	if dependencies.PIDs == nil {
-		dependencies.PIDs = identity.AllPids
-	}
-	if dependencies.PGID == nil {
-		dependencies.PGID = func(pid int64) (int64, error) {
-			group, err := unix.Getpgid(int(pid))
-			return int64(group), err
-		}
+	if dependencies.Processes == nil {
+		dependencies.Processes = identity.KernelProcessTable{}
 	}
 	if dependencies.TaggedScan == nil && dependencies.MatchesTag != nil {
 		dependencies.TaggedScan = func(tag string) census.TaggedProcessCensus {
 			return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{
-				PIDs: dependencies.PIDs, PGID: dependencies.PGID,
-				Reader: dependencies.Reader, MatchesTag: dependencies.MatchesTag,
+				Processes: dependencies.Processes,
+				Reader:    dependencies.Reader, MatchesTag: dependencies.MatchesTag,
 			})
 		}
 	}
@@ -168,12 +163,12 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 		}
 	}
 
-	pids, err := dependencies.PIDs()
+	pids, err := dependencies.Processes.Pids()
 	if err != nil {
 		return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "process-table-unreadable"}
 	}
 	for _, pid := range pids {
-		group, groupErr := dependencies.PGID(pid)
+		group, groupErr := dependencies.Processes.Group(pid)
 		if groupErr != nil {
 			if errors.Is(groupErr, unix.ESRCH) {
 				continue
@@ -209,12 +204,12 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 }
 
 func preforkNamedGroupClear(marker *preforkMarker, tag string, dependencies CustodyDeathDependencies) (bool, string) {
-	pids, err := dependencies.PIDs()
+	pids, err := dependencies.Processes.Pids()
 	if err != nil {
 		return false, "prefork-process-table-unreadable"
 	}
 	for _, pid := range pids {
-		group, groupErr := dependencies.PGID(pid)
+		group, groupErr := dependencies.Processes.Group(pid)
 		if groupErr != nil {
 			if errors.Is(groupErr, unix.ESRCH) {
 				continue

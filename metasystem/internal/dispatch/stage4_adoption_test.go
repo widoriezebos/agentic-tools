@@ -18,7 +18,7 @@ type processTableAdoptionScanner struct{ table *stage4ProcessTable }
 
 func (s processTableAdoptionScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
 	return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{
-		PIDs: s.table.PIDs, Signal: func(int64) error { return nil }, Reader: s.table,
+		Processes: s.table, Signal: func(int64) error { return nil }, Reader: s.table,
 		MatchesTag:           func(argv []string, wanted string) bool { return false },
 		ReservationCreatedAt: reservationCreatedAt,
 	})

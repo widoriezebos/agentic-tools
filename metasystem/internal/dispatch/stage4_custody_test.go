@@ -45,17 +45,22 @@ func (f *stage4ProcessTable) ReadArgv(pid int64) ([]string, bool) {
 	return f.argv[pid], f.argvKnown[pid]
 }
 
-func (f *stage4ProcessTable) PIDs() ([]int64, error) {
+// The fake is the test's whole process table: its pids, and their groups.
+func (f *stage4ProcessTable) Pids() ([]int64, error) {
 	return append([]int64(nil), f.pids...), nil
 }
 
-func (f *stage4ProcessTable) PGID(pid int64) (int64, error) {
+func (f *stage4ProcessTable) Group(pid int64) (int64, error) {
 	group, ok := f.groups[pid]
 	if !ok {
 		return 0, errors.New("group unavailable")
 	}
 	return group, nil
 }
+
+func (f *stage4ProcessTable) Session(pid int64) (int64, error) { return f.Group(pid) }
+
+func (f *stage4ProcessTable) Parent(int64) (int64, bool) { return 0, false }
 
 func stage4Exact(pid, micro int64) identity.Exact {
 	return nativeTestExact(pid, micro)
@@ -75,12 +80,11 @@ func stage4RecordWithPrimary(fields map[string]any, primary identity.Exact, pgid
 
 func stage4DeathDependencies(table *stage4ProcessTable) CustodyDeathDependencies {
 	return CustodyDeathDependencies{
-		Reader: table,
-		PIDs:   table.PIDs,
-		PGID:   table.PGID,
+		Reader:    table,
+		Processes: table,
 		TaggedScan: func(tag string) census.TaggedProcessCensus {
 			return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{
-				PIDs: table.PIDs, Signal: func(int64) error { return nil }, PGID: table.PGID, Reader: table,
+				Processes: table, Signal: func(int64) error { return nil }, Reader: table,
 				MatchesTag: func(argv []string, wanted string) bool {
 					return len(argv) == 2 && argv[0] == "owned" && argv[1] == wanted
 				},
@@ -274,7 +278,7 @@ func TestCrossGroupCustodyBlocksDeathAndIsIncludedInWindDown(t *testing.T) {
 	if got := ProveCustodyDeath(root, record, stage4DeathDependencies(table)); got.Outcome != CustodyDeathAlive {
 		t.Fatalf("cross-group custody did not block death: %+v", got)
 	}
-	targets, err := CustodyGroupTargets(record, table.PGID)
+	targets, err := CustodyGroupTargets(record, table.Group)
 	if err != nil {
 		t.Fatal(err)
 	}
