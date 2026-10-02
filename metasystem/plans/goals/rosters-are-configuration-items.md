@@ -1,6 +1,6 @@
 # rosters-are-configuration-items
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="configuration change touching every dispatch and launch; new interface surface; every seat"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: Next: Fable writes the design (the roster item and its types, where rosters live, how the engine picks the roster for a piece of work, the verbs, the Settings page, and the path from today's keys), one Astra critique, then Wido decides the build. Done when: rosters of each type can be listed, created and changed from the Settings page and from the verbs, and work of each kind runs on the roster its type selects. Added 2026-10-02 (Wido: 'the running agent; is that defined in the roster which agent and which model? That should be the case'): today runtime/model/effort are scattered over two overlapping key families (launch.<kind>.* and role.<role>.*) and copied per checkout (five seat checkouts on this host). The roster must: cover EVERY agent kind incl. the seat agent and the landing lane agent; be ONE key family; be shared by every checkout on the host (one place to change a model); refuse an unknown key instead of silently falling back; have a 'roster show' verb plus the Settings view; include effort (Wido 2026-10-01).
 - OpenedAt: 2026-10-01T08:27:46Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:13:11Z revision=3 opid=TT96HT9FAHK2KTV99T0ZY77KS6-m1e-9c612d71 authority=proven digest=0971b629f8bf0145a53609941a9ddaf48895bae9215c10b46461dcbb37a7d9b9 episode=3
-- Claimed: machine=m1g lineage=steward-seat at=2026-10-02T22:31:05Z revision=10 accountingRevision=10 episodeAt=2026-10-02T22:31:05Z episodeRevision=10
-- StopCapability: generation=10 revision=10 machine=m1g claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1g lineage=steward-seat accountingRevision=10 episodeAt=2026-10-02T22:31:05Z episodeRevision=10 idleSeconds=0 released=2026-10-02T22:38:38Z
 
 History:
 - 2026-10-01T08:27:46Z NR62KBQS8JYD6Z4EZ90EX155JH-m1e-528c72bf open actor=human:Wido targets=rosters-are-configuration-items
@@ -27,4 +26,5 @@ History:
 - 2026-10-02T21:54:59Z M0TSVAQNR16NW151930292CY3V-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-shows-true-facts,work-review-starts-its-critic reason=priority-order subject=ui-shows-true-facts from=1:8 to=1:9 requested-sequence=4
 - 2026-10-02T21:55:18Z M5SNS9E2687N391M87QKYDC658-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-reads-well-on-a-phone-in-plain-words,work-review-starts-its-critic reason=priority-order subject=ui-reads-well-on-a-phone-in-plain-words from=1:9 to=1:10 requested-sequence=5
 - 2026-10-02T22:31:05Z 64M7RPYBY4AWX6YPFCE27XHVS3-m1g-71c5cb39 claim actor=m1g+steward-seat targets=rosters-are-configuration-items
-Integrity: sha256=7e35c78faeb52896f42aa27dbff86de00222f2f46a961fbe42a6f3f9de5b4460
+- 2026-10-02T22:38:38Z 9BQ71P54Q85M4NDJNP34SJP1KH-m1g-71c5cb39 release actor=m1g+steward-seat targets=rosters-are-configuration-items reason=Seat m1g returns to seat-path-lands-without-help: Wido unparked it at 00:36 after this seat had claimed rosters, it is pinned to m1g, and its design is staged in this checkout. Nothing of rosters was designed or built. The preparation for its design brief (a code map of every reader of today's roster keys, and two draft brief sections) is kept in agentic-tools-evidence/rosters-prep-20261003/.
+Integrity: sha256=1b214481a5dbfa17b184bb2b51acbc0164288789d04405f7ef8cfca02c187190
