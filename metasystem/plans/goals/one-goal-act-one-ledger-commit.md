@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 39
+- Sequence: 38
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="Goal publication affects every program and preserves human-act history; defects create ledger churn or lose provenance without changing product code directly."
 - Tier: 2
 - Intent: What: When several goal actions are taken together (for example open, approve and pin), they go to main as one commit that lists every action, instead of one commit per action. Why: About three of every four commits on main are goal-ledger actions, roughly twelve per code commit. That buries the code history and makes main churn. Pros: A readable history, less push traffic and fewer collisions between seats. Cons: Publishing several actions at once must be all-or-nothing, and the history view must still show each action inside the combined commit.
 - Origin: human
 - Next step: Next: Write a short design: how several goal actions are published as one commit, what the commit message lists, and how goal history still shows each action separately; one critique round; build. Done when: a batch of goal actions lands as one commit whose message names each action, and a goal's history still lists them one by one.
 - OpenedAt: 2026-09-16T21:03:14Z
-- Revision: 41
+- Revision: 42
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -55,4 +55,5 @@ History:
 - 2026-10-02T20:58:46Z VZA02XPXH29ZBJRQJHQT9YVABB-m1e-9c612d71 abandon actor=human:Wido targets=fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:42 to=2:41
 - 2026-10-02T20:59:33Z R5QYQM97D0V1V5DE0FS4J7J0M6-m1e-9c612d71 done actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,machinery-blocks-of-2026-10-02,one-goal-act-one-ledger-commit,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:41 to=2:40
 - 2026-10-02T20:59:57Z SX5WNT2FENZZCCVKJXH1FB3F4R-m1e-9c612d71 abandon actor=human:Wido targets=land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:40 to=2:39
-Integrity: sha256=a3cc30d6a9a8f3835e5fd888ef5ccd6dbc2c72f68a1620b0d4f32c52d4367c00
+- 2026-10-02T21:00:16Z 64WRXC2N0XRTJC4F3K853E30DP-m1e-9c612d71 done actor=human:Wido targets=actionable-metrics,failed-job-attention,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,machinery-blocks-of-2026-10-02,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:39 to=2:38
+Integrity: sha256=811e6e1c890c07f4fd035b1ece8a4809334019f288cb3adf61f8e80d88a53ee0

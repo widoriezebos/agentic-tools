@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 40
+- Sequence: 39
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="severity 3: the verb passes guards on trunk, so an agent reaching it, or a commit it lets through that breaks validation, defeats every guard and blocks every seat, as the 2026-09-15 paper commit did; novelty 2: the human-caller check (arm), the goal integrity record, refresh-only and reconcile exist, while a guarded commit path with restamp and an outside-commit repair are new; exposure 2: human use only, rare; accumulation 2: an unrepaired break blocks all goal mutations until someone repairs it, but leaves no hidden state"
 - Tier: 3
 - Intent: What: A person-only command that commits anything you want, protected files included, and keeps the goal ledger valid. Why: On 09-15 a hand commit changed a goal file without updating its checksum, and every goal command on every seat refused until it was repaired. You asked for a break-glass way to commit anything. Pros: You are never locked out, and the ledger stays valid after your commit. Cons: The design predates syncing the ledger with GitHub and has four open findings; part of it may now be covered by goal repair.
 - Origin: human
 - Next step: Next: Re-check design revision 3 (706125247) against today's GitHub-synced ledger (goal fetch, goal repair with accept-remote), resolve its four open findings (BGCR3-01 to 04), decide what is still needed, then build the first unit. Done when: a test shows a person commits a changed goal file with this command and every goal command still works afterwards.
 - OpenedAt: 2026-09-15T19:11:07Z
-- Revision: 66
+- Revision: 67
 - BudgetExceptions: 0
 
 History:
@@ -79,4 +79,5 @@ History:
 - 2026-10-02T20:58:46Z VZA02XPXH29ZBJRQJHQT9YVABB-m1e-9c612d71 abandon actor=human:Wido targets=fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:43 to=2:42
 - 2026-10-02T20:59:33Z R5QYQM97D0V1V5DE0FS4J7J0M6-m1e-9c612d71 done actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,machinery-blocks-of-2026-10-02,one-goal-act-one-ledger-commit,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:42 to=2:41
 - 2026-10-02T20:59:57Z SX5WNT2FENZZCCVKJXH1FB3F4R-m1e-9c612d71 abandon actor=human:Wido targets=land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:41 to=2:40
-Integrity: sha256=123e15d5cca4722de2a270c2b712bd004c350fa2fa7471c9fa2c682b55734ffa
+- 2026-10-02T21:00:16Z 64WRXC2N0XRTJC4F3K853E30DP-m1e-9c612d71 done actor=human:Wido targets=actionable-metrics,failed-job-attention,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,machinery-blocks-of-2026-10-02,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:40 to=2:39
+Integrity: sha256=79aeec781031f9b9f3e92d6a1152f6db6ee00fa14ae2e9c123d6bc3fa401b539
