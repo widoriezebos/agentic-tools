@@ -4,8 +4,6 @@ package goal
 
 import (
 	"errors"
-	"fmt"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -35,12 +33,10 @@ func transportMemberExited(pid int) (bool, error) {
 // sent SIGKILL closes its files before the kernel marks it exited, so a
 // reader that saw its pipe close must wait for the exit itself rather than
 // probe once: the kqueue's NOTE_EXIT is delivered when the process exits,
-// and a process already gone is refused with ESRCH.
+// and a process already gone is refused with ESRCH. The wait has no bound
+// of its own: the exit is the event, and only the test binary's deadline
+// ends a wait for one that never comes.
 func awaitTransportMemberExit(pid int) error {
-	return awaitTransportMemberExitWithin(pid, transportExitBound)
-}
-
-func awaitTransportMemberExitWithin(pid int, bound time.Duration) error {
 	kqueue, err := unix.Kqueue()
 	if err != nil {
 		return err
@@ -61,14 +57,8 @@ func awaitTransportMemberExitWithin(pid int, bound time.Duration) error {
 		return err
 	}
 	events := make([]unix.Kevent_t, 1)
-	deadline := time.Now().Add(bound)
 	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return fmt.Errorf("process %d did not exit within %s of being killed", pid, bound)
-		}
-		timeout := unix.NsecToTimespec(remaining.Nanoseconds())
-		n, err := unix.Kevent(kqueue, nil, events, &timeout)
+		n, err := unix.Kevent(kqueue, nil, events, nil)
 		switch {
 		case errors.Is(err, unix.EINTR):
 			continue

@@ -46,7 +46,7 @@ func waitCaptureGrace(ctx context.Context) time.Duration {
 	if !ok {
 		return boundedCaptureGrace
 	}
-	return min(boundedCaptureGrace, max(time.Until(deadline)/2, 0))
+	return min(boundedCaptureGrace, max(deadline.Sub(waitDependencies(ctx).now())/2, 0))
 }
 
 func withWaitGrace(ctx context.Context, grace time.Duration) context.Context {
@@ -69,6 +69,8 @@ type waitGitDependencies struct {
 	withTimeout      waitGitContextFunc
 	withFetchTimeout waitGitContextFunc
 	timers           attentionTimerSource
+	// now reads the clock a wait measures its remaining deadline on.
+	now func() time.Time
 }
 
 type waitGitDependenciesKey struct{}
@@ -94,6 +96,9 @@ func waitDependencies(ctx context.Context) waitGitDependencies {
 	}
 	if dependencies.timers == nil {
 		dependencies.timers = wallAttentionTimerSource{}
+	}
+	if dependencies.now == nil {
+		dependencies.now = time.Now
 	}
 	return dependencies
 }
@@ -175,7 +180,7 @@ func waitGit(ctx context.Context, root string, stdin []byte, args ...string) (st
 	budget := 10 * time.Second
 	grace := waitCaptureGrace(ctx)
 	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(waitDependencies(ctx).now())
 		if remaining-budget < grace {
 			budget = remaining - grace
 		}
@@ -822,7 +827,7 @@ func ObserveLedgerForWait(ctx context.Context, root string, selector metarun.Wai
 	budget := 10 * time.Second
 	grace := waitCaptureGrace(ctx)
 	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline) - grace
+		remaining := deadline.Sub(waitDependencies(ctx).now()) - grace
 		if remaining < budget {
 			budget = remaining
 		}
