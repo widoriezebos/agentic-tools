@@ -145,7 +145,7 @@ func TestSuccessorRefusesWrongSessionRow(t *testing.T) {
 		row := Waiter{
 			SchemaVersion: 2, WaitID: waitID, Nonce: "1234567890abcdef1234567890abcdef", Kind: "job", TargetID: "job-a",
 			OwnerDigest: OwnerDigest("main-owner"), MainId: "main-owner", OwnerLineage: "lineage-owner", State: "pending",
-			Selector: WaitSelector{Kind: "job", TargetID: "job-a"}, Deadline: time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano),
+			Selector: WaitSelector{Kind: "job", TargetID: "job-a"}, Deadline: time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
 		}
 		rowPath := WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest)
 		if err := writeV2Waiter(rowPath, row); err != nil {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // holdStandIn stands in for `ENGINE util hold`: it records its pid and argv
@@ -417,13 +418,7 @@ func TestFakeHostHold(t *testing.T) {
 			}
 			pid := command.Process.Pid
 			t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-			deadline := time.Now().Add(20 * time.Second)
-			for !present(h.path("host-ready")) {
-				if time.Now().After(deadline) {
-					t.Fatalf("the hold never became ready; output %s", readFile(t, filepath.Join(h.root, "host.out")))
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
+			testenv.Await(t, "the hold's ready file", func() bool { return present(h.path("host-ready")) })
 			lines := strings.Split(strings.TrimSpace(readFile(t, h.path("host-ready"))), "\n")
 			if lines[0] != strconv.Itoa(pid) {
 				t.Fatalf("hold pid %s, host pid %d: the hold did not replace the host", lines[0], pid)
@@ -437,6 +432,10 @@ func TestFakeHostHold(t *testing.T) {
 			}
 			_ = syscall.Kill(pid, syscall.SIGTERM)
 			if ignore {
+				// A TERM the hold ignores leaves no event to wait on; the
+				// pause only gives a hold that wrongly honours it the time to
+				// show it, and a slow host can only make this check pass, never
+				// fail.
 				time.Sleep(300 * time.Millisecond)
 				if present(h.path("host-stopped")) || syscall.Kill(pid, 0) != nil {
 					t.Fatal("an ignore-term hold stopped on SIGTERM")

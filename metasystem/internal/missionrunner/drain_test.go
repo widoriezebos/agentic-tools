@@ -412,9 +412,13 @@ func writeUnprovableSurvivor(t *testing.T, engine *Engine, job string, now time.
 func TestDrainClearsReapableHuskWithoutParking(t *testing.T) {
 	engine, statePath, ledgerPath := drainMission(t, map[string]any{"job-husk": map[string]any{}})
 	engine.custodianFn = fixedCustodian(identity.Unknown)
+	// The engine reads a fixed clock, so the husk is twenty minutes old at
+	// every read however long the host takes.
+	now := time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)
+	engine.Now = func() time.Time { return now }
 	path := writeJob(t, engine, "job-husk", map[string]any{
 		"mission": "", "status": "pending-setup",
-		"createdAt": isoAt(time.Now().Add(-20 * time.Minute)),
+		"createdAt": isoAt(now.Add(-20 * time.Minute)),
 	})
 	parked, err := engine.drainJobs(statePath, ledgerPath, "demo-t1-aaaa", 1)
 	if err != nil || parked != nil {
