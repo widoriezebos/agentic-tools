@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 11
+- Sequence: 12
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a receipt in the wrong checkout is lost or double-recorded; novelty 1: the writer exists, its root resolution changes; exposure 3: every landing from a worktree; accumulation 1: one writer and one root resolver"
 - Tier: 2
 - Intent: scripts/receipt.sh add writes the MAIN checkout ledger even when run from a linked worktree (internal/stateroot resolves to the main checkout), so a landing lane row lands in R0 while its commit is built elsewhere, and every ff-merge and rebase on R0 then collides with an uncommitted append. On 2026-09-15/16 this led two seats to discard ledger lines by hand and cost the fleet dozens of steward and narrator appends, seven receipt rows of which were restored from a stash. DONE: a receipt added from a linked worktree is written to that worktree ledger, or the writer refuses naming the worktree and the one command that writes it in the right place; a fixture runs the writer from a worktree and shows the main checkout ledger unchanged; the mechanism lives in the engine and the shell contract, never one runtime, and is proven on two runtimes.
 - Origin: human
 - Next step: Locate the root resolution (internal/stateroot) and the receipt writer; decide worktree-local write versus refusal-with-remedy; one unit with the fixture; Opus read; land. Updated 2026-10-02: scripts/receipt.sh no longer exists (Bash ported to Go). First check whether the Go receipt writer still has the defect; if not, conclude this goal with that evidence.
 - OpenedAt: 2026-09-16T06:43:05Z
-- Revision: 94
+- Revision: 95
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -108,4 +108,5 @@ History:
 - 2026-10-02T20:56:26Z DQD3F3KX8TGZYR94T6BGC5GSSJ-m1e-9c612d71 edit actor=human:Wido targets=receipt-writer-follows-the-worktree-it-runs-in
 - 2026-10-02T21:01:40Z FV1SKKGNSTB9NZPAVAQPPAXW7A-m1e-9c612d71 abandon actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:11 to=1:10
 - 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:10 to=1:11 requested-sequence=1
-Integrity: sha256=848a0c6a04f2c1264fdc853e4ec22d74d41c2d77a65c56ab22049a72c15a3b1d
+- 2026-10-02T21:11:27Z JWBQX6BFTF75PDPRW56J5R9TQV-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=ui-connects-to-a-running-agent from=1:11 to=1:12 requested-sequence=6
+Integrity: sha256=975d3fed31aced50f98f8e7b2984c38c04de4c82fd4727627361c016eaf7a0e3
