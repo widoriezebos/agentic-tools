@@ -874,7 +874,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if err != nil {
 		return outcome, &ArmStepError{Step: ArmStepLock, Err: fmt.Errorf("open arm lock %s: %w", armLockPath, err)}
 	}
-	defer armLock.Close()
+	defer unlockAndClose(armLock)
 	if beforeArmLock != nil {
 		beforeArmLock()
 	}

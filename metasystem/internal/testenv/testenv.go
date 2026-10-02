@@ -790,7 +790,7 @@ func createRegistryHomeUnder(mkdirTemp func(string, string) (string, error), roo
 	closeOwner := true
 	defer func() {
 		if closeOwner {
-			_ = owner.Close()
+			_ = unlockAndClose(owner)
 		}
 	}()
 	if err := unix.Flock(int(owner.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {

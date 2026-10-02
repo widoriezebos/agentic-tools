@@ -147,12 +147,11 @@ func witnessDiskTrimRepeat(t *testing.T) {
 	bed.entry(t, "staticcheck", "01/kept-a", 100, 3*24*time.Hour)
 	before := idemTreeDigest(t, bed.userCache)
 	for run := 1; run <= 2; run++ {
+		// Each pass unlocks its trim lock before it closes it, so no fork copy
+		// keeps it: the repeat finds the lock free (goal no-flaky-tests,
+		// cluster C).
 		code, result, printed := bed.run(t, "--go-cache")
-		// A repeat may meet the trim lock the first run's pass still holds
-		// on a loaded host: that answer is a success too, as long as the
-		// caches are unchanged (checked below).
-		settled := strings.Contains(result.Summary, "nothing removed") || run > 1 && strings.Contains(result.Summary, "another steward is trimming")
-		if code != 0 || result.Outcome != intentConfirmed || !settled {
+		if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "nothing removed") {
 			t.Fatalf("disk clean %d = %d %s", run, code, printed)
 		}
 		idemSameTree(t, "a repeated disk clean", before, idemTreeDigest(t, bed.userCache))

@@ -334,7 +334,9 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 				return nil
 			}
 		}
-		_ = existing.Close()
+		// Unlocked: the lease is not taken on this path, and unlocking a
+		// description that holds nothing is a no-op.
+		unlockAndClose(existing)
 	}
 	temporary, err := os.CreateTemp(directory, ".engine-pin-*")
 	if err != nil {

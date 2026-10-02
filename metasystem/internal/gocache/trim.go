@@ -95,6 +95,8 @@ type TrimConfig struct {
 }
 
 type trimHooks struct {
+	// afterLock sees the pass's lock file once it holds the flock.
+	afterLock    func(*os.File)
 	afterMeasure func()
 	beforeStat   func(shard, name string)
 	beforeRemove func(shard, name string)
@@ -186,7 +188,10 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 	if err != nil {
 		return report, err
 	}
-	defer lockFile.Close()
+	// Unlock before close: a sibling's fork copy of the description would
+	// otherwise hold the lock after this pass, and the next pass would read
+	// "another steward trims" (goal no-flaky-tests, cluster C).
+	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN); _ = lockFile.Close() }()
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) {
 			report.EndedBy, report.Reason, report.Phase = "lock-held", "another steward trims", "idle"
@@ -194,6 +199,9 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 			return report, nil
 		}
 		return report, err
+	}
+	if cfg.hooks.afterLock != nil {
+		cfg.hooks.afterLock(lockFile)
 	}
 	p := &trimPass{cfg: cfg, report: &report, cutoff: cfg.Now.Add(-cfg.Keep), floor: cfg.Now.Add(-cfg.MinKeep), clock: clock}
 	if !cfg.Deadline.IsZero() {
