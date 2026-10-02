@@ -1,6 +1,6 @@
 # one-folder-deployed-and-evolved
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Moves where every adopted project's state lives and what an upgrade replaces; a wrong boundary loses project state on upgrade (severity 3); a new layout rule and a new upgrade boundary (novelty 2); every adopter and this repository (exposure 3); every agent turn reads these paths (accumulation 2)"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Astra critique of the design (tier 3: threat model and rabbit-hole risks named up front), then build step 1
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1f
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T14:27:24Z revision=2 opid=J4DDF6HKHD2PQVRBVK0E4BZR2X-m1e-9c612d71 authority=proven digest=427db9e3d13e3794fe6adfc0bb4315aa91e8df721ed56128aeb42752da9b759f episode=2
+- Claimed: machine=m1f lineage=steward-seat at=2026-10-02T20:46:14Z revision=10 accountingRevision=10 episodeAt=2026-10-02T20:46:14Z episodeRevision=10
+- StopCapability: generation=10 revision=10 machine=m1f claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-02T14:27:17Z 835YY2SYJ5EB97ZYCSK1FZJDB5-m1e-9c612d71 open actor=human:Wido targets=one-folder-deployed-and-evolved
@@ -25,4 +27,5 @@ History:
 - 2026-10-02T17:10:27Z D0ABKFP7C6AXJWZC5K11C4QR3K-m1e-9c612d71 set-priority actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,design-gate-at-dispatch,design-rounds-read-less-and-repeat-less,enrollment-proves-a-human-not-a-terminal,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,land-verb-writes-the-receipt,landing-deploys-the-engine,landing-design-provenance,landing-lane-runtime-redesign,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,machinery-blocks-of-2026-10-02,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,old-lane-plumbing-is-deleted,one-approval-gate,one-folder-deployed-and-evolved,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,switch-on-trial,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-stops-on-convergence from=1:5 to=1:6 requested-sequence=2
 - 2026-10-02T20:35:15Z ZWKRZH8TKTAWYXQ21JPQDHD5YK-m1e-9c612d71 set-pin actor=human:Wido targets=one-folder-deployed-and-evolved
 - 2026-10-02T20:35:22Z 30GBYHYKNNYYEC48SVC191W7W9-m1e-9c612d71 set-priority actor=human:Wido targets=critique-stops-on-convergence,one-folder-deployed-and-evolved,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,work-review-starts-its-critic reason=priority-order subject=one-folder-deployed-and-evolved from=1:6 to=1:1 requested-sequence=1
-Integrity: sha256=14be9303a500324ed96cffdf60b9b072fb3608dce49655258151aa560d372ea2
+- 2026-10-02T20:46:14Z MRMXN9CBFY801PG7XC6T90AB0Z-m1f-71c5cb39 claim actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
+Integrity: sha256=7f9370778899ad1fec96967edd427f8eb444961c1ec919cc81471b80a40b36eb
