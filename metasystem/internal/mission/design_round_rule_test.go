@@ -9,7 +9,7 @@ import (
 
 func TestDesignRoundRuleIsStatedBySkillAndDocs(t *testing.T) {
 	phrases := []string{
-		"Design critique exists at tiers 2 and 3 and not at tier 1.",
+		"Design critique exists at tiers 2 and 3 and not at tier 1",
 		"round cap is the goal's review-round member under",
 		"The cap is a backstop, not the stop criterion",
 		"The final round folded with no material finding closes the loop.",
