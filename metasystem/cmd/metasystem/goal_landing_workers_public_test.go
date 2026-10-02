@@ -283,6 +283,11 @@ func testOrdinaryPublicApplicationCancellationIsolated(t *testing.T) {
 	}
 	children := publicApplicationChildren(t, state, workers)
 	testenv.Await(t, "the proof launcher's running process record", func() bool {
+		select {
+		case early := <-runnerDone:
+			t.Fatalf("the runner ended before the proof launcher ran: status=%d err=%v", early.status, early.err)
+		default:
+		}
 		liveAttempt, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
 		if readErr != nil || len(liveAttempt.ProcessKeys) == 0 {
 			return false

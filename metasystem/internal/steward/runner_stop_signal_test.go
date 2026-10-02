@@ -94,8 +94,15 @@ func TestStewardRunFinishesItsPushedGoalTransactionOnSIGTERM(t *testing.T) {
 	// Wait for the push to reach the origin's hook: the entry is then
 	// durably pushed and the outcome unknown.
 	testenv.AwaitOr(t, "the runner's publish to reach the origin", func() bool {
-		_, err := os.Stat(parked)
-		return err == nil
+		if _, err := os.Stat(parked); err == nil {
+			return true
+		}
+		select {
+		case <-exited:
+			t.Fatalf("the runner exited before its publish reached the origin: %v; output=%s", waitErr, stdout.String())
+		default:
+		}
+		return false
 	}, func() string { return "output=" + stdout.String() })
 	entries, err := goal.Entries(bed.publisher)
 	if err != nil || len(entries) != 1 || entries[0].Phase != goal.PhasePushed || entries[0].Owner.Pid != int64(pid) {

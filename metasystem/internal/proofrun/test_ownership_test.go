@@ -1029,6 +1029,11 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 		consumerDone <- outcome{result, status, err}
 	}()
 	testenv.Await(t, "the native producer's launch", func() bool {
+		select {
+		case early := <-producerDone:
+			t.Fatalf("the producer ended before its native launch: %+v", early)
+		default:
+		}
 		data, err := os.ReadFile(counter)
 		return err == nil && len(data) > 0
 	})
