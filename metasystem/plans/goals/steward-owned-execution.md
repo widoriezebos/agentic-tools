@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 3
+- Sequence: 2
 - Intent: What: The steward starts and supervises long-running work itself, such as test suites and revived runs, as its own announced child processes, so no cron job or detached launcher can lose track of who started what. Why: in August a detached launch lost its identity and the test battery went red; that hole is still open, but no design or code exists yet. Pros: one owner for every long run, so nothing runs unaccounted for. Cons: a sizable design for the steward, and the machine batch lane on the VM now carries the long runs this goal was meant for, so the need is smaller than it was.
 - Origin: human
 - Next step: Next: write the design for the steward's run-a-declared-unit surface, starting from the boundaries draft already recorded. Done when: the design is accepted and a test shows a suite started by the steward announced, supervised and stamped as the steward's child.
 - OpenedAt: 2026-08-24T15:40:53Z
-- Revision: 19
+- Revision: 20
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:53:53Z because=Parked until a detached launch loses its identity again, or the batch lane needs the steward to start runs itself. Not now because the machine batch lane already carries the long runs this goal was meant for.
 
@@ -31,4 +31,5 @@ History:
 - 2026-09-30T18:53:39Z Q00KY8SS2D5XQ7HH02EEEQ03PR-ui-bc2fda53 edit actor=human:Wido targets=steward-owned-execution
 - 2026-09-30T18:53:53Z 6J782FKY3GCQRX2YTXFPSER0K6-ui-bc2fda53 park actor=human:Wido targets=steward-owned-execution reason=Parked until a detached launch loses its identity again, or the batch lane needs the steward to start runs itself. Not now because the machine batch lane already carries the long runs this goal was meant for.
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:4 to=3:3
-Integrity: sha256=5c6d7572cb939e4726c83b99a83f39c63a3af2d1037b718a48107d0b1b74938a
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:3 to=3:2
+Integrity: sha256=6f6622a15b0a81c93fe7aa5669d9c18f7f0658af0814d12b0c0743168046deb9

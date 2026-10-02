@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 18
+- Sequence: 17
 - Intent: What: When the system notices a problem you would notice (a dead test suite, lost jobs, repeated refusals), it drafts a proposed fix and brings it to you. Why: Detection alone is not enough; you asked for drafted proposals to reach you. Pros: Problems arrive with a suggested remedy, not only an alert. Cons: It needs a recorded stream of incidents to draft from, which is being designed now in steward-acts-on-behaviour-patterns.
 - Origin: human
 - Next step: Next: When the steward records typed incidents, add one drafting step per incident kind: evidence, suspected cause, candidate remedy, size. Rewrite this step on unpark against what steward-acts-on-behaviour-patterns built. Done when: replaying a known incident produces a drafted proposal waiting for you.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 94
+- Revision: 95
 - Labels: custody
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:35Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
@@ -107,4 +107,5 @@ History:
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
-Integrity: sha256=033090d2d69aefc16e0dae0fb5ae256998be76ebf0654f4fcade3368b4a1ed2b
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
+Integrity: sha256=1c5c9f28e81514bcb9157b35344ad7c37b2d6011ceba8ec47931445d4b7486bd

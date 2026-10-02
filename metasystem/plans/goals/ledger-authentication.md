@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 27
+- Sequence: 26
 - Intent: What: Records only a person may make in the goal ledger (approvals, stops, resumes) are signed, so a forged one is rejected. Why: Today anyone with write access to the checkout could write a record that looks like your act. Pros: Closes the forgery threat for person-only acts. Cons: A large design touching every person-only command, and no forgery has been seen.
 - Origin: main
 - Next step: Next: When triggered, design it: which acts are signed, how keys are kept, and whether signing is per act or per tree, keeping ordinary agent ledger commands unsigned. Done when: the design is accepted and a test refuses a forged person-only record.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 94
+- Revision: 95
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:45Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-09-02 deferred true forge-proofing to this foundational design program; nothing signs ledger records; never-idle-ironclad explicitly excludes forged history from its readiness claim; back of queue until Wido prioritises; wide blast radius, multi-slice design.
 
@@ -106,4 +106,5 @@ History:
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:30 to=3:29
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
 - 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
-Integrity: sha256=311840fcc1eca69f1f04498b8001b39a81fbe0e57f77a44732ff79206e454756
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
+Integrity: sha256=79d45e71232a4652724d8d86780495b8c72ae7149d941f50efcf01d6f52d7e80

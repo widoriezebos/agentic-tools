@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 2
+- Sequence: 1
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a gate that refuses a fix dispatch wrongly stalls a repair, one that admits without an analysis lets an unearned fix in; novelty 2: an analysis record on the goal and a challenge join through the existing register are new, the reproduction bar (two-bars Defect-Proof) and the admission boundary exist; exposure 2: every defect-fix dispatch; accumulation 2: the goal record's schema and the admission path"
 - Tier: 2
 - Intent: What: A bug fix can only start when a checked analysis of the bug is attached: what was seen, the suspected cause, and a test showing that cause is real. Why: Fixes built on a guessed cause waste rounds and sometimes fix the wrong thing. The design exists, but it puts the check where work used to be dispatched, which is no longer where work enters. Pros: Fewer wrong fixes; each fix carries the evidence for its cause. Cons: More upfront work for small, obvious bugs; the design must first be moved to where work enters today.
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1b. After landing-lane-runtime-redesign lands, move the design's check to where work now enters the landing lane (batch-lane admission), update the design page once (plans/defect-analysis-gate-design.md), then build its first member (section 6). Done when: the revised design is accepted and a test refuses a fix goal with no attached analysis.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 27
+- Revision: 28
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
 
@@ -41,4 +41,5 @@ History:
 - 2026-09-30T18:48:28Z 4ZTR8GV2P9CFAFWFPETQA60ZSC-m1e-b6a4eb0a edit actor=human:wido targets=defect-analysis-gate
 - 2026-09-30T18:51:44Z NQKJ0RXS1VX3V4S1SSRTT9Q0Q5-m1e-b6a4eb0a set-pin actor=human:wido targets=defect-analysis-gate
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:3 to=3:2
-Integrity: sha256=4af88eb45e28355e57b62b84d32306e661703bf82ed64403a5383eb7f0bae822
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:2 to=3:1
+Integrity: sha256=a1c7041322f2516f4a9ec6cb6c808f65323464076be49d9d19c09f77f55e5ce8

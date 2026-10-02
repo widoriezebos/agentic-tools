@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 8
+- Sequence: 7
 - Intent: What: One permanent, append-only record of every answer you give the system (replies to questions, approvals, resets), each joined to the question it answered. Why: Your answers are the system's memory of what you decided. Today they would live only in a working inbox that can rotate away. Pros: Nothing you said is lost; you and every machine can list all answers in order. Cons: Only useful once the message gateway that collects answers exists; the record must be kept free of secrets.
 - Origin: main
 - Next step: Next: Nothing until fleet-channel-gateway lands (if that goal is abandoned, abandon this one with it). Then write the archive from the gateway's inbox as an append-only file synced with the other records, about four hours of work. Done when: one command lists every answer received, in order, each with its question and outcome, and rotating the inbox loses nothing.
 - OpenedAt: 2026-09-03T15:27:59Z
-- Revision: 22
+- Revision: 23
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:22Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido's word 2026-09-03 as companion to fleet-channel-gateway; no archive writer exists and the gateway's inbox it harvests is unfinished, so park as not-now and re-queue (4h box) the day fleet-channel-gateway lands.
 
@@ -34,4 +34,5 @@ History:
 - 2026-09-13T08:23:22Z G1NPY2VZ5RY1YF7CR5CQF5201N-m1-c6925449 park actor=human:Wido targets=answer-archive reason=Not now (2026-09-13 backlog consolidation, Wido's word): Wido's word 2026-09-03 as companion to fleet-channel-gateway; no archive writer exists and the gateway's inbox it harvests is unfinished, so park as not-now and re-queue (4h box) the day fleet-channel-gateway lands.
 - 2026-09-30T18:47:31Z NBY5WA7QNJ6G2PNGJE3CW4PFPB-m1e-b6a4eb0a edit actor=human:wido targets=answer-archive
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:9 to=3:8
-Integrity: sha256=b5bdbe420ce43ad986125a9d4f3913395c9a4fe212070d5f9a3f7ab0dfdb5d63
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:8 to=3:7
+Integrity: sha256=0d0dbca45f995180c04f7e47828b8a0cd2543d8ac1647b0071a11565cde44f81

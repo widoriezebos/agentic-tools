@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 26
+- Sequence: 25
 - Intent: What: You can name the branch all work lands in, instead of it always being the repository's default branch. Why: Repositories with a protected main branch allow merges only through pull requests, which would block MetaSystem's own landing. Pros: MetaSystem can work in organisation repositories with protected branches, and promotion to main stays a person's decision. Cons: Needs a proper design; the goal ledger has to move with the chosen branch or the two drift apart.
 - Origin: human
 - Next step: Next: When an adopted repository with protected branches comes up, design it (four to six hours): list every place that assumes the default branch, and cover the five recorded points (two governance systems, person-led promotion, the ledger follows the branch, the setting belongs to the app, inception). Done when: the design is accepted.
 - OpenedAt: 2026-08-23T19:32:07Z
-- Revision: 96
+- Revision: 97
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:39Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24: 'low priority, queued behind the app-guardrail program'; no protected-branch incident since; pull forward when inception targets an org repo with protected branches; needs the recorded design loop carrying the five considerations (two governance systems, human promotion, ledger foll
 
@@ -108,4 +108,5 @@ History:
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
 - 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
-Integrity: sha256=621881f58805e661bbd174d50207a9685ed70b8fe73e2e14ed7a7d07384a2e1d
+- 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
+Integrity: sha256=15ced92e95f9ae5237643ef5de6b373c57321904bdb372b315bc1b44b1d9c839
