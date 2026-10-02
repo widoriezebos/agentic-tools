@@ -5,7 +5,7 @@
 - Status: accepted
 - Goals: blocked-agent-asks-the-human
 
-Critique: Codex Astra, chain design-critic-7c1b3f32b7c2d075001609eb, closed at round 3 on 0 material findings (material per round 6, 2, 0; the round-2 divergence signal was handled by the seat as the guided agent, by subtraction per the rabbit-hole list). Accepted under Wido's 2026-10-02 plan: this goal is what lets the machinery switch on.
+Critique: Codex Astra, chain design-critic-7c1b3f32b7c2d075001609eb, closed at round 6 on 0 material findings after Decisions 7 and 8 were added (material per round 6, 2, 0, 2, 1, 0; rounds 2 and 5 divergence signals folded by subtraction; the round-2 divergence signal was handled by the seat as the guided agent, by subtraction per the rabbit-hole list). Accepted under Wido's 2026-10-02 plan: this goal is what lets the machinery switch on.
 
 Wido, 2026-10-02: a blocked agent is not a failure; it means the human should get involved, easily, and unblock it by a decision or otherwise. That includes the landing agent, and it is what lets the machinery switch on. Facts below were read at `135bd6a7a` unless marked *(inferred)*; the inventory is `agentic-tools-evidence/escape-hatch-20261002/inventory.md`.
 
