@@ -24,10 +24,19 @@ type ProcessScanner interface{ Scan() ([]Process, error) }
 type ProcessSignaler interface {
 	Signal(int64, syscall.Signal) error
 }
-type KernelProcessScanner struct{ Prober identity.Prober }
+// KernelProcessScanner lists the live processes with readable argv in
+// Table, the kernel's when nil; a test passes the processes it started.
+type KernelProcessScanner struct {
+	Prober identity.Prober
+	Table  identity.ProcessTable
+}
 
 func (scanner KernelProcessScanner) Scan() ([]Process, error) {
-	pids, err := identity.AllPids()
+	table := scanner.Table
+	if table == nil {
+		table = identity.KernelProcessTable{}
+	}
+	pids, err := table.Pids()
 	if err != nil {
 		return nil, err
 	}
