@@ -57,9 +57,6 @@ func appFixtureApp(t *testing.T) string {
 	if appFixtureError != nil {
 		t.Fatal(appFixtureError)
 	}
-	previous := appEngine
-	appEngine = func() (string, error) { return appEngineBinary, nil }
-	t.Cleanup(func() { appEngine = previous })
 	return appFixtureBinary
 }
 
@@ -75,9 +72,10 @@ type appBed struct {
 	// that a test can see the argument vector a verb hands it and answer for
 	// it.
 	testRun func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
-	// supervisorWait replaces an app start's wait for its supervisor's
-	// answer; zero is production's.
-	supervisorWait time.Duration
+	// engine is the engine this bed's starts launch as their supervisor: the
+	// one built for the purpose, given to each invocation as its owner. Under
+	// `go test` this process is the test binary, which is no engine.
+	engine string
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -128,7 +126,7 @@ func newAppBed(t *testing.T, contract map[string]any) *appBed {
 			t.Fatal(err)
 		}
 	}
-	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}}
+	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: appEngineBinary}
 	bed.git("init", "--quiet", "--initial-branch=main")
 	bed.git("config", "user.email", "fixture@invalid")
 	bed.git("config", "user.name", "Fixture")
@@ -160,7 +158,12 @@ func (b *appBed) run(args ...string) (int, string) {
 	if b.testRun != nil {
 		owners.work.testRun = b.testRun
 	}
-	owners.appSupervisorWait = b.supervisorWait
+	// The start waits for its supervisor's one answer or its exit, never a
+	// clock: the supervisor reports ready or failed by the contract's own
+	// readiness, and the test's timeout bounds a supervisor that never does.
+	owners.appSupervisorWait = applaunch.WaitForReport
+	engine := b.engine
+	owners.appEngine = func() (string, error) { return engine, nil }
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
 	return code, stdout.String() + stderr.String()
