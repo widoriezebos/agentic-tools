@@ -1793,14 +1793,9 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 	if err := signalGroup(requestedResult.Owner.Pid, syscall.SIGTERM); err != nil {
 		t.Fatalf("stop requested checkout owner for takeover: %v", err)
 	}
-	_, teardownCeilingSeconds := publishedOwnerState(requestedRoot, requestedResult.Owner)
-	ownerDeadline := time.Now().Add(scaledWait(10*teardownCeilingSeconds, armingOptions(requestedRoot).WaitScaleMilli))
-	for ownerLiveness(requestedResult.Owner) != identity.Dead && time.Now().Before(ownerDeadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if state := ownerLiveness(requestedResult.Owner); state != identity.Dead {
-		t.Fatalf("requested checkout owner did not become provably dead for takeover: %s", state)
-	}
+	testenv.Await(t, "the requested checkout owner to become provably dead for takeover", func() bool {
+		return ownerLiveness(requestedResult.Owner) == identity.Dead
+	})
 	takeoverOptions := armingOptions(requestedRoot)
 	takeoverOptions.Scope = requestedScope
 	takeoverOptions.OwnerTagPrefix = requestedPrefix

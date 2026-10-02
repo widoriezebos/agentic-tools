@@ -530,8 +530,11 @@ func setRetirementPairTimes(t *testing.T, root, runtimeName, session string, cur
 	}
 }
 
+// retirementTestCutoff is a fixed cutoff older than the retention window at
+// every run, so the fixtures around it keep their ages however long the host
+// takes.
 func retirementTestCutoff() time.Time {
-	return time.Now().UTC().Add(-callRetentionWindow - 24*time.Hour)
+	return time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 }
 
 func appendRetirementRegistration(t *testing.T, root string, row CallRegistration) {

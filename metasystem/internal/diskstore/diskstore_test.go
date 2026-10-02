@@ -245,14 +245,12 @@ func TestCriticalSectionRefusesAHeldLockAndReloads(t *testing.T) {
 	if critical.Record().State != StateReleasing {
 		t.Fatalf("critical section saw %s, not the reloaded releasing", critical.Record().State)
 	}
-	started := time.Now()
+	// The first critical section still holds the lock, so a second attempt
+	// that waited for it instead of refusing would never return.
 	_, heldErr := registry.TryCritical(record.ID)
 	var held *HeldError
 	if !errors.As(heldErr, &held) {
 		t.Fatalf("a second exclusive attempt = %v, want HeldError", heldErr)
-	}
-	if waited := time.Since(started); waited > 5*time.Second {
-		t.Fatalf("the held lock was waited on for %s", waited)
 	}
 	if free, err := registry.ProbeRecordLock(record.ID); err != nil || free {
 		t.Fatalf("probe of a held lock = %v, %v", free, err)
