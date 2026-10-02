@@ -12,6 +12,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
+// landedGoals are the waiting hand-ins a push from old to head put on
+// main: head contains them and old did not.
+func landedGoals(install, checkout, old, head string) []string {
+	waiting, _ := plain.Waiting(install)
+	inHead, inOld := plain.ContainedIn(checkout, head), plain.ContainedIn(checkout, old)
+	var goals []string
+	for _, entry := range waiting {
+		now, _ := inHead(entry.SHA)
+		before, _ := inOld(entry.SHA)
+		if now && !before {
+			goals = append(goals, entry.Goal)
+		}
+	}
+	return goals
+}
+
 func landingPushCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "push", audience: "agent", summary: "put the landing checkout's proven HEAD on main",
@@ -30,7 +46,16 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 	if refused := inv.lanePaused(admitted, "pushed"); refused != nil {
 		return inv.render(*refused)
 	}
-	outcome, err := plain.Push(admitted.installation, string(admitted.layout.Checkout), admitted.owners.now())
+	checkout := string(admitted.layout.Checkout)
+	outcome, err := plain.Push(admitted.installation, checkout, admitted.owners.now())
+	var told []string
+	if outcome.Changed {
+		// A landing on main is the one piece of news the channel carries
+		// (Decision 7); a failed post is kept for a retry and fails nothing.
+		if problem := postLanded(admitted.installation, landedGoals(admitted.installation, checkout, outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now()); problem != nil {
+			told = []string{"the channel was not told of the landing; the next landing or tick retries once: " + problem.Error()}
+		}
+	}
 	var refusal *plain.Refusal
 	switch {
 	case errors.As(err, &refusal):
@@ -48,7 +73,7 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 	case err != nil && outcome.Changed:
 		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: outcome,
 			Summary: "pushed " + shortLandingID(outcome.Commit) + " to main, but the push could not be recorded for landing status: " + oneLine(err.Error()),
-			Details: []string{err.Error()}})
+			Details: append([]string{err.Error()}, told...)})
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: outcome,
 			Summary: "the push could not be made: " + oneLine(err.Error()), retry: "tries again", Details: []string{err.Error()}})
@@ -58,5 +83,5 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root)})
 	}
 	summary := "pushed " + shortLandingID(outcome.Commit) + " to main (from " + shortLandingID(outcome.Old) + ")"
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root)})
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root), Details: told})
 }

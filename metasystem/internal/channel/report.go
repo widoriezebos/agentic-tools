@@ -374,7 +374,3 @@ func LoadStatusState(repo string) StatusState {
 func SaveStatusState(repo string, s StatusState) error {
 	return writeJSON(filepath.Join(channelRoot(repo), "status.json"), s)
 }
-
-func ShouldPost(s StatusState, now time.Time, interval time.Duration, text string, force bool) bool {
-	return force || (now.Sub(s.LastPost) >= interval && s.ContentDigest != Digest(text))
-}
