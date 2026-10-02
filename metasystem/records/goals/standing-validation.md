@@ -1,14 +1,15 @@
 # standing-validation
 
-- State: queued
+- State: abandoned
 - Priority: 3
 - Sequence: 11
 - Intent: What: A permanent record, not work to do. The landing lane's regular validation run (the deep test run that clears accumulated landing risk) runs under this goal's approval, so every such run points to a person's permission and budget. Why: Every automatic deep run needs a person's approval on record, and this goal carries it. The code names this goal directly, so it must never be concluded or picked up as ordinary work. Pros: One lasting place for the approval, and the history of every validation run stays in one record. Cons: It looks like an open goal in the backlog and can confuse reviews or be picked up by mistake. It has been unapproved since 09-11, so the lane's validation run currently reports "authority unavailable".
 - Origin: main
 - Next step: Next: Leave it open and never work it by hand. Per the landing-lane redesign (lane-stepback-20260930/lane-runtime-design.md, decision D2), Wido approves it with an enforced obligation at switch-on, and from then on the landing lane claims it once and holds it. Done when: never, because it stays open. After switch-on, landing status shows the validation run is no longer waiting for authority.
 - OpenedAt: 2026-08-31T10:47:20Z
-- Revision: 84
+- Revision: 85
 - BudgetExceptions: 0
+- Abandoned: by=human:Wido at=2026-10-02T20:59:52Z revision=85 opid=9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 because=Obsolete (audit 2026-10-02): landing validate no longer exists; 3e19210dd deleted its only caller
 
 History:
 - 2026-08-31T10:47:20Z H03B8PM6P6FCS5DQND5F7R3MKX-m2-bc1be9cb open actor=m2+mac-coordinator targets=standing-validation
@@ -95,4 +96,5 @@ History:
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
-Integrity: sha256=45551ea6410dd2e08f46b231700285e917e669b3569431af5c57cd4222bb3641
+- 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=Obsolete (audit 2026-10-02): landing validate no longer exists; 3e19210dd deleted its only caller
+Integrity: sha256=1ce77ecc406e95fd1197bf8c1821374db5fe028f7cee273501c2d97336eec6ca
