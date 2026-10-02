@@ -83,6 +83,7 @@ func TestReportReadyWritesTheReadinessLine(t *testing.T) {
 }
 
 func TestReportReadyHelper(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("TESTEXEC_REPORT_READY_HELPER") != "1" {
 		return
 	}

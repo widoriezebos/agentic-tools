@@ -143,8 +143,7 @@ func earlyChildCommandReads(fileSet *token.FileSet, file *ast.File) []earlyChild
 		}
 		// pidOf names the raw child whose pid an expression carries.
 		pidVars := map[string]string{}
-		var pidOf func(expression ast.Expr) string
-		pidOf = func(expression ast.Expr) string {
+		pidOf := func(expression ast.Expr) string {
 			found := ""
 			ast.Inspect(expression, func(node ast.Node) bool {
 				switch typed := node.(type) {
