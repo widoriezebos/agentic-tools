@@ -418,7 +418,7 @@ func TestStopRunsTheContractsOwnStopCommand(t *testing.T) {
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 20 * time.Second, ProjectRoot: b.root, Environment: os.Environ()})
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 20 * time.Second, ProjectRoot: b.root, Environment: os.Environ(), Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}

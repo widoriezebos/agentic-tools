@@ -36,6 +36,25 @@ func (p censusProber) ReadStart(pid int64) (identity.Exact, identity.Liveness, e
 	return identity.KernelProber{}.ReadStart(pid)
 }
 
+// tableGroup is the kernel group reader over table alone: a test's group
+// census reads the processes it started, never the host's.
+func tableGroup(table identity.ProcessTable) GroupReader {
+	return func(pgid int64) ([]Member, error) { return groupCensus(table, pgid, identity.KernelProber{}) }
+}
+
+// The group census reads only the table it is given: a live member outside
+// it is never counted, whatever runs on the host.
+func TestGroupCensusReadsOnlyItsTable(t *testing.T) {
+	t.Parallel()
+	pid := groupDescendant(t)
+	if members, err := groupCensus(identity.ListedProcessTable{pid}, pid, identity.KernelProber{}); err != nil || len(members) != 1 || members[0].Pid != pid {
+		t.Fatalf("a table holding the member = %+v, %v; want the member", members, err)
+	}
+	if members, err := groupCensus(identity.ListedProcessTable{}, pid, identity.KernelProber{}); err != nil || len(members) != 0 {
+		t.Fatalf("an empty table = %+v, %v; want no member", members, err)
+	}
+}
+
 // groupDescendant is a live process leading a group of its own, standing
 // for a descendant the application left behind.
 func groupDescendant(t *testing.T) int64 {
@@ -95,7 +114,7 @@ func TestGroupCensusKeepsAnUncertainMember(t *testing.T) {
 	for name, answer := range map[string]func(identity.Exact) (identity.Exact, identity.Liveness, error){
 		"unreadable argv": unreadableArgv, "uncertain probe": uncertainProbe,
 	} {
-		members, err := groupCensus(pid, censusProber{pid: pid, answer: answer})
+		members, err := groupCensus(identity.ListedProcessTable{pid}, pid, censusProber{pid: pid, answer: answer})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +122,7 @@ func TestGroupCensusKeepsAnUncertainMember(t *testing.T) {
 			t.Fatalf("%s: an alive member whose identity is uncertain stays in the census: %+v", name, members)
 		}
 	}
-	members, err := groupCensus(pid, censusProber{pid: pid, answer: finishedProbe})
+	members, err := groupCensus(identity.ListedProcessTable{pid}, pid, censusProber{pid: pid, answer: finishedProbe})
 	if err != nil || len(members) != 0 {
 		t.Fatalf("a member the probe says is finished may be left out: %+v %v", members, err)
 	}
@@ -123,9 +142,11 @@ func TestStopCannotProveAGroupWithAnUncertainMember(t *testing.T) {
 		}
 		var signalled []int
 		result, err := Stop(root, StandingKey, Contract{StopMS: 100}, StopOptions{
-			Wait:  300 * time.Millisecond,
-			Group: func(pgid int64) ([]Member, error) { return groupCensus(pgid, censusProber{pid: pid, answer: answer}) },
-			Send:  func(pid int, sig syscall.Signal) error { signalled = append(signalled, pid); return nil },
+			Wait: 300 * time.Millisecond,
+			Group: func(pgid int64) ([]Member, error) {
+				return groupCensus(identity.ListedProcessTable{pid}, pgid, censusProber{pid: pid, answer: answer})
+			},
+			Send: func(pid int, sig syscall.Signal) error { signalled = append(signalled, pid); return nil },
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -269,7 +290,7 @@ func TestAnEndedRecordWithALiveGroupIsNotFinished(t *testing.T) {
 		Ended: &Ended{At: "2026-09-28T00:00:00Z", ExitStatus: "exit 0"}}); err != nil {
 		t.Fatal(err)
 	}
-	status, err := Read(root, StandingKey, Contract{}, ReadOptions{})
+	status, err := Read(root, StandingKey, Contract{}, ReadOptions{Group: tableGroup(identity.ListedProcessTable{pid})})
 	if err != nil {
 		t.Fatal(err)
 	}
