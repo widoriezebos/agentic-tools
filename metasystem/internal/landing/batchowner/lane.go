@@ -153,14 +153,16 @@ func LandingLaneArmed(root string) (bool, error) {
 	return false, fmt.Errorf("whether the supervision owner pid %d of %s runs is unknown", owner.Pid, root)
 }
 
-// landingLaneView is the lane as landing status, status and /api/board show
-// it; without a lane home, the view says so.
-func landingLaneView(home func() (string, error), now time.Time) lane.View {
+// landingLaneStatus is the lane as landing status --json and /api/board
+// show it: its view and the plain lane around it (plain.ReadStatus), the one
+// reader both use.
+func landingLaneStatus(home func() (string, error), now time.Time) plain.Status {
 	laneHome, err := home()
 	if err != nil {
-		return lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
+		return plain.Status{View: lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}, Queue: []plain.Entry{}}
 	}
-	return lane.BuildView(LandingLaneViewSources(laneHome, now))
+	record, _, _ := lane.Read(laneHome)
+	return plain.ReadStatus(laneHome, record, lane.BuildView(LandingLaneViewSources(laneHome, now)), plain.ProveSeams{})
 }
 
 // LandingLaneViewSources are the production reads of the lane's view as the

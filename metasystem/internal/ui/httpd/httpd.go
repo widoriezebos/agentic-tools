@@ -81,6 +81,13 @@ type Info struct {
 	// the route answers with; anything else is a 500. A nil DiscardLaunch is
 	// an engine that cannot discard one, which the route says.
 	DiscardLaunch func(id string) (launch.Record, error)
+	// LandNow is the landing lane card's Land now (goal
+	// fleet-card-can-land-now): it runs `metasystem landing run --json` once
+	// and answers the verb's one-result envelope as the verb wrote it —
+	// success, a repeat that started nothing, or a refusal. An error is a
+	// verb that could not be run or read at all. A nil LandNow is an engine
+	// that cannot start the landing agent from here, which the route says.
+	LandNow func() (LandNowAnswer, error)
 	// Watch is the bridge between the open notification streams and the
 	// presence fetch owner: the streams are the owner's connection signal,
 	// and the one `fleet` event rides back to them after every attempt. A nil

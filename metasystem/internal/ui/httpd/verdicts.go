@@ -73,6 +73,12 @@ type reviewBody struct {
 // sessionFor is the launch route's rule, for every act here: a live session
 // whose proof stands for this checkout. The boot proof never answers.
 func (h *handler) sessionFor(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {
+	return h.sessionWith(w, r, actNeedsSignIn)
+}
+
+// sessionWith is sessionFor telling a request with no live session what it
+// needs, in the words of the act it asked for.
+func (h *handler) sessionWith(w http.ResponseWriter, r *http.Request, needs string) (*session.Session, bool) {
 	signed, liveness := h.signedIn(r)
 	switch liveness {
 	case session.Live:
@@ -82,7 +88,7 @@ func (h *handler) sessionFor(w http.ResponseWriter, r *http.Request) (*session.S
 		return nil, false
 	default:
 		w.WriteHeader(http.StatusForbidden)
-		writeSignInRefusal(w, "session", actNeedsSignIn)
+		writeSignInRefusal(w, "session", needs)
 		return nil, false
 	}
 	if signed == nil || h.info.Sessions == nil || !signed.Proof.SessionValidFor(h.info.Sessions.Root()) {

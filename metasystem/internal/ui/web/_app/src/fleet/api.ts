@@ -19,6 +19,7 @@ const FLEET = "/api/fleet";
 const LAUNCH = "/api/fleet/launch";
 const LAUNCHES = "/api/fleet/launches/";
 const BOARD = "/api/board";
+const LAND_NOW = "/api/fleet/land-now";
 
 /** What this seat concludes about one machine, from its presence record. */
 export type Standing = "reachable" | "unreachable" | "unknown";
@@ -378,37 +379,80 @@ export type LaneOwner = {
   retry_hint: string | null;
 };
 
-/** One goal in a batch, and the seat it lands from. */
-export type LaneMember = { goal: string; seat: string };
-
-/** A goal the batch is holding for, with when its seat expects it ready. */
-export type LaneWaiting = { goal: string; seat: string; expected: string | null };
-
-/** Where the batch in hand is: one batch proves at a time on a host. */
-export type LaneBatchState = "collecting" | "waiting" | "proving" | "pushing" | "held";
-
-/** The batch the lane is working on now. */
-export type LaneBatch = {
-  id: string;
-  state: LaneBatchState;
-  members: LaneMember[];
-  waiting_for: LaneWaiting[];
-  since: string;
-  reason: string;
+/**
+ * One hand-in of the plain lane's queue and what became of it: waiting,
+ * returned (with why), superseded by a newer hand-in of its goal, or landed.
+ */
+export type LaneEntry = {
+  goal: string;
+  branch: string;
+  sha: string;
+  seat: string;
+  at: string;
+  state: "waiting" | "returned" | "superseded" | "landed" | (string & {});
+  reason?: string;
+  returned_at?: string;
 };
 
-/** The batch collecting behind it. */
-export type LaneNext = { id: string; members: LaneMember[] };
+/** The lane's proof recorded running; died is one that ended without a result. */
+export type LaneRunningProof = {
+  tree: string;
+  commit?: string;
+  since: string;
+  attempt: string;
+  log?: string;
+  state: "running" | "died" | (string & {});
+};
 
-/** The landing lane, field for field as /api/board carries it. */
+/** The newest proof the lane recorded. */
+export type LaneProof = {
+  tree: string;
+  commit: string;
+  result: "green" | "red" | (string & {});
+  log: string;
+  at: string;
+  attempt?: string;
+  reason?: string;
+};
+
+/** The newest push the lane made to main. */
+export type LanePush = { old: string; commit: string; tree: string; at: string };
+
+/**
+ * The landing lane, field for field as /api/board carries it: landing status
+ * --json's data. The plain lane's fields are absent from a server built
+ * before they joined the board.
+ */
 export type Lane = {
   root: string | null;
   registered_by: string | null;
   registered_at: string | null;
   owner: LaneOwner;
-  batch: LaneBatch | null;
-  next: LaneNext | null;
+  /**
+   * Why the landing agent would run now, read the way the lane's keeper reads
+   * it ("queued", "proof-finished").
+   */
+  wake?: LaneWake | null;
   summary: string;
+  paused?: boolean;
+  agent_alive?: boolean;
+  queue?: LaneEntry[];
+  running_proof?: LaneRunningProof | null;
+  last_proof?: LaneProof | null;
+  last_push?: LanePush | null;
+};
+
+export type LaneWake = { reasons: string[]; unread: string[] };
+
+/**
+ * What `metasystem landing run` answered, as its one-result envelope says
+ * it: the outcome, line 1 (summary) and line 2 (next), null where it names
+ * none.
+ */
+export type LandNowAnswer = {
+  outcome: string;
+  summary: string;
+  next: { argv: string[]; reason: string } | null;
 };
 
 /**
@@ -429,6 +473,16 @@ export async function loadBoard(signal?: AbortSignal): Promise<BoardPayload> {
  */
 export async function launchMachine(asked: LaunchRequest, signal?: AbortSignal): Promise<Launch> {
   return (await request(LAUNCH, asked, signal)) as Launch;
+}
+
+/**
+ * Land now, from the landing lane card: the server runs `metasystem landing
+ * run` once under the signed-in session and answers the verb's envelope,
+ * success or refusal alike. A press while an agent runs is the verb's success
+ * that started nothing.
+ */
+export async function landNow(signal?: AbortSignal): Promise<LandNowAnswer> {
+  return (await request(LAND_NOW, {}, signal)) as LandNowAnswer;
 }
 
 /**

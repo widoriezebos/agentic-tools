@@ -1,6 +1,6 @@
 # reviewers-check-the-rulings
 
-- State: approved
+- State: done
 - Priority: 2
 - Sequence: 10
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="review process change for every critic dispatch; no product behaviour change; every seat"
@@ -8,13 +8,13 @@
 - Intent: What: Every design critic and code critic checks the work against the standing human rulings, the project's register of Wido's decisions and the decisions recorded on the goal itself, and reports any conflict as a finding that always counts as material, naming the ruling it breaks. Why: today the critic roles are bound only by their brief, their skill and the project rules; the rulings register (175 rulings) and a goal's own human decisions reach a critic only if whoever wrote the brief happened to quote them, so a design or change can quietly contradict a ruling and still pass review. Wido, 2026-09-30: it should definitely be one of the tasks of the reviewer to check the rulings. Pros: decisions the human already made are enforced at every review instead of depending on someone remembering them. Cons: each review reads more material, and the register needs to stay findable by topic as it grows.
 - Origin: human
 - Next step: Next: Fable writes a short design (where the rulings are read from, how a critic reports the rulings it checked, how a conflict is reported), one Astra critique round, then Opus builds it into the design-critic and code-critic roles and skills with tests, Sol reviews the code, and it lands. Done when: a critic dispatched on a goal lists the rulings it checked in its return, and a planted conflict with a ruling is reported as material.
+- Concluded: Landed by hand at 9ed2fa68c (in 4fc037e5d), gate green: both critique skills and critic roles carry a binding Check the Rulings step, proved by a planted conflict caught by Opus, Astra and Sol; the engine review was clean, its close blocked by the critic-chain register defect.
 - OpenedAt: 2026-09-30T20:38:45Z
-- Revision: 39
+- Revision: 40
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T07:54:04Z revision=9 opid=J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf authority=proven digest=2778966e6d0b60e3db4fb97e4114a58b6f96311e630eb3791470009314b1ef2c episode=9
 - Sliced: machine=ui lineage=main-1790664507-87928-61899b revision=37 at=2026-10-02T14:49:37Z
-- Episode: machine=ui lineage=main-1790664507-87928-61899b accountingRevision=10 episodeAt=2026-10-01T07:54:10Z episodeRevision=10 idleSeconds=103675 released=2026-10-02T14:58:23Z
 
 History:
 - 2026-09-30T20:38:45Z 7PTYSF4TX48MAA3GD0YVH8B9KE-ui-bc2fda53 open actor=human:Wido targets=reviewers-check-the-rulings
@@ -56,4 +56,5 @@ History:
 - 2026-10-02T14:32:52Z B9S89J4D110FGHBP654DJ6R2R1-ui-d4023bb7 claim actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
 - 2026-10-02T14:49:37Z XWV2HHWDPTKWD3XWZDSJT685FG-ui-d4023bb7 slice-start actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
 - 2026-10-02T14:58:23Z Q6MD4KXWQEHTWZ3EJDMY98JX7E-ui-d4023bb7 release actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings reason=built and reviewed clean; its review close is stuck on an engine defect m1e is looking at; Land now goes first
-Integrity: sha256=29280159d5fd1aa841e697e1696eddd978a89d48c34eb1d26e2b021d49584c41
+- 2026-10-02T15:09:24Z SZGVJ23Q1Q1ZCKPKR7DBN6RPY6-ui-31a738e9 done actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,arming-binds-the-installed-engine-identity,commit-goal-binding,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,failed-job-attention,first-headless-run,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,machinery-blocks-of-2026-10-02,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-approval-gate,one-goal-act-one-ledger-commit,recovery-rehearsal,recovery-to-good-state,reviewers-check-the-rulings,role-context-composition,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak
+Integrity: sha256=91a450f67426dd516afbb49b6a76fa343745d0f6921bf2c1769c02f3f1a466d5

@@ -189,7 +189,10 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // This host's board (batch-lane design D14-r2) joins the fleet's read at
   // the same call site: one more resource, read when the pane mounts and on
   // the same event and reconnect the fleet re-reads on, and no timer.
-  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch", "/api/board"]],
+  // Land now, from the landing lane card (goal fleet-card-can-land-now), is
+  // one more act at the same call site: the same request with a body, and the
+  // board read again after it answers, still with no timer.
+  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch", "/api/board", "/api/fleet/land-now"]],
   // The Project Partner. Three requests through one call site: the
   // conversation, read when the page loads and again on every reconnect of the
   // one stream below; a send, when a human presses Send; and a stop, when they
