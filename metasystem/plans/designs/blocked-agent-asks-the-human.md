@@ -71,6 +71,14 @@ The question records are the log: opened, machine, goal or about, refusal line (
 
 Engine-launched delegates inherit `METASYSTEM_OWNER_LINEAGE` from the dispatching seat; no launcher sets it for them (`internal/adapter/supervisor/deps.go:111`, `lifecycle.go:191`). A delegate's question would be filed under its seat's lineage, and a sandboxed delegate often cannot reach the channel or the ledger *(inferred from the Codex sandbox)*. So the fix is a rule, not code: delegates return `BLOCKED:` and the seat, which owns the goal and the turn, asks.
 
+## Decision 7: a quiet channel (Wido 2026-10-02)
+
+Wido: "I want to have the IM (telegram/slack/...) channel as silent as possible i.e. if there is no news, there should be no message. I only want a message when there is a landing on main, or when there is something I need to respond to"; "everything else; I have the UI for".
+
+1. The periodic status report (`internal/channel/phase/phase.go:197-213`, `ShouldPost` `internal/channel/report.go:378`) no longer posts to the channel; needs, backlog and delivered live in the UI. `channel.status.interval-minutes` becomes unused and is removed from the local config.
+2. A landing on main posts one line per landing: the goal and the short SHA ("landed: G at SHA"). Producers: the lane's `landing push` after a successful push, and a seat that lands its own work. Once per SHA.
+3. Every other channel message asks for a response: a question, or a notice whose second line is the act the human takes (Decision 4's signals). A message that only informs does not go to the channel.
+
 ## Moved effects
 
 | Effect | From | To | Code |
