@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 12
+- Sequence: 13
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Register-only change (append lines to receipts.log and the narrator digest); no code; reverts cleanly"
 - Tier: 1
 - Intent: Prove the landing lane end to end at switch-on: land m1e's uncommitted register lines as a goal-bound change
 - Origin: human
 - Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 26
+- Revision: 27
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -40,4 +40,5 @@ History:
 - 2026-10-02T21:23:24Z 87SK1HNSS72691NDAZ1HW4NHXK-m1e-9c612d71 done actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-panel-ux,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order from=1:11 to=1:10
 - 2026-10-02T21:26:09Z R2HYT0B7AQQAFK3RXJAFY14GW8-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,machinery-blocks-of-2026-10-02,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order subject=machinery-blocks-of-2026-10-02 from=1:10 to=1:11 requested-sequence=3
 - 2026-10-02T21:54:59Z M0TSVAQNR16NW151930292CY3V-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-shows-true-facts,work-review-starts-its-critic reason=priority-order subject=ui-shows-true-facts from=1:11 to=1:12 requested-sequence=4
-Integrity: sha256=7686e5bbb28664497034f9c06b56a8d29dbce827f4b73a2af566a8173f87fe98
+- 2026-10-02T21:55:18Z M5SNS9E2687N391M87QKYDC658-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-reads-well-on-a-phone-in-plain-words,work-review-starts-its-critic reason=priority-order subject=ui-reads-well-on-a-phone-in-plain-words from=1:12 to=1:13 requested-sequence=5
+Integrity: sha256=dda223338bfff7eab13dcb8a009d0abab228a6bef3c362c6ce587e07eed9cdda
