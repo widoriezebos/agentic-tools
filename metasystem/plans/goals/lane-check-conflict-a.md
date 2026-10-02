@@ -1,16 +1,18 @@
 # lane-check-conflict-a
 
-- State: queued
+- State: approved
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="comment only"
 - Tier: 1
 - Intent: Lane real-run conflict check A (2026-10-02 night): changes the same comment line as conflict check B; the landing agent must land one and resolve or return the other.
 - Origin: human
 - Next step: hand in with work land
 - OpenedAt: 2026-10-02T02:49:47Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T02:49:59Z revision=2 opid=1TJ7J0B5W7ZXWH0EHCVQFGFRYX-m1e-9c612d71 authority=proven digest=fa4f0ecd6a7ebf7317868b8a86b12bdcd529268768b4907382516a320b5198d6 episode=2
 
 History:
 - 2026-10-02T02:49:47Z JEVGQGG1NQBKGES4FP5F84AA02-m1e-9c612d71 open actor=human:Wido targets=lane-check-conflict-a
-Integrity: sha256=cd3dca4efc7b2931d6f940d51ed4daeff0e38637966c267149ec51ba1a191543
+- 2026-10-02T02:49:59Z 1TJ7J0B5W7ZXWH0EHCVQFGFRYX-m1e-9c612d71 approve actor=human:Wido targets=lane-check-conflict-a
+Integrity: sha256=49032de4b05bbe8d65b9b5f36fe38a307406ccef4ec56189b1ad95cdb24b2f41
