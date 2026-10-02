@@ -1075,8 +1075,11 @@ var runnerSleep = time.Sleep
 const runnerReplacementKillWait = 2 * time.Second
 
 // stopRunnerForReplacement stops a runner the caller replaces; signal is
-// the per-call sender (syscall.Kill in production).
+// the per-call sender; nil resolves to syscall.Kill.
 func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error) error {
+	if signal == nil {
+		signal = syscall.Kill
+	}
 	if err := runnerStopWriter(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
 		return fmt.Errorf("write restart marker before stopping runner pid %d: %w", runner.Pid, err)
 	}

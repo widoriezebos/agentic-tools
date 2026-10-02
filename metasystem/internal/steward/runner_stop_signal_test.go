@@ -323,3 +323,22 @@ func TestAStoppingRunnerStartsNoFurtherBreachStop(t *testing.T) {
 		t.Fatalf("reports = %+v", reports)
 	}
 }
+
+// A hand-built rearmResolverDeps leaves signal nil; the replacement stop
+// resolves that to syscall.Kill at the point of use instead of panicking.
+// The runner is a child already exited and reaped, so the real Kill
+// answers ESRCH and no live process is touched.
+func TestStopRunnerForReplacementNilSignalUsesKill(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^$", "-test.count=1")
+	if err := child.Run(); err != nil {
+		t.Fatalf("run exited child: %v", err)
+	}
+	if err := stopRunnerForReplacement(root, RunnerRecord{Pid: int64(child.Process.Pid)}, nil); err != nil {
+		t.Fatalf("stop with nil signal: %v", err)
+	}
+}

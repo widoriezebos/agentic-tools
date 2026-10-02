@@ -304,7 +304,7 @@ func setChildEnv(cmd *exec.Cmd, root string, fds []string) {
 	cmd.Env = kept
 }
 
-// childRunning reports a prepared child that was started and has not been
+// childRunning reports a child started through StartChild that has not been
 // waited for and is still in the process table (an unwaited exit is a
 // zombie whose pid is not reused, so it reads as running: kept).
 func childRunning(cmd *exec.Cmd) bool {
