@@ -220,6 +220,17 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 				return nil
 			}
 		}
+		if line.Delivered == "" {
+			// A goal handed in again (after a return) without a sentence
+			// keeps the latest one it was handed in with; a new one
+			// replaces it.
+			for index := len(entries) - 1; index >= 0; index-- {
+				if entries[index].Goal == line.Goal && entries[index].Delivered != "" {
+					line.Delivered = entries[index].Delivered
+					break
+				}
+			}
+		}
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}

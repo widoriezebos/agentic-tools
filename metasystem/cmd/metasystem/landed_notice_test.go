@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -211,7 +212,7 @@ func TestWorkLandWithoutDeliveredHintsAndStillHandsIn(t *testing.T) {
 func TestWorkLandDeliveredGuardRefusesHashesAndPaths(t *testing.T) {
 	t.Parallel()
 	b, _, install := plainLaneBed(t, "critic-root", "critic-root")
-	for _, text := range []string{"Fixed the stop hook at 3ed2e2d2b.", "Rewrote internal/channel/landed.go."} {
+	for _, text := range []string{"Fixed the stop hook at 3ed2e2d2b.", "Rewrote internal/channel/landed.go.", "Moved it to internal/channel/inbox.go", "Ships ./bin/metasystem now.", "Fixed 3fa9c12."} {
 		code, result := b.do("work", "land", "standing-validation", "--delivered", text)
 		expectOutcome(t, text, code, result, intentRefused)
 		if !strings.Contains(result.Summary, "plain") {
@@ -220,6 +221,39 @@ func TestWorkLandDeliveredGuardRefusesHashesAndPaths(t *testing.T) {
 	}
 	if entries, _ := plain.Entries(install); len(entries) != 0 {
 		t.Fatalf("a refused sentence handed in: %+v", entries)
+	}
+	// Ordinary English with a slash is not a path.
+	for _, text := range []string{"Seats can ask and/or wait for you.", "The lane now runs 24/7."} {
+		code, result := b.do("work", "land", "standing-validation", "--delivered", text)
+		if code != 0 || result.Outcome == intentRefused {
+			t.Fatalf("%q was refused: %+v", text, result)
+		}
+	}
+}
+
+// A goal returned and handed in again at a new commit without --delivered
+// keeps its earlier sentence, and its landing posts it.
+func TestReturnedGoalHandedInAgainKeepsItsSentence(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
+	dir, _ := commandFakeBed(t)
+	appendChannelConf(t, bed.installation, dir)
+	bed.seatSaying(t, "goal-a", sentenceA)
+	if _, _, err := plain.Return(bed.installation, "goal-a", "red", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	seat := filepath.Join(filepath.Dir(bed.checkout), "seat-goal-a")
+	bed.git(t, seat, "commit", "--quiet", "--allow-empty", "-m", "the fix")
+	bed.git(t, seat, "push", "--quiet", "origin", "goal/goal-a")
+	fixed := bed.git(t, seat, "rev-parse", "HEAD")
+	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: fixed, Seat: "seat-goal-a", At: "2026-10-02T21:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	bed.merge(t, fixed)
+	bed.proveAndPush(t)
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
+		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
 	}
 }
 

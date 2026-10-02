@@ -1676,12 +1676,25 @@ func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
 	return inv.deliveredHint(goalID, inv.noteLanded(goalID, inv.landGoalRoute(goalID, through)))
 }
 
-// A hash of seven or more hex digits (with a digit in it), and a path: what
-// a sentence for a person must not carry.
+// A commit hash (seven or more hex characters with a letter a-f) and a
+// path (a word starting with /, ./ or ../, or one with a slash ending in a
+// dot-extension): what a sentence for a person must not carry. Ordinary
+// English with a slash ("and/or", "24/7") is neither.
 var (
-	deliveredHash = regexp.MustCompile(`(?i)\b[0-9a-f]*[0-9][0-9a-f]*\b`)
-	deliveredPath = regexp.MustCompile(`\S/\S`)
+	deliveredHash = regexp.MustCompile(`^[0-9a-fA-F]{7,}$`)
+	deliveredPath = regexp.MustCompile(`^(\.{0,2}/|.*/.*\.[A-Za-z0-9]+$)`)
 )
+
+// technicalWord says whether one word of a --delivered sentence is a
+// commit hash or a path.
+func technicalWord(word string) bool {
+	word = strings.Trim(word, "\"'()[],;:!?")
+	word = strings.TrimRight(word, ".")
+	if deliveredHash.MatchString(word) && strings.ContainsAny(strings.ToLower(word), "abcdef") {
+		return true
+	}
+	return deliveredPath.MatchString(word)
+}
 
 // deliveredRefusal is the light guard on work land --delivered: the
 // sentence is for a person reading on a phone, so a commit hash or a path
@@ -1691,11 +1704,9 @@ func (inv *intentInvocation) deliveredRefusal() *intentResult {
 		return nil
 	}
 	text := strings.TrimSpace(inv.input.text("delivered"))
-	technical := text == "" || deliveredPath.MatchString(text)
-	for _, word := range deliveredHash.FindAllString(text, -1) {
-		if len(word) >= 7 && strings.ContainsAny(strings.ToLower(word), "abcdef") {
-			technical = true
-		}
+	technical := text == ""
+	for _, word := range strings.Fields(text) {
+		technical = technical || technicalWord(word)
 	}
 	if !technical {
 		return nil
