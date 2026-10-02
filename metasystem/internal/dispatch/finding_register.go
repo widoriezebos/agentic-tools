@@ -9,9 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -276,9 +278,6 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 		limit, ok := numInt(limitValue)
 		if !ok || limit < 1 || limit > 255 {
 			return account, fmt.Errorf("reviewRoundLimit is not a positive eight-bit integer")
-		}
-		if asString(root["role"]) == "design-critic" && limit > int64(designCritiqueRoundLimit) {
-			return account, fmt.Errorf("design-critic review-round limit %d exceeds cap %d", limit, designCritiqueRoundLimit)
 		}
 		account.limit = limit
 	} else {
@@ -774,17 +773,26 @@ func deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage
 }
 
 // designFinalRound reports whether a design critique's folded round is its
-// last: the limit frozen on the chain root (five since 2026-10-01, a backstop;
-// a root frozen earlier keeps its two).
+// last: the limit frozen on the chain root, else the goal's review-round
+// member under metasystem.budget.review-round-max, else that ceiling.
 func designFinalRound(repoRoot string, state critiqueState, rootJob string, root map[string]any, foldedRound int64) bool {
 	if asString(root["role"]) != "design-critic" {
 		return false
 	}
-	limit := int64(designCritiqueRoundLimit)
 	if account, err := critiqueRoundAccounting(repoRoot, state, rootJob, root); err == nil {
-		limit = account.limit
+		return foldedRound >= account.limit
 	}
-	return foldedRound >= limit
+	return foldedRound >= reviewRoundCeiling(repoRoot)
+}
+
+// reviewRoundCeiling is metasystem.budget.review-round-max for the checkout,
+// or its compiled default when the configuration cannot be read.
+func reviewRoundCeiling(repoRoot string) int64 {
+	maximum, err := config.ReviewRoundMax(filepath.Join(repoRoot, "metasystem.conf"))
+	if err != nil {
+		maximum, _ = strconv.ParseUint(config.MustDefault(config.ReviewRoundMaxKey), 10, 64)
+	}
+	return int64(maximum)
 }
 
 func designCapHumanRaise(goalID string, round int64, findingIDs []string) error {

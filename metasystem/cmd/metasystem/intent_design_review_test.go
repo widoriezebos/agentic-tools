@@ -23,7 +23,12 @@ type designReviewBed struct {
 }
 
 func newDesignReviewBed(t *testing.T) *designReviewBed {
-	b := &designReviewBed{deliveryBed: newDeliveryBed(t)}
+	return newDesignReviewBedAmended(t, nil)
+}
+
+// newDesignReviewBedAmended is newDesignReviewBed over an amended goal file.
+func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *designReviewBed {
+	b := &designReviewBed{deliveryBed: newDeliveryBedAmended(t, amend)}
 	roots, err := project.ResolveRoots(b.install)
 	if err != nil {
 		t.Fatal(err)
@@ -237,5 +242,32 @@ func TestDesignCritiqueClosesOnUnchangedDesign(t *testing.T) {
 	b.writeFile(accepted, strings.Replace(body, "| F1 | DECIDE | | |", "| F1 | accepted | a real gap | section 2 |", 1))
 	if result := review("--dispositions", accepted); result.Outcome != intentRefused || len(closes) != 0 || len(b.followUps) != 0 || !strings.Contains(result.Summary, "F1") {
 		t.Fatalf("an accepted material finding on the unchanged design: %+v closes=%d followUps=%d", result, len(closes), len(b.followUps))
+	}
+}
+
+// TestDesignReviewBriefCarriesTheGoalsRounds: a design review's round budget
+// is the goal's review-round member, as a code review's is; no fixed five
+// clamps it (Wido 2026-10-02).
+func TestDesignReviewBriefCarriesTheGoalsRounds(t *testing.T) {
+	t.Parallel()
+	b := newDesignReviewBedAmended(t, func(file *goal.GoalFile) {
+		if file.Budget == nil {
+			t.Fatal("the bed goal has no budget to amend")
+		}
+		file.Budget.ReviewRoundLimit = 12
+		if file.Approved != nil {
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		}
+	})
+	_, result := b.do("design", "review", b.design, "--tool-calls", "30")
+	if result.Outcome != intentInProgress {
+		t.Fatalf("design review: %+v", result)
+	}
+	briefs, _ := filepath.Glob(filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-*", "brief.md"))
+	if len(briefs) != 1 {
+		t.Fatalf("design review briefs = %v, want one", briefs)
+	}
+	if brief := string(mustRead(t, briefs[0])); !strings.Contains(brief, "Round budget: 12 focused rounds") {
+		t.Fatalf("the brief does not carry the goal's 12 rounds:\n%s", brief)
 	}
 }

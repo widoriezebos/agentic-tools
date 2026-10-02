@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -21,15 +22,26 @@ import (
 // finding per round, when the chain closes.
 
 // designRoundLimit is the round limit the dispatch owner froze on the chain's
-// root; a root that carries none is a design critique's five rounds. A root
-// frozen before the cap rose keeps its own limit, as the register close does.
+// root; a root that carries none has metasystem.budget.review-round-max
+// rounds, a backstop. A frozen root keeps its own limit, as the register
+// close does.
 func (inv *intentInvocation) designRoundLimit(root string) int64 {
 	if record, err := inv.jobRecord(root); err == nil {
 		if limit := recordInt(record, "reviewRoundLimit"); limit >= 1 {
 			return limit
 		}
 	}
-	return designCritiqueRounds
+	return reviewRoundCeiling(inv.stateRoot)
+}
+
+// reviewRoundCeiling is metasystem.budget.review-round-max in the
+// configuration at dir, or its compiled default when that cannot be read.
+func reviewRoundCeiling(dir string) int64 {
+	maximum, err := config.ReviewRoundMax(filepath.Join(dir, "metasystem.conf"))
+	if err != nil {
+		maximum, _ = strconv.ParseUint(config.MustDefault(config.ReviewRoundMaxKey), 10, 64)
+	}
+	return int64(maximum)
 }
 
 // roundDecisionsPath is the round's own decisions file, the template the

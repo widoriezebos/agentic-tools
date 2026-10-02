@@ -42,7 +42,7 @@ For each substantial piece of work, use this five-step loop:
    wrong behavior, and names the artifact; witness bookkeeping, naming and
    record-format findings are notes for the builder's brief, not rounds. The
    orchestrator dispositions every finding. A further round runs only after a
-   fold that changed a rule, up to the five-round backstop. An amendment that records
+   fold that changed a rule, up to the round-cap backstop. An amendment that records
    a human ruling gets no round: the ruling is the authority and the builder
    proves the fold (2026-09-17 reset,
    records/misc/delivery-process-reset-2026-09-17.md).
@@ -61,12 +61,12 @@ For each substantial piece of work, use this five-step loop:
 The loop also has reverse edges. An implementer gap-stop reopens design with
 the gap as input. A critic finding that indicts the design rather than the code
 reopens design critique. A failed merge gate returns the work to
-implementation, after which the critic reviews the new tree. Design and code
-critique have separate round rules. For code critique and the warden, Part One
+implementation, after which the critic reviews the new tree. Design critique, code
+critique and the warden share one round rule: Part One
 stores a review-round member on the goal: the `metasystem.budget.tier-1`,
 `metasystem.budget.tier-2`, and `metasystem.budget.tier-3` keys in
 `metasystem.conf` provide zero, five, and five rounds, while
-`metasystem.budget.review-round-max` keeps five as the ceiling. The count is a backstop: the loop ends when no remaining finding would change the implementation materially under the brief's threat model and step 1 (R-124), and hitting the cap with material findings open goes to the human. Design critique has five rounds at tiers 2 and 3 (Wido 2026-10-01) and does not exist at tier 1. A design-critic chain's `reviewRoundLimit` is frozen at 5 at dispatch whatever the goal's stored member says; a chain frozen at 2 before 2026-10-01 is rebound to the current limit at its next round or close. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
+`metasystem.budget.review-round-max` is the ceiling (20 in this repository, five by compiled default). The count is a backstop: the loop ends when no remaining finding would change the implementation materially under the brief's threat model and step 1 (R-124), and hitting the cap with material findings open goes to the human. Design critique exists at tiers 2 and 3 and not at tier 1; its round cap is the goal's review-round member under that ceiling (Wido 2026-10-02), a backstop: the loop ends on materiality and divergence. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored review-round member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
 
 Before reserving a job, the dispatcher judges the exact claimed revision and
 the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and

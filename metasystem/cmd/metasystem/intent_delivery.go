@@ -795,7 +795,6 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 
 // reviewBrief renders the engine's review-brief.md template for one
 // subject. Every value is recorded state or the caller's explicit input.
-const designCritiqueRounds = 5
 
 func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, scope, copyPath, contents, findings string, checklist []string) string {
 	lines := []string{
@@ -916,10 +915,6 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if lineCount == 0 {
 		lineCount = 1
 	}
-	// A design critique has at most five rounds, a backstop: the register
-	// raises the final round's unresolved findings to a person
-	// (finding_register.go).
-	rounds = min(rounds, designCritiqueRounds)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself (where it states none: our own agents and operators make mistakes, nobody attacks), and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),

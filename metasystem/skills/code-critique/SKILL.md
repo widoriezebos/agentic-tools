@@ -95,13 +95,13 @@ Stop on divergence. From round 2 on, count the adjudicated material findings (ac
 
 Run before round 2. When the change has a runnable surface, run it for real (`skills/verify/SKILL.md`) after the first fold and before round 2. A failure from that run outranks the open review findings, and round 2 reads the fold plus whatever the run touched.
 
-As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. The loop ends on that test, judged against the brief's threat model, not on a round count: the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains. The five-round cap is a backstop; reaching it with material findings open goes to the human (accept-risk or re-scope).
+As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. The loop ends on that test, judged against the brief's threat model, not on a round count: the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains. The round cap, the goal's review-round member under `metasystem.budget.review-round-max` (20 in this repository), is a backstop; reaching it with material findings open goes to the human (accept-risk or re-scope).
 
 Only a finding that changes what gets built can keep the chain open, and it
 must name the artifact it would change; a finding that fails the artifact
 test is demoted at registration. If material findings remain, do not certify
 the change. Only an approved token raising the goal's five-member tuple can
-raise its stored review-round member, never above the five-round ceiling;
+raise its stored review-round member, never above the `metasystem.budget.review-round-max` ceiling;
 the chain's next follow-up (`metasystem work revise j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`,
 `metasystem work finish`) first carries the raised member onto every critic root reviewing the implementation. When
 the rounds are spent, closing the review (inside `metasystem work review`) sends exhausted bounded
