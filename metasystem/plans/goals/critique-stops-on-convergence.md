@@ -5,11 +5,11 @@
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
 - Tier: 2
-- Intent: Critique loops (design and code) stop on a trusted per-tier criterion, few rounds being the norm (Wido 2026-10-02: many rounds only for a too-large or truly complex problem). Dispatch decides each round from recorded material counts: zero = stop; falling and under half in the last fold = continue; otherwise go to the human; the per-tier cap (20) is only a far-away backstop. Before a tier 3 loop starts, the brief names the threat model and the rabbit-hole risks with mitigations. The steward watches every loop as a behaviour pattern and alerts the seat and the human: past the tier's watch threshold (e.g. round 3 at tier 2: too large? split?), count not falling, findings mostly in the last fold, or a loop ending at the cap; it records each loop's end cause (criterion, divergence, cap) so trust in the criterion is measured. The steward alerts; the agent and the human decide.
+- Intent: Critique loops (design and code) stop on a trusted per-tier criterion, few rounds being the norm (Wido 2026-10-02: many rounds only for a too-large or truly complex problem). Dispatch decides each round from recorded material counts: zero = stop; falling and under half in the last fold = continue; the per-tier cap (20) is only a far-away backstop. Before a tier 3 loop starts, the brief names the threat model and the rabbit-hole risks with mitigations. The steward watches every loop and alerts the AGENT running the critique, as guidance so it converges (Wido 2026-10-02: alerts go to the agent, not the human): past the tier's watch threshold (e.g. round 3 at tier 2: check scope, split step 1?), count not falling (re-anchor on step 1, threat model, rabbit-hole list), findings mostly in the last fold (step back and subtract instead of folding again). The human is reached only when guided loops still do not converge or one ends at the cap. The steward records each loop's end cause (criterion, guided convergence, human, cap) so trust in the criterion is measured.
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -27,4 +27,5 @@ History:
 - 2026-10-02T11:51:22Z 0FMMDQ068C16YPHM8JZ9CNR6FZ-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:51:30Z 3BG3A84PJAY2NJW85SHQ4NPCHY-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:53:04Z 3JQC3KAE2PEQMTZPPDMRPE230Y-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=Wido 2026-10-02: steward alerts go to the critiquing agent as guidance, not to the human
-Integrity: sha256=ae73cfd33e55566c909c97960eaf31d67857b5400155937d7f62bf94ab6c6976
+- 2026-10-02T11:53:09Z C54SW6389DM8H49XVRNF4NFR12-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
+Integrity: sha256=b3162e34a00b0c238d4c2413f7931f0e4b708feb1fadd04efdb20ae73fb702bb
