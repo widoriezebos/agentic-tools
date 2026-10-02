@@ -40,6 +40,9 @@ type ProcComponents struct {
 	IntervalSec int
 	// StopCeiling is D-6's component stop wait.
 	StopCeiling time.Duration
+	// Processes is the process table the group count reads; nil is the
+	// kernel's. A test hands it exactly the processes it describes.
+	Processes identity.ProcessTable
 	// clock, sleep, and signal are injectable; nil means real time and a real
 	// sleep or group signal.
 	clock  func() time.Time
@@ -171,13 +174,20 @@ func (p *ProcComponents) Observe(held Held) Observation {
 	return Healthy
 }
 
+func (p *ProcComponents) processTable() identity.ProcessTable {
+	if p.Processes == nil {
+		return identity.KernelProcessTable{}
+	}
+	return p.Processes
+}
+
 // GroupCount counts live members of the held components' process
 // groups — the ceiling's input. Under setsid a component's pgid is
 // its pid, so the group is enumerated by that pgid.
 func (p *ProcComponents) GroupCount(held []Held) (int, error) {
 	total := 0
 	for _, member := range held {
-		members, err := processGroupMembers(member.Identity.Pid)
+		members, err := processGroupMembers(p.processTable(), member.Identity.Pid)
 		if err != nil {
 			return 0, err
 		}
@@ -229,30 +239,20 @@ func (p *ProcComponents) signalGroup(pid int64, sig syscall.Signal) {
 	_ = syscall.Kill(int(-pid), sig)
 }
 
-// Group enumeration goes through seams so the ceiling's error paths are
-// testable without a process-table fixture.
-var (
-	groupAllPids = identity.AllPids
-	groupGetpgid = func(pid int64) (int64, error) {
-		pg, err := syscall.Getpgid(int(pid))
-		return int64(pg), err
-	}
-)
-
 // processGroupMembers counts live processes in the group led by pgid — the
 // REAL enumeration the ceiling verdict needs: counting only the group
 // leaders could never exceed the number of held components, which would
 // make the ceiling's duration bound vacuous against a forking set. Only ESRCH counts
 // as an absent member; any other failure makes the count indeterminable —
 // a process-table denial must not undercount while the breaker resets.
-func processGroupMembers(pgid int64) (int, error) {
-	pids, err := groupAllPids()
+func processGroupMembers(processes identity.ProcessTable, pgid int64) (int, error) {
+	pids, err := processes.Pids()
 	if err != nil {
 		return 0, fmt.Errorf("group ceiling count is indeterminable: %w", err)
 	}
 	count := 0
 	for _, pid := range pids {
-		pg, err := groupGetpgid(pid)
+		pg, err := processes.Group(pid)
 		if err != nil {
 			if err == syscall.ESRCH {
 				continue // genuinely gone between enumeration and probe
@@ -271,12 +271,12 @@ func processGroupMembers(pgid int64) (int, error) {
 // same indeterminability rule as the ceiling count: only ESRCH is an absent
 // member; any other probe failure refuses, because a sweep that silently
 // undercounts would prove a death that was not proven.
-func GroupMemberPids(pgid int64, except ...int64) ([]int64, error) {
+func GroupMemberPids(processes identity.ProcessTable, pgid int64, except ...int64) ([]int64, error) {
 	excluded := map[int64]bool{}
 	for _, pid := range except {
 		excluded[pid] = true
 	}
-	pids, err := groupAllPids()
+	pids, err := processes.Pids()
 	if err != nil {
 		return nil, fmt.Errorf("group membership is indeterminable: %w", err)
 	}
@@ -285,7 +285,7 @@ func GroupMemberPids(pgid int64, except ...int64) ([]int64, error) {
 		if excluded[pid] {
 			continue
 		}
-		pg, err := groupGetpgid(pid)
+		pg, err := processes.Group(pid)
 		if err != nil {
 			if err == syscall.ESRCH {
 				continue
