@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -68,7 +67,7 @@ func ReconcileAttempts(root string, options ReconcileOptions) ([]ReconcileOutcom
 		options.Stop.Prober = options.Prober
 	}
 	if options.GroupMembers == nil {
-		options.GroupMembers = liveGroupMembers
+		options.GroupMembers = kernelGroupMembers
 	}
 	emit := options.Emit
 	if emit == nil {
@@ -211,15 +210,21 @@ func stopRecorded(records []Record, options ReconcileOptions) (string, bool) {
 	return "", true
 }
 
-// liveGroupMembers reads the kernel for the live members of a process group.
-func liveGroupMembers(pgid int64) ([]int64, error) {
-	pids, err := identity.AllPids()
+// kernelGroupMembers reads the kernel for the live members of a process
+// group.
+func kernelGroupMembers(pgid int64) ([]int64, error) {
+	return liveGroupMembers(identity.KernelProcessTable{}, pgid)
+}
+
+// liveGroupMembers reads table for the live members of a process group.
+func liveGroupMembers(table identity.ProcessTable, pgid int64) ([]int64, error) {
+	pids, err := table.Pids()
 	if err != nil {
 		return nil, err
 	}
 	var members []int64
 	for _, pid := range pids {
-		if group, err := syscall.Getpgid(int(pid)); err == nil && int64(group) == pgid {
+		if group, err := table.Group(pid); err == nil && group == pgid {
 			members = append(members, pid)
 		}
 	}

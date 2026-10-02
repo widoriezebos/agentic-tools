@@ -9,12 +9,17 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
 )
 
 // kern.proc.pgrp is a native, complete snapshot of one live process group.
 // It avoids traversing unrelated processes during a custodian's last census.
-func custodyGroupMembers(group int64) ([]int64, error) {
+// A table other than the kernel's is read as it is.
+func custodyGroupMembers(table identity.ProcessTable, group int64) ([]int64, error) {
+	if _, kernel := table.(identity.KernelProcessTable); !kernel {
+		return tableGroupMembers(table, group)
+	}
 	var raw []byte
 	var err error
 	for attempt := 0; attempt < 5; attempt++ {
