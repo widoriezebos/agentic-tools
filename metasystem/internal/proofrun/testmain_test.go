@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -96,8 +97,38 @@ func isolateHostAdmissionDirectory() error {
 		return fmt.Errorf("create test host admission directory: %w", err)
 	}
 	hostAdmissionDirectoryForTest = filepath.Join(root, "host-admission")
+	binaryHostAdmissionDirectory = hostAdmissionDirectoryForTest
 	return nil
 }
+
+// binaryHostAdmissionDirectory is the one admission directory TestMain gives
+// this test binary. Every parallel test sharing it took the same
+// admission.lock, so a test's reservation was refused "host proof admission
+// is busy" whenever another test reserved at the same moment.
+var binaryHostAdmissionDirectory string
+
+// reserveLocked is ReserveLocked for this package's tests. While the
+// binary's own admission directory is in force, a request whose control
+// root is a fake-runtime fixture gets a directory private to that root, so
+// only a test's own requests contend; any other request (its root may not
+// select a directory) reserves under binaryReservations, so two tests never
+// take the binary's admission.lock at once. A test that installed a
+// directory of its own (hostAdmissionDirectoryForTest) keeps it.
+// TestEveryReservationInTheProofrunTestsIsPrivate holds that the package's
+// tests reserve only through here.
+func reserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
+	if request.testHostAdmissionDirectory != "" || hostAdmissionDirectoryForTest == "" || hostAdmissionDirectoryForTest != binaryHostAdmissionDirectory {
+		return ReserveLocked(request)
+	}
+	if fixtureauth.FixtureModeRoot(request.ControlRoot) {
+		return ReserveLocked(WithTestHostAdmissionDirectory(request, filepath.Join(request.ControlRoot, "artifacts", "agents", "host-admission-fixture")))
+	}
+	binaryReservations.Lock()
+	defer binaryReservations.Unlock()
+	return ReserveLocked(request)
+}
+
+var binaryReservations sync.Mutex
 
 func TestHostAdmissionDirectoryIsInsideTheTestNamespace(t *testing.T) {
 	if hostAdmissionDirectoryForTest == "" || filepath.Base(hostAdmissionDirectoryForTest) != "host-admission" ||

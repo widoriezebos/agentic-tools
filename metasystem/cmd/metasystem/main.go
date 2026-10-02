@@ -245,18 +245,29 @@ func main() {
 	os.Exit(dispatch(os.Args[1:]))
 }
 
+// dispatch is the process's one command: main's, and a re-exec'd test
+// binary's.
 func dispatch(args []string) int {
-	return dispatchWithFamilies(args, os.Stdout, os.Stderr, families())
+	return dispatchProcess(args, os.Stdout, os.Stderr, families())
 }
 
-// dispatchWithFamilies releases the process's scratch on the way to the exit
-// code, never in main (R2): a normal end leaves nothing, and a root a child
-// still holds, or that a goroutine still uses, stays for the sweeper's
-// process proof.
-func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
+// dispatchProcess runs the process's one command and releases the process's
+// scratch on the way to the exit code, never in main (R2): a normal end
+// leaves nothing, and a root a child still holds, or that a goroutine still
+// uses, stays for the sweeper's process proof. Only a process's own end
+// releases it: a command run in-process beside others (the test binary)
+// goes through dispatchWithFamilies, which never does, so one command's end
+// never replaces the root under another still running.
+func dispatchProcess(args []string, stdout, stderr io.Writer, registered []family) int {
 	defer func() {
 		_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
 	}()
+	return dispatchWithFamilies(args, stdout, stderr, registered)
+}
+
+// dispatchWithFamilies routes one command line; the process scratch stays
+// (dispatchProcess releases it at the process's end).
+func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
 	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
 }
 

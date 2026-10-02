@@ -40,7 +40,7 @@ func TestWaitAttemptRequiresCommittedTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,18 +67,18 @@ func TestProofRepeatDecisionProtocol(t *testing.T) {
 	now := time.Now().UTC()
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
 		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}
-	attempt, result, err := ReserveLocked(candidateAdmission(request))
+	attempt, result, err := reserveLocked(candidateAdmission(request))
 	if err != nil || result.Disposition != DispositionExecuted {
 		t.Fatalf("initial reservation = %+v, %+v, %v", attempt, result, err)
 	}
-	_, duplicate, err := ReserveLocked(candidateAdmission(request))
+	_, duplicate, err := reserveLocked(candidateAdmission(request))
 	if err != nil || duplicate.Disposition != DispositionLiveDuplicate || duplicate.ExitStatus != ExitLiveDuplicate {
 		t.Fatalf("live duplicate = %+v, %v", duplicate, err)
 	}
 	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalSuccess, 0, "green", nil, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	_, reusable, err := ReserveLocked(candidateAdmission(request))
+	_, reusable, err := reserveLocked(candidateAdmission(request))
 	if err != nil || reusable.Disposition != DispositionReusableSuccess || reusable.ExitStatus != ExitReusableSuccess {
 		t.Fatalf("success duplicate = %+v, %v", reusable, err)
 	}
@@ -87,14 +87,14 @@ func TestProofRepeatDecisionProtocol(t *testing.T) {
 	failedIdentity.CommandClass = "failed-proof"
 	failedIdentity.IdentityDigest = failedIdentity.digest()
 	request.Identity = failedIdentity
-	failed, _, err := ReserveLocked(candidateAdmission(request))
+	failed, _, err := reserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := FinalizeAttempt(root, failed.AttemptID, TerminalFailed, 23, "gate failed", nil, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	_, required, err := ReserveLocked(candidateAdmission(request))
+	_, required, err := reserveLocked(candidateAdmission(request))
 	if err != nil || required.Disposition != DispositionRetryRequired || required.ExitStatus != ExitRetryRequired {
 		t.Fatalf("failed repeat = %+v, %v", required, err)
 	}
@@ -110,7 +110,7 @@ func TestProofRepeatDecisionProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	request.RetryDecisionPath = decisionPath
-	retry, executed, err := ReserveLocked(candidateAdmission(request))
+	retry, executed, err := reserveLocked(candidateAdmission(request))
 	if err != nil || executed.Disposition != DispositionExecuted || retry.PreviousAttempt != failed.AttemptID || retry.Retry == nil {
 		t.Fatalf("diagnosed retry = %+v, %+v, %v", retry, executed, err)
 	}
@@ -129,14 +129,14 @@ func TestProofTransientRetryBound(t *testing.T) {
 	now := time.Now().UTC()
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now}
-	attempt, _, err := ReserveLocked(candidateAdmission(request))
+	attempt, _, err := reserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalFailed, 75, "child returned a generic nonzero status", nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	_, result, err := ReserveLocked(candidateAdmission(request))
+	_, result, err := reserveLocked(candidateAdmission(request))
 	if err != nil || result.Disposition != DispositionRetryRequired || result.PriorAttempt != attempt.AttemptID {
 		t.Fatalf("generic failure was retried automatically: %+v, %v", result, err)
 	}
@@ -161,13 +161,13 @@ func TestProofContextAcrossRuntimesAndRoots(t *testing.T) {
 	now := time.Now().UTC()
 	request := AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: firstRoot, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 4, Identity: firstIdentity, Launcher: launcher, Now: now}
-	attempt, result, err := ReserveLocked(candidateAdmission(request))
+	attempt, result, err := reserveLocked(candidateAdmission(request))
 	if err != nil || result.Disposition != DispositionExecuted {
 		t.Fatalf("first runtime reservation = %+v %+v %v", attempt, result, err)
 	}
 	request.ExecutionRoot = secondRoot
 	request.Identity = secondIdentity
-	_, duplicate, err := ReserveLocked(candidateAdmission(request))
+	_, duplicate, err := reserveLocked(candidateAdmission(request))
 	if err != nil || duplicate.ExitStatus != ExitLiveDuplicate || duplicate.AttemptID != attempt.AttemptID {
 		t.Fatalf("renamed runtime scratch root evaded retained attempt: %+v %v", duplicate, err)
 	}
@@ -187,7 +187,7 @@ func TestProofParentCustody(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
 
 	if err != nil {
@@ -207,7 +207,7 @@ func TestProofParentCustody(t *testing.T) {
 	staleIdentity := proofIdentity
 	staleIdentity.CommandClass = "stale-parent-custody"
 	staleIdentity.IdentityDigest = staleIdentity.digest()
-	staleAttempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	staleAttempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: staleIdentity, Launcher: staleLauncher, Now: now}))
 
 	if err != nil {
@@ -219,7 +219,7 @@ func TestProofParentCustody(t *testing.T) {
 	expiredIdentity := proofIdentity
 	expiredIdentity.CommandClass = "expired-parent-custody"
 	expiredIdentity.IdentityDigest = expiredIdentity.digest()
-	expiredAttempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	expiredAttempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: expiredIdentity, Launcher: launcher,
 		Now: now.Add(-3 * time.Minute)}))
 
@@ -301,7 +301,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now}))
 	if err != nil {
 		t.Fatal(err)
@@ -433,7 +433,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	legacyIdentity := identity
 	legacyIdentity.CommandClass = "legacy"
 	legacyIdentity.IdentityDigest = legacyIdentity.digest()
-	legacy, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	legacy, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: legacyIdentity, Launcher: launcher, Now: now}))
 
 	if err != nil {
@@ -541,7 +541,7 @@ func TestSchemaThreeCandidateTreeIgnoresSortedIdentityDigests(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
 	tree := strings.Repeat("2", 40)
-	attempt, decision, err := ReserveLocked(AdmissionRequest{
+	attempt, decision, err := reserveLocked(AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		CandidateGoalID: "goal-a", CandidateRevision: 2, CandidateTree: tree,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now,
@@ -562,7 +562,7 @@ func TestAttemptSchemaThreeCarriesTheCandidateTupleAtomically(t *testing.T) {
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "authority", GoalRevision: 5, AccountingRevision: 4,
 		BudgetEpoch: &epoch, CandidateGoalID: "authority", CandidateRevision: 4, CandidateBudgetEpoch: &epoch, CandidateTree: tree,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.SchemaVersion != IdentityAttemptSchemaVersion ||
 		attempt.AccountedGoal() != "authority" || attempt.AccountedRevision() != 4 || attempt.CandidateTree != tree ||
 		attempt.AccountedBudgetEpoch() == nil || *attempt.AccountedBudgetEpoch() != epoch {
@@ -571,12 +571,12 @@ func TestAttemptSchemaThreeCarriesTheCandidateTupleAtomically(t *testing.T) {
 
 	missingGoal := request
 	missingGoal.AttemptID, missingGoal.CandidateGoalID = "missing-candidate-goal", ""
-	if _, _, err := ReserveLocked(missingGoal); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
+	if _, _, err := reserveLocked(missingGoal); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
 		t.Fatalf("reservation without candidate goal was not refused at its boundary: %v", err)
 	}
 	missingRevision := request
 	missingRevision.AttemptID, missingRevision.CandidateRevision = "missing-candidate-revision", 0
-	if _, _, err := ReserveLocked(missingRevision); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
+	if _, _, err := reserveLocked(missingRevision); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
 		t.Fatalf("reservation without candidate revision was not refused at its boundary: %v", err)
 	}
 
@@ -623,7 +623,7 @@ func TestCandidateTreeFieldsMustAgree(t *testing.T) {
 		t.Fatal(err)
 	}
 	tree, other := strings.Repeat("1", 40), strings.Repeat("2", 40)
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+	attempt, _, err := reserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, CandidateGoalID: "goal-a", CandidateRevision: 2, CandidateTree: tree,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Now().UTC()})
 	if err != nil {
@@ -653,7 +653,7 @@ func TestWithdrawReservationRemovesAReservedOnlyRecord(t *testing.T) {
 	}
 	request := candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Now().UTC()})
-	reserved, _, err := ReserveLocked(request)
+	reserved, _, err := reserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -666,7 +666,7 @@ func TestWithdrawReservationRemovesAReservedOnlyRecord(t *testing.T) {
 
 	withProcess := request
 	withProcess.AttemptID = "reserved-with-process"
-	processAttempt, _, err := ReserveLocked(withProcess)
+	processAttempt, _, err := reserveLocked(withProcess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -681,7 +681,7 @@ func TestWithdrawReservationRemovesAReservedOnlyRecord(t *testing.T) {
 	withResult.AttemptID = "reserved-with-result"
 	withResult.Identity.CommandClass = "withdraw-result"
 	withResult.Identity.IdentityDigest = withResult.Identity.digest()
-	resultAttempt, _, err := ReserveLocked(withResult)
+	resultAttempt, _, err := reserveLocked(withResult)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,7 +703,7 @@ func TestComponentRepeatDecisionSpansPlanChanges(t *testing.T) {
 	identity := BindIdentityInputs(baseIdentity, []string{"group:a:" + strings.Repeat("1", 64), "plan:one"})
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now, ComponentIdentities: map[string]string{"a": strings.Repeat("1", 64)}}
-	attempt, _, err := ReserveLocked(candidateAdmission(request))
+	attempt, _, err := reserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,7 +724,7 @@ func TestComponentRepeatDecisionSpansPlanChanges(t *testing.T) {
 	failedRequest := request
 	failedRequest.Identity = failedIdentity
 	failedRequest.ComponentIdentities = map[string]string{"failed": strings.Repeat("3", 64)}
-	failed, _, err := ReserveLocked(candidateAdmission(failedRequest))
+	failed, _, err := reserveLocked(candidateAdmission(failedRequest))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +854,7 @@ func TestComponentRetryDecisionIgnoresAnotherCandidatesFailure(t *testing.T) {
 	request := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(4*time.Second), treeTwo, "combined",
 		map[string]string{"g": gIdentity, "h": hIdentity})
 	request.RetryDecisionPath = decisionPath
-	retry, decision, err := ReserveLocked(request)
+	retry, decision, err := reserveLocked(request)
 	if err != nil || decision.Disposition != DispositionExecuted || retry.PreviousAttempt != prior.AttemptID {
 		t.Fatalf("other candidate made retry ambiguous: retry=%+v decision=%+v err=%v", retry, decision, err)
 	}
@@ -869,7 +869,7 @@ func TestComponentSuccessIsReusableAcrossCandidateTrees(t *testing.T) {
 	now := time.Now().UTC()
 	identity := strings.Repeat("a", 64)
 	first := componentAdmissionRequest(root, baseIdentity, launcher, now, strings.Repeat("1", 40), "first", map[string]string{"g": identity})
-	attempt, _, err := ReserveLocked(first)
+	attempt, _, err := reserveLocked(first)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -894,7 +894,7 @@ func TestLiveComponentBlocksAnotherCandidateTree(t *testing.T) {
 	now := time.Now().UTC()
 	identity := strings.Repeat("a", 64)
 	first := componentAdmissionRequest(root, baseIdentity, launcher, now, strings.Repeat("1", 40), "first", map[string]string{"g": identity})
-	live, _, err := ReserveLocked(first)
+	live, _, err := reserveLocked(first)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -941,7 +941,7 @@ func TestAttemptRejectsCandidateTreeDisagreement(t *testing.T) {
 	now := time.Now().UTC()
 	identity := strings.Repeat("a", 64)
 	request := componentAdmissionRequest(root, baseIdentity, launcher, now, strings.Repeat("1", 40), "mismatch", map[string]string{"g1": identity})
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted {
 		t.Fatalf("reserve candidate-bound attempt: decision=%+v err=%v", decision, err)
 	}
@@ -993,7 +993,7 @@ func TestEjectAndReproveCandidateScopesRetryFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	sameTree.RetryDecisionPath = decisionPath
-	retry, decision, err := ReserveLocked(candidateAdmission(sameTree))
+	retry, decision, err := reserveLocked(candidateAdmission(sameTree))
 	if err != nil || decision.Disposition != DispositionExecuted || retry.PreviousAttempt != prior.AttemptID || retry.Retry == nil {
 		t.Fatalf("typed same-tree retry decision did not open execution: retry=%+v decision=%+v err=%v", retry, decision, err)
 	}
@@ -1015,7 +1015,7 @@ func componentAdmissionRequest(root string, base ProofIdentity, launcher Process
 
 func retainComponentAttempt(t *testing.T, request AdmissionRequest, tree string, statuses []componentStatus, ended time.Time) Attempt {
 	t.Helper()
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted {
 		t.Fatalf("reserve component attempt: decision=%+v err=%v", decision, err)
 	}
@@ -1069,7 +1069,7 @@ func TestExactReusableTestResultPreservesCommittedOuterOwner(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	groupIdentity := strings.Repeat("7", 64)
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now}))
 
 	if err != nil {
@@ -1107,7 +1107,7 @@ func TestJoinedTestingResultAttachesWithoutClosingParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now}))
 
 	if err != nil {
@@ -1239,7 +1239,7 @@ func TestAnAttemptPastItsReservationStillLaunchesAuthenticatesAndFinalizes(t *te
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now.Add(-3 * time.Minute)}))
 
 	if err != nil {
@@ -1270,7 +1270,7 @@ func TestReserveLockedRefusesGovernedReservationWhoseCapHasPassed(t *testing.T) 
 		GoalRevision: 2, ObligationRevision: 1, AttemptOrdinal: 1,
 		Deadline: ownerDeadline.Format(time.RFC3339Nano),
 	}
-	_, _, err = ReserveLocked(candidateAdmission(AdmissionRequest{
+	_, _, err = reserveLocked(candidateAdmission(AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, ReservationOwner: owner, Now: now,
 	}))

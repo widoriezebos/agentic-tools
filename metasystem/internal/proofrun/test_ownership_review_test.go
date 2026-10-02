@@ -25,7 +25,7 @@ func reserveOwnershipReviewFixture(f ownershipFixture, goal, plan string, groups
 		f.t.Fatal(err)
 	}
 	defer guard.Release()
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil {
 		f.t.Fatal(err)
 	}
