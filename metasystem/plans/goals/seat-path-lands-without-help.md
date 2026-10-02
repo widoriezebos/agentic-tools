@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 3
+- Sequence: 4
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Seat landing gates; each fix small, together they decide whether seats run unattended"
 - Tier: 2
 - Intent: What: a seat agent takes a finished goal from claim to landed (alone or through the lane) without a person or another session clearing gates. Today's real hand-ins (2026-10-01) each stopped on one: --message hand-in refuses 'delivery candidate differs from working-tree inputs'; receipt line, test run with a named budgeted goal and a goal record all demanded before a hand-in; two sessions in one checkout can't both review or land (lease held by the other); a goal's 1h tier-1 box breach-stops it while it waits on fixes. Why: the machinery's seat agents will hit the same walls unattended. Pros: switch-on without babysitting. Cons: touches several old gates; each needs one real repro.
 - Origin: human
 - Next step: Reproduce each friction item from 2026-10-01 (list in the m1e work-state note) on current main, fix one at a time by subtraction, then one unattended hand-in from each seat Wido 2026-10-01: apply the threat model to every seat-path layer (receipt worktrees, test-policy engine checks, budget-episode gates, custody): what does it defend against; outside 'nobody attacks' -> remove, don't fix. TARGET (Wido 2026-10-01): one landing mechanism. A seat without a lane lands exactly as the lane agent does for a batch of one: merge its branch onto latest main, landing prove (same landing.prove.command, detached), landing push (same rail) - on its own landing tree. The lane adds only batching across seats and sharing the expensive suite run. Then delete the old seat self-land plumbing (landpath receipts, test-policy planning in landing, budget-episode gates for landing).
 - OpenedAt: 2026-10-01T15:55:49Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -23,4 +23,5 @@ History:
 - 2026-10-01T20:39:40Z VF58YC4Q7AZ8XVCE0VKHQ3EPC1-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=old-lane-plumbing-is-deleted from=1:2 to=1:3 requested-sequence=2
 - 2026-10-01T20:39:55Z GNJ4EWX0AFK80KJVE0Q804HD24-m1e-9c612d71 edit actor=human:Wido targets=seat-path-lands-without-help
 - 2026-10-01T21:28:57Z A2Z9RSD5R72Z0C4NWK3NFQGKFN-m1e-9c612d71 edit actor=human:Wido targets=seat-path-lands-without-help
-Integrity: sha256=2acba30b3654cb7048795707d1cc2c9974389a943f05a2fcda5bd8ce7463a6d1
+- 2026-10-02T06:05:41Z SXYVTQXC11PAE2AHBMSDRSBJJX-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,no-flaky-tests,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=no-flaky-tests from=1:3 to=1:4 requested-sequence=1
+Integrity: sha256=4a472598ba06dff7e44335a7d4fcec6f52daf62ab1d2ff3c0e7618075001f85e

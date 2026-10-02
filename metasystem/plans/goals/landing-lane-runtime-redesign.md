@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The lane pushes to GitHub main for every seat on the host; today's fix-forward chain produced ten defects and two reds on main; mistakes land everyone's work wrongly or block it; design and careful build required"
 - Tier: 3
 - Intent: What: The landing lane, which proves and pushes everyone's work one batch at a time, runs reliably with real processes. One design settles which folder is which, which engine version runs, how pausing works, how the scheduled check runs, and the difference between a failed test, a test that could not run, and a red. Why: The lane failed on real runs: it treated a test that could not start as a red, kept starting work after a pause, and mixed engine versions. It is paused, and today's fixes land by hand. Pros: One consistent design instead of patches, proven by a full rehearsal in the VM before the lane is switched back on. Cons: Nine build units; the lane stays paused and landings stay by hand until the rehearsal passes.
 - Origin: main
 - Next step: Next: Design revision 5 (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/lane-runtime-design.md) folds Astra round 4; run Astra rounds until no material finding is left, take your rulings on D1-D9 (section 11), then build U1-U9 by hand with one independent code critique per unit and the lane paused. Hand work: the machinery must not claim it. Done when: the U9 end-to-end rehearsal passes in the VM on the deploy commit and main is green, so the lane can be switched on. Switch-on path (Wido 2026-10-01): done when the simple lane has passed the thorough run: two seats single hand-ins, two at once in one batch, a red branch returned with main green, a conflict pair, pause/resume, landing run from a seat and from the UI.
 - OpenedAt: 2026-09-30T16:34:22Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -32,4 +32,5 @@ History:
 - 2026-10-01T07:49:23Z N43G98VTZ9Z94HBG5K5CPH2C0X-m1e-528c72bf done actor=human:Wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:3 to=1:2
 - 2026-10-01T15:56:27Z 3F02AQHSQXSQ5SE9WR8TMRTNEX-m1e-9c612d71 edit actor=human:Wido targets=landing-lane-runtime-redesign
 - 2026-10-01T15:56:33Z MSKV92TY1JNDF71D6N5WS60V4B-m1e-9c612d71 set-priority actor=human:Wido targets=landing-lane-runtime-redesign,reviewers-check-the-rulings reason=priority-order subject=landing-lane-runtime-redesign from=1:2 to=1:1 requested-sequence=1
-Integrity: sha256=4816073468979b2ec561c193d7db36091bacff09d88b3c7211ece2bd5906253b
+- 2026-10-02T06:05:41Z SXYVTQXC11PAE2AHBMSDRSBJJX-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,no-flaky-tests,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=no-flaky-tests from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=bc2c134041658c75c3b2763bf226c64cbc1717083c3c09c358ad108327d6585e
