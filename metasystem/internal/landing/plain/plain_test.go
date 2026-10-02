@@ -456,44 +456,74 @@ func TestProofHoldWhileALiveProofRuns(t *testing.T) {
 	}
 }
 
-// F-1: a checkout with uncommitted or untracked changes is refused before
-// anything runs (Start and Run alike), so a green is never recorded for a
-// committed tree the command did not see; a proof during which HEAD's tree
-// changed, or the worktree got dirty, is recorded red with the reason.
-func TestProveRefusesADirtyCheckoutAndRedsATreeThatChanged(t *testing.T) {
+// The proof runs in a fresh detached worktree of the lane repository at the
+// commit being proven, from that worktree's installation folder: machinery
+// writing a tracked file of the lane checkout while it runs (the steward's
+// narrator digest) does not make it red, and the worktree is gone after.
+func TestProveRunsInAFreshWorktreeSoLaneWritesDoNotRedIt(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.seat("seat-a", "goal-a")
+	head := b.merge("goal-a")
+	tree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+	where := filepath.Join(b.root, "where.txt")
+	script := "echo steward >> \"" + filepath.Join(b.install, "metasystem.conf") + "\"\n" +
+		"echo \"$(pwd -P) $(git rev-parse HEAD) $(git rev-parse HEAD^{tree})\" > \"" + where + "\"\n"
+	result := b.prove(script)
+	if result.Result != Green || result.Tree != tree || result.Commit != head || result.Reason != "" {
+		t.Fatalf("a steward write in the lane checkout redded the proof: %+v", result)
+	}
+	data, err := os.ReadFile(where)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Fields(string(data))
+	install, _ := filepath.EvalSymlinks(b.install)
+	if len(got) != 3 || got[0] == install || filepath.Base(got[0]) != "metasystem" || got[1] != head || got[2] != tree {
+		t.Fatalf("the command ran at %q, not in a worktree's installation at %s", data, Short(head))
+	}
+	if _, err := os.Stat(got[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the proof's worktree outlived the proof: %v", err)
+	}
+	if list := b.git(b.checkout, "worktree", "list", "--porcelain"); strings.Count(list, "worktree ") != 1 {
+		t.Fatalf("the proof's worktree is still registered:\n%s", list)
+	}
+}
+
+// F-1 by construction: an uncommitted fix in the lane checkout is not seen
+// by the proof, which proves the committed tree; red stays red until the fix
+// is committed.
+func TestProveSeesTheCommittedTreeNotTheLaneCheckout(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.seat("seat-a", "goal-a")
 	b.merge("goal-a")
+	needsFix := "cd \"$(git rev-parse --show-toplevel)\" && test -e fix.txt\n"
 	b.write(filepath.Join(b.checkout, "fix.txt"), "an uncommitted fix\n")
-	var dirty *Dirty
-	if _, err := Run(b.install, b.checkout, b.greenScript, "", &bytes.Buffer{}, ProveSeams{Now: func() time.Time { return bedNow }}); !errors.As(err, &dirty) {
-		t.Fatalf("run in an untracked checkout: %v", err)
+	if result := b.prove(needsFix); result.Result != Red {
+		t.Fatalf("the proof saw the uncommitted fix: %+v", result)
 	}
-	seams := ProveSeams{Executable: func() (string, error) { return "/engine", nil },
-		Launch: func([]string, string, string) (int64, error) {
-			t.Fatal("a dirty checkout started a proof")
-			return 0, nil
-		}}
-	if _, _, err := Start(b.install, b.checkout, seams); !errors.As(err, &dirty) {
-		t.Fatalf("start in an untracked checkout: %v", err)
+	b.git(b.checkout, "add", "fix.txt")
+	b.git(b.checkout, "commit", "--quiet", "-m", "fix")
+	if result := b.prove(needsFix); result.Result != Green {
+		t.Fatalf("the committed fix: %+v", result)
 	}
-	if _, ok, _ := LastResult(b.install); ok {
-		t.Fatal("a refused proof recorded a result")
+}
+
+// A proof's worktree left by a crash is removed by the next prove.
+func TestProveRemovesAWorktreeACrashLeft(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	left := filepath.Join(proofTrees(b.install), "crashed")
+	b.git(b.checkout, "worktree", "add", "--quiet", "--detach", left, "HEAD")
+	if result := b.prove("true"); result.Result != Green {
+		t.Fatalf("prove: %+v", result)
 	}
-	if err := os.Remove(filepath.Join(b.checkout, "fix.txt")); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(left); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the crashed proof's worktree is still there: %v", err)
 	}
-	for name, script := range map[string]string{
-		"dirtied":   "echo changed >> goal-a.txt\n",
-		"committed": "echo changed >> goal-a.txt && git -c user.name=x -c user.email=x@example.invalid commit -qam moved\n",
-	} {
-		before := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
-		result := b.prove(script)
-		if result.Result != Red || result.Tree != before || !strings.Contains(result.Reason, "the tree changed during the proof") {
-			t.Fatalf("%s: %+v", name, result)
-		}
-		b.git(b.checkout, "checkout", "--quiet", "--", ".")
+	if list := b.git(b.checkout, "worktree", "list", "--porcelain"); strings.Count(list, "worktree ") != 1 {
+		t.Fatalf("worktrees:\n%s", list)
 	}
 }
 

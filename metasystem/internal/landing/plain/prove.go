@@ -2,7 +2,10 @@ package plain
 
 // landing prove: the project's own proof command (landing.prove.command)
 // over the lane checkout's HEAD, detached so it outlives the agent's
-// session. running.json names the proof while it runs; results.jsonl gets
+// session. The command runs in a fresh detached worktree of the lane
+// repository at exactly the commit being proven, so it sees only that
+// committed tree: what the lane checkout holds besides (a steward's record,
+// an uncommitted file) neither reaches nor reds it. running.json names the proof while it runs; results.jsonl gets
 // one line when it ends (exit 0 green, else red). A proof whose process is
 // gone without a result died: it holds nothing and is shown as such.
 
@@ -50,14 +53,6 @@ type Result struct {
 	Attempt string `json:"attempt,omitempty"`
 	// Reason says why a result is red besides the command's exit.
 	Reason string `json:"reason,omitempty"`
-}
-
-// Dirty is a prove refused because the lane checkout has uncommitted or
-// untracked changes: the command would see a tree that is not HEAD's.
-type Dirty struct{ Paths string }
-
-func (d *Dirty) Error() string {
-	return "the lane checkout has uncommitted or untracked changes (" + d.Paths + "), so nothing was proven"
 }
 
 // ProveSeams are a proof's effects.
@@ -161,9 +156,6 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	if err != nil {
 		return Running{}, false, err
 	}
-	if err := clean(checkout); err != nil {
-		return Running{}, false, err
-	}
 	var started Running
 	already := false
 	err = withLock(install, func() error {
@@ -211,8 +203,8 @@ func writeRunning(install string, running Running) error {
 	return os.Rename(temp, path)
 }
 
-// Run runs the proof command over the checkout's HEAD in this process and
-// appends its result. attempt names a detached start's record (Start wrote
+// Run runs the proof command over the checkout's HEAD in this process, in
+// a fresh detached worktree at that commit, and appends its result. attempt names a detached start's record (Start wrote
 // it); empty records this process as the running proof first, refusing
 // while another tree's proof runs. The command's output goes to output.
 func Run(install, checkout, command, attempt string, output io.Writer, seams ProveSeams) (Result, error) {
@@ -221,12 +213,6 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return Result{}, err
 	}
 	running := Running{Attempt: attempt, Tree: tree, Commit: commit}
-	if attempt == "" {
-		// A detached start checked the checkout before it launched this.
-		if err := clean(checkout); err != nil {
-			return Result{}, err
-		}
-	}
 	err = withLock(install, func() error {
 		current, recorded, alive, err := ReadRunning(install, seams)
 		if err != nil {
@@ -252,21 +238,12 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil {
 		return Result{}, err
 	}
-	shell := exec.Command("/bin/sh", "-c", command)
-	shell.Dir = checkout
-	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit)
-	shell.Stdin, shell.Stdout, shell.Stderr = nil, output, output
 	outcome := Green
-	if runErr := shell.Run(); runErr != nil {
+	if runErr := proveInWorktree(install, checkout, command, running, output); runErr != nil {
 		outcome = Red
-		fmt.Fprintf(output, "\nlanding prove: the command ended: %v\n", runErr)
+		fmt.Fprintf(output, "\nlanding prove: %v\n", runErr)
 	}
 	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
-	// The result holds only for the tree the command saw throughout.
-	if _, after, err := Head(checkout); err != nil || after != running.Tree || clean(checkout) != nil {
-		result.Result, result.Reason = Red, "the tree changed during the proof"
-		fmt.Fprintf(output, "\nlanding prove: %s, so it is red\n", result.Reason)
-	}
 	err = withLock(install, func() error {
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err
@@ -330,20 +307,68 @@ func Git(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// clean refuses a checkout with uncommitted or untracked changes (*Dirty):
-// the command must see exactly HEAD's tree.
-func clean(checkout string) error {
-	status, err := Git(checkout, "status", "--porcelain", "--untracked-files=all")
-	if err != nil {
+// proveInWorktree runs command in a fresh detached worktree of the lane
+// repository checked out at running.Commit, from the worktree's folder that
+// matches the installation's place in the checkout, and removes the
+// worktree after. Worktrees a crashed proof left are removed first. Only
+// this process proves (it holds running.json), so every worktree under
+// proofTrees is a leftover.
+func proveInWorktree(install, checkout, command string, running Running, output io.Writer) error {
+	trees := proofTrees(install)
+	removeProofTrees(checkout, trees, output)
+	if err := os.MkdirAll(trees, 0o755); err != nil {
 		return err
 	}
-	if status == "" {
-		return nil
+	tree := filepath.Join(trees, running.Attempt)
+	if _, err := Git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
+		return fmt.Errorf("the worktree of commit %s could not be made: %w", Short(running.Commit), err)
 	}
-	lines := strings.Split(status, "\n")
-	paths := strings.TrimSpace(lines[0][min(3, len(lines[0])):])
-	if len(lines) > 1 {
-		paths += fmt.Sprintf(" and %d more", len(lines)-1)
+	defer func() {
+		if _, err := Git(checkout, "worktree", "remove", "--force", tree); err != nil {
+			fmt.Fprintf(output, "\nlanding prove: the proof's worktree stays until the next prove: %v\n", err)
+		}
+	}()
+	dir := tree
+	if rel, err := filepath.Rel(checkout, install); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		dir = filepath.Join(tree, rel)
 	}
-	return &Dirty{Paths: paths}
+	shell := exec.Command("/bin/sh", "-c", command)
+	shell.Dir = dir
+	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit)
+	shell.Stdin, shell.Stdout, shell.Stderr = nil, output, output
+	if err := shell.Run(); err != nil {
+		return fmt.Errorf("the command ended: %w", err)
+	}
+	return nil
 }
+
+// removeProofTrees removes the lane repository's worktrees under trees,
+// each by the path git lists for it, and prunes what is gone.
+func removeProofTrees(checkout, trees string, output io.Writer) {
+	list, err := Git(checkout, "worktree", "list", "--porcelain")
+	if err != nil {
+		return
+	}
+	resolved := trees
+	if real, err := filepath.EvalSymlinks(trees); err == nil {
+		resolved = real
+	}
+	for _, line := range strings.Split(list, "\n") {
+		path, ok := strings.CutPrefix(line, "worktree ")
+		if !ok {
+			continue
+		}
+		for _, parent := range []string{trees, resolved} {
+			if strings.HasPrefix(path, parent+string(filepath.Separator)) {
+				if _, err := Git(checkout, "worktree", "remove", "--force", path); err != nil {
+					fmt.Fprintf(output, "landing prove: a crashed proof's worktree %s stays: %v\n", path, err)
+				}
+				break
+			}
+		}
+	}
+	_, _ = Git(checkout, "worktree", "prune")
+}
+
+// proofTrees holds the proofs' detached worktrees of the lane repository.
+func proofTrees(install string) string { return filepath.Join(Dir(install), "proof-trees") }

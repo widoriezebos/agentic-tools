@@ -1,8 +1,8 @@
 package main
 
 // landing prove (plain lane step 3): runs the project's proof command,
-// config key landing.prove.command, over the landing checkout's HEAD,
-// detached so it outlives the agent's session, and records green or red for
+// config key landing.prove.command, over the landing checkout's HEAD in a
+// fresh worktree at that commit, detached so it outlives the agent's session, and records green or red for
 // that exact tree in results.jsonl, which landing push reads. The detached
 // start is gaterun.LaunchDetached; nothing else of the older lane runs.
 
@@ -20,8 +20,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
-// proveCommandKey is the project's proof command, run in the lane checkout
-// with LANDING_TREE and LANDING_COMMIT set; exit 0 is green.
+// proveCommandKey is the project's proof command, run in a worktree of the
+// lane checkout at the proven commit with LANDING_TREE and LANDING_COMMIT set; exit 0 is green.
 const proveCommandKey = "landing.prove.command"
 
 // laneAdmitted is a lane verb's admission: the registered lane and its
@@ -94,7 +94,7 @@ func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
 		usage: []string{"metasystem landing prove [--wait]"},
-		details: []string{"Runs the shell command set as landing.prove.command in the lane checkout at HEAD, with LANDING_TREE and LANDING_COMMIT naming what it proves; exit 0 is green, anything else red.",
+		details: []string{"Runs the shell command set as landing.prove.command in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--wait proves in this command and says the result. Refused while the lane is stopped."},
@@ -125,7 +125,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if !inv.input.switched("wait") {
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, checkout, err))
+			return inv.render(landingProveRefusal(inv, targets, err))
 		}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: running,
 			Summary: "proving " + provedWords(running.Commit, running.Tree) + " in the background; end your turn, the keeper wakes the landing agent when it ends"}
@@ -153,7 +153,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	result, err := plain.Run(admitted.installation, checkout, command, attempt, output, seams)
 	if err != nil {
-		return inv.render(landingProveRefusal(inv, targets, checkout, err))
+		return inv.render(landingProveRefusal(inv, targets, err))
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Green {
@@ -166,12 +166,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 }
 
 // landingProveRefusal renders a prove that could not start or run.
-func landingProveRefusal(inv *intentInvocation, targets []intentTarget, checkout string, err error) intentResult {
-	var dirty *plain.Dirty
-	if errors.As(err, &dirty) {
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: dirty.Error(),
-			next: []string{"git", "-C", checkout, "status"}, nextReason: "commit or drop them, then prove again"}
-	}
+func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: busy.Error(),
