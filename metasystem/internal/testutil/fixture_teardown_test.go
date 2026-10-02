@@ -98,3 +98,39 @@ func fixtureTeardownExact(pid, token int64) identity.Exact {
 	}
 	return exact
 }
+
+// TestFixtureTeardownOutwaitsASlowExit: teardown waits for the exit its own
+// SIGKILL caused, however slow, and reports no failure. The child answers
+// Alive until its 100th probe (or until the recorder holds a failure), then
+// Dead. Nothing is timed: under a teardown bound the deadline, once fired,
+// stays ready, and the 10 ms tick would have to win every one of the 99
+// selects that follow.
+func TestFixtureTeardownOutwaitsASlowExit(t *testing.T) {
+	owner := fixtureTeardownExact(int64(os.Getpid()), 1)
+	child := fixtureTeardownExact(500, 2)
+	recorder := &recordingTB{}
+	childProbes := 0
+	prober := fixtureProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		if pid == owner.Pid {
+			return owner, identity.Alive, nil
+		}
+		childProbes++
+		if len(recorder.errs) > 0 || childProbes >= 100 {
+			return identity.Exact{}, identity.Dead, nil
+		}
+		return child, identity.Alive, nil
+	})
+	signals := 0
+	fixture := newProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(pid int, sig syscall.Signal) error {
+		if pid == int(child.Pid) && sig == syscall.SIGKILL {
+			signals++
+		}
+		return nil
+	})
+	fixture.scan = noFixtureSurvivors
+	fixture.Hold(int(child.Pid))
+	recorder.cleanups[0]()
+	if len(recorder.errs) != 0 || signals != 1 || childProbes < 100 {
+		t.Fatalf("teardown of a slow exit: failures=%q signals=%d child probes=%d", recorder.errs, signals, childProbes)
+	}
+}

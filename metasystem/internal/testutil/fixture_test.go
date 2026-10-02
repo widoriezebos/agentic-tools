@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -575,17 +576,16 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 		})
 		fixture := newProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(int, syscall.Signal) error { sent++; return nil })
 		fixture.scan = func(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
-		fixture.waitBound = time.Millisecond
 		if test.held {
 			fixture.Hold(500)
 		} else {
 			fixture.Record(500)
 		}
-		recorder.cleanups[0]()
+		fixture.teardown(cancelledContext())
 		failures := strings.Join(recorder.errs, "\n")
 		if sent != test.wantSent || len(recorder.errs) != test.wantFailures ||
 			test.wantFailures > 0 && !strings.Contains(failures, "finished child found running at teardown") ||
-			test.wantFailures > 1 && !strings.Contains(failures, "child did not exit after") {
+			test.wantFailures > 1 && !strings.Contains(failures, "child did not exit") {
 			t.Fatalf("case=%+v: sent=%d failures=%v", test, sent, recorder.errs)
 		}
 	}
@@ -637,9 +637,8 @@ func TestFixtureRecordsAndReleasesEachChild(t *testing.T) {
 				}
 				return nil
 			})
-			recorder.Cleanup(fixture.cleanup)
+			recorder.Cleanup(func() { fixture.teardown(cancelledContext()) })
 			fixture.scan = noFixtureSurvivors
-			fixture.waitBound = time.Millisecond
 			fixture.records = filepath.Join(t.TempDir(), "records")
 			failOnFixtureError(t, os.WriteFile(fixture.records, nil, 0o600))
 			if test.hold {
@@ -796,6 +795,14 @@ func failOnFixtureError(t *testing.T, err error) {
 	}
 }
 func noFixtureSurvivors(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
+
+// cancelledContext ends a teardown's exit waits at once: a failure-path test
+// decides the outcome with its fake prober, and nothing waits on a clock.
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
 
 // waitForFixtureZombie reads the killed child's stdout to its end and then
 // waits for the kernel to report the child a zombie of the same identity.
