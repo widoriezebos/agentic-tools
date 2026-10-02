@@ -68,9 +68,9 @@ func TestRunSweepProofOrRefuse(t *testing.T) {
 }
 
 func TestCleanupStaleRunsCarriesGovernedSpendProjection(t *testing.T) {
-	savedPids, savedPgid, savedCommand, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	savedCommand, savedKill := sweepProcessCommand, sweepKill
 	defer func() {
-		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCommand, savedKill
+		sweepProcessCommand, sweepKill = savedCommand, savedKill
 	}()
 	root := t.TempDir()
 	c, _ := newClaimer(root)
@@ -98,8 +98,7 @@ func TestCleanupStaleRunsCarriesGovernedSpendProjection(t *testing.T) {
 	if err := store.Bind("governed-sweep", nonce, pid, pid); err != nil {
 		t.Fatal(err)
 	}
-	sweepAllPids = func() ([]int64, error) { return []int64{pid}, nil }
-	sweepGetpgid = func(int64) (int64, error) { return pid, nil }
+	c.processes = identity.FixedProcessTable{{Pid: pid, Group: pid}}
 	sweepProcessCommand = func(int64, identity.FixtureProbe) (string, bool) { return "wrapper " + nonce, true }
 	sweepKill = func(int64, unix.Signal) error { return nil }
 	if err := c.cleanupStaleRuns(5); err != nil {

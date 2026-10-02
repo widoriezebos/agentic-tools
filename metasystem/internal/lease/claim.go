@@ -29,6 +29,17 @@ type claimer struct {
 	paths   Paths
 	emitter *events.Emitter
 	probe   identity.FixtureProbe
+	// processes is the process table the takeover sweep proves a stale
+	// group's ownership against; nil is the kernel's. Signal authorization
+	// stays kernel-only in production: only a test sets it.
+	processes identity.ProcessTable
+}
+
+func (c *claimer) processTable() identity.ProcessTable {
+	if c.processes == nil {
+		return identity.KernelProcessTable{}
+	}
+	return c.processes
 }
 
 func newClaimer(root string) (*claimer, error) {
