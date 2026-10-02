@@ -472,7 +472,7 @@ func (d *driver) land() int {
 			d.failStep(status)
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
-		d.hintWaiters(head)
+		d.pushed(head)
 		d.releaseLanded(head)
 	} else {
 		d.requiredStep("commit", d.commitChanges)
@@ -508,7 +508,7 @@ func (d *driver) land() int {
 			d.requiredStep("verify shared testing proof after retry rebase", d.verifyCurrentTestingProof)
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
-		d.hintWaiters(head)
+		d.pushed(head)
 		d.releaseLanded(head)
 	}
 	if !request.SkipTransport {
@@ -547,6 +547,20 @@ func (d *driver) sampleBoot() {
 	d.boot = nil
 	if sample, err := d.owners.BootClock(); err == nil {
 		d.boot = &sample
+	}
+}
+
+// pushed is the one point where the landing path knows its commit is on
+// origin: the goal's waiters are hinted, and a push to main tells the
+// channel (Decision 7 of the blocked-agent-asks-the-human design); a
+// failed telling is a detail and stops nothing.
+func (d *driver) pushed(commit string) {
+	d.hintWaiters(commit)
+	if d.owners.Landed == nil || d.branch != "main" || commit == "" {
+		return
+	}
+	if err := d.owners.Landed(d.request.Root, d.request.Goal, commit); err != nil {
+		writeDetails(d.details, "the channel was not told of the landing; the next landing or tick retries once: "+err.Error())
 	}
 }
 

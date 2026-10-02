@@ -521,6 +521,15 @@ func landingPathOwners() landpath.Owners {
 		LiveEngine: os.Executable,
 		Environ:    os.Environ,
 		Now:        time.Now,
+		// Every landing-path push to main (the --message, recertified and
+		// exception routes) tells the channel once per sha (Decision 7).
+		Landed: func(root, goalID, commit string) error {
+			var goals []string
+			if goalID != "" {
+				goals = []string{goalID}
+			}
+			return postLanded(root, goals, commit, time.Now())
+		},
 		RequireHolder: func(root string, caller int64, epoch *int64) (*int64, error) {
 			view, err := lease.RequireHolder(root, caller, epoch)
 			return view.ClaimEpoch, err

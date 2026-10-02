@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // fakeChannelPosts are the texts the fake channel server was asked to post.
@@ -150,5 +151,60 @@ func TestHandLandingPostsOneLandedLine(t *testing.T) {
 	expectOutcome(t, "repeat", code, result, intentUnchanged)
 	if got := fakeChannelPosts(t, dir); len(got) != 1 {
 		t.Fatalf("a repeat landing posted again: %q", got)
+	}
+}
+
+// The exception route (work land G --exception, then the proved landing)
+// moves main through the landing path; it posts one landing line naming
+// the goal and the carried commit.
+func TestExceptionLandingPostsOneLandedLine(t *testing.T) {
+	b := newCarriedDeliveryBed(t)
+	dir, _ := commandFakeBed(t)
+	// The main checkout must stay clean for the carried landing, so the
+	// channel is configured through the environment, not a .local file.
+	for key, value := range map[string]string{"channel.destination.fleet.adapter": "fake", "channel.destination.fleet.fake.dir": dir, "channel.destination.fleet.fake.face": "slack"} {
+		t.Setenv(config.EnvName(key), value)
+	}
+	_, result := b.land("standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
+	opid, _ := carriedResultData(result)["exception"].(string)
+	if result.Outcome != intentPartial || opid == "" {
+		t.Fatalf("first request: %+v", result)
+	}
+	if got := fakeChannelPosts(t, dir); len(got) != 0 {
+		t.Fatalf("an exception that landed nothing yet posted %q", got)
+	}
+	code, landed := b.shown(b.provePublicly(result))
+	if code != 0 || landed.Outcome != intentConfirmed {
+		t.Fatalf("the exception did not land: %d %+v", code, landed)
+	}
+	want := "landed: standing-validation at " + shortLandingID(b.carried(opid))
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != want {
+		t.Fatalf("posts = %q; want [%q]", got, want)
+	}
+}
+
+// The staged (--message) and recertified routes run the landing path with
+// the production owners; their landed owner posts to the configured
+// channel once per sha.
+func TestLandingPathOwnersPostTheLandedLine(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := commandFakeBed(t)
+	appendChannelConf(t, root, dir)
+	owners := landingPathOwners()
+	if owners.Landed == nil {
+		t.Fatal("the landing path's production owners tell the channel nothing of a landing")
+	}
+	sha := strings.Repeat("ab", 20)
+	for range 2 {
+		if err := owners.Landed(root, "goal-a", sha); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != "landed: goal-a at "+shortLandingID(sha) {
+		t.Fatalf("posts = %q; want one landing line", got)
 	}
 }

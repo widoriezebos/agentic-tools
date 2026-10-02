@@ -856,23 +856,9 @@ func (s *stopRun) decide() {
 		if len(s.phases) > 0 {
 			_ = s.appendHookLog(nowStamp(inv.Now()) + " stop phases " + strings.Join(s.phases, " ") + "\n")
 		}
-		brainPostFailure := ""
-		if brainStatusDue == "true" {
-			statusPath := filepath.Join(s.repo, "artifacts", "agents", "brain-status.json")
-			before := fileJSONValueDefault(statusPath, "lastPostedAt")
-			var discard, postErr strings.Builder
-			postRC := ops.ChannelStatusPost(s.repo, &discard, &postErr)
-			after := fileJSONValueDefault(statusPath, "lastPostedAt")
-			if postRC != 0 {
-				reason := lastLine(postErr.String())
-				if reason == "" {
-					reason = "channel status exited " + strconv.Itoa(postRC)
-				}
-				brainPostFailure = "the brain's status line was not published: " + reason
-			} else if after == "" || after == before {
-				brainPostFailure = "the brain's status line was not published: no channel provider is configured"
-			}
-		}
+		// A due brain status line is not posted to the channel: the channel
+		// carries landings and what needs a response (Decision 7 of the
+		// blocked-agent-asks-the-human design); the UI shows the status.
 		s.extras = ""
 		for _, line := range []string{s.upNotice, s.evidenceFail, factsFailure, completionFailure} {
 			if line != "" {
@@ -882,7 +868,7 @@ func (s *stopRun) decide() {
 		if surfaceWatchdog == "true" && watchdogText != "" {
 			s.extras = appendLine(s.extras, watchdogText)
 		}
-		for _, line := range []string{s.protocolMessage, brainPostFailure, s.hookLogFailure} {
+		for _, line := range []string{s.protocolMessage, s.hookLogFailure} {
 			if line != "" {
 				s.extras = appendLine(s.extras, line)
 			}
@@ -915,15 +901,6 @@ func (s *stopRun) decide() {
 func nonEmptyFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Size() > 0
-}
-
-// fileJSONValueDefault is `json get --file F --field K --default ”`.
-func fileJSONValueDefault(path, field string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return jsonValueDefault(string(data), field, "")
 }
 
 func (s *stopRun) advanceProtocol() {
