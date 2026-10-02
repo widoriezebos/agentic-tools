@@ -109,6 +109,8 @@ func breachStopNotice(goalID string) string {
 // COMPLETE report, keyed by goal and revision, which every report carries
 // (the first has no stop id). The stop itself is unchanged and nothing
 // resumes the goal; with no channel configured the tick report is all.
+// Every pass first retries, from its own record, each notice whose post did
+// not go through: a stop completes in one tick and is not reported again.
 func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) error {
 	var stopped []BreachStopReport
 	for _, report := range reports {
@@ -117,11 +119,9 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		}
 	}
 	if len(stopped) == 0 {
-		return nil
-	}
-	channel := loadSignalChannel(repoRoot)
-	if !channel.configured {
-		return nil
+		if _, err := os.Stat(alertDir(repoRoot)); os.IsNotExist(err) {
+			return nil
+		}
 	}
 	held, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
@@ -131,6 +131,28 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
 	if err != nil {
 		return err
+	}
+	unsent := func(episode AlertEpisode) bool {
+		return episode.Owner == breachStopAlertOwner && !episode.Cleared && episode.TransportResult != TransportSubmitted
+	}
+	retry := false
+	for _, episode := range episodes {
+		retry = retry || unsent(episode)
+	}
+	if len(stopped) == 0 && !retry {
+		return nil
+	}
+	channel := loadSignalChannel(repoRoot)
+	if !channel.configured {
+		return nil
+	}
+	for index := range episodes {
+		if !unsent(episodes[index]) {
+			continue
+		}
+		if err := submitEpisode(repoRoot, &episodes[index], now, channel.transport(episodes[index].Message)); err != nil {
+			return err
+		}
 	}
 	for _, report := range stopped {
 		digest := signalDigest(breachStopAlertOwner, report.GoalID, fmt.Sprint(report.Revision))
@@ -164,8 +186,8 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 
 // reportBreachStopNotices is the tick's best-effort notice pass: the stop
 // already happened and its report stands whatever the notice does. A
-// transport failure is kept on the episode and retried on the next report;
-// a store failure is said on the runner's error stream and retried too.
+// transport failure is kept on the episode and retried on the next pass; a
+// store failure is said on the runner's error stream.
 func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time) {
 	if err := noticeBreachStops(repoRoot, reports, now); err != nil {
 		fmt.Fprintf(os.Stderr, "breach-stop notice not recorded: %v\n", err)

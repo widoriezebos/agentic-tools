@@ -26,11 +26,29 @@ type channelFixture struct {
 
 func newChannelFixture(t *testing.T) channelFixture {
 	t.Helper()
+	fixture := newUnservedChannelFixture(t)
+	fixture.serve(t)
+	return fixture
+}
+
+// newUnservedChannelFixture names the fake channel before it serves: a post
+// fails until serve starts it.
+func newUnservedChannelFixture(t *testing.T) channelFixture {
+	t.Helper()
 	fixture := channelFixture{root: t.TempDir(), dir: t.TempDir()}
+	conf := "channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir=" + fixture.dir + "\n"
+	if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func (f channelFixture) serve(t *testing.T) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan string, 1)
 	done := make(chan error, 1)
-	go func() { done <- fake.ServeReady(ctx, fixture.dir, ready) }()
+	go func() { done <- fake.ServeReady(ctx, f.dir, ready) }()
 	select {
 	case <-ready:
 	case err := <-done:
@@ -43,11 +61,6 @@ func newChannelFixture(t *testing.T) channelFixture {
 			t.Errorf("the fake channel did not stop cleanly: %v", err)
 		}
 	})
-	conf := "channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir=" + fixture.dir + "\n"
-	if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return fixture
 }
 
 // posts are the texts the fake channel received, oldest first.
@@ -278,5 +291,40 @@ func TestBreachStopWithoutChannelKeepsTheReportOnly(t *testing.T) {
 	}
 	if _, err := os.Stat(alertDir(root)); !os.IsNotExist(err) {
 		t.Fatalf("with no channel the stop opened an alert episode: %v", err)
+	}
+}
+
+func TestBreachStopNoticeRetriesAFailedPostWithoutANewReport(t *testing.T) {
+	t.Parallel()
+	fixture := newUnservedChannelFixture(t)
+	stops := 0
+	cfg := breachFixtureConfig(&stops)
+	routes := []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}
+	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) { return routes, nil }
+
+	// The stop completes in one tick while the channel is down.
+	if reports := custodialBreachStops(fixture.root, cfg, scanner); len(reports) != 1 || reports[0].State != "COMPLETE" {
+		t.Fatalf("fixture stop did not complete: %+v", reports)
+	}
+	owned := episodesOwnedBy(t, fixture.root, "breach-stop")
+	if len(owned) != 1 || owned[0].TransportResult != TransportFailed {
+		t.Fatalf("want one failed breach-stop episode: %+v", owned)
+	}
+
+	// The goal is stopped: the scanner no longer reports it.
+	routes = nil
+	fixture.serve(t)
+	custodialBreachStops(fixture.root, cfg, scanner)
+	posts := fixture.posts(t)
+	if len(posts) != 1 {
+		t.Fatalf("the failed notice was not retried once with no report: %q", posts)
+	}
+	assertTwoLineNotice(t, posts[0], "Goal budget-goal was stopped: it spent its budget.", "metasystem goal resume budget-goal")
+	custodialBreachStops(fixture.root, cfg, scanner)
+	if posts := fixture.posts(t); len(posts) != 1 {
+		t.Fatalf("a submitted notice posted again: %q", posts)
+	}
+	if owned := episodesOwnedBy(t, fixture.root, "breach-stop"); len(owned) != 1 || owned[0].TransportResult != TransportSubmitted {
+		t.Fatalf("want the one episode submitted: %+v", owned)
 	}
 }
