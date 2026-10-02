@@ -1,9 +1,11 @@
 package main
 
-// Decision 7 of the blocked-agent-asks-the-human design: the channel says
-// one line per landing on main, "landed: G at SHA", once per sha, from
-// where the landing becomes fact: the lane's landing push and a seat's own
-// hand landing. A refused push says nothing; a failed post fails nothing.
+// Decision 7 of the blocked-agent-asks-the-human design, with Wido's word
+// on the line (2026-10-02): when work reaches main the channel posts the
+// plain sentence of what it delivered, written by the agent that did the
+// work (work land G --delivered), once per landing and with nothing added:
+// no goal id, no hash. A landing with no sentence posts nothing. A refused
+// push says nothing; a failed post fails nothing.
 
 import (
 	"bufio"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // fakeChannelPosts are the texts the fake channel server was asked to post.
@@ -59,22 +62,54 @@ func appendChannelConf(t *testing.T, install, dir string) {
 	}
 }
 
-// landing push posts one landing line naming the goals it landed and the
-// pushed sha; the repeat push, which pushes nothing, posts nothing.
-func TestLandingPushPostsOneLandedLine(t *testing.T) {
+// seatSaying is bed.seat with the hand-in's sentence of what it delivers.
+func (bed *plainVerbBed) seatSaying(t *testing.T, goal, sentence string) string {
+	t.Helper()
+	dir := filepath.Join(filepath.Dir(bed.checkout), "seat-"+goal)
+	bed.git(t, filepath.Dir(bed.checkout), "clone", "--quiet", bed.origin, dir)
+	bed.git(t, dir, "checkout", "--quiet", "-b", "goal/"+goal)
+	if err := os.WriteFile(filepath.Join(dir, goal+".txt"), []byte(goal+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.git(t, dir, "add", "-A")
+	bed.git(t, dir, "commit", "--quiet", "-m", goal)
+	bed.git(t, dir, "push", "--quiet", "origin", "goal/"+goal)
+	sha := bed.git(t, dir, "rev-parse", "HEAD")
+	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: goal, Branch: "goal/" + goal, SHA: sha, Seat: "seat-" + goal, At: "2026-10-02T20:00:00Z", Delivered: sentence}); err != nil {
+		t.Fatal(err)
+	}
+	return sha
+}
+
+// proveAndPush proves the lane checkout's HEAD green and pushes it.
+func (bed *plainVerbBed) proveAndPush(t *testing.T) string {
+	t.Helper()
+	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
+		t.Fatalf("a green prove = %d\n%s", code, text)
+	}
+	code, text := bed.run(t, "landing", "push")
+	if code != 0 {
+		t.Fatalf("push = %d\n%s", code, text)
+	}
+	return text
+}
+
+const (
+	sentenceA = "Seats now ask you on Telegram when they are stuck."
+	sentenceB = "The channel stays quiet unless something landed."
+)
+
+// A lane batch of two posts both sentences, verbatim, in one message; the
+// repeat push, which pushes nothing, posts nothing.
+func TestLandingPushPostsTheDeliveredSentencesInOneMessage(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
 	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
-	head := bed.merge(t, bed.seat(t, "goal-a"), bed.seat(t, "goal-b"))
-	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
-		t.Fatalf("a green prove = %d\n%s", code, text)
-	}
-	if code, text := bed.run(t, "landing", "push"); code != 0 {
-		t.Fatalf("push = %d\n%s", code, text)
-	}
-	want := "landed: goal-a, goal-b at " + shortLandingID(head)
+	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA), bed.seatSaying(t, "goal-b", sentenceB))
+	bed.proveAndPush(t)
+	want := sentenceA + "\n" + sentenceB
 	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != want {
 		t.Fatalf("posts = %q; want [%q]", got, want)
 	}
@@ -86,13 +121,28 @@ func TestLandingPushPostsOneLandedLine(t *testing.T) {
 	}
 }
 
+// A landing whose hand-ins carry no sentence posts nothing at all: there
+// is no fallback line.
+func TestLandingPushWithoutSentencePostsNothing(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
+	dir, _ := commandFakeBed(t)
+	appendChannelConf(t, bed.installation, dir)
+	bed.merge(t, bed.seat(t, "goal-a"))
+	bed.proveAndPush(t)
+	if got := fakeChannelPosts(t, dir); len(got) != 0 {
+		t.Fatalf("a landing with no sentence posted %q", got)
+	}
+}
+
 // A refused push put nothing on main, so it posts nothing.
 func TestRefusedLandingPushPostsNothing(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
-	bed.merge(t, bed.seat(t, "goal-a"))
+	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
 	if code, text := bed.run(t, "landing", "push"); code != 1 || !strings.Contains(text, "never proven") {
 		t.Fatalf("an unproven push = %d\n%s", code, text)
 	}
@@ -115,49 +165,109 @@ func TestLandingPushStandsWhenTheLandedPostFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendChannelConf(t, bed.installation, dir)
-	head := bed.merge(t, bed.seat(t, "goal-a"))
-	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
-		t.Fatalf("a green prove = %d\n%s", code, text)
+	head := bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
+	if text := bed.proveAndPush(t); !strings.Contains(text, "pushed "+shortLandingID(head)) {
+		t.Fatalf("push:\n%s", text)
 	}
-	if code, text := bed.run(t, "landing", "push"); code != 0 || !strings.Contains(text, "pushed "+shortLandingID(head)) {
-		t.Fatalf("push = %d\n%s", code, text)
-	}
-	if pending := channel.LoadLandedState(bed.installation).Pending; len(pending) != 1 || pending[0].SHA != head {
+	if pending := channel.LoadLandedState(bed.installation).Pending; len(pending) != 1 || pending[0].SHA != head || pending[0].Text != sentenceA {
 		t.Fatalf("pending = %+v; want the landing kept for a retry", pending)
 	}
 }
 
-// A seat's own hand landing posts one landing line; a refused attempt
-// before it and the repeat after it post nothing.
-func TestHandLandingPostsOneLandedLine(t *testing.T) {
+// work land G --delivered stores the sentence with the lane hand-in, and a
+// repeat at the same commit with a sentence adds it to the waiting line.
+func TestWorkLandDeliveredIsStoredWithTheHandIn(t *testing.T) {
+	t.Parallel()
+	b, _, install := plainLaneBed(t, "critic-root", "critic-root")
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "hand-in", code, result, intentConfirmed)
+	code, result = b.do("work", "land", "standing-validation", "--delivered", sentenceA)
+	if code != 0 {
+		t.Fatalf("hand-in with a sentence = %d %+v", code, result)
+	}
+	entries, err := plain.Entries(install)
+	if err != nil || len(entries) != 1 || entries[0].Delivered != sentenceA {
+		t.Fatalf("entries = %+v %v; want one waiting line carrying the sentence", entries, err)
+	}
+}
+
+// work land without --delivered still hands in, and its two lines say the
+// channel will stay silent and give the command with --delivered.
+func TestWorkLandWithoutDeliveredHintsAndStillHandsIn(t *testing.T) {
+	t.Parallel()
+	b, _, install := plainLaneBed(t, "critic-root", "critic-root")
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "hand-in", code, result, intentConfirmed)
+	if entries, _ := plain.Entries(install); len(entries) != 1 {
+		t.Fatalf("nothing was handed in: %+v", entries)
+	}
+	if !strings.Contains(result.Summary, "no sentence") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work land standing-validation --delivered") {
+		t.Fatalf("the hint: %+v", result)
+	}
+}
+
+// The guard refuses a sentence that carries a commit hash or a path, in
+// plain words, and hands nothing in.
+func TestWorkLandDeliveredGuardRefusesHashesAndPaths(t *testing.T) {
+	t.Parallel()
+	b, _, install := plainLaneBed(t, "critic-root", "critic-root")
+	for _, text := range []string{"Fixed the stop hook at 3ed2e2d2b.", "Rewrote internal/channel/landed.go."} {
+		code, result := b.do("work", "land", "standing-validation", "--delivered", text)
+		expectOutcome(t, text, code, result, intentRefused)
+		if !strings.Contains(result.Summary, "plain") {
+			t.Fatalf("%q: the refusal is not plain: %+v", text, result)
+		}
+	}
+	if entries, _ := plain.Entries(install); len(entries) != 0 {
+		t.Fatalf("a refused sentence handed in: %+v", entries)
+	}
+}
+
+// A seat's own hand landing posts its sentence verbatim, once; a refused
+// attempt before it and the repeat after it post nothing.
+func TestHandLandingPostsTheDeliveredSentenceOnce(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, b.install, dir)
 	owners := &landingOwners{status: readBranch(1, "reader-record")}
 	owners.install(b)
-	code, result := b.do("work", "land", "standing-validation")
+	code, result := b.do("work", "land", "standing-validation", "--delivered", sentenceA)
 	expectOutcome(t, "unread unit", code, result, intentRefused)
 	if got := fakeChannelPosts(t, dir); len(got) != 0 {
 		t.Fatalf("a refused landing posted %q", got)
 	}
 	owners.status = readBranch(2, "reader-record", "reader-record")
-	code, result = b.do("work", "land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation", "--delivered", sentenceA)
 	expectOutcome(t, "landed", code, result, intentConfirmed)
-	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != "landed: standing-validation at land1" {
-		t.Fatalf("posts = %q; want one landing line", got)
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
+		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
 	}
-	code, result = b.do("work", "land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation", "--delivered", sentenceA)
 	expectOutcome(t, "repeat", code, result, intentUnchanged)
 	if got := fakeChannelPosts(t, dir); len(got) != 1 {
 		t.Fatalf("a repeat landing posted again: %q", got)
 	}
 }
 
-// The exception route (work land G --exception, then the proved landing)
-// moves main through the landing path; it posts one landing line naming
-// the goal and the carried commit.
-func TestExceptionLandingPostsOneLandedLine(t *testing.T) {
+// A hand landing with no sentence posts nothing.
+func TestHandLandingWithoutSentencePostsNothing(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	dir, _ := commandFakeBed(t)
+	appendChannelConf(t, b.install, dir)
+	owners := &landingOwners{status: readBranch(2, "reader-record", "reader-record")}
+	owners.install(b)
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "landed", code, result, intentConfirmed)
+	if got := fakeChannelPosts(t, dir); len(got) != 0 {
+		t.Fatalf("a landing with no sentence posted %q", got)
+	}
+}
+
+// The exception route moves main through the landing path; the landing
+// that pushes posts its sentence verbatim.
+func TestExceptionLandingPostsTheDeliveredSentence(t *testing.T) {
 	b := newCarriedDeliveryBed(t)
 	dir, _ := commandFakeBed(t)
 	// The main checkout must stay clean for the carried landing, so the
@@ -173,19 +283,19 @@ func TestExceptionLandingPostsOneLandedLine(t *testing.T) {
 	if got := fakeChannelPosts(t, dir); len(got) != 0 {
 		t.Fatalf("an exception that landed nothing yet posted %q", got)
 	}
-	code, landed := b.shown(b.provePublicly(result))
+	proved := b.provePublicly(result)
+	code, landed := b.land(append(append([]string(nil), proved.Next.Argv[3:]...), "--delivered", sentenceA)...)
 	if code != 0 || landed.Outcome != intentConfirmed {
 		t.Fatalf("the exception did not land: %d %+v", code, landed)
 	}
-	want := "landed: standing-validation at " + shortLandingID(b.carried(opid))
-	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != want {
-		t.Fatalf("posts = %q; want [%q]", got, want)
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
+		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
 	}
 }
 
 // The staged (--message) and recertified routes run the landing path with
-// the production owners; their landed owner posts to the configured
-// channel once per sha.
+// the production owners; their landed owner posts the sentence verbatim
+// once per commit.
 func TestLandingPathOwnersPostTheLandedLine(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -200,11 +310,11 @@ func TestLandingPathOwnersPostTheLandedLine(t *testing.T) {
 	}
 	sha := strings.Repeat("ab", 20)
 	for range 2 {
-		if err := owners.Landed(root, "goal-a", sha); err != nil {
+		if err := owners.Landed(root, sentenceA, sha); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != "landed: goal-a at "+shortLandingID(sha) {
-		t.Fatalf("posts = %q; want one landing line", got)
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
+		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
 	}
 }

@@ -2,9 +2,11 @@ package channel
 
 // A landing on main is the one piece of news the channel carries without
 // asking for a response (Decision 7 of the blocked-agent-asks-the-human
-// design): one line, "landed: G at SHA", once per sha. A post that fails
-// is kept and retried once, by the next landing or the next tick; it never
-// fails the landing itself.
+// design). Its message is the plain sentence of what was delivered, written
+// by the agent that did the work, posted verbatim once per sha; a landing
+// with no sentence posts nothing (Wido, 2026-10-02: "a meaningful message
+// about what was delivered"). A post that fails is kept and retried once,
+// by the next landing or the next tick; it never fails the landing itself.
 
 import (
 	"context"
@@ -21,9 +23,10 @@ import (
 
 // LandedNotice is one landing's line.
 type LandedNotice struct {
-	SHA   string    `json:"sha"`
-	Goals []string  `json:"goals,omitempty"`
-	At    time.Time `json:"at"`
+	SHA string `json:"sha"`
+	// Text is the message: the plain sentences of what landed.
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
 	// Error is why its last post failed.
 	Error string `json:"error,omitempty"`
 }
@@ -47,30 +50,23 @@ func LoadLandedState(repo string) LandedState {
 	return s
 }
 
-// LandedText is a landing's one line.
-func LandedText(goals []string, sha string) string {
-	short := sha
-	if len(short) > 12 {
-		short = short[:12]
+// PostLanded posts a landing's message, the plain sentences of what it
+// delivered, unless its sha was posted, is waiting for its retry or was
+// given up; empty text posts and records nothing. A pending earlier
+// landing is retried first. A failed post is recorded for one retry and
+// returned.
+func PostLanded(ctx context.Context, repo string, p Provider, d DestinationConfig, text, sha string, now time.Time) error {
+	text = strings.TrimSpace(text)
+	if text == "" || sha == "" {
+		return RetryLanded(ctx, repo, p, d)
 	}
-	named := strings.Join(goals, ", ")
-	if named == "" {
-		named = "main"
-	}
-	return "landed: " + named + " at " + short
-}
-
-// PostLanded posts a landing's line unless its sha was posted, is waiting
-// for its retry or was given up. A pending earlier landing is retried
-// first. A failed post is recorded for one retry and returned.
-func PostLanded(ctx context.Context, repo string, p Provider, d DestinationConfig, goals []string, sha string, now time.Time) error {
 	return withLandedState(repo, func(s *LandedState) error {
 		retryErr := retryPending(ctx, s, p, d)
-		if sha == "" || s.known(sha) {
+		if s.known(sha) {
 			return retryErr
 		}
-		notice := LandedNotice{SHA: sha, Goals: goals, At: now.UTC()}
-		if _, err := p.Post(ctx, d, LandedText(goals, sha), nil); err != nil {
+		notice := LandedNotice{SHA: sha, Text: text, At: now.UTC()}
+		if _, err := p.Post(ctx, d, text, nil); err != nil {
 			notice.Error = err.Error()
 			s.Pending = append(s.Pending, notice)
 			return errors.Join(retryErr, err)
@@ -92,7 +88,7 @@ func RetryLanded(ctx context.Context, repo string, p Provider, d DestinationConf
 func retryPending(ctx context.Context, s *LandedState, p Provider, d DestinationConfig) error {
 	var problems []error
 	for _, notice := range s.Pending {
-		if _, err := p.Post(ctx, d, LandedText(notice.Goals, notice.SHA), nil); err != nil {
+		if _, err := p.Post(ctx, d, notice.Text, nil); err != nil {
 			notice.Error = err.Error()
 			s.Failed = append(s.Failed, notice)
 			problems = append(problems, err)

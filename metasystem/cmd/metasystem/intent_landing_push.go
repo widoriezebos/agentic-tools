@@ -8,24 +8,27 @@ package main
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
-// landedGoals are the waiting hand-ins a push from old to head put on
-// main: head contains them and old did not.
-func landedGoals(install, checkout, old, head string) []string {
+// landedMessage is the message of a push from old to head: the plain
+// sentences of what the waiting hand-ins it put on main (head contains
+// them, old did not) delivered, one per line in queue order. Hand-ins
+// with no sentence add nothing; none at all is an empty message.
+func landedMessage(install, checkout, old, head string) string {
 	waiting, _ := plain.Waiting(install)
 	inHead, inOld := plain.ContainedIn(checkout, head), plain.ContainedIn(checkout, old)
-	var goals []string
+	var sentences []string
 	for _, entry := range waiting {
 		now, _ := inHead(entry.SHA)
 		before, _ := inOld(entry.SHA)
-		if now && !before {
-			goals = append(goals, entry.Goal)
+		if now && !before && strings.TrimSpace(entry.Delivered) != "" {
+			sentences = append(sentences, strings.TrimSpace(entry.Delivered))
 		}
 	}
-	return goals
+	return strings.Join(sentences, "\n")
 }
 
 func landingPushCommand() intentCommand {
@@ -52,7 +55,7 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 	if outcome.Changed {
 		// A landing on main is the one piece of news the channel carries
 		// (Decision 7); a failed post is kept for a retry and fails nothing.
-		if problem := postLanded(admitted.installation, landedGoals(admitted.installation, checkout, outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now()); problem != nil {
+		if problem := postLanded(admitted.installation, landedMessage(admitted.installation, checkout, outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now()); problem != nil {
 			told = []string{"the channel was not told of the landing; the next landing or tick retries once: " + problem.Error()}
 		}
 	}

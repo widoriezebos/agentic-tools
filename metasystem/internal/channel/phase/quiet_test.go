@@ -120,7 +120,7 @@ func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
 	t.Parallel()
 	root, dir := quietRoot(t)
 	sha := "0123456789abcdef0123456789abcdef01234567"
-	if err := channel.PostLanded(context.Background(), root, unreachable{}, channel.DestinationConfig{}, []string{"goal-a"}, sha, time.Now()); err == nil {
+	if err := channel.PostLanded(context.Background(), root, unreachable{}, channel.DestinationConfig{}, "Seats now ask you when they are stuck.", sha, time.Now()); err == nil {
 		t.Fatal("a post to an unreachable channel reported no error")
 	}
 	for range 2 {
@@ -128,7 +128,7 @@ func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := posts(t, dir); len(got) != 1 || got[0] != "landed: goal-a at 0123456789ab" {
+	if got := posts(t, dir); len(got) != 1 || got[0] != "Seats now ask you when they are stuck." {
 		t.Fatalf("posts = %q; want the landing line once", got)
 	}
 }
@@ -137,7 +137,7 @@ func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
 func TestNotifyLandedWithoutChannelDoesNothing(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	if err := phase.NotifyLanded(context.Background(), root, []string{"goal-a"}, "0123456789abcdef", time.Now()); err != nil {
+	if err := phase.NotifyLanded(context.Background(), root, "Seats now ask you when they are stuck.", "0123456789abcdef", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts")); !os.IsNotExist(err) {

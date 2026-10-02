@@ -55,17 +55,18 @@ func channelPollContext(root string) (context.Context, context.CancelFunc, error
 	return ctx, cancel, nil
 }
 
-// postLanded tells the channel at root of a landing on main, once per sha
-// (Decision 7 of the blocked-agent-asks-the-human design). No channel
+// postLanded tells the channel at root of a landing on main by its plain
+// sentences of what was delivered, once per sha (Decision 7 of the
+// blocked-agent-asks-the-human design). No sentence or no channel
 // configured is nothing to do; the error is a failed post, kept for one
 // retry, and never fails the landing.
-func postLanded(root string, goals []string, sha string, now time.Time) error {
+func postLanded(root, text, sha string, now time.Time) error {
 	ctx, cancel, err := channelPollContext(root)
 	if err != nil {
 		return err
 	}
 	defer cancel()
-	return phase.NotifyLanded(ctx, root, goals, sha, now)
+	return phase.NotifyLanded(ctx, root, text, sha, now)
 }
 
 // channelStatus composes the checkout's status report, printing it and, with

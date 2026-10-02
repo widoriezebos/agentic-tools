@@ -191,7 +191,13 @@ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) inte
 	// A landing on main is the one piece of news the channel carries
 	// (Decision 7), once per sha; a failed post is kept for a retry.
 	if landing := result.Data.(map[string]any)["landing"].(intentLanded); landing.Landing != "" {
-		if err := postLanded(inv.layout.InstallationRoot, []string{goalID}, landing.Landing, inv.delivery().now()); err != nil {
+		// The message is the plain sentence of what it delivered: this
+		// command's --delivered, else the one recorded with the landing.
+		text := strings.TrimSpace(inv.input.text("delivered"))
+		if text == "" {
+			text = landing.Delivered
+		}
+		if err := postLanded(inv.layout.InstallationRoot, text, landing.Landing, inv.delivery().now()); err != nil {
 			result.Data.(map[string]any)["landedNotice"] = err.Error()
 		}
 	}

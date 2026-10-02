@@ -199,10 +199,11 @@ func Run(ctx context.Context, root string) (int, error) {
 	return res.Undelivered, nil
 }
 
-// NotifyLanded posts the one channel line of a landing on main, once per
-// sha. With no channel configured it does nothing; a failed post is kept
-// for one retry and returned, and never undoes the landing.
-func NotifyLanded(ctx context.Context, root string, goals []string, sha string, now time.Time) error {
+// NotifyLanded posts a landing on main as its plain sentences of what was
+// delivered, once per sha; empty text posts nothing. With no channel
+// configured it does nothing; a failed post is kept for one retry and
+// returned, and never undoes the landing.
+func NotifyLanded(ctx context.Context, root, text, sha string, now time.Time) error {
 	loaded, err := Load(root, false)
 	if err != nil {
 		return err
@@ -210,5 +211,5 @@ func NotifyLanded(ctx context.Context, root string, goals []string, sha string, 
 	if loaded.Provider == nil {
 		return nil
 	}
-	return channel.PostLanded(ctx, root, loaded.Provider, loaded.Destination, goals, sha, now)
+	return channel.PostLanded(ctx, root, loaded.Provider, loaded.Destination, text, sha, now)
 }

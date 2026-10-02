@@ -15,7 +15,8 @@ conflict and which branch broke a red. The lane only gives you what you can't do
   background and returns. **End your turn after it**; the keeper wakes you when it ends
   (`proof-finished`). Never wait for it.
 - `metasystem landing push`: pushes HEAD to main only when `last_proof` is green for exactly HEAD's
-  tree and HEAD contains origin's main. Nothing else.
+  tree and HEAD contains origin's main. Nothing else. After the push the lane posts to the channel,
+  in one message, the plain sentences the seats handed in (`--delivered`) for what it landed.
 - `metasystem landing return GOAL --reason TEXT`: hands a goal back to its seat with the reason.
 
 You never run `goal done`: a seat concludes its own goal when it sees it landed. Never push main
