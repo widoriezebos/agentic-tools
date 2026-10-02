@@ -1,6 +1,6 @@
 # work-review-starts-its-critic
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Review dispatch reliability; gates every tier 2/3 landing"
@@ -8,15 +8,14 @@
 - Intent: What: work review --commit SHA --goal G reliably starts its independent critic and reports its findings. On 2026-10-01 a ui seat's run left a half-made request: 'whether the critic started isn't known yet', no launch record, no critic process, and a rerun treated it as possibly in flight. Why: tier 2 and 3 goals (most of the backlog) need this read to land; machinery seats can't get past it. Pros: tier 2/3 work can land unattended. Cons: the review dispatch path is old and wide; scope to making one request start or fail cleanly.
 - Origin: human
 - Next step: Reproduce on current main with a tier-2 goal branch; find where the request is recorded before the critic launches; make a failed launch fail cleanly so a repeat starts it; ASKED TGKJ5VPN0KZ63TD6EW1C1R2JQ8 (other): work-review-starts-its-critic: the fix is built and was read twice by Sol, but its own review cannot close, so this seat cannot land it alone. How should it land?; ASKED 593APC8QY76TG306SKJB783ND8 (other): work-review-starts-its-critic is on main (merge dfb0a034f, landed by m1e). Shall I conclude it, or keep it open?
+- Concluded: Landed on main as dfb0a034f (unit 91826da58): a review whose critic launch never reported back settles from the critic job records. Concluded by m1e in Wido word. Forced past two stale critic chains and work item main whose frozen check ran outside the Go module (machinery-blocks item 27).
 - OpenedAt: 2026-10-01T15:55:55Z
-- Revision: 31
+- Revision: 32
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T15:56:09Z revision=2 opid=JTF90THEXAEBZKTT7TJMMM3JK7-m1e-9c612d71 authority=proven digest=4d6c69ba579b5ab2396d8efcb800241ba587804b9961e47434247b36ed8d1dcf episode=2
 - Sliced: machine=ui lineage=steward-seat revision=22 at=2026-10-02T21:59:35Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-02T21:05:35Z revision=22 accountingRevision=22 episodeAt=2026-10-02T21:05:35Z episodeRevision=22
-- StopCapability: generation=22 revision=22 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-01T15:55:55Z CM77Z74SFD4T16WKGNBN0NK4RM-m1e-9c612d71 open actor=human:Wido targets=work-review-starts-its-critic
@@ -50,4 +49,5 @@ History:
 - 2026-10-02T21:59:35Z XP2F8DD2PWQE15G7HEM7HGAXN2-ui-71c5cb39 slice-start actor=ui+steward-seat targets=work-review-starts-its-critic
 - 2026-10-02T22:40:20Z 3T2XKMCXQKYWWYVPMD6E9RY3T5-ui-71c5cb39 ask actor=ui+steward-seat targets=work-review-starts-its-critic
 - 2026-10-02T22:48:54Z YBD1F8DTQDANEBFKBKZ0MH4EAW-ui-71c5cb39 ask actor=ui+steward-seat targets=work-review-starts-its-critic
-Integrity: sha256=27fb6593aa78e2cfea959492ca245b2bcc586e68e85bc97302ded66d25014427
+- 2026-10-02T22:49:12Z 36N88KVE8XHQEPB4C82C7T5M3M-m1e-718ba0eb done actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic displaced=ui+steward-seat@2026-10-02T21:05:35Z
+Integrity: sha256=2cac18334666f138f524df58132ce4909662b2dbc01bf2f2c17697a7666758ac
