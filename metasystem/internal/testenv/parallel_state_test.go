@@ -60,6 +60,10 @@ type parallelStatePackage struct {
 	functions map[string][]parallelStateFunction
 	globals   map[string]bool
 	files     []*parallelStateFile
+	// escaped are the package's test functions that take a *testing.T and
+	// are used as a value somewhere (registered in a table, handed to a
+	// helper): a call through a function value given a t may reach any.
+	escaped []parallelStateFunction
 }
 
 type parallelStateFile struct {
@@ -142,6 +146,7 @@ func findParallelStateWrites(root string) ([]parallelStateWrite, error) {
 	}
 	var writes []parallelStateWrite
 	for _, pkg := range packages {
+		pkg.findEscaped()
 		writes = append(writes, pkg.writes()...)
 	}
 	sort.Slice(writes, func(i, j int) bool {
@@ -233,7 +238,23 @@ func (pkg *parallelStatePackage) writes() []parallelStateWrite {
 							if !ok {
 								return true
 							}
-							for _, callee := range pkg.callees(current, call.Fun) {
+							// A function of the package handed on as a value
+							// (t.Run(name, check), a helper's callback) runs too.
+							for _, argument := range call.Args {
+								if ident, ok := argument.(*ast.Ident); ok {
+									for _, callee := range pkg.callees(current, ident) {
+										if !visited[callee.body] {
+											visited[callee.body] = true
+											visit(callee.file, callee.name, nil, []ast.Node{callee.body})
+										}
+									}
+								}
+							}
+							callees := pkg.callees(current, call.Fun)
+							if len(callees) == 0 && parallelStateValueCallWithT(current, call) {
+								callees = pkg.escaped
+							}
+							for _, callee := range callees {
 								if visited[callee.body] {
 									continue
 								}
@@ -381,6 +402,91 @@ func (pkg *parallelStatePackage) callees(file *parallelStateFile, fun ast.Expr) 
 		return pkg.callees(file, fun.X)
 	}
 	return nil
+}
+
+// findEscaped records the package's test functions that take a
+// *testing.T and are registered in a table: named as a value in an init
+// function or a package-level variable's value. A call through a function
+// value handed t (a table's witness run by a parallel subtest) may reach
+// any of them.
+func (pkg *parallelStatePackage) findEscaped() {
+	used := map[string]bool{}
+	note := func(root ast.Node) {
+		called := map[*ast.Ident]bool{}
+		ast.Inspect(root, func(node ast.Node) bool {
+			if call, ok := node.(*ast.CallExpr); ok {
+				if ident, ok := call.Fun.(*ast.Ident); ok {
+					called[ident] = true
+				}
+			}
+			if ident, ok := node.(*ast.Ident); ok && !called[ident] {
+				used[ident.Name] = true
+			}
+			return true
+		})
+	}
+	for _, file := range pkg.files {
+		for _, decl := range file.syntax.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if decl.Recv == nil && decl.Name.Name == "init" && decl.Body != nil {
+					note(decl.Body)
+				}
+			case *ast.GenDecl:
+				if decl.Tok == token.VAR {
+					note(decl)
+				}
+			}
+		}
+	}
+	for _, file := range pkg.files {
+		for _, decl := range file.syntax.Decls {
+			function, ok := decl.(*ast.FuncDecl)
+			if !ok || function.Body == nil || function.Recv != nil || !used[function.Name.Name] || !parallelStateTakesT(function.Type) {
+				continue
+			}
+			pkg.escaped = append(pkg.escaped, parallelStateFunction{file: file, name: function.Name.Name, body: function.Body})
+		}
+	}
+}
+
+// parallelStateTakesT says whether a function type has a *testing.T
+// parameter.
+func parallelStateTakesT(function *ast.FuncType) bool {
+	for _, field := range function.Params.List {
+		star, ok := field.Type.(*ast.StarExpr)
+		if !ok {
+			continue
+		}
+		if selector, ok := star.X.(*ast.SelectorExpr); ok && selector.Sel.Name == "T" {
+			if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "testing" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parallelStateValueCallWithT says whether call calls a function value
+// (not a package or a function of the file's imports) and hands it t.
+func parallelStateValueCallWithT(file *parallelStateFile, call *ast.CallExpr) bool {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+	case *ast.SelectorExpr:
+		if ident, ok := fun.X.(*ast.Ident); ok {
+			if _, isPackage := file.imports[ident.Name]; isPackage {
+				return false
+			}
+		}
+	default:
+		return false
+	}
+	for _, argument := range call.Args {
+		if ident, ok := argument.(*ast.Ident); ok && ident.Name == "t" {
+			return true
+		}
+	}
+	return false
 }
 
 // writeAt is the process-wide write node is, if any.
@@ -705,6 +811,30 @@ func TestOwnedInline(t *testing.T) {
 	}
 	seam = 7
 }
+
+var witnesses = map[string]func(*testing.T){}
+
+func init() { witnesses["swap"] = swapWitness }
+
+func swapWitness(t *testing.T) { seam = 8 }
+
+func TestTable(t *testing.T) {
+	t.Parallel()
+	for _, witness := range witnesses {
+		witness(t)
+	}
+}
+
+func checkValue(t *testing.T) { counter = 9 }
+
+func TestValue(t *testing.T) {
+	t.Parallel()
+	t.Run("value", checkValue)
+}
+
+func unregistered(t *testing.T) { seam = 10 }
+
+func TestSequentialValue(t *testing.T) { unregistered(t) }
 `)
 	writes, err := findParallelStateWrites(root)
 	if err != nil {
@@ -720,6 +850,8 @@ func TestOwnedInline(t *testing.T) {
 		"44 TestForeignAndCounter assignment to the package-level other.Clock",
 		"45 TestForeignAndCounter assignment to the package-level counter",
 		"51 TestSubtest os.Clearenv",
+		"87 swapWitness assignment to the package-level seam",
+		"96 checkValue assignment to the package-level counter",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("writes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
