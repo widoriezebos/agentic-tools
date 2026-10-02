@@ -1,6 +1,6 @@
 # critique-stops-on-convergence
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 27
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=5
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T10:24:58Z revision=7 opid=MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 authority=proven digest=bb2fe7ab98d51c6d2b306a84d296b4eff47d157a5f1e8cfd60776a26b68fcb87 episode=7
 
 History:
 - 2026-10-02T10:12:16Z DGM1ZK0JGJ8198MGJ0A44NHWHE-m1e-9c612d71 open actor=human:Wido targets=critique-stops-on-convergence
@@ -20,4 +22,5 @@ History:
 - 2026-10-02T10:12:34Z QPY02SXM3KXWKHJCAGW0ZBPN12-m1e-9c612d71 set-pin actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T10:24:49Z FAM6WB0PQGXER3NN7WMWMVYY6T-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=fold Wido's 2026-10-02 rabbit-hole exercise into the intent
 - 2026-10-02T10:24:53Z 0MVGJHJYKHNDF1G2PAZDT8NCA0-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
-Integrity: sha256=26ee568856e894a5ce656c1085fa5c2a4f1bbda9d8d4fce64013adfb024a136e
+- 2026-10-02T10:24:58Z MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
+Integrity: sha256=2b21d22d86b100dad4e369ccdfdd96e4c33a683eb00c7f52c82254dfdde8c916
