@@ -10,6 +10,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 4 && os.Args[1] == "scratch-token-guard" {
+		os.Exit(scratchTokenGuard(os.Args[2], os.Args[3]))
+	}
 	if len(os.Args) == 6 && os.Args[1] == "testing" && os.Args[2] == "merge-driver" {
 		base, baseErr := os.ReadFile(os.Args[3])
 		ours, oursErr := os.ReadFile(os.Args[4])

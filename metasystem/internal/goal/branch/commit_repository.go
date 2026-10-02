@@ -2,10 +2,19 @@ package branch
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 type commitWorktree struct{ Path, Branch string }
@@ -128,6 +137,12 @@ func gitCommitRepository() commitRepository {
 		effects: commitEffects{
 			ClearFetch: clearPushTxn,
 			Open: func(repo, base string, amend bool) (string, func(), error) {
+				// The hook resolves its root as the worktree top plus the
+				// installation prefix, just as ledgerfence's composer does.
+				prefix, err := gitOutput(repo, "rev-parse", "--show-prefix")
+				if err != nil {
+					return "", nil, err
+				}
 				pattern := "goal-branch-adopt-*"
 				if amend {
 					pattern = "goal-branch-amend-*"
@@ -141,10 +156,17 @@ func gitCommitRepository() commitRepository {
 					done()
 					return "", nil, err
 				}
-				return worktree, func() {
+				root := filepath.Join(worktree, strings.TrimRight(string(prefix), "\n"))
+				close := func() {
+					_ = os.Remove(landpath.TokenPath(root))
 					_, _ = gitOutput(repo, "worktree", "remove", "--force", worktree)
 					done()
-				}, nil
+				}
+				if err := mintScratchCommitToken(root); err != nil {
+					close()
+					return "", nil, fmt.Errorf("the scratch commit couldn't create its wrapper token, so nothing was committed: %w", err)
+				}
+				return worktree, close, nil
 			},
 			Apply: func(dir string, patch []byte) error {
 				_, err := gitInput(dir, patch, "apply", "--index", "--3way", "-")
@@ -175,4 +197,28 @@ func gitCommitRepository() commitRepository {
 			Publish: updateBranchAndOrigin,
 		},
 	}
+}
+
+// The scratch worktree keeps this token through its commit and any replay;
+// closing the worktree removes it even when a hook or cherry-pick refuses.
+func mintScratchCommitToken(root string) error {
+	pid := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil {
+		return err
+	}
+	if state != identity.Alive {
+		return fmt.Errorf("the committing process %d is %s", pid, state)
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return err
+	}
+	data, err := json.Marshal(landpath.WrapperToken{WrapperPid: pid, WrapperPidStartedAt: exact.StartedAt.Unix(),
+		Nonce: hex.EncodeToString(nonce[:]), CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z")})
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(landpath.TokenPath(root), string(data), "")
+	return err
 }
