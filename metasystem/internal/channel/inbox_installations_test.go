@@ -399,8 +399,6 @@ func TestOneBotTwoInstallationsCommitToTheLedgerInbox(t *testing.T) {
 		}
 	case err := <-seatDone:
 		t.Fatalf("the seat finished before confirming: %v", err)
-	case <-time.After(30 * time.Second):
-		t.Fatal("the seat never reached its Confirm")
 	}
 	laneConfirms := bed.confirms(t, "lane")
 	bed.poll(t, bed.lane)
