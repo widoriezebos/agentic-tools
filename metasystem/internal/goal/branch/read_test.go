@@ -1,6 +1,8 @@
 package branch_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
@@ -266,7 +268,60 @@ func gleBranchReadRecordPath(t *testing.T, root, unit string) string {
 	return filepath.Join(root, ".git", "metasystem", "goal-reads", "goal-a", unit+".json")
 }
 
-func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
+func gleBranchReadRecord(t *testing.T, root, unit string) string {
+	t.Helper()
+	data, err := os.ReadFile(gleBranchReadRecordPath(t, root, unit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// gleBranchReadCriticID is the job id the delegate boundary derives for a
+// fresh code-critic of goal-a at a goal revision that reads a brief with this
+// content: the id of the critic a review request with that frozen brief starts.
+func gleBranchReadCriticID(t *testing.T, brief []byte, revision uint64) string {
+	t.Helper()
+	sum := sha256.Sum256(brief)
+	id, err := dispatch.DefaultOperationID("goal-a", revision, dispatch.DispatchModeFresh, "code-critic", hex.EncodeToString(sum[:]), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// gleBranchReadFrozenCriticID is the id of the critic a review request starts
+// at goal revision 1, derived from the frozen brief file the delegate is given.
+func gleBranchReadFrozenCriticID(t *testing.T, briefPath string) string {
+	t.Helper()
+	brief, err := os.ReadFile(briefPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gleBranchReadCriticID(t, brief, 1)
+}
+
+// writeReadCriticRecord writes a critic job record as the delegate boundary
+// leaves it before any process exists. Round 0 is a reservation whose setup
+// never completed, which carries no round; a positive round is launchable.
+// Revision 0 is a record that names no goal revision.
+func writeReadCriticRecord(t *testing.T, root, job, goalID, commit, parent, createdAt string, round int, revision uint64) {
+	t.Helper()
+	record := map[string]any{"jobId": job, "role": "code-critic", "status": "pending-setup",
+		"reviews": "commit:" + commit, "goalId": goalID, "createdAt": createdAt}
+	if round > 0 {
+		record["status"], record["round"] = "pending", round
+	}
+	if revision > 0 {
+		record["goalRevision"] = revision
+	}
+	if parent != "" {
+		record["parentJob"] = parent
+	}
+	writeJSONFixture(t, root, "artifacts/agents/jobs/"+job+".json", record)
+}
+
+func TestGLEBranchReadInterruptedLaunchWithoutJobRecordDispatchesFrozenIntentAgain(t *testing.T) {
 	t.Parallel()
 	r := newReadFactRepository(t, false)
 	unit := r.unit
@@ -278,18 +333,67 @@ func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
 	if err := os.WriteFile(input, []byte("accepted design A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	recordPath := gleBranchReadRecordPath(t, r.root, unit)
 	delegates := 0
+	var firstBrief string
 	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
 		GoalID: "goal-a", UnitCommit: unit, Repository: r, BriefPath: input, Runtime: "codex", Model: "gpt-5.6-sol",
 		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
 			delegates++
-			data, err := os.ReadFile(recordPath)
-			if err != nil || !strings.Contains(string(data), `"dispatchPending": true`) ||
-				!strings.Contains(string(data), `"runtime": "codex"`) || !strings.Contains(string(data), `"model": "gpt-5.6-sol"`) {
-				t.Fatalf("dispatch intent before launch=%q err=%v", data, err)
+			body, err := os.ReadFile(brief)
+			data := gleBranchReadRecord(t, r.root, unit)
+			if err != nil || runtime != "codex" || model != "gpt-5.6-sol" || !strings.Contains(data, `"dispatchPending": true`) ||
+				!strings.Contains(data, `"runtime": "codex"`) || !strings.Contains(data, `"model": "gpt-5.6-sol"`) {
+				t.Fatalf("dispatch intent before launch=%q runtime=%q model=%q err=%v", data, runtime, model, err)
 			}
+			if delegates == 1 {
+				firstBrief = string(body)
+				panic("process interrupted before any job record")
+			}
+			if string(body) != firstBrief {
+				t.Fatalf("second dispatch changed the frozen brief: first=%q second=%q", firstBrief, body)
+			}
+			writeReadJobWithSubject(t, r.root, "critic-again", unit, "running", false, r.readSubject())
+			return "critic-again", nil
+		},
+	}
+	func() {
+		defer func() {
+			if got := recover(); got != "process interrupted before any job record" {
+				t.Fatalf("interruption=%v", got)
+			}
+		}()
+		_, _ = branch.RunBranchRead(request)
+	}()
+	if err := os.WriteFile(input, []byte("accepted design B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || delegates != 1 {
+		t.Fatalf("changed request after interruption=%v delegates=%d", err, delegates)
+	}
+	request.BriefPath, request.Runtime, request.Model = "", "", ""
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "dispatched" || result.RootJob != "critic-again" || delegates != 2 {
+		t.Fatalf("omitted options after interruption=%+v err=%v delegates=%d", result, err, delegates)
+	}
+}
+
+func TestGLEBranchReadInterruptedLaunchWithJobRecordAdoptsItsCritic(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	unit := r.unit
+	r.expectStart()
+	r.expectGateAndBrief()
+	r.expectStart()
+	delegates := 0
+	var critic string
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, Repository: r, CheckClaim: claimAllowed,
+		Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			critic = gleBranchReadFrozenCriticID(t, brief)
+			writeReadJobWithSubject(t, r.root, critic, unit, "running", false, r.readSubject())
 			panic("process interrupted after critic launch")
 		},
 	}
@@ -301,19 +405,306 @@ func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
 		}()
 		_, _ = branch.RunBranchRead(request)
 	}()
-	if err := os.WriteFile(input, []byte("accepted design B\n"), 0o644); err != nil {
-		t.Fatal(err)
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "open" || critic == "" || result.RootJob != critic || delegates != 1 {
+		t.Fatalf("run after interruption=%+v err=%v delegates=%d", result, err, delegates)
 	}
-	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {
-		t.Fatalf("changed request after interruption=%v", err)
-	}
-	request.BriefPath, request.Runtime, request.Model = "", "", ""
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadDispatchPendingCode) || delegates != 1 {
-		t.Fatalf("omitted options after interruption=%v delegates=%d", err, delegates)
+	if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"rootJob": "`+critic+`"`) || strings.Contains(data, `"dispatchPending"`) {
+		t.Fatalf("adopted record=%q", data)
 	}
 }
 
-func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
+func TestGLEBranchReadFailedDispatchWithoutJobRecordMayBeRequestedAgain(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	unit := r.unit
+	r.expectStart()
+	r.expectGateAndBrief()
+	r.expectStart()
+	input := filepath.Join(t.TempDir(), "accepted.md")
+	if err := os.WriteFile(input, []byte("accepted design before the failed dispatch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	delegates := 0
+	var firstBrief string
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, Repository: r, BriefPath: input, Runtime: "codex", Model: "gpt-5.6-sol",
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			body, err := os.ReadFile(brief)
+			if err != nil || runtime != "codex" || model != "gpt-5.6-sol" {
+				t.Fatalf("delegate brief=%q runtime=%q model=%q err=%v", body, runtime, model, err)
+			}
+			if delegates == 1 {
+				firstBrief = string(body)
+				return "", errors.New("delegate outcome REFUSED-LEASE: no job was reserved")
+			}
+			if string(body) != firstBrief {
+				t.Fatalf("second dispatch changed the frozen brief: first=%q second=%q", firstBrief, body)
+			}
+			writeReadJobWithSubject(t, r.root, "critic-second", unit, "running", false, r.readSubject())
+			return "critic-second", nil
+		},
+	}
+	var never *branch.ReadNeverLaunchedError
+	if _, err := branch.RunBranchRead(request); !errors.As(err, &never) || !strings.Contains(err.Error(), "REFUSED-LEASE") || delegates != 1 {
+		t.Fatalf("failed dispatch without a job record=%v delegates=%d", err, delegates)
+	}
+	if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"dispatchRetryable": true`) || strings.Contains(data, `"dispatchPending"`) {
+		t.Fatalf("retryable record=%q", data)
+	}
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "dispatched" || result.RootJob != "critic-second" || delegates != 2 {
+		t.Fatalf("second request=%+v err=%v delegates=%d", result, err, delegates)
+	}
+}
+
+func TestGLEBranchReadFailedDispatchWithJobRecordAdoptsItsCritic(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	unit := r.unit
+	r.expectStart()
+	r.expectGateAndBrief()
+	r.expectStart()
+	delegates := 0
+	var critic string
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, Repository: r, CheckClaim: claimAllowed,
+		Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			critic = gleBranchReadFrozenCriticID(t, brief)
+			writeReadJobWithSubject(t, r.root, critic, unit, "failed", false, r.readSubject())
+			return "", errors.New("delegate outcome HANDSHAKE-FAILED: session did not establish")
+		},
+	}
+	var never *branch.ReadNeverLaunchedError
+	if _, err := branch.RunBranchRead(request); err == nil || errors.As(err, &never) || !strings.Contains(err.Error(), "HANDSHAKE-FAILED") {
+		t.Fatalf("failed dispatch with a job record=%v", err)
+	}
+	if data := gleBranchReadRecord(t, r.root, unit); critic == "" || !strings.Contains(data, `"rootJob": "`+critic+`"`) || strings.Contains(data, `"dispatchPending"`) {
+		t.Fatalf("adopted record=%q", data)
+	}
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "closed" || result.RootJob != critic || delegates != 1 {
+		t.Fatalf("run after failed dispatch=%+v err=%v delegates=%d", result, err, delegates)
+	}
+}
+
+func TestGLEBranchReadAnotherCallersCriticOfTheSameCommitIsNeverAdopted(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		// interrupted is a dispatch whose process died; otherwise it failed.
+		interrupted bool
+	}{
+		{"this review's dispatch failed", false},
+		{"this review's dispatch was interrupted", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newReadFactRepository(t, false)
+			unit := r.unit
+			r.expectStart()
+			r.expectGateAndBrief()
+			r.expectStart()
+			// Another caller's examination of the same commit for the same
+			// goal: a launchable root named after the brief that caller read.
+			other := gleBranchReadCriticID(t, []byte("another caller's brief\n"), 1)
+			writeReadJobWithSubject(t, r.root, other, unit, "running", false, r.readSubject())
+			delegates := 0
+			var firstBrief, critic string
+			request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+				GoalID: "goal-a", UnitCommit: unit, Repository: r, CheckClaim: claimAllowed,
+				Gate: func(string) (string, error) { return "green", nil },
+				Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+					delegates++
+					body, err := os.ReadFile(brief)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if delegates == 1 {
+						firstBrief = string(body)
+						if tc.interrupted {
+							panic("process interrupted before any job record")
+						}
+						return "", errors.New("delegate outcome REFUSED-LEASE: no job was reserved")
+					}
+					if string(body) != firstBrief {
+						t.Fatalf("second dispatch changed the frozen brief: first=%q second=%q", firstBrief, body)
+					}
+					critic = gleBranchReadCriticID(t, body, 1)
+					writeReadJobWithSubject(t, r.root, critic, unit, "running", false, r.readSubject())
+					return critic, nil
+				},
+			}
+			if tc.interrupted {
+				func() {
+					defer func() {
+						if got := recover(); got != "process interrupted before any job record" {
+							t.Fatalf("interruption=%v", got)
+						}
+					}()
+					_, _ = branch.RunBranchRead(request)
+				}()
+				if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"dispatchPending": true`) || strings.Contains(data, `"rootJob"`) {
+					t.Fatalf("interrupted record=%q", data)
+				}
+			} else {
+				var never *branch.ReadNeverLaunchedError
+				if _, err := branch.RunBranchRead(request); !errors.As(err, &never) || !strings.Contains(err.Error(), "REFUSED-LEASE") {
+					t.Fatalf("failed dispatch beside another caller's critic=%v", err)
+				}
+				if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"dispatchRetryable": true`) || strings.Contains(data, `"dispatchPending"`) || strings.Contains(data, `"rootJob"`) {
+					t.Fatalf("retryable record=%q", data)
+				}
+			}
+			result, err := branch.RunBranchRead(request)
+			if err != nil || result.State != "dispatched" || critic == other || result.RootJob != critic || delegates != 2 {
+				t.Fatalf("next request=%+v err=%v delegates=%d other=%s", result, err, delegates, other)
+			}
+			if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"rootJob": "`+critic+`"`) || strings.Contains(data, other) {
+				t.Fatalf("record after the second dispatch=%q", data)
+			}
+		})
+	}
+}
+
+func TestGLEBranchReadAdoptsOnlyTheNewestLaunchableCriticRootOfItsCommitAndGoal(t *testing.T) {
+	t.Parallel()
+	other := strings.Repeat("9", 40)
+	// Each record carries the id this request's critic has at the goal
+	// revision the record names, so only the named difference keeps it from
+	// being adopted. reserve returns the root the review adopts, or none.
+	for _, tc := range []struct {
+		name    string
+		reserve func(t *testing.T, root, unit string, brief []byte) string
+	}{
+		{"another commit", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", other, "", "2026-01-02T03:04:05Z", 1, 1)
+			return ""
+		}},
+		{"another goal", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-b", unit, "", "2026-01-02T03:04:05Z", 1, 1)
+			return ""
+		}},
+		{"a later round of a chain", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", unit, "critic-root", "2026-01-02T03:04:05Z", 2, 1)
+			return ""
+		}},
+		{"a reservation that ended in setup", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", unit, "", "2026-01-02T03:04:05Z", 0, 1)
+			return ""
+		}},
+		{"an id derived from another brief", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, append([]byte("another brief\n"), brief...), 1), "goal-a", unit, "", "2026-01-02T03:04:05Z", 1, 1)
+			return ""
+		}},
+		{"an id derived from another goal revision than the record names", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", unit, "", "2026-01-02T03:04:05Z", 1, 2)
+			return ""
+		}},
+		{"a record that names no goal revision", func(t *testing.T, root, unit string, brief []byte) string {
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", unit, "", "2026-01-02T03:04:05Z", 1, 0)
+			return ""
+		}},
+		{"a root reserved at a later goal revision", func(t *testing.T, root, unit string, brief []byte) string {
+			critic := gleBranchReadCriticID(t, brief, 7)
+			writeReadCriticRecord(t, root, critic, "goal-a", unit, "", "2026-01-02T03:04:05Z", 1, 7)
+			return critic
+		}},
+		{"roots at three goal revisions and a newer reservation that ended in setup", func(t *testing.T, root, unit string, brief []byte) string {
+			newest := gleBranchReadCriticID(t, brief, 2)
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 1), "goal-a", unit, "", "2026-01-02T03:04:05Z", 1, 1)
+			writeReadCriticRecord(t, root, newest, "goal-a", unit, "", "2026-01-02T03:04:06Z", 1, 2)
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 3), "goal-a", unit, "", "2026-01-02T03:04:04Z", 1, 3)
+			writeReadCriticRecord(t, root, gleBranchReadCriticID(t, brief, 4), "goal-a", unit, "", "2026-01-02T03:04:07Z", 0, 4)
+			return newest
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newReadFactRepository(t, false)
+			r.expectStart()
+			r.expectGateAndBrief()
+			var wantRoot string
+			_, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit,
+				GoalID: "goal-a", UnitCommit: r.unit, Repository: r, CheckClaim: claimAllowed,
+				Gate: func(string) (string, error) { return "green", nil },
+				Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+					body, err := os.ReadFile(brief)
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantRoot = tc.reserve(t, r.root, r.unit, body)
+					return "", errors.New("delegate failed")
+				}})
+			var never *branch.ReadNeverLaunchedError
+			data := gleBranchReadRecord(t, r.root, r.unit)
+			if wantRoot == "" {
+				if !errors.As(err, &never) || !strings.Contains(data, `"dispatchRetryable": true`) || strings.Contains(data, `"rootJob"`) {
+					t.Fatalf("unrelated job record: err=%v record=%q", err, data)
+				}
+				return
+			}
+			if err == nil || errors.As(err, &never) || !strings.Contains(data, `"rootJob": "`+wantRoot+`"`) {
+				t.Fatalf("newest root: err=%v record=%q", err, data)
+			}
+		})
+	}
+}
+
+func TestGLEBranchReadUnreadableJobRecordKeepsTheRequestPending(t *testing.T) {
+	t.Parallel()
+	for name, body := range map[string]string{
+		"a torn record": "{",
+		"this request's critic root under another file name": `{"jobId": "CRITIC", "role": "code-critic", "round": 1, "goalId": "goal-a", "goalRevision": 1, "reviews": "commit:UNIT"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := newReadFactRepository(t, false)
+			unit := r.unit
+			r.expectStart()
+			r.expectGateAndBrief()
+			r.expectStart()
+			r.expectStart()
+			torn := filepath.Join(r.root, "artifacts", "agents", "jobs", "torn.json")
+			delegates := 0
+			request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+				GoalID: "goal-a", UnitCommit: unit, Repository: r, CheckClaim: claimAllowed,
+				Gate: func(string) (string, error) { return "green", nil },
+				Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+					delegates++
+					if delegates == 1 {
+						write(t, r.root, "artifacts/agents/jobs/torn.json", strings.NewReplacer("UNIT", unit, "CRITIC", gleBranchReadFrozenCriticID(t, brief)).Replace(body))
+						return "", errors.New("delegate failed")
+					}
+					return "critic-after-repair", nil
+				},
+			}
+			var never *branch.ReadNeverLaunchedError
+			for _, run := range []string{"failed dispatch", "next request"} {
+				_, err := branch.RunBranchRead(request)
+				if goal.RefusalCode(err) != branch.ReadDispatchPendingCode || errors.As(err, &never) || !strings.Contains(err.Error(), "torn.json") || delegates != 1 {
+					t.Fatalf("%s with an unreadable job record=%v delegates=%d", run, err, delegates)
+				}
+				if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"dispatchPending": true`) || strings.Contains(data, `"rootJob"`) {
+					t.Fatalf("%s left record=%q", run, data)
+				}
+			}
+			if err := os.Remove(torn); err != nil {
+				t.Fatal(err)
+			}
+			result, err := branch.RunBranchRead(request)
+			if err != nil || result.State != "dispatched" || result.RootJob != "critic-after-repair" || delegates != 2 {
+				t.Fatalf("request after repair=%+v err=%v delegates=%d", result, err, delegates)
+			}
+		})
+	}
+}
+
+func TestGLEBranchReadRecordWriteFailureAdoptsTheStartedCritic(t *testing.T) {
 	t.Parallel()
 	r := newReadFactRepository(t, false)
 	unit := r.unit
@@ -322,15 +713,18 @@ func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
 	r.expectStart()
 	recordPath := gleBranchReadRecordPath(t, r.root, unit)
 	delegates := 0
+	var critic string
 	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
 		GoalID: "goal-a", UnitCommit: unit, Repository: r, CheckClaim: claimAllowed,
 		Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
 			delegates++
+			critic = gleBranchReadFrozenCriticID(t, brief)
+			writeReadJobWithSubject(t, r.root, critic, unit, "running", false, r.readSubject())
 			if err := os.Chmod(filepath.Dir(recordPath), 0o500); err != nil {
 				t.Fatal(err)
 			}
-			return "critic-write-failure", nil
+			return critic, nil
 		},
 	}
 	defer os.Chmod(filepath.Dir(recordPath), 0o755)
@@ -340,12 +734,15 @@ func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
 	if err := os.Chmod(filepath.Dir(recordPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(recordPath)
-	if err != nil || !strings.Contains(string(data), `"dispatchPending": true`) || strings.Contains(string(data), `"rootJob"`) {
-		t.Fatalf("retained pending intent=%q err=%v", data, err)
+	if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"dispatchPending": true`) || strings.Contains(data, `"rootJob"`) {
+		t.Fatalf("retained pending intent=%q", data)
 	}
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadDispatchPendingCode) || delegates != 1 {
-		t.Fatalf("retry after record failure=%v delegates=%d", err, delegates)
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "open" || critic == "" || result.RootJob != critic || delegates != 1 {
+		t.Fatalf("run after record failure=%+v err=%v delegates=%d", result, err, delegates)
+	}
+	if data := gleBranchReadRecord(t, r.root, unit); !strings.Contains(data, `"rootJob": "`+critic+`"`) || strings.Contains(data, `"dispatchPending"`) {
+		t.Fatalf("adopted record=%q", data)
 	}
 }
 
