@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 113
+- Revision: 114
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -149,4 +149,5 @@ History:
 - 2026-10-01T15:31:39Z VDRWT66V2QX0M9XGP6XCB3NXCW-m1e-c6925449 grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-03T15:31:00Z
 - 2026-10-02T02:11:01Z GWMFCQNTB3NRHRG4WFTWJVMWVB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=review-briefs-name-a-threat-model displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:08:51Z ack
 - 2026-10-02T02:50:24Z 2X46PWT82ZT6XZFVJP35B3F8B0-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-red displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:11:20Z ack
-Integrity: sha256=35aa244e63b6a7e0c593eee4386da74ec8c65f437be30a9b2f3587b86f40bae7
+- 2026-10-02T03:11:13Z WN89TPJVYJZECWK5B4C441EG6X-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-conflict-b displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:50:38Z ack
+Integrity: sha256=0613c7f44c11bbcf42b0f92a8e1722be624ada00a60e46cfd2d1798470ef4665
