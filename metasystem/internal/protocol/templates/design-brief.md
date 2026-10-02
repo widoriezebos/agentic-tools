@@ -77,3 +77,5 @@ or:
 <absolute page path>
 DESIGN: blocked (<reason>)
 ```
+
+When blocked, stop and return `BLOCKED:` with the refusal's first line, what you tried and the decision needed; your seat asks.
