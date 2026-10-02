@@ -241,47 +241,12 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	return inv.render(result)
 }
 
-// landingStatusData is landing status --json: the lane's view, whether the
-// lane is paused and its agent alive, the plain lane's queue, the running
-// proof, the last proof and the last push. An absent value is null.
-type landingStatusData struct {
-	lane.View
-	Paused     bool `json:"paused"`
-	AgentAlive bool `json:"agent_alive"`
-	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
-	// waiting, returned, superseded by a newer hand-in of its goal, or
-	// landed when origin's main (as the lane checkout last fetched it)
-	// contains its sha.
-	Queue        []plain.Entry        `json:"queue"`
-	RunningProof *landingRunningProof `json:"running_proof"`
-	// LastProof is the newest line of results.jsonl.
-	LastProof *plain.Result `json:"last_proof"`
-	// LastPush is the newest push landing push made.
-	LastPush *plain.Pushed `json:"last_push"`
-}
+// landingStatusData is landing status --json: the plain lane's status,
+// the one reader /api/board's lane reads too (plain.ReadStatus).
+type landingStatusData = plain.Status
 
 func landingStatus(owners laneVerbOwners, home string, record lane.Record, view lane.View) landingStatusData {
-	_, paused := lane.ReadPause(home)
-	data := landingStatusData{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []plain.Entry{}}
-	layout, err := record.Layout()
-	if view.Root == nil || err != nil {
-		return data
-	}
-	install, checkout := string(layout.Install), string(layout.Checkout)
-	if entries, err := plain.Entries(install); err == nil {
-		if main, err := plain.Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}"); err == nil {
-			entries, _ = plain.Landed(entries, plain.ContainedIn(checkout, main))
-		}
-		data.Queue = entries
-	}
-	data.RunningProof = readLandingRunningProof(install, owners.plainProve)
-	if result, ok, err := plain.LastResult(install); err == nil && ok {
-		data.LastProof = &result
-	}
-	if push, ok, err := plain.LastPush(install); err == nil && ok {
-		data.LastPush = &push
-	}
-	return data
+	return plain.ReadStatus(home, record, view, owners.plainProve)
 }
 
 // landingQueueWords counts the queue's lines that need the lane, for the

@@ -184,36 +184,8 @@ func provedWords(commit, tree string) string {
 	return shortLandingID(commit) + " (tree " + shortLandingID(tree) + ")"
 }
 
-// landingRunningProof is the lane's proof recorded running, as landing
-// status shows it.
-type landingRunningProof struct {
-	Tree   string `json:"tree"`
-	Commit string `json:"commit,omitempty"`
-	Since  string `json:"since"`
-	// Attempt and Log name the run; State is running while its process
-	// runs, died when it ended without a result (the next prove runs it
-	// again).
-	Attempt string `json:"attempt"`
-	Log     string `json:"log,omitempty"`
-	State   string `json:"state"`
-}
-
-// readLandingRunningProof is the lane's running proof; nil when none is
-// recorded running or it can't be read.
-func readLandingRunningProof(install string, seams plain.ProveSeams) *landingRunningProof {
-	running, recorded, alive, err := plain.ReadRunning(install, seams)
-	if err != nil || !recorded {
-		return nil
-	}
-	state := "running"
-	if !alive {
-		state = "died"
-	}
-	return &landingRunningProof{Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}
-}
-
 // withRunningProof adds the lane's running proof to landing status's page.
-func withRunningProof(view func(*textui.Page), running *landingRunningProof) func(*textui.Page) {
+func withRunningProof(view func(*textui.Page), running *plain.RunningProof) func(*textui.Page) {
 	if running == nil {
 		return view
 	}

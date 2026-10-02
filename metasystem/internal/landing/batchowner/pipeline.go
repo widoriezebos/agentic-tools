@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 )
@@ -110,7 +110,7 @@ func HostBoardSource(installation string) *httpd.BoardSource {
 		return nil
 	}
 	return &httpd.BoardSource{Home: home, Seats: source.Seats, Prober: source.Prober, Stall: source.stall,
-		Lane: func(now time.Time) lane.View { return landingLaneView(LandingLaneHome, now) }}
+		Lane: func(now time.Time) plain.Status { return landingLaneStatus(LandingLaneHome, now) }}
 }
 
 // PipelineStall is the stall bound the installation's configuration sets,

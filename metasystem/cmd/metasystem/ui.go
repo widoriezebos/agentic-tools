@@ -483,6 +483,12 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// A stopped launch put out of sight: the record is marked
 				// and kept, and nothing on disk is deleted.
 				DiscardLaunch: launchDiscarder(roots),
+				// The landing lane card's Land now: landing run, run once
+				// as the terminal runs it (ui_landnow.go's seam). The route
+				// asks for the signed-in session itself.
+				LandNow: func() (httpd.LandNowAnswer, error) {
+					return landNowRun(roots)
+				},
 				Project: func() (project.Pane, error) {
 					return project.ReadPane(projectRoots(roots), time.Now().UTC())
 				},

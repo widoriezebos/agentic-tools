@@ -96,6 +96,8 @@ func writeRouteOf(path string) (written, bool) {
 		return written{route: routePreviewSource}, true
 	case launchPath:
 		return written{route: routeLaunch}, true
+	case landNowPath:
+		return written{route: routeLandNow}, true
 	}
 	if id, ok := idBetween(path, launchesPrefix, discardSuffix); ok {
 		return written{route: routeDiscardLaunch, id: id}, true
@@ -241,6 +243,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.launchMachine(w, r)
 	case routeDiscardLaunch:
 		h.discardLaunch(w, r, route.id)
+	case routeLandNow:
+		h.landNow(w, r)
 	case routeApprove:
 		h.approveGoal(w, r, route.id)
 	case routeWithdraw:
