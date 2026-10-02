@@ -163,6 +163,7 @@ func TestSeatIdleWithoutChannelKeepsTheSilentEpisode(t *testing.T) {
 }
 
 func TestSpendCrossingPostsOnceToTheChannel(t *testing.T) {
+	t.Parallel()
 	fixture := newChannelFixture(t)
 	ledger := fixtureSpendLedger()
 	ledger.DayScope.Tokens = 250000000
