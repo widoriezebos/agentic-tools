@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M3Y1P7GDX118WC3BQ9K67SE8
-- Status: draft
+- Status: accepted
 - Goals: flaky-leftovers
+
+Critique: Codex Astra, chain design-critic-09e95ff70db9b256797eb586, closed at round 4 on 0 material findings (material per round 3, 2, 1, 0; the round-2 divergence signal went to Wido, who chose the step-back by subtraction). Accepted under Wido's 2026-10-02 instruction to implement once the critique stops.
 
 Three things the no-flaky-tests program left on its "later list" (evidence log `flaky-20261002/log.md` 08:53 and 10:32; discovery clusters C and E). Facts below were read at `ada2497d0` unless marked *(recited)*.
 
