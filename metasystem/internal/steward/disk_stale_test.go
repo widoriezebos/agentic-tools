@@ -47,6 +47,9 @@ func (bed staleBed) pass(mode diskstore.Mode, checkouts []string, forget bool) D
 	return DiskPass{Mode: mode, Now: staleNow, Clock: func() time.Time { return staleNow }, Home: bed.home,
 		TempRoots: []string{bed.tmp}, Volumes: []string{bed.root}, Checkouts: checkouts, Registry: bed.registry, ForgetRemoved: forget,
 		Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{},
+		// The bed starts no process: its use census and process proofs read
+		// an empty table, never the host's.
+		Processes: identity.ListedProcessTable{},
 		// The fixtures run no git: an armed checkout's facts are unknown,
 		// so the evidence bound reports its segments and acts on none.
 		Facts: func(context.Context, string) (diskstore.CheckoutFacts, error) {

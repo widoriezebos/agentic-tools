@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"time"
 )
@@ -194,7 +195,7 @@ func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore
 	if pass.Proofs != nil {
 		return pass.Proofs
 	}
-	proofs := diskOwnerProofs()
+	proofs := diskOwnerProofs(pass.processes())
 	layout, err := stateroot.ResolveLayout(top)
 	if err != nil {
 		return proofs
@@ -234,7 +235,8 @@ func goalEnded(ledger *ledgerView) func(diskstore.Owner) (bool, bool, string) {
 }
 
 // DiskOwnerProofs are the owner-kind proofs of the checkout at top, as its
-// pass judges them at now: a person's disk clean --release uses the same.
-func DiskOwnerProofs(top string, now time.Time) map[diskstore.OwnerKind]diskstore.OwnerProof {
-	return checkoutProofs(top, DiskPass{Now: now})
+// pass judges them at now over processes (nil is the kernel's table): a
+// person's disk clean --release uses the same.
+func DiskOwnerProofs(top string, now time.Time, processes identity.ProcessTable) map[diskstore.OwnerKind]diskstore.OwnerProof {
+	return checkoutProofs(top, DiskPass{Now: now, Processes: processes})
 }

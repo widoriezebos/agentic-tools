@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -37,6 +38,10 @@ type diskOwners struct {
 	// name to record.
 	person func(root string) (string, error)
 	census func() *diskstore.UseCensus
+	// processes is the process table the default census, the pass and the
+	// default --release proofs read; nil is the kernel's (fixtures pass
+	// their own).
+	processes identity.ProcessTable
 	// proofs replaces the owner-kind proofs --release uses (fixtures); nil
 	// is the engine's own for the checkout (steward.DiskOwnerProofs).
 	proofs map[diskstore.OwnerKind]diskstore.OwnerProof
@@ -62,6 +67,14 @@ type diskOwners struct {
 	evidenceEnv func(ctx context.Context, top, by string) (evidence.Env, error)
 }
 
+// processTable is the owners' process table: the kernel's unless given.
+func (o diskOwners) processTable() identity.ProcessTable {
+	if o.processes != nil {
+		return o.processes
+	}
+	return identity.KernelProcessTable{}
+}
+
 func (o diskOwners) withDefaults() diskOwners {
 	if o.pass == nil {
 		o.pass = steward.SweepDiskStores
@@ -78,7 +91,7 @@ func (o diskOwners) withDefaults() diskOwners {
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
 			home, _ := steward.HomeStateRoot()
-			census := diskstore.TakeUseCensus(context.Background(), *steward.KernelCensusReader(home, steward.ArmedCheckouts()))
+			census := diskstore.TakeUseCensus(context.Background(), *steward.KernelCensusReader(o.processTable(), home, steward.ArmedCheckouts()))
 			return &census
 		}
 	}
@@ -111,7 +124,7 @@ func (o diskOwners) proofsFor(top string) map[diskstore.OwnerKind]diskstore.Owne
 	if o.proofs != nil {
 		return o.proofs
 	}
-	return steward.DiskOwnerProofs(top, o.now().UTC())
+	return steward.DiskOwnerProofs(top, o.now().UTC(), o.processTable())
 }
 
 func diskIntentCommands() []intentCommand {
@@ -425,7 +438,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 			Summary: "--plan names the preview that --strays acts on, and alone it does nothing; nothing was done",
 			next:    inv.publicArgv("disk", "clean", "--strays", "--plan", inv.input.text("plan")), nextReason: "remove the strays that preview listed"})
 	}
-	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true}
+	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true,
+		Processes: owners.processTable()}
 	if inv.input.switched("preview") {
 		pass.Mode, pass.ForgetRemoved = diskstore.ModePreview, false
 	}

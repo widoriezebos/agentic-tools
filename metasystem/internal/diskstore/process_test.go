@@ -285,7 +285,7 @@ func (b scratchBed) onlyRecord(t *testing.T) Record {
 // rule), and a test bed records no metasystem process.
 func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
 	t.Helper()
-	reader := KernelCensusReader(uint32(os.Getuid()))
+	reader := KernelCensusReader(append(identity.ListedProcessTable(nil), *b.processes...), uint32(os.Getuid()))
 	// No process of a test bed is the metasystem's, so by the census's
 	// ancestry rule every unreadable process (a zombie another test has
 	// not reaped yet, whose parent chain the kernel no longer answers) is
@@ -820,5 +820,19 @@ func TestOwnerGroupVerdictReadsOnlyTheTableItIsGiven(t *testing.T) {
 	}
 	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{}); verdict.Decision != Release {
 		t.Fatalf("a member outside the table kept the root: %+v", verdict)
+	}
+}
+
+// The kernel use census reads the processes of the table it is given and no
+// other: a table of the test's own process is a census of exactly that one.
+func TestKernelCensusReaderReadsOnlyItsTable(t *testing.T) {
+	t.Parallel()
+	self := int64(os.Getpid())
+	census := TakeUseCensus(context.Background(), KernelCensusReader(identity.ListedProcessTable{self}, uint32(os.Getuid())))
+	if !census.Taken || len(census.Processes)+len(census.Unreadable)+len(census.NotOurs) != 1 {
+		t.Fatalf("census of a one-process table = %+v; want exactly this process", census)
+	}
+	if empty := TakeUseCensus(context.Background(), KernelCensusReader(identity.ListedProcessTable{}, uint32(os.Getuid()))); !empty.Complete() || len(empty.Processes) != 0 {
+		t.Fatalf("census of an empty table = %+v; want taken and empty", empty)
 	}
 }

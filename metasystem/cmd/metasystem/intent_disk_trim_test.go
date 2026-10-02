@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // diskCleanBed is an installation with the shipped trim defaults, a
@@ -30,6 +31,9 @@ func newDiskCleanBed(t *testing.T) diskCleanBed {
 		userCacheDir: func() (string, error) { return bed.userCache, nil },
 		stateDir:     bed.state,
 		now:          func() time.Time { return diskCleanNow },
+		// The bed starts no process: disk clean's sweep and use census read
+		// an empty table, never the host's.
+		processes: identity.ListedProcessTable{},
 	}
 	bed.owners = owners
 	return bed
@@ -313,5 +317,16 @@ func TestDiskTrimLineSaysTheKeepWindowYieldsOverTheCap(t *testing.T) {
 				t.Fatalf("line %q; want it to say %q: %v", line, plain, tc.says)
 			}
 		})
+	}
+}
+
+// disk clean's default use census reads the process table its owners are
+// given: an empty table is a complete census of nothing, whatever runs on
+// the host.
+func TestDiskCleanDefaultCensusReadsTheOwnersTable(t *testing.T) {
+	t.Parallel()
+	census := diskOwners{processes: identity.ListedProcessTable{}}.withDefaults().census()
+	if !census.Complete() || census.Count != 0 || len(census.NotOurs) != 0 {
+		t.Fatalf("the census of an empty table = %+v; want complete and empty", census)
 	}
 }

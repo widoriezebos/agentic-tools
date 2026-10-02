@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The machine pass carries the launch store's retention (Part B U5d): with
@@ -125,5 +126,28 @@ func TestDiskPassesCarryTheProcessProof(t *testing.T) {
 	machine := DiskPass{}.machineProofs(bed.inst)
 	if proof, ok := machine[diskstore.OwnerUnit].(diskstore.UnitFindingsProof); !ok || proof.UnitRoot != filepath.Join(bed.inst, "unit") {
 		t.Errorf("the machine pass has no unit findings proof: %+v", proof)
+	}
+}
+
+// A pass's process proofs and use census read the process table the pass
+// is given; nil is the kernel's.
+func TestDiskPassesReadTheProcessTableTheyAreGiven(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	table := identity.ListedProcessTable{int64(os.Getpid())}
+	pass := DiskPass{Now: staleNow, Processes: table}
+	for name, proofs := range map[string]map[diskstore.OwnerKind]diskstore.OwnerProof{
+		"machine": pass.machineProofs(bed.inst), "checkout": checkoutProofs(bed.inst, pass)} {
+		proof, ok := proofs[diskstore.OwnerProcess].(diskstore.ProcessProof)
+		if listed, isListed := proof.Table.(identity.ListedProcessTable); !ok || !isListed || len(listed) != 1 || listed[0] != table[0] {
+			t.Errorf("the %s pass's process proof reads %#v; want the pass's table", name, proof.Table)
+		}
+	}
+	if proof, _ := (DiskPass{}).machineProofs(bed.inst)[diskstore.OwnerProcess].(diskstore.ProcessProof); proof.Table != (identity.KernelProcessTable{}) {
+		t.Errorf("a pass without a table reads %#v; want the kernel's", proof.Table)
+	}
+	reader := KernelCensusReader(table, bed.home, nil)
+	if pids, err := reader.Pids(); err != nil || len(pids) != 1 || pids[0] != table[0] {
+		t.Fatalf("the census reader lists %v, %v; want only the table's process", pids, err)
 	}
 }
