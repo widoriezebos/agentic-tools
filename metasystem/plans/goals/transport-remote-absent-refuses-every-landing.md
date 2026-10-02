@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it misreports a landing that reached origin as a failed landing, and leaves the VM mirror the validation rule depends on unwritten; novelty 1: a remote configuration plus an honest refusal line, on machinery that already carries a skip flag; exposure 3: the step is required on every landing from this Mac; accumulation 2: every landing pays it and every report has to be read past it"
 - Tier: 3
 - Intent: What: A landing that reached GitHub is never reported as failed just because this computer has no "transport" mirror set up. Why: The landing lane already skips the mirror step when no mirror exists, but the hand-landing path (work land --message) still requires it and reports a failure for work that is safely on origin. Pros: Truthful landing reports and no false alarms on machines without a mirror. Cons: A machine that should have the mirror but lost it now gets only a one-line note, so the gap may go unnoticed longer.
 - Origin: main
 - Next step: Next: In internal/landpath/land.go, skip the mirror sync with one plain line when git remote get-url transport fails, as the batch lane already does; add a test where a landing with no transport remote succeeds and names the skip. Done when: work land --message on a checkout without a transport remote reports success and says the mirror step was skipped.
 - OpenedAt: 2026-09-09T07:04:53Z
-- Revision: 8
+- Revision: 9
 - BudgetExceptions: 0
 
 History:
@@ -21,4 +21,5 @@ History:
 - 2026-09-11T08:04:19Z AB7K9V2D4MPDKGSXNJ244E2DS2-m1-c6925449 unapprove actor=human:Wido targets=transport-remote-absent-refuses-every-landing reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
 - 2026-09-11T21:58:41Z 79JJNEBYSPGBCDTAJDBMMNK743-m1-c6925449 edit actor=human:Wido targets=transport-remote-absent-refuses-every-landing
 - 2026-09-30T18:47:03Z VM9AFBJD64KKFE8T6WZDWN3TFS-m1e-b6a4eb0a edit actor=human:wido targets=transport-remote-absent-refuses-every-landing
-Integrity: sha256=94ec5e17d609b33ba9efd8812050be6793244218dfb83bd42a3458df21f56da4
+- 2026-10-02T12:27:47Z GN6351VETFAJ8N7M5Z9DY4SM56-m1e-9c612d71 set-priority actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,design-gate-at-dispatch,design-rounds-read-less-and-repeat-less,enrollment-proves-a-human-not-a-terminal,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,land-verb-writes-the-receipt,landing-deploys-the-engine,landing-design-provenance,landing-lane-runtime-redesign,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,old-lane-plumbing-is-deleted,one-approval-gate,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,reviewers-check-the-rulings,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak,work-review-starts-its-critic reason=priority-order subject=seat-path-lands-without-help from=2:1 to=2:2 requested-sequence=1
+Integrity: sha256=ab6a27aac012d38b4e15e08a8c0e51b3901aa6fe2489631aee0ac018d520dc9b
