@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
@@ -187,12 +189,17 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 		return channel.Question{}, warnings, 1, e
 	}
 	defer cancel()
-	ledgerCursor, cursorExists, cursorErr := surface.cursor(root)
-	if cursorErr != nil {
-		return channel.Question{}, warnings, 1, fmt.Errorf("channel ask could not read the accepted ledger cursor: %v", cursorErr)
-	}
-	if !cursorExists {
-		ledgerCursor = ""
+	// A question about the lane or the machine is waited for on its record,
+	// not on the goal ledger, so it needs no ledger position.
+	ledgerCursor := ""
+	if in.Goal != "" {
+		cursor, cursorExists, cursorErr := surface.cursor(root)
+		if cursorErr != nil {
+			return channel.Question{}, warnings, 1, fmt.Errorf("channel ask could not read the accepted ledger cursor: %v", cursorErr)
+		}
+		if cursorExists {
+			ledgerCursor = cursor
+		}
 	}
 	now, e := goalCommandNow(root)
 	if e != nil {
@@ -257,6 +264,9 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	if q.Goal == "" && *resume == "" {
+		return channelGoallessWait(*root, q, time.Duration(*timeoutMinutes)*time.Minute, time.Duration(*pollSeconds)*time.Second, callerPID, lineage, stdout, stderr, resolveMachine)
 	}
 	cursor := ""
 	if *resume == "" {
@@ -326,4 +336,126 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 		fmt.Fprintln(stdout, answered.Answer.Text)
 	}
 	return code
+}
+
+// channelHumanWaitClock is the goal-less wait's clock and pause; tests
+// replace both together.
+var channelHumanWaitClock = struct {
+	now   func() time.Time
+	sleep func(context.Context, time.Duration)
+}{now: time.Now, sleep: func(ctx context.Context, d time.Duration) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}}
+
+// channelGoallessWait waits for the answer to a question that names no
+// goal. There is no goal ledger act to observe, so it registers the human
+// wait of the session that waits, polls the channel, and reads the question
+// record until its answer is recorded; the registration ends with the wait.
+func channelGoallessWait(root string, q channel.Question, timeout, pollEvery time.Duration, callerPID int64, lineage string, stdout, stderr io.Writer, resolveMachine func(string) (string, error)) int {
+	if timeout <= 0 {
+		timeout = 24 * time.Hour
+	}
+	loaded, err := phase.Load(root, true)
+	if err != nil {
+		fmt.Fprintln(stderr, "channel wait provider is unavailable:", err)
+		return 1
+	}
+	if loaded.Provider == nil {
+		fmt.Fprintln(stderr, "channel wait requires a configured channel provider")
+		return 1
+	}
+	machine, lineage, err := channelIdentityFor(root, resolveMachine, lineage)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	stateRoot, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return metarun.ExitWaiterIO
+	}
+	options, err := waitRegisterOptions(stateRoot)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return metarun.ExitWaiterIO
+	}
+	resolved, code, err := resolveWaitCaller(stateRoot, callerPID)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return code
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	scanCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	openWorkSignature, err := waitOpenWorkSignature(scanCtx, stateRoot)
+	cancel()
+	if err != nil {
+		fmt.Fprintln(stderr, "the open-work signature could not be read:", err)
+		return metarun.ExitWaiterIO
+	}
+	store := &metarun.Store{Root: stateRoot}
+	row, err := store.RegisterDetachedWait(metarun.RegisterWaitRequest{
+		Kind: "human", Question: q.ID, Owner: resolved.owner, RuntimeSession: resolved.runtimeSession,
+		Runtime: resolved.view.Announcement.Runtime, Timeout: timeout, OpenWorkSignature: openWorkSignature,
+	}, options)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return metarun.WaiterExitCode(err)
+	}
+	end := func() {
+		if _, endErr := store.EndDetachedWait(row.WaitID, resolved.owner, resolved.runtimeSession, options); endErr != nil {
+			fmt.Fprintln(stderr, "the human wait registration could not be ended:", endErr)
+		}
+	}
+	clock := channelHumanWaitClock
+	deadline := clock.now().Add(timeout)
+	nextPoll := time.Time{}
+	for {
+		if pollEvery > 0 && !clock.now().Before(nextPoll) {
+			nextPoll = clock.now().Add(pollEvery)
+			now, nowErr := goalCommandNow(root)
+			if nowErr == nil {
+				pollCtx, pollCancel := context.WithTimeout(ctx, time.Minute)
+				_, nowErr = channel.Poll(pollCtx, channel.PollConfig{
+					RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter,
+					HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret,
+					Machine: machine, Lineage: lineage, Provider: loaded.Provider,
+					DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5,
+				})
+				pollCancel()
+			}
+			if nowErr != nil {
+				fmt.Fprintln(stderr, "channel poll failed; the wait goes on:", nowErr)
+			}
+		}
+		current, readErr := channel.ReadQuestion(root, q.ID)
+		switch {
+		case readErr != nil:
+			end()
+			fmt.Fprintln(stderr, readErr)
+			return 1
+		case current.Answer != nil && current.Answer.Phase != "matched":
+			end()
+			fmt.Fprintln(stdout, current.Answer.Text)
+			return 0
+		case current.State == "closed" && current.Answer == nil:
+			end()
+			fmt.Fprintf(stderr, "question %s was withdrawn, so no answer will come\nrun: metasystem question show channel:%s\n", q.ID, q.ID)
+			return 1
+		case ctx.Err() != nil:
+			end()
+			fmt.Fprintln(stderr, "the wait was interrupted before the answer came")
+			return metarun.ExitInterrupted
+		case !clock.now().Before(deadline):
+			end()
+			fmt.Fprintf(stderr, "question %s is not answered yet; the person answers in its channel thread\nrun: metasystem question wait channel:%s\n", q.ID, q.ID)
+			return metarun.ExitWaitDeadline
+		}
+		clock.sleep(ctx, 2*time.Second)
+	}
 }
