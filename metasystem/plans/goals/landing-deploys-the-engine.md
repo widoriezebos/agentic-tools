@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: After the lane's first real landing: one design page (core question: engine pins vs central binary), Astra at most 2 rounds, one builder, one real run Wido 2026-10-01: full control by verbs where applicable (deploy status/now/rollback/pause, which engine each seat runs) and all of it from the UI too (Fleet page: current engine, per-seat engine, deploy now, rollback, history); the design names each verb and its UI action. Wido 2026-10-01: must fit other languages, e.g. Java/Maven: the lane only calls the project's deploy adapter (build artifact from the pushed commit, place/activate it, report the version, roll back) with language-neutral input/output; the metasystem's Go engine is just one adapter; a Maven adapter (mvn package/deploy of a jar, or a container image) is the design's worked second example. Updated 2026-10-02: its precondition 'after the lane's first real landing' is MET (fleet-card-can-land-now landed through the plain lane, 91579aa80). Next: design, then build, per the intent (controllable by verbs and the UI, language-generic). Observed 2026-10-02 night (coordinator m1e): seats edit code directly in their own checkout (m1g, m1h: uncommitted files in the main checkout), and the steward's engine is built from that same tree, so a seat's own gate run (go run ./cmd/devgate build) turns work in progress into the next engine generation its steward re-arms on (m1g gen 2, m1h gen 3). Deploying must build the engine from a clean landed commit into a location apart from any seat's working tree, and every seat on the host picks it up between sessions. Today's landed fixes (fleet Running column 46a3fc613, machine start a0159fd3f, seat claim fallback 3681afe27) are waiting for exactly that.
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 31
+- Revision: 32
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T22:18:28Z revision=32 opid=XXSA4976C2TXY30BPDAPWWQPKW-m1e-9c612d71 authority=proven digest=e230fa483eb4f2f2d749306693ebc6a1d509afe1c13c47ac1897543e06560fc2 episode=32
 - Parked: by=human:Wido at=2026-10-02T22:18:23Z displaced=m1h+steward-seat@2026-10-02T21:05:00Z because=approval revoked: Re-arm after idle-backlog-dead: seats ended turns to wait on background jobs (fixed in the seat brief, 8df19cc3a); seat engine restarted with the fix.
 
 History:
@@ -45,4 +47,5 @@ History:
 - 2026-10-02T21:05:42Z 0FKNV8EAEBJYFY0VMKB87M6B2Z-m1e-9c612d71 set-pin actor=human:Wido targets=landing-deploys-the-engine
 - 2026-10-02T21:53:40Z DCA4Y6MBB3DXFTZ70KVVJWZSWH-m1e-9c612d71 edit actor=human:Wido targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-02T21:05:00Z
 - 2026-10-02T22:18:23Z R95FVFX22T6W6JRZ2EEW6ZM0VZ-m1e-9c612d71 unapprove actor=human:Wido targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-02T21:05:00Z reason=Re-arm after idle-backlog-dead: seats ended turns to wait on background jobs (fixed in the seat brief, 8df19cc3a); seat engine restarted with the fix.
-Integrity: sha256=3b0afd74b2fb6618f0df63ae02089aca99da1214b7a8715078bd356f77482d4e
+- 2026-10-02T22:18:28Z XXSA4976C2TXY30BPDAPWWQPKW-m1e-9c612d71 approve actor=human:Wido targets=landing-deploys-the-engine
+Integrity: sha256=e0b18b9a33cde27c52f408cf8eb7419e9e961aa0d68659fe04602ceb74ef8c0f
