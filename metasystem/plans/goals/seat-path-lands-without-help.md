@@ -1,6 +1,6 @@
 # seat-path-lands-without-help
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Seat landing gates; each fix small, together they decide whether seats run unattended"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Reproduce each friction item from 2026-10-01 (list in the m1e work-state note) on current main, fix one at a time by subtraction, then one unattended hand-in from each seat Wido 2026-10-01: apply the threat model to every seat-path layer (receipt worktrees, test-policy engine checks, budget-episode gates, custody): what does it defend against; outside 'nobody attacks' -> remove, don't fix. TARGET (Wido 2026-10-01): one landing mechanism. A seat without a lane lands exactly as the lane agent does for a batch of one: merge its branch onto latest main, landing prove (same landing.prove.command, detached), landing push (same rail) - on its own landing tree. The lane adds only batching across seats and sharing the expensive suite run. Then delete the old seat self-land plumbing (landpath receipts, test-policy planning in landing, budget-episode gates for landing). Narrowed 2026-10-02 (coordinator m1e): the 10-01 hand-in frictions are largely resolved; on 2026-10-02 the ui seat's hand-in went through the lane end to end (fleet-card-can-land-now, 91579aa80) after only a budget fix. Do NOT re-reproduce them. Remaining work: (1) a seat on a host WITHOUT a lane lands exactly like the lane's batch of one (merge onto main, landing prove with landing.prove.command, landing push); (2) delete the old self-land plumbing (landpath receipts, test-policy planning in landing, landing budget gates), keeping only what the lane and (1) use. Smallest thing that works; ask the human if blocked. Unit 1b (coordinator m1e, 2026-10-02): a hand-in to the lane suspends the goal's elapsed clock exactly as goal land-ready does, and a return resumes it; a goal waiting in the lane is never budget-stopped for the wait (observed: review-briefs-name-a-threat-model breach-stopped while queued 10-02 01:42Z; fleet-card-can-land-now needed a set-budget). Test: handed in and waiting past the elapsed limit is not breach-stopped; a returned goal's clock runs again. Independent of (1) and (2): build it as its own small unit.
 - OpenedAt: 2026-10-01T15:55:49Z
-- Revision: 30
+- Revision: 31
 - Pinned: m1g
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T22:18:38Z revision=29 opid=HHEZHXDPCQ8650HPTZHMPKN9DZ-m1e-9c612d71 authority=proven digest=2e5281524d910c8741b1aa7e3548695517639cb3e2a844b3f2c3ddb253983350 episode=29
+- Claimed: machine=m1g lineage=steward-seat at=2026-10-02T22:38:46Z revision=31 accountingRevision=31 episodeAt=2026-10-02T22:38:46Z episodeRevision=31
+- StopCapability: generation=31 revision=31 machine=m1g claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T15:55:49Z JEJN0GE0Z67Y33FQ5KNVKATV1T-m1e-9c612d71 open actor=human:Wido targets=seat-path-lands-without-help
@@ -46,4 +48,5 @@ History:
 - 2026-10-02T22:18:34Z KV7HA8DQ97P4F7QTXJ7C1XXXGE-m1e-9c612d71 unapprove actor=human:Wido targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-02T20:47:59Z reason=Re-arm after idle-backlog-dead: seats ended turns to wait on background jobs (fixed in the seat brief, 8df19cc3a); seat engine restarted with the fix.
 - 2026-10-02T22:18:38Z HHEZHXDPCQ8650HPTZHMPKN9DZ-m1e-9c612d71 approve actor=human:Wido targets=seat-path-lands-without-help
 - 2026-10-02T22:36:49Z 8YD9Z6NDXPCTRZG46WG0E3VZHB-m1e-9c612d71 unpark actor=human:Wido targets=seat-path-lands-without-help
-Integrity: sha256=ab223906e64413fc821159acdf574fa6bb1ebf19468841fe8655ccb6ee9aa0c3
+- 2026-10-02T22:38:46Z CXQZAKYAKPXJXH5BXSC51Z85VH-m1g-71c5cb39 claim actor=m1g+steward-seat targets=seat-path-lands-without-help
+Integrity: sha256=b73fb4d3b8714b5157de39687cc2f3df82c56f89d5d10231b0548beac21e4475
