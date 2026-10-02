@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: Fix the UX items in report.md; verify each page at 1480 and 390 px with Playwright screenshots before and after; ASKED MGZWNQWNM9187QHCBNC2CADXQK (other): The seat on m1i can't commit its finished, proven UI work: 'work review' is refused by the commit guard ('an agent commits here only through metasystem work land (HEAD names no branch)'). The engine commits from a scratch copy whose HEAD names no branch, and the guard there finds no landing token. Tried twice, the same refusal both times. The result (proof green, 1,889 web tests) is staged in the goal's worktree, agentic-tools-m1i-ui-reads-well-on-a-phone-in-plain-words. How should it get committed?; ASKED NB7XMYFJV0E8AQDMTPCP9CSD7F (other): The tier-1 UI goal ui-reads-well-on-a-phone-in-plain-words can't land from a seat. Its first work is committed on the goal branch, with green proof and checked in a browser at 390 and 1480 px. 'work land' refuses: 'unit 9e9d712ca has no clean read, so it cannot land'. The read it names refuses because 'tier 1 goal ... refuses critic roles; raise it first with goal edit --tier 2'. A seat's raise of an approved goal needs misclassification evidence, which there isn't. (My earlier question about the commit is moot: updating this checkout's engine to main fixed it.) How should it land?
 - OpenedAt: 2026-10-02T21:55:06Z
-- Revision: 7
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- NormApproval: approvedRef=BM7GRAHX0ZQ4MNRCNRBDAEQ5ZZ-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=3
-- Approved: by=human:Wido at=2026-10-02T21:55:29Z revision=4 opid=BM7GRAHX0ZQ4MNRCNRBDAEQ5ZZ-m1e-9c612d71 authority=proven digest=181c035bba9a7ab31d8b2c84a5d34fa45bb2eeacad36b9dfabbc2bf0f9bc0bff episode=4
-- Claimed: machine=m1i lineage=steward-seat at=2026-10-02T22:29:18Z revision=5 accountingRevision=5 episodeAt=2026-10-02T22:29:18Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=m1i claimEpoch=1 fenceEpoch=0
+- Revision: 8
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=0
+- BudgetExceptions: 1
+- NormApproval: approvedRef=KF9M6TP5NPQMCX4HA69Z44X1QC-m1e-718ba0eb minutes=720 reviewRounds=0 goalRevision=7
+- Approved: by=human:Wido at=2026-10-02T23:37:36Z revision=8 opid=KF9M6TP5NPQMCX4HA69Z44X1QC-m1e-718ba0eb authority=proven digest=2eca1bb24df2884f7545603a09f59d0de591666fcb57a4123c1aedb51f8c4eaa episode=8
+- Claimed: machine=m1i lineage=steward-seat at=2026-10-02T23:37:36Z revision=8 accountingRevision=8 episodeAt=2026-10-02T22:29:18Z episodeRevision=5
+- StopCapability: generation=8 revision=8 machine=m1i claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-02T21:55:06Z 899KWZAXQNVT1C3JJQAB3KWB5C-m1e-9c612d71 open actor=human:Wido targets=ui-reads-well-on-a-phone-in-plain-words
@@ -25,4 +25,5 @@ History:
 - 2026-10-02T22:29:18Z P1RYV5X29AE0XXNMPAR32AB841-m1i-71c5cb39 claim actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words
 - 2026-10-02T23:22:14Z ZYSW5NDC8M8CAM6DTWH034Z04B-m1i-71c5cb39 ask actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words
 - 2026-10-02T23:36:38Z BCG906FCJEST55YG17N5NSMRJV-m1i-71c5cb39 ask actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words
-Integrity: sha256=32bd2d3aec4d661cb2ee30434f439e007da8c8ffc4fab02cc19c6152a5f52f52
+- 2026-10-02T23:37:36Z KF9M6TP5NPQMCX4HA69Z44X1QC-m1e-718ba0eb set-budget actor=human:Wido targets=ui-reads-well-on-a-phone-in-plain-words displaced=m1i+steward-seat@2026-10-02T22:29:18Z
+Integrity: sha256=d3e02cc7f4662a298ecb19943c335ab14b61ecd17bd28e30a2c21f025a6295d2
