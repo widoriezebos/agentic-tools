@@ -79,13 +79,13 @@ func TestProcessScratchKeepsANestedRootWhileItsGrandchildLives(t *testing.T) {
 				if _, err := os.Lstat(dir); err != nil {
 					t.Fatalf("the owners' releases removed a root a live grandchild uses:\n%s", output)
 				}
-				bed.sweep(t, identity.KernelProber{})
+				bed.sweep(t, identity.KernelProber{}, grandchild)
 				if _, err := os.Lstat(dir); err != nil {
 					t.Fatalf("the sweeper removed a root a live grandchild uses: %v", err)
 				}
 				_ = stdin.Close()
 				awaitGone(t, grandchild)
-				bed.sweep(t, identity.KernelProber{})
+				bed.sweep(t, identity.KernelProber{}, grandchild)
 				if _, err := os.Lstat(child); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("after the grandchild ended the child's root stayed: %v", err)
 				}
@@ -348,7 +348,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersSessionLives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, grandchild)
 	if unix.Kill(grandchild, 0) != nil {
 		t.Fatal("the grandchild ended before the witness looked")
 	}
@@ -357,7 +357,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersSessionLives(t *testing.T) {
 	}
 	_ = stdin.Close()
 	awaitGone(t, grandchild)
-	report := bed.sweep(t, identity.KernelProber{})
+	report := bed.sweep(t, identity.KernelProber{}, grandchild)
 	if _, err := os.Lstat(child); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("after the session ended the root stayed: %v\nkept %+v\npending %+v", err, report.Kept, report.Pending)
 	}
