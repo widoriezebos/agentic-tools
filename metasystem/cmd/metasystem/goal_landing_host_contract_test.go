@@ -400,6 +400,40 @@ var retiredWithDeletedLibrary = map[string]string{
 	"landing-command-standard/TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD": "landing/batch, landing/batchowner and landing/kernel (old lane plumbing)",
 }
 
+// retiredWithDesignDecision is the fifth and last way a legacy mandatory
+// test (group/test) may leave the floor: an accepted design deliberately
+// removed the behavior it pinned. Each value cites that design, as the
+// page's path under the installation followed by the decision; the page
+// must exist and say "- Status: accepted". Nothing without such a citation
+// may leave the legacy floor this way.
+var retiredWithDesignDecision = map[string]string{
+	"authority-standard/TestStatusCadenceAndDigestGate":                   "plans/designs/blocked-agent-asks-the-human.md Decision 7 (a quiet channel: no periodic status post); digest behaviour kept as TestStatusDigestIgnoresHeaderTime",
+	"authority-standard/TestRejectionRecordsItsPostRef":                   "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestCursorFromAnotherProviderIsIgnored":           "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestPollKeepsPassingSavedCursorWithoutConfirming": "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+}
+
+// assertRetiringDesignsAccepted holds each retiredWithDesignDecision
+// citation to an accepted design page under the installation.
+func assertRetiringDesignsAccepted(t *testing.T, installation string) {
+	t.Helper()
+	for test, citation := range retiredWithDesignDecision {
+		page, decision, _ := strings.Cut(citation, " ")
+		if !strings.HasPrefix(page, "plans/designs/") || !strings.HasSuffix(page, ".md") || !strings.HasPrefix(decision, "Decision ") {
+			t.Errorf("%s retires with %q, which cites no design page and decision", test, citation)
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(installation, filepath.FromSlash(page)))
+		if err != nil {
+			t.Errorf("%s retires with the design %s, which cannot be read: %v", test, page, err)
+			continue
+		}
+		if !slices.Contains(strings.Split(string(data), "\n"), "- Status: accepted") {
+			t.Errorf("%s retires with the design %s, which is not accepted", test, page)
+		}
+	}
+}
+
 var retiredWithDeletedBed = map[string]string{
 	"batch-buildcd-standard/TestLandFixtureConfigurationsPinProofAdmission": "land-fixtures.sh",
 	"batch-buildcd-standard/TestLandFixtureScenarioRegistryMatchesCount":    "land-fixtures.sh",
@@ -458,6 +492,7 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		t.Fatal(err)
 	}
 	projectRoot := filepath.Dir(installation)
+	assertRetiringDesignsAccepted(t, installation)
 	data, err := os.ReadFile(filepath.Join("testdata", "goal_landing_legacy_testing.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -734,6 +769,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			if library, retired := retiredWithDeletedLibrary[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted library %s", old.ID, name, library)
+				continue
+			}
+			if design, retired := retiredWithDesignDecision[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired by the accepted design %s", old.ID, name, design)
 				continue
 			}
 			if replacement, retired := retiredWithDeletedScript[old.ID+"/"+name]; retired {
