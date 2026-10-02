@@ -106,6 +106,7 @@ func fixtureTeardownExact(pid, token int64) identity.Exact {
 // stays ready, and the 10 ms tick would have to win every one of the 99
 // selects that follow.
 func TestFixtureTeardownOutwaitsASlowExit(t *testing.T) {
+	t.Parallel()
 	owner := fixtureTeardownExact(int64(os.Getpid()), 1)
 	child := fixtureTeardownExact(500, 2)
 	recorder := &recordingTB{}

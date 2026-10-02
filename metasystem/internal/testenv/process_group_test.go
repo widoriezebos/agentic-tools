@@ -13,6 +13,7 @@ import (
 // expired is not a failure; cleanup moves on to the group kill. The stop's
 // context is already cancelled, so nothing is timed.
 func TestExpiredOrderlyStopEscalatesToTheKill(t *testing.T) {
+	t.Parallel()
 	recorder := &fixtureProcessGroupRecorder{}
 	var kills []string
 	reapFixtureProcessGroups(recorder, []FixtureProcessGroup{{
@@ -43,6 +44,7 @@ func TestExpiredOrderlyStopEscalatesToTheKill(t *testing.T) {
 // production wiring is used with only the kernel seams swapped, and the fake
 // wait records whether its context carries a deadline.
 func TestSignaledGroupExitWaitHasNoDeadline(t *testing.T) {
+	t.Parallel()
 	ops, err := defaultFixtureProcessGroupOps()
 	if err != nil {
 		t.Fatal(err)
