@@ -46,10 +46,6 @@ func appFixtureApp(t *testing.T) string {
 			return
 		}
 	})
-	// A verb's start launches the engine's own `app serve`. Under `go test`
-	// this process is the test binary, so the tests supervise with the real
-	// engine this binary builds once.
-	appEngineBinary := testenv.Engine(t)
 	if appFixtureError != nil {
 		t.Fatal(appFixtureError)
 	}
@@ -122,7 +118,10 @@ func newAppBed(t *testing.T, contract map[string]any) *appBed {
 			t.Fatal(err)
 		}
 	}
-	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: appEngineBinary}
+	// A verb's start launches the engine's own `app serve`. Under `go test`
+	// this process is the test binary, so the tests supervise with the real
+	// engine this binary builds once.
+	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: testenv.Engine(t)}
 	bed.git("init", "--quiet", "--initial-branch=main")
 	bed.git("config", "user.email", "fixture@invalid")
 	bed.git("config", "user.name", "Fixture")
