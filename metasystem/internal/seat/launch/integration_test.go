@@ -62,7 +62,7 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	target := filepath.Join(bed, "agentic-tools-m1f")
 	evidence := filepath.Join(bed, "evidence", "m1u")
 	committed := filepath.Join(bed, "evidence", "committed")
-	fixtureRepository(t, bare, source, committed, evidence)
+	fixtureRepository(t, bare, source, committed, evidence, false)
 	if err := os.MkdirAll(evidence, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -189,12 +189,81 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	}
 }
 
+// A fresh clone of the self-hosted template keeps its ledger beneath the
+// installation, and the ledger step fetches it at the state root an existing
+// checkout of that layout resolves — the installation — never at the
+// repository root, whose own plans/ folder holds no ledger at all.
+func TestAFreshCloneOfTheSelfHostedTemplateFetchesItsLedger(t *testing.T) {
+	t.Parallel()
+	bed := t.TempDir()
+	bare := filepath.Join(bed, "origin.git")
+	source := filepath.Join(bed, "agentic-tools")
+	target := filepath.Join(bed, "agentic-tools-m1j")
+	evidence := filepath.Join(bed, "evidence", "m1u")
+	committed := filepath.Join(bed, "evidence", "committed")
+	fixtureRepository(t, bare, source, committed, evidence, true)
+	if err := os.MkdirAll(evidence, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mixedRunner{said: map[string]string{
+		"metasystem validate session-isolation --source-root " + source + " --destination-root " + target +
+			" --manifest " + filepath.Join(target, install, "artifacts", "agents", "ui", "local-config-paths") +
+			" --harness-root " + filepath.Join(source, install): "",
+		"metasystem config validate --conf " + filepath.Join(target, install, "metasystem.conf") +
+			" --repo " + target: "",
+	}}
+	sequencer := &Sequencer{
+		Request: Request{
+			Machine: machineName, From: source, Destination: target,
+			Word: humanWord, ReviewBy: reviewBy,
+		},
+		Installation: install, OriginURL: bare,
+		Host: OSHost{}, Runner: runner, Clock: Wall{},
+		Write:     func(Record) error { return nil },
+		GitBudget: 60 * time.Second, BuildBudget: time.Minute,
+	}
+	record := Record{Launch: launchID, Machine: machineName, Destination: target, Outcome: OutcomeRunning}
+	for _, name := range []string{StepClone, StepTracking, StepConfiguration, StepNickname} {
+		if ran, err := sequencer.step(name, &record); err != nil || ran.outcome != StepDone {
+			t.Fatalf("%s = %q, %v; want done", name, ran.outcome, err)
+		}
+	}
+	buildEngine(t, filepath.Join(target, install, "bin", "metasystem"))
+	ran, err := sequencer.step(StepLedger, &record)
+	if err != nil || ran.outcome != StepDone {
+		t.Fatalf("ledger = %q, %v; want the template clone's ledger fetched and validated", ran.outcome, err)
+	}
+	stateRoot := filepath.Join(target, install)
+	for _, verb := range []string{"fetch", "next"} {
+		want := "metasystem goal " + verb + " --root " + stateRoot
+		found := false
+		for _, key := range runner.ran {
+			found = found || key == want
+		}
+		if !found {
+			t.Fatalf("the ledger step ran %q, want %q", runner.ran, want)
+		}
+	}
+	accepted := git(t, target, "rev-parse", "--verify", "refs/metasystem/goals/accepted")
+	if accepted == "" || accepted != git(t, target, "rev-parse", "--verify", "refs/remotes/origin/main") {
+		t.Fatalf("the accepted ref is %q, want the fleet's published tip", accepted)
+	}
+	if record.Orientation == "" {
+		t.Fatal("the record carries no orientation line from the clone's own reading")
+	}
+}
+
 // fixtureRepository builds a bare remote and a checkout of it that looks
 // enough like a seat of this fleet to be cloned: an installation directory
 // with a configuration in it, the endpoint and human keys in local git
 // configuration, and an unversioned metasystem.conf.local beside the
 // versioned one.
-func fixtureRepository(t *testing.T, bare, source, committedRoot, sourceRoot string) {
+//
+// A template fixture is this repository's own self-hosted layout: the
+// installation's committed conf declares metasystem.template=true, the ledger
+// lives beneath the installation at metasystem/plans/goals, and the
+// repository root carries a plans/ folder of its own that holds no ledger.
+func fixtureRepository(t *testing.T, bare, source, committedRoot, sourceRoot string, template bool) {
 	t.Helper()
 	run(t, "", "git", "init", "--quiet", "--bare", "-b", "main", bare)
 	run(t, "", "git", "init", "--quiet", "-b", "main", source)
@@ -207,18 +276,28 @@ func fixtureRepository(t *testing.T, bare, source, committedRoot, sourceRoot str
 	if err := os.MkdirAll(filepath.Join(source, install), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(source, install, "metasystem.conf"), config.EvidenceRootKey+"="+committedRoot+"\n")
+	conf := config.EvidenceRootKey + "=" + committedRoot + "\n"
+	ledger := source
+	if template {
+		conf += config.TemplateModeKey + "=true\n"
+		ledger = filepath.Join(source, install)
+		if err := os.MkdirAll(filepath.Join(source, "plans", "designs"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(source, "plans", "designs", "a-design.md"), "# A design, not a ledger\n")
+	}
+	write(t, filepath.Join(source, install, "metasystem.conf"), conf)
 	// One lawful ledger, so the clone's own `goal fetch` has a canonical tree
 	// to validate and an accepted ref to create. It is the smallest tree the
 	// validator accepts: a root record and one queued goal.
-	if err := os.MkdirAll(filepath.Join(source, "plans", "goals"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(ledger, "plans", "goals"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(source, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
+	write(t, filepath.Join(ledger, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "2",
 		SyncMode: goal.SyncRemote, Revision: 1,
 	})))
-	write(t, filepath.Join(source, "plans", "goals", "fixture-goal.md"), string(goal.RenderFile(&goal.GoalFile{
+	write(t, filepath.Join(ledger, "plans", "goals", "fixture-goal.md"), string(goal.RenderFile(&goal.GoalFile{
 		Id: "fixture-goal", State: goal.StateQueued, Intent: "Join the fleet.", Origin: "main",
 		NextStep: "Start it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
 		History: []goal.HistoryLine{{

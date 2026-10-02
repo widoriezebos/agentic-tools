@@ -180,6 +180,12 @@ func (h *fakeHost) EvidenceRoot(installation string) (config.EvidenceRoot, error
 	return config.EvidenceRoot{}, fmt.Errorf("no evidence root for %s", installation)
 }
 
+// StateRoot answers the adopted layout's root, the checkout above the
+// installation, which is what every fake launch is.
+func (h *fakeHost) StateRoot(installation string) (string, error) {
+	return filepath.Dir(installation), nil
+}
+
 func (h *fakeHost) MakeDir(path string) (bool, error) {
 	h.madeDirs = append(h.madeDirs, path)
 	if h.present[path] {

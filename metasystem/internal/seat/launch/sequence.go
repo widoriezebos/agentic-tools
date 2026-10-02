@@ -67,6 +67,11 @@ type Host interface {
 	// EvidenceRoot is an installation's evidence root as the engine's one
 	// owner resolves it.
 	EvidenceRoot(installation string) (config.EvidenceRoot, error)
+	// StateRoot is the directory an installation keeps its ledger beneath,
+	// as the engine's one owner resolves it for an existing checkout: the
+	// installation itself in the self-hosted template, the repository root
+	// for an adopted installation.
+	StateRoot(installation string) (string, error)
 	// CopyLocalConf copies one seat's metasystem.conf.local to another as
 	// bytes, blanking the evidence root through the engine's own conf
 	// writer, and publishes it atomically.
@@ -645,10 +650,19 @@ func (s *Sequencer) nickname(record *Record) (stepRun, error) {
 // The fetch runs every time: a fresh clone validates the canonical tree and
 // creates its accepted ref, and a resumed launch wants the tip as it stands
 // now rather than as it stood when it was interrupted.
+//
+// Both commands take the clone's state root, resolved as an existing checkout
+// resolves it, and never the clone's top: the self-hosted template keeps its
+// ledger beneath the installation, and its repository root carries a plans/
+// folder of its own that holds no ledger.
 func (s *Sequencer) ledger(record *Record) (stepRun, error) {
+	root, err := s.Host.StateRoot(s.install(record.Destination))
+	if err != nil {
+		return stepRun{}, err
+	}
 	if _, err := s.run(Command{
 		Dir: record.Destination, Name: s.binary(record.Destination), Budget: s.GitBudget,
-		Args: []string{"goal", "fetch", "--root", record.Destination},
+		Args: []string{"goal", "fetch", "--root", root},
 	}); err != nil {
 		return stepRun{}, err
 	}
@@ -656,7 +670,7 @@ func (s *Sequencer) ledger(record *Record) (stepRun, error) {
 	// ledger with nothing claimable is a machine that joined.
 	printed, err := s.run(Command{
 		Dir: record.Destination, Name: s.binary(record.Destination), Budget: s.GitBudget,
-		Args: []string{"goal", "next", "--root", record.Destination},
+		Args: []string{"goal", "next", "--root", root},
 	})
 	if err == nil {
 		record.Orientation = firstLine(printed)
