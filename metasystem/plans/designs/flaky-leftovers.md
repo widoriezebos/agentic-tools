@@ -37,6 +37,7 @@ The ways this goal could end in a rabbit hole, each with what keeps it out:
 **Fix: one description for the owner and one per child, all shared locks.**
 1. The owner takes its own description `LOCK_SH`, not `LOCK_EX`. At release it runs `unlockAndClose` (LOCK_UN, then Close). That frees every fork copy of the owner's description, deterministically.
 2. Replace `PrepareChild` with `StartChild(cmd) error`. Under `scratchMu` it opens a fresh description of `.writer-lock` (`O_RDONLY|O_CLOEXEC|O_NOFOLLOW`), takes `LOCK_SH|LOCK_NB`, appends it to `ExtraFiles`, sets the environment as today and records the child. Then it calls `cmd.Start()` and closes the parent's copy, whether or not Start succeeded. The child and its descendants hold that description. The owner never holds it again and never unlocks it.
+   - **Fallback root** (FL-START-001). When registration fails, the root is an unregistered directory with no `.writer-lock` (`openScratch`, `:96-114`), and preparation does nothing (`:252-255`). In that case `StartChild` sets only the environment and starts the command without a lock, as today. A failed registration never stops the Stop worker or the optional-input reader from starting.
 3. An engine child still passes its inherited descriptions on to its own children, unchanged.
 4. Release keeps today's order: check users, check running prepared children, close, then take `LOCK_EX|LOCK_NB` once through a fresh description. A shared lock held by any descendant refuses that exclusive take, so the result is `Keep` and the record stays for the sweeper, exactly as today. The sweeper's proof (`ProbeWriterLock`, the exclusive take) is unchanged.
 5. Delete `WriterDrain`, `WriterDrainWindow`, `WriterDrainStep`, the `drain` parameter of `ReleaseProcessScratch` and `releaseScratchRoot`, and the clock arguments at `cmd/metasystem/main.go:263`, `cmd/devgate/main.go:62` and `internal/ui/httpd/walkthrough/main.go:65`.
@@ -45,6 +46,7 @@ The ways this goal could end in a rabbit hole, each with what keeps it out:
 
 **Tests.**
 - *Red before:* `TestOwnerReleaseFreesForkCopiesOfItsLock`. Create a scratch and hold `unix.Dup(writer)` open, which is a fork copy in everything but name. Then release. Today the result is "kept for the sweeper". After the fix the root is gone. No fork and no clock are involved.
+- `TestStartChildStartsInTheFallback`: a fallback scratch starts the child with no lock and returns no error.
 - `TestStartChildLeavesNoParentCopy`. After `StartChild` and Wait, no descriptor in this process (from `/dev/fd` plus fstat) has the lock file's device and inode, apart from the owner's own.
 - The existing grandchild test (`process_test.go` `grand-child-prep`) stays green: an orphaned holder keeps the root. *Mutation check:* make release unlock the children's descriptions too, and this test must go red.
 - Delete the drain tests at `process_d1_test.go:232-252` and `:440-480`.
@@ -69,23 +71,39 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 **Why the bounds are flake sources.**
 - Bounds 1, 2 and 8 run inside `t.Cleanup` or a test body. Each fails the test when the event is merely slow: 15 s for a stop, and 10 × the custodian bound × scale (50 s by default, `testenv.go:89-118`) for a SIGKILLed exit.
 - SIGKILL cannot be refused, so the exit always comes. The only open question is when.
-- The binary's own `go test -timeout` alarm already ends a wait that never comes. It is still armed while cleanups run, and it panics with every goroutine's stack, which names the stuck wait *(recited: Go testing internals)*.
-- If the binary dies there, the fixture custodian, a separate process, kills the recorded fixtures of its dead owner (`identity/fixture_custodian.go:494-606`). That keeps custody intact. *(Recited, not traced:* whether its scan covers every detached group that `ReapFixtureProcessGroups` reaps.)
+- The binary's own `go test -timeout` alarm already ends a wait that never comes. It is still armed while cleanups run *(recited: Go testing internals)*.
+
+**Trace: would the custodian catch what the reaper would have killed? Only partly.** (Read.)
+- The groups that `ReapFixtureProcessGroups` reaps are not written anywhere the custodian reads. Its records file is fed only by `ProcessFixture` (`testutil/fixture.go` `appendRecord`). Its tag scan (`identity/fixture_survivors.go:186-205`) matches only processes that carry a fixture tag, and those tags are opt-in (`testenv.go:142-160`).
+- The steward and cmd/metasystem callers start their groups with the plain environment: `steward/runner.go:1032-1038` and `cmd/metasystem/goal_landing_portable_test.go:272-276`. The delegation caller's launch environment was not read.
+- What the custodian does catch is live descendants. Every 250 ms poll (`fixture_custodian.go:27`) it records the owner's descendants from a process census (`:188-189`, `:291-318`), and after the owner dies it kills them (`reapDeadOwner`, `:522-539`). A group leader the test started, together with its in-tree members, is therefore caught once one poll has seen it.
+- It misses group members that were reparented out of the owner's tree, and processes born after its last poll.
+- **Conclusion:** after a `-timeout` panic, the reaper's residual group kill is not fully replaced. It has to stay reachable.
+
+**Ending a stuck wait without a load bound.** Reuse `testenv.Await`'s one accepted bound: the test binary's own deadline, read through `t.Deadline()`, minus `awaitReserve`. Await already gives up at that point "so the test's cleanups still run before go test's timeout panic" (`await.go:9-12, 38-44`).
+- A slow host never reaches that point unless the whole binary is about to time out anyway, so it is not a flake source.
+- Without `-timeout`, the wait ends only on the event.
 
 **Why #5 stays.** It runs after `m.Run` returns. The `-timeout` alarm has stopped by then *(recited)*, so nothing else would end a wait for a process stuck in the kernel. And `exitScan` has already set the failing exit code (`testenv.go:313-332`), so the bound only ends a report on a run that has already failed. It is a deadline, not a flake source.
 
 **Not in the eight.** The custodian's own bounds (`fixture_custodian.go:454, 472, 490, 597, 626`) are deadlines for an owner it can no longer observe. They run on the injected `custodianClock`, and tests drive them with a fake. They stay.
 
 **Fix (subtraction).**
-- In `fixtureProcessGroupOps`, replace `cleanupContext` and `exitContext` with one `done context.Context`. Production passes `context.Background()`. Delete `fixtureCleanupBound`.
-- `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown and `AwaitExactExit` pass `context.Background()`. Delete `ProcessFixture.waitBound`, `awaitExactExitWithin` and the bound in the error text.
+- Add one helper next to `Await` in `await.go`: `DeadlineContext(t)`. If `t` has a deadline, it returns `context.WithDeadline(deadline - awaitReserve)`; otherwise it returns `context.Background()`.
+- In `fixtureProcessGroupOps`, replace `cleanupContext` and `exitContext` with one `done context.Context`. Production passes `DeadlineContext(t)`. Delete `fixtureCleanupBound`.
+- The orderly stops, the residual SIGKILL and the exit waits keep their order (`process_group.go:117-173`). A hung stop now ends at the binary deadline as a named `t.Errorf`, and the group kill still runs after it.
+- `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown passes `DeadlineContext(f.t)`. `AwaitExactExit` takes no `t` and passes `context.Background()`; only `-timeout` ends it.
+- Delete `ProcessFixture.waitBound`, `awaitExactExitWithin` and the bound in the error text.
 - `FixtureExitWaitBound` stays, for #5 only.
 
 **Tests.**
 - The failure-path tests that set `waitBound = time.Millisecond` (`testutil/fixture_test.go:578, 642`) and `testFixtureContext` (`protection_test.go`) pass an already-cancelled context instead, as `TestAwaitProcessTargetGoneWaitsForTheReap` already does (`fixture_exit_test.go:113-140`).
-- *Red before:* `TestFixtureTeardownOutwaitsASlowExit`. The fake prober blocks its first probe on a channel and the test releases it, then the prober reports Dead. Today, with a 1 ms bound, the result is "child did not exit after 1ms". After the fix the teardown is clean. Add the same case for `ReapFixtureProcessGroups` with a fake `wait`.
+- *Red before:* `TestFixtureTeardownOutwaitsASlowExit` (FL-PROOF-001). The fake prober answers Alive on the first two probes and Dead from the third.
+  - **Old code** (1 ms bound): after probe 1, the select's 1 ms deadline fires before the 10 ms tick. If a stall makes both ready and the tick wins, probe 2 is still Alive, and the deadline, already ready, is then the only ready case. Either way the result is "child did not exit after 1ms": red.
+  - **New code:** the third probe returns Dead and teardown is clean.
+  - Add the same case for `ReapFixtureProcessGroups`, with a fake `wait` that returns `ctx.Err()` until its third call.
 
-**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). Lower `process_group.go` 3→1 and `testutil/fixture.go` 3→2, and rewrite their reasons as "pacing only". Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
+**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). Lower `process_group.go` 3→1 and `testutil/fixture.go` 3→2, and rewrite their reasons as "pacing only". Raise `await.go` 2→3 for `DeadlineContext`'s `WithDeadline`, because the audit counts it (`walltime_test.go:23`). The reason reads "the binary deadline, as Await". Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
 
 ## 3. Swapped process seams in sequential tests
 
@@ -108,7 +126,16 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 
 **Audit.** Add identity `Prober` and `KernelProber` and kernel `Kill` and `Signal` to the markers, and delete the "one-pid seam is not a table" exemption. A scratch AST count with those markers found three more seams on today's tree: `lease.sweepKill` (8), `mission.probeGroupGone` (2) and `steward.runnerSignal` (4). Convert them in the same slice.
 For the two configuration variables, add a two-name list to the same audit: "assigned only in TestMain or init".
-*Red before:* the extended audit names all ten seams on base.
+**Skip `artifacts/` in step 1** (FL-AUDIT-001). The audit's walk (`host_process_scan_audit_test.go:412-422`) skips only `testdata`, `vendor`, `node_modules` and dot-directories. It parses the stale worktree copies under `artifacts/agents/`, so with the new markers it would go red on those copies. Add `name == "artifacts"` to that condition, exactly as the sibling audit does (`process_scratch_release_audit_test.go:31`). The package's other shared list, `scriptRuleSkipNames` (`script_rule_test.go:24`), has no `testdata` or `vendor`, so this audit should not reuse it.
+*Red before:* the extended audit names all ten seams in the live tree, and none under `artifacts/`.
+
+## Moved effects
+
+| Effect | From | To | Code |
+|---|---|---|---|
+| Starting the child | `brain_boot.go:119`, `runtime_hook_worker.go:46` (`cmd.Start()` after `PrepareChild`) | `diskstore.StartChild` | `StartChild` calls `cmd.Start()`, then closes the parent's copy. The callers' own Wait, timers and kill logic stay where they are. |
+| Freeing fork copies of the owner's lock | the 2 s `WriterDrain` re-probe (`process.go:319-335`) | `LOCK_UN` on the owner's own description at release | `closeWriter` becomes `unlockAndClose` |
+| Ending a stuck orderly stop or exit wait | `WithTimeout(15s)` / `WithTimeout(exitBound)` (`process_group.go:72, 75`) and `time.After(bound)` (`testutil/fixture.go:354`) | the test binary's deadline minus `awaitReserve` (Await's rule). After a `-timeout` panic or a crash, the custodian's descendant kill takes over (partial, see the trace). | `testenv.DeadlineContext(t)` |
 
 ## Step 1
 
@@ -118,11 +145,10 @@ All three parts land as one slice each, in this order: 3 (mechanical), then 2, t
 
 - **`proofrun.scratchDrain`** (`internal/proofrun/scratch.go:582-600`). Same shape, but a borrowed run re-takes `LOCK_EX` on the inherited descriptor (`:520`). Later home: the same per-child-description pattern in that file.
 - **Kernel exit events** (kqueue `NOTE_EXIT`, pidfd) in place of the 10 ms pacing in the custody polls. Later home: `waitForFixtureProcessTarget` and `awaitExits`. They do not fix a flake, and a group has no exit event.
-- **The audit walking `artifacts/` copies of the tree.** The scratch count saw stale worktree copies there. Later home: the audit's `WalkDir` skip list.
 
 ## Risks
 
 - **The writer lock changes from exclusive to shared.** If any reader expects the owner to hold `LOCK_EX`, it would misread the lock. All three probes (`ProbeWriterLock`, the release take, the sweeper) take an exclusive lock through a fresh description, so a shared holder still reads "held". The existing `process_test.go` and `process_d1_test.go` suites cover the sweeper and nested children.
 - **A future `ExtraFiles` launcher that bypasses `StartChild`** would start a child with no lock. The removed export makes that a compile error.
-- **Unbounded teardown waits** turn a stuck stop into a `-timeout` panic instead of a named error. The panic's stack still names the wait. The red-before tests prove that a slow event no longer fails the test.
+- **Teardown waits now end only at the binary deadline.** A stuck stop is reported later, but still as a named `t.Errorf`, and the residual group kill still runs. The red-before tests prove that a slow event no longer fails the test. A cleanup that itself outlasts `awaitReserve` still ends in the panic, with the custodian's partial cover described in the trace.
 - **Seam conversion touches about 60 test sites.** The packages' own tests and their reverse dependents are the gate.
