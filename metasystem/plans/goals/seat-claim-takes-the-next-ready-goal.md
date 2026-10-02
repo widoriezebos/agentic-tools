@@ -9,7 +9,8 @@
 - Origin: main
 - Next step: Build: in the claim verb for the steward-seat lineage, fall back from a taken named goal to the machine's next ready goal; test with two machines and one goal; land
 - OpenedAt: 2026-10-02T21:06:51Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:06:57Z revision=2 opid=ECXBGNTD6MPJX3JJEPGN43FX8Z-m1e-9c612d71 authority=proven digest=676f2d401048b6a613285d53cd7b5b43e4b516244b1ec504efa5baccac15842c episode=2
@@ -18,4 +19,5 @@ History:
 - 2026-10-02T21:06:51Z HKKY7NCV27P0HC74EDX26V571C-m1e-9c612d71 open actor=human:Wido targets=seat-claim-takes-the-next-ready-goal
 - 2026-10-02T21:06:57Z ECXBGNTD6MPJX3JJEPGN43FX8Z-m1e-9c612d71 approve actor=human:Wido targets=seat-claim-takes-the-next-ready-goal
 - 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=f1ebf216cd71e9790928a219af87169a1055828cd535b8e8decef63aa6157c09
+- 2026-10-02T21:07:09Z ECK4XWDQ6V6QASBCH90V2VPW3K-m1e-9c612d71 set-pin actor=human:Wido targets=seat-claim-takes-the-next-ready-goal
+Integrity: sha256=2a16b5eb7ae88e7d9fb9a0ffe8a21c6112ec850653e2eed40505281b6683a3aa
