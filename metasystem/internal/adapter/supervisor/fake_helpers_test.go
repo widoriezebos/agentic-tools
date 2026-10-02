@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -431,16 +432,11 @@ func (f *fakeInstall) holds() map[int][]string {
 	return out
 }
 
-// waitFor polls cond until it holds or the test's bound passes.
+// waitFor polls cond until it holds: the fact is the event, bounded only by
+// the test binary's deadline.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testenv.Await(t, what, cond)
 }
 
 // waitPidFile waits for a round pid file to be written whole (the writer

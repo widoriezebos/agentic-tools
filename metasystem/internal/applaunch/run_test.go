@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 var (
@@ -158,22 +159,15 @@ func (b *bed) cleanup(key string) {
 	// A KILL is delivered, not awaited: the test's temporary directory is
 	// removed next, and a supervisor still writing its ended record into it
 	// would fail that removal. Wait until nothing recorded is alive.
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		alive := false
+	testenv.Await(b.t, "every recorded process of "+key+" to be dead", func() bool {
 		for _, encoded := range []string{record.Child, record.Supervisor} {
 			if ref, err := identity.ParseRef(encoded); err == nil && identity.AliveRef(prober, ref) != identity.Dead {
-				alive = true
+				return false
 			}
 		}
-		if members, err := KernelGroup(record.Group); err == nil && len(members) > 0 {
-			alive = true
-		}
-		if !alive {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		members, err := KernelGroup(record.Group)
+		return err != nil || len(members) == 0
+	})
 }
 
 func reap(pid int) {
@@ -205,16 +199,12 @@ func (b *bed) record(key string) *Record {
 	return record
 }
 
-func eventually(t *testing.T, what string, wait time.Duration, done func() bool) {
+// eventually waits for done to hold. The fact is the event: the duration a
+// caller names is how long the fact should take, never a deadline, and only
+// the test binary's deadline ends a wait for a fact that never comes.
+func eventually(t *testing.T, what string, _ time.Duration, done func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
-		if done() {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	testenv.Await(t, what, done)
 }
 
 func httpContract(app, address string, extra ...string) map[string]any {
