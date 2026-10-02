@@ -15,7 +15,7 @@ import (
 )
 
 // processScratchDispatchHelper runs one invocation through
-// dispatchWithFamilies in a child of this test binary, as main does, with a
+// dispatchProcess in a child of this test binary, as main does, with a
 // verb that takes a scratch directory and is done with it, as every site
 // is: the root and its record go only by the release on the way to the
 // exit code, which is dispatch's (R2).
@@ -37,7 +37,7 @@ func init() {
 			fmt.Fprintf(stdout, "dir=%s\n", dir)
 			return 0
 		}}}}
-		return dispatchWithFamilies([]string{"internal", "scratchfixture", "use"}, os.Stdout, os.Stderr, []family{scratch})
+		return dispatchProcess([]string{"internal", "scratchfixture", "use"}, os.Stdout, os.Stderr, []family{scratch})
 	}
 }
 
@@ -117,5 +117,30 @@ func TestBrainBootReaderStartsInTheProcessScratch(t *testing.T) {
 	}
 	if tmpdir, dir := lines[0], lines[1]; filepath.Dir(dir) != tmpdir || filepath.Base(filepath.Dir(tmpdir)) != "metasystem" {
 		t.Fatalf("the reader's TMPDIR %s is not the process scratch root holding its --dir %s", tmpdir, dir)
+	}
+}
+
+// An in-process command run leaves the process scratch alone: the test
+// binary runs many commands in one process at once, and a root released by
+// one of them was replaced under the others (flaky "projection index path
+// is not task-private"). Only the process's end releases it.
+func TestAnInProcessDispatchKeepsTheProcessScratch(t *testing.T) {
+	t.Parallel()
+	before, err := diskstore.ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return dispatchOn([]string{"help"}, stdout, stderr)
+	})
+	if code != 0 {
+		t.Fatalf("help: code=%d stderr=%q", code, stderr)
+	}
+	if _, err := os.Lstat(before); err != nil {
+		t.Fatalf("an in-process command released the process scratch %s: %v", before, err)
+	}
+	after, err := diskstore.ProcessScratch()
+	if err != nil || after != before {
+		t.Fatalf("the process scratch changed under an in-process command: %s -> %s (%v)", before, after, err)
 	}
 }
