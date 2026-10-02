@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 2
+- Sequence: 3
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Register-only change (append lines to receipts.log and the narrator digest); no code; reverts cleanly"
 - Tier: 1
 - Intent: Prove the landing lane end to end at switch-on: land m1e's uncommitted register lines as a goal-bound change
 - Origin: human
 - Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 14
+- Revision: 15
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -28,4 +28,5 @@ History:
 - 2026-10-02T14:05:34Z 9BRJM352K9WGFA2RBFQ78S0Y5R-m1e-9c612d71 approve actor=human:Wido targets=switch-on-trial
 - 2026-10-02T17:03:29Z Y8AT6TM53TN357Y4RPN3095FV9-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:3 to=1:2
 - 2026-10-02T17:10:02Z GVB4J2JWMYTRMDRQ7HKX5VT9G2-m1e-9c612d71 unapprove actor=human:Wido targets=switch-on-trial reason=coordinator goal: m1e concludes it by observing the real seats
-Integrity: sha256=8d3db841fb8f27ab491b9ee5852046903457305321e447c45aaa24595607a458
+- 2026-10-02T17:10:19Z 7RVXWYBA2E3130JD872F862HP1-m1e-9c612d71 set-priority actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,design-gate-at-dispatch,design-rounds-read-less-and-repeat-less,enrollment-proves-a-human-not-a-terminal,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,land-verb-writes-the-receipt,landing-deploys-the-engine,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,machinery-blocks-of-2026-10-02,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-approval-gate,one-folder-deployed-and-evolved,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,switch-on-trial,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak,work-review-starts-its-critic reason=priority-order subject=work-review-starts-its-critic from=1:2 to=1:3 requested-sequence=1
+Integrity: sha256=33710a991d7e32dba2ba26f71eb5ddb6e5993adf3e52df0a3ceaaa1b10ec4701
