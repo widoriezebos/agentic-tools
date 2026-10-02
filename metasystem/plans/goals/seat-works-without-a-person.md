@@ -1,6 +1,6 @@
 # seat-works-without-a-person
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="engine starts agent sessions unattended on this computer with the human own runtime credentials; bounded by the existing continuation role and permissions preset; local to one seat"
@@ -9,10 +9,8 @@
 - Origin: main
 - Next step: Next: run the first live proof on the ui seat: rebuild the engine, return the helm, switch on the seat launch setting, and let the steward start a seat against one approved goal; then mark the design page done. Done when: a steward-started seat claims an approved goal, commits on its branch and exits at idle.
 - OpenedAt: 2026-09-30T11:55:56Z
-- Revision: 15
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 16
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-30T18:57:37Z revision=5 opid=PHB1BRJVH52X711QGNNJPY4R4E-ui-bc2fda53 authority=proven digest=6eec8180e2a376dbd77a36d3ec0162aeec1a7d35e4cd8bd63a786ecbed475a81 episode=5
 
 History:
 - 2026-09-30T11:55:56Z CCNKJTVQC8G2MASVSB426PXV0H-ui-966d857e open actor=human:Wido targets=seat-works-without-a-person
@@ -30,4 +28,5 @@ History:
 - 2026-10-02T12:25:41Z EMJE19768V4AWPZGC7KV99ZY3Q-m1e-9c612d71 set-priority actor=human:Wido targets=critique-stops-on-convergence,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,seat-path-lands-without-help,seat-works-without-a-person,steward-acts-on-behaviour-patterns,work-review-starts-its-critic reason=priority-order subject=seat-works-without-a-person from=1:10 to=1:3 requested-sequence=3
 - 2026-10-02T12:49:24Z EQFW4CYPEQWW7Z9Z92KDJGB0YP-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,flaky-leftovers,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:3 to=1:2
 - 2026-10-02T17:03:29Z Y8AT6TM53TN357Y4RPN3095FV9-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:2 to=1:1
-Integrity: sha256=1efce3750ef68bb55008d04e268fe61872a532a0eceb30ac1f72800a261b0249
+- 2026-10-02T17:09:57Z EXGYHAW2NJBXNGJKWMRRSV0BWR-m1e-9c612d71 unapprove actor=human:Wido targets=seat-works-without-a-person reason=coordinator goal: m1e concludes it by observing the first real seat run
+Integrity: sha256=fd96de3c0997f92d2c557504593999eb86259ee0c04795e699297b93057fb4d4
