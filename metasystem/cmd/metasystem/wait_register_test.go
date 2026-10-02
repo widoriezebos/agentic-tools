@@ -51,12 +51,10 @@ func waitRegisterCommandFixture(t *testing.T) (string, int64, string, time.Time)
 	}
 	mainID := announcedMainID(t, announcement)
 	originalPID, originalSignature := waitCallerPID, waitOpenWorkSignature
-	originalProber := waitRegisterProber
 	waitCallerPID = func() int64 { return self }
 	waitOpenWorkSignature = func(_ context.Context, _ string) (string, error) { return strings.Repeat("a", 64), nil }
 	t.Cleanup(func() {
 		waitCallerPID, waitOpenWorkSignature = originalPID, originalSignature
-		waitRegisterProber = originalProber
 	})
 	return root, self, mainID, now
 }
@@ -85,12 +83,12 @@ func registeredRows(t *testing.T, root string) []metarun.Waiter {
 func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 	root, _, mainID, now := waitRegisterCommandFixture(t)
 	tracked := int64(8123)
-	waitRegisterProber = waitRegisterFixtureProber{
+	tracker := waitRegisterFixtureProber{
 		exact: identity.Exact{Pid: tracked, StartedAt: time.Unix(5000, 0), StartTicks: 77, BootID: "process-boot"},
 		state: identity.Alive,
 	}
 	code, output, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		return runSessionWait([]string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"}, stdout, stderr)
+		return runSessionWaitProbing([]string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "compile release", "--job", "job-a", "--json"}, stdout, stderr, tracker)
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" {
@@ -118,10 +116,9 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 		{name: "over maximum", prober: waitRegisterFixtureProber{exact: identity.Exact{Pid: tracked}, state: identity.Alive}, args: []string{"--timeout", "25h"}, want: "no longer than 24 hours"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			waitRegisterProber = test.prober
 			args := []string{"--root", root, "--pid", fmt.Sprint(tracked), "--label", "refused"}
 			args = append(args, test.args...)
-			code, _, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runSessionWait(args, stdout, stderr) })
+			code, _, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runSessionWaitProbing(args, stdout, stderr, test.prober) })
 			if code == 0 || !strings.Contains(problem, test.want) || len(registeredRows(t, root)) != before {
 				t.Fatalf("code=%d stderr=%q rows=%d want rows=%d", code, problem, len(registeredRows(t, root)), before)
 			}

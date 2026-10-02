@@ -19,15 +19,11 @@ func (p groupOwnershipProbe) FixtureEntry(pid int64) (identity.FixtureEntry, boo
 }
 
 func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
-	savedCmd, savedKill := sweepProcessCommand, sweepKill
+	savedCmd := sweepProcessCommand
 	defer func() {
-		sweepProcessCommand, sweepKill = savedCmd, savedKill
+		sweepProcessCommand = savedCmd
 	}()
 	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "different-tag", true }
-	sweepKill = func(pgid int64, sig unix.Signal) error {
-		t.Fatal("a provably unowned group must not be signaled")
-		return nil
-	}
 
 	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts/agents/jobs")
@@ -44,6 +40,10 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 
 	sweepClaimer, _ := newClaimer(root)
 	sweepClaimer.processes = identity.FixedProcessTable{{Pid: 7, Group: 999999}}
+	sweepClaimer.kill = func(pgid int64, sig unix.Signal) error {
+		t.Fatal("a provably unowned group must not be signaled")
+		return nil
+	}
 	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}

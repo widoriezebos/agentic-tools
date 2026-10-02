@@ -327,9 +327,9 @@ func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 // through cleanupStaleJobs — the fuse between a takeover sweep and
 // SIGTERM-ing a recycled process group.
 func TestSweepStopVerdictRows(t *testing.T) {
-	savedCmd, savedKill := sweepProcessCommand, sweepKill
+	savedCmd := sweepProcessCommand
 	defer func() {
-		sweepProcessCommand, sweepKill = savedCmd, savedKill
+		sweepProcessCommand = savedCmd
 	}()
 
 	staleJob := func(t *testing.T, root string) string {
@@ -343,9 +343,9 @@ func TestSweepStopVerdictRows(t *testing.T) {
 
 	// An empty ownership scan cannot authorize a signal.
 	var emptyScanKills int
-	sweepKill = func(pgid int64, sig unix.Signal) error { emptyScanKills++; return nil }
 	c, _ := newClaimer(t.TempDir())
 	c.processes = identity.FixedProcessTable{}
+	c.kill = func(pgid int64, sig unix.Signal) error { emptyScanKills++; return nil }
 	err := c.stopStaleGroup(map[string]any{"pgid": float64(424242), "instanceTag": "stale-tag"}, "stale")
 	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership") {
 		t.Fatalf("an empty scan must stay unprovable: %v", err)
@@ -371,11 +371,11 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	// Owned and provable, but the kill is DENIED (EPERM): loud refusal.
 	owned := identity.FixedProcessTable{{Pid: 7, Group: 424242}}
 	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "runner stale-tag", true }
-	sweepKill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
 	root = t.TempDir()
 	staleJob(t, root)
 	secondClaimer, _ := newClaimer(root)
 	secondClaimer.processes = owned
+	secondClaimer.kill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
 	err = secondClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot stop stale job stale") {
 		t.Fatalf("a denied kill must refuse: %v", err)
@@ -383,11 +383,11 @@ func TestSweepStopVerdictRows(t *testing.T) {
 
 	// Owned, provable, kill lands: the record is stamped failed.
 	var killed []int64
-	sweepKill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
 	root = t.TempDir()
 	recordPath = staleJob(t, root)
 	thirdClaimer, _ := newClaimer(root)
 	thirdClaimer.processes = owned
+	thirdClaimer.kill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
 	if err := thirdClaimer.cleanupStaleJobs(5); err != nil {
 		t.Fatalf("a provable stale group must sweep cleanly: %v", err)
 	}

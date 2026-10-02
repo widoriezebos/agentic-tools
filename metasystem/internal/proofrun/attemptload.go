@@ -68,6 +68,10 @@ type loadReaders struct {
 // the kernel's, set at init. Only a package's TestMain replaces it, once,
 // before any test runs; a test hands its readers per call instead.
 var loadSeams loadReaders
+
+// commandLoadOptions are the load options a command fixture's process name
+// selects, set at init. A test hands its own options to the call
+// (sampleLoad, sampleNestedProofLauncher, resourceLegacyLauncherCount).
 var commandLoadOptions []loadSampleOption
 
 type loadSampleSettings struct {

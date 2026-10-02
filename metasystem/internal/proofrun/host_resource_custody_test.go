@@ -110,7 +110,7 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 		<-observationCtx.Done()
 	})
 	go func() {
-		lease, err := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
+		lease, err := acquireHostResourcesIn(waitCtx, directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 		if err != nil {
 			errs <- err
 			return
@@ -173,7 +173,7 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 		t.Fatalf("resource custodian terminated without a clean marker: marker=%s err=%v helper=%s custodylog=%s spools=%s", markerData, err, logBytes, custodyLog, spoolData)
 	}
 	waitCustodyTerminal(t, prober, grandchild)
-	lease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", []string{"fixture-db"})
+	lease, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		active, activeErr := activeHostResourceSlots(directory)
 		logBytes, _ := os.ReadFile(filepath.Join(directory, "launcher-helper.log"))
@@ -408,8 +408,7 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory, conf, watchdog, workerPID, grandPID, ready, grandRelease := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7], os.Args[separator+8]
-	hostAdmissionDirectoryForTest = directory
-	lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+	lease, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

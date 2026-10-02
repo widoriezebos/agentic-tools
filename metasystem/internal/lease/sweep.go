@@ -68,7 +68,7 @@ func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	return store.SweepStale(epoch,
 		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(c.processTable(), pgid, nonce, nil) },
 		func(pgid int64) error {
-			switch err := sweepKill(pgid, unix.SIGTERM); err {
+			switch err := c.groupKill(pgid, unix.SIGTERM); err {
 			case nil, unix.ESRCH:
 				return nil
 			default:
@@ -195,7 +195,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	if !owned {
 		return nil
 	}
-	switch err := sweepKill(pgid, unix.SIGTERM); err {
+	switch err := c.groupKill(pgid, unix.SIGTERM); err {
 	case nil, unix.ESRCH:
 		return nil
 	case unix.EPERM:
@@ -205,16 +205,11 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	}
 }
 
-// The sweep's member identity read and its signal go through seams so the
-// refusal rows — the branches standing between a takeover sweep and
-// SIGTERM-ing a recycled group — are testable. Its process-table read is
-// the claimer's table (processTable), which a test hands its own processes.
-var (
-	sweepProcessCommand = ProcessCommand
-	sweepKill           = func(pgid int64, sig unix.Signal) error {
-		return unix.Kill(int(-pgid), sig)
-	}
-)
+// The sweep's member identity read goes through a seam so the refusal rows
+// — the branches standing between a takeover sweep and SIGTERM-ing a
+// recycled group — are testable. Its process-table read and its signal are
+// the claimer's (processTable, groupKill), which a test hands its own.
+var sweepProcessCommand = ProcessCommand
 
 // groupOwnsTag reports whether any live process of processes in the given
 // process group carries tag in its command line. A scan with no live

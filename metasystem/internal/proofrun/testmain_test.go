@@ -65,6 +65,12 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
 		panic(err)
 	}
+	// A host-resource helper process's binary directory is the one its
+	// parent test handed it on the command line.
+	helperDirectory, helperAdmission := helperHostAdmissionDirectory(os.Args)
+	if helperAdmission {
+		hostAdmissionDirectoryForTest = helperDirectory
+	}
 	declarations := []testenv.Declaration{}
 	helperProcess := proofrunSubprocessHelper() || os.Getenv("METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE") == "1"
 	if helperProcess {
@@ -85,20 +91,49 @@ func TestMain(m *testing.M) {
 	// tests exercising real contention explicitly replace this directory with
 	// their shared fixture directory.
 	var setup func() error
-	if !helperProcess {
-		setup = isolateHostAdmissionDirectory
+	if !helperProcess && !helperAdmission {
+		setup = func() error {
+			directory, err := isolatedHostAdmissionDirectory()
+			if err != nil {
+				return err
+			}
+			hostAdmissionDirectoryForTest = directory
+			binaryHostAdmissionDirectory = directory
+			return nil
+		}
 	}
 	os.Exit(testenv.MainWithSetup(m, setup, declarations...))
 }
 
-func isolateHostAdmissionDirectory() error {
+func isolatedHostAdmissionDirectory() (string, error) {
 	root, err := os.MkdirTemp("", "metasystem-proofrun-admission.")
 	if err != nil {
-		return fmt.Errorf("create test host admission directory: %w", err)
+		return "", fmt.Errorf("create test host admission directory: %w", err)
 	}
-	hostAdmissionDirectoryForTest = filepath.Join(root, "host-admission")
-	binaryHostAdmissionDirectory = hostAdmissionDirectoryForTest
-	return nil
+	return filepath.Join(root, "host-admission"), nil
+}
+
+// helperHostAdmissions name the host-resource helper tests a parent re-execs
+// with an admission directory, and the directory's place after "--".
+var helperHostAdmissions = map[string]int{
+	"-test.run=^TestGLEHostResourceCustodyProcessHelper$": 2,
+	"-test.run=^TestHostResourceNestedCustodySubprocess$": 2,
+	"-test.run=^TestHostResourceReviewSubprocess$":        1,
+	"-test.run=^TestHostResourceNestedLeaseSubprocess$":   1,
+	"-test.run=^TestHostResourceSubprocess$":              2,
+}
+
+// helperHostAdmissionDirectory returns the admission directory a helper
+// invocation was handed, so TestMain sets it as that binary's directory.
+func helperHostAdmissionDirectory(args []string) (string, bool) {
+	if len(args) < 3 || args[2] != "--" {
+		return "", false
+	}
+	offset, ok := helperHostAdmissions[args[1]]
+	if !ok || len(args) <= 2+offset || args[2+offset] == "" {
+		return "", false
+	}
+	return args[2+offset], true
 }
 
 // binaryHostAdmissionDirectory is the one admission directory TestMain gives

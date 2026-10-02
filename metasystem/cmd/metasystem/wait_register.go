@@ -16,10 +16,6 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-var (
-	waitRegisterProber identity.Prober = identity.KernelProber{}
-)
-
 type resolvedWaitCaller struct {
 	view           lease.ClassifyResult
 	owner          metarun.Caller
@@ -75,7 +71,7 @@ func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
 	}}, nil
 }
 
-func runWaitRegister(args []string, stdout, stderr io.Writer) int {
+func runWaitRegister(args []string, stdout, stderr io.Writer, prober identity.Prober) int {
 	flags := newFlagSet("session wait", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	pid := flags.Int64("pid", 0, "tracked process identifier")
@@ -144,7 +140,7 @@ func runWaitRegister(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "the open-work signature could not be read:", err)
 		return metarun.ExitWaiterIO
 	}
-	row, err := (&metarun.Store{Root: stateRoot, Prober: waitRegisterProber}).RegisterDetachedWait(metarun.RegisterWaitRequest{
+	row, err := (&metarun.Store{Root: stateRoot, Prober: prober}).RegisterDetachedWait(metarun.RegisterWaitRequest{
 		Kind: kind, Pid: *pid, Label: *label, Question: *question, JobID: *jobID,
 		Owner: resolved.owner, RuntimeSession: resolved.runtimeSession, Runtime: resolved.view.Announcement.Runtime,
 		Timeout: *timeout, OpenWorkSignature: openWorkSignature,
@@ -204,6 +200,12 @@ func runWaitEnd(args []string, stdout, stderr io.Writer) int {
 // --end ID says the wait is over. The caller the registration records is the
 // command's parent, the waiting session's own process.
 func runSessionWait(args []string, stdout, stderr io.Writer) int {
+	return runSessionWaitProbing(args, stdout, stderr, identity.KernelProber{})
+}
+
+// runSessionWaitProbing is runSessionWait with the prober that reads the
+// tracked process's identity handed in per call.
+func runSessionWaitProbing(args []string, stdout, stderr io.Writer, prober identity.Prober) int {
 	for index, arg := range args {
 		if arg == "--end" || strings.HasPrefix(arg, "--end=") {
 			rest := append(append([]string(nil), args[:index]...), args[index+1:]...)
@@ -221,8 +223,8 @@ func runSessionWait(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, arg := range args {
 		if arg == "--question" || strings.HasPrefix(arg, "--question=") {
-			return runWaitRegister(append([]string{"--human"}, args...), stdout, stderr)
+			return runWaitRegister(append([]string{"--human"}, args...), stdout, stderr, prober)
 		}
 	}
-	return runWaitRegister(args, stdout, stderr)
+	return runWaitRegister(args, stdout, stderr, prober)
 }

@@ -29,6 +29,11 @@ import (
 
 const inheritedHostResourceFDs = "METASYSTEM_PROOF_RESOURCE_FDS"
 
+// hostAdmissionDirectoryForTest is the binary's admission directory: empty
+// in production, set once by a test binary's TestMain. A test that needs
+// another directory hands it to the call (acquireHostResourcesIn,
+// withAdmissionDirectory, hostAdmissionDirectoryFrom) or the request
+// (testHostAdmissionDirectory).
 var hostAdmissionDirectoryForTest string
 
 // HostResourceLease is the existing host proof admission's active phase.
@@ -166,7 +171,14 @@ func (lease *HostResourceLease) Close() error {
 }
 
 func hostAdmissionDirectory() (string, error) {
-	path := hostAdmissionDirectoryForTest
+	return hostAdmissionDirectoryFrom(hostAdmissionDirectoryForTest)
+}
+
+// hostAdmissionDirectoryFrom resolves the admission directory with
+// configured as the binary's directory: empty selects the fixture
+// namespace a test environment names, else the host's own.
+func hostAdmissionDirectoryFrom(configured string) (string, error) {
+	path := configured
 	if path == "" && os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" {
 		// The request owner checks canonical ancestors before creating the
 		// directory, so a temporary symlink cannot redirect fixture admission
@@ -669,19 +681,20 @@ func WithHostResourceWaitObserver(ctx context.Context, observe func()) context.C
 	return context.WithValue(ctx, hostResourceWaitObserverKey{}, observe)
 }
 
-func resourceLegacyLauncherCount(readers loadReaders, controlRoot string) (int, bool, error) {
-	// The existing fixture executable's scripted host count also governs its
-	// resource phase, but only in an explicitly selected temporary admission
-	// namespace owned by this same fake-runtime checkout. Ordinary engines and
-	// production roots still use the real process census.
-	if len(commandLoadOptions) != 0 && fixtureauth.FixtureModeRoot(controlRoot) {
+func resourceLegacyLauncherCount(readers loadReaders, controlRoot string, options []loadSampleOption) (int, bool, error) {
+	// The existing fixture executable's scripted host count (its load
+	// options) also governs its resource phase, but only in an explicitly
+	// selected temporary admission namespace owned by this same fake-runtime
+	// checkout. Ordinary engines and production roots still use the real
+	// process census.
+	if len(options) != 0 && fixtureauth.FixtureModeRoot(controlRoot) {
 		_, selected, err := FixtureHostAdmissionDirectory(controlRoot)
 		if err != nil {
 			return 0, false, err
 		}
 		if selected {
 			settings := loadSampleSettings{}
-			for _, option := range commandLoadOptions {
+			for _, option := range options {
 				option(&settings)
 			}
 			if settings.fixtureSet {
@@ -711,12 +724,13 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 // acquireHostResourcesIn acquires in one explicit admission namespace, so a
 // parallel test owns its namespace without replacing the package default.
 func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
-	return acquireHostResourcesWith(ctx, loadSeams, directory, controlRoot, confPath, class, exclusive, check)
+	return acquireHostResourcesWith(ctx, loadSeams, directory, controlRoot, confPath, class, exclusive, check, commandLoadOptions...)
 }
 
 // acquireHostResourcesWith acquires with the launcher census and process
-// table of readers: a test hands its own, never by replacing the package's.
-func acquireHostResourcesWith(ctx context.Context, readers loadReaders, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
+// table of readers and the load options of the call: a test hands its own,
+// never by replacing the package's.
+func acquireHostResourcesWith(ctx context.Context, readers loadReaders, directory, controlRoot, confPath, class string, exclusive []string, check func() error, options ...loadSampleOption) (*HostResourceLease, error) {
 	if class != "cheap" && class != "heavy" {
 		return nil, fmt.Errorf("unknown test-run resource class %q", class)
 	}
@@ -787,7 +801,7 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 			files = append(files, file)
 		}
 		if available && class == "heavy" && capacity.Max > 0 {
-			legacy, known, censusErr := resourceLegacyLauncherCount(readers, controlRoot)
+			legacy, known, censusErr := resourceLegacyLauncherCount(readers, controlRoot, options)
 			active, countErr := activeHostResourceSlots(directory)
 			if countErr != nil || censusErr != nil || !known {
 				closeHostFiles(files)

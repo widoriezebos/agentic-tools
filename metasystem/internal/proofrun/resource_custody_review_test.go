@@ -321,7 +321,7 @@ func main(){
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func main(){
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("clean fixture left capacity held: %v", err)
 	}
