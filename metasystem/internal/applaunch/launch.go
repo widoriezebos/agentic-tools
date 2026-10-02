@@ -189,7 +189,15 @@ func Rejoin(ctx context.Context, stateRoot, key string, contract Contract, o Rea
 	if wait <= 0 {
 		wait = time.Duration(contract.ReadyWaitMS()) * time.Millisecond
 	}
-	deadline := time.Now().Add(wait)
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	return rejoin(ctx, stateRoot, key, contract, o, timer.C)
+}
+
+// rejoin is Rejoin with the wait's end as an event the caller owns; a nil
+// channel never fires, and the run is read at least once before it is
+// looked at.
+func rejoin(ctx context.Context, stateRoot, key string, contract Contract, o ReadOptions, expired <-chan time.Time) (Status, error) {
 	for {
 		status, err := Read(stateRoot, key, contract, o)
 		if err != nil {
@@ -201,16 +209,22 @@ func Rejoin(ctx context.Context, stateRoot, key string, contract Contract, o Rea
 		case status.State != Running && status.State != Starting:
 			return status, errors.New("the run is " + string(status.State) + ", not starting")
 		}
-		if !time.Now().Before(deadline) {
-			return status, errors.New("the running application did not become ready in time")
+		select {
+		case <-expired:
+			return status, errRejoinTimeout
+		default:
 		}
 		select {
 		case <-ctx.Done():
 			return status, ctx.Err()
+		case <-expired:
+			return status, errRejoinTimeout
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
+
+var errRejoinTimeout = errors.New("the running application did not become ready in time")
 
 // ReadinessPipe opens the descriptor a launcher handed its supervisor for the
 // one readiness answer, and keeps it the supervisor's own: it is marked

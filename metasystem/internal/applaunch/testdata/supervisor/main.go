@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 )
@@ -24,6 +25,7 @@ func main() {
 	readyFile := flag.String("ready-file", "", "write the readiness answer here")
 	readyFD := flag.Int("ready-fd", -1, "write the readiness answer to this descriptor")
 	dieAfterSpawn := flag.Bool("die-after-spawn", false, "die between the spawn and the child's ref write")
+	noReadyDeadline := flag.Bool("no-ready-deadline", false, "wait for readiness or the application's exit, with no deadline")
 	flag.Parse()
 
 	contract, err := applaunch.Load(*contractPath)
@@ -57,6 +59,11 @@ func main() {
 		Seed:        applaunch.Record{Key: *key, Address: *address, StateRoot: *stateRoot},
 		Ready:       func(a string) { report("ready " + a) },
 		Failed:      func(m string) { report("failed " + m) },
+	}
+	if *noReadyDeadline {
+		// Readiness is the application's own signal or its exit; a test's
+		// verdict never rests on a clock a loaded host outruns.
+		options.ReadyDeadline = func(time.Duration) <-chan time.Time { return nil }
 	}
 	if *dieAfterSpawn {
 		// A person's kill lands here: no deferred act, no ended record.

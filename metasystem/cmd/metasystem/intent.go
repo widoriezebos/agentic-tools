@@ -578,6 +578,10 @@ type intentOwners struct {
 	stopMovesDeclare func(string, audit.StopSurfaceOptions, string, string) (string, error)
 	// disk are the disk verbs' seams; the zero value is production.
 	disk diskOwners
+	// appEngine names the engine an app start launches as its supervisor;
+	// nil is this executable. It is an owner of the invocation, never a
+	// process-wide variable, so parallel invocations cannot swap it.
+	appEngine func() (string, error)
 	// landing are the landing verbs' seams; the zero value is production.
 	landing laneVerbOwners
 	// alerts are the alert verbs' seams; the zero value is production.

@@ -93,6 +93,11 @@ type SuperviseOptions struct {
 	SendGroup   func(pgid int64, sig syscall.Signal) error
 	LeadsGroup  func() (int64, bool)
 	Now         func() time.Time
+	// ReadyDeadline starts the end of the readiness wait for the contract's
+	// ready wait. Nil is a real timer of that length. A fixture gives one it
+	// fires itself, or one that never fires, so that readiness is decided by
+	// the application's own signal and never by a clock a loaded host outruns.
+	ReadyDeadline func(wait time.Duration) <-chan time.Time
 	// Ready and Failed report the one readiness answer back to whoever
 	// launched this supervisor, as the interface's launcher is reported to.
 	Ready  func(address string)
@@ -245,8 +250,16 @@ func Supervise(o SuperviseOptions) error {
 		}
 	}
 
-	readyErr := AwaitReady(ctx, o.Contract, record.Address, record.Log, offset, alive,
-		time.Duration(o.Contract.ReadyWaitMS())*time.Millisecond)
+	readyWait := time.Duration(o.Contract.ReadyWaitMS()) * time.Millisecond
+	var expired <-chan time.Time
+	if o.ReadyDeadline != nil {
+		expired = o.ReadyDeadline(readyWait)
+	} else {
+		timer := time.NewTimer(readyWait)
+		expired = timer.C
+		defer timer.Stop()
+	}
+	readyErr := AwaitReady(ctx, o.Contract, record.Address, record.Log, offset, alive, expired)
 	if readyErr != nil {
 		message := readyErr.Error() + "; see " + record.Log
 		if o.Failed != nil {

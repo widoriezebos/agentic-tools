@@ -252,7 +252,7 @@ func TestAwaitReadyRefusesAForeignAnswerWhenTheChildHasExited(t *testing.T) {
 		{Address: address, Ready: &Ready{Kind: ReadyHTTP, URL: "http://${address}/-/health"}},
 		{Address: address, Ready: &Ready{Kind: ReadyTCP, Address: "${address}"}},
 	} {
-		err := AwaitReady(context.Background(), form, address, "", 0, func() bool { return false }, time.Second)
+		err := AwaitReady(context.Background(), form, address, "", 0, func() bool { return false }, nil)
 		if !ExitedBeforeReady(err) {
 			t.Fatalf("%s: a child that exited while a foreign listener answers is reported as exited: %v", form.ReadyKind(), err)
 		}

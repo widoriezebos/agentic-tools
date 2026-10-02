@@ -103,23 +103,27 @@ func newBed(t *testing.T, contract map[string]any) *bed {
 // readiness answer, exactly as the engine's start does.
 func (b *bed) start(key string) (string, int, error) {
 	b.t.Helper()
-	args := []string{"--state-root", b.stateRoot, "--key", key, "--contract", b.path,
-		"--project-root", b.root, "--address", b.address, "--ready-fd", "3"}
-	return b.startWith(key, args)
+	return b.startWith(key, b.args(key))
 }
 
+// args is the fixture supervisor's argument vector for this bed's run. Its
+// readiness wait has no deadline: readiness is the event the application
+// signals (it answers, listens or writes its line) or its exit, never a
+// clock that a loaded host outruns. A test whose subject is the deadline
+// itself builds its own vector without --no-ready-deadline.
+func (b *bed) args(key string, extra ...string) []string {
+	return append([]string{"--state-root", b.stateRoot, "--key", key, "--contract", b.path,
+		"--project-root", b.root, "--address", b.address, "--ready-fd", "3", "--no-ready-deadline"}, extra...)
+}
+
+// startWith launches the supervisor with the given vector. The launcher waits
+// for the supervisor's one answer or its exit (WaitForReport), never a clock:
+// the test's own timeout is what bounds a supervisor that never answers.
 func (b *bed) startWith(key string, args []string) (string, int, error) {
-	b.t.Helper()
-	return b.startWaiting(key, args, 20*time.Second)
-}
-
-// startWaiting is startWith with the launcher's wait for the supervisor's
-// answer given; WaitForReport waits for the answer or the supervisor's exit.
-func (b *bed) startWaiting(key string, args []string, wait time.Duration) (string, int, error) {
 	b.t.Helper()
 	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
 		LogPath: filepath.Join(Dir(b.stateRoot), key+".launch.log")}
-	address, pid, err := LaunchSupervisor(spec, ExecSpawn, wait,
+	address, pid, err := LaunchSupervisor(spec, ExecSpawn, WaitForReport,
 		time.Duration(b.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	if pid > 0 {
 		// The engine's own start exits at once, so a supervisor it launched
@@ -224,7 +228,10 @@ func httpContract(app, address string, extra ...string) map[string]any {
 		"address": address,
 		"start":   map[string]any{"argv": argv},
 		"ready":   map[string]any{"kind": "http", "url": "http://${address}/-/health"},
-		"readyMs": 15000,
+		// One millisecond: the beds' supervisors wait for readiness without a
+		// deadline, so a readiness clock left on this path fails every time
+		// instead of on a loaded host.
+		"readyMs": 1,
 		"stopMs":  4000,
 	}
 }
@@ -281,8 +288,7 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	address := freePort(t)
 	live := filepath.Join(t.TempDir(), "alive")
 	b := newBed(t, httpContract(mustApp(t), address, "--live-file", live))
-	args := []string{"--state-root", b.stateRoot, "--key", StandingKey, "--contract", b.path,
-		"--project-root", b.root, "--address", b.address, "--ready-fd", "3", "--die-after-spawn"}
+	args := b.args(StandingKey, "--die-after-spawn")
 	began := time.Now()
 	_, _, err := b.startWith(StandingKey, args)
 	if err == nil {
@@ -384,11 +390,14 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 }
 
 // Status says starting while a live supervisor has not yet seen readiness:
-// alive is said, and ready is not.
+// alive is said, and ready is not. The application answers only once the
+// test writes its ready file, so "not yet" is a state the test holds, not a
+// window of the application's own clock.
 func TestStatusSaysStartingBeforeReadiness(t *testing.T) {
 	t.Parallel()
 	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "3s"))
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	b := newBed(t, httpContract(mustApp(t), address, "--ready-file", readyFile))
 	started := make(chan error, 1)
 	go func() {
 		_, _, err := b.start(StandingKey)
@@ -408,6 +417,9 @@ func TestStatusSaysStartingBeforeReadiness(t *testing.T) {
 	lines := strings.Join(status.Lines(), "\n")
 	if !strings.Contains(lines, "state: starting") || !strings.Contains(lines, "readiness: not yet ready") {
 		t.Fatalf("liveness and readiness are said separately while starting:\n%s", lines)
+	}
+	if err := os.WriteFile(readyFile, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if err := <-started; err != nil {
 		t.Fatalf("start: %v", err)
@@ -439,7 +451,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 			"address": address,
 			"start":   map[string]any{"argv": []string{app, "--listen", "${address}", "--listen-after", "400ms"}},
 			"ready":   map[string]any{"kind": "tcp", "address": "${address}"},
-			"readyMs": 15000, "stopMs": 4000})
+			"readyMs": 1, "stopMs": 4000})
 		if _, _, err := b.start(StandingKey); err != nil {
 			t.Fatalf("tcp readiness: %v", err)
 		}
@@ -452,7 +464,7 @@ func TestTheFourReadinessForms(t *testing.T) {
 		b := newBed(t, map[string]any{
 			"start":   map[string]any{"argv": []string{app, "--no-listen", "--ready-line", "READY", "--ready-after", "400ms"}},
 			"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
-			"readyMs": 15000, "stopMs": 4000})
+			"readyMs": 1, "stopMs": 4000})
 		if _, _, err := b.start(StandingKey); err != nil {
 			t.Fatalf("log readiness: %v", err)
 		}
@@ -491,14 +503,16 @@ func TestTheFourReadinessForms(t *testing.T) {
 }
 
 // A log readiness form is scoped to the offset this run's supervisor opened
-// the log at: a line an earlier run wrote can never make this one ready.
+// the log at: a line an earlier run wrote can never make this one ready. The
+// wait ending is the subject here, so this supervisor keeps the contract's
+// deadline; it asks the log at least once before that deadline is read.
 func TestLogReadinessIsScopedToThisRun(t *testing.T) {
 	t.Parallel()
 	app := mustApp(t)
 	b := newBed(t, map[string]any{
 		"start":   map[string]any{"argv": []string{app, "--no-listen"}},
 		"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
-		"readyMs": 1500, "stopMs": 3000})
+		"readyMs": 1, "stopMs": 3000})
 	logPath := DefaultLogPath(b.stateRoot, StandingKey)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -506,8 +520,10 @@ func TestLogReadinessIsScopedToThisRun(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("READY\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := b.start(StandingKey); err == nil {
-		t.Fatal("an earlier run's READY line must not make this run ready")
+	args := []string{"--state-root", b.stateRoot, "--key", StandingKey, "--contract", b.path,
+		"--project-root", b.root, "--address", b.address, "--ready-fd", "3"}
+	if _, _, err := b.startWith(StandingKey, args); err == nil || !strings.Contains(err.Error(), "did not become ready in time") {
+		t.Fatalf("an earlier run's READY line must not make this run ready: %v", err)
 	}
 }
 
@@ -521,12 +537,8 @@ func TestRunningAndNotAnswering(t *testing.T) {
 	// that clock would never be ready at all. The start carries no clock
 	// either; the test's own timeout bounds it.
 	dark := filepath.Join(t.TempDir(), "dark")
-	contract := httpContract(mustApp(t), address, "--dark-file", dark)
-	contract["readyMs"] = 600_000
-	b := newBed(t, contract)
-	args := []string{"--state-root", b.stateRoot, "--key", StandingKey, "--contract", b.path,
-		"--project-root", b.root, "--address", b.address, "--ready-fd", "3"}
-	if _, _, err := b.startWaiting(StandingKey, args, WaitForReport); err != nil {
+	b := newBed(t, httpContract(mustApp(t), address, "--dark-file", dark))
+	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	if err := os.WriteFile(dark, nil, 0o644); err != nil {
@@ -728,8 +740,10 @@ func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	first := b.record(StandingKey)
-	status, err := Rejoin(context.Background(), b.stateRoot, StandingKey, b.contract,
-		ReadOptions{Probe: ProbeOnce}, 10*time.Second)
+	// The rejoin's wait has no deadline: it ends on readiness observed or a
+	// run that is not starting, never on a clock.
+	status, err := rejoin(context.Background(), b.stateRoot, StandingKey, b.contract,
+		ReadOptions{Probe: ProbeOnce}, nil)
 	if err != nil {
 		t.Fatalf("a second start rejoins the live run: %v", err)
 	}
@@ -774,7 +788,7 @@ func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
 	b := newBed(t, httpContract(mustApp(t), address))
 	spec := LaunchSpec{Executable: filepath.Join(b.root, "no-such-engine"), Args: nil,
 		LogPath: filepath.Join(Dir(b.stateRoot), "standing.launch.log")}
-	if _, _, err := LaunchSupervisor(spec, ExecSpawn, time.Second, 0); err == nil {
+	if _, _, err := LaunchSupervisor(spec, ExecSpawn, WaitForReport, 0); err == nil {
 		t.Fatal("a supervisor that cannot be started is a refusal")
 	}
 	if status := b.status(StandingKey); status.State != Stopped {
@@ -817,7 +831,7 @@ func TestALogReadinessFormStopsOnDeathAlone(t *testing.T) {
 	b := newBed(t, map[string]any{
 		"start":   map[string]any{"argv": []string{mustApp(t), "--no-listen", "--ready-line", "READY"}},
 		"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
-		"readyMs": 15000, "stopMs": 4000})
+		"readyMs": 1, "stopMs": 4000})
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -881,7 +895,7 @@ func TestADescendantLeftBeforeReadinessKeepsTheRunUnended(t *testing.T) {
 		"start": map[string]any{"argv": []string{mustApp(t), "--no-listen", "--spawn-descendant",
 			"--exit-after", "300ms", "--live-file", live}},
 		"ready":   map[string]any{"kind": "log", "pattern": "^NEVER$"},
-		"readyMs": 15000, "stopMs": 500})
+		"readyMs": 1, "stopMs": 500})
 	if _, _, err := b.start(StandingKey); err == nil {
 		t.Fatal("a start command that exits before readiness is refused")
 	}
