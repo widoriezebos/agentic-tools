@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 4
+- Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
 - Tier: 2
 - Intent: Critique loops stop on a trusted per-tier criterion, few rounds being the norm (Wido 2026-10-02). Tier 1: no critique required; one is allowed when asked for (today tier 1 refuses every critic role), with a HARD cap of 1 round and none of the guidance machinery; a material finding that cannot be fixed locally means the tier was wrong and the goal moves to tier 2. Tiers 2 and 3: before a loop starts, its brief names the threat model and the rabbit-hole risks with mitigations (short at tier 2, required at tier 3); dispatch decides each round from recorded material counts (zero = stop, else continue); the steward watches every loop and alerts the AGENT running the critique, never the human (past the tier's watch threshold e.g. round 3 at tier 2, count not falling, findings mostly in the last fold), each alert carrying advice drawn from the loop's own named risks (match findings to a risk, give its mitigation as the next step) so the loop converges under guidance; if that fails the loop runs into the far-away cap (20) and only there does failure bubble up to the human, with the signals and advice given. The steward records each loop's end cause (criterion, guided convergence, cap, re-tier) so trust in the criterion is measured.
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 22
+- Revision: 23
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -38,4 +38,5 @@ History:
 - 2026-10-02T11:55:28Z WZT2WY34M1YTQYKKZME5SWBA3D-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:55:32Z ENWHBG70Q20ATMYQV3MZV6KSJK-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T12:24:25Z KS49YJBH3D4MGEAWVK9G8Y150S-m1e-9c612d71 set-priority actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=blocked-agent-asks-the-human from=1:3 to=1:4 requested-sequence=2
-Integrity: sha256=a8f0328d10fc9cf79d6ef9e74b33d943ef01d0c96ec2e22acba677c8f78d0350
+- 2026-10-02T12:25:41Z EMJE19768V4AWPZGC7KV99ZY3Q-m1e-9c612d71 set-priority actor=human:Wido targets=critique-stops-on-convergence,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,seat-path-lands-without-help,seat-works-without-a-person,steward-acts-on-behaviour-patterns,work-review-starts-its-critic reason=priority-order subject=seat-works-without-a-person from=1:4 to=1:5 requested-sequence=3
+Integrity: sha256=150d95d89abbc340b7f43e0fdbb9e08588f430a2ee180ebb565f319ec4b8f1d8
