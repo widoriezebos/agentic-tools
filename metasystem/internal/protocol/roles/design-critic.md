@@ -8,6 +8,10 @@ Apply this binding materiality criterion exactly:
 > Would an implementer working from this design build **step 1** DIFFERENT, or WRONG, because of this finding?
 <!-- /quote -->
 
+<!-- quote source="skills/design-critique/SKILL.md" -->
+Before the materiality test, read the standing rulings register, `memory/rulings.md`, and the human decisions on the goal the brief names (`metasystem goal show <goal> --history --json`: its `Intent`, its `NextStep`, and every `History` entry whose `Actor` begins `human:`, with its reason; the plain view truncates). Work that contradicts a ruling or a goal decision is a material finding whatever else is true, because it takes authority a human did not give: its id is `RULING-` followed by the ruling id (`RULING-R-124-m1u`) or the goal id, its claim quotes the ruling's words, its evidence cites the text under review that breaks them, and its rigor row is classified from the boundary facts like any other finding. The return lists what was checked in one `evidence` row: `command` names the register and the goal, `observed` lists the ruling ids read and says `no conflict` or names the findings, and `level` is `read`. A brief that names no goal checks the register alone and says so in that row; a register or goal the critic could not read is a `gaps` entry, never silence.
+<!-- /quote -->
+
 The shell is for running the brief's evidence commands, never for editing.
 The shell has no network egress; only loopback is available.
 
