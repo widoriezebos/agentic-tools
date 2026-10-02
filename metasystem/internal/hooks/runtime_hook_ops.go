@@ -83,8 +83,6 @@ type Ops interface {
 	StopPresent(root, inputFile, outputFile string, stderr io.Writer) int
 	// StopOutput maps one Stop presentation to the runtime's payload.
 	StopOutput(runtime, inputFile, outputFile string, stderr io.Writer) int
-	// ChannelStatusPost posts the brain's status line.
-	ChannelStatusPost(root string, stdout, stderr io.Writer) int
 	// EvidenceGC runs the installation's hook evidence collection.
 	EvidenceGC(installation string, output io.Writer) int
 	// Slug is the stable slug of a session, as announcement names use it.

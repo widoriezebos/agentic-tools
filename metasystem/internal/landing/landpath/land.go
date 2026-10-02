@@ -19,6 +19,10 @@ import (
 type LandRequest struct {
 	// Root is the metasystem installation root the landing runs from.
 	Root string
+	// Delivered is the one plain sentence of what this landing delivers,
+	// which Landed tells the channel once it is on main; empty tells
+	// nothing.
+	Delivered string
 	// HeldEpoch is the lease epoch a caller that already holds the lease
 	// passes to a carried landing ("human" or a claim epoch).
 	HeldEpoch string
@@ -472,7 +476,7 @@ func (d *driver) land() int {
 			d.failStep(status)
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
-		d.hintWaiters(head)
+		d.pushed(head)
 		d.releaseLanded(head)
 	} else {
 		d.requiredStep("commit", d.commitChanges)
@@ -508,7 +512,7 @@ func (d *driver) land() int {
 			d.requiredStep("verify shared testing proof after retry rebase", d.verifyCurrentTestingProof)
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
-		d.hintWaiters(head)
+		d.pushed(head)
 		d.releaseLanded(head)
 	}
 	if !request.SkipTransport {
@@ -547,6 +551,21 @@ func (d *driver) sampleBoot() {
 	d.boot = nil
 	if sample, err := d.owners.BootClock(); err == nil {
 		d.boot = &sample
+	}
+}
+
+// pushed is the one point where the landing path knows its commit is on
+// origin: the goal's waiters are hinted, and a push to main tells the
+// channel the request's plain sentence of what it delivered (Decision 7 of
+// the blocked-agent-asks-the-human design); no sentence tells nothing, and
+// a failed telling is a detail and stops nothing.
+func (d *driver) pushed(commit string) {
+	d.hintWaiters(commit)
+	if d.owners.Landed == nil || d.branch != "main" || commit == "" || strings.TrimSpace(d.request.Delivered) == "" {
+		return
+	}
+	if err := d.owners.Landed(d.request.Root, d.request.Delivered, commit); err != nil {
+		writeDetails(d.details, "the channel was not told of the landing; the next landing or tick retries once: "+err.Error())
 	}
 }
 

@@ -27,6 +27,8 @@ type testProvider struct {
 	confirms    int
 	beforePost  func()
 	failPosts   int
+	confirmed   []Cursor
+	onConfirm   func(Cursor)
 }
 
 func (p *testProvider) Post(_ context.Context, _ DestinationConfig, text string, thread *MessageRef) (MessageRef, error) {
@@ -55,8 +57,12 @@ func (p *testProvider) Receive(_ context.Context, _ DestinationConfig, threads [
 	p.after = after
 	return p.inbound, p.cursor, nil
 }
-func (p *testProvider) Confirm(context.Context, DestinationConfig, Cursor) error {
+func (p *testProvider) Confirm(_ context.Context, _ DestinationConfig, ack Cursor) error {
 	p.confirms++
+	p.confirmed = append(p.confirmed, ack)
+	if p.onConfirm != nil {
+		p.onConfirm(ack)
+	}
 	return nil
 }
 func (p *testProvider) Credential(context.Context, DestinationConfig) (CredentialIdentity, error) {
@@ -73,56 +79,59 @@ func TestTOTPVerifiesRFC6238Vectors(t *testing.T) {
 func TestTOTPWindowAndReplay(t *testing.T) {
 	now := time.Unix(1234567890, 0)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now.Add(-30*time.Second))
-	step, ok := VerifyTOTP("JBSWY3DPEHPK3PXP", code, now)
-	if !ok {
+	if _, ok := VerifyTOTP("JBSWY3DPEHPK3PXP", code, now); !ok {
 		t.Fatal("previous step rejected")
 	}
-	root := t.TempDir()
-	row := consumedRow{Step: step, Destination: "fleet", Provider: "slack", ThreadID: "1", Ref: MessageRef{ID: "2"}, QID: "q"}
-	if fresh, err := consume(root, row, now); err != nil || !fresh {
-		t.Fatal(err)
-	}
-	other := row
-	other.Ref.ID = "3"
-	if fresh, _ := consume(root, other, now); fresh {
-		t.Fatal("replay accepted")
-	}
 }
 
+// The replay register is the ledger inbox (FCG-COMMIT-05): a step already
+// committed on another message makes a later message replayed, however long
+// ago the first one was sent.
 func TestDelayedTOTPReplayRemainsConsumed(t *testing.T) {
-	now := time.Unix(1234567890, 0)
-	delayed := consumedRow{Step: now.Add(-100*time.Second).Unix() / TOTPStep, Destination: "fleet", Provider: "slack", ThreadID: "1", Ref: MessageRef{ID: "2"}, QID: "q"}
-	root := t.TempDir()
-	if fresh, err := consume(root, delayed, now); err != nil || !fresh {
+	bed, p, _, now := pollLedgerBed(t)
+	delayedAt := now.Add(-100 * time.Second)
+	delayed, _ := TOTPCode("JBSWY3DPEHPK3PXP", delayedAt)
+	current, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{
+		{Ref: MessageRef{ID: "2"}, UserID: "UWIDO", Text: "first " + delayed, SentAt: delayedAt},
+		{Ref: MessageRef{ID: "3"}, UserID: "UWIDO", Text: "current " + current, SentAt: now},
+		{Ref: MessageRef{ID: "4"}, UserID: "UWIDO", Text: "again " + delayed, SentAt: delayedAt},
+	}
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	current := delayed
-	current.Step = now.Unix() / TOTPStep
-	current.Ref.ID = "3"
-	if fresh, err := consume(root, current, now); err != nil || !fresh {
-		t.Fatal(err)
-	}
-	replay := delayed
-	replay.Ref.ID = "4"
-	if fresh, err := consume(root, replay, now); err != nil || fresh {
-		t.Fatalf("delayed replay accepted: fresh=%t err=%v", fresh, err)
+	inbox := bed.inbox()
+	first, second, replay := inbox["plans/channel/inbox/fleet/fake-2.json"], inbox["plans/channel/inbox/fleet/fake-3.json"], inbox["plans/channel/inbox/fleet/fake-4.json"]
+	if first.Outcome != "verified" || second.Outcome != "verified" || replay.Outcome != "replayed" || replay.Step == nil || *replay.Step != *first.Step {
+		t.Fatalf("first=%+v second=%+v replay=%+v", first, second, replay)
 	}
 }
 
+// The same message received again is its own record, never its own replay.
 func TestTOTPResumeExceptionIsEnvelopeScoped(t *testing.T) {
-	root := t.TempDir()
-	now := time.Unix(1234567890, 0)
-	row := consumedRow{Step: now.Unix() / 30, Destination: "fleet", Provider: "slack", ThreadID: "1", Ref: MessageRef{ID: "2"}, QID: "q"}
-	if ok, err := consume(root, row, now); !ok || err != nil {
+	bed, p, q, now := pollLedgerBed(t)
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: now, Ack: "3"}}
+	cfg := pollBedConfig(bed, p, now)
+	cfg.FailurePoint = func(point string) error {
+		if point == "inbox-committed" {
+			return errors.New("killed")
+		}
+		return nil
+	}
+	if _, err := bed.poll(context.Background(), cfg); err == nil {
+		t.Fatal("the kill did not fire")
+	}
+	cfg.FailurePoint = nil
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	same := row
-	if ok, _ := consume(root, same, now); !ok {
-		t.Fatal("same envelope cannot resume")
+	inbox := bed.inbox()
+	if len(inbox) != 1 || inbox["plans/channel/inbox/fleet/fake-2.json"].Outcome != "verified" {
+		t.Fatalf("inbox=%+v", inbox)
 	}
-	same.Provider = "fake"
-	if ok, _ := consume(root, same, now); ok {
-		t.Fatal("another provider reused the exception")
+	if got, _ := ReadQuestion(bed.root, q.ID); got.State != "closed" || got.Answer == nil {
+		t.Fatalf("question=%+v", got)
 	}
 }
 func TestPollAtomicallyConsumesTOTP(t *testing.T) {
@@ -149,9 +158,12 @@ func TestPollAtomicallyConsumesTOTP(t *testing.T) {
 		}
 	}
 	got, _ := ReadQuestion(root, q2.ID)
-	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "totp-consumed.json"))
-	if err != nil || answers != 1 || len(got.Rejected) != 1 || got.Rejected[0].Reason != "replayed code" || strings.Count(string(b), `"step"`) != 1 {
-		t.Fatalf("answers=%d rejected=%+v consumption=%s err=%v", answers, got.Rejected, b, err)
+	replay := bed.inbox()["plans/channel/inbox/fleet/fake-4.json"]
+	if answers != 1 || got.State != "open" || replay.Outcome != "replayed" || len(p.posts) != 1 || !strings.HasPrefix(p.posts[0], "not recorded: replayed code.") {
+		t.Fatalf("answers=%d question=%+v replay=%+v posts=%v", answers, got, replay, p.posts)
+	}
+	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "channel", "totp-consumed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the local replay register is still written: %v", err)
 	}
 }
 func TestSecretsScrubbedFromErrors(t *testing.T) {
@@ -256,18 +268,11 @@ func TestGitWindowRemainsUTC(t *testing.T) {
 	}
 }
 
-func TestStatusCadenceAndDigestGate(t *testing.T) {
-	now := time.Unix(10000, 0)
-	s := StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest("same")}
-	if ShouldPost(s, now, 4*time.Hour, "same", false) {
-		t.Fatal("unchanged digest posted")
+func TestStatusDigestIgnoresHeaderTime(t *testing.T) {
+	if Digest("same") == Digest("new") {
+		t.Fatal("changed content kept its digest")
 	}
-	if !ShouldPost(s, now, 4*time.Hour, "new", false) {
-		t.Fatal("changed due digest skipped")
-	}
-	old := "m status 2026-09-04 08:00 +0200\nNext up: first"
-	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200\nNext up: first", false) {
+	if Digest("m status 2026-09-04 08:00 +0200\nNext up: first") != Digest("m status 2026-09-04 13:00 +0200\nNext up: first") {
 		t.Fatal("a changed header timestamp defeated the content digest")
 	}
 	legacy := "m status 2026-09-04 08:00Z\nNext up: first"
@@ -275,10 +280,8 @@ func TestStatusCadenceAndDigestGate(t *testing.T) {
 	if Digest(legacy) != Digest(offset) {
 		t.Fatal("legacy Z and offset-bearing status headlines produced different content digests")
 	}
-	old = "m status 2026-09-04 08:00 +0200"
-	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200", false) {
-		t.Fatal("an empty fleet posted again because only its header time changed")
+	if Digest("m status 2026-09-04 08:00 +0200") != Digest("m status 2026-09-04 13:00 +0200") {
+		t.Fatal("an empty fleet's report changed because only its header time changed")
 	}
 }
 
@@ -451,9 +454,8 @@ func TestReportPriority(t *testing.T) {
 		if !strings.Contains(first, "accepted tree") || !strings.Contains(second, "accepted tree") {
 			t.Fatalf("staleness notice was not visible at both ages:\nfirst:\n%s\nsecond:\n%s", first, second)
 		}
-		state := StatusState{LastPost: firstNow, ContentDigest: Digest(first)}
-		if ShouldPost(state, secondNow, time.Hour, second, false) {
-			t.Fatalf("a change only in tree age triggered another post:\nfirst:\n%s\nsecond:\n%s", first, second)
+		if Digest(first) != Digest(second) {
+			t.Fatalf("a change only in tree age changed the report's digest:\nfirst:\n%s\nsecond:\n%s", first, second)
 		}
 	})
 
@@ -465,7 +467,7 @@ func TestReportPriority(t *testing.T) {
 		fixture := newReportFixture(t, now, marked)
 		root := fixture.root
 		text, goalID, err := fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id)) {
+		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id, false)) {
 			t.Fatalf("a visible approval line lost its binding: goal=%q err=%v\n%s", goalID, err, text)
 		}
 		for i := 0; i < 20; i++ {
@@ -475,7 +477,7 @@ func TestReportPriority(t *testing.T) {
 			}
 		}
 		text, goalID, err = fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id)) || !strings.Contains(text, "Backlog first: zz marked") {
+		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id, false)) || !strings.Contains(text, "Backlog first: zz marked") {
 			t.Fatalf("a trimmed approval line retained its binding or displaced the reserved backlog line: goal=%q err=%v\n%s", goalID, err, text)
 		}
 	})
@@ -523,7 +525,7 @@ func TestBudgetQuestionRequiresPersistsAndRendersCompleteTuple(t *testing.T) {
 		t.Fatalf("stored budget=%+v err=%v", stored.Budget, err)
 	}
 	want := "Proposed box: 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds"
-	if rendered := renderQuestion(stored); !strings.Contains(rendered, want) {
+	if rendered := renderQuestion(stored, false); !strings.Contains(rendered, want) {
 		t.Fatalf("rendered question %q does not contain %q", rendered, want)
 	}
 	other := request
@@ -552,7 +554,7 @@ func TestRenderQuestionBoundsGoalRecordProseAndKeepsReplyTokenReachable(t *testi
 		Wants:          "answer:channel-ask-fits-one-message",
 	}
 
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	tail := "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
 	if got := len([]rune(rendered)); got > questionMessageRuneLimit {
 		t.Fatalf("rendered question has %d runes, limit is %d", got, questionMessageRuneLimit)
@@ -592,7 +594,7 @@ func TestRenderQuestionTrimNoticeDoesNotClaimDroppedFactsWhenAllFactsRemain(t *t
 		Wants:          "gradual",
 	}
 
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	wantNotice := "Long text was trimmed for channel length; full details are in goal " + q.Goal + "."
 	if !strings.Contains(rendered, wantNotice) {
 		t.Fatalf("long option text was trimmed without a notice:\n%s", rendered)
@@ -616,7 +618,7 @@ func TestRenderQuestionLeavesShortAskSubstanceUnchanged(t *testing.T) {
 		Recommendation: "Choose blue",
 		Wants:          "blue",
 	}
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	for _, want := range []string{
 		"choose launch colour — other",
 		"- The launch is next Tuesday",
@@ -888,44 +890,39 @@ func reportFencedClaim(id, intent, machine, stopID string, now time.Time) *goal.
 }
 
 func TestPollRejectsWrongUserNoCodeBadCodeReplay(t *testing.T) {
-	root := t.TempDir()
-	p := &testProvider{}
-	q := Question{ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "1", ThreadID: "1"}}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+	bed, p, q, now := pollLedgerBed(t)
+	p.inbound = []Inbound{
+		{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "stranger", Text: "answer 000000"},
+		{Ref: MessageRef{ID: "3", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "answer"},
+		{Ref: MessageRef{ID: "4", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "answer 000000"},
+		{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "stranger", Text: "answer 000000"},
+	}
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "stranger", Text: "answer 000000"}, {Ref: MessageRef{ID: "3", ThreadID: "1"}, ThreadID: "1", UserID: "human", Text: "answer"}, {Ref: MessageRef{ID: "4", ThreadID: "1"}, ThreadID: "1", UserID: "human", Text: "answer 000000"}, {Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "stranger", Text: "answer 000000"}}
-	_, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "human", TOTPSecret: "JBSWY3DPEHPK3PXP", Machine: "m", Lineage: "l", Provider: p, Now: time.Unix(1234567890, 0)})
-	if err != nil {
-		t.Fatal(err)
+	inbox := bed.inbox()
+	for id, want := range map[string]string{"2": "wrong-user", "3": "no-code", "4": "bad-code", "5": "wrong-user"} {
+		if got := inbox["plans/channel/inbox/fleet/fake-"+id+".json"]; got.Outcome != want || got.Text != "answer" {
+			t.Fatalf("message %s: %+v", id, got)
+		}
 	}
-	got, _ := ReadQuestion(root, "q")
-	if len(got.Rejected) != 4 || len(p.posts) != 3 {
-		t.Fatalf("rejections=%d posts=%d", len(got.Rejected), len(p.posts))
+	got, _ := ReadQuestion(bed.root, q.ID)
+	if got.State != "open" || len(got.Rejected) != 0 || len(p.posts) != 4 {
+		t.Fatalf("question=%+v posts=%v", got, p.posts)
 	}
-	for _, tc := range []struct{ name, user, secret string }{{"empty-secret", "human", ""}, {"empty-user", "", "JBSWY3DPEHPK3PXP"}} {
+	for _, tc := range []struct{ name, user, secret string }{{"empty-secret", "UWIDO", ""}, {"empty-user", "", "JBSWY3DPEHPK3PXP"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			bed, p, q, now := pollLedgerBed(t)
-			root := bed.root
 			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
-			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "human", Text: "answer " + code}}
+			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "answer " + code}}
 			cfg := pollBedConfig(bed, p, now)
 			cfg.HumanUserID, cfg.TOTPSecret = tc.user, tc.secret
 			if _, err := bed.poll(context.Background(), cfg); err != nil {
 				t.Fatal(err)
 			}
-			got, _ := ReadQuestion(root, q.ID)
-			g := projectGoal(t, bed, "g")
-			if len(got.Rejected) != 1 || got.Rejected[0].Reason != "unconfigured" || len(p.posts) != 1 {
-				t.Fatalf("question=%+v posts=%v", got, p.posts)
-			}
-			for _, h := range g.History {
-				if h.Verb == "answer" {
-					t.Fatal("unconfigured channel recorded an answer")
-				}
-			}
-			if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "channel", "totp-consumed.json")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("unconfigured channel wrote consumption: %v", err)
+			got, _ := ReadQuestion(bed.root, q.ID)
+			if got.State != "open" || p.receives != 0 || p.confirms != 0 || len(p.posts) != 0 || len(bed.inbox()) != 0 {
+				t.Fatalf("an unconfigured installation received: question=%+v receives=%d posts=%v", got, p.receives, p.posts)
 			}
 		})
 	}
@@ -969,8 +966,9 @@ func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
 			if tc.wantAnswer != (got.Answer != nil) {
 				t.Fatalf("answer=%+v rejections=%+v", got.Answer, got.Rejected)
 			}
-			if tc.wantReason != "" && (len(got.Rejected) != 1 || got.Rejected[0].Reason != tc.wantReason) {
-				t.Fatalf("rejections=%+v", got.Rejected)
+			if tc.wantReason != "" && (bed.inbox()["plans/channel/inbox/fleet/fake-2.json"].Outcome != "stale" || len(p.posts) != 1 ||
+				p.posts[0] != "not recorded: "+tc.wantReason+". Reply to the question above with your answer and your code") {
+				t.Fatalf("inbox=%+v posts=%v", bed.inbox(), p.posts)
 			}
 		})
 	}
@@ -978,28 +976,26 @@ func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
 
 func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 	bed, p, _, now := pollLedgerBed(t)
-	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
-	p.inbound = []Inbound{{Ref: MessageRef{ID: "u"}, ThreadID: "stray"}, {Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code}}
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "u"}, ThreadID: "stray", Ack: "1"}, {Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, Ack: "2"}}
 	cfg := pollBedConfig(bed, p, now)
+	crashed := false
 	cfg.FailurePoint = func(point string) error {
-		if point == "before-cursor" {
+		if point == "inbox-committed" && len(bed.inbox()) == 2 && !crashed {
+			crashed = true
 			return errors.New("crash")
 		}
 		return nil
 	}
 	if _, err := bed.poll(context.Background(), cfg); err == nil {
-		t.Fatal("crash before cursor write did not fire")
+		t.Fatal("crash before the second confirm did not fire")
 	}
-	cfg.FailurePoint = nil
+	if len(p.confirmed) != 1 || p.confirmed[0] != "1" {
+		t.Fatalf("confirmed before the crash: %v", p.confirmed)
+	}
 	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json"))
-	if err != nil || !strings.Contains(string(b), "done") {
-		t.Fatal(string(b), err)
-	}
-	unmatched, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl"))
 	g := projectGoal(t, bed, "g")
 	answers := 0
 	for _, h := range g.History {
@@ -1007,8 +1003,11 @@ func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 			answers++
 		}
 	}
-	if err != nil || strings.Count(strings.TrimSpace(string(unmatched)), "\n") != 0 || answers != 1 {
-		t.Fatalf("unmatched=%q answers=%d err=%v", unmatched, answers, err)
+	if len(bed.inbox()) != 2 || answers != 1 {
+		t.Fatalf("inbox=%v answers=%d", bed.inbox(), answers)
+	}
+	if _, err := os.Stat(filepath.Join(bed.root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a stray reply was filed locally: %v", err)
 	}
 }
 
@@ -1052,9 +1051,8 @@ func TestStatusThreadReplyWithoutTokenIsAnsweredAndFiled(t *testing.T) {
 	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl"))
-	if err != nil || !strings.Contains(string(b), `"id":"11"`) {
-		t.Fatalf("unmatched=%s err=%v", b, err)
+	if in := bed.inbox()["plans/channel/inbox/fleet/fake-11.json"]; in.Outcome != "verified" || in.Text != "approved" {
+		t.Fatalf("status reply record: %+v", in)
 	}
 	if len(p.posts) != 1 || p.posts[0] != "not recorded: wrong token; reply with the token and your code" || p.postThreads[0] == nil || p.postThreads[0].ThreadID != "10" {
 		t.Fatalf("posts=%v threads=%v", p.posts, p.postThreads)
@@ -1065,103 +1063,77 @@ func TestStatusThreadReplyWithoutTokenIsAnsweredAndFiled(t *testing.T) {
 }
 
 func TestTickChannelPassBound(t *testing.T) {
-	root := t.TempDir()
-	p := &testProvider{cursor: "later"}
+	bed, p, _, now := pollLedgerBed(t)
+	p.cursor = "later"
 	for i := 0; i < 6; i++ {
-		p.inbound = append(p.inbound, Inbound{Ref: MessageRef{ID: fmt.Sprint(i)}, ThreadID: "stray"})
+		p.inbound = append(p.inbound, Inbound{Ref: MessageRef{ID: fmt.Sprint(i)}, ThreadID: "stray", Ack: Cursor(fmt.Sprint(i + 1))})
 	}
-	r, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", Provider: p, Now: time.Unix(1, 0)})
-	if err != nil || r.Dispositions != 5 || p.receives != 1 {
-		t.Fatal(r, p.receives, err)
+	cfg := pollBedConfig(bed, p, now)
+	cfg.MaxDispositions = 5
+	r, err := bed.poll(context.Background(), cfg)
+	if err != nil || r.Dispositions != 5 || p.receives != 1 || len(bed.inbox()) != 5 {
+		t.Fatal(r, p.receives, len(bed.inbox()), err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("partial pass advanced cursor")
+	if fmt.Sprint(p.confirmed) != "[1 2 3 4 5]" {
+		t.Fatalf("a partial pass confirmed past its last commit: %v", p.confirmed)
 	}
 }
 
 func TestPollPassesEveryPostedRefWithItsRoot(t *testing.T) {
-	root := t.TempDir()
-	q := Question{
-		ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"},
-		Rejected: []Rejection{{Ref: MessageRef{ID: "11", ThreadID: "10"}, PostRef: &MessageRef{ID: "12", ThreadID: "wrong"}}},
-	}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+	bed, p, q, now := pollLedgerBed(t)
+	q.Thread = &MessageRef{ID: "10", ThreadID: "10"}
+	q.Rejected = []Rejection{{Ref: MessageRef{ID: "11", ThreadID: "10"}, PostRef: &MessageRef{ID: "12", ThreadID: "wrong"}}}
+	if err := writeJSON(questionPath(bed.root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
-	p := &testProvider{}
-	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", Provider: p}); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	want := []MessageRef{{ID: "10", ThreadID: "10"}, {ID: "12", ThreadID: "10"}}
+	want := []MessageRef{{ID: "10", ThreadID: "10"}}
 	if fmt.Sprint(p.threads) != fmt.Sprint(want) {
 		t.Fatalf("threads=%+v want=%+v", p.threads, want)
 	}
 }
 
-func TestRejectionRecordsItsPostRef(t *testing.T) {
-	root := t.TempDir()
-	q := Question{ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"}}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
-		t.Fatal(err)
-	}
-	p := &testProvider{inbound: []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "stranger"}}}
-	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "human", TOTPSecret: "JBSWY3DPEHPK3PXP", Provider: p}); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := ReadQuestion(root, q.ID)
-	if len(got.Rejected) != 1 || got.Rejected[0].PostRef == nil || got.Rejected[0].PostRef.ThreadID != "10" {
-		t.Fatalf("rejection=%+v", got.Rejected)
-	}
-}
-
-func rejectionCrashCase(t *testing.T, point string, wantPosts int) {
+func rejectionCrashCase(t *testing.T) {
 	t.Helper()
-	root := t.TempDir()
-	q := Question{ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"}}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
-		t.Fatal(err)
-	}
-	p := &testProvider{inbound: []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "stranger"}}}
+	bed, p, q, now := pollLedgerBed(t)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "1"}, ThreadID: "1", UserID: "stranger"}}
 	fired := false
-	cfg := PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "human", TOTPSecret: "JBSWY3DPEHPK3PXP", Provider: p, FailurePoint: func(got string) error {
-		if got == point && !fired {
+	cfg := pollBedConfig(bed, p, now)
+	cfg.FailurePoint = func(got string) error {
+		if got == "inbox-committed" && !fired {
 			fired = true
 			return errors.New("injected crash")
 		}
 		return nil
-	}}
-	if _, err := Poll(context.Background(), cfg); err == nil {
+	}
+	if _, err := bed.poll(context.Background(), cfg); err == nil {
 		t.Fatal("crash did not fire")
 	}
 	cfg.FailurePoint = nil
-	if _, err := Poll(context.Background(), cfg); err != nil {
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := ReadQuestion(root, q.ID)
-	if len(got.Rejected) != 1 || len(p.posts) != wantPosts {
-		t.Fatalf("rejections=%+v posts=%v", got.Rejected, p.posts)
+	got, _ := ReadQuestion(bed.root, q.ID)
+	if len(got.Rejected) != 0 || len(p.posts) != 1 || len(bed.inbox()) != 1 {
+		t.Fatalf("rejections=%+v posts=%v inbox=%v", got.Rejected, p.posts, bed.inbox())
 	}
 }
 
 func TestRejectionReceiptPostRecordCrashIsDispositionSafe(t *testing.T) {
-	t.Run("after record", func(t *testing.T) { rejectionCrashCase(t, "rejection-recorded", 0) })
-	t.Run("after post", func(t *testing.T) { rejectionCrashCase(t, "rejection-posted", 1) })
+	rejectionCrashCase(t)
 }
 
 func TestEveryInvalidInboundRefIsAnsweredAtMostOnceAcrossRecordBeforePostCrash(t *testing.T) {
-	for _, tc := range []struct {
-		point string
-		posts int
-	}{{"rejection-recorded", 0}, {"rejection-posted", 1}} {
-		t.Run(tc.point, func(t *testing.T) { rejectionCrashCase(t, tc.point, tc.posts) })
-	}
+	rejectionCrashCase(t)
 }
 
 func TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched(t *testing.T) {
-	bed, p, _, now := pollLedgerBed(t)
+	bed, p, q, now := pollLedgerBed(t)
 	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
-	p.inbound = []Inbound{{Ref: MessageRef{ID: "22", ThreadID: "20"}, ThreadID: "1", UserID: "UWIDO", Text: "yes " + code}}
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "22", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "yes " + code}}
 	cfg := pollBedConfig(bed, p, now)
 	cfg.FailurePoint = func(point string) error {
 		if point == "matched" {
@@ -1176,43 +1148,29 @@ func TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched(t *testing.T)
 	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl")
-	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) != 0 {
-		t.Fatalf("matched reply became unmatched: %s", b)
+	if got, _ := ReadQuestion(root, q.ID); got.State != "closed" || got.Answer == nil || got.Answer.Text != "yes" {
+		t.Fatalf("question=%+v", got)
+	}
+	if len(bed.inbox()) != 1 {
+		t.Fatalf("inbox=%v", bed.inbox())
 	}
 }
 
-func TestCursorFromAnotherProviderIsIgnored(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")
-	if err := writeJSON(path, cursorRecord{Provider: "slack", Cursor: "slack-cursor"}); err != nil {
+// Decision 8: receive sends no offset, so a saved per-installation cursor is
+// never read and never written.
+func TestPollNeverReadsTheSavedCursor(t *testing.T) {
+	bed, p, _, now := pollLedgerBed(t)
+	path := filepath.Join(bed.root, "artifacts", "agents", "channel", "fleet", "cursor.json")
+	if err := writeJSON(path, map[string]string{"provider": "fake", "cursor": "saved-cursor"}); err != nil {
 		t.Fatal(err)
 	}
-	p := &testProvider{cursor: "telegram-cursor"}
-	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "telegram", Provider: p}); err != nil {
+	p.cursor = "next-cursor"
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
-	}
-	if p.after != "" {
-		t.Fatalf("foreign cursor passed to provider: %q", p.after)
 	}
 	b, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(b), `"provider": "telegram"`) {
-		t.Fatal(string(b), err)
-	}
-}
-
-func TestPollKeepsPassingSavedCursorWithoutConfirming(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")
-	if err := writeJSON(path, cursorRecord{Provider: "telegram", Cursor: "saved-cursor"}); err != nil {
-		t.Fatal(err)
-	}
-	p := &testProvider{cursor: "next-cursor"}
-	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "telegram", Provider: p}); err != nil {
-		t.Fatal(err)
-	}
-	if p.after != "saved-cursor" || p.confirms != 0 {
-		t.Fatalf("Poll passed cursor %q and made %d confirmations", p.after, p.confirms)
+	if p.after != "" || p.confirms != 0 || err != nil || !strings.Contains(string(b), "saved-cursor") {
+		t.Fatalf("Poll passed cursor %q, made %d confirmations, cursor file %s %v", p.after, p.confirms, b, err)
 	}
 }
 
@@ -1251,10 +1209,10 @@ func TestPollRecordsAuthenticatedReply(t *testing.T) {
 			}
 		}
 	}
-	if got.State != "closed" || got.Answer == nil || answers != 1 || strings.Count(g.NextStep, "ANSWERED "+q.ID) != 1 || r.Dispositions != 1 {
+	if got.State != "closed" || got.Answer == nil || answers != 1 || strings.Count(g.NextStep, "ANSWERED "+q.ID) != 1 || r.Dispositions != 2 {
 		t.Fatalf("question=%+v goal=%+v result=%+v", got, g, r)
 	}
-	t.Run("receipt post failure does not stop receiving", func(t *testing.T) {
+	t.Run("a crash after recording still closes the question", func(t *testing.T) {
 		bed, p, _, now := pollLedgerBed(t)
 		root := bed.root
 		code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
@@ -1270,22 +1228,17 @@ func TestPollRecordsAuthenticatedReply(t *testing.T) {
 			t.Fatal("recorded crash did not fire")
 		}
 		cfg.FailurePoint = nil
-		p.failPosts = 1
-		r, err := bed.poll(context.Background(), cfg)
-		if err != nil || r.Received != 1 || p.receives != 2 {
-			t.Fatalf("result=%+v receives=%d err=%v", r, p.receives, err)
-		}
 		if _, err := bed.poll(context.Background(), cfg); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := ReadQuestion(root, "01J5X0000000000000000000Q0")
-		if got.State != "closed" {
-			t.Fatalf("receipt was not retried: %+v", got)
+		if got.State != "closed" || len(p.posts) != 0 {
+			t.Fatalf("question=%+v posts=%v", got, p.posts)
 		}
 	})
 }
 func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
-	for _, phase := range []string{"matched", "recorded-commit", "recorded", "receipted", "closed"} {
+	for _, phase := range []string{"matched", "recorded-commit", "recorded", "closed"} {
 		t.Run(phase, func(t *testing.T) {
 			bed, p, q, now := pollLedgerBed(t)
 			root := bed.root
@@ -1317,9 +1270,6 @@ func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 			record, _ := ReadQuestion(root, q.ID)
 			if answers != 1 || strings.Count(g.NextStep, "ANSWERED "+q.ID) != 1 || record.State != "closed" {
 				t.Fatalf("answers=%d next=%q record=%+v", answers, g.NextStep, record)
-			}
-			if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")); err != nil {
-				t.Fatal("cursor did not advance last", err)
 			}
 		})
 	}
@@ -1366,8 +1316,8 @@ func TestVerifiedBudgetTokenRaisesBoxTwiceAndReopensAdmission(t *testing.T) {
 	if afterFirst.Budget == nil || *afterFirst.Budget != firstBudget || afterFirst.Approved == nil || afterFirst.Approved.Authority != goal.ApprovalAuthorityChannel || afterFirst.NormApproval == nil || afterFirst.NormApproval.ApprovedRef != first.ID {
 		t.Fatalf("first verified answer did not bind its box and norm proof: %+v", afterFirst)
 	}
-	if got := p.posts[len(p.posts)-1]; got != "recorded: g box raised to 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds" {
-		t.Fatalf("first receipt=%q", got)
+	if got, _ := ReadQuestion(root, first.ID); got.Answer == nil || got.Answer.Receipt != "recorded: g box raised to 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds" || len(p.posts) != 0 {
+		t.Fatalf("first receipt=%+v posts=%q", got.Answer, p.posts)
 	}
 
 	secondNow := now.Add(30 * time.Second)
@@ -1457,8 +1407,8 @@ func TestLegacyBudgetQuestionAnswerRaisesNothing(t *testing.T) {
 			t.Fatalf("legacy answer wrote an approve row: %+v", history)
 		}
 	}
-	if len(p.posts) == 0 || !strings.Contains(p.posts[len(p.posts)-1], "nothing raised") {
-		t.Fatalf("legacy answer posts=%q", p.posts)
+	if len(p.posts) != 0 {
+		t.Fatalf("legacy answer posted a receipt: %q", p.posts)
 	}
 }
 

@@ -19,6 +19,24 @@ import (
 // infrastructure and worker legs, and the nested bed's override and
 // compiled-installation rows.
 
+// Decision 7 of the blocked-agent-asks-the-human design: a declared brain
+// seat's Stop posts nothing to the channel, even when its status line is
+// due; the status lives in the UI and in metasystem channel status.
+func TestBrainSeatStopPostsNothingToTheChannel(t *testing.T) {
+	_, ops, run := stopOnce(t, func(ops *fakeOps) {
+		ops.verdict = strings.Replace(ops.verdict, `"brainStatusDue":false`, `"brainStatusDue":true`, 1)
+	}, `{"session_id":"brain-seat"}`)
+	if run.status != 0 || strings.Contains(run.stdout, `"decision":"block"`) {
+		t.Fatalf("stop = status %d stdout %q", run.status, run.stdout)
+	}
+	if trace := ops.trace(); strings.Contains(trace, "channel status") {
+		t.Fatalf("the Stop hook posted to the channel:\n%s", trace)
+	}
+	if strings.Contains(ops.captured[0].notices, "status line") {
+		t.Fatalf("notices = %q", ops.captured[0].notices)
+	}
+}
+
 func stopOnce(t *testing.T, configure func(*fakeOps), payload string) (hookInstallation, *fakeOps, hookRun) {
 	t.Helper()
 	installation := newHookInstallation(t)
@@ -370,13 +388,6 @@ func TestStopCapturedFactFailures(t *testing.T) {
 		{"holder classification", func(ops *fakeOps) {
 			ops.classify = func(string, string, int) (string, int) { return `{"class":"MAIN","holder":"maybe"}`, 0 }
 		}, "the checkout holder classification was unreadable", "stop-condition infrastructure checkout-holder-classification-was-unreadable checkout-holder ", ""},
-		{"brain status", func(ops *fakeOps) {
-			ops.verdict = strings.Replace(ops.verdict, `"brainStatusDue":false`, `"brainStatusDue":true`, 1)
-			ops.channelPost = func(_, stderr io.Writer) int { fmt.Fprintln(stderr, "channel refused"); return 1 }
-		}, "", "", "the brain's status line was not published: channel refused"},
-		{"brain status without provider", func(ops *fakeOps) {
-			ops.verdict = strings.Replace(ops.verdict, `"brainStatusDue":false`, `"brainStatusDue":true`, 1)
-		}, "", "", "the brain's status line was not published: no channel provider is configured"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

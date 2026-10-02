@@ -1,6 +1,6 @@
 # channel-tells-me-when-something-lands
 
-- State: queued
+- State: done
 - Priority: 3
 - Sequence: 30
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: nothing is authorized or lost wrongly, but the human's only view of fleet delivery is silent for up to four hours, which is what makes him ask whether the machinery is working at all; novelty 2: the trigger point is new - a landing completes in scripts/agents/land.sh while the poster lives on the steward tick - and where it lives, how it stays exactly-once across machines, and what happens when the post fails are real choices; exposure 3: every landing on every machine, into the one channel Wido reads; accumulation 2: the third channel defect he has reported today after the wall of text and the UTC stamps, all three sharing one cause - the channel was designed as a periodic digest and is being asked to be a notifier"
@@ -8,8 +8,9 @@
 - Intent: What: Every time work lands on main, Wido gets one Telegram message, in plain English, that says what was delivered: what the change does for him and which goal it finishes or advances, the way a colleague would tell him. No interval reports, no technical boilerplate (no commit hashes, file paths, codes, counters or status dumps). Why: Wido, 2026-10-01, verbatim: "I want a message when something lands, in plain english. Not at interval, not with tech/boilerplate shit. A meaningful message about what was delivered is what I want." Today the only channel message is a status post every 240 minutes, and nothing tells him when something lands. This requirement was folded into fleet-channel-gateway on 2026-09-13 and lost when that goal was abandoned on 2026-09-30; it is reopened here. Pros: Wido learns about each delivery when it happens, in words he can act on. Cons: writing a meaningful summary needs the landing's goal and its plain-English intent, and every kind of landing (a seat's own, the lane's, a hand landing) must produce exactly one message. Until m1e's landing work lands, the landing code itself must not be touched, so the design should work from what the steward can see (main moving) or wait for the new lane.
 - Origin: main
 - Next step: Next: When Wido says go, write a short design for how one plain-English message per landing is produced and sent from one place, and put it to Wido. Do not start before his go. Done when: each landing on main produces exactly one Telegram message that says in plain English what was delivered, with no technical boilerplate, and the interval status post no longer stands in for it.
+- Concluded: Landed c294fd312 (escape hatch slice C, Decision 7): when work reaches main, one Telegram message carrying the plain-English sentence the delivering agent gave with work land --delivered; no interval reports, no ids, hashes or paths; no sentence means no message
 - OpenedAt: 2026-09-05T11:06:28Z
-- Revision: 28
+- Revision: 29
 - BudgetExceptions: 0
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=5 at=2026-09-05T23:08:05Z
 
@@ -42,4 +43,5 @@ History:
 - 2026-10-01T07:53:28Z 7GZ386RARYJB320ZX7B0FM7JHT-m1e-528c72bf reopen actor=human:Wido targets=channel-tells-me-when-something-lands reason=priority-order from=3:18 to=3:30
 - 2026-10-01T07:53:32Z YCM2A67209BZP71H60J9C247Q7-m1e-528c72bf edit actor=human:Wido targets=channel-tells-me-when-something-lands
 - 2026-10-01T07:53:36Z SKBRYSZY3C3S7AZJDYDGTE2CSQ-m1e-528c72bf edit actor=human:Wido targets=channel-tells-me-when-something-lands
-Integrity: sha256=fca03c3c6917a5351d3e0c76e416b8f0609a0669ec2afd714b702b7b6f9f769f
+- 2026-10-02T17:03:44Z KTMR4TC1NXEC865GMHQ597CDK0-m1e-f456f182 done actor=human:Wido targets=channel-tells-me-when-something-lands
+Integrity: sha256=a2f7615b20c45d2d0914a4807bddb54b0c174f12fc01ec816573b55a19453525

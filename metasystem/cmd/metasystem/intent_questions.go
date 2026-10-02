@@ -119,7 +119,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
 	if q.kind == "channel" {
 		c := q.channel
-		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructions(c)}
+		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
 		switch {
@@ -135,7 +135,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			headline, fact = "Channel question "+c.ID+" is not delivered yet", textui.Count(c.Undelivered, "failed delivery", "failed deliveries")
 		default:
 			result.Summary = fmt.Sprintf("channel question %s waits for the person's reply in its channel thread", c.ID)
-			result.text = []string{channel.ReplyInstructions(c)}
+			result.text = []string{channel.ReplyInstructionsAt(inv.stateRoot, c)}
 			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
 		}
 		result.view = func(page *textui.Page) {
@@ -149,7 +149,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			}
 			page.Facts(rows...)
 			if c.Thread != nil && c.Answer == nil && c.State != "closed" {
-				page.Section("", "").Text(channel.ReplyInstructions(c))
+				page.Section("", "").Text(channel.ReplyInstructionsAt(inv.stateRoot, c))
 			}
 		}
 		return result

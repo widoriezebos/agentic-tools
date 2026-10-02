@@ -165,6 +165,10 @@ func Load(root string, withHuman bool) (Loaded, error) {
 	if err != nil {
 		return loaded, err
 	}
+	codeOff, err := channel.AnswerCodeOff(root)
+	if err != nil || codeOff {
+		return loaded, err
+	}
 	loaded.TOTPSecret, err = Secret(root, "channel.human.totp-secret")
 	return loaded, err
 }
@@ -190,27 +194,26 @@ func Run(ctx context.Context, root string) (int, error) {
 	if err != nil {
 		return res.Undelivered + 1, err
 	}
-	text, err := channel.ComposeReport(channel.ReportConfig{RepoRoot: root, Machine: machine, Now: time.Now(), Undelivered: res.Undelivered})
-	if err != nil {
-		return res.Undelivered + 1, err
-	}
-	state := channel.LoadStatusState(root)
-	minutes := 240
-	if raw, e := Get(root, "channel.status.interval-minutes", "240"); e == nil {
-		if n, e := strconv.Atoi(raw); e == nil && n > 0 {
-			minutes = n
-		}
-	}
-	if channel.ShouldPost(state, time.Now(), time.Duration(minutes)*time.Minute, text, false) {
-		ref, e := loaded.Provider.Post(ctx, loaded.Destination, text, nil)
-		if e != nil {
-			return res.Undelivered + 1, e
-		}
-		state = channel.StatusState{LastPost: time.Now().UTC(), ContentDigest: channel.Digest(text), Ref: ref}
-		e = channel.SaveStatusState(root, state)
-		if e != nil {
-			return res.Undelivered + 1, e
-		}
+	// The channel carries no periodic status report (Decision 7 of the
+	// blocked-agent-asks-the-human design): the UI shows needs, backlog and
+	// delivered. The tick only retries a landing line whose post failed.
+	if e := channel.RetryLanded(ctx, root, loaded.Provider, loaded.Destination); e != nil {
+		return res.Undelivered + 1, e
 	}
 	return res.Undelivered, nil
+}
+
+// NotifyLanded posts a landing on main as its plain sentences of what was
+// delivered, once per sha; empty text posts nothing. With no channel
+// configured it does nothing; a failed post is kept for one retry and
+// returned, and never undoes the landing.
+func NotifyLanded(ctx context.Context, root, text, sha string, now time.Time) error {
+	loaded, err := Load(root, false)
+	if err != nil {
+		return err
+	}
+	if loaded.Provider == nil {
+		return nil
+	}
+	return channel.PostLanded(ctx, root, loaded.Provider, loaded.Destination, text, sha, now)
 }

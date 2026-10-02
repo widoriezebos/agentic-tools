@@ -28,11 +28,6 @@ type ReportConfig struct {
 	OldestUndelivered time.Time
 }
 
-func ComposeReport(c ReportConfig) (string, error) {
-	text, _, err := ComposeStatusReport(c)
-	return text, err
-}
-
 // ComposeStatusReport returns the rendered post and the goal named by its
 // execution-approval line, when that line fits in the post.
 func ComposeStatusReport(c ReportConfig) (string, string, error) {
@@ -120,7 +115,7 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 			backlog = backlogStatusLines(p, c.Machine, frontier)
 		}
 		if id := markedNextGoal(p, c.Machine); id != "" && !questionGoals[id] {
-			needs = append(needs, approvalRequestLine(id))
+			needs = append(needs, approvalRequestLine(id, answerCodeOffOrOn(c.RepoRoot)))
 			approvalGoal = id
 		}
 		if frontierErr == nil {
@@ -180,7 +175,7 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 		lines = append(lines, fmt.Sprintf("Undelivered: %d channel messages, oldest %d min", c.Undelivered, age))
 	}
 	text := strings.Join(lines, "\n")
-	if approvalGoal != "" && !strings.Contains(text, approvalRequestLine(approvalGoal)) {
+	if approvalGoal != "" && !strings.Contains(text, approvalRequestLine(approvalGoal, answerCodeOffOrOn(c.RepoRoot))) {
 		approvalGoal = ""
 	}
 	return text, approvalGoal, nil
@@ -254,7 +249,10 @@ func markedNextGoal(p goal.Projection, machine string) string {
 	return marked
 }
 
-func approvalRequestLine(id string) string {
+func approvalRequestLine(id string, codeOff bool) string {
+	if codeOff {
+		return "Needs you: " + featureName(id) + " — Reply in this thread with this token verbatim: start " + id
+	}
 	return "Needs you: " + featureName(id) + " — Reply in this thread with this token verbatim, followed by your code: start " + id
 }
 
@@ -373,8 +371,4 @@ func LoadStatusState(repo string) StatusState {
 }
 func SaveStatusState(repo string, s StatusState) error {
 	return writeJSON(filepath.Join(channelRoot(repo), "status.json"), s)
-}
-
-func ShouldPost(s StatusState, now time.Time, interval time.Duration, text string, force bool) bool {
-	return force || (now.Sub(s.LastPost) >= interval && s.ContentDigest != Digest(text))
 }

@@ -740,3 +740,64 @@ func channelRejectionReasons(rejections []ChannelRejection) []string {
 	}
 	return reasons
 }
+
+// ChannelInboxPath is the one ledger path of an inbound message: the
+// record's path makes every write of it idempotent by message id.
+func ChannelInboxPath(destination string, in *ChannelInbound) string {
+	return ChannelPrefix + "inbox/" + destination + "/" + channelInboxID(in) + ".json"
+}
+
+// RenderChannelInbound is the record's canonical serialisation: two-space
+// indentation, keys in struct order, a trailing newline.
+func RenderChannelInbound(in *ChannelInbound) ([]byte, error) {
+	b, err := json.MarshalIndent(in, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// ReadChannelInbox returns every inbox record committed at commit, by path.
+func ReadChannelInbox(e Endpoint, commit string) (map[string]*ChannelInbound, error) {
+	files, err := readCommitFiles(e, commit, ChannelPrefix)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*ChannelInbound)
+	for filePath, data := range files {
+		location, ok := classifyChannelPath(filePath)
+		if !ok || location.kind != "inbound" {
+			continue
+		}
+		in, err := decodeChannelInbound(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", filePath, err)
+		}
+		out[filePath] = in
+	}
+	return out, nil
+}
+
+// ReadChannelInboxAtTip captures the canonical tip under nonce and returns
+// the inbox records committed there.
+func ReadChannelInboxAtTip(e Endpoint, nonce string) (map[string]*ChannelInbound, error) {
+	repository := e.repository()
+	tip, err := repository.Capture(nonce)
+	if err != nil {
+		return nil, err
+	}
+	defer repository.Release(nonce)
+	return ReadChannelInbox(e, tip)
+}
+
+// ValidateChannelTreeAt applies the channel refusals to a commit read through
+// the endpoint's repository.
+func ValidateChannelTreeAt(e Endpoint, commit string) []Problem {
+	return validateChannelTreeFor(e, commit)
+}
+
+// ChannelTokenIn reports whether text carries token exactly once as a
+// contiguous run of whitespace-delimited fields.
+func ChannelTokenIn(text, token string) bool {
+	return containsContiguousFields(text, token)
+}

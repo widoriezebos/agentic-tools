@@ -55,6 +55,10 @@ type Line struct {
 	At      string `json:"at"`
 	Outcome string `json:"outcome,omitempty"`
 	Reason  string `json:"reason,omitempty"`
+	// Delivered is the hand-in's one plain sentence of what it delivers,
+	// written by the agent that did the work; the channel posts it when
+	// the work reaches main.
+	Delivered string `json:"delivered,omitempty"`
 }
 
 // Entry is one hand-in and what became of it.
@@ -66,6 +70,8 @@ type Entry struct {
 	At     string `json:"at"`
 	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
+	// Delivered is the hand-in's plain sentence of what it delivers.
+	Delivered string `json:"delivered,omitempty"`
 	// ReturnedAt is when it was returned.
 	ReturnedAt string `json:"returned_at,omitempty"`
 }
@@ -132,6 +138,12 @@ func Entries(install string) ([]Entry, error) {
 	for _, line := range lines {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
+			if at, seen := index[key]; seen && line.Delivered != "" {
+				// A repeat hand-in that says what it delivers adds its
+				// sentence to the line.
+				entries[at].Delivered = line.Delivered
+				continue
+			}
 			if _, seen := index[key]; !seen && line.Goal != "" && line.SHA != "" {
 				// A new hand-in of a goal supersedes its older waiting line.
 				for at := range entries {
@@ -140,7 +152,7 @@ func Entries(install string) ([]Entry, error) {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting})
+				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting, Delivered: line.Delivered})
 			}
 			continue
 		}
@@ -180,8 +192,9 @@ func Latest(install, goal string) (Entry, bool, error) {
 }
 
 // HandIn appends a seat's hand-in. A hand-in of the same goal at the same
-// sha is a repeat: nothing is appended and the existing entry is returned
-// with added false.
+// sha is a repeat: the existing entry is returned with added false, and
+// nothing is appended unless the repeat brings a new sentence of what a
+// waiting line delivers, which is kept with it.
 func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
@@ -195,16 +208,55 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		for _, existing := range entries {
 			if existing.Goal == line.Goal && existing.SHA == line.SHA {
 				entry = existing
+				if line.Delivered == "" || line.Delivered == existing.Delivered || existing.State != StateWaiting {
+					return nil
+				}
+				// The repeat brings the sentence of what it delivers: it is
+				// kept with the waiting line, nothing else changes.
+				if err := appendLine(queuePath(install), line); err != nil {
+					return err
+				}
+				entry.Delivered = line.Delivered
 				return nil
+			}
+		}
+		if line.Delivered == "" {
+			// A goal handed in again after a return, without a sentence,
+			// keeps the returned line's; a landed or waiting line's
+			// sentence was for other work. A new sentence replaces it.
+			for index := len(entries) - 1; index >= 0; index-- {
+				if entries[index].Goal == line.Goal {
+					if entries[index].State == StateReturned {
+						line.Delivered = entries[index].Delivered
+					}
+					break
+				}
 			}
 		}
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}
-		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting}, true
+		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting, Delivered: line.Delivered}, true
 		return nil
 	})
 	return entry, added, err
+}
+
+// Say keeps a sentence of what it delivers with the waiting hand-in of
+// goal at sha; with no such line, or the same sentence, nothing changes.
+func Say(install, goal, sha, delivered string) error {
+	return withLock(install, func() error {
+		entries, err := Entries(install)
+		if err != nil {
+			return err
+		}
+		for _, existing := range entries {
+			if existing.Goal == goal && existing.SHA == sha && existing.State == StateWaiting && existing.Delivered != delivered && delivered != "" {
+				return appendLine(queuePath(install), Line{Goal: goal, SHA: sha, At: time.Now().UTC().Format(time.RFC3339), Delivered: delivered})
+			}
+		}
+		return nil
+	})
 }
 
 // ErrNotWaiting is a return of a goal with no waiting hand-in.

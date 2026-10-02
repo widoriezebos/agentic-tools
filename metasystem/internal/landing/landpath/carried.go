@@ -384,7 +384,7 @@ func (d *driver) finishCarriedPublication(commit string) {
 		}
 		d.failStep(status)
 	}
-	d.hintWaiters(commit)
+	d.pushed(commit)
 	d.carryAbandonArmed = false
 	d.seam("after-push")
 	d.carriedStep("complete carried goal record", CarriedRequest{Entry: d.carriedEntry})

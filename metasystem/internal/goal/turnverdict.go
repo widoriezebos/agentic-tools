@@ -139,6 +139,16 @@ type GoalFacts struct {
 	Intent   string `json:"intent"`
 	NextStep string `json:"nextStep"`
 	Revision string `json:"revision"`
+	// AskedOpen says an open channel question names this goal: like a
+	// pending human word, it leaves the goal to the person.
+	AskedOpen bool `json:"askedOpen,omitempty"`
+}
+
+// OpenQuestion is one open channel question as the Stop judgment and the
+// claim choices read it: the goal it names (or what it is about when it
+// names none) and the machine and owner lineage of the session that asked.
+type OpenQuestion struct {
+	ID, Goal, About, Machine, Lineage string
 }
 
 // Verdict is the verb's structured decision.
@@ -534,6 +544,11 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			}
 		}
 		watches := s.authenticatedWatches(scan, mainId, waits)
+		questions := s.readOpenQuestions()
+		if workRead && workErr == nil {
+			work.MarkAskedOpen(questions)
+		}
+		asked := s.questionPending(questions, options)
 		state, err := s.loadVerdictState()
 		if err != nil {
 			return Result{}, infrastructureFailure{"verdict-state", err}
@@ -542,7 +557,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 
 		brainLines := append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
 		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
-		s.decide(&verdict, scan, session, &work, brainSeat, waits)
+		s.decide(&verdict, scan, session, &work, brainSeat, waits, asked)
 		if len(waitDropReasons) > 0 && strings.HasPrefix(waitDropReasons[0], "registered waits not credited at work-unreadable:") {
 			verdict.Diagnostics = append(waitDropReasons, verdict.Diagnostics...)
 		} else {
@@ -558,7 +573,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
 		}
 		if !humanAuthorized && !brainSeat {
-			s.enforceIdleBacklogWithWaits(&verdict, &work, workErr, session, sessionId, mainId, options, waits)
+			s.enforceIdleBacklogWithWaits(&verdict, &work, workErr, session, sessionId, mainId, options, waits, asked)
 		}
 		greens := s.decideGreens(scan, session)
 		fullDisplay := composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
@@ -1236,10 +1251,10 @@ func slugStopCause(value string) string {
 const unreadableIdleBacklogDigest = "ledger-unreadable"
 
 func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions) {
-	s.enforceIdleBacklogWithWaits(verdict, work, workErr, session, sessionID, mainID, options, nil)
+	s.enforceIdleBacklogWithWaits(verdict, work, workErr, session, sessionID, mainID, options, nil, nil)
 }
 
-func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions, waits registeredWaits) {
+func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions, waits registeredWaits, asked *OpenQuestion) {
 	blockedBeforeIdle := verdict.ShouldBlock
 	if workErr != nil {
 		verdict.Class = "idle-with-backlog"
@@ -1281,7 +1296,9 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 		verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
 	}
 	digest := idleBacklogDigest(*work)
-	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() || waits.hasWorkInFlight() {
+	// A seat waiting on the question it asked is not idle: the person's
+	// answer is its next step.
+	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() || waits.hasWorkInFlight() || asked != nil {
 		session.IdleBlockDigest = digest
 		session.IdleBlocks = 0
 		return
@@ -1317,7 +1334,7 @@ const idleOutsideWorkRemedy = "if this seat waits on work the engine cannot see 
 func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) {
 	if len(work.Claimed) > 0 {
 		id := work.Claimed[0]
-		if NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+		if waitsOnAPerson(work.GoalFacts[id]) {
 			return "", false, "this machine's held goal waits on a human word"
 		}
 		return id, false, ""
@@ -1335,11 +1352,65 @@ func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) 
 // backlog-ordered-by-priority design.
 func preferredClaimable(work ClaimableBudgetedWork) (string, bool) {
 	for _, id := range work.Claimable {
-		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+		if !waitsOnAPerson(work.GoalFacts[id]) {
 			return id, true
 		}
 	}
 	return "", false
+}
+
+// waitsOnAPerson says a goal is the person's to move: its next step names a
+// pending human word, or an open question names it.
+func waitsOnAPerson(facts GoalFacts) bool {
+	return facts.AskedOpen || NextStepNamesAPendingHumanWord(facts.NextStep)
+}
+
+// readOpenQuestions is the open channel questions, through the command's
+// read; none without it.
+func (s *Store) readOpenQuestions() []OpenQuestion {
+	if s.OpenQuestions == nil {
+		return nil
+	}
+	return s.OpenQuestions()
+}
+
+// questionPending names the newest open question this session asked: one
+// whose record names the session's machine and owner lineage. A question
+// from any other session, or a session whose identity cannot be told,
+// names none.
+func (s *Store) questionPending(questions []OpenQuestion, options TurnVerdictOptions) *OpenQuestion {
+	if len(questions) == 0 {
+		return nil
+	}
+	actor := options.SeatActor
+	if (actor.Machine == "" || actor.Lineage == "") && s.ResolveIdleSeat != nil {
+		if resolved, _, err := s.ResolveIdleSeat(); err == nil {
+			actor = resolved
+		}
+	}
+	if actor.Machine == "" || actor.Lineage == "" {
+		return nil
+	}
+	for _, question := range questions {
+		if question.Machine == actor.Machine && question.Lineage == actor.Lineage {
+			return &question
+		}
+	}
+	return nil
+}
+
+// questionWaitingLines is what a Stop shows while this session's question
+// is open: the plain reason the turn may end, then the one command that
+// shows the question and its answer.
+func questionWaitingLines(question OpenQuestion) []string {
+	subject := "goal " + question.Goal
+	if question.Goal == "" {
+		subject = "the " + question.About
+	}
+	return []string{
+		"WAITING: question " + question.ID + " about " + subject + " is open, so this turn may end until the person answers it",
+		"run: metasystem question show channel:" + question.ID,
+	}
 }
 
 func idleBacklogNames(work ClaimableBudgetedWork) string {
@@ -1713,7 +1784,7 @@ func (w ClaimableBudgetedWork) OnlyFencedClaim() (*GoalFile, bool) {
 }
 
 // decide is the precedence ladder from the design, in order.
-func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool, waits registeredWaits) {
+func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool, waits registeredWaits, asked *OpenQuestion) {
 	for _, item := range scan.Open {
 		verdict.OpenWork = append(verdict.OpenWork, item.Detail)
 	}
@@ -1770,6 +1841,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 			names = append(names, item.Detail)
 		}
 		display = append(display, "STILL WORKING: "+strings.Join(names, "; "))
+
+	case asked != nil:
+		// The session waits on the question it asked: neither its plan
+		// lines nor its claimed goal's next step refuse the turn's end.
+		display = append(display, questionWaitingLines(*asked)...)
+		if len(scan.Open) > 0 {
+			display = append(display, fmt.Sprintf("OPEN WORK (%d): %s", len(scan.Open), strings.Join(verdict.OpenWork, "; ")))
+		}
 
 	case len(scan.Open) > 0 && waits.suppressOpenWork(verdict.OpenWorkSignature, goalIDOf(facts), scan.WaitingOnHuman):
 		display = append(display, fmt.Sprintf("OPEN WORK (%d): %s", len(scan.Open), strings.Join(verdict.OpenWork, "; ")))

@@ -230,9 +230,10 @@ func nextEpisodeID(digest string, episodes []AlertEpisode) string {
 	}
 }
 
-// RecordSeatIdleIncident writes one silent alert episode for an unchanged
-// backlog. The episode is surfaced by steward status but never submitted to
-// the human notifier; the existing idle alarm remains the only human alarm.
+// RecordSeatIdleIncident writes one alert episode for an unchanged backlog.
+// With a channel configured the episode is submitted once, as a channel
+// post; with none it stays silent, surfaced by steward status only. The
+// separate idle alarm (no continuation prepared) is not this episode's.
 func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time.Time) (AlertEpisode, error) {
 	if incident.SessionID == "" || (!validEvidenceDigest(incident.BacklogDigest) && incident.BacklogDigest != "ledger-unreadable") || incident.Refusal < 3 {
 		return AlertEpisode{}, errors.New("an idle-seat alert needs a session, a backlog checksum and at least three refusals")
@@ -256,6 +257,9 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
 				return AlertEpisode{}, err
 			}
+			if err := postSeatIdleEpisode(repoRoot, &episodes[index], now); err != nil {
+				return AlertEpisode{}, err
+			}
 			return episodes[index], nil
 		}
 		if episodes[index].Owner == seatIdleAlertOwner && episodes[index].Digest == digest && episodes[index].Suppressed {
@@ -274,7 +278,23 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 	if err := saveAlertEpisode(repoRoot, episode); err != nil {
 		return AlertEpisode{}, err
 	}
+	if err := postSeatIdleEpisode(repoRoot, &episode, now); err != nil {
+		return AlertEpisode{}, err
+	}
 	return episode, nil
+}
+
+// postSeatIdleEpisode submits an idle episode not yet submitted, through the
+// channel only: with no channel configured it submits nothing.
+func postSeatIdleEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error {
+	if episode.TransportResult == TransportSubmitted {
+		return nil
+	}
+	channel := loadSignalChannel(repoRoot)
+	if !channel.configured {
+		return nil
+	}
+	return submitEpisode(repoRoot, episode, now, channel.transport(seatIdleNotice(*episode.SeatIdle)))
 }
 
 func seatIdleIncidentMessage(incident SeatIdleIncident) string {
@@ -591,7 +611,9 @@ func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now 
 		if episode.TransportResult == TransportSubmitted {
 			continue
 		}
-		if err := submitEpisode(repoRoot, episode, now, deliver); err != nil {
+		// With a channel configured the crossing is posted there; without
+		// one it takes the local notifier, as before.
+		if err := submitEpisode(repoRoot, episode, now, signalTransport(repoRoot, spendNotice(crossing), deliver)); err != nil {
 			return err
 		}
 	}

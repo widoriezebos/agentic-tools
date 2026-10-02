@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -154,7 +155,7 @@ func (f *pollRepository) Build(opid, parent string, changes []goal.Change, messa
 	files := copyPollFiles(p.files)
 	seen := make(map[string]bool)
 	for _, change := range changes {
-		if change.Path != "plans/goals/g.md" && change.Path != "plans/goals/backlog.md" && change.Path != "records/goals/g.md" {
+		if change.Path != "plans/goals/g.md" && change.Path != "plans/goals/backlog.md" && change.Path != "records/goals/g.md" && !strings.HasPrefix(change.Path, "plans/channel/inbox/fleet/") {
 			return "", fmt.Errorf("undeclared goal change path %q", change.Path)
 		}
 		if seen[change.Path] {
@@ -266,6 +267,21 @@ func (f *pollRepository) canonicalGoal(t *testing.T, id string) *goal.GoalFile {
 		t.Fatal(problems)
 	}
 	return file
+}
+
+// inbox returns the committed inbox records at the canonical tip by path.
+func (f *pollRepository) inbox() map[string]goal.ChannelInbound {
+	out := map[string]goal.ChannelInbound{}
+	for path, b := range f.commits[f.canonical].files {
+		if strings.HasPrefix(path, "plans/channel/inbox/") {
+			var in goal.ChannelInbound
+			if err := json.Unmarshal(b, &in); err != nil {
+				f.t.Fatalf("%s: %v", path, err)
+			}
+			out[path] = in
+		}
+	}
+	return out
 }
 
 func (f *pollRepository) syncAccepted(t *testing.T) {

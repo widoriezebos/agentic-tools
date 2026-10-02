@@ -543,10 +543,6 @@ func (o hookOwners) StopOutput(runtime, inputFile, outputFile string, stderr io.
 	return 0
 }
 
-func (o hookOwners) ChannelStatusPost(root string, stdout, stderr io.Writer) int {
-	return channelStatus(root, true, stdout, stderr, nil, nil, nil)
-}
-
 func (o hookOwners) EvidenceGC(installation string, output io.Writer) int {
 	return evidenceGC(installation, "", evidenceGCDefaultGrace(), output, output)
 }
