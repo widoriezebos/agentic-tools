@@ -484,3 +484,44 @@ func TestOneBotTwoInstallationsCommitToTheLedgerInbox(t *testing.T) {
 		t.Fatalf("posts: three questions and two notices, no receipts; got %+v", posts)
 	}
 }
+
+// R2-1: the seat commits a rejected reply and is killed before posting its
+// notice; the lane receives the redelivery, loses to the seat's record and
+// posts nothing; the seat's queued notice is posted on its next poll.
+func TestKilledCommitterStillNoticesWhenTheOtherInstallationConfirms(t *testing.T) {
+	t.Parallel()
+	bed := newInboxBed(t)
+	q := bed.ask(t, bed.seat, "seat-goal", "Seat needs a decision")
+	bed.poll(t, bed.seat)
+	thread := bed.question(t, bed.seat, q.ID).Thread
+	if thread == nil {
+		t.Fatal("question was not posted")
+	}
+	bed.reply(t, thread.ID, "no code here", bed.now.Add(-30*time.Second))
+	killed := bed.config(bed.seat)
+	killed.FailurePoint = func(point string) error {
+		if point == "inbox-published" {
+			return errors.New("seat killed after its commit")
+		}
+		return nil
+	}
+	if _, err := channel.Poll(context.Background(), killed); err == nil {
+		t.Fatal("the seat was not killed after its commit")
+	}
+	if rec := bed.recordFor(t, "no code here"); rec.Outcome != "no-code" || rec.ReceivedBy != "m1e" {
+		t.Fatalf("record=%+v", rec)
+	}
+	bed.poll(t, bed.lane)
+	if got := notices(bed.sent(t)); len(got) != 0 {
+		t.Fatalf("the losing lane posted: %+v", got)
+	}
+	bed.poll(t, bed.seat)
+	bed.poll(t, bed.seat)
+	got := notices(bed.sent(t))
+	if len(got) != 1 || got[0].Listener != "seat" || replyParent(got[0]) != thread.ID {
+		t.Fatalf("notices=%+v", got)
+	}
+	if n := len(bed.inbox(t)); n != 1 {
+		t.Fatalf("inbox holds %d records", n)
+	}
+}

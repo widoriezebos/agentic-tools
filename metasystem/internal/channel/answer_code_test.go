@@ -105,3 +105,20 @@ func TestAnswerCodeOffBudgetAnswerApprovesAsProven(t *testing.T) {
 		}
 	}
 }
+
+// R2-2: with the code off, six-digit numbers in an answer are the human's
+// words and stay intact.
+func TestAnswerCodeOffKeepsSixDigitNumbers(t *testing.T) {
+	t.Parallel()
+	bed, p, q, now := pollLedgerBed(t)
+	answerCodeOff(t, bed.root)
+	cfg := pollBedConfig(bed, p, now)
+	cfg.TOTPSecret = ""
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "limit 100000 rows", SentAt: now}}
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ReadQuestion(bed.root, q.ID); got.Answer == nil || got.Answer.Text != "limit 100000 rows" {
+		t.Fatalf("question=%+v", got)
+	}
+}
