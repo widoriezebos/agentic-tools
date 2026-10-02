@@ -14,6 +14,7 @@ package httpd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -80,8 +81,11 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		Human:        decisions.Standing{Proven: standing.SignedIn},
 	}
 	if h.info.Asks != nil {
+		// A walk that could not read every record still answers the ones it
+		// could; the Fleet page is where the others are named.
 		asked, asksErr := h.info.Asks()
-		if asksErr != nil {
+		var unread *UnreadQuestions
+		if asksErr != nil && !errors.As(asksErr, &unread) {
 			writeFailure(w, asksErr.Error())
 			return
 		}

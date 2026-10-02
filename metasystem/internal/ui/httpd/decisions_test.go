@@ -337,3 +337,28 @@ func TestDecisionsWithoutAPartnerCarriesNoProposals(t *testing.T) {
 	}
 	testutil.Expect(t, "the approval still waits", page.Counts.NeedsYou, 3)
 }
+
+// TestDecisionsKeepsTheQuestionsItCouldRead: a question walk that could not
+// read every record still answers the ones it could, so the inbox shows this
+// seat's ask rather than refusing the page; the Fleet page is where the
+// records it could not read are named.
+func TestDecisionsKeepsTheQuestionsItCouldRead(t *testing.T) {
+	t.Parallel()
+	info := decisionsInfo()
+	read := info.Asks
+	info.Asks = func() ([]channel.Question, error) {
+		open, _ := read()
+		return open, &UnreadQuestions{Records: []string{"/c/artifacts/agents/channel/questions/q-2.json: unexpected end of JSON input"}}
+	}
+	served := New(info, loopback(), testBundle())
+
+	page := decisionsPage(t, served, "the read with a torn record")
+
+	asks := 0
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindAsk {
+			asks++
+		}
+	}
+	testutil.Expect(t, "the readable ask is still in the inbox", asks, 1)
+}

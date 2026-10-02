@@ -1,6 +1,14 @@
 package plain
 
-import "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+)
 
 // Status is the plain lane as landing status --json carries it and as
 // /api/board carries it under "lane" (goal fleet-card-can-land-now): one
@@ -14,13 +22,20 @@ type Status struct {
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
-	// contains its sha.
+	// contains its sha. A landed hand-in a push of the last day brought
+	// carries that push's time.
 	Queue        []Entry       `json:"queue"`
 	RunningProof *RunningProof `json:"running_proof"`
 	// LastProof is the newest line of results.jsonl.
 	LastProof *Result `json:"last_proof"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
+	// Problems are the lane's records this read could not read, one plain
+	// sentence each: a queue, proof or push that could not be read, or a
+	// line of one that does not decode, is said here rather than read as
+	// none, and so is what the view could not read (its pause, its agent,
+	// its wake). Empty when everything was read.
+	Problems []string `json:"problems"`
 }
 
 // RunningProof is the lane's proof recorded running.
@@ -34,45 +49,267 @@ type RunningProof struct {
 	Attempt string `json:"attempt"`
 	Log     string `json:"log,omitempty"`
 	State   string `json:"state"`
+	// Goals are the waiting hand-ins the proof's commit holds, oldest
+	// first, by the containment that derives landed; none for a proof that
+	// died or whose commit is not recorded.
+	Goals []string `json:"goals,omitempty"`
+}
+
+// landedWindow is how far back a landing is timed. The page lists what
+// landed today, and pushes.jsonl grows by a line with every landing, so a
+// read asks only the pushes of the last day what they brought; an older
+// landing carries no time.
+const landedWindow = 24 * time.Hour
+
+// laneGit is what a status read asks the lane checkout's Git: origin's main
+// as the checkout last fetched it, whether that main contains a commit, and
+// which commits one push brought to main.
+type laneGit struct {
+	main     func() (string, error)
+	contains func(main, sha string) (bool, error)
+	brought  func(old, commit string) ([]string, error)
+}
+
+// checkoutGit answers laneGit from the lane checkout at dir.
+func checkoutGit(dir string) laneGit {
+	return laneGit{
+		main: func() (string, error) {
+			return Git(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+		},
+		contains: func(main, sha string) (bool, error) { return ContainedIn(dir, main)(sha) },
+		brought: func(old, commit string) ([]string, error) {
+			listed, err := Git(dir, "rev-list", old+".."+commit)
+			if err != nil || listed == "" {
+				return nil, err
+			}
+			return strings.Fields(listed), nil
+		},
+	}
 }
 
 // ReadStatus reads the plain lane around its view: home is the lane's home
 // (its pause), record the registered lane, seams the proof's (its process
-// check).
+// check and its clock).
 func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams) Status {
-	_, paused := lane.ReadPause(home)
-	status := Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}}
-	layout, err := record.Layout()
-	if view.Root == nil || err != nil {
+	layout, _ := record.Layout()
+	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout)))
+}
+
+func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) Status {
+	pause, paused := lane.ReadPause(home)
+	status := Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
+	if view.Root == nil {
+		// A registration that can't be read is a lane this read could not
+		// read, not a lane that is not there.
+		if view.Unreadable != "" {
+			status.Problems = append(status.Problems, "the lane's registration can't be read: "+view.Unreadable)
+		}
 		return status
 	}
-	install, checkout := string(layout.Install), string(layout.Checkout)
-	if entries, err := Entries(install); err == nil {
-		if main, err := Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}"); err == nil {
-			entries, _ = Landed(entries, ContainedIn(checkout, main))
+	// Every read failure this status could know of is a problem, one plain
+	// line each (fix round 4). First what the lane's own records and the
+	// view could not read: the pause (which then reads as stopped), whether
+	// the agent runs or the lane can run, and the wake's unread sources, an
+	// unreadable keeper record among them; never the same line twice.
+	said := func(line string) {
+		line = strings.Join(strings.Fields(strings.ReplaceAll(line, "\n", "; ")), " ")
+		if line == "" || slices.Contains(status.Problems, line) {
+			return
 		}
-		status.Queue = entries
+		status.Problems = append(status.Problems, line)
 	}
-	status.RunningProof = ReadRunningProof(install, seams)
-	if result, ok, err := LastResult(install); err == nil && ok {
-		status.LastProof = &result
+	if pause.Unreadable() {
+		said("the lane's pause record can't be read, so the lane reads as stopped")
 	}
-	if push, ok, err := LastPush(install); err == nil && ok {
-		status.LastPush = &push
+	said(view.Owner.Unread)
+	if view.Wake != nil {
+		for _, line := range view.Wake.Unread {
+			said(line)
+		}
+	}
+	layout, err := record.Layout()
+	if err != nil {
+		status.Problems = append(status.Problems, "the lane's record can't be placed: "+err.Error())
+		return status
+	}
+	install := string(layout.Install)
+	unread := func(what string, err error) {
+		if err != nil {
+			status.Problems = append(status.Problems, what+" can't be read: "+err.Error())
+		}
+	}
+	// damaged says the lines of a record file that do not decode: the lane's
+	// own readers skip them, and the status says them (fix round 4).
+	damaged := func(what string, skipped int, path string) {
+		if skipped > 0 {
+			lines := "lines"
+			if skipped == 1 {
+				lines = "line"
+			}
+			status.Problems = append(status.Problems, fmt.Sprintf("%s %d %s that can't be read (%s)", what, skipped, lines, path))
+		}
+	}
+	lines, skipped, err := countedLines[Line](queuePath(install))
+	unread("the queue", err)
+	damaged("the queue has", skipped, queuePath(install))
+	if err == nil {
+		status.Queue = entriesOf(lines)
+	}
+	if len(status.Queue) > 0 {
+		main, err := git.main()
+		if err == nil {
+			contains := func(sha string) (bool, error) { return git.contains(main, sha) }
+			var again error
+			status.Queue, err = Landed(status.Queue, contains)
+			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
+			err = errors.Join(err, again)
+		}
+		unread("whether main holds the queued work", err)
+	}
+	running, err := readRunningProof(install, seams)
+	unread("the running proof", err)
+	status.RunningProof = running
+	if running != nil && running.State == "running" && running.Commit != "" {
+		running.Goals, err = proving(status.Queue, running.Commit, git.contains)
+		unread("what the running proof holds", err)
+	}
+	results, skipped, err := countedLines[Result](resultsPath(install))
+	unread("the proof results", err)
+	damaged("the proof results have", skipped, resultsPath(install))
+	if err == nil && len(results) > 0 {
+		status.LastProof = &results[len(results)-1]
+	}
+	pushes, skipped, err := countedLines[Pushed](pushesPath(install))
+	unread("the push record", err)
+	damaged("the push record has", skipped, pushesPath(install))
+	if err == nil && len(pushes) > 0 {
+		last := pushes[len(pushes)-1]
+		status.LastPush = &last
+		status.Queue, err = LandingTimes(status.Queue, pushes, seams.now().Add(-landedWindow), git.brought)
+		unread("when the queued work landed", err)
 	}
 	return status
+}
+
+// proving are the goals of the waiting entries the proof's commit contains,
+// in queue order; an entry whose containment can't be read is named in the
+// error and left out.
+func proving(queue []Entry, commit string, contains func(main, sha string) (bool, error)) ([]string, error) {
+	var goals []string
+	var problems []error
+	for _, entry := range queue {
+		if entry.State != StateWaiting {
+			continue
+		}
+		inside, err := contains(commit, entry.SHA)
+		switch {
+		case err != nil:
+			problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
+		case inside:
+			goals = append(goals, entry.Goal)
+		}
+	}
+	return goals, errors.Join(problems...)
+}
+
+// LandingTimes gives each landed entry the time of the push that brought its
+// commit to main: the first push, oldest first, whose old main did not
+// contain it and whose commit does, which is what brought lists. Only pushes
+// at or after since are asked; a landing no such push brought (an older one,
+// or work that reached main some other way) carries no time. A push whose
+// commits can't be listed, or whose line names no old main, commit or
+// readable time (landing push writes all three), is named in the error, and
+// the others still time their entries.
+func LandingTimes(entries []Entry, pushes []Pushed, since time.Time, brought func(old, commit string) ([]string, error)) ([]Entry, error) {
+	out := append([]Entry(nil), entries...)
+	waiting := map[string][]int{}
+	for index, entry := range out {
+		if entry.State == StateLanded && entry.SHA != "" {
+			waiting[entry.SHA] = append(waiting[entry.SHA], index)
+		}
+	}
+	var problems []error
+	for _, push := range pushes {
+		at, err := time.Parse(time.RFC3339, push.At)
+		if err == nil && at.Before(since) {
+			continue
+		}
+		if err != nil || push.Old == "" || push.Commit == "" {
+			// landing push writes all three, so a line without one is
+			// damaged: it can't say what it brought, and is named.
+			problems = append(problems, fmt.Errorf("a push line can't be read (old %q, commit %q, at %q)", Short(push.Old), Short(push.Commit), push.At))
+			continue
+		}
+		if len(waiting) == 0 {
+			// Every landing is timed; the rest of the last day's lines
+			// are still read for damage.
+			continue
+		}
+		commits, err := brought(push.Old, push.Commit)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("push %s: %w", Short(push.Commit), err))
+			continue
+		}
+		for _, commit := range commits {
+			for _, index := range waiting[commit] {
+				out[index].LandedAt = push.At
+			}
+			delete(waiting, commit)
+		}
+	}
+	return out, errors.Join(problems...)
+}
+
+// landedBeforeAgain asks main about each hand-in superseded by a later
+// hand-in of its goal made at or after since: it may have landed before its
+// goal was handed in again, and today's list keeps that landing. A hand-in
+// superseded before since is not asked; the queue only grows.
+func landedBeforeAgain(entries []Entry, since time.Time, contains func(sha string) (bool, error)) ([]Entry, error) {
+	out := append([]Entry(nil), entries...)
+	var problems []error
+	for index, entry := range out {
+		if entry.State != StateSuperseded || !handedInAgainSince(out[index+1:], entry.Goal, since) {
+			continue
+		}
+		inside, err := contains(entry.SHA)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
+		} else if inside {
+			out[index].State = StateLanded
+		}
+	}
+	return out, errors.Join(problems...)
+}
+
+// handedInAgainSince is whether the first later hand-in of goal was made at
+// or after since.
+func handedInAgainSince(later []Entry, goal string, since time.Time) bool {
+	for _, entry := range later {
+		if entry.Goal == goal {
+			at, err := time.Parse(time.RFC3339, entry.At)
+			return err == nil && !at.Before(since)
+		}
+	}
+	return false
 }
 
 // ReadRunningProof is the lane's running proof; nil when none is recorded
 // running or it can't be read.
 func ReadRunningProof(install string, seams ProveSeams) *RunningProof {
+	running, _ := readRunningProof(install, seams)
+	return running
+}
+
+// readRunningProof is the lane's running proof, nil when none is recorded,
+// and why it can't be read.
+func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	running, recorded, alive, err := ReadRunning(install, seams)
 	if err != nil || !recorded {
-		return nil
+		return nil, err
 	}
 	state := "running"
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}
+	return &RunningProof{Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

@@ -160,7 +160,7 @@ describe("the rail's Fleet row", () => {
   });
 });
 
-describe("the Fleet table's Running column", () => {
+describe("the Fleet table's Doing column", () => {
   function table(rows: Machine[]): string {
     return renderToStaticMarkup(
       <MemoryRouter>
@@ -171,9 +171,11 @@ describe("the Fleet table's Running column", () => {
     );
   }
 
-  it("takes the same dot before its words for a working machine, and keeps its words", () => {
+  it("takes the same dot before its words for a working machine, and says them in the column's own words", () => {
     const markup = table([machine()]);
-    expect(markup).toMatch(/Running<\/span><span class="ms-live-dot" aria-hidden="true"><\/span><span>implementer round 2 on verbs-match-intent · running/);
+    // The minutes are counted against the page's own clock, which is the
+    // wall's here; the words before them are the column's.
+    expect(markup).toMatch(/Doing<\/span><span class="ms-live-dot" aria-hidden="true"><\/span><span>building · round 2 · /);
   });
 
   it("has no dot for a machine that is not working", () => {

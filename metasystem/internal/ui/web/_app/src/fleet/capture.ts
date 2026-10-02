@@ -24,23 +24,29 @@ export const CAPTURED_MACHINES = 24;
 /** How many of one machine's holds travel with it. */
 export const CAPTURED_HOLDS = 8;
 
-export function captureOfFleet(page: Page, now: Date, open: Set<string> = new Set()): FleetCapture {
+/**
+ * What the panel composed beside the fleet's payload, where it was drawn: the
+ * Needs you lines as they read, and each row's Doing words by machine.
+ */
+export type Shown = { needsYou?: readonly string[]; doing?: Readonly<Record<string, string>> };
+
+export function captureOfFleet(page: Page, now: Date, open: Set<string> = new Set(), shown: Shown = {}): FleetCapture {
   return {
     source: page.copy.source,
     fetchedAt: copyLine(page, now),
     problem: page.copy.problem,
-    // The flag as the page rendered it, instant and all: the capture is what
-    // the human was looking at, not what the server composed.
-    needsYou: page.needsYou.slice(0, CAPTURED_MACHINES).map((held) => `${held.goal} is ${flagWords(held)}`),
+    // The lines as the page rendered them, instants and all: the capture is
+    // what the human was looking at, not what the server composed.
+    needsYou: (shown.needsYou ?? page.needsYou.map((held) => `${held.goal} is ${flagWords(held)}`)).slice(0, CAPTURED_MACHINES),
     machines: page.machines.slice(0, CAPTURED_MACHINES).map((machine) => ({
       machine: machine.machine,
       standing: machine.standing,
       seen: seenWords(machine, now),
-      // The phase as the row said it, and whether the human had the row
-      // open: the sentence alone and the sentence with the goal, the job,
-      // the box and the chain under it are two different screens, and this
-      // capture is what was on one of them.
-      phase: workingWords(machine, now),
+      // What the row said the machine is doing, and whether the human had
+      // the row open: the sentence alone and the sentence with the goal, the
+      // job, the box and the chain under it are two different screens, and
+      // this capture is what was on one of them.
+      phase: shown.doing?.[machine.machine] ?? workingWords(machine, now),
       open: open.has(machine.machine),
       flag: flagWords(machine.holds.find((held) => held.flag !== "") ?? { flag: "", since: "" }),
       holds: machine.holds.slice(0, CAPTURED_HOLDS).map((held) => held.goal),

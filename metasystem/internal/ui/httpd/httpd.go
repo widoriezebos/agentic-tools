@@ -228,8 +228,10 @@ type Info struct {
 	// the human and nobody has answered. It is called per request for the
 	// reason the readers are, and it is this seat's own files — a fleet
 	// where another seat holds a question shows only this seat's, which the
-	// page says. A nil Asks is a build with no channel reader, which costs
-	// the Decisions page its ask rows and nothing else.
+	// page says. A walk that could not read some records answers the rest
+	// beside an *UnreadQuestions naming them. A nil Asks is a build with no
+	// channel reader, which costs the Decisions page its ask rows and
+	// nothing else.
 	Asks func() ([]channel.Question, error)
 	// Rulings answers the standing rulings register, whole rows and all. It
 	// is the same read the steward's sweep makes, through the same package,

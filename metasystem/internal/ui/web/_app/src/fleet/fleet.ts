@@ -184,7 +184,7 @@ function minutesUntil(to: string, from: Date): number | null {
 }
 
 /**
- * The one sentence the Running column says: what the machine is in the middle
+ * The phase sentence the rail says: what the machine is in the middle
  * of, how long that job has run, and the cap it reserved.
  */
 export function phaseWords(working: Working, now: Date): string {
@@ -203,8 +203,9 @@ export function phaseWords(working: Working, now: Date): string {
 }
 
 /**
- * What the row says about a machine's work: the phase where the payload
- * carries one, and the chain's older words where it does not.
+ * A machine's work in phase words: the phase where the payload carries one,
+ * and the chain's older words where it does not. A question asked from the
+ * page carries it where the page composed no Doing words of its own.
  *
  * Both branches stay, because a fleet is not one build. A machine still
  * publishing the chain alone is answered from the chain rather than reported
@@ -463,7 +464,7 @@ export function rolesAlive(health: Health | null): Role[] {
 }
 
 /**
- * The sentence the needs-you block ends with.
+ * What a person does about a goal held by a silent machine.
  *
  * The remedies are named conditionally, because they are not interchangeable:
  * `goal steal` reassigns a claim and refuses a fenced one, and `goal resume`
@@ -471,7 +472,7 @@ export function rolesAlive(health: Health | null): Role[] {
  * make, so both are named as the terminal acts they are.
  */
 export const NEEDS_YOU_REMEDY =
-  "Nothing here acts. At a terminal, goal steal reassigns a claim, and goal resume lifts a breach fence and keeps its owner.";
+  "At a terminal, goal steal reassigns the claim, and goal resume lifts a breach fence and keeps its owner.";
 
 /** One needs-you line: the goal, and what its holder's standing says. */
 export function needsYouLine(held: { goal: string; flag: string }): string {

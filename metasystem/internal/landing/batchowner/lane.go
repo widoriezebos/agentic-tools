@@ -159,7 +159,8 @@ func LandingLaneArmed(root string) (bool, error) {
 func landingLaneStatus(home func() (string, error), now time.Time) plain.Status {
 	laneHome, err := home()
 	if err != nil {
-		return plain.Status{View: lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}, Queue: []plain.Entry{}}
+		return plain.Status{View: lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")",
+			Unreadable: "this host has no home for it (" + err.Error() + ")"}, Queue: []plain.Entry{}, Problems: []string{"the lane's registration can't be read: this host has no home for it (" + err.Error() + ")"}}
 	}
 	record, _, _ := lane.Read(laneHome)
 	return plain.ReadStatus(laneHome, record, lane.BuildView(LandingLaneViewSources(laneHome, now)), plain.ProveSeams{})

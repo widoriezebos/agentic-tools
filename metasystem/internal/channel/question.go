@@ -144,9 +144,21 @@ func WalkOpenQuestions(repo string) ([]Question, []string) {
 // WalkQuestions reads every question record, open or ended, newest first,
 // with the same tolerance as WalkOpenQuestions.
 func WalkQuestions(repo string) ([]Question, []string) {
-	paths, globErr := filepath.Glob(filepath.Join(channelRoot(repo), "questions", "*.json"))
-	if globErr != nil {
-		return nil, []string{globErr.Error()}
+	// The folder is listed rather than globbed: a glob reads a folder it
+	// can't list as one with no questions.
+	dir := filepath.Join(channelRoot(repo), "questions")
+	listed, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, []string{dir + ": " + err.Error()}
+	}
+	var paths []string
+	for _, entry := range listed {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
 	}
 	var questions []Question
 	var unreadable []string

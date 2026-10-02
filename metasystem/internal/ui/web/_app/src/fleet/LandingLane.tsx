@@ -1,69 +1,88 @@
 import { type ReactNode, useRef, useState } from "react";
+import { NavLink } from "react-router";
 
-import { dateAndTime, minuteTime } from "../backlog/format";
-import { Button } from "../shell/controls";
+import { goalPath } from "../routes";
+import { Button, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Trouble } from "../shell/Trouble";
 import { failureMessage, landNow, ResourceError } from "./api";
-import type { Lane, LaneEntry, LandNowAnswer, LaneOwner, LaneOwnerState, LaneProof, LanePush, LaneRunningProof } from "./api";
+import type { Lane, LaneEntry, LandNowAnswer } from "./api";
+import { laneLists, laneNotRead, laneState, when, type LaneItem, type ProvingItem } from "./panel";
 
 /**
- * The host's landing lane (U12; Wido 2026-09-29: "the status of the landing
- * component on the fleet page"): the plain lane, as landing status --json
- * carries it — paused or not, whether its landing agent is alive, the queue
- * of hand-ins, the proof running, and the last proof and push.
+ * This computer's landing lane on the Fleet page: one state word — Running,
+ * Paused or Needs attention — with the one button that makes sense in that
+ * state, and then the lane's four lists: what waits, what is being proved,
+ * what landed today and what came back. Every item says what it is in plain
+ * words; its commit, branch and seat are behind its own Details disclosure,
+ * and the lane's root, its agent's pid and its last proof and push behind
+ * the block's.
  *
- * It is drawn from the same /api/board response the host board is, so it
- * adds no request. The panel shows; the `metasystem landing` verbs act, so
- * where a person has something to do the panel prints the command as text to
- * copy. Its one act is Land now (goal fleet-card-can-land-now; Wido
- * 2026-10-01: "I want a verb that does that (from any seat) and from the UI
- * especially"): it runs `metasystem landing run` through the server and shows
- * the verb's two lines. It is offered only when a hand-in waits, the lane is
- * not paused and no landing agent is alive, and says in one line why not
- * where work waits all the same.
+ * It is drawn from the same /api/board response the Doing column and the
+ * questions are, so it adds no request. Its one act is Land now (goal
+ * fleet-card-can-land-now): it runs `metasystem landing run` through the
+ * server and shows the verb's two lines. It is offered only when a hand-in
+ * waits, the lane is not paused, can run, no landing agent is alive and no
+ * proof runs, and says in one line why not where work waits all the same.
+ * What else the person can do about the lane is said in Needs you, as the
+ * plain sentence of what to do.
  *
  * A server built before the lane existed sends no `lane` field at all; the
- * panel says it does not report one rather than claiming the host has none.
+ * block says it does not report one rather than claiming there is none.
  */
 
-/** What a person runs to resume a lane a person stopped. */
-export const START_COMMAND = "metasystem landing start";
-
-/** The status colour each owner state takes, in the tokens the page uses. */
-const TONE: Record<LaneOwnerState, "ok" | "warn" | "bad" | "neutral"> = {
-  running: "ok",
-  idle: "neutral",
-  stopped: "bad",
-  unready: "warn",
-};
-
-function toneOf(state: string): string {
-  return (TONE as Record<string, string | undefined>)[state] ?? "neutral";
-}
-
-/**
- * An instant a person reads, in local time: the clock alone when it falls on
- * today, the day as well when it does not.
- */
-function when(stamp: string, now: Date): string {
-  const at = new Date(stamp);
-  if (Number.isNaN(at.getTime())) {
-    return minuteTime(stamp);
-  }
-  return at.toDateString() === now.toDateString() ? minuteTime(stamp) : dateAndTime(stamp);
+/** The block's own frame, its heading and what stands beside it. */
+function Panel({ children, state, action }: { children: ReactNode; state?: ReactNode; action?: ReactNode }) {
+  return (
+    <section className="ms-fleet-block ms-fleet-lane" aria-label="Landing lane">
+      <h2 className="ms-fleet-heading">
+        Landing lane
+        {state}
+        {action !== undefined && <span className="ms-fleet-actions">{action}</span>}
+      </h2>
+      {children}
+    </section>
+  );
 }
 
 export function LaneBlock({
   lane,
+  titles = {},
+  problem = "",
+  unread,
+  loading = false,
   now = new Date(),
   onLanded,
 }: {
   lane: Lane | null | undefined;
+  titles?: Readonly<Record<string, string>>;
+  /** Why the response the lane is read from could not be read, or "". */
+  problem?: string;
+  /** What the lane could not read, by the panel's one rule (unreadOf); any line withholds Land now. */
+  unread: readonly string[];
+  /** The first read has not answered yet. */
+  loading?: boolean;
   now?: Date;
-  /** Called after Land now answered, so the card is read again. */
+  /** Called after Land now answered, so the block is read again. */
   onLanded?: () => void;
 }) {
+  if (loading) {
+    return (
+      <Panel>
+        <div className="ms-fleet-skeleton" aria-busy="true" aria-label="Reading the landing lane">
+          <Skeleton />
+          <Skeleton />
+        </div>
+      </Panel>
+    );
+  }
+  if (problem !== "" && lane === undefined) {
+    return (
+      <Panel>
+        <Trouble text={`The landing lane could not be read: ${problem}`} role="status" />
+      </Panel>
+    );
+  }
   if (lane === undefined) {
     return (
       <Panel>
@@ -74,185 +93,212 @@ export function LaneBlock({
   if (lane === null) {
     return (
       <Panel>
-        <p className="ms-fleet-quiet">No landing lane is registered on this host.</p>
+        {problem !== "" && (
+          <Trouble text={`The landing lane could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
+        )}
+        <p className="ms-fleet-quiet">No landing lane is registered on this computer.</p>
       </Panel>
     );
   }
+  if (laneNotRead(lane)) {
+    return (
+      <Panel>
+        <Trouble text={`The landing lane could not be read: ${(lane.problems ?? []).join("; ")}`} role="status" />
+      </Panel>
+    );
+  }
+  const state = laneState(lane);
   return (
-    <Panel>
-      <p className="ms-fleet-lane-summary">{lane.summary}</p>
-      <Owner owner={lane.owner} now={now} />
-      <State lane={lane} />
-      <Queue queue={lane.queue} />
-      {lane.running_proof !== undefined && lane.running_proof !== null && (
-        <Proving proof={lane.running_proof} now={now} />
+    <LandNow lane={lane} unread={unread} onLanded={onLanded}>
+      {(landing) => (
+        <Panel
+          state={<span className={`ms-fleet-pill ms-fleet-lane-state ms-fleet-lane-state--${state.tone}`}>{state.word}</span>}
+          action={landing.button}
+        >
+          {problem !== "" && (
+            <Trouble text={`The landing lane could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
+          )}
+          {(lane.problems ?? []).map((one) => (
+            <Trouble key={one} text={`Part of the landing lane could not be read: ${one}`} variant="small" />
+          ))}
+          {landing.lines}
+          <Lists lane={lane} titles={titles} now={now} />
+          <LaneDetails lane={lane} now={now} />
+        </Panel>
       )}
-      {lane.last_proof !== undefined && lane.last_proof !== null && <LastProof proof={lane.last_proof} now={now} />}
-      {lane.last_push !== undefined && lane.last_push !== null && <LastPush push={lane.last_push} now={now} />}
-      <LandNow lane={lane} onLanded={onLanded} />
-      <Root lane={lane} now={now} />
-    </Panel>
+    </LandNow>
   );
 }
 
-function Panel({ children }: { children: ReactNode }) {
-  return (
-    <section className="ms-fleet-block ms-fleet-lane" aria-label="Landing lane">
-      <h2 className="ms-fleet-heading">Landing lane</h2>
-      {children}
-    </section>
-  );
-}
-
-function Owner({ owner, now }: { owner: LaneOwner; now: Date }) {
-  const facts: string[] = [];
-  if (owner.since !== null && owner.since !== "") {
-    facts.push(`since ${when(owner.since, now)}`);
+/** The four lists, each drawn only when it holds something. */
+function Lists({ lane, titles, now }: { lane: Lane; titles: Readonly<Record<string, string>>; now: Date }) {
+  const lists = laneLists(lane, titles, now);
+  if (lists.waiting.length === 0 && lists.proving === null && lists.landed.length === 0 && lists.cameBack.length === 0) {
+    return <p className="ms-fleet-quiet">Nothing is waiting to land.</p>;
   }
-  if (owner.pid !== null) {
-    facts.push(`pid ${String(owner.pid)}`);
-  }
-  // Idle is the normal state of a ready lane with nothing to land: it gets no
-  // prompt. Unready says why and what fixes it in retry_hint. Only a lane a
-  // person stopped is resumed with landing start.
-  const needsStart = owner.state === "stopped";
   return (
-    <div className="ms-fleet-lane-owner">
-      <p className="ms-fleet-lane-line">
-        <span className="ms-fleet-lane-label">Owner</span>
-        <span className={`ms-fleet-pill ms-fleet-lane-state ms-fleet-lane-state--${toneOf(owner.state)}`}>
-          {owner.state.replace("-", " ")}
-        </span>
-        {facts.length > 0 && <span className="ms-fleet-lane-facts">{facts.join(" · ")}</span>}
-      </p>
-      {owner.stopped_by !== null && owner.stopped_by !== "" && (
-        <p className="ms-fleet-lane-note">
-          Stopped by {owner.stopped_by}
-          {owner.stopped_because !== undefined && owner.stopped_because !== "" ? `: ${owner.stopped_because}` : ""}.
-        </p>
+    <div className="ms-fleet-lane-lists">
+      {lists.waiting.length > 0 && (
+        <List name="Waiting">
+          {lists.waiting.map((item) => (
+            <Item key={key(item.entry)} item={item}>
+              <GoalLink goal={item.entry.goal}>{item.title}</GoalLink>
+              {item.detail !== "" && <span className="ms-fleet-lane-detail">{item.detail}</span>}
+            </Item>
+          ))}
+        </List>
       )}
-      {owner.last_exit !== null && owner.last_exit !== "" && (
-        <p className="ms-fleet-lane-note">
-          Last exit: <span className="ms-mono">{owner.last_exit}</span>
-        </p>
+      {lists.proving !== null && <Proving proving={lists.proving} lane={lane} now={now} />}
+      {lists.landed.length > 0 && (
+        <List name="Landed today">
+          {lists.landed.map((item) => (
+            <Item key={key(item.entry)} item={item}>
+              <span className="ms-fleet-lane-time">{when(item.at, now)}</span>
+              <span>{item.words}</span>
+            </Item>
+          ))}
+        </List>
       )}
-      {owner.retry_hint !== null && owner.retry_hint !== "" && (
-        <p className="ms-fleet-lane-note">{owner.retry_hint}</p>
-      )}
-      {needsStart && (
-        <p className="ms-fleet-lane-note">
-          To resume it, run <code className="ms-mono ms-fleet-lane-command">{START_COMMAND}</code>
-        </p>
+      {lists.cameBack.length > 0 && (
+        <List name="Came back">
+          {lists.cameBack.map((item) => (
+            <Item key={key(item.entry)} item={item}>
+              <span>{`${item.title} · ${item.words}`}</span>
+              {item.again && <span className="ms-fleet-quiet">handed in again</span>}
+              <NavLink className="ms-fleet-lane-open" to={goalPath(item.entry.goal)}>
+                Open goal
+              </NavLink>
+            </Item>
+          ))}
+        </List>
       )}
     </div>
   );
 }
 
-/** A commit or tree id as a person reads it: its first seven characters. */
+function key(entry: LaneEntry): string {
+  return `${entry.goal}@${entry.sha}@${entry.at}`;
+}
+
+function List({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="ms-fleet-lane-list">
+      <p className="ms-fleet-lane-sub">{name}</p>
+      <ul className="ms-fleet-lane-members">{children}</ul>
+    </div>
+  );
+}
+
+/** One hand-in on a list: its line, and its Details. */
+function Item({ item, children }: { item: LaneItem; children: ReactNode }) {
+  const entry = item.entry;
+  return (
+    <li className="ms-fleet-lane-member">
+      <span className="ms-fleet-lane-item">{children}</span>
+      <Details
+        facts={[
+          ["Goal", entry.goal],
+          ["Branch", entry.branch],
+          ["Commit", entry.sha],
+          ["Seat", entry.seat],
+          ["Handed in", entry.at],
+          ["Returned", entry.returned_at ?? ""],
+          ["Landed", entry.landed_at ?? ""],
+        ]}
+      />
+    </li>
+  );
+}
+
+function GoalLink({ goal, children }: { goal: string; children: ReactNode }) {
+  return (
+    <NavLink className="ms-fleet-lane-goal" to={goalPath(goal)}>
+      {children}
+    </NavLink>
+  );
+}
+
+function Proving({ proving, lane, now }: { proving: ProvingItem; lane: Lane; now: Date }) {
+  const proof = lane.running_proof;
+  return (
+    <List name="Proving">
+      <li className="ms-fleet-lane-member">
+        {proving.goals.length === 0 ? (
+          <span className="ms-fleet-lane-item">{proving.words}</span>
+        ) : (
+          <span className="ms-fleet-lane-item">
+            {proving.goals.map((goal) => (
+              <GoalLink key={goal.id} goal={goal.id}>
+                {goal.title}
+              </GoalLink>
+            ))}
+            <span className="ms-fleet-lane-detail">{proving.detail}</span>
+          </span>
+        )}
+        {proof !== undefined && proof !== null && (
+          <Details
+            facts={[
+              ["Tree", proof.tree],
+              ["Commit", proof.commit ?? ""],
+              ["Attempt", proof.attempt],
+              ["Since", proof.since === "" ? "" : when(proof.since, now)],
+              ["Log", proof.log ?? ""],
+            ]}
+          />
+        )}
+      </li>
+    </List>
+  );
+}
+
+/** A commit or tree id as a person compares it by eye. */
 function short(id: string): string {
   return id.slice(0, 7);
 }
 
-/** Whether the lane is paused, and whether its landing agent is alive. */
-function State({ lane }: { lane: Lane }) {
-  if (lane.paused === undefined && lane.agent_alive === undefined) {
-    return null;
-  }
+/** The lane's own particulars: where it is, its agent, its last proof and push. */
+function LaneDetails({ lane, now }: { lane: Lane; now: Date }) {
+  const owner = lane.owner;
+  const proof = lane.last_proof ?? null;
+  const push = lane.last_push ?? null;
   return (
-    <p className="ms-fleet-lane-line">
-      <span className="ms-fleet-lane-label">Lane</span>
-      <span className="ms-fleet-pill">{lane.paused === true ? "paused" : "not paused"}</span>
-      <span className="ms-fleet-lane-facts">{lane.agent_alive === true ? "agent alive" : "no agent running"}</span>
-    </p>
+    <Details
+      label="Details"
+      facts={[
+        ["Root", lane.root ?? ""],
+        ["Registered", [lane.registered_by ?? "", lane.registered_at === null || lane.registered_at === "" ? "" : when(lane.registered_at, now)].filter((part) => part !== "").join(" · ")],
+        ["Agent", owner.pid === null ? "" : `pid ${String(owner.pid)}${owner.since === null || owner.since === "" ? "" : ` since ${when(owner.since, now)}`}`],
+        ["Last exit", owner.last_exit ?? ""],
+        ["Last proof", proof === null ? "" : `${proof.result} · ${short(proof.commit)} · ${when(proof.at, now)}${proof.reason === undefined || proof.reason === "" ? "" : ` · ${proof.reason}`}`],
+        ["Proof log", proof === null ? "" : proof.log],
+        ["Last push", push === null ? "" : `${short(push.old)} → ${short(push.commit)} · ${when(push.at, now)}`],
+        ["Summary", lane.summary],
+      ]}
+    />
   );
 }
 
 /**
- * The queue as the terminal shows it: the hand-ins that wait or were
- * returned, with their seat, state and reason; the landed and superseded ones
- * are counted and not listed.
+ * One Details disclosure: the particulars a person wants only now and then,
+ * as name and value, the empty ones left out.
  */
-function Queue({ queue }: { queue: LaneEntry[] | undefined }) {
-  if (queue === undefined) {
+function Details({ facts, label = "Details" }: { facts: readonly (readonly [string, string])[]; label?: string }) {
+  const shown = facts.filter(([, value]) => value !== "");
+  if (shown.length === 0) {
     return null;
   }
-  const shown = queue.filter((entry) => entry.state !== "landed" && entry.state !== "superseded");
-  const hidden = queue.length - shown.length;
   return (
-    <div className="ms-fleet-lane-queue">
-      <p className="ms-fleet-lane-sub">Queue</p>
-      {shown.length === 0 ? (
-        <p className="ms-fleet-quiet">Nothing waits in the queue.</p>
-      ) : (
-        <ul className="ms-fleet-lane-members">
-          {shown.map((entry) => (
-            <li key={`${entry.goal}@${entry.seat}@${entry.sha}`} className="ms-fleet-lane-member">
-              <span className="ms-mono">{entry.goal}</span> <span className="ms-fleet-lane-seat">@ {entry.seat}</span>{" "}
-              <span className="ms-fleet-pill ms-fleet-lane-entry-state">{entry.state}</span>
-              {entry.reason !== undefined && entry.reason !== "" && (
-                <span className="ms-fleet-lane-facts">{entry.reason}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {hidden > 0 && <p className="ms-fleet-quiet">{`${String(hidden)} landed or superseded not shown`}</p>}
-    </div>
-  );
-}
-
-function Proving({ proof, now }: { proof: LaneRunningProof; now: Date }) {
-  return (
-    <p className="ms-fleet-lane-line">
-      <span className="ms-fleet-lane-label">Proving</span>
-      {proof.state === "died" ? (
-        <span>
-          tree <span className="ms-mono">{short(proof.tree)}</span> (attempt {proof.attempt}) died without a result; the
-          next proof runs it again
-        </span>
-      ) : (
-        <span>
-          tree <span className="ms-mono">{short(proof.tree)}</span> as attempt {proof.attempt}
-          <span className="ms-fleet-lane-facts">since {when(proof.since, now)}</span>
-        </span>
-      )}
-    </p>
-  );
-}
-
-function LastProof({ proof, now }: { proof: LaneProof; now: Date }) {
-  return (
-    <p className="ms-fleet-lane-line">
-      <span className="ms-fleet-lane-label">Last proof</span>
-      <span className="ms-fleet-pill">{proof.result}</span>
-      <span className="ms-mono">{short(proof.commit)}</span>
-      {proof.reason !== undefined && proof.reason !== "" && <span className="ms-fleet-lane-facts">{proof.reason}</span>}
-      <span className="ms-fleet-lane-facts">at {when(proof.at, now)}</span>
-    </p>
-  );
-}
-
-function LastPush({ push, now }: { push: LanePush; now: Date }) {
-  return (
-    <p className="ms-fleet-lane-line">
-      <span className="ms-fleet-lane-label">Last push</span>
-      <span className="ms-mono">{`${short(push.old)} → ${short(push.commit)}`}</span>
-      <span className="ms-fleet-lane-facts">at {when(push.at, now)}</span>
-    </p>
-  );
-}
-
-function Root({ lane, now }: { lane: Lane; now: Date }) {
-  if (lane.root === null || lane.root === "") {
-    return <p className="ms-fleet-provenance">No lane root is registered.</p>;
-  }
-  const by = lane.registered_by !== null && lane.registered_by !== "" ? ` by ${lane.registered_by}` : "";
-  const at = lane.registered_at !== null && lane.registered_at !== "" ? ` at ${when(lane.registered_at, now)}` : "";
-  return (
-    <p className="ms-fleet-provenance ms-fleet-lane-root">
-      root <span className="ms-mono">{lane.root}</span>
-      {by !== "" || at !== "" ? ` · registered${by}${at}` : ""}
-    </p>
+    <details className="ms-fleet-details">
+      <summary className="ms-fleet-details-summary">{label}</summary>
+      <dl className="ms-fleet-details-list">
+        {shown.map(([name, value]) => (
+          <div key={name} className="ms-fleet-details-row">
+            <dt>{name}</dt>
+            <dd className="ms-mono">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -271,22 +317,27 @@ function hasWaitingWork(lane: Lane): boolean {
 }
 
 /**
- * Land now is offered when a hand-in waits, the lane is not paused and no
- * landing agent is alive. With nothing waiting it is not drawn at all; with
- * a hand-in waiting and an agent alive, the lane paused, or the lane unable
- * to run (unready), it says in one line why it is not offered. Everything
- * else — the helm, a race with the keeper — is the verb's to judge, and its
- * answer says so.
+ * Land now is offered when a hand-in waits, every part of the lane was read,
+ * the lane is not paused, can run, no landing agent is alive and no proof
+ * runs. With nothing waiting it is not drawn at all; with a hand-in waiting
+ * and any of the rest not so, it says in one line why it is not offered. A
+ * lane with a part it could not read — the running proof's record, say — is
+ * a lane whose state this page cannot vouch for, so it offers no act on it.
+ * Everything else — the helm, a race with the keeper — is the verb's to
+ * judge, and its answer says so.
  */
-export function landNowOffer(lane: Lane): LandNowOffer {
+export function landNowOffer(lane: Lane, unread: readonly string[]): LandNowOffer {
   if (!hasWaitingWork(lane)) {
     return { offered: false, reason: "" };
+  }
+  if (unread.length > 0) {
+    return { offered: false, reason: "Land now waits until the landing lane can be read." };
   }
   if (lane.agent_alive === true || lane.owner.state === "running") {
     return { offered: false, reason: "The landing agent is already running; it lands the queued work." };
   }
   if (lane.paused === true || lane.owner.state === "stopped") {
-    return { offered: false, reason: "Land now waits until the lane is started again." };
+    return { offered: false, reason: "Land now waits until the lane is resumed." };
   }
   if (lane.owner.state === "unready") {
     // The lane cannot run, or cannot tell whether an agent runs: a press
@@ -299,6 +350,9 @@ export function landNowOffer(lane: Lane): LandNowOffer {
           ? "Land now is unavailable until the lane can run."
           : `Land now is unavailable until the lane can run: ${fix}`,
     };
+  }
+  if (lane.running_proof?.state === "running") {
+    return { offered: false, reason: "Land now waits while a proof runs." };
   }
   return { offered: true, reason: "" };
 }
@@ -340,16 +394,35 @@ export function LandNowView({
   if (!offer.offered && offer.reason === "" && answer === null && problem === "") {
     return null;
   }
-  const lines = answer === null ? null : landNowLines(answer);
   return (
     <div className="ms-fleet-lane-landnow">
       {offer.offered && (
         <div className="ms-fleet-lane-landnow-act">
-          <Button primary disabled={sending} onClick={onPress}>
-            Land now
-          </Button>
+          <LandNowButton sending={sending} onPress={onPress} />
         </div>
       )}
+      <LandNowLines offer={offer} answer={answer} problem={problem} />
+    </div>
+  );
+}
+
+/** The button itself, which stands beside the lane's state word. */
+function LandNowButton({ sending, onPress }: { sending: boolean; onPress: () => void }) {
+  return (
+    <Button primary disabled={sending} onClick={onPress}>
+      Land now
+    </Button>
+  );
+}
+
+/** Why Land now is not offered, and the verb's answer to the last press. */
+function LandNowLines({ offer, answer, problem }: { offer: LandNowOffer; answer: LandNowAnswer | null; problem: string }) {
+  if ((offer.offered || offer.reason === "") && answer === null && problem === "") {
+    return null;
+  }
+  const lines = answer === null ? null : landNowLines(answer);
+  return (
+    <>
       {!offer.offered && offer.reason !== "" && <p className="ms-fleet-lane-note">{offer.reason}</p>}
       {lines !== null && !lines.refused && (
         <div className="ms-fleet-lane-answer" role="status">
@@ -362,7 +435,7 @@ export function LandNowView({
         </Trouble>
       )}
       {problem !== "" && <Trouble text={problem} variant="small" />}
-    </div>
+    </>
   );
 }
 
@@ -394,9 +467,20 @@ function AnswerLines({ lines }: { lines: AnswerLinesOf }) {
 
 /**
  * Land now's press: one POST, the sign-in sheet once where the route asks for
- * it, and the verb's answer kept until the next press.
+ * it, and the verb's answer kept until the next press. It hands the block the
+ * button, for beside the state word, and the lines, for under it.
  */
-function LandNow({ lane, onLanded }: { lane: Lane; onLanded?: () => void }) {
+function LandNow({
+  lane,
+  unread,
+  onLanded,
+  children,
+}: {
+  lane: Lane;
+  unread: readonly string[];
+  onLanded?: () => void;
+  children: (landing: { button: ReactNode; lines: ReactNode }) => ReactNode;
+}) {
   const [sending, setSending] = useState(false);
   const [answer, setAnswer] = useState<LandNowAnswer | null>(null);
   const [problem, setProblem] = useState("");
@@ -426,5 +510,9 @@ function LandNow({ lane, onLanded }: { lane: Lane; onLanded?: () => void }) {
       });
   };
 
-  return <LandNowView offer={landNowOffer(lane)} sending={sending} answer={answer} problem={problem} onPress={send} />;
+  const offer = landNowOffer(lane, unread);
+  return children({
+    button: offer.offered ? <LandNowButton sending={sending} onPress={send} /> : undefined,
+    lines: <LandNowLines offer={offer} answer={answer} problem={problem} />,
+  });
 }

@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +123,32 @@ func TestWalkQuestionsReadsEveryRecordAndOpenQuestionsTheOpenOnes(t *testing.T) 
 	open := GoalOpenQuestions(root)
 	if len(open) != 1 || open[0] != (goal.OpenQuestion{ID: "01J5X0000000000000000000W0", Goal: "g", Machine: "m1", Lineage: "seat"}) {
 		t.Fatalf("open questions for the goal judgment = %+v", open)
+	}
+}
+
+// A questions folder that can't be listed is named, not read as a folder
+// with no questions; a missing one is no questions.
+func TestWalkQuestionsNamesAFolderItCannotList(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root lists any folder")
+	}
+	root := t.TempDir()
+	if all, unreadable := WalkQuestions(root); len(all) != 0 || len(unreadable) != 0 {
+		t.Fatalf("missing folder = %v %v; want no questions and nothing unreadable", all, unreadable)
+	}
+	dir := filepath.Join(channelRoot(root), "questions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	all, unreadable := WalkQuestions(root)
+
+	if len(all) != 0 || len(unreadable) != 1 || !strings.HasPrefix(unreadable[0], dir+": ") {
+		t.Fatalf("unlistable folder = %v %v; want the folder named as unreadable", all, unreadable)
 	}
 }

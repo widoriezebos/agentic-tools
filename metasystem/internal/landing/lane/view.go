@@ -34,6 +34,10 @@ type View struct {
 	// keeper wakes it on, read the same way; null with no lane.
 	Wake    *Wake  `json:"wake"`
 	Summary string `json:"summary"`
+	// Unreadable is why this computer's lane record could not be read,
+	// which a reader tells from a lane that was never registered; absent
+	// when the record was read or there is none.
+	Unreadable string `json:"unreadable,omitempty"`
 }
 
 // OwnerView is what runs the lane: its landing agent (lane design r10 §3),
@@ -52,6 +56,11 @@ type OwnerView struct {
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
+	// Unread is what of the owner this view could not read, as LastExit
+	// says it: whether the landing agent runs, or whether the lane can run,
+	// when that check failed for a reason other than a refusal. The lane's
+	// status carries it as a problem (plain.Status); empty when it was read.
+	Unread string `json:"-"`
 }
 
 // OwnerProbe is whether the lane's landing agent runs, and since when.
@@ -80,6 +89,7 @@ func BuildView(sources ViewSources) View {
 	record, ok, err := Read(sources.Home)
 	if err != nil {
 		view.Summary = "this computer's landing lane record can't be read (" + err.Error() + "); metasystem landing set replaces it"
+		view.Unreadable = err.Error()
 		return view
 	}
 	if !ok {
@@ -123,7 +133,8 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	probe, err := sources.Owner(root)
 	switch {
 	case err != nil:
-		owner.LastExit = text("whether the landing agent runs is unknown: " + err.Error())
+		owner.Unread = "whether the landing agent runs is unknown: " + err.Error()
+		owner.LastExit = text(owner.Unread)
 		return owner
 	case probe.Alive:
 		owner.State = OwnerRunning
@@ -152,7 +163,8 @@ func notReady(owner *OwnerView, err error) {
 	}
 	var refusal *Refusal
 	if !errors.As(err, &refusal) {
-		owner.LastExit = text("whether the lane can run is unknown: " + err.Error())
+		owner.Unread = "whether the lane can run is unknown: " + err.Error()
+		owner.LastExit = text(owner.Unread)
 		return
 	}
 	owner.LastExit, owner.RetryHint, owner.Fix = text(refusal.Message), text(refusal.Fix), refusal.Argv

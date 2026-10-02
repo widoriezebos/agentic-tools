@@ -38,7 +38,17 @@ type Picture struct {
 type Unreadable struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+	// Stray is a seat directory no armed seat names: a leftover the reader
+	// skips, not a part of the board it failed to read.
+	Stray bool `json:"stray,omitempty"`
 }
+
+// The reasons a seat or a card is Unknown because it could not be read,
+// which a reader tells apart from the Unknowns classification decides.
+const (
+	ReasonSeatUnreadable = "seat directory unreadable"
+	ReasonCardUnreadable = "card unreadable"
+)
 
 // Read reads the cards of exactly the armed seats its caller gives and
 // classifies them. A seat directory with no armed seat behind it is reported
@@ -80,7 +90,7 @@ func Read(home string, seats []Seat, prober identity.Prober, now time.Time, stal
 				continue
 			}
 			if _, armed := byMachine[name]; !armed {
-				unreadable = append(unreadable, Unreadable{Path: filepath.Join(board, name), Reason: "no armed seat on this host is named " + name})
+				unreadable = append(unreadable, Unreadable{Path: filepath.Join(board, name), Reason: "no armed seat on this host is named " + name, Stray: true})
 			}
 		}
 	case !errors.Is(err, fs.ErrNotExist):
@@ -100,7 +110,7 @@ func readSeat(dir string, seat Seat) ([]Card, []Unknown) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, []Unknown{{Seat: seat, Reason: "seat directory unreadable: " + err.Error()}}
+		return nil, []Unknown{{Seat: seat, Reason: ReasonSeatUnreadable + ": " + err.Error()}}
 	}
 	var cards []Card
 	var unknown []Unknown
@@ -113,7 +123,7 @@ func readSeat(dir string, seat Seat) ([]Card, []Unknown) {
 		card, readable := readCardFile(filepath.Join(dir, name))
 		switch {
 		case !readable:
-			unknown = append(unknown, Unknown{Seat: seat, Goal: goal, Reason: "card unreadable"})
+			unknown = append(unknown, Unknown{Seat: seat, Goal: goal, Reason: ReasonCardUnreadable})
 		case card.Goal != goal:
 			unknown = append(unknown, Unknown{Seat: seat, Goal: goal, Reason: "card names goal " + card.Goal, Card: &card})
 		case card.Seat.Machine != seat.Machine:

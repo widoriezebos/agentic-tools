@@ -755,14 +755,9 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// cannot disagree about what it says.
 				// The walk is tolerant by its own contract: one
 				// unreadable question file never hides the others, and
-				// its path comes back on a second channel. The page
-				// shows what could be read rather than refusing the
-				// whole block over one file, which is the contract this
-				// caller keeps.
-				Asks: func() ([]channel.Question, error) {
-					open, _ := channel.WalkOpenQuestions(roots.Checkout)
-					return open, nil
-				},
+				// its path comes back on a second channel, which the
+				// Fleet page names (uiAsks).
+				Asks: uiAsks(roots.Checkout),
 				// The register is read from the INSTALLATION, because
 				// that is where the kit's memory home is on every layout
 				// this interface serves: a checkout that is not the
@@ -1325,4 +1320,18 @@ func knownIssuesFromCheckout(roots lifecycle.Roots) string {
 		return ""
 	}
 	return slashed
+}
+
+// uiAsks is this checkout's open questions as the interface reads them: every
+// open question the tolerant walk could read, and the records it could not
+// beside them as an *httpd.UnreadQuestions, so a page shows what was asked
+// and says what it could not read rather than reading it as nothing asked.
+func uiAsks(checkout string) func() ([]channel.Question, error) {
+	return func() ([]channel.Question, error) {
+		open, unreadable := channel.WalkOpenQuestions(checkout)
+		if len(unreadable) > 0 {
+			return open, &httpd.UnreadQuestions{Records: unreadable}
+		}
+		return open, nil
+	}
 }
