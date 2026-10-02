@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Design step 1 (verbs agent watch/say, the per-runtime session-stream adapter, the UI view on the fleet page), Astra critique, build
 - OpenedAt: 2026-10-02T21:11:09Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:11:15Z revision=2 opid=Y6Z9K94NJ5P6TCQ0ER325MPQZ9-m1e-9c612d71 authority=proven digest=40ecf274bcf8a6e1932a8c214aec9c42e7a3159aa063c63e9d3f30afe4608a8f episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-10-02T21:11:09Z 71EHXME1ZQTHJR4XME33T8GGG5-m1e-9c612d71 open actor=human:Wido targets=ui-connects-to-a-running-agent
 - 2026-10-02T21:11:15Z Y6Z9K94NJ5P6TCQ0ER325MPQZ9-m1e-9c612d71 approve actor=human:Wido targets=ui-connects-to-a-running-agent
-Integrity: sha256=08b6b2c086fb9f6c418282de8c195eef6b3691727c5f7748757f76a7ee9571af
+- 2026-10-02T21:11:21Z 8PJBM619PH904SFJVC3VVY6V9N-m1e-9c612d71 set-pin actor=human:Wido targets=ui-connects-to-a-running-agent
+Integrity: sha256=1df32303e420054a3c69713cf86e7c42409015bb08246ac2dc96b1aa35a2c821
