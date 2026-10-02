@@ -1,0 +1,64 @@
+package testenv
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+)
+
+type awaitRecorder struct {
+	failures []string
+}
+
+func (*awaitRecorder) Helper() {}
+
+func (r *awaitRecorder) Fatalf(format string, args ...any) {
+	r.failures = append(r.failures, fmt.Sprintf(format, args...))
+}
+
+func TestAwaitReturnsOnTheObservedEventWhateverItTook(t *testing.T) {
+	t.Parallel()
+	recorder := &awaitRecorder{}
+	observations, pauses := 0, 0
+	remaining := func() (time.Duration, bool) { return awaitReserve + time.Nanosecond, true }
+	await(recorder, "the third observation", func() bool {
+		observations++
+		return observations == 3
+	}, func() { pauses++ }, remaining)
+	if len(recorder.failures) != 0 || observations != 3 || pauses != 2 {
+		t.Fatalf("failures=%q observations=%d pauses=%d, want none, 3 and 2", recorder.failures, observations, pauses)
+	}
+}
+
+func TestAwaitFailsOnlyAtTheTestBinaryDeadline(t *testing.T) {
+	t.Parallel()
+	recorder := &awaitRecorder{}
+	observations := 0
+	left := []time.Duration{time.Hour, awaitReserve + time.Nanosecond, awaitReserve}
+	remaining := func() (time.Duration, bool) {
+		next := left[0]
+		left = left[1:]
+		return next, true
+	}
+	await(recorder, "the release file", func() bool {
+		observations++
+		return false
+	}, func() {}, remaining)
+	if observations != 3 || len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "the release file") || !strings.Contains(recorder.failures[0], "deadline") {
+		t.Fatalf("observations=%d failures=%q, want 3 and one failure naming the awaited event and the deadline", observations, recorder.failures)
+	}
+}
+
+func TestAwaitWithoutADeadlineNeverGivesUp(t *testing.T) {
+	t.Parallel()
+	recorder := &awaitRecorder{}
+	observations := 0
+	await(recorder, "the thousandth observation", func() bool {
+		observations++
+		return observations == 1000
+	}, func() {}, func() (time.Duration, bool) { return 0, false })
+	if len(recorder.failures) != 0 || observations != 1000 {
+		t.Fatalf("failures=%q observations=%d, want none and 1000", recorder.failures, observations)
+	}
+}
