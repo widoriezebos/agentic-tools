@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Inventory what question ask/answer/wait, the Telegram channel, the UI and the peer-message bridge already do; design step 1; critique; build
 - OpenedAt: 2026-10-02T12:24:05Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T12:29:42Z revision=7 opid=YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 authority=proven digest=48b04d7686eaa4569893a5283340bb53ebc04468b30b581531164cc89416a033 episode=7
+- Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=9 at=2026-10-02T12:59:14Z
 - Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-02T12:49:53Z revision=9 accountingRevision=9 episodeAt=2026-10-02T12:49:53Z episodeRevision=9
 - StopCapability: generation=9 revision=9 machine=m1e claimEpoch=9 fenceEpoch=0
 
@@ -27,4 +28,5 @@ History:
 - 2026-10-02T12:29:42Z YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 approve actor=human:Wido targets=blocked-agent-asks-the-human
 - 2026-10-02T12:49:24Z EQFW4CYPEQWW7Z9Z92KDJGB0YP-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,flaky-leftovers,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:2 to=1:1
 - 2026-10-02T12:49:53Z CK8M6D52004EHDQZ2JV69KEKWR-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=blocked-agent-asks-the-human
-Integrity: sha256=7821f844b6988a8e1fc9198f5b6521602565879abeb147f7a294cd26f836aa5b
+- 2026-10-02T12:59:14Z 5KKG0M3Q2GA345X2Z5A2SDBNCZ-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=blocked-agent-asks-the-human
+Integrity: sha256=74ea673eb329f092ae2adead77d657b235cad5c129b59a5c16264121d24b707c
