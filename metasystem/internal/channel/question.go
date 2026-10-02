@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -236,7 +237,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		if postContext == nil {
 			postContext = context.Background()
 		}
-		ref, postErr := r.Provider.Post(postContext, r.Destination, renderQuestion(q), nil)
+		ref, postErr := r.Provider.Post(postContext, r.Destination, renderQuestion(q, answerCodeOffOrOn(r.RepoRoot)), nil)
 		if postErr == nil {
 			q.Thread = &ref
 		} else {
@@ -291,17 +292,59 @@ func (contextBackground) Done() <-chan struct{}       { return nil }
 func (contextBackground) Err() error                  { return nil }
 func (contextBackground) Value(any) any               { return nil }
 
+// AnswerCodeOff reads channel.human.answer-code: "on" (the default) asks the
+// human for a TOTP code with every answer; "off" (Wido 2026-10-02) takes the
+// sender's channel user id alone as the proof that the answer is the human's
+// word, with the same authority.
+func AnswerCodeOff(root string) (bool, error) {
+	value, code, err := config.Get(config.GetParams{Key: "channel.human.answer-code", ConfPath: filepath.Join(root, "metasystem.conf"), Default: "on", DefaultSet: true})
+	if code != 0 {
+		return false, err
+	}
+	switch strings.TrimSpace(value) {
+	case "on":
+		return false, nil
+	case "off":
+		return true, nil
+	default:
+		return false, fmt.Errorf("channel.human.answer-code must be on or off, not %q", value)
+	}
+}
+
+// answerCodeOffOrOn is AnswerCodeOff for wording: an unreadable setting keeps
+// asking for the code.
+func answerCodeOffOrOn(root string) bool {
+	off, err := AnswerCodeOff(root)
+	return err == nil && off
+}
+
 // ReplyInstructions is how the human answers q: in its authenticated
 // channel thread, never through a local command.
 func ReplyInstructions(q Question) string {
+	return replyInstructions(q, false)
+}
+
+// ReplyInstructionsAt is ReplyInstructions under the repository's
+// channel.human.answer-code setting.
+func ReplyInstructionsAt(root string, q Question) string {
+	return replyInstructions(q, answerCodeOffOrOn(root))
+}
+
+func replyInstructions(q Question, codeOff bool) string {
+	if codeOff {
+		if q.Wants != "" {
+			return "Reply in this thread with this token verbatim:\n" + q.Wants
+		}
+		return "Reply in this thread with your answer"
+	}
 	if q.Wants != "" {
 		return "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
 	}
 	return "Reply in this thread with your answer followed by your code"
 }
 
-func renderQuestion(q Question) string {
-	tail := ReplyInstructions(q)
+func renderQuestion(q Question, codeOff bool) string {
+	tail := replyInstructions(q, codeOff)
 
 	full := renderQuestionParts(q, q.Facts, optionConsequences(q.Options), q.Recommendation, "", tail)
 	if len([]rune(full)) <= questionMessageRuneLimit {

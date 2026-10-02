@@ -55,7 +55,7 @@ func TestRetryDeliveryPostsTheStoredQuestionOnlyUntilItIsDelivered(t *testing.T)
 	if err != nil || outcome != RetryDelivered || q.Thread == nil || q.Thread.ID != "1" {
 		t.Fatalf("a delivering retry = %q thread %v err %v; want delivered in thread 1", outcome, q.Thread, err)
 	}
-	if len(delivering.posts) != 1 || delivering.posts[0] != renderQuestion(asked) || delivering.postThreads[0] != nil {
+	if len(delivering.posts) != 1 || delivering.posts[0] != renderQuestion(asked, false) || delivering.postThreads[0] != nil {
 		t.Fatalf("the retry posted %q in %v; want the stored question once as a new thread", delivering.posts, delivering.postThreads)
 	}
 	if stored, _ := ReadQuestion(root, asked.ID); stored.Thread == nil || stored.Thread.ID != "1" {

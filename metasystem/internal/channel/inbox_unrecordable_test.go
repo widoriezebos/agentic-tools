@@ -13,22 +13,22 @@ import (
 // skipped record, confirmed, and the queue moves on.
 func TestUnrecordableUpdateIsSkippedNotBlocking(t *testing.T) {
 	bed, p, q, now := pollLedgerBed(t)
-	refuse := validateInboxCommit
-	validateInboxCommit = func(e goal.Endpoint, commit string) error {
+	t.Parallel()
+	cfg := pollBedConfig(bed, p, now)
+	cfg.validateInbox = func(e goal.Endpoint, commit string) error {
 		for _, in := range mustInboxAt(t, e, commit) {
 			if in.MessageID == "5" && in.Outcome != "skipped" {
 				return errors.New("refused by the fixture")
 			}
 		}
-		return refuse(e, commit)
+		return validateInboxCommit(e, commit)
 	}
-	t.Cleanup(func() { validateInboxCommit = refuse })
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{
 		{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "odd", SentAt: now, Ack: "6", UpdateID: 5},
 		{Ref: MessageRef{ID: "7", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: now, Ack: "8", UpdateID: 7},
 	}
-	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	// The refused build is never published; the fake's cleanup must not

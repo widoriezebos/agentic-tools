@@ -215,3 +215,20 @@ func TestLoadIsTheOnlyLoader(t *testing.T) {
 		t.Fatal("command package still owns channel loading")
 	}
 }
+
+func TestAnswerCodeOffNeedsNoSecret(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "fake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "base-url"), []byte("http://127.0.0.1:1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, root, "channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir="+dir+"\nchannel.destination.fleet.fake.face=telegram\nchannel.human.telegram.user-id=7001\nchannel.human.answer-code=off\n", "")
+	loaded, err := phase.Load(root, true)
+	if err != nil || loaded.HumanUserID != "7001" || loaded.TOTPSecret != "" {
+		t.Fatalf("loaded=%+v err=%v", loaded, err)
+	}
+}

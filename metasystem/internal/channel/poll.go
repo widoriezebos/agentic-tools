@@ -22,6 +22,10 @@ type PollConfig struct {
 	Now                                                                            time.Time
 	MaxDispositions                                                                int
 	FailurePoint                                                                   func(string) error
+	// answerCodeOff is channel.human.answer-code=off, read once per poll.
+	answerCodeOff bool
+	// validateInbox replaces the inbox commit validation in tests.
+	validateInbox func(goal.Endpoint, string) error
 }
 type PollResult struct {
 	Busy                                bool
@@ -55,6 +59,9 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		return result, err
 	}
 	defer held.Release()
+	if c.answerCodeOff, err = AnswerCodeOff(c.RepoRoot); err != nil {
+		return result, err
+	}
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
 		return result, err
@@ -65,7 +72,7 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		}
 		q := &questions[i]
 		if q.State == "open" && q.Thread == nil {
-			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q), nil)
+			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q, c.answerCodeOff), nil)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++
@@ -161,7 +168,11 @@ func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status St
 			return err
 		}
 	}
-	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with the token and your code", &status.Ref)
+	ask := "; reply with the token and your code"
+	if c.answerCodeOff {
+		ask = "; reply with the token"
+	}
+	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+ask, &status.Ref)
 	return err
 }
 

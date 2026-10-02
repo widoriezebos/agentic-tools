@@ -12,6 +12,7 @@ import (
 // Decision 8: receive with no offset, commit every update to the ledger
 // inbox, and Confirm its Ack only once the commit is durable.
 func TestPollCommitsEachUpdateToTheInboxBeforeConfirm(t *testing.T) {
+	t.Parallel()
 	bed, p, q, now := pollLedgerBed(t)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{
@@ -45,6 +46,7 @@ func TestPollCommitsEachUpdateToTheInboxBeforeConfirm(t *testing.T) {
 }
 
 func TestPollKilledAfterCommitConfirmsNothing(t *testing.T) {
+	t.Parallel()
 	bed, p, _, now := pollLedgerBed(t)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "7"}, UserID: "stranger", Text: "hello", SentAt: now, Ack: "8", UpdateID: 7}}
 	cfg := pollBedConfig(bed, p, now)
@@ -75,6 +77,7 @@ func TestPollKilledAfterCommitConfirmsNothing(t *testing.T) {
 // A rejected reply gets one notice in the question's thread and the
 // question stays open; no rejection is saved on the question.
 func TestRejectedReplyIsNoticedOnceInTheQuestionThread(t *testing.T) {
+	t.Parallel()
 	bed, p, q, now := pollLedgerBed(t)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 000000", SentAt: now, Ack: "6", UpdateID: 5}}
 	cfg := pollBedConfig(bed, p, now)
@@ -99,6 +102,7 @@ func TestRejectedReplyIsNoticedOnceInTheQuestionThread(t *testing.T) {
 // Decision 7: the answer receipt is not posted, and the question still
 // closes locally.
 func TestAnsweredQuestionClosesWithoutAReceiptPost(t *testing.T) {
+	t.Parallel()
 	bed, p, q, now := pollLedgerBed(t)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: now}}
@@ -113,6 +117,7 @@ func TestAnsweredQuestionClosesWithoutAReceiptPost(t *testing.T) {
 
 // An unthreaded verified reply binds by the question's token.
 func TestUnthreadedReplyMatchesByToken(t *testing.T) {
+	t.Parallel()
 	bed, p, q, now := pollLedgerBed(t)
 	q.Kind, q.Wants = "stop", "stop g"
 	if err := writeJSON(questionPath(bed.root, q.ID), q); err != nil {
@@ -131,6 +136,7 @@ func TestUnthreadedReplyMatchesByToken(t *testing.T) {
 // An installation without the human's id or secret cannot check a reply, so
 // it receives nothing and confirms nothing.
 func TestUnconfiguredInstallationReceivesNothing(t *testing.T) {
+	t.Parallel()
 	bed, p, _, now := pollLedgerBed(t)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 123456", SentAt: now, Ack: "3"}}
 	cfg := pollBedConfig(bed, p, now)
@@ -146,6 +152,7 @@ func TestUnconfiguredInstallationReceivesNothing(t *testing.T) {
 // F-1: a message with two code-shaped fields must not poison the queue; every
 // code-shaped field is masked before the record is built.
 func TestTwoCodeFieldsDoNotBlockTheQueue(t *testing.T) {
+	t.Parallel()
 	bed, p, q, now := pollLedgerBed(t)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{
@@ -170,6 +177,7 @@ func TestTwoCodeFieldsDoNotBlockTheQueue(t *testing.T) {
 
 // F-2: a notice whose post failed is retried on the next tick, once.
 func TestFailedNoticeIsRetriedOnTheNextTick(t *testing.T) {
+	t.Parallel()
 	bed, p, _, now := pollLedgerBed(t)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 000000", SentAt: now, Ack: "6", UpdateID: 5}}
 	p.failPosts = 1
@@ -191,6 +199,7 @@ func TestFailedNoticeIsRetriedOnTheNextTick(t *testing.T) {
 // F-2: a kill between the commit and the notice still yields one notice,
 // whether it falls before or after the notice is queued.
 func TestKillBetweenCommitAndNoticeStillNotices(t *testing.T) {
+	t.Parallel()
 	for _, point := range []string{"inbox-published", "inbox-notice-pending"} {
 		t.Run(point, func(t *testing.T) {
 			bed, p, _, now := pollLedgerBed(t)

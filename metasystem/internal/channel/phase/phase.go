@@ -165,6 +165,10 @@ func Load(root string, withHuman bool) (Loaded, error) {
 	if err != nil {
 		return loaded, err
 	}
+	codeOff, err := channel.AnswerCodeOff(root)
+	if err != nil || codeOff {
+		return loaded, err
+	}
 	loaded.TOTPSecret, err = Secret(root, "channel.human.totp-secret")
 	return loaded, err
 }

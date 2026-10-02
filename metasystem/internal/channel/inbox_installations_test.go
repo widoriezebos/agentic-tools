@@ -318,6 +318,7 @@ func notices(rows []journalRow) []journalRow {
 }
 
 func TestOneBotTwoInstallationsCommitToTheLedgerInbox(t *testing.T) {
+	t.Parallel()
 	bed := newInboxBed(t)
 	seatQ := bed.ask(t, bed.seat, "seat-goal", "Seat needs a decision")
 	laneQ := bed.ask(t, bed.lane, "lane-goal", "Lane needs a decision")

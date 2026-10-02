@@ -477,7 +477,7 @@ func TestReportPriority(t *testing.T) {
 		fixture := newReportFixture(t, now, marked)
 		root := fixture.root
 		text, goalID, err := fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id)) {
+		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id, false)) {
 			t.Fatalf("a visible approval line lost its binding: goal=%q err=%v\n%s", goalID, err, text)
 		}
 		for i := 0; i < 20; i++ {
@@ -487,7 +487,7 @@ func TestReportPriority(t *testing.T) {
 			}
 		}
 		text, goalID, err = fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id)) || !strings.Contains(text, "Backlog first: zz marked") {
+		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id, false)) || !strings.Contains(text, "Backlog first: zz marked") {
 			t.Fatalf("a trimmed approval line retained its binding or displaced the reserved backlog line: goal=%q err=%v\n%s", goalID, err, text)
 		}
 	})
@@ -535,7 +535,7 @@ func TestBudgetQuestionRequiresPersistsAndRendersCompleteTuple(t *testing.T) {
 		t.Fatalf("stored budget=%+v err=%v", stored.Budget, err)
 	}
 	want := "Proposed box: 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds"
-	if rendered := renderQuestion(stored); !strings.Contains(rendered, want) {
+	if rendered := renderQuestion(stored, false); !strings.Contains(rendered, want) {
 		t.Fatalf("rendered question %q does not contain %q", rendered, want)
 	}
 	other := request
@@ -564,7 +564,7 @@ func TestRenderQuestionBoundsGoalRecordProseAndKeepsReplyTokenReachable(t *testi
 		Wants:          "answer:channel-ask-fits-one-message",
 	}
 
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	tail := "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
 	if got := len([]rune(rendered)); got > questionMessageRuneLimit {
 		t.Fatalf("rendered question has %d runes, limit is %d", got, questionMessageRuneLimit)
@@ -604,7 +604,7 @@ func TestRenderQuestionTrimNoticeDoesNotClaimDroppedFactsWhenAllFactsRemain(t *t
 		Wants:          "gradual",
 	}
 
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	wantNotice := "Long text was trimmed for channel length; full details are in goal " + q.Goal + "."
 	if !strings.Contains(rendered, wantNotice) {
 		t.Fatalf("long option text was trimmed without a notice:\n%s", rendered)
@@ -628,7 +628,7 @@ func TestRenderQuestionLeavesShortAskSubstanceUnchanged(t *testing.T) {
 		Recommendation: "Choose blue",
 		Wants:          "blue",
 	}
-	rendered := renderQuestion(q)
+	rendered := renderQuestion(q, false)
 	for _, want := range []string{
 		"choose launch colour — other",
 		"- The launch is next Tuesday",

@@ -1489,7 +1489,7 @@ func runIntentAsk(inv *intentInvocation) int {
 	case q.Thread == nil:
 		delivery, pending = "not sent: no channel is configured for this repository", true
 	}
-	data := map[string]any{"question": q, "delivery": delivery, "replyInstructions": channel.ReplyInstructions(q)}
+	data := map[string]any{"question": q, "delivery": delivery, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, q)}
 	lines := append(warnings, "delivery: "+delivery)
 	wait := inv.publicArgv("question", "wait", "channel:"+q.ID)
 	poll := inv.publicArgv("question", "retry", q.ID)
@@ -1518,7 +1518,7 @@ func runIntentAsk(inv *intentInvocation) int {
 		}
 		return inv.render(result)
 	}
-	lines = append(lines, "the person answers in the channel thread: "+channel.ReplyInstructions(q))
+	lines = append(lines, "the person answers in the channel thread: "+channel.ReplyInstructionsAt(inv.stateRoot, q))
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "asked " + q.ID + " and " + delivery, text: lines,
 		next: wait, nextReason: "wait for the authenticated answer", Data: data})
 }
@@ -2181,7 +2181,7 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: view.Targets, Data: view.Data,
 			Summary: "question " + q.id + " is answered in its channel thread, where you are known; nothing was recorded here",
 			next:    inv.publicArgv("question", "show", "channel:"+q.id), nextReason: "where and how to answer it",
-			Details: []string{channel.ReplyInstructions(q.channel)}})
+			Details: []string{channel.ReplyInstructionsAt(inv.stateRoot, q.channel)}})
 	}
 	if strings.TrimSpace(text) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a mission question is answered with TEXT (or --answer-file FILE); nothing was answered",

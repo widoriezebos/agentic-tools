@@ -28,7 +28,7 @@ const channelRecordTime = "2006-01-02T15:04:05Z"
 // installation without the human's id or code secret cannot, so it receives
 // nothing: it never confirms an update it could not judge.
 func (c PollConfig) receiveConfigured() bool {
-	return strings.TrimSpace(c.HumanUserID) != "" && strings.TrimSpace(c.TOTPSecret) != ""
+	return strings.TrimSpace(c.HumanUserID) != "" && (c.answerCodeOff || strings.TrimSpace(c.TOTPSecret) != "")
 }
 
 // receiveToInbox receives every unconfirmed update, commits each one in
@@ -105,11 +105,22 @@ func draftInbound(c PollConfig, in Inbound) (goal.ChannelInbound, string) {
 		replyTo := in.Ref.ThreadID
 		rec.ReplyTo = &replyTo
 	}
-	_, code, hasCode := SplitTOTP(in.Text)
-	switch {
-	case in.UserID != c.HumanUserID:
+	if in.UserID != c.HumanUserID {
 		rec.Outcome = "wrong-user"
 		return rec, "wrong user"
+	}
+	if c.answerCodeOff {
+		// The sender's user id is the proof. The record still needs a step
+		// (the ledger schema and the channel authority both carry one); the
+		// send second stands in, and it can never equal a real TOTP step
+		// (the send time over 30), so a coded answer is never its replay.
+		step := sentAt.Unix()
+		rec.Outcome = "verified"
+		rec.Step = &step
+		return rec, ""
+	}
+	_, code, hasCode := SplitTOTP(in.Text)
+	switch {
 	case !hasCode:
 		rec.Outcome = "no-code"
 		return rec, "no code"
@@ -148,9 +159,8 @@ func codeShaped(field string) bool {
 	return len(field) == 6 && strings.Trim(field, "0123456789") == ""
 }
 
-// validateInboxCommit is the channel validation every inbox commit passes;
-// tests replace it to stage a record the ledger refuses.
-var validateInboxCommit = func(e goal.Endpoint, commit string) error {
+// validateInboxCommit is the channel validation every inbox commit passes.
+func validateInboxCommit(e goal.Endpoint, commit string) error {
 	if problems := goal.ValidateChannelTreeAt(e, commit); len(problems) > 0 {
 		return fmt.Errorf("%s", problems[0])
 	}
@@ -192,7 +202,7 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 			return false, nil
 		}
 		path := goal.ChannelInboxPath(c.Destination, existing)
-		if err := queueNotice(notices, path, noticeFor(reasonFor(*existing, c.Now)), existing.ReplyTo, in.ThreadID); err != nil {
+		if err := queueNotice(notices, path, noticeFor(c, reasonFor(*existing, c.Now)), existing.ReplyTo, in.ThreadID); err != nil {
 			return false, err
 		}
 		return false, flushNotices(ctx, c, result)
@@ -209,7 +219,7 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 	if written.Outcome == "replayed" {
 		reason = "replayed code"
 	}
-	if err := queueNotice(notices, goal.ChannelInboxPath(c.Destination, &written), noticeFor(reason), written.ReplyTo, in.ThreadID); err != nil {
+	if err := queueNotice(notices, goal.ChannelInboxPath(c.Destination, &written), noticeFor(c, reason), written.ReplyTo, in.ThreadID); err != nil {
 		return false, err
 	}
 	if err := fail(c, "inbox-notice-pending"); err != nil {
@@ -253,7 +263,7 @@ func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound) (
 				return nil, errors.New("inbox record present without its transaction")
 			}
 			written = draft
-			if draft.Step != nil {
+			if draft.Step != nil && !c.answerCodeOff {
 				for _, other := range records {
 					if other.Step != nil && *other.Step == *draft.Step && other.MessageID != draft.MessageID {
 						written.Outcome = "replayed"
@@ -267,12 +277,20 @@ func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound) (
 			}
 			return []goal.Change{{Path: path, Content: body}}, nil
 		},
-		Validate: func(commit string) error { return validateInboxCommit(ep, commit) },
+		Validate: func(commit string) error {
+			if c.validateInbox != nil {
+				return c.validateInbox(ep, commit)
+			}
+			return validateInboxCommit(ep, commit)
+		},
 	})
 	return written, found, res, err
 }
 
-func noticeFor(reason string) string {
+func noticeFor(c PollConfig, reason string) string {
+	if c.answerCodeOff {
+		return "not recorded: " + reason + ". Reply to the question above with your answer"
+	}
 	return "not recorded: " + reason + ". Reply to the question above with your answer and your code"
 }
 
