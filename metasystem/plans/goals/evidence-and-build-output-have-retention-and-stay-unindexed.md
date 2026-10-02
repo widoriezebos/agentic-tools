@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 17
+- Sequence: 18
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: disk and indexing churn that slows every seat, no correctness harm; novelty 2: durable-copy acknowledgement and pins before deletion, and path moves across every reader; exposure 3: every proof run writes these stores; accumulation 3: grows by gigabytes per day until pruned"
 - Tier: 2
 - Intent: What: Kept test evidence, pinned engine copies and temporary build output are stored where the Mac's Spotlight search and malware scanner do not index them. Cleanup of these stores already exists (it was built under the disk-lifetimes goal); only the indexing part is left. Why: Tens of thousands of copied source files are indexed and scanned in the background, which slows the machine and wastes disk and CPU while seats work. Pros: Less background load on every seat machine. Cons: Moving stores means every reader and writer must follow them, and a missed one breaks a lookup.
 - Origin: human
 - Next step: Next: Keep the evidence folders, engine pins and build output out of Spotlight, either by placing them in a folder Spotlight skips or by marking each root as not to be indexed, and then count indexed files and disk use over one day of work on three seats. Done when: After that day, the Spotlight index holds none of those files and the counts stay under the thresholds written in the goal.
 - OpenedAt: 2026-09-15T09:05:39Z
-- Revision: 137
+- Revision: 138
 - BudgetExceptions: 0
 
 History:
@@ -150,4 +150,5 @@ History:
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:16 to=1:15
 - 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:15 to=1:16 requested-sequence=1
 - 2026-10-02T21:11:27Z JWBQX6BFTF75PDPRW56J5R9TQV-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=ui-connects-to-a-running-agent from=1:16 to=1:17 requested-sequence=6
-Integrity: sha256=7f29404523e16ac42d26b57e4ff2f83da1806ceea9055fef84edf6f5530abfea
+- 2026-10-02T21:13:17Z BS5E1X03DEBQQQZ7CAKY9W0ZPM-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=rosters-are-configuration-items from=1:17 to=1:18 requested-sequence=7
+Integrity: sha256=2ba0cbb1fab37e68abe17695e68dfa152c0132c799fc404b2335999ec6fa9aae

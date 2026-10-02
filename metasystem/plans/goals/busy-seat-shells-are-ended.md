@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 16
+- Sequence: 17
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: one core for hours per incident, no data loss; novelty 2: a CPU predicate and child evidence the census lacks today; exposure 3: every seat runs shell commands through the harness; accumulation 1: incidents are rare but unbounded when they occur"
 - Tier: 2
 - Intent: What: The engine notices a seat's shell that keeps burning CPU long after its tool call ended, and deals with it: a shell with no child processes for 30 minutes is ended, and a shell that keeps starting short-lived children (a runaway loop) is reported to its session instead of being ended. Why: on 2026-09 a seat's runaway shell loop burned a CPU core for hours and nobody noticed until a person looked. Wido chose option (a) of design revision 3 on 2026-09-30: report fork-heavy loops, never end them automatically. Pros: idle busy shells stop wasting the machine, and a runaway loop is at least visible to the session that owns it. Cons: the exact runaway loop from the incident is only reported, so a session or a person still ends it by hand; ending it automatically would be a separate goal.
 - Origin: human
 - Next step: Next: have one Astra critique of design revision 3 with option (a) settled, then build it. Done when: on a seat, a childless shell spinning for 30 minutes is ended and its session told, and a fork-heavy loop is reported to its session as busy-forking without being ended.
 - OpenedAt: 2026-09-15T09:05:29Z
-- Revision: 137
+- Revision: 138
 - BudgetExceptions: 0
 
 History:
@@ -150,4 +150,5 @@ History:
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:15 to=1:14
 - 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:14 to=1:15 requested-sequence=1
 - 2026-10-02T21:11:27Z JWBQX6BFTF75PDPRW56J5R9TQV-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=ui-connects-to-a-running-agent from=1:15 to=1:16 requested-sequence=6
-Integrity: sha256=c4db91a7a6da0c38ac08bbe6ea284d45ff267ca664dee6a278a0053129633168
+- 2026-10-02T21:13:17Z BS5E1X03DEBQQQZ7CAKY9W0ZPM-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=rosters-are-configuration-items from=1:16 to=1:17 requested-sequence=7
+Integrity: sha256=465145196fc1bc4da30b3915f65bd50dcf26e221e26ed068e99b77094d406268

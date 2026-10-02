@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 15
+- Sequence: 16
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a false mutation entry lets an unproved rule reach the read, which is today's state, and a strict check refuses a return until the builder adds the test; novelty 2: a new return field and a new conformance check beside the existing return schema and conformance; exposure 3: every implementer chain; accumulation 2: every unproved rule that reaches the read costs a read and a fold round."
 - Tier: 2
 - Intent: What: For every rule a builder adds, the builder shows a test that fails when that rule alone is removed, before handing the work back. Why: Reads keep finding rules that no test protects, and each one costs a fix round. The original design put this check in the old dispatch lane, which has not run since 09-24; builds now go through the launch lane. Pros: Rules are proven when they are built, not found unprotected in the read; the reader only spot-checks. Cons: Builders do more work per unit, and confirming that a named test really fails has to stay cheap.
 - Origin: human
 - Next step: Next: Retarget to the launch build lane: add the rule to the build brief template and the implementer role, and have each unit's read check one named mutation per rule. Drop the old plan to enforce it in the dispatch lane's return format. Done when: build briefs carry the rule, and a unit read refuses a return that names no failing test for one of its rules.
 - OpenedAt: 2026-09-14T15:28:42Z
-- Revision: 128
+- Revision: 129
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -142,4 +142,5 @@ History:
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:14 to=1:13
 - 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:13 to=1:14 requested-sequence=1
 - 2026-10-02T21:11:27Z JWBQX6BFTF75PDPRW56J5R9TQV-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=ui-connects-to-a-running-agent from=1:14 to=1:15 requested-sequence=6
-Integrity: sha256=471fcf827e16d5d8afd22b21c0678e407824e31707e49c356e43b5ef19e993c6
+- 2026-10-02T21:13:17Z BS5E1X03DEBQQQZ7CAKY9W0ZPM-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=rosters-are-configuration-items from=1:15 to=1:16 requested-sequence=7
+Integrity: sha256=8882e89a7753ddf5c4e79598e959d4083a351680864847897ddddfa557d42b6d
