@@ -101,6 +101,9 @@ func draftInbound(c PollConfig, in Inbound) (goal.ChannelInbound, string) {
 		Provider: c.ProviderName, Destination: c.Destination, MessageID: in.Ref.ID, UpdateID: updateID,
 		UserID: in.UserID, SentAt: sentAt.UTC().Format(channelRecordTime), Text: textWithoutCode(in.Text), Question: "unmatched",
 	}
+	if c.answerCodeOff {
+		rec.Text = textKeepingNumbers(in.Text)
+	}
 	if in.Ref.ThreadID != "" {
 		replyTo := in.Ref.ThreadID
 		rec.ReplyTo = &replyTo
@@ -154,6 +157,18 @@ func textWithoutCode(text string) string {
 	return strings.Join(fields, " ")
 }
 
+// textKeepingNumbers is the message on one line with every six-digit number
+// kept, for answer-code off where no code is ever sent. Only a trailing
+// six-digit field is masked, because the ledger refuses an inbox record whose
+// last field is code-shaped (goal/channel.go validateChannelInbound).
+func textKeepingNumbers(text string) string {
+	fields := strings.Fields(text)
+	if n := len(fields); n > 0 && codeShaped(fields[n-1]) {
+		fields[n-1] = "[code]"
+	}
+	return strings.Join(fields, " ")
+}
+
 func codeShaped(field string) bool {
 	field = strings.TrimRight(field, ".,;:!?")
 	return len(field) == 6 && strings.Trim(field, "0123456789") == ""
@@ -178,31 +193,48 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 		return false, fmt.Errorf("inbox refused %s: the provider message id %q cannot name a record", updateName(in), in.Ref.ID)
 	}
 	draft, reason := draftInbound(c, in)
-	written, existing, res, err := publishInbound(c, ep, draft)
+	// A rejection's notice is queued before its commit, keyed by the
+	// record's path (the message id), so a kill after the commit still
+	// leaves it queued here; a kill before it means no commit, and the
+	// update comes again.
+	notices := noticesPath(c)
+	key := goal.ChannelInboxPath(c.Destination, &draft)
+	queue := func(reason string) error {
+		return queueNotice(notices, key, noticeFor(c, reason), draft.ReplyTo, in.ThreadID)
+	}
+	if draft.Outcome != "verified" {
+		if err := queue(reason); err != nil {
+			return false, err
+		}
+	}
+	written, existing, res, err := publishInbound(c, ep, draft, func() error { return queue("replayed code") })
 	if err != nil {
 		return false, fmt.Errorf("inbox refused %s: %w", updateName(in), err)
 	}
 	if res.Outcome == goal.OutcomeRejected {
 		skipped := draft
 		skipped.Text, skipped.Step, skipped.Outcome, skipped.Question = "", nil, "skipped", "unmatched"
-		reason = "unrecordable"
-		if written, existing, res, err = publishInbound(c, ep, skipped); err != nil {
+		if err := queue("unrecordable"); err != nil {
+			return false, err
+		}
+		if written, existing, res, err = publishInbound(c, ep, skipped, nil); err != nil {
 			return false, fmt.Errorf("inbox refused %s: %w", updateName(in), err)
 		}
 	}
-	notices := noticesPath(c)
 	switch res.Outcome {
 	case goal.OutcomeLost:
-		// A record this installation committed earlier and never got to
-		// notice (a kill between its commit and its notice) is noticed now.
-		if existing == nil || existing.Outcome == "verified" {
-			return false, nil
+		// The notice stays queued only when the record that won is a
+		// rejection this installation committed earlier; any other winner
+		// owns its own notice, or needs none.
+		own := false
+		if existing != nil && existing.Outcome != "verified" {
+			_, entryErr := goal.ReadEntry(c.RepoRoot, existing.Opid)
+			own = entryErr == nil
 		}
-		if _, err := goal.ReadEntry(c.RepoRoot, existing.Opid); err != nil {
-			return false, nil
+		if !own {
+			return false, dropNotice(notices, key)
 		}
-		path := goal.ChannelInboxPath(c.Destination, existing)
-		if err := queueNotice(notices, path, noticeFor(c, reasonFor(*existing, c.Now)), existing.ReplyTo, in.ThreadID); err != nil {
+		if err := queueNotice(notices, key, noticeFor(c, reasonFor(*existing, c.Now)), existing.ReplyTo, in.ThreadID); err != nil {
 			return false, err
 		}
 		return false, flushNotices(ctx, c, result)
@@ -214,13 +246,7 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 		return false, err
 	}
 	if written.Outcome == "verified" {
-		return true, nil
-	}
-	if written.Outcome == "replayed" {
-		reason = "replayed code"
-	}
-	if err := queueNotice(notices, goal.ChannelInboxPath(c.Destination, &written), noticeFor(c, reason), written.ReplyTo, in.ThreadID); err != nil {
-		return false, err
+		return true, dropNotice(notices, key)
 	}
 	if err := fail(c, "inbox-notice-pending"); err != nil {
 		return false, err
@@ -230,7 +256,7 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 
 // publishInbound runs one inbox Publish of draft under a fresh opid. It
 // returns the record as written and, on a loss, the record already there.
-func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound) (goal.ChannelInbound, *goal.ChannelInbound, goal.PublishResult, error) {
+func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound, onReplayed func() error) (goal.ChannelInbound, *goal.ChannelInbound, goal.PublishResult, error) {
 	ulid, err := goal.NewOperationULID()
 	if err != nil {
 		return draft, nil, goal.PublishResult{}, err
@@ -267,6 +293,11 @@ func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound) (
 				for _, other := range records {
 					if other.Step != nil && *other.Step == *draft.Step && other.MessageID != draft.MessageID {
 						written.Outcome = "replayed"
+						if onReplayed != nil {
+							if err := onReplayed(); err != nil {
+								return nil, err
+							}
+						}
 						break
 					}
 				}
@@ -358,16 +389,40 @@ func queueNotice(path, record, text string, replyTo *string, threadID string) er
 			return nil
 		}
 	}
-	for _, pending := range ledger.Pending {
-		if pending.Record == record {
-			return nil
-		}
-	}
 	notice := pendingNotice{Record: record, Text: text, ThreadID: threadID}
 	if replyTo != nil {
 		notice.ReplyTo = *replyTo
 	}
+	for i, pending := range ledger.Pending {
+		if pending.Record == record {
+			if pending == notice {
+				return nil
+			}
+			ledger.Pending[i] = notice
+			return writeJSON(path, ledger)
+		}
+	}
 	ledger.Pending = append(ledger.Pending, notice)
+	return writeJSON(path, ledger)
+}
+
+// dropNotice removes a queued notice whose message turned out to need none
+// from this installation.
+func dropNotice(path, record string) error {
+	ledger, err := readNotices(path)
+	if err != nil {
+		return err
+	}
+	kept := ledger.Pending[:0]
+	for _, pending := range ledger.Pending {
+		if pending.Record != record {
+			kept = append(kept, pending)
+		}
+	}
+	if len(kept) == len(ledger.Pending) {
+		return nil
+	}
+	ledger.Pending = kept
 	return writeJSON(path, ledger)
 }
 
