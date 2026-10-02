@@ -29,6 +29,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // mixedRunner runs git and the real engine, and answers only for the two
@@ -271,9 +272,5 @@ func buildEngine(t *testing.T, at string) {
 	if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("go", "build", "-o", at, "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem")
-	build.Dir = filepath.Join("..", "..", "..")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build the engine for the clone: %v\n%s", err, out)
-	}
+	testenv.Link(t, testenv.Engine(t), at)
 }

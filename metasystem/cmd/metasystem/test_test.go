@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -1043,11 +1044,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 
 func candidateResourceCustodyContext(t *testing.T) context.Context {
 	t.Helper()
-	executable := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", executable, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build resource custodian fixture: %v\n%s", err, output)
-	}
+	executable := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	return proofrun.WithResourceCustodyExecutable(context.Background(), executable)
 }
 
@@ -1320,10 +1317,7 @@ func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.
 func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t *testing.T) {
 	// The real bootstrap build, compiled from this module and run in each
 	// materialization as `go run ./cmd/devgate` would run it there.
-	devgate := filepath.Join(t.TempDir(), "devgate")
-	if output, err := exec.Command("go", "build", "-o", devgate, "../devgate").CombinedOutput(); err != nil {
-		t.Fatalf("build devgate: %v\n%s", err, output)
-	}
+	devgate := testenv.Link(t, testenv.Built(t, "./cmd/devgate"), filepath.Join(t.TempDir(), "devgate"))
 	cacheRoot := t.TempDir()
 	stamp := strings.Repeat("a", 40)
 	build := func(name string, args ...string) string {
@@ -2099,7 +2093,7 @@ func logFrozenCorpusEntryBreakdown(t *testing.T, root string) {
 // frozenCorpusGoCache is the Go build cache this test process compiles into.
 func frozenCorpusGoCache(t *testing.T) string {
 	t.Helper()
-	command := exec.Command("go", "env", "GOCACHE")
+	command := testenv.Go("env", "GOCACHE")
 	command.Env = gittree.ScrubbedEnviron()
 	output, err := command.Output()
 	cache := strings.TrimSpace(string(output))
@@ -2116,7 +2110,7 @@ func frozenCorpusGoCache(t *testing.T) string {
 // so the nested layout moves goal inputs as an adopted installation does.
 func writeFrozenCorpusEngineClosure(t *testing.T, moduleRoot, root, devgate, goCache string) {
 	t.Helper()
-	list := exec.Command("go", "list", "-deps", "-f",
+	list := testenv.Go("list", "-deps", "-f",
 		// Only the main module's packages are copied; a dependency outside it
 		// comes from the module cache. The package directory is made relative
 		// to the module directory go list itself reports, never to this
@@ -2387,7 +2381,7 @@ func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, phases *frozenCorpusP
 			enginebuild.StampLinkerFlags(input.candidateCommit), "-o", engine, "./cmd/metasystem"}},
 		{moduleRoot, gittree.ScrubbedEnviron(), []string{"build", "-buildvcs=false", "-o", devgate, "./cmd/devgate"}},
 	} {
-		command := exec.CommandContext(ctx, "go", build.args...)
+		command := testenv.GoContext(ctx, build.args...)
 		command.Dir, command.Env, command.WaitDelay = build.dir, build.environment, 10*time.Second
 		if output, buildErr := command.CombinedOutput(); buildErr != nil {
 			phase.fail(ctx, buildErr, output)
@@ -2591,11 +2585,7 @@ func TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngine
 	testingFixtureGit(t, root, "update-ref", landingRef, head)
 	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
 	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, ".")
-	if output, buildErr := build.CombinedOutput(); buildErr != nil {
-		t.Fatalf("build public flag-negative engine: %v\n%s", buildErr, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	public := proofFixture.command(nil, engine, "test", "plan", "--root", root, "--tree", tree, "--mode", "standard", "--purpose", "diagnostic")
 	public.Env = append(public.Env, "METASYSTEM_TRUSTED_POLICY_DECISION=1")
 	output, publicErr := public.CombinedOutput()

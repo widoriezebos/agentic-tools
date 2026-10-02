@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -1042,7 +1043,7 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	binaryFixture := pinProofBinaryFixture(t, controlRoot)
-	build := exec.Command("go", "build", "-o", engine, ".")
+	build := testenv.Go("build", "-o", engine, ".")
 	build.Dir = sourceDir
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build candidate section authorization CLI: %v\n%s", err, output)
@@ -1636,12 +1637,7 @@ func TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress(t *test
 	}
 	engine := os.Getenv("METASYSTEM_FIXTURE_EVENTS_BINARY")
 	if engine == "" {
-		engine = filepath.Join(t.TempDir(), "metasystem")
-		build := exec.Command("go", "build", "-p=1", "-o", engine, "./cmd/metasystem")
-		build.Dir = sourceRoot
-		if output, buildErr := build.CombinedOutput(); buildErr != nil {
-			t.Fatalf("build authenticated guard fixture engine: %v\n%s", buildErr, output)
-		}
+		engine = testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	}
 	if info, statErr := os.Stat(engine); statErr != nil || info.Mode()&0o111 == 0 {
 		t.Fatalf("authenticated guard fixture engine is not executable: %s: %v", engine, statErr)
@@ -2505,11 +2501,7 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := proofBinaryFixture{t: t}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build public legacy canary: %v\n%s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	result := filepath.Join(t.TempDir(), "result.json")
 	childOutput := filepath.Join(root, "child-ran")
@@ -2739,10 +2731,7 @@ func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *t
 	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	if output, err := exec.Command("go", "build", "-o", engine, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build public launcher-loss canary: %v\n%s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)

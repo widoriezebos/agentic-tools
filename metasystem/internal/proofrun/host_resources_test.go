@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // privateHostResources is an admission namespace and cap file of the test's
@@ -55,14 +56,7 @@ func isolatedHostResources(t *testing.T) (string, string) {
 
 func buildResourceCustodyEngine(t *testing.T) string {
 	t.Helper()
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	command := exec.Command("go", "build", "-p=2", "-o", engine, "./cmd/metasystem")
-	command.Dir = filepath.Clean(filepath.Join("..", ".."))
-	command.Env = append(os.Environ(), "GOMAXPROCS=2")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("build resource custodian engine: %v: %s", err, output)
-	}
-	return engine
+	return testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 }
 
 func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -306,7 +307,7 @@ func main(){
 	if err := os.WriteFile(workerSource, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("go", "build", "-p=2", "-o", worker, workerSource)
+	build := testenv.Go("build", "-p=2", "-o", worker, workerSource)
 	build.Env = append(os.Environ(), "GOMAXPROCS=2")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build detached worker: %v: %s", err, output)

@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -219,11 +220,12 @@ func realEngine(t *testing.T) string {
 	templates(t)
 	shared.engineOnce.Do(func() {
 		shared.engine = filepath.Join(shared.dir, "engine", "metasystem")
-		build := exec.Command("go", "build", "-buildvcs=false", "-o", shared.engine, "./cmd/metasystem")
-		build.Dir = moduleRoot(t)
-		if out, err := build.CombinedOutput(); err != nil {
-			shared.engineError = fmt.Errorf("%v: %s", err, out)
+		built := testenv.Engine(t)
+		if err := os.MkdirAll(filepath.Dir(shared.engine), 0o755); err != nil {
+			shared.engineError = err
+			return
 		}
+		shared.engineError = os.Link(built, shared.engine)
 	})
 	if shared.engineError != nil {
 		t.Fatalf("build the engine: %v", shared.engineError)

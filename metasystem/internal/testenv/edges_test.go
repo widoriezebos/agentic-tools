@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ import (
 // go/build still treats as constraints though no port ships them.
 func TestBuildConstraintAuditKnowsEveryToolchainName(t *testing.T) {
 	t.Parallel()
-	output, err := exec.Command("go", "tool", "dist", "list").Output()
+	output, err := Go("tool", "dist", "list").Output()
 	if err != nil {
 		t.Fatalf("go tool dist list: %v", err)
 	}

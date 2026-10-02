@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -1503,35 +1504,15 @@ func TestResumeChildRechecksFileMode(t *testing.T) {
 // permissive prompt checker, the armed pin, and the anchor seam. The
 // behavior directive, when given, rides the contract's stream text into
 // the prompt, which is how the fake host selects its behavior.
-var (
-	freshBinaryOnce sync.Once
-	freshBinaryPath string
-	freshBinaryErr  error
-)
+var ()
 
 // freshEngineBinary compiles cmd/metasystem from the CURRENT source into
 // a shared temporary location, once per test process.
 func freshEngineBinary(t *testing.T) string {
 	t.Helper()
-	freshBinaryOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "metasystem-test-binary.")
-		if err != nil {
-			freshBinaryErr = err
-			return
-		}
-		freshBinaryPath = filepath.Join(dir, "metasystem")
-		build := exec.Command("go", "build", "-o", freshBinaryPath, "./cmd/metasystem")
-		build.Dir = filepath.Join("..", "..")
-		if out, err := build.CombinedOutput(); err != nil {
-			freshBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
-		}
-	})
-	if freshBinaryErr != nil {
-		// A proof that silently vanishes is no proof:
-		// the wrapper certification REQUIRES the reviewed binary.
-		t.Fatalf("cannot build the engine binary from source: %v", freshBinaryErr)
-	}
-	return freshBinaryPath
+	// A proof that silently vanishes is no proof: the wrapper certification
+	// REQUIRES the reviewed binary, and Engine fails the test without it.
+	return testenv.Engine(t)
 }
 
 func buildFullCycleRoot(t *testing.T, behavior string) *Engine {

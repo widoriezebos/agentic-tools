@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // carriedDeliveryBed is the whole-owner landing bed prepared for a real
@@ -403,7 +404,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	// The testing owner runs only an enrolled engine built from this
 	// history: the batch e2e bed's stamped build and fixture enrollment.
 	stamp := goalSyncMutationGit(t, clone, "rev-parse", "HEAD")
-	stamped := exec.Command("go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", engine, ".")
+	stamped := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", engine, ".")
 	if output, err := stamped.CombinedOutput(); err != nil {
 		t.Fatalf("build stamped fixture engine: %v: %s", err, output)
 	}

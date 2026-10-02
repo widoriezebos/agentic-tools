@@ -528,7 +528,7 @@ func contextCostCandidateEngine(t *testing.T, declaredCandidate string) string {
 		}
 	}
 	environment = append(environment, "GOCACHE="+cache)
-	command := exec.Command("go", "build", "-o", candidate, "./cmd/metasystem")
+	command := testenv.Go("build", "-o", candidate, "./cmd/metasystem")
 	command.Dir = moduleRoot
 	command.Env = environment
 	if output, err := command.CombinedOutput(); err != nil {
@@ -544,7 +544,7 @@ func contextCostReaderHelper(t *testing.T) string {
 		t.Fatal(err)
 	}
 	helper := filepath.Join(t.TempDir(), "context-cost-reader.test")
-	command := exec.Command("go", "test", "-c", "-o", helper, "./internal/usage")
+	command := testenv.Go("test", "-c", "-o", helper, "./internal/usage")
 	command.Dir = moduleRoot
 	command.Env = os.Environ()
 	if output, err := command.CombinedOutput(); err != nil {

@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,7 +123,7 @@ func TestShippedTemplateSkillAssetsExist(t *testing.T) {
 func buildShippedEngine(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-o", engine, "./cmd/metasystem")
+	build := testenv.GoContext(ctx, "build", "-buildvcs=false", "-o", engine, "./cmd/metasystem")
 	build.Dir = shippedRoot(t)
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the shipped engine: %v\n%s", err, output)

@@ -2,8 +2,11 @@ package testpolicy
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/build"
+	"go/parser"
+	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -148,6 +151,7 @@ func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	untagged := map[string]map[string]bool{}
 	for _, group := range contract.Groups {
 		if group.Adapter != "go" || len(group.Tests) == 0 || string(group.Tests) == `"all"` {
 			continue
@@ -158,16 +162,15 @@ func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
 		}
 		available := map[string]bool{}
 		for _, pkg := range group.Packages {
-			command := exec.Command("go", "test", "-list", "^Test", "./"+pkg)
-			command.Dir = "../.."
-			output, err := command.Output()
-			if err != nil {
-				t.Fatalf("list untagged tests for group %s package %s: %v", group.ID, pkg, err)
-			}
-			for _, line := range strings.Fields(string(output)) {
-				if strings.HasPrefix(line, "Test") {
-					available[line] = true
+			declared, ok := untagged[pkg]
+			if !ok {
+				if declared, err = untaggedGoTests(filepath.Join("..", "..", filepath.FromSlash(pkg))); err != nil {
+					t.Fatalf("list untagged tests for group %s package %s: %v", group.ID, pkg, err)
 				}
+				untagged[pkg] = declared
+			}
+			for name := range declared {
+				available[name] = true
 			}
 		}
 		for _, name := range names {
@@ -175,6 +178,52 @@ func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
 				t.Errorf("go group %s names test %s which is absent without build tags", group.ID, name)
 			}
 		}
+	}
+}
+
+// untaggedGoTests is the top-level Test functions of the test files the
+// default build context (no build tags) selects in one package directory,
+// read from source: `go test -list` would compile every package's test
+// binary for this check under a full suite.
+func untaggedGoTests(directory string) (map[string]bool, error) {
+	listed, err := build.Default.ImportDir(directory, 0)
+	if err != nil {
+		return nil, err
+	}
+	declared := map[string]bool{}
+	for _, name := range append(append([]string(nil), listed.TestGoFiles...), listed.XTestGoFiles...) {
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, parser.SkipObjectResolution)
+		if err != nil {
+			return nil, err
+		}
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil && strings.HasPrefix(function.Name.Name, "Test") {
+				declared[function.Name.Name] = true
+			}
+		}
+	}
+	return declared, nil
+}
+
+func TestUntaggedGoTestsLeaveOutTaggedFiles(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	files := map[string]string{
+		"plain_test.go":  "package pkg\n\nimport \"testing\"\n\nfunc TestPlain(t *testing.T) {}\n\nfunc helper() {}\n",
+		"tagged_test.go": "//go:build batchtest\n\npackage pkg\n\nimport \"testing\"\n\nfunc TestTagged(t *testing.T) {}\n",
+		"x_test.go":      "package pkg_test\n\nimport \"testing\"\n\nfunc TestExternal(t *testing.T) {}\n",
+	}
+	for name, source := range files {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declared, err := untaggedGoTests(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]bool{"TestPlain": true, "TestExternal": true}; !reflect.DeepEqual(declared, want) {
+		t.Fatalf("untagged tests = %v, want %v", declared, want)
 	}
 }
 

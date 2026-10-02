@@ -164,7 +164,7 @@ func expectedStaticcheckCache(environment []string, goCache string) string {
 
 func disableGoTelemetryForFixture(t *testing.T, environment []string) {
 	t.Helper()
-	command := exec.Command("go", "telemetry", "off")
+	command := Go("telemetry", "off")
 	command.Env = environment
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("disable fixture Go telemetry: %v\n%s", err, output)
@@ -173,7 +173,7 @@ func disableGoTelemetryForFixture(t *testing.T, environment []string) {
 
 func readGoCacheEnvironment(t *testing.T, environment []string) map[string]string {
 	t.Helper()
-	command := exec.Command("go", "env", "-json", "GOCACHE", "GOMODCACHE", "GOPATH")
+	command := Go("env", "-json", "GOCACHE", "GOMODCACHE", "GOPATH")
 	command.Env = environment
 	output, err := command.CombinedOutput()
 	if err != nil {

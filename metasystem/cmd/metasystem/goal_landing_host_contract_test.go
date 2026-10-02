@@ -4,8 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/build"
+	"go/parser"
+	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -14,7 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -640,8 +643,7 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 				t.Errorf("retired section %s: replacement %s must name the ported tests", old.ID, retired.replacement)
 				continue
 			}
-			probeContract := testpolicy.Contract{SchemaVersion: current.SchemaVersion, Groups: []testpolicy.Group{probe}}
-			if err := proofrun.CheckNativeDiscovery(t.Context(), projectRoot, installation, probeContract, os.Environ()); err != nil {
+			if err := sourceDeclaresGoTests(projectRoot, probe); err != nil {
 				t.Errorf("retired section %s: replacement %s does not discover its ported tests: %v", old.ID, retired.replacement, err)
 			}
 			continue
@@ -807,8 +809,7 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			if err != nil {
 				t.Fatal(err)
 			}
-			probeContract := testpolicy.Contract{SchemaVersion: current.SchemaVersion, Groups: []testpolicy.Group{probe}}
-			if err := proofrun.CheckNativeDiscovery(t.Context(), projectRoot, installation, probeContract, os.Environ()); err != nil {
+			if err := sourceDeclaresGoTests(projectRoot, probe); err != nil {
 				t.Errorf("%s automatic test selection dropped mandatory legacy names: %v", old.ID, err)
 			}
 		}
@@ -839,6 +840,84 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		if !reflect.DeepEqual(old, now) {
 			t.Errorf("legacy group %s changed its native definition outside the reviewed migration fields", old.ID)
 		}
+	}
+}
+
+// sourceDeclaresGoTests is the native discovery check of one Go group with
+// named tests, read from source: each name must be a top-level function of a
+// test file that the group's build tags select in one of its packages. It
+// starts no toolchain; the whole-module go list the proof's own discovery
+// runs once killed this test under a full suite, and its catalog is not
+// what the check needs.
+func sourceDeclaresGoTests(projectRoot string, group testpolicy.Group) error {
+	all, names, err := testpolicy.GoTests(group)
+	if err != nil {
+		return err
+	}
+	if all {
+		return fmt.Errorf("testing group %s selects every test; name the tests to check", group.ID)
+	}
+	context := build.Default
+	context.BuildTags = append([]string(nil), group.BuildTags...)
+	declared := map[string]bool{}
+	for _, pkg := range group.Packages {
+		directory := filepath.Join(projectRoot, filepath.FromSlash(group.CWD), filepath.FromSlash(strings.TrimPrefix(pkg, "./")))
+		listed, err := context.ImportDir(directory, 0)
+		if err != nil {
+			return fmt.Errorf("testing group %s package %s: %w", group.ID, pkg, err)
+		}
+		for _, name := range append(append([]string(nil), listed.TestGoFiles...), listed.XTestGoFiles...) {
+			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, parser.SkipObjectResolution)
+			if err != nil {
+				return fmt.Errorf("testing group %s package %s: %w", group.ID, pkg, err)
+			}
+			for _, declaration := range file.Decls {
+				if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil {
+					declared[function.Name.Name] = true
+				}
+			}
+		}
+	}
+	var missing []string
+	for _, name := range names {
+		if !declared[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) != 0 {
+		return fmt.Errorf("testing group %s declares missing Go tests %s", group.ID, strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func TestSourceDeclaredGoTestsFollowTheGroupsBuildTags(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "pkg", "plain_test.go"), []byte("package pkg\n\nimport \"testing\"\n\nfunc TestPlain(t *testing.T) {}\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "pkg", "tagged_test.go"), []byte("//go:build batchtest\n\npackage pkg\n\nimport \"testing\"\n\nfunc TestTagged(t *testing.T) {}\n"), 0o644)
+	group := func(tags []string, names ...string) testpolicy.Group {
+		tests, err := json.Marshal(names)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return testpolicy.Group{ID: "probe", CWD: "metasystem", Packages: []string{"pkg"}, BuildTags: tags, Tests: tests}
+	}
+	if err := sourceDeclaresGoTests(root, group(nil, "TestPlain")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourceDeclaresGoTests(root, group(nil, "TestTagged")); err == nil || !strings.Contains(err.Error(), "TestTagged") {
+		t.Fatalf("an untagged group found a batchtest-only test: %v", err)
+	}
+	if err := sourceDeclaresGoTests(root, group([]string{"batchtest"}, "TestPlain", "TestTagged")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourceDeclaresGoTests(root, group(nil, "TestGone")); err == nil || !strings.Contains(err.Error(), "TestGone") {
+		t.Fatalf("a missing test passed: %v", err)
+	}
+	missingPackage := group(nil, "TestPlain")
+	missingPackage.Packages = []string{"absent"}
+	if err := sourceDeclaresGoTests(root, missingPackage); err == nil {
+		t.Fatal("an absent package passed")
 	}
 }
 
@@ -873,7 +952,9 @@ func TestGitAdapterGoManifestInventoryMatchesNativeGoList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("go", "list", "./...")
+	// The one native witness of this inventory in this package: it runs go
+	// list under the binary's toolchain slot.
+	command := testenv.Go("list", "./...")
 	command.Dir = module
 	output, err := command.CombinedOutput()
 	if err != nil {
