@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -78,6 +79,16 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		t.Logf("command=%q cwd=%s status=%d elapsed=%s\n%s", argv, cwd, code, time.Since(started), output)
 		return string(output), code
 	}
+	// buildStamped builds this source's engine at output, stamped with
+	// commit, under the test binary's toolchain slot.
+	buildStamped := func(cwd, commit, output string) {
+		t.Helper()
+		build := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", output, "./cmd/metasystem")
+		build.Dir, build.Env = cwd, append([]string(nil), environment...)
+		if combined, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build the stamped engine in %s: %v\n%s", cwd, err, combined)
+		}
+	}
 	mustRun := func(cwd string, argv ...string) string {
 		t.Helper()
 		output, code := run(cwd, nil, argv...)
@@ -124,7 +135,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	}
 	commit := runReceiptGit(t, source, "rev-parse", "HEAD")
 	sourceEngine := filepath.Join(source, "bin", "metasystem")
-	mustRun(source, "go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", sourceEngine, "./cmd/metasystem")
+	buildStamped(source, commit, sourceEngine)
 
 	prepare := func(name, runtimes string, copySkills bool) string {
 		t.Helper()
@@ -187,7 +198,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		// The actual reviewed source is committed before resolving the policy
 		// base, and these compiled bytes carry that source's exact commit stamp.
 		engine := filepath.Join(target, "bin", "metasystem")
-		mustRun(target, "go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", engine, "./cmd/metasystem")
+		buildStamped(target, commit, engine)
 		digest, err := fileSHA256(engine)
 		if err != nil {
 			t.Fatal(err)

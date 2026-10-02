@@ -795,7 +795,7 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 	}
 	previous, alive := liveRunner(top)
 	if alive {
-		if err := stopRunnerForReplacement(top, previous); err != nil {
+		if err := stopRunnerForReplacement(top, previous, syscall.Kill); err != nil {
 			return RunnerRepairOutcome{}, err
 		}
 	}
@@ -874,7 +874,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if err != nil {
 		return outcome, &ArmStepError{Step: ArmStepLock, Err: fmt.Errorf("open arm lock %s: %w", armLockPath, err)}
 	}
-	defer armLock.Close()
+	defer unlockAndClose(armLock)
 	if beforeArmLock != nil {
 		beforeArmLock()
 	}
@@ -947,7 +947,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		}
 		outcome.StoppedRunnerPid = rec.Pid
 		outcome.Stage = StageStopAttempted
-		if err := stopRunnerForReplacement(top, rec); err != nil {
+		if err := stopRunnerForReplacement(top, rec, deps.signal); err != nil {
 			return outcome, err
 		}
 		outcome.Stage = StageStopped
@@ -1069,22 +1069,26 @@ func runnerLaunchArguments(repoRoot, lineage string) []string {
 }
 
 var runnerStopWriter = os.WriteFile
-var runnerSignal = syscall.Kill
 var runnerNow = time.Now
 var runnerSleep = time.Sleep
 
 const runnerReplacementKillWait = 2 * time.Second
 
-func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
+// stopRunnerForReplacement stops a runner the caller replaces; signal is
+// the per-call sender; nil resolves to syscall.Kill.
+func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error) error {
+	if signal == nil {
+		signal = syscall.Kill
+	}
 	if err := runnerStopWriter(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
 		return fmt.Errorf("write restart marker before stopping runner pid %d: %w", runner.Pid, err)
 	}
-	if err := runnerSignal(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := signal(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 		return fmt.Errorf("stop runner pid %d for replacement: %w", runner.Pid, err)
 	}
 	// A stalled runner may itself be stopped, so let it receive the termination
 	// signal before deciding whether a hard stop is necessary.
-	_ = runnerSignal(int(runner.Pid), syscall.SIGCONT)
+	_ = signal(int(runner.Pid), syscall.SIGCONT)
 	deadline := runnerNow().Add(runnerReplacementKillWait)
 	for runnerNow().Before(deadline) {
 		if _, alive := liveRunner(repoRoot); !alive {
@@ -1093,7 +1097,7 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
 		runnerSleep(50 * time.Millisecond)
 	}
 	if current, alive := liveRunner(repoRoot); alive && current.Pid == runner.Pid {
-		if err := runnerSignal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := signal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
 		}
 	}
@@ -1224,6 +1228,11 @@ func waitForRunnerGone(root string, record RunnerRecord, wait time.Duration) boo
 // Disarm stops the runner through its orderly marker, then TERM and KILL,
 // re-proving the recorded identity beside every signal.
 func Disarm(repoRoot string) (RunnerStopOutcome, error) {
+	return disarmSignalling(repoRoot, syscall.Kill)
+}
+
+// disarmSignalling is Disarm with the signal sender handed in per call.
+func disarmSignalling(repoRoot string, signal func(int, syscall.Signal) error) (RunnerStopOutcome, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return RunnerStopOutcome{}, err
@@ -1254,7 +1263,7 @@ func Disarm(repoRoot string) (RunnerStopOutcome, error) {
 		return outcome, nil
 	}
 	outcome.Signal = "term"
-	if err := runnerSignal(int(rec.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := signal(int(rec.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 		outcome.Reason = "TERM failed: " + err.Error()
 		return outcome, err
 	}
@@ -1275,7 +1284,7 @@ func Disarm(repoRoot string) (RunnerStopOutcome, error) {
 		return outcome, nil
 	}
 	outcome.Signal = "kill"
-	if err := runnerSignal(int(rec.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+	if err := signal(int(rec.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 		outcome.Reason = "KILL failed: " + err.Error()
 		return outcome, err
 	}

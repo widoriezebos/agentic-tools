@@ -20,7 +20,7 @@ func TestCoverageReceiptProducerConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}))
 
 	if err != nil {
@@ -176,7 +176,7 @@ func TestCoverageEligibilityKeepsAuthenticatedForeignDescendantOutOfProducerSlot
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}))
 
 	if err != nil {
@@ -213,7 +213,7 @@ func TestCoverageEligibilityAcceptsEquivalentSnapshotPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}))
 
 	if err != nil {
@@ -317,7 +317,7 @@ func completeCoverageAt(t *testing.T, root string, identity ProofIdentity) (Atte
 	// refusal without an error, which would leave coverage with no attempt.
 	request := WithTestHostAdmissionDirectory(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}), filepath.Join(t.TempDir(), "host-admission"))
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
 	}

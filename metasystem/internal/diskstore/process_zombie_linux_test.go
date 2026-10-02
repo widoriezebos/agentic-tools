@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,7 +37,7 @@ func TestOwnerGroupVerdictIgnoresAZombieMember(t *testing.T) {
 		t.Fatalf("the zombie member's group reads %d, %v; want %d", group, err, pid)
 	}
 	record := Record{OwnerGroup: int64(pid), OwnerSession: int64(pid)}
-	if verdict := ownerGroupVerdict(record); verdict.Decision != Release {
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{int64(pid)}); verdict.Decision != Release {
 		t.Fatalf("a zombie in the owner's session keeps the root: %+v", verdict)
 	}
 }
@@ -56,7 +57,7 @@ func TestOwnerGroupVerdictKeepsForARunningMember(t *testing.T) {
 	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
 	pid := member.Process.Pid
 	record := Record{OwnerGroup: int64(pid), OwnerSession: int64(pid)}
-	if verdict := ownerGroupVerdict(record); verdict.Decision != Keep || !strings.Contains(verdict.Reason, "is alive") {
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{int64(pid)}); verdict.Decision != Keep || !strings.Contains(verdict.Reason, "is alive") {
 		t.Fatalf("a running member in the owner's session does not keep the root: %+v", verdict)
 	}
 }

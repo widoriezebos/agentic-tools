@@ -38,7 +38,7 @@ func newReuseFixture(t *testing.T) *reuseFixture {
 func (f *reuseFixture) reserve(goalID string, revision uint64, startedAt time.Time, plan string) Attempt {
 	f.t.Helper()
 	identity := BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:" + plan})
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: goalID, GoalRevision: revision, AccountingRevision: revision,
+	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: goalID, GoalRevision: revision, AccountingRevision: revision,
 		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: startedAt}))
 
 	if err != nil {
@@ -191,7 +191,7 @@ func TestExecuteAfreshNeverAnswersReusableSuccess(t *testing.T) {
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || decided {
 		t.Fatalf("an execute-afresh admission still answered without a child: %+v err=%v", decision, err)
 	}
-	fresh, decision, err := ReserveLocked(candidateAdmission(request))
+	fresh, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || fresh.AttemptID == "" || fresh.PreviousAttempt != "" {
 		t.Fatalf("an execute-afresh admission did not reserve a fresh attempt: %+v %+v err=%v", fresh, decision, err)
 	}
@@ -304,7 +304,7 @@ func TestExactReuseYieldsToANewerObservationOnTheSeat(t *testing.T) {
 func TestExactReuseFollowsTheCandidatePair(t *testing.T) {
 	f := newReuseFixture(t)
 	identity := BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:candidate"})
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+	attempt, _, err := reserveLocked(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: "authority-c", GoalRevision: 4, AccountingRevision: 3,
 		CandidateGoalID: "candidate-x", CandidateRevision: 7, CandidateTree: strings.Repeat("b", 40),
 		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: f.now})

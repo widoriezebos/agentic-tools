@@ -47,18 +47,20 @@ type fixtureTB interface {
 }
 
 type ProcessFixture struct {
-	t         fixtureTB
-	key       identity.FixtureKey
-	tag       string
-	prober    identity.Prober
-	signal    identity.SignalFunc
-	refs      []identity.Ref
-	scan      func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
-	held      map[identity.Ref]bool
-	released  map[identity.Ref]bool
-	records   string
-	leash     *os.File
-	waitBound time.Duration
+	t        fixtureTB
+	key      identity.FixtureKey
+	tag      string
+	prober   identity.Prober
+	signal   identity.SignalFunc
+	refs     []identity.Ref
+	scan     func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
+	held     map[identity.Ref]bool
+	released map[identity.Ref]bool
+	records  string
+	leash    *os.File
+	// unkilledWaitBound bounds teardown's wait for a child it did not
+	// SIGKILL: an unproven or refused child's exit is not guaranteed.
+	unkilledWaitBound time.Duration
 }
 
 func Fixture(t testing.TB) *ProcessFixture {
@@ -118,7 +120,7 @@ func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, cu
 	if err != nil {
 		t.Fatalf("create process fixture for test name %q: %v", testName, err)
 	}
-	waitBound, err := testenv.FixtureExitWaitBound()
+	unkilledWaitBound, err := testenv.FixtureExitWaitBound()
 	if err != nil {
 		t.Fatalf("derive process fixture exit bound: %v", err)
 	}
@@ -129,7 +131,7 @@ func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, cu
 	fixture := &ProcessFixture{
 		t: t, key: key, tag: identity.FixtureOwnerEnv + "=" + encoded,
 		prober: prober, signal: signal, scan: identity.FixtureSurvivors,
-		held: make(map[identity.Ref]bool), released: make(map[identity.Ref]bool), leash: leash, waitBound: waitBound,
+		held: make(map[identity.Ref]bool), released: make(map[identity.Ref]bool), leash: leash, unkilledWaitBound: unkilledWaitBound,
 	}
 	return fixture
 }
@@ -293,28 +295,58 @@ func (f *ProcessFixture) record(pid int, held bool) {
 	f.appendRecord('+', exact.Ref())
 }
 
-func (f *ProcessFixture) cleanup() {
+func (f *ProcessFixture) cleanup() { f.teardown(context.Background()) }
+
+// teardown kills every recorded child and every certain key survivor, then
+// waits for each to exit. A child this teardown SIGKILLed always exits, so its
+// wait ends on ctx alone: production teardown passes a context that never
+// ends, failure-path tests an already-cancelled one. A child it did not kill
+// (unproven, refused, or already gone) keeps unkilledWaitBound, because its
+// exit is not guaranteed.
+func (f *ProcessFixture) teardown(ctx context.Context) {
 	defer f.closeLeash()
+	var killed, unkilled []identity.Ref
 	for _, ref := range f.refs {
-		f.stopRecordedChild(ref, f.held[ref])
+		if f.stopRecordedChild(ref, f.held[ref]) {
+			killed = append(killed, ref)
+		} else {
+			unkilled = append(unkilled, ref)
+		}
 	}
-	f.waitForExits(f.refs)
-	f.reapKeySurvivors()
+	f.waitForSplitExits(ctx, killed, unkilled)
+	f.reapKeySurvivors(ctx)
 }
 
-func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
+// waitForSplitExits waits for the killed children on ctx and for the
+// unkilled ones within unkilledWaitBound of it.
+func (f *ProcessFixture) waitForSplitExits(ctx context.Context, killed, unkilled []identity.Ref) {
+	f.waitForExits(ctx, killed)
+	bounded, cancel := withExitBound(ctx, f.unkilledWaitBound)
+	defer cancel()
+	f.waitForExits(bounded, unkilled)
+}
+
+// withExitBound is the one bounded exit wait: AwaitExactExit and teardown's
+// wait for a child it did not kill.
+func withExitBound(parent context.Context, bound time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, bound)
+}
+
+// stopRecordedChild SIGKILLs ref when it is still the recorded child and
+// reports whether that signal was delivered.
+func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) bool {
 	exact, state, err := f.prober.Probe(ref.Pid)
 	if err == nil && (state == identity.Dead || state == identity.Alive && !identity.SameIdentity(exact, ref)) {
 		f.release(ref)
-		return
+		return false
 	}
 	if err != nil || state != identity.Alive {
 		f.t.Errorf("child identity unproven at teardown: ref=%+v", ref)
-		return
+		return false
 	}
 	if exact.Zombie {
 		f.release(ref)
-		return
+		return false
 	}
 	signalErr := identity.SignalExact(f.prober, ref, syscall.SIGKILL, f.signal)
 	if signalErr == identity.ErrUninspectable {
@@ -325,14 +357,15 @@ func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 	if !held {
 		f.t.Errorf("finished child found running at teardown: pid=%d exe=%q argv=%q", ref.Pid, exact.Exe, exact.Argv)
 	}
+	return signalErr == nil
 }
 
-func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
-	pending := awaitExits(f.prober, refs, f.waitBound, f.release)
+func (f *ProcessFixture) waitForExits(ctx context.Context, refs []identity.Ref) {
+	pending := awaitExits(ctx, f.prober, refs, f.release)
 	for _, ref := range sortedPendingRefs(pending) {
 		last := pending[ref]
-		f.t.Errorf("child did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
-			f.waitBound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
+		f.t.Errorf("child did not exit before teardown's wait ended (%v): ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
+			ctx.Err(), ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
 	}
 }
 
@@ -344,14 +377,13 @@ type exitObservation struct {
 }
 
 // awaitExits probes each exact identity until it has exited (gone, a zombie,
-// or its pid now held by another process) or bound elapses, calling exited
-// for each as it goes. It returns the identities still present at the bound
+// or its pid now held by another process) or ctx ends, calling exited for
+// each as it goes. It returns the identities still present when ctx ended
 // with their last probe; an unknown liveness or a probe error stays pending.
-func awaitExits(prober identity.Prober, refs []identity.Ref, bound time.Duration, exited func(identity.Ref)) map[identity.Ref]exitObservation {
+func awaitExits(ctx context.Context, prober identity.Prober, refs []identity.Ref, exited func(identity.Ref)) map[identity.Ref]exitObservation {
 	observed := make(map[identity.Ref]exitObservation, len(refs))
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.After(bound)
 	for {
 		pending := map[identity.Ref]exitObservation{}
 		for _, ref := range refs {
@@ -368,7 +400,7 @@ func awaitExits(prober identity.Prober, refs []identity.Ref, bound time.Duration
 		}
 		select {
 		case <-ticker.C:
-		case <-deadline:
+		case <-ctx.Done():
 			return pending
 		}
 	}
@@ -395,8 +427,12 @@ func AwaitExactExit(prober identity.Prober, ref identity.Ref) error {
 	return awaitExactExitWithin(prober, ref, bound)
 }
 
+// awaitExactExitWithin keeps a bound: it asserts an exit that someone else's
+// cleanup should cause, so a survivor must fail rather than wait forever.
 func awaitExactExitWithin(prober identity.Prober, ref identity.Ref, bound time.Duration) error {
-	if pending := awaitExits(prober, []identity.Ref{ref}, bound, nil); len(pending) != 0 {
+	ctx, cancel := withExitBound(context.Background(), bound)
+	defer cancel()
+	if pending := awaitExits(ctx, prober, []identity.Ref{ref}, nil); len(pending) != 0 {
 		last := pending[ref]
 		return fmt.Errorf("process did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
 			bound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
@@ -434,13 +470,13 @@ func (f *ProcessFixture) appendRecord(operation byte, ref identity.Ref) {
 	}
 }
 
-func (f *ProcessFixture) reapKeySurvivors() {
+func (f *ProcessFixture) reapKeySurvivors(ctx context.Context) {
 	survivors, err := f.scan(f.key)
 	if err != nil {
 		f.t.Errorf("scan process fixture survivors: %v", err)
 		return
 	}
-	var reaped []identity.Ref
+	var killed, unkilled []identity.Ref
 	for _, survivor := range survivors {
 		exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
 		if probeErr == nil && state == identity.Alive && identity.SameIdentity(exact, survivor.Ref) && exact.Zombie {
@@ -457,9 +493,13 @@ func (f *ProcessFixture) reapKeySurvivors() {
 			f.t.Errorf("fixture survivor signal failed for ref=%+v: %v", survivor.Ref, signalErr)
 		}
 		f.t.Errorf("unrecorded fixture child found running at teardown: pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv)
-		reaped = append(reaped, survivor.Ref)
+		if signalErr == nil {
+			killed = append(killed, survivor.Ref)
+		} else {
+			unkilled = append(unkilled, survivor.Ref)
+		}
 	}
-	f.waitForExits(reaped)
+	f.waitForSplitExits(ctx, killed, unkilled)
 }
 
 func (f *ProcessFixture) closeLeash() {

@@ -146,7 +146,7 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 	loop.Chain, loop.Goal, loop.Round = chain.Root, chain.Goal, chain.NewestRound
 	loop.Status = recordText(chain.Newest, "status")
 	loop.Critic = roundModel(roots, chain.Root, chain.NewestRound)
-	loop.Limit = designCritiqueRounds
+	loop.Limit = reviewRoundCeiling(roots.Installation)
 	if root, err := readJobRecord(roots.Installation, chain.Root); err == nil {
 		if limit, ok := root["reviewRoundLimit"].(float64); ok && limit >= 1 {
 			loop.Limit = int64(limit)

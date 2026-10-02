@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // diskCleanBed is an installation with the shipped trim defaults, a
@@ -30,6 +31,9 @@ func newDiskCleanBed(t *testing.T) diskCleanBed {
 		userCacheDir: func() (string, error) { return bed.userCache, nil },
 		stateDir:     bed.state,
 		now:          func() time.Time { return diskCleanNow },
+		// The bed starts no process: disk clean's sweep and use census read
+		// an empty table, never the host's.
+		processes: identity.ListedProcessTable{},
 	}
 	bed.owners = owners
 	return bed
@@ -147,12 +151,11 @@ func witnessDiskTrimRepeat(t *testing.T) {
 	bed.entry(t, "staticcheck", "01/kept-a", 100, 3*24*time.Hour)
 	before := idemTreeDigest(t, bed.userCache)
 	for run := 1; run <= 2; run++ {
+		// Each pass unlocks its trim lock before it closes it, so no fork copy
+		// keeps it: the repeat finds the lock free (goal no-flaky-tests,
+		// cluster C).
 		code, result, printed := bed.run(t, "--go-cache")
-		// A repeat may meet the trim lock the first run's pass still holds
-		// on a loaded host: that answer is a success too, as long as the
-		// caches are unchanged (checked below).
-		settled := strings.Contains(result.Summary, "nothing removed") || run > 1 && strings.Contains(result.Summary, "another steward is trimming")
-		if code != 0 || result.Outcome != intentConfirmed || !settled {
+		if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "nothing removed") {
 			t.Fatalf("disk clean %d = %d %s", run, code, printed)
 		}
 		idemSameTree(t, "a repeated disk clean", before, idemTreeDigest(t, bed.userCache))
@@ -313,5 +316,16 @@ func TestDiskTrimLineSaysTheKeepWindowYieldsOverTheCap(t *testing.T) {
 				t.Fatalf("line %q; want it to say %q: %v", line, plain, tc.says)
 			}
 		})
+	}
+}
+
+// disk clean's default use census reads the process table its owners are
+// given: an empty table is a complete census of nothing, whatever runs on
+// the host.
+func TestDiskCleanDefaultCensusReadsTheOwnersTable(t *testing.T) {
+	t.Parallel()
+	census := diskOwners{processes: identity.ListedProcessTable{}}.withDefaults().census()
+	if !census.Complete() || census.Count != 0 || len(census.NotOurs) != 0 {
+		t.Fatalf("the census of an empty table = %+v; want complete and empty", census)
 	}
 }

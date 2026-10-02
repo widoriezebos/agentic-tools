@@ -1,9 +1,9 @@
 package gopackages
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"go/build"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -89,7 +89,7 @@ func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T
 	if err != nil || slices.Contains(cgoDisabled.Packages, "./cgoonly") || !slices.Contains(cgoDisabled.Packages, "./onlytest") {
 		t.Fatalf("cgo-disabled/test-only inventory = %+v err=%v", cgoDisabled, err)
 	}
-	listed := exec.Command("go", "list", "./...")
+	listed := testenv.Go("list", "./...")
 	listed.Dir = manifestFixture.candidate
 	listed.Env = append(os.Environ(), "CGO_ENABLED=0")
 	output, err := listed.CombinedOutput()

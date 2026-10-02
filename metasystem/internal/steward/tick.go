@@ -353,6 +353,7 @@ func defaultTickContinuationDependencies() tickContinuationDependencies {
 		openWork: openWorkDependencies{
 			NewWorld:                  goal.NewWorld,
 			ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+			HandoffProber:             identity.KernelProber{},
 		},
 		resolveMachine: goal.ResolveMachine,
 		resolveLayout:  stateroot.ResolveLayout,

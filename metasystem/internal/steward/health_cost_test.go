@@ -70,7 +70,7 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	started := time.Now()
 	first, coldWork := previewHealthAtWithWork(root, now)
-	cold := time.Since(started)
+	t.Logf("hook preview synthetic volume: cold=%s", time.Since(started))
 	appended := syntheticTranscriptLine(t, root, "seat-request-appended")
 	file, err := os.OpenFile(warmTranscript, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -86,9 +86,7 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 	started = time.Now()
 	cpuBefore := processCPUTime()
 	second, warmWork := previewHealthAtWithWork(root, now.Add(time.Minute))
-	warm := time.Since(started)
-	warmCPU := processCPUTime() - cpuBefore
-	fmt.Printf("hook preview synthetic volume: cold=%s warm=%s warm-cpu=%s cold-work=%+v warm-work=%+v\n", cold, warm, warmCPU, coldWork, warmWork)
+	t.Logf("hook preview synthetic volume: warm=%s warm-cpu=%s cold-work=%+v warm-work=%+v", time.Since(started), processCPUTime()-cpuBefore, coldWork, warmWork)
 	if len(first.Roles) != len(healthRoleOrder) || len(second.Roles) != len(healthRoleOrder) {
 		t.Fatalf("synthetic health preview omitted roles: cold=%d warm=%d", len(first.Roles), len(second.Roles))
 	}

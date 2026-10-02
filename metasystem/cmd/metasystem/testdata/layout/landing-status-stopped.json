@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
+  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; 0 waiting, 0 returned in the queue",
   "data": {
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
@@ -31,7 +31,11 @@ exit 0
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
     "paused": true,
-    "agent_alive": false
+    "agent_alive": false,
+    "queue": [],
+    "running_proof": null,
+    "last_proof": null,
+    "last_push": null
   }
 }
 

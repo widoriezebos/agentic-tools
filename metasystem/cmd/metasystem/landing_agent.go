@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
@@ -173,13 +174,15 @@ func (a landingAgent) reapOutage(id string) error {
 }
 
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
-// of self (simple lane §1, rail 2): it starts the agent when the lane's
-// queue is not empty, the lane is not paused and none is alive. Its one
-// hold is a standing provider outage at the lane installation, and each
-// ended launch is reaped for its outage.
+// of self (simple lane §1, rail 2): it starts the agent when the plain
+// lane's queue holds work (queued, proof-finished), the lane is not paused
+// and none is alive. Its holds are a proof that runs and a standing
+// provider outage at the lane installation, and each ended launch is
+// reaped for its outage.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
-	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self,
+	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
 		Holds: []func(string) (string, error){
+			plain.KeeperProofHold,
 			func(root string) (string, error) {
 				if mark, standing := outage.StandingAt(batch.ModuleRoot(root), agent.now()); standing {
 					return fmt.Sprintf("the model provider is limited or overloaded (%s since %s); it starts when the provider recovers", mark.LastClass, lane.LocalText(mark.Since)), nil

@@ -44,7 +44,13 @@ type deliveryBed struct {
 
 func newDeliveryBed(t *testing.T) *deliveryBed {
 	t.Helper()
-	bed := newDeliveryBedWith(t, nil)
+	return newDeliveryBedAmended(t, nil)
+}
+
+// newDeliveryBedAmended is newDeliveryBed over an amended goal file.
+func newDeliveryBedAmended(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
+	t.Helper()
+	bed := newDeliveryBedWith(t, amend)
 	// The landing gate is not what these beds prove: its own beds run the
 	// production gate over the ledger (intent_landing_gate_test.go).
 	bed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }

@@ -50,6 +50,11 @@ func (p *sequenceProbe) Probe(int64) (identity.Exact, identity.Liveness, error) 
 	return p.exacts[index], p.states[index], nil
 }
 
+// watchdogFixtureNow is the instant the watchdog fixtures are written
+// around. Every watchdog read of the time goes through an injected clock or
+// compares recorded identities, so the fixtures need no reading of the wall.
+var watchdogFixtureNow = time.Date(2030, time.January, 2, 3, 4, 5, 0, time.UTC)
+
 type pidProbe struct{ started int64 }
 
 func (p pidProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
@@ -62,7 +67,7 @@ func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 	if err := testexec.WriteFile(blocker, []byte("#!/usr/bin/env bash\nexec sleep 2\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	timerCalls := 0
 	options := WatchdogOptions{
 		Suite: "fixture", Root: root, ProgressPath: "progress", DonePath: "done",
@@ -196,7 +201,7 @@ func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) 
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{logPath}}); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now().Add(-time.Minute)
+	started := watchdogFixtureNow.Add(-time.Minute)
 	if err := AppendSectionEvent(progress, SectionEvent{
 		Suite: "fixture", Section: "printing", Event: "start", At: started.UTC().Format(time.RFC3339Nano), Depth: 0,
 	}); err != nil {
@@ -260,14 +265,14 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 			t.Fatal(err)
 		}
 		if err := AppendSectionEvent(progress, SectionEvent{Suite: "fixture", Section: "quiet", Event: "start",
-			At: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano), Depth: 0}); err != nil {
+			At: watchdogFixtureNow.Add(-time.Hour).UTC().Format(time.RFC3339Nano), Depth: 0}); err != nil {
 			t.Fatal(err)
 		}
 		preserve := filepath.Join(root, "preserve.sh")
 		writeExecutable(t, preserve, "#!/usr/bin/env bash\necho bounded-copy-completed\n")
 		return root, progress, logPath
 	}
-	started := time.Now().Add(-time.Minute)
+	started := watchdogFixtureNow.Add(-time.Minute)
 	options := func(root, progress, logPath string, shutdowns *int) WatchdogOptions {
 		clock := &watchdogTestClock{now: started.Add(2 * time.Hour)}
 		return WatchdogOptions{
@@ -299,9 +304,9 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 	t.Run("a verdict followed by an end does not end a later invocation of the section", func(t *testing.T) {
 		root, progress, logPath := newBed(t)
 		for _, progressEvent := range []SectionEvent{
-			{Suite: "fixture", Section: "quiet", Event: "verdict", At: time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: "dead"},
-			{Suite: "fixture", Section: "quiet", Event: "end", At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
-			{Suite: "fixture", Section: "quiet", Event: "start", At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
+			{Suite: "fixture", Section: "quiet", Event: "verdict", At: watchdogFixtureNow.Add(-2 * time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: "dead"},
+			{Suite: "fixture", Section: "quiet", Event: "end", At: watchdogFixtureNow.Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
+			{Suite: "fixture", Section: "quiet", Event: "start", At: watchdogFixtureNow.Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
 		} {
 			if err := AppendSectionEvent(progress, progressEvent); err != nil {
 				t.Fatal(err)
@@ -345,7 +350,7 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
+		attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
 			GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
 
 		if err != nil {
@@ -389,7 +394,7 @@ func TestRunWatchdogReturnsOnDoneAndValidatesBounds(t *testing.T) {
 }
 
 func TestSuiteSignalsReauthenticateImmediatelyAndAbortOnMismatch(t *testing.T) {
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	matching := identity.Exact{Pid: 999997, StartedAt: time.Unix(started, 0)}
 	recycled := identity.Exact{Pid: 999997, StartedAt: time.Unix(started+1, 0)}
 	probe := &sequenceProbe{
@@ -413,7 +418,7 @@ func TestSuiteSignalsReauthenticateImmediatelyAndAbortOnMismatch(t *testing.T) {
 }
 
 func TestGuardMemberSignalsReauthenticateAndAbortOnMismatch(t *testing.T) {
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	matching := identity.Exact{Pid: 999996, StartedAt: time.Unix(started, 0)}
 	recycled := identity.Exact{Pid: 999996, StartedAt: time.Unix(started+1, 0)}
 	probe := &sequenceProbe{
@@ -441,7 +446,7 @@ func TestExecutionGuardSweepSignalsExactDetachedMember(t *testing.T) {
 	if err := os.MkdirAll(guard, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	record := fmt.Sprintf(`{"members":[{"pid":999998,"pidStartedAt":%d}]}`, started)
 	if err := os.WriteFile(filepath.Join(guard, "owner.json"), []byte(record), 0o600); err != nil {
 		t.Fatal(err)
@@ -472,7 +477,7 @@ func TestExecutionGuardSweepContinuesAfterMemberFailure(t *testing.T) {
 	if err := os.MkdirAll(guard, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	record := fmt.Sprintf(`{"members":[{"pid":999991,"pidStartedAt":%d},{"pid":999992,"pidStartedAt":%d}]}`, started, started)
 	if err := os.WriteFile(filepath.Join(guard, "owner.json"), []byte(record), 0o600); err != nil {
 		t.Fatal(err)
@@ -502,7 +507,7 @@ func TestExecutionGuardSweepContinuesAfterMemberFailure(t *testing.T) {
 func TestRecycledSuiteIdentityAuthorizesNoKillAction(t *testing.T) {
 	var signals int
 	var shutdowns int
-	started := time.Now().Add(-time.Minute).Unix()
+	started := watchdogFixtureNow.Add(-time.Minute).Unix()
 	options := WatchdogOptions{
 		Suite: "fixture", Root: t.TempDir(), ProgressPath: "progress", DonePath: "done",
 		LogPaths: []string{"log"}, SuiteIdentity: identity.Ref{Pid: 71, StartedAtSec: started},

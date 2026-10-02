@@ -30,8 +30,10 @@ type execAllowance struct {
 var lawfulExecPrograms = map[string]execAllowance{
 	"git": {reason: "the repository is git's: no in-module Go library reads or writes it, so git is the version-control adapter every owner drives"},
 	"go": {
-		files:  []string{"cmd/devgate/main.go", "cmd/metasystem/proof_run.go", "cmd/metasystem/intent_adopt.go", "cmd/metasystem/landing_path.go"},
-		reason: "the Go toolchain builds and runs the engine and the development gate: a supervised launch of the language adapter",
+		files: []string{"cmd/devgate/main.go", "cmd/metasystem/proof_run.go", "cmd/metasystem/intent_adopt.go", "cmd/metasystem/landing_path.go",
+			"internal/testenv/toolchain.go"},
+		reason: "the Go toolchain builds and runs the engine and the development gate: a supervised launch of the language adapter; " +
+			"internal/testenv/toolchain.go: test support, the one place tests start the toolchain, under a per-binary slot",
 	},
 	"bash": {
 		files:  []string{"internal/landing/receipt.go", "internal/contract/measure.go", "internal/testutil/"},
@@ -43,8 +45,9 @@ var lawfulExecPrograms = map[string]execAllowance{
 			"Go without cgo has no confstr, and the path is derived from the user's directory-services UUID, not a file the engine can read",
 	},
 	"/bin/sh": {
-		files:  []string{"internal/testutil/"},
-		reason: "test support drives a fixture script; never production decision code",
+		files: []string{"internal/testutil/", "internal/landing/plain/prove.go"},
+		reason: "test support drives a fixture script; never production decision code. " +
+			"internal/landing/plain/prove.go: adapter: runs the project's configured landing.prove.command",
 	},
 }
 

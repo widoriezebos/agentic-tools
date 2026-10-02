@@ -71,15 +71,16 @@ func TestRetroDebtIsDeadUntilRetroReceiptLands(t *testing.T) {
 
 func TestUnknownGraceAlertsOnSecondConsecutiveObservation(t *testing.T) {
 	unknown := []RoleVerdict{{Role: RoleCensusFreshness, Status: HealthUnknown, Reason: "census unreadable", Remedy: "repair"}}
-	first := applyHealthObservation("/repo", HealthObservationState{}, unknown, time.Now())
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	first := applyHealthObservation("/repo", HealthObservationState{}, unknown, now)
 	if first.ExitCode() != 2 || first.ShouldAlert {
 		t.Fatalf("the first unknown exits 2 without alerting: %+v", first)
 	}
-	second := applyHealthObservation("/repo", first.State, unknown, time.Now().Add(time.Minute))
+	second := applyHealthObservation("/repo", first.State, unknown, now.Add(time.Minute))
 	if second.ExitCode() != 2 || !second.ShouldAlert || second.Roles[0].ConsecutiveUnknown != 2 {
 		t.Fatalf("the second consecutive unknown alerts: %+v", second)
 	}
-	reset := applyHealthObservation("/repo", second.State, []RoleVerdict{{Role: RoleCensusFreshness, Status: HealthAlive}}, time.Now().Add(2*time.Minute))
+	reset := applyHealthObservation("/repo", second.State, []RoleVerdict{{Role: RoleCensusFreshness, Status: HealthAlive}}, now.Add(2*time.Minute))
 	if reset.State.UnknownCounts[RoleCensusFreshness] != 0 {
 		t.Fatalf("an alive observation resets unknown grace: %+v", reset.State)
 	}
@@ -1001,7 +1002,8 @@ func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing
 	root := t.TempDir()
 	ledger := fixtureSpendLedger()
 	withSpendMeasurement(t, func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil })
-	preview := PreviewHealth(root, time.Now(), healthProbe{})
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	preview := PreviewHealth(root, now, healthProbe{})
 	if len(preview.Roles) != len(healthRoleOrder) {
 		t.Fatalf("health preview omitted roles: %+v", preview.Roles)
 	}
@@ -1036,7 +1038,7 @@ func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing
 		t.Fatalf("role timing changed the health line:\nwith: %s\nwithout: %s", preview.Line(), withoutDuration.Line())
 	}
 
-	observed, err := ObserveHealth(root, time.Now().Add(time.Second), healthProbe{})
+	observed, err := ObserveHealth(root, now.Add(time.Second), healthProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1060,7 +1062,7 @@ func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing
 	if err := os.WriteFile(HealthRecordPath(root), []byte("{corrupt"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	unreadableState, err := ObserveHealth(root, time.Now().Add(2*time.Second), healthProbe{})
+	unreadableState, err := ObserveHealth(root, now.Add(2*time.Second), healthProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

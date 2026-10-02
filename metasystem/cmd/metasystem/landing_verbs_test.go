@@ -519,11 +519,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	copyFixture("../../internal/landing/landing-classes.json", "internal/landing/landing-classes.json", 0o644)
 	copyFixture("../../memory/rulings.md", "memory/rulings.md", 0o644)
 
-	build := exec.Command("go", "build", "-o", filepath.Join(root, "bin", "metasystem"), ".")
-	build.Env = gittree.ScrubbedEnviron()
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fixture engine: %v\n%s", err, out)
-	}
+	testenv.Link(t, testenv.Engine(t), filepath.Join(root, "bin", "metasystem"))
 
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\nrole.code-critic.runtime=fake\ntesting.contract=testing.json\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
@@ -636,7 +632,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	// The recertification selector is owned by the retained destination build,
 	// not by the candidate source loaded into this test process. Rebuild the
 	// fixture executable with T's source stamp and enroll those exact bytes.
-	build = exec.Command("go", "build", "-buildvcs=false", "-ldflags",
+	build := testenv.Go("build", "-buildvcs=false", "-ldflags",
 		enginebuild.StampLinkerFlags(target), "-o", filepath.Join(root, "bin", "metasystem"), ".")
 	build.Env = gittree.ScrubbedEnviron()
 	if out, err := build.CombinedOutput(); err != nil {
@@ -774,7 +770,7 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 	runAsHolder := func(arguments []string, extraEnv []string) (string, int) {
 		t.Helper()
 		gate := filepath.Join(bed, "holder-gate-"+strconv.FormatInt(time.Now().UnixNano(), 10))
-		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done
+		script := testexec.ReadyPrologue + `while [[ ! -e "$1" ]]; do sleep 0.01; done
 shift
 "$@" &
 child=$!
@@ -793,7 +789,10 @@ exit "$status"`
 		command.Env = env
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
-		if err := command.Start(); err != nil {
+		// The holder is announced by its command line, which a just-exec'd
+		// child may not have published yet: it starts once its own image
+		// reports ready.
+		if err := testexec.StartReady(command); err != nil {
 			t.Fatal(err)
 		}
 		pid := int64(command.Process.Pid)
@@ -963,8 +962,8 @@ exit "$status"`
 		t.Fatal(err)
 	}
 	holderGate := filepath.Join(bed, "park-holder-gate")
-	holder := exec.Command("bash", "-c", `while [[ ! -e "$1" ]]; do sleep 0.01; done`, "holder", holderGate)
-	if err := holder.Start(); err != nil {
+	holder := exec.Command("bash", "-c", testexec.ReadyPrologue+`while [[ ! -e "$1" ]]; do sleep 0.01; done`, "holder", holderGate)
+	if err := testexec.StartReady(holder); err != nil {
 		t.Fatal(err)
 	}
 	holderPid := int64(holder.Process.Pid)
@@ -1431,15 +1430,8 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	tree := runReceiptGit(t, root, "write-tree")
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build receipt canary engine: %v\n%s", err, output)
-	}
-	devgate := filepath.Join(t.TempDir(), "devgate")
-	if output, err := exec.Command("go", "build", "-o", devgate, "../devgate").CombinedOutput(); err != nil {
-		t.Fatalf("build receipt canary bootstrap: %v\n%s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
+	devgate := testenv.Link(t, testenv.Built(t, "./cmd/devgate"), filepath.Join(t.TempDir(), "devgate"))
 	realGo, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatal(err)
@@ -1478,6 +1470,10 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	var outputBuffer bytes.Buffer
 	command.Stdout, command.Stderr = &outputBuffer, &outputBuffer
+	// The canonical validator runs the real go gate (build, vet, staticcheck,
+	// deadcode) through the devgate: this binary's other toolchains wait.
+	releaseToolchain := testenv.HoldToolchain()
+	defer releaseToolchain()
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1501,6 +1497,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatal(err)
 	}
 	err = command.Wait()
+	releaseToolchain()
 	output := outputBuffer.Bytes()
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 		t.Fatalf("canonical receipt CLI did not retain a successful proof before projection failure: %v\n%s", err, output)
@@ -1732,7 +1729,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, head)
 	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, head)
 	tree := runReceiptGit(t, root, "write-tree")
-	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
+	build := testenv.Go("build", "-buildvcs=false", "-ldflags",
 		enginebuild.StampLinkerFlags(head), "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build shared testing receipt engine: %v\n%s", buildErr, output)

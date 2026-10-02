@@ -59,13 +59,21 @@ func TestJournalRefusesADuplicateOpid(t *testing.T) {
 	}
 }
 
+// pushDeadlineNeverReached and pushDeadlinePassed are fixed push
+// deadlines on either side of every run of these tests: a push recorded
+// with the first is never overdue, one with the second always is.
+var (
+	pushDeadlineNeverReached = time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
+	pushDeadlinePassed       = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+)
+
 func TestJournalPhasesAreMonotonic(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-3", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkPushed(root, "op-3", "old-tip", 1, time.Now().Add(time.Minute)); err != nil {
+	if err := MarkPushed(root, "op-3", "old-tip", 1, pushDeadlineNeverReached); err != nil {
 		t.Fatal(err)
 	}
 	if err := MarkTerminal(root, "op-3", OutcomeConfirmed, "opid in history"); err != nil {
@@ -91,7 +99,7 @@ func TestPushedBlocksOwnCloneMutations(t *testing.T) {
 	if _, blocking, _ := PushedBlocking(root); blocking {
 		t.Fatal("a created entry does not block; nothing has left the process")
 	}
-	if err := MarkPushed(root, "op-4", "tip", 1, time.Now().Add(time.Minute)); err != nil {
+	if err := MarkPushed(root, "op-4", "tip", 1, pushDeadlineNeverReached); err != nil {
 		t.Fatal(err)
 	}
 	e, blocking, err := PushedBlocking(root)

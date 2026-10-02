@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -46,6 +47,8 @@ type rearmResolverDeps struct {
 	archivedEngineDigest func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error)
 	notifyAvailable      func(string) bool
 	runnerExcluded       func(string, bool) (string, bool)
+	// signal stops a runner the arm replaces (syscall.Kill in production).
+	signal func(int, syscall.Signal) error
 }
 
 func defaultRearmResolverDeps() rearmResolverDeps {
@@ -68,6 +71,7 @@ func defaultRearmResolverDeps() rearmResolverDeps {
 		archivedEngineDigest: archivedEngineDigestAtCommitWithClock,
 		notifyAvailable:      func(root string) bool { _, ok := NotifyCommand(root); return ok },
 		runnerExcluded:       runnerExclusion,
+		signal:               syscall.Kill,
 	}
 }
 

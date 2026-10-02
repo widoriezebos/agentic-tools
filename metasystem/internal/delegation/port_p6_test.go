@@ -421,6 +421,11 @@ func TestFollowUpIntegrationRecoversConflictProvenanceAfterAnAuthorityRefusal(t 
 	if refused.ExitCode == 0 || !strings.Contains(b.stderr.String(), "follow-up brief authority admission refused") {
 		t.Fatalf("a missing authority was admitted: exit %d stderr %s", refused.ExitCode, b.stderr.String())
 	}
+	// The refusal itself names the path, so the reason survives where only
+	// the refusal line is kept (the recorded outcome, a verb's line 1).
+	if !strings.Contains(b.stderr.String(), "follow-up brief authority admission refused: ") || !strings.Contains(b.stderr.String(), "admission refused: the brief cites paths the delegate's tree does not hold: ") {
+		t.Fatalf("the refusal line does not carry its reason: %s", b.stderr.String())
+	}
 	if !strings.Contains(b.p6Read(filepath.Join(workspace, target)), "<<<<<<<") || b.p6Git(workspace, "rev-parse", "HEAD") != to {
 		t.Fatal("the authority refusal did not leave the rebased conflict in place")
 	}

@@ -161,9 +161,10 @@ func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
 func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 	t.Parallel()
 	e := soloLedgerFakeEndpoint(t)
-	// Read far in the future: the staleness banner names the age;
-	// the local-mode banner names the promotion goal.
-	later := time.Now().Add(2 * time.Hour)
+	// Read far in the future (a fixed instant after every fetch this
+	// fixture records): the staleness banner names the age; the local-mode
+	// banner names the promotion goal.
+	later := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
 	p, err := Project(e, false, later)
 	if err != nil {
 		t.Fatal(err)

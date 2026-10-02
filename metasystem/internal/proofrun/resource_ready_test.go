@@ -108,7 +108,7 @@ func TestCustodyBarrierWaitFailsWhenTheCommandEnds(t *testing.T) {
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		waitCustodyFileWhile(tb, filepath.Join(t.TempDir(), "never.ready"), 0, ended,
+		waitCustodyFileWhile(tb, filepath.Join(t.TempDir(), "never.ready"), ended,
 			func() error { return errors.New("custodian start refused") })
 	}()
 	<-finished
@@ -134,7 +134,7 @@ func TestCustodyPidBarrierWaitsForTheCompleteLine(t *testing.T) {
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		waitCustodyBarrier(tb, path, 0, ended, func() error { return errors.New("worker exited") },
+		waitCustodyBarrier(tb, path, ended, func() error { return errors.New("worker exited") },
 			func() bool { return completeCustodyRecord(path) })
 	}()
 	<-finished

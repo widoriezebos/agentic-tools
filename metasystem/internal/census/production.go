@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"golang.org/x/sys/unix"
 )
 
 // EnumerateConfiguredProcesses uses the same authorized process source as a
@@ -46,18 +45,15 @@ func EnumerateProcesses() ([]Process, error) {
 	return liveProductionProcessSource().enumerate()
 }
 
+// productionProcessSource enumerates the processes of table, each probed by
+// prober.
 type productionProcessSource struct {
-	pids          func() ([]int64, error)
-	prober        identity.Prober
-	processGroup  func(int) (int, error)
-	parentProcess func(int64) (int64, bool)
+	table  identity.ProcessTable
+	prober identity.Prober
 }
 
 func liveProductionProcessSource() productionProcessSource {
-	return productionProcessSource{
-		pids: identity.AllPids, prober: identity.KernelProber{},
-		processGroup: unix.Getpgid, parentProcess: identity.ParentPid,
-	}
+	return productionProcessSource{table: identity.KernelProcessTable{}, prober: identity.KernelProber{}}
 }
 
 func (source productionProcessSource) enumerate() ([]Process, error) {
@@ -65,7 +61,7 @@ func (source productionProcessSource) enumerate() ([]Process, error) {
 }
 
 func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) ([]Process, error) {
-	pids, err := source.pids()
+	pids, err := source.table.Pids()
 	if err != nil {
 		return nil, fmt.Errorf("process enumeration failed: %w", err)
 	}
@@ -84,11 +80,11 @@ func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) (
 		if argv == "" && !retainEmptyArgv {
 			continue
 		}
-		pgid, perr := source.processGroup(int(pid))
+		pgid, perr := source.table.Group(pid)
 		if perr != nil {
 			pgid = 0
 		}
-		ppid, _ := source.parentProcess(pid)
+		ppid, _ := source.table.Parent(pid)
 		environ := exact.Environ
 		if !exact.EnvironKnown {
 			environ = nil
@@ -98,7 +94,7 @@ func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) (
 			executable = ""
 		}
 		processes = append(processes, Process{
-			Pid: pid, PPID: ppid, PGID: int64(pgid),
+			Pid: pid, PPID: ppid, PGID: pgid,
 			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
 			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv, ArgvVector: vector,
 			Environ: environ, Exe: executable,

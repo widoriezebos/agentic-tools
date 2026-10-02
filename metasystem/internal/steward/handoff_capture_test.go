@@ -1739,7 +1739,7 @@ func TestContextPruneDefaultAgeComposesWithUsageFloor(t *testing.T) {
 	fixture := newHandoffGoalFixture(t, "claimed")
 	root := fixture.root
 	_ = fixture
-	now := time.Now().UTC().Add(time.Hour)
+	now := handoffCaptureNow.Add(time.Hour)
 	if result, err := PruneContext(root, 14*24*time.Hour, now); err != nil || result.CallSessions != 0 || len(result.Handoffs) != 0 {
 		t.Fatalf("documented 14-day default was blocked by usage retention: %+v %v", result, err)
 	}

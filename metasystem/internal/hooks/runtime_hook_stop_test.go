@@ -52,14 +52,16 @@ func presentedFailures(t *testing.T, ops *fakeOps) string {
 // the digest cursor advanced and the completion recorded with its report.
 func TestStopEmitsThePresentedVerdict(t *testing.T) {
 	t.Parallel()
-	started := time.Now().Add(-3 * time.Second).Unix()
+	now := time.Date(2026, 9, 27, 19, 0, 0, 0, time.UTC)
+	started := now.Add(-3 * time.Second).Unix()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.digestPending = func() (string, int) {
 		return `{"cursor":42,"message":"NARRATOR DIGEST since last check-in\nA landing moved the repository storyline to commit abc123","prefixSha256":"` + strings.Repeat("d", 64) + `"}`, 0
 	}
 	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"line-fixture","transcript_path":"/transcripts/t.jsonl"}`,
-		env: map[string]string{stopDeadlineParentEnv: "777", stopDeadlineStartedEnv: fmt.Sprint(started)}})
+		env: map[string]string{stopDeadlineParentEnv: "777", stopDeadlineStartedEnv: fmt.Sprint(started)},
+		now: func() time.Time { return now }})
 	if run.status != 0 || run.stdout != `{"systemMessage":"presented: "}`+"\n" {
 		t.Fatalf("stop = status %d stdout %q stderr %q", run.status, run.stdout, run.stderr)
 	}
@@ -618,7 +620,8 @@ func TestStopStagingFailureAllows(t *testing.T) {
 // Before the trace a 20-43 s Stop left only its total elapsed seconds.
 func TestStopTracesEachOwnerCallsCost(t *testing.T) {
 	t.Parallel()
-	started := time.Now().Add(-3 * time.Second).Unix()
+	now := time.Date(2026, 9, 27, 19, 0, 0, 0, time.UTC)
+	started := now.Add(-3 * time.Second).Unix()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	var clock atomic.Int64
@@ -635,7 +638,8 @@ func TestStopTracesEachOwnerCallsCost(t *testing.T) {
 	}
 	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"trace-fixture","transcript_path":"/transcripts/t.jsonl"}`,
 		env:       map[string]string{stopDeadlineParentEnv: "777", stopDeadlineStartedEnv: fmt.Sprint(started)},
-		monotonic: func() time.Duration { return time.Duration(clock.Load()) }})
+		monotonic: func() time.Duration { return time.Duration(clock.Load()) },
+		now:       func() time.Time { return now }})
 	if run.status != 0 {
 		t.Fatalf("stop = status %d stdout %q stderr %q", run.status, run.stdout, run.stderr)
 	}
@@ -656,7 +660,7 @@ func TestStopTracesEachOwnerCallsCost(t *testing.T) {
 // interval on an artificial wall clock, and a skipped Stop still logs.
 func TestStopRunsEvidenceCollectionAtMostOncePerInterval(t *testing.T) {
 	t.Parallel()
-	started := time.Now().Add(-3 * time.Second).Unix()
+	started := time.Date(2026, 9, 27, 19, 0, 0, 0, time.UTC).Add(-3 * time.Second).Unix()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	var collections atomic.Int32

@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
@@ -124,7 +125,7 @@ func groupMembers(pgid int, except ...int) ([]int, error) {
 	for _, pid := range except {
 		excluded = append(excluded, int64(pid))
 	}
-	members, err := supervise.GroupMemberPids(int64(pgid), excluded...)
+	members, err := supervise.GroupMemberPids(identity.KernelProcessTable{}, int64(pgid), excluded...)
 	if err != nil {
 		return nil, err
 	}

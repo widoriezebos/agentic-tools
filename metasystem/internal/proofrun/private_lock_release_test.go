@@ -53,11 +53,9 @@ func TestPrivateLockReleaseDoesNotWaitForAForkedCopy(t *testing.T) {
 // census reads that namespace only. Another namespace may hold a lease marker
 // between its creation and its claim (written under that namespace's
 // guard); reading it made admission refuse with unknown overlap. Not
-// parallel: it points the package default namespace at the foreign one.
+// parallel: the foreign namespace is the binary's default one (TestMain's),
+// which holds the unclaimed marker for this test only.
 func TestReserveCensusReadsOnlyItsOwnAdmissionNamespace(t *testing.T) {
-	previous := hostAdmissionDirectoryForTest
-	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "foreign-admission")
-	t.Cleanup(func() { hostAdmissionDirectoryForTest = previous })
 	foreign, err := hostAdmissionDirectory()
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +64,11 @@ func TestReserveCensusReadsOnlyItsOwnAdmissionNamespace(t *testing.T) {
 	if err := os.WriteFile(unclaimed, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := os.Remove(unclaimed); err != nil {
+			t.Errorf("remove the foreign namespace's unclaimed marker: %v", err)
+		}
+	})
 	f := newOwnershipFixture(t)
 	_, decision := f.reserve("goal-census", "own-namespace", map[string]string{"check": strings.Repeat("c", 64)}, "", "", 0)
 	if decision.Disposition != DispositionExecuted {

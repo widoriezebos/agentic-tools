@@ -22,7 +22,8 @@ type FixtureProcessGroup struct {
 }
 
 // FixtureCleanup is one orderly stop action. Each action receives a fresh
-// bound so one slow stop cannot prevent a later stop from running.
+// bound so one slow stop cannot prevent a later stop from running. A stop
+// whose bound expires is not a failure: cleanup escalates to the group kill.
 type FixtureCleanup struct {
 	Verb string
 	Run  func(context.Context) error
@@ -53,17 +54,29 @@ type resolvedFixtureProcessGroup struct {
 // ReapFixtureProcessGroups makes detached fixture children part of the test's
 // lifecycle. It runs every orderly stop, kills each remaining process group
 // whose leader is still the child resolved before those stops, and does not
-// return from cleanup until every group is gone or the fixture exit bound
-// expires. A group whose leader is gone is never signaled: its numeric id no
-// longer proves ownership, so cleanup only waits for it to disappear. Resolve callbacks should read the durable pid record
-// written by the child they own.
+// return from cleanup until every group is gone. A killed group always ends,
+// so its wait ends on that fact, not on a clock. A group whose leader is gone
+// is never signaled: its numeric id no longer proves ownership, so cleanup
+// waits for it to disappear only within the fixture exit bound. Resolve
+// callbacks should read the durable pid record written by the child they own.
 func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanups ...FixtureCleanup) {
 	t.Helper()
-	exitBound, err := FixtureExitWaitBound()
+	ops, err := defaultFixtureProcessGroupOps()
 	if err != nil {
 		t.Fatalf("derive fixture process-group exit bound: %v", err)
 	}
-	reapFixtureProcessGroups(t, groups, cleanups, fixtureProcessGroupOps{
+	reapFixtureProcessGroups(t, groups, cleanups, ops)
+}
+
+// defaultFixtureProcessGroupOps is the reaper's production wiring: the kernel
+// for groups, signals, births and exits, the orderly-stop bound, and the exit
+// bound for a leaderless group, which was never signaled.
+func defaultFixtureProcessGroupOps() (fixtureProcessGroupOps, error) {
+	exitBound, err := FixtureExitWaitBound()
+	if err != nil {
+		return fixtureProcessGroupOps{}, err
+	}
+	return fixtureProcessGroupOps{
 		groupID: syscall.Getpgid,
 		signal:  syscall.Kill,
 		birth:   func(pid int) (time.Time, bool) { return identity.ProcessBirth(int64(pid)) },
@@ -74,7 +87,7 @@ func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanu
 		exitContext: func() (context.Context, context.CancelFunc) {
 			return context.WithTimeout(context.Background(), exitBound)
 		},
-	})
+	}, nil
 }
 
 func reapFixtureProcessGroups(t fixtureProcessGroupTB, groups []FixtureProcessGroup, cleanups []FixtureCleanup, ops fixtureProcessGroupOps) {
@@ -121,10 +134,12 @@ func reapFixtureProcessGroups(t fixtureProcessGroupTB, groups []FixtureProcessGr
 			}
 			ctx, cancel := ops.cleanupContext()
 			err := cleanup.Run(ctx)
-			contextErr := ctx.Err()
+			expired := ctx.Err() != nil
 			cancel()
-			if err != nil || contextErr != nil {
-				t.Errorf("fixture cleanup failed: verb=%q context=%v error=%v", cleanup.Verb, contextErr, err)
+			// An expired stop is slow, not wrong: the identity re-check and
+			// the group kill below end the group anyway.
+			if err != nil && !expired {
+				t.Errorf("fixture cleanup failed: verb=%q error=%v", cleanup.Verb, err)
 			}
 		}
 
@@ -163,7 +178,13 @@ func reapFixtureProcessGroups(t fixtureProcessGroupTB, groups []FixtureProcessGr
 			if group.signalTarget == 0 {
 				continue
 			}
-			ctx, cancel := ops.exitContext()
+			// SIGKILL cannot be refused, so a signaled group always ends and
+			// its wait needs no bound. A leaderless group was never signaled
+			// and its exit is not guaranteed, so its wait keeps one.
+			ctx, cancel := context.Background(), context.CancelFunc(func() {})
+			if leaderless[i] {
+				ctx, cancel = ops.exitContext()
+			}
 			err := ops.wait(ctx, group.signalTarget)
 			cancel()
 			if err != nil && leaderless[i] {
@@ -192,4 +213,20 @@ func waitForFixtureProcessTarget(ctx context.Context, target int) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// AwaitProcessTargetGone waits until kill(target, 0) reports ESRCH: the
+// process (target > 0), or every member of the process group (target < 0),
+// has exited and been reaped. A process another process kills ends in
+// stages (its files close, it exits, its parent or init reaps it), so a test
+// that saw an earlier stage (a pipe's EOF, a lock freed, a drain that counts
+// zombies as gone) waits here for the last one before it asserts the target
+// is gone, and never reads it once. The wait ends on that fact, never on a
+// clock: only the test binary's deadline ends a wait for a reap that never
+// comes (as testenv.Await).
+func AwaitProcessTargetGone(target int) error {
+	if err := waitForFixtureProcessTarget(context.Background(), target); err != nil {
+		return fmt.Errorf("process target %d: %w", target, err)
+	}
+	return nil
 }

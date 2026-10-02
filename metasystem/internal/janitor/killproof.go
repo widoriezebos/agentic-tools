@@ -166,13 +166,9 @@ func GroupOwnership(pgid int64, tag string) GroupOwnershipOutcome {
 // (ShapesAt), so an external runtime's supervisors and CLIs are provable.
 func GroupOwnershipAt(root string, pgid int64, tag string) GroupOwnershipOutcome {
 	return groupOwnership(pgid, tag, groupOwnershipDependencies{
-		Shapes: ShapesAt(root),
-		PIDs:   identity.AllPids,
-		PGID: func(pid int64) (int64, error) {
-			group, err := unix.Getpgid(int(pid))
-			return int64(group), err
-		},
-		Reader: identity.KernelProber{},
+		Shapes:    ShapesAt(root),
+		Processes: identity.KernelProcessTable{},
+		Reader:    identity.KernelProber{},
 	})
 }
 
@@ -180,16 +176,20 @@ type groupOwnershipDependencies struct {
 	// Shapes are the positional shapes a member must match; nil is
 	// DefaultShapes.
 	Shapes []Shape
-	PIDs   func() ([]int64, error)
-	PGID   func(pid int64) (int64, error)
-	Reader identity.VerificationReader
+	// Processes is the process table the members are read from: the
+	// kernel's in production, a test's own rows in a test.
+	Processes identity.ProcessTable
+	Reader    identity.VerificationReader
 }
 
 func groupOwnership(pgid int64, tag string, dependencies groupOwnershipDependencies) GroupOwnershipOutcome {
 	if pgid < 2 || tag == "" {
 		return GroupNotOwned
 	}
-	pids, err := dependencies.PIDs()
+	if dependencies.Processes == nil {
+		dependencies.Processes = identity.KernelProcessTable{}
+	}
+	pids, err := dependencies.Processes.Pids()
 	if err != nil {
 		return GroupIndeterminate
 	}
@@ -200,7 +200,7 @@ func groupOwnership(pgid int64, tag string, dependencies groupOwnershipDependenc
 	uncertainMembership := false
 	var verifications []identity.Verification
 	for _, pid := range pids {
-		group, err := dependencies.PGID(pid)
+		group, err := dependencies.Processes.Group(pid)
 		if err != nil {
 			if !errors.Is(err, unix.ESRCH) {
 				uncertainMembership = true

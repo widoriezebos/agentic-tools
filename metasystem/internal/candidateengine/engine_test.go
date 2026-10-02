@@ -59,7 +59,7 @@ func TestScratchCandidateEngineV2KeepsEightAndCopiesOut(t *testing.T) {
 	controlRoot := t.TempDir()
 	cacheRoot := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines")
 	v2 := filepath.Join(cacheRoot, "v2")
-	base := time.Now().Add(-time.Hour)
+	base := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	identities := make([]string, 10)
 	for index := range identities {
 		identities[index] = fmt.Sprintf("%040d", index)

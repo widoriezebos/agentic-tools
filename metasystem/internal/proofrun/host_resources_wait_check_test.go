@@ -9,14 +9,14 @@ import (
 func checkHostCapacityWaitObservesCallerFence(t *testing.T, ctx context.Context) {
 	t.Run("held_slot", func(t *testing.T) {
 		directory, conf := isolatedHostResources(t)
-		holder, err := AcquireHostResources(ctx, directory, conf, "heavy", nil)
+		holder, err := acquireHostResourcesIn(ctx, directory, directory, conf, "heavy", nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer holder.Close()
 		closed := errors.New("caller fence closed")
 		reads := 0
-		contender, err := AcquireHostResourcesWithWaitCheck(ctx, directory, conf, "heavy", nil, func() error {
+		contender, err := acquireHostResourcesIn(ctx, directory, directory, conf, "heavy", nil, func() error {
 			reads++
 			if reads > 2 {
 				return closed
@@ -43,7 +43,7 @@ func checkHostCapacityWaitObservesCallerFence(t *testing.T, ctx context.Context)
 		defer guard.Close()
 		closed := errors.New("caller fence closed")
 		reads := 0
-		lease, err := AcquireHostResourcesWithWaitCheck(ctx, directory, conf, "heavy", nil, func() error {
+		lease, err := acquireHostResourcesIn(ctx, directory, directory, conf, "heavy", nil, func() error {
 			reads++
 			if reads > 2 {
 				return closed

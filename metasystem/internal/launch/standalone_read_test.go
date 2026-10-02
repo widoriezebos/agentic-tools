@@ -689,7 +689,7 @@ func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
 	runGit(t, repo, "commit", "-m", "base")
 	oldBlob := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD:main.go"))
 	writeFile(t, file, "new\n")
-	past := time.Now().Add(-10 * time.Second).Truncate(time.Second)
+	past := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	if err := os.Chtimes(file, past, past); err != nil {
 		t.Fatal(err)
 	}

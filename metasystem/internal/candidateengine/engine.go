@@ -181,7 +181,9 @@ func prepareScratch(ctx context.Context, scratch *proofrun.ScratchRun, controlRo
 	if err != nil {
 		return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
 	}
-	defer lockFile.Close()
+	// Unlock before close: a sibling's fork copy of the description would
+	// otherwise keep the identity reserved after this build ended.
+	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN); _ = lockFile.Close() }()
 	cacheWaitStarted := time.Now()
 	for {
 		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
@@ -317,6 +319,7 @@ func evictV2(cacheRoot, own string) {
 		if unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB) == nil && os.RemoveAll(filepath.Join(cacheRoot, candidate.name)) == nil {
 			survivors--
 		}
+		_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 		_ = lock.Close()
 	}
 }

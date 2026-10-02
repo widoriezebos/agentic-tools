@@ -59,8 +59,10 @@ func leaseReclaimerFromContext(ctx context.Context, controlRoot string) *leaseRe
 		return reclaimer
 	}
 	return &leaseReclaimer{
-		prober:      identity.KernelProber{},
-		groupLive:   processGroupLive,
+		prober: identity.KernelProber{},
+		groupLive: func(group int64, prober identity.Prober) (bool, error) {
+			return processGroupLive(identity.KernelProcessTable{}, group, prober)
+		},
 		survivors:   identity.FixtureSurvivorsOfDeadOwner,
 		report:      func(line string) { fmt.Fprintln(os.Stderr, line) },
 		now:         time.Now,
@@ -69,14 +71,14 @@ func leaseReclaimerFromContext(ctx context.Context, controlRoot string) *leaseRe
 }
 
 // processGroupLive reports whether any process, the leader included, is a
-// live, non-zombie member of group. Unknown membership is an error.
-func processGroupLive(group int64, prober identity.Prober) (bool, error) {
-	members, err := custodyGroupMembers(group)
+// live, non-zombie member of group in table. Unknown membership is an error.
+func processGroupLive(table identity.ProcessTable, group int64, prober identity.Prober) (bool, error) {
+	members, err := custodyGroupMembers(table, group)
 	if err != nil {
 		return false, err
 	}
 	// custodyGroupMembers omits the leader; a live leader is still a member.
-	if leaderGroup, leaderErr := syscall.Getpgid(int(group)); leaderErr == nil && int64(leaderGroup) == group {
+	if leaderGroup, leaderErr := table.Group(group); leaderErr == nil && leaderGroup == group {
 		members = append(members, group)
 	} else if leaderErr != nil && !errors.Is(leaderErr, syscall.ESRCH) {
 		return false, fmt.Errorf("group leader %d is uninspectable: %w", group, leaderErr)

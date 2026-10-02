@@ -18,12 +18,13 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestResourceCustodyStreamsLiveCapNoteAndRetainsSpools(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func (writer *gatedSuiteOutput) Write(data []byte) (int, error) {
 func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 	}
 	// The launcher writes .done only after the direct child has exited and
 	// exec.Cmd.Wait has completed. Keep the first public write gated until then.
-	waitCustodyFileWhile(t, logPath+".done", 0, ended, func() error { return errors.New("the gated suite launcher returned") })
+	waitCustodyFileWhile(t, logPath+".done", ended, func() error { return errors.New("the gated suite launcher returned") })
 	releaseOnce.Do(func() { close(output.release) })
 	if status := <-finished; status != 0 {
 		t.Fatalf("gated suite status=%d", status)
@@ -241,7 +242,7 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 		<-ended
 	})
 	// The shell creates the pid file before it writes the line; wait for the line.
-	waitCustodyBarrier(t, pidPath, 0, ended, func() error { return errors.New("the borrowed custody launcher returned") },
+	waitCustodyBarrier(t, pidPath, ended, func() error { return errors.New("the borrowed custody launcher returned") },
 		func() bool { return completeCustodyRecord(pidPath) })
 	pidText, err := os.ReadFile(pidPath)
 	if err != nil {
@@ -262,8 +263,13 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 	if status := <-finished; status == 0 {
 		t.Fatal("ordinary grandchild was silently accepted as a clean launch")
 	}
-	if state := identity.AliveRef(identity.KernelProber{}, grandchild); state == identity.Alive {
-		t.Fatal("no-file custodian left its ordinary grandchild live")
+	// The custodian's drain returns once no member of the group is live; a
+	// killed grandchild may then still be exiting, or a zombie awaiting its
+	// reap after reparenting. Its exit is awaited on the process table, never
+	// read once: a grandchild the custodian left running (sleep 60) never
+	// exits within the bound.
+	if err := testutil.AwaitExactExit(identity.KernelProber{}, grandchild); err != nil {
+		t.Fatalf("no-file custodian left its ordinary grandchild live: %v", err)
 	}
 	if !strings.Contains(output.String(), "borrowed-suite-tail") {
 		t.Fatalf("no-file suite output lost final line: %q", output.String())
@@ -403,7 +409,7 @@ func TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild(t *testing.
 
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +482,7 @@ waitForResult:
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("large-output failure left host capacity held: %v", err)
 	}
@@ -523,7 +529,7 @@ func TestResourceCustodySpoolFinalDrainAndFailedPublicWriter(t *testing.T) {
 func TestResourceCustodyPublicWriterFailureStillDrainsAndReleasesCapacity(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +555,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("public writer failure left capacity held: %v", err)
 	}
@@ -589,7 +595,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 		if err := next.Close(); err != nil {
 			t.Fatal(err)
 		}
-		released, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+		released, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 		if err != nil {
 			t.Fatalf("managed suite retained capacity: %v", err)
 		}

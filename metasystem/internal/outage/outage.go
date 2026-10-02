@@ -119,12 +119,15 @@ func acquireMarkLock(repoRoot string) (*markLock, error) {
 	for attempt := 0; attempt < 10; attempt++ {
 		err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 		if err == nil {
-			return &markLock{f: f}, nil
+			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	f.Close()
-	return nil, fmt.Errorf("outage mark lock is held; the hint update is skipped: %w", err)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("outage mark lock is held; the hint update is skipped: %w", err)
+	}
+	return &markLock{f: f}, nil
 }
 
 func (l *markLock) release() {

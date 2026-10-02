@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // carriedDeliveryBed is the whole-owner landing bed prepared for a real
@@ -403,7 +404,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	// The testing owner runs only an enrolled engine built from this
 	// history: the batch e2e bed's stamped build and fixture enrollment.
 	stamp := goalSyncMutationGit(t, clone, "rev-parse", "HEAD")
-	stamped := exec.Command("go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", engine, ".")
+	stamped := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", engine, ".")
 	if output, err := stamped.CombinedOutput(); err != nil {
 		t.Fatalf("build stamped fixture engine: %v: %s", err, output)
 	}
@@ -651,14 +652,14 @@ func (b *carriedDeliveryBed) answerCarry(workspace, ulid string) string {
 
 // raiseFormatThroughAnExpiredExercise is a person's earlier exception that
 // raised the ledger to the carry format, recorded by the real carry owner
-// on the ledger's fixture clock two hours ago with a one-hour life: the
-// ledger is at format 2 and no other word is open.
+// on the ledger's fixture clock at a fixed instant long past with a one-hour
+// life: the ledger is at format 2 and no other word is open.
 func (b *carriedDeliveryBed) raiseFormatThroughAnExpiredExercise() {
 	b.t.Helper()
 	tree := goalSyncMutationGit(b.t, b.f.mainRoot, "rev-parse", "refs/remotes/origin/main^{tree}")
 	carry := exec.Command(commandTestExecutable(b.t), goalCarryHelperCommand, "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree", tree,
 		"--past", "missing-declaration", "--why", "an earlier exception", "--expires", "1h", "--raise-format", "--fixture-human-authority", "--lineage", "m1")
-	carry.Env = fixtureCommandEnvironment(b.t, "METASYSTEM_GOAL_NOW="+time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339))
+	carry.Env = fixtureCommandEnvironment(b.t, "METASYSTEM_GOAL_NOW="+time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339))
 	if output, err := carry.CombinedOutput(); err != nil {
 		b.t.Fatalf("raise the ledger format through an earlier exception: %v\n%s", err, output)
 	}

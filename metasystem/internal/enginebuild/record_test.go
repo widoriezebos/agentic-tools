@@ -3,6 +3,7 @@ package enginebuild
 import (
 	"debug/buildinfo"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,7 +175,7 @@ func TestReadStampFromRealEngineBuilds(t *testing.T) {
 				args = append(args, "-ldflags", test.ldflags)
 			}
 			args = append(args, "-o", output, "./testdata/stampprobe")
-			build := exec.Command("go", args...)
+			build := testenv.Go(args...)
 			build.Env = append(os.Environ(), "GOFLAGS=", "CGO_ENABLED=0")
 			if out, err := build.CombinedOutput(); err != nil {
 				t.Fatalf("go %v: %v\n%s", args, err, out)

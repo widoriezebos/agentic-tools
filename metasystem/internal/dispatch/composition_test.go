@@ -24,16 +24,9 @@ func compositionRepoRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	// Every caller composes against the real checkout, so an operator's
-	// exported cap would decide these results. Pin the configured cap for the
-	// whole test and restore whatever the environment had.
-	if original, present := os.LookupEnv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); present {
-		t.Cleanup(func() { _ = os.Setenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB", original) })
-	} else {
-		t.Cleanup(func() { _ = os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB") })
-	}
-	if err := os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); err != nil {
-		t.Fatal(err)
-	}
+	// exported cap would decide these results. TestMain clears it once for
+	// the whole binary: a parallel caller writing the process environment
+	// changed it under every other one.
 	return root
 }
 

@@ -88,12 +88,10 @@ func TestAStopFileDuringATrimEndsTheTrimAndTheRunner(t *testing.T) {
 		TrimCaches:     machineCacheTrimmer(func() (string, error) { return userCache, nil }, state),
 		Now:            time.Now, Sleep: func(time.Duration) { t.Error("the runner waited after its stop file") },
 	}
-	started := time.Now()
+	// The runner's Sleep seam fails the test, so a runner that waited after
+	// the stop file instead of ending is red without timing it.
 	if err := runLoopWithDependencies(root, fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}, nil, time.Hour, TickConfig{}, deps); err != nil {
 		t.Fatal(err)
-	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("the runner took %v to stop", elapsed)
 	}
 	var report gocache.TrimReport
 	data, err := os.ReadFile(filepath.Join(state, "engine-go-build.json"))

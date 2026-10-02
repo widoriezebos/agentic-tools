@@ -16,6 +16,7 @@ import (
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
@@ -94,7 +95,7 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, openWorkDependencies{
-		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork, HandoffProber: identity.KernelProber{},
 	}, claimOption...)
 }
 
@@ -313,7 +314,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 		ProviderOutage:     providerOutage,
 	})
 	if intent.Reason == seatHandoffReason {
-		return decideForHandoffWithReader(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now, dependencies.ReadClaimableBudgetedWork)
+		return decideForHandoffWithReader(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now, dependencies.ReadClaimableBudgetedWork, dependencies.HandoffProber)
 	}
 	if intent.Reason != "seatIdle" {
 		return decision, workReason, nil

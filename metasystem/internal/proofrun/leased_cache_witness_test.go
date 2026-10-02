@@ -100,7 +100,6 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 	}
 	summary := struct {
 		Run    string         `json:"run"`
-		WallMS int64          `json:"wallMs"`
 		Groups []groupSummary `json:"groups"`
 	}{Run: run.ID()}
 	started := time.Now()
@@ -110,7 +109,7 @@ func TestLeasedLayoutGoTestCacheWitness(t *testing.T) {
 			DurationMS: result.DurationMS, Lease: request.ScratchEnvironment.leaseOf(id), Packages: goLogPackageOutcomes(result.LogPath),
 			Execution: result.Execution})
 	}
-	summary.WallMS = time.Since(started).Milliseconds()
+	t.Logf("lease witness wall time %s", time.Since(started))
 	if err := run.Cleanup(nil); err != nil {
 		t.Fatal(err)
 	}

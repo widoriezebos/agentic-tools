@@ -62,7 +62,7 @@ func main() {
 	stop()
 	// The process's scratch root goes before the exit (Part B 3.2
 	// "Process"); one a kept checkout still uses stays for the sweeper.
-	_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
+	_ = diskstore.ReleaseProcessScratch(context.Background())
 	switch {
 	case errors.Is(err, errUsage):
 		os.Exit(2)

@@ -24,10 +24,6 @@ import (
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var gitObjectIDRe = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// designCritiqueRoundLimit implements section 4 of critique-closes-on-folded-proof-design.md and R-97-m1e,
-// raised to five as a backstop (Wido 2026-10-01): the loop ends on materiality, not on the count.
-const designCritiqueRoundLimit uint8 = 5
-
 // VerifyChainIncarnation proves a chain still belongs to the LIVE mission
 // incarnation: a mission identifier can be
 // re-provisioned, and a surviving chain from incarnation A must not consume
@@ -240,12 +236,12 @@ type reviewRoundLimitResolution struct {
 	sourceLimit uint8
 }
 
+// reviewRoundLimitForRole gives every critic role, design critics included,
+// the goal's review-round member clamped by metasystem.budget.review-round-max,
+// or that ceiling when no goal binds the chain (Wido 2026-10-02): the count is
+// a far-away backstop; the loop ends on materiality and divergence.
 func reviewRoundLimitForRole(role string, goalBound bool, sourceLimit uint8) reviewRoundLimitResolution {
-	resolution := reviewRoundLimitResolution{role: role, goalBound: goalBound, roleLimit: sourceLimit, sourceLimit: sourceLimit}
-	if role == "design-critic" {
-		resolution.roleLimit = designCritiqueRoundLimit
-	}
-	return resolution
+	return reviewRoundLimitResolution{role: role, goalBound: goalBound, roleLimit: sourceLimit, sourceLimit: sourceLimit}
 }
 
 func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
@@ -290,9 +286,6 @@ func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, rol
 }
 
 func (r reviewRoundLimitResolution) rebindLimit() uint8 {
-	if r.role == "design-critic" && (!r.goalBound || r.sourceLimit >= designCritiqueRoundLimit) {
-		return r.roleLimit
-	}
 	return r.sourceLimit
 }
 

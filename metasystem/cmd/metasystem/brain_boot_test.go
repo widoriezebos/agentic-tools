@@ -116,7 +116,6 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 		os.Exit(0)
 	}
 	root, identity := declaredBrainBootTestRoot(t)
-	originalCommand, originalNow, originalTimer := newBrainBootInputsCommand, brainBootNow, newBrainBootTimer
 	readyRead, readyWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +125,7 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 		_ = readyWrite.Close()
 	})
 	termPath := filepath.Join(t.TempDir(), "term")
-	newBrainBootInputsCommand = func(_ string, args ...string) *exec.Cmd {
+	inputsCommand := func(_ string, args ...string) *exec.Cmd {
 		dir := ""
 		for index := 0; index+1 < len(args); index++ {
 			if args[index] == "--dir" {
@@ -143,10 +142,10 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 		command.ExtraFiles = []*os.File{readyWrite}
 		return command
 	}
-	brainBootNow = func() time.Time { return time.Unix(1, 0) }
+	now := func() time.Time { return time.Unix(1, 0) }
 	fired := 0
 	var firedDuration time.Duration
-	newBrainBootTimer = func(duration time.Duration) brainBootTimer {
+	timer := func(duration time.Duration) brainBootTimer {
 		if fired == 0 {
 			_ = readyWrite.Close()
 			var signal [1]byte
@@ -156,16 +155,15 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 			fired++
 			firedDuration = duration
 			ch := make(chan time.Time, 1)
-			ch <- brainBootNow()
+			ch <- now()
 			return brainBootTimer{C: ch, Stop: func() bool { return false }}
 		}
 		return brainBootTimer{C: make(chan time.Time), Stop: func() bool { return true }}
 	}
-	t.Cleanup(func() {
-		newBrainBootInputsCommand, brainBootNow, newBrainBootTimer = originalCommand, originalNow, originalTimer
-	})
 
-	output, err := composeBrainBootModeWithIdentity(root, root, minimumBrainContextBytes, 250, false, identity)
+	output, err := composeBrainBootWith(root, root, minimumBrainContextBytes, 250, false, brainBootDependencies{
+		ledgerIdentity: identity, inputsCommand: inputsCommand, now: now, timer: timer,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +239,6 @@ func runBrainBootThreeSectionsBody(t *testing.T) {
 	t.Helper()
 
 	root, identity := declaredBrainBootTestRoot(t)
-	originalCommand, originalNow, originalTimer := newBrainBootInputsCommand, brainBootNow, newBrainBootTimer
 	readyRead, readyWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +248,7 @@ func runBrainBootThreeSectionsBody(t *testing.T) {
 		_ = readyWrite.Close()
 	})
 	termPath := filepath.Join(t.TempDir(), "term")
-	newBrainBootInputsCommand = func(_ string, args ...string) *exec.Cmd {
+	inputsCommand := func(_ string, args ...string) *exec.Cmd {
 		dir := ""
 		for index := 0; index+1 < len(args); index++ {
 			if args[index] == "--dir" {
@@ -271,10 +268,10 @@ func runBrainBootThreeSectionsBody(t *testing.T) {
 		command.ExtraFiles = []*os.File{readyWrite}
 		return command
 	}
-	brainBootNow = func() time.Time { return time.Unix(1, 0) }
+	now := func() time.Time { return time.Unix(1, 0) }
 	fired := 0
 	var firedDuration time.Duration
-	newBrainBootTimer = func(duration time.Duration) brainBootTimer {
+	timer := func(duration time.Duration) brainBootTimer {
 		if fired == 0 {
 			_ = readyWrite.Close()
 			var ready [1]byte
@@ -284,16 +281,15 @@ func runBrainBootThreeSectionsBody(t *testing.T) {
 			fired++
 			firedDuration = duration
 			ch := make(chan time.Time, 1)
-			ch <- brainBootNow()
+			ch <- now()
 			return brainBootTimer{C: ch, Stop: func() bool { return false }}
 		}
 		return brainBootTimer{C: make(chan time.Time), Stop: func() bool { return true }}
 	}
-	t.Cleanup(func() {
-		newBrainBootInputsCommand, brainBootNow, newBrainBootTimer = originalCommand, originalNow, originalTimer
-	})
 
-	output, err := composeBrainBootModeWithIdentity(root, root, minimumBrainContextBytes, 250, false, identity)
+	output, err := composeBrainBootWith(root, root, minimumBrainContextBytes, 250, false, brainBootDependencies{
+		ledgerIdentity: identity, inputsCommand: inputsCommand, now: now, timer: timer,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

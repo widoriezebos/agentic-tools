@@ -59,9 +59,12 @@ var auditModes = map[string]auditMode{
 	"internal/stoptransition/transition.go":                  {group: "G1a"},
 	"internal/stoptransition/families.go":                    {group: "G1a"},
 	// G1b machine and landing.
-	"cmd/metasystem/intent_machine.go": {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_landing.go": {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_alert.go":   {group: "G1b"},
+	"cmd/metasystem/intent_machine.go":        {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing.go":        {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing_prove.go":  {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing_push.go":   {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing_return.go": {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_alert.go":          {group: "G1b"},
 	// G2 goals and grants.
 	"cmd/metasystem/intent_goals.go":                       {group: "G2"},
 	"cmd/metasystem/intent_planning.go":                    {group: "G2"},

@@ -98,8 +98,8 @@ func child() {
 			},
 			wait: func(ctx context.Context, target int) error {
 				waited = true
-				if _, present := ctx.Deadline(); !present {
-					return fmt.Errorf("exit wait has no deadline")
+				if _, present := ctx.Deadline(); present {
+					return fmt.Errorf("the wait after the group kill has a deadline")
 				}
 				if target != -42 || !killed {
 					return context.DeadlineExceeded
@@ -202,7 +202,9 @@ func child() {
 			exitContext: testFixtureContext,
 		})
 		freshContexts.runCleanups()
-		if !secondRan || created != 2 || len(freshContexts.errors) != 1 || !strings.Contains(freshContexts.errors[0], `verb="first stop"`) {
+		// The first stop's cancelled context is an expired stop, not a
+		// failure; the second stop still gets a fresh, live context.
+		if !secondRan || created != 2 || len(freshContexts.errors) != 0 {
 			t.Fatalf("fresh cleanup contexts: second-ran=%t created=%d errors=%v", secondRan, created, freshContexts.errors)
 		}
 	})
@@ -311,8 +313,12 @@ func (r *fixtureProcessGroupRecorder) runCleanups() {
 	}
 }
 
+// testFixtureContext is an already-cancelled context: the fakes decide the
+// outcome, and nothing waits on a clock.
 func testFixtureContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx, cancel
 }
 
 func auditFixtureEngineChildren(root string) ([]string, error) {

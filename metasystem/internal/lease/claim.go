@@ -7,6 +7,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 // supervisionTagPrefixes mark an announcement as a supervision component
@@ -29,6 +30,28 @@ type claimer struct {
 	paths   Paths
 	emitter *events.Emitter
 	probe   identity.FixtureProbe
+	// processes is the process table the takeover sweep proves a stale
+	// group's ownership against; nil is the kernel's. Signal authorization
+	// stays kernel-only in production: only a test sets it.
+	processes identity.ProcessTable
+	// kill signals a stale process group the sweep proved ours; nil is the
+	// kernel's kill of the group. Only a test sets it.
+	kill func(pgid int64, sig unix.Signal) error
+}
+
+// groupKill signals the process group pgid through the claimer's kill.
+func (c *claimer) groupKill(pgid int64, sig unix.Signal) error {
+	if c.kill == nil {
+		return unix.Kill(int(-pgid), sig)
+	}
+	return c.kill(pgid, sig)
+}
+
+func (c *claimer) processTable() identity.ProcessTable {
+	if c.processes == nil {
+		return identity.KernelProcessTable{}
+	}
+	return c.processes
 }
 
 func newClaimer(root string) (*claimer, error) {

@@ -27,7 +27,7 @@ func reconcileFixture(t *testing.T, now time.Time) (string, Attempt, Record) {
 	t.Helper()
 	root, proof, admission := privateAdmissionFixture(t, "reconcile")
 	launcher := ProcessIdentity{Pid: 1001, PidStartedAt: 100}
-	attempt, result, err := ReserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
+	attempt, result, err := reserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
 		AccountingRevision: 2, ReservedMinutes: 4, Identity: proof, Launcher: launcher, Now: now}), admission))
 
 	if err != nil || result.Disposition != DispositionExecuted {

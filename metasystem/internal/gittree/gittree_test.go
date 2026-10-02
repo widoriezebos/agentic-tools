@@ -549,7 +549,7 @@ func TestTrackedAndIgnoredModificationProjects(t *testing.T) {
 func TestPosixMetadataOutsideProjection(t *testing.T) {
 	f := newTreeFixture(t)
 	before := f.snapshot()
-	old := time.Now().Add(-48 * time.Hour)
+	old := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	if err := os.Chtimes(filepath.Join(f.w.Dir, "README.md"), old, old); err != nil {
 		t.Fatal(err)
 	}

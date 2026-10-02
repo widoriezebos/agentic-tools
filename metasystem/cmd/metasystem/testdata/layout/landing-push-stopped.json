@@ -1,0 +1,24 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing push",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "the landing lane is stopped by Wido, so nothing was pushed",
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "start"
+    ],
+    "reason": "a person resumes it"
+  }
+}
+
+--

@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -622,7 +623,12 @@ func TestWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	command.Stdout, command.Stderr = &output, &output
-	if err := RunResourceCommand(t.Context(), command, nil); err != nil {
+	// A real go test in a fresh managed cache compiles its whole closure:
+	// this binary's other toolchains wait.
+	releaseToolchain := testenv.HoldToolchain()
+	err = RunResourceCommand(t.Context(), command, nil)
+	releaseToolchain()
+	if err != nil {
 		t.Fatalf("go test: %v\n%s", err, output.String())
 	}
 	contents, err := os.ReadFile(report)

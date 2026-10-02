@@ -68,6 +68,9 @@ type Engine struct {
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
+	// windDown is the wind-down ladder's clock and kernel; its zero value
+	// is the kernel's and the wall clock.
+	windDown windDownSeam
 	// Output and Errors receive the reports of Answer, Status, Launch and
 	// ResolveTaint; nil keeps the process streams. A public command gives
 	// each engine its own.

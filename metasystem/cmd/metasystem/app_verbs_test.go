@@ -18,13 +18,13 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var (
 	appFixtureOnce   sync.Once
 	appFixtureBinary string
-	appEngineBinary  string
 	appFixtureError  error
 )
 
@@ -40,26 +40,15 @@ func appFixtureApp(t *testing.T) string {
 			return
 		}
 		appFixtureBinary = filepath.Join(dir, "fixtureapp")
-		build := exec.Command("go", "build", "-o", appFixtureBinary, "../../internal/applaunch/testdata/fixtureapp")
+		build := testenv.Go("build", "-o", appFixtureBinary, "../../internal/applaunch/testdata/fixtureapp")
 		if out, err := build.CombinedOutput(); err != nil {
 			appFixtureError = fmt.Errorf("build fixture application: %v\n%s", err, out)
 			return
-		}
-		// A verb's start launches the engine's own `app serve`. Under `go
-		// test` this process is the test binary, so the tests supervise with
-		// a real engine built for the purpose.
-		appEngineBinary = filepath.Join(dir, "metasystem")
-		engine := exec.Command("go", "build", "-o", appEngineBinary, ".")
-		if out, err := engine.CombinedOutput(); err != nil {
-			appFixtureError = fmt.Errorf("build the engine: %v\n%s", err, out)
 		}
 	})
 	if appFixtureError != nil {
 		t.Fatal(appFixtureError)
 	}
-	previous := appEngine
-	appEngine = func() (string, error) { return appEngineBinary, nil }
-	t.Cleanup(func() { appEngine = previous })
 	return appFixtureBinary
 }
 
@@ -75,9 +64,10 @@ type appBed struct {
 	// that a test can see the argument vector a verb hands it and answer for
 	// it.
 	testRun func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
-	// supervisorWait replaces an app start's wait for its supervisor's
-	// answer; zero is production's.
-	supervisorWait time.Duration
+	// engine is the engine this bed's starts launch as their supervisor: the
+	// one built for the purpose, given to each invocation as its owner. Under
+	// `go test` this process is the test binary, which is no engine.
+	engine string
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -128,7 +118,10 @@ func newAppBed(t *testing.T, contract map[string]any) *appBed {
 			t.Fatal(err)
 		}
 	}
-	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}}
+	// A verb's start launches the engine's own `app serve`. Under `go test`
+	// this process is the test binary, so the tests supervise with the real
+	// engine this binary builds once.
+	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: testenv.Engine(t)}
 	bed.git("init", "--quiet", "--initial-branch=main")
 	bed.git("config", "user.email", "fixture@invalid")
 	bed.git("config", "user.name", "Fixture")
@@ -160,7 +153,12 @@ func (b *appBed) run(args ...string) (int, string) {
 	if b.testRun != nil {
 		owners.work.testRun = b.testRun
 	}
-	owners.appSupervisorWait = b.supervisorWait
+	// The start waits for its supervisor's one answer or its exit, never a
+	// clock: the supervisor reports ready or failed by the contract's own
+	// readiness, and the test's timeout bounds a supervisor that never does.
+	owners.appSupervisorWait = applaunch.WaitForReport
+	engine := b.engine
+	owners.appEngine = func() (string, error) { return engine, nil }
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
 	return code, stdout.String() + stderr.String()
@@ -497,16 +495,11 @@ func countLines(t *testing.T, path string) int {
 	return len(strings.Fields(string(data)))
 }
 
+// eventuallyTrue waits for done to hold: the fact is the event, bounded only
+// by the test binary's deadline.
 func eventuallyTrue(t *testing.T, what string, done func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if done() {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	testenv.Await(t, what, done)
 }
 
 // --goal G is sugar for the goal branch's tip, and a moved tip makes the
@@ -747,6 +740,30 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 	}
 }
 
+// followTurns is the context a follow runs under in TestAppLogFollow. A
+// follow asks for Done each time it has read to the log's end: the first
+// time it has opened the log and reached its end, so a line appended then is
+// written after the follow began; the second time it has read that line, so
+// the follow ends. Nothing waits on the clock.
+type followTurns struct {
+	context.Context
+	ends       int
+	atFirstEnd func()
+	ended      chan struct{}
+}
+
+func (turns *followTurns) Done() <-chan struct{} {
+	turns.ends++
+	switch turns.ends {
+	case 1:
+		turns.atFirstEnd()
+		return nil
+	case 2:
+		close(turns.ended)
+	}
+	return turns.ended
+}
+
 // log --follow prints the captured tail and then what the application writes
 // after it, until it is interrupted.
 func TestAppLogFollow(t *testing.T) {
@@ -757,17 +774,18 @@ func TestAppLogFollow(t *testing.T) {
 	}
 	previous := appFollowContext
 	appFollowContext = func() (context.Context, context.CancelFunc) {
-		return context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	}
-	t.Cleanup(func() { appFollowContext = previous })
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		log, err := os.OpenFile(applaunch.DefaultLogPath(bed.installation, applaunch.StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
-		if err == nil {
+		turns := &followTurns{Context: context.Background(), ended: make(chan struct{}), atFirstEnd: func() {
+			log, err := os.OpenFile(applaunch.DefaultLogPath(bed.installation, applaunch.StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
+			if err != nil {
+				t.Errorf("append to the followed log: %v", err)
+				return
+			}
 			fmt.Fprintln(log, "written after the follow began")
 			_ = log.Close()
-		}
-	}()
+		}}
+		return turns, func() {}
+	}
+	t.Cleanup(func() { appFollowContext = previous })
 	code, out := bed.run("app", "log", "--follow")
 	if code != 0 {
 		t.Fatalf("app log --follow: %d\n%s", code, out)

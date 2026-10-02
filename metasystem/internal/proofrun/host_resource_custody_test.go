@@ -71,9 +71,9 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 			_ = launcher.Wait()
 		}
 	})
-	waitCustodyFile(t, ready, 0)
-	worker = waitCustodyRef(t, prober, workerPID, 0)
-	grandchild = waitCustodyRef(t, prober, grandPID, 0)
+	waitCustodyFile(t, ready)
+	worker = waitCustodyRef(t, prober, workerPID)
+	grandchild = waitCustodyRef(t, prober, grandPID)
 	watchdogProcess = waitCustodyRecordWatchdog(t, directory, "custody-killed-launcher")
 	// The helper drops inherited descriptors before it starts anything, and
 	// the grandchild is ready only after the helper, custodian and worker
@@ -110,7 +110,7 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 		<-observationCtx.Done()
 	})
 	go func() {
-		lease, err := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
+		lease, err := acquireHostResourcesIn(waitCtx, directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 		if err != nil {
 			errs <- err
 			return
@@ -173,7 +173,7 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 		t.Fatalf("resource custodian terminated without a clean marker: marker=%s err=%v helper=%s custodylog=%s spools=%s", markerData, err, logBytes, custodyLog, spoolData)
 	}
 	waitCustodyTerminal(t, prober, grandchild)
-	lease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", []string{"fixture-db"})
+	lease, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		active, activeErr := activeHostResourceSlots(directory)
 		logBytes, _ := os.ReadFile(filepath.Join(directory, "launcher-helper.log"))
@@ -292,17 +292,17 @@ func waitCustodyRecordWatchdog(t *testing.T, root, suite string) identity.Ref {
 	}
 }
 
-func waitCustodyFile(t *testing.T, path string, bound time.Duration) {
+func waitCustodyFile(t *testing.T, path string) {
 	t.Helper()
-	waitCustodyFileWhile(t, path, bound, nil, nil)
+	waitCustodyFileWhile(t, path, nil, nil)
 }
 
 // waitCustodyFileWhile also fails as soon as ended closes while the barrier
 // is still missing: the command that would create it is gone, so waiting on
 // hangs the test instead of reporting endedErr.
-func waitCustodyFileWhile(t testing.TB, path string, bound time.Duration, ended <-chan struct{}, endedErr func() error) {
+func waitCustodyFileWhile(t testing.TB, path string, ended <-chan struct{}, endedErr func() error) {
 	t.Helper()
-	waitCustodyBarrier(t, path, bound, ended, endedErr, func() bool {
+	waitCustodyBarrier(t, path, ended, endedErr, func() bool {
 		_, err := os.Stat(path)
 		return err == nil
 	})
@@ -329,17 +329,12 @@ func completeCustodyRecord(path string) bool {
 	return err == nil && strings.HasSuffix(string(data), "\n")
 }
 
-func waitCustodyBarrier(t testing.TB, path string, bound time.Duration, ended <-chan struct{}, endedErr func() error, exists func() bool) {
+// waitCustodyBarrier waits for the barrier, or for the command that would
+// create it to end; the barrier is the event, with no bound of its own.
+func waitCustodyBarrier(t testing.TB, path string, ended <-chan struct{}, endedErr func() error, exists func() bool) {
 	t.Helper()
 	poll := time.NewTicker(20 * time.Millisecond)
 	defer poll.Stop()
-	var deadline <-chan time.Time
-	var timer *time.Timer
-	if bound > 0 {
-		timer = time.NewTimer(bound)
-		deadline = timer.C
-		defer timer.Stop()
-	}
 	for {
 		if exists() {
 			return
@@ -351,11 +346,6 @@ func waitCustodyBarrier(t testing.TB, path string, bound time.Duration, ended <-
 				return
 			}
 			t.Fatalf("custody barrier %s did not appear: %v", filepath.Base(path), t.Context().Err())
-		case <-deadline:
-			if exists() {
-				return
-			}
-			t.Fatalf("custody barrier %s did not appear", filepath.Base(path))
 		case <-ended:
 			if exists() {
 				return
@@ -365,9 +355,9 @@ func waitCustodyBarrier(t testing.TB, path string, bound time.Duration, ended <-
 	}
 }
 
-func waitCustodyRef(t *testing.T, prober identity.Prober, path string, bound time.Duration) identity.Ref {
+func waitCustodyRef(t *testing.T, prober identity.Prober, path string) identity.Ref {
 	t.Helper()
-	waitCustodyBarrier(t, path, bound, nil, nil, func() bool { return completeCustodyRecord(path) })
+	waitCustodyBarrier(t, path, nil, nil, func() bool { return completeCustodyRecord(path) })
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -418,9 +408,7 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory, conf, watchdog, workerPID, grandPID, ready, grandRelease := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7], os.Args[separator+8]
-	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
-	lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+	lease, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

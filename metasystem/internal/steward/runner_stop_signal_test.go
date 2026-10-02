@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -90,17 +91,19 @@ func TestStewardRunFinishesItsPushedGoalTransactionOnSIGTERM(t *testing.T) {
 		}
 	})
 
-	// Bounded wait for the push to reach the origin's hook: the entry is then
+	// Wait for the push to reach the origin's hook: the entry is then
 	// durably pushed and the outcome unknown.
-	for attempt := 0; ; attempt++ {
+	testenv.AwaitOr(t, "the runner's publish to reach the origin", func() bool {
 		if _, err := os.Stat(parked); err == nil {
-			break
+			return true
 		}
-		if attempt > 3000 {
-			t.Fatalf("the runner's publish never reached the origin; output=%s", stdout.String())
+		select {
+		case <-exited:
+			t.Fatalf("the runner exited before its publish reached the origin: %v; output=%s", waitErr, stdout.String())
+		default:
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return false
+	}, func() string { return "output=" + stdout.String() })
 	entries, err := goal.Entries(bed.publisher)
 	if err != nil || len(entries) != 1 || entries[0].Phase != goal.PhasePushed || entries[0].Owner.Pid != int64(pid) {
 		t.Fatalf("the parked transaction is not the runner's pushed entry: %+v %v", entries, err)
@@ -113,19 +116,13 @@ func TestStewardRunFinishesItsPushedGoalTransactionOnSIGTERM(t *testing.T) {
 	case <-exited:
 		after, _ := goal.Entries(bed.publisher)
 		t.Fatalf("SIGTERM ended the runner mid-transaction (%v); journal=%+v", waitErr, after)
-	case <-time.After(60 * time.Second):
-		t.Fatal("the runner neither reported the signal nor exited")
 	}
 	if err := os.WriteFile(release, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-exited:
-		if waitErr != nil {
-			t.Fatalf("the drained runner did not exit cleanly: %v; stderr=%q stdout=%s", waitErr, collected, stdout.String())
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("the drained runner did not exit after its transaction")
+	<-exited
+	if waitErr != nil {
+		t.Fatalf("the drained runner did not exit cleanly: %v; stderr=%q stdout=%s", waitErr, collected, stdout.String())
 	}
 	entries, err = goal.Entries(bed.publisher)
 	if err != nil || len(entries) != 1 || entries[0].Phase != goal.PhaseTerminal || entries[0].Outcome != goal.OutcomeConfirmed {
@@ -204,16 +201,20 @@ func (f *fakeStopSignals) source(t *testing.T) stopSignalSource {
 	}
 }
 
+// receiveWithin receives what the fixture sends: the send is the event,
+// bounded only by the test binary's deadline.
 func receiveWithin[T any](t *testing.T, from <-chan T, what string) T {
 	t.Helper()
-	select {
-	case value := <-from:
-		return value
-	case <-time.After(30 * time.Second):
-		t.Fatalf("no %s", what)
-	}
-	var zero T
-	return zero
+	var value T
+	testenv.Await(t, what, func() bool {
+		select {
+		case value = <-from:
+			return true
+		default:
+			return false
+		}
+	})
+	return value
 }
 
 // A second signal while the runner drains ends it at once, with the
@@ -320,5 +321,24 @@ func TestAStoppingRunnerStartsNoFurtherBreachStop(t *testing.T) {
 	}
 	if len(reports) != 2 || reports[0].State != "COMPLETE" || reports[1].State != "DEFERRED" || !strings.Contains(reports[1].Detail, "stopping") {
 		t.Fatalf("reports = %+v", reports)
+	}
+}
+
+// A hand-built rearmResolverDeps leaves signal nil; the replacement stop
+// resolves that to syscall.Kill at the point of use instead of panicking.
+// The runner is a child already exited and reaped, so the real Kill
+// answers ESRCH and no live process is touched.
+func TestStopRunnerForReplacementNilSignalUsesKill(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^$", "-test.count=1")
+	if err := child.Run(); err != nil {
+		t.Fatalf("run exited child: %v", err)
+	}
+	if err := stopRunnerForReplacement(root, RunnerRecord{Pid: int64(child.Process.Pid)}, nil); err != nil {
+		t.Fatalf("stop with nil signal: %v", err)
 	}
 }

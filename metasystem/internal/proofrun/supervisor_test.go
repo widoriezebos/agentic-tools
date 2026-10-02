@@ -1132,8 +1132,16 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		announceSupervisorHelperReady()
 		select {}
 	case "stop-then-exit":
+		// kill(getpid, SIGSTOP) is process-directed: the kernel may queue it for
+		// another thread and return here before the group stops. Without the
+		// wait, this goroutine could return and exit 0 before the stop is ever
+		// delivered, and the test would see a process that "resumed" with no
+		// SIGCONT. The helper ends only after the test's own SIGCONT.
+		continued := make(chan os.Signal, 1)
+		signal.Notify(continued, syscall.SIGCONT)
 		announceSupervisorHelperReady()
 		_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
+		<-continued
 	case "busy-for":
 		announceSupervisorHelperReady()
 		duration, _ := time.ParseDuration(args[0])

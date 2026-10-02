@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -254,26 +255,19 @@ func checkProcessGitFixture(t *testing.T, config processGitConfig, denied string
 			t.Errorf("malformed Git helper event %q", line)
 		}
 	}
-	deadline := time.Now().Add(3 * time.Second)
 	completedCount, interruptedGone := 0, 0
 	for pid, ref := range starts {
-		for time.Now().Before(deadline) {
-			if completed[pid] && processGitHelperGone(ref) {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-			if refreshed, readErr := os.ReadFile(config.Events); readErr == nil {
-				completed[pid] = strings.Contains(string(refreshed), fmt.Sprintf("done %d\n", pid))
-			}
-		}
+		// A helper the killed CLI left running is ended here, by its exact
+		// identity; its leaving the kernel's table is the event awaited.
 		if !processGitHelperGone(ref) {
 			exact, state, readErr := (identity.KernelProber{}).ReadStart(ref.Pid)
 			if readErr == nil && state == identity.Alive && identity.Compare(exact, ref).Matches {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
-				for attempt := 0; attempt < 200 && !processGitHelperGone(ref); attempt++ {
-					time.Sleep(10 * time.Millisecond)
-				}
+				testenv.Await(t, fmt.Sprintf("killed Git helper %d to exit", pid), func() bool { return processGitHelperGone(ref) })
 			}
+		}
+		if refreshed, readErr := os.ReadFile(config.Events); readErr == nil {
+			completed[pid] = strings.Contains(string(refreshed), fmt.Sprintf("done %d\n", pid))
 		}
 		gone := processGitHelperGone(ref)
 		if !gone {

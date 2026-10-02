@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
@@ -153,7 +154,7 @@ func TestGitProjectionAdapterPreservesArchivedKindsModesAndSymlinks(t *testing.T
 
 func buildFakeRunner(t *testing.T, output, stamp string) {
 	t.Helper()
-	cmd := exec.Command("go", "build", "-buildvcs=false",
+	cmd := testenv.Go("build", "-buildvcs=false",
 		"-ldflags", enginebuild.StampLinkerFlags(stamp),
 		"-o", output, "./testdata/fakerunner")
 	out, err := cmd.CombinedOutput()
@@ -1264,15 +1265,14 @@ func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 
 func TestSignalFailureNamesStopAttempted(t *testing.T) {
 	bed := newRearmBed(t, true)
-	original := runnerSignal
-	runnerSignal = func(pid int, signal syscall.Signal) error {
+	deps := bed.successDeps(t)
+	deps.signal = func(pid int, signal syscall.Signal) error {
 		if signal == syscall.SIGTERM {
 			return errors.New("injected termination failure")
 		}
-		return original(pid, signal)
+		return syscall.Kill(pid, signal)
 	}
-	t.Cleanup(func() { runnerSignal = original })
-	outcome, err := bed.rearm(t)
+	outcome, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
 	if err == nil || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "stop runner pid") {
 		t.Fatalf("signal failure transition: %+v %v", outcome, err)
 	}

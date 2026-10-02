@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -26,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -94,34 +94,26 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 // pipe and waits for the process to be reaped.
 func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	t.Helper()
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	holdRead, holdWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", "-c", `printf x >&3; read -r _ <&4`,
+	cmd := exec.Command("bash", "-c", testexec.ReadyPrologue+`read -r _`,
 		"metasystem", "util", "hold", "--tag", tag)
-	cmd.ExtraFiles = []*os.File{readyWrite, holdRead}
+	cmd.Stdin = holdRead
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	readyWrite.Close()
+	startErr := testexec.StartReady(cmd)
 	holdRead.Close()
+	if startErr != nil {
+		holdWrite.Close()
+		t.Fatalf("tagged holder did not publish readiness: %v", startErr)
+	}
 	waited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() {
 		holdWrite.Close()
 		<-waited
-		readyRead.Close()
 	})
-	ready := []byte{0}
-	if _, err := io.ReadFull(readyRead, ready); err != nil || ready[0] != 'x' {
-		t.Fatalf("tagged holder pid %d did not publish readiness: byte=%q err=%v", cmd.Process.Pid, ready, err)
-	}
 	exact, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
 	if err != nil || state != identity.Alive || !exact.ArgvKnown ||
 		!strings.Contains(strings.Join(exact.Argv, " "), tag) {
@@ -1288,10 +1280,6 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	// start fits it at any scale.
 	engine := equipFullCycleBed(t, buildPreflightBed(t, "FAKEHOST:close-stream", true))
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	teardownBound, err := ScaledWaitAtLeast(10, 10*killThroughFloor)
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
 		recordPath, _, _ := engine.runnerPaths()
 		record, err := readJSONDoc(recordPath)
@@ -1364,18 +1352,10 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 			}
 			_ = syscall.Kill(-int(recPgid), syscall.SIGKILL)
 		}
-		deadline := time.Now().Add(teardownBound)
 		for _, g := range groups {
-			for {
-				if err := syscall.Kill(-int(g), 0); err != nil {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Errorf("mission-birth teardown: process group %d still alive after %s; TempDir removal would race it", g, teardownBound)
-					break
-				}
-				time.Sleep(50 * time.Millisecond)
-			}
+			testenv.Await(t, fmt.Sprintf("mission-birth teardown: process group %d to be gone before TempDir removal", g), func() bool {
+				return syscall.Kill(-int(g), 0) != nil
+			})
 		}
 		// FOURTH sighting of this race: a writer in an UNRECORDED
 		// group — a detached descendant's git child — outlived every
@@ -1384,8 +1364,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		// inside this test's private TempDir: sweep by cwd, then wait
 		// the directory quiet before TempDir removal runs.
 		checkout := filepath.Dir(engine.Root)
-		sweepDeadline := time.Now().Add(teardownBound)
-		for {
+		testenv.Await(t, "mission-birth teardown: no process working under "+checkout+" before TempDir removal", func() bool {
 			live := 0
 			if pids, pidErr := identity.AllPids(); pidErr == nil {
 				for _, pid := range pids {
@@ -1397,15 +1376,8 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 					_ = syscall.Kill(int(pid), syscall.SIGKILL)
 				}
 			}
-			if live == 0 {
-				break
-			}
-			if time.Now().After(sweepDeadline) {
-				t.Errorf("mission-birth teardown: %d process(es) still working under %s after %s; TempDir removal would race them", live, checkout, teardownBound)
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+			return live == 0
+		})
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
 		"mission", "start", engine.Mission, "--wait", "--repo", engine.Root)
@@ -1503,35 +1475,15 @@ func TestResumeChildRechecksFileMode(t *testing.T) {
 // permissive prompt checker, the armed pin, and the anchor seam. The
 // behavior directive, when given, rides the contract's stream text into
 // the prompt, which is how the fake host selects its behavior.
-var (
-	freshBinaryOnce sync.Once
-	freshBinaryPath string
-	freshBinaryErr  error
-)
+var ()
 
 // freshEngineBinary compiles cmd/metasystem from the CURRENT source into
 // a shared temporary location, once per test process.
 func freshEngineBinary(t *testing.T) string {
 	t.Helper()
-	freshBinaryOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "metasystem-test-binary.")
-		if err != nil {
-			freshBinaryErr = err
-			return
-		}
-		freshBinaryPath = filepath.Join(dir, "metasystem")
-		build := exec.Command("go", "build", "-o", freshBinaryPath, "./cmd/metasystem")
-		build.Dir = filepath.Join("..", "..")
-		if out, err := build.CombinedOutput(); err != nil {
-			freshBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
-		}
-	})
-	if freshBinaryErr != nil {
-		// A proof that silently vanishes is no proof:
-		// the wrapper certification REQUIRES the reviewed binary.
-		t.Fatalf("cannot build the engine binary from source: %v", freshBinaryErr)
-	}
-	return freshBinaryPath
+	// A proof that silently vanishes is no proof: the wrapper certification
+	// REQUIRES the reviewed binary, and Engine fails the test without it.
+	return testenv.Engine(t)
 }
 
 func buildFullCycleRoot(t *testing.T, behavior string) *Engine {

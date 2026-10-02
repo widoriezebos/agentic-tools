@@ -965,7 +965,9 @@ type treeCPUProgress struct {
 }
 
 func newTreeCPUProgress(rootPID int) *treeCPUProgress {
-	return &treeCPUProgress{rootPID: rootPID, interval: time.Second, sample: processTreeCPUSeconds}
+	return &treeCPUProgress{rootPID: rootPID, interval: time.Second, sample: func(root int) (float64, bool) {
+		return processTreeCPUSeconds(identity.KernelProcessTable{}, root)
+	}}
 }
 
 func (p *treeCPUProgress) advanced(now time.Time) bool {
@@ -986,9 +988,9 @@ func (p *treeCPUProgress) advanced(now time.Time) bool {
 // (R-138-m1e: Go decides natively, it once listed `ps`). It reports false
 // when the root's CPU is unreadable, so a caller never mistakes a missing
 // sample for a stall; a descendant that exits between the snapshot and its
-// read contributes nothing.
-func processTreeCPUSeconds(rootPID int) (float64, bool) {
-	census, err := identity.TakeProcessCensus()
+// read contributes nothing. The tree is table's.
+func processTreeCPUSeconds(table identity.ProcessTable, rootPID int) (float64, bool) {
+	census, err := identity.CensusOf(table)
 	if err != nil {
 		return 0, false
 	}

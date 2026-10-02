@@ -56,6 +56,9 @@ func (i Item) ref() identity.Ref {
 // preceding runner: whether the runner itself concluded the host turn.
 type StopOptions struct {
 	RunnerConcluded bool
+	// windDown is the clock and kernel this stop reads; its zero value is
+	// the kernel's and the wall clock.
+	windDown windDownSeam
 }
 
 // StopOutcome is the typed process result consumed by the aggregate stop
@@ -188,22 +191,20 @@ func runnerItemLiveness(item Item, authorization *fixtureauth.Authorization) ide
 	}
 }
 
-var stopSignal = func(pid int, signal syscall.Signal) error { return unix.Kill(pid, signal) }
-
 // Stop ends one inventoried mission process. It never signals without the
 // record identity and positioned tag proof represented by the item.
 func Stop(item Item, options StopOptions) (StopOutcome, error) {
 	switch item.Kind {
 	case ItemRunner:
-		return stopRunner(item)
+		return stopRunner(item, options.windDown.resolved())
 	case ItemTurn:
-		return stopTurn(item, options.RunnerConcluded)
+		return stopTurn(item, options.RunnerConcluded, options.windDown.resolved())
 	default:
 		return StopOutcome{}, fmt.Errorf("unknown mission stop item %q", item.Kind)
 	}
 }
 
-func stopRunner(item Item) (StopOutcome, error) {
+func stopRunner(item Item, windDown windDownSeam) (StopOutcome, error) {
 	outcome := StopOutcome{Item: item, Signal: TerminationAlreadyGone, Result: "already-gone"}
 	authorization, err := fixtureauth.New(item.Root)
 	if err != nil {
@@ -215,7 +216,7 @@ func stopRunner(item Item) (StopOutcome, error) {
 		return outcome, nil
 	}
 	if state == identity.Dead {
-		return outcome, finishDeadRunner(item)
+		return outcome, finishDeadRunner(item, windDown)
 	}
 	requester, requesterState, requesterErr := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if requesterErr != nil || requesterState != identity.Alive {
@@ -229,19 +230,19 @@ func stopRunner(item Item) (StopOutcome, error) {
 	if err := atomicWriteJSON(intentPath, intent); err != nil {
 		return outcome, err
 	}
-	if err := stopSignal(-int(item.Pgid), syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := windDown.signal(-int(item.Pgid), syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return outcome, err
 	}
 	termWait, err := ScaledWait(10)
 	if err != nil {
 		return outcome, err
 	}
-	if waitRunnerGone(item, authorization, termWait) {
+	if waitRunnerGone(item, authorization, termWait, windDown) {
 		outcome.Result, outcome.Signal, outcome.Reason = "stopped", TerminationTerm, "runner-concluded"
 		return outcome, nil
 	}
 	if runnerItemLiveness(item, authorization) == identity.Alive {
-		if err := stopSignal(-int(item.Pgid), syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		if err := windDown.signal(-int(item.Pgid), syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return outcome, err
 		}
 	}
@@ -249,15 +250,15 @@ func stopRunner(item Item) (StopOutcome, error) {
 	if err != nil {
 		return outcome, err
 	}
-	if !waitRunnerGone(item, authorization, killWait) {
+	if !waitRunnerGone(item, authorization, killWait, windDown) {
 		outcome.Result, outcome.Signal, outcome.Reason = "not-stopped", TerminationKill, "runner survived SIGKILL"
 		return outcome, nil
 	}
 	outcome.Result, outcome.Signal, outcome.Reason = "stopped", TerminationKill, "TERM ignored"
-	return outcome, finishDeadRunner(item)
+	return outcome, finishDeadRunner(item, windDown)
 }
 
-func waitRunnerGone(item Item, authorization *fixtureauth.Authorization, limit time.Duration) bool {
+func waitRunnerGone(item Item, authorization *fixtureauth.Authorization, limit time.Duration, windDown windDownSeam) bool {
 	poll, err := Interval("METASYSTEM_HEARTBEAT_INTERVAL_MS", 50)
 	if err != nil {
 		poll = 50 * time.Millisecond
@@ -272,7 +273,7 @@ func waitRunnerGone(item Item, authorization *fixtureauth.Authorization, limit t
 	return runnerItemLiveness(item, authorization) == identity.Dead
 }
 
-func stopTurn(item Item, byRunner bool) (StopOutcome, error) {
+func stopTurn(item Item, byRunner bool, windDown windDownSeam) (StopOutcome, error) {
 	outcome := StopOutcome{Item: item, ByRunner: byRunner}
 	if item.Liveness == identity.Unknown.String() {
 		outcome.Result, outcome.Reason = "not-stopped", "host group identity is uninspectable"
@@ -285,13 +286,14 @@ func stopTurn(item Item, byRunner bool) (StopOutcome, error) {
 		}
 	}
 	engine := NewEngine(item.Root, item.MissionID)
+	engine.windDown = windDown
 	termination, err := engine.terminateGroup(int(item.Pgid), item.Tag, item.Runtime == "fake")
 	if err != nil {
 		outcome.Result, outcome.Signal, outcome.Reason = "not-stopped", termination, err.Error()
 		return outcome, nil
 	}
 	outcome.Signal = termination
-	if groupAlive(int(item.Pgid)) && groupHasSubstantiveMember(int(item.Pgid)) {
+	if windDown.groupAlive(int(item.Pgid)) && windDown.groupHasSubstantiveMember(int(item.Pgid)) {
 		outcome.Result, outcome.Reason = "not-stopped", "host group death is unproven"
 		return outcome, nil
 	}
@@ -306,7 +308,7 @@ func stopTurn(item Item, byRunner bool) (StopOutcome, error) {
 	return outcome, nil
 }
 
-func finishDeadRunner(item Item) error {
+func finishDeadRunner(item Item, windDown windDownSeam) error {
 	engine := NewEngine(item.Root, item.MissionID)
 	turns, err := Inventory(item.Root)
 	if err != nil {
@@ -314,7 +316,7 @@ func finishDeadRunner(item Item) error {
 	}
 	for _, turn := range turns {
 		if turn.Kind == ItemTurn && turn.MissionID == item.MissionID {
-			if _, err := stopTurn(turn, false); err != nil {
+			if _, err := stopTurn(turn, false, windDown); err != nil {
 				return err
 			}
 		}

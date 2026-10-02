@@ -522,6 +522,33 @@ func TestTrimSkipsAHeldCacheAndStopsOnCancellation(t *testing.T) {
 	}
 }
 
+// A fork by any goroutine copies the pass's lock description until the child
+// execs, and a flock belongs to the description: a pass that released by
+// Close alone left the next pass reading "another steward trims" (disk clean
+// repeat, goal no-flaky-tests cluster C). The duplicate is made while the
+// lock is held, as such a fork would, and outlives the pass.
+func TestTrimReleasesItsLockWhateverAForkDuplicated(t *testing.T) {
+	t.Parallel()
+	c := newSyntheticCache(t)
+	c.write("00/one-d", 100, 5*24*time.Hour)
+	duplicate := -1
+	c.trim(gocache.WithTrimHooks(c.config(150), gocache.TrimHooks{AfterLock: func(file *os.File) {
+		fd, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		duplicate = fd
+	}}))
+	if duplicate < 0 {
+		t.Fatal("the pass never reported its lock")
+	}
+	t.Cleanup(func() { _ = unix.Close(duplicate) })
+	if second := c.trim(c.config(150)); second.EndedBy == "lock-held" {
+		t.Fatalf("the next pass found the lock held after the first ended: %+v", second)
+	}
+}
+
 // A repeat with nothing over cap changes nothing but the report's
 // timestamp (R-129).
 func TestTrimRepeatChangesOnlyTheTimestamp(t *testing.T) {

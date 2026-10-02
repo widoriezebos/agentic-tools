@@ -13,8 +13,6 @@ import (
 
 const seatHandoffReason = "seatHandoff"
 
-var handoffProber identity.Prober = identity.KernelProber{}
-
 // handoffExpiryRule keeps every admission reader on one policy function. The
 // persisted timestamp stays useful while the default deliberately has no age
 // limit.
@@ -64,7 +62,7 @@ func handoffGoalIsStillOwnedWithReader(repoRoot, goalID string, now time.Time, r
 	return false, nil
 }
 
-func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers, ev Evidence, intent Intent, others int, providerOutage bool, workReason string, now time.Time, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (Decision, string, error) {
+func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers, ev Evidence, intent Intent, others int, providerOutage bool, workReason string, now time.Time, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error), prober identity.Prober) (Decision, string, error) {
 	targetPresent, err := handoffGoalIsStillOwnedWithReader(repoRoot, intent.Goal, now, reader)
 	if err != nil {
 		return Decision{}, workReason, fmt.Errorf("seat handoff goal could not be re-read: %w", err)
@@ -86,7 +84,7 @@ func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers
 		return Decision{VerdictStalledDead, ActNotify, fmt.Sprintf("handoff %s expired before its predecessor could be replaced", intent.Nonce)}, workReason, nil
 	}
 
-	liveness := handoffPredecessorLiveness(binding)
+	liveness := handoffPredecessorLiveness(binding, prober)
 	if liveness != identity.Dead {
 		verdict := VerdictHealthy
 		if liveness == identity.Unknown {
@@ -123,9 +121,13 @@ func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers
 
 // handoffPredecessorLiveness makes a launch-side decision from one process
 // observation. Once the recorded identity matches, a missing expected tag is
-// uncertainty about ownership, not proof that the process ended.
-func handoffPredecessorLiveness(binding HandoffBinding) identity.Liveness {
-	exact, state, _ := handoffProber.Probe(binding.Predecessor.Pid)
+// uncertainty about ownership, not proof that the process ended. A nil
+// prober reads the kernel.
+func handoffPredecessorLiveness(binding HandoffBinding, prober identity.Prober) identity.Liveness {
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	exact, state, _ := prober.Probe(binding.Predecessor.Pid)
 	switch state {
 	case identity.Dead:
 		return identity.Dead

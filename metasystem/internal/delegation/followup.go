@@ -373,7 +373,7 @@ func (s *session) followUp(args []string) error {
 		}
 	}
 	if err := s.briefAuthority(authorityMessage, workspace); err != nil {
-		return s.die(1, "follow-up brief authority admission refused")
+		return s.die(1, "follow-up brief authority admission refused: "+err.Error())
 	}
 	// The completed critic attempt is folded and the cap is checked while no
 	// successor record exists. A repeated wrapper claims a round the winner

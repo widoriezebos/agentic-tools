@@ -95,7 +95,7 @@ func TestWorkLandAsksOnlyWhetherALaneIsRegistered(t *testing.T) {
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		laneRoot: production.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	refused := inv.laneRegistered(nil)
-	if refused == nil || refused.Summary != "this computer has a landing lane, whose hand-in isn't built yet" {
+	if refused == nil || refused.Summary != "this computer has a landing lane, which lands only a goal's branch; nothing was landed" {
 		t.Fatalf("work land on a registered lane = %+v; want the lane's refusal and no other question asked", refused)
 	}
 }

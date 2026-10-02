@@ -176,7 +176,7 @@ func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[
 }
 
 // TestDesignLoopRoundTwoOfFiveIsNotFinal: a design chain whose root froze
-// no limit has the design critique's five rounds (Wido 2026-10-01, a
+// no limit has metasystem.budget.review-round-max rounds (five by default, a
 // backstop), so round 2 is requested as an ordinary round, not the final one.
 func TestDesignLoopRoundTwoOfFiveIsNotFinal(t *testing.T) {
 	t.Parallel()
@@ -259,5 +259,24 @@ func TestDesignLoopAcceptedMaterialOnAnEarlierRoundStillRefuses(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "1", "decisions.md")); err != nil {
 		t.Fatal(fmt.Errorf("the round's own decisions file: %w", err))
+	}
+}
+
+// TestDesignLoopUnfrozenRootTakesTheCeiling: a design chain whose root froze
+// no limit ends at metasystem.budget.review-round-max, not at a fixed five
+// (Wido 2026-10-02): under a ceiling of 2, round 2 is the final round.
+func TestDesignLoopUnfrozenRootTakesTheCeiling(t *testing.T) {
+	t.Parallel()
+	b := newDesignLoopBed(t)
+	conf := filepath.Join(b.root(), "metasystem.conf")
+	existing, _ := os.ReadFile(conf)
+	b.writeFile(conf, string(existing)+"metasystem.budget.review-round-max=2\n")
+	b.review()
+	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	first := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2 names the page"})
+	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
+	requested := b.review("--dispositions", first, "--after", "1")
+	if len(b.followUps) != 1 || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested, the final round") {
+		t.Fatalf("round 2 under a ceiling of 2: %+v", requested)
 	}
 }

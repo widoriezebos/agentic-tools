@@ -98,6 +98,11 @@ func TestRunningContinuationIsLeftAlone(t *testing.T) {
 	}
 }
 
+// pastTheSetupGrace is a fixed instant older than any pending or setup
+// grace, so a consumed intent stamped with it is past the grace however long
+// the test ran.
+var pastTheSetupGrace = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
 func TestUnstampedConsumedReconcilesAsNotifiedUnknown(t *testing.T) {
 	root := t.TempDir()
 	it := testIntent("rp-3")
@@ -109,7 +114,7 @@ func TestUnstampedConsumedReconcilesAsNotifiedUnknown(t *testing.T) {
 		t.Fatalf("the setup window is respected: %+v %v", reports, err)
 	}
 	// Past the grace with no record, the boundary reconciles visibly.
-	old := time.Now().Add(-11 * time.Minute)
+	old := pastTheSetupGrace
 	if err := os.Chtimes(filepath.Join(consumedDir(root), "rp-3.json"), old, old); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +130,7 @@ func TestUnstampedWithALiveJobIsLeftAlone(t *testing.T) {
 	it.Notified = true
 	consumedIntentOnDisk(t, root, it)
 	jobRecordOnDisk(t, root, it.JobId, "running", "")
-	old := time.Now().Add(-11 * time.Minute)
+	old := pastTheSetupGrace
 	if err := os.Chtimes(filepath.Join(consumedDir(root), "rp-6.json"), old, old); err != nil {
 		t.Fatal(err)
 	}

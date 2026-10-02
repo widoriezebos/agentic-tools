@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
@@ -122,7 +123,7 @@ func TestRevivalUnderHelmHoldsEveryKind(t *testing.T) {
 	t.Run("HM-7 seatHandoff", func(t *testing.T) {
 		root, intent := prepareRevivalHandoff(t, "4000000000000077")
 		takeHelmFixture(t, root)
-		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, identity.KernelProber{}, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			t.Fatal("HM-7: a handoff launched under the helm")
 			return nil
 		})

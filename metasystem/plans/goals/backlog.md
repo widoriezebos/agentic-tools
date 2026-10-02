@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 111
+- Revision: 115
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -147,4 +147,8 @@ History:
 - 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-10-01T06:56:04Z ack
 - 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-10-01T06:58:00Z ack
 - 2026-10-01T15:31:39Z VDRWT66V2QX0M9XGP6XCB3NXCW-m1e-c6925449 grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-03T15:31:00Z
-Integrity: sha256=e0977dafb860ef6bfb54ddc21884db73b8eb669ee462b5bdd1a96db29972a41a
+- 2026-10-02T02:11:01Z GWMFCQNTB3NRHRG4WFTWJVMWVB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=review-briefs-name-a-threat-model displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:08:51Z ack
+- 2026-10-02T02:50:24Z 2X46PWT82ZT6XZFVJP35B3F8B0-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-red displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:11:20Z ack
+- 2026-10-02T03:11:13Z WN89TPJVYJZECWK5B4C441EG6X-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-conflict-b displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:50:38Z ack
+- 2026-10-02T10:16:27Z D2VVM51K6YGVSFX2CXP5K6KMG6-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-pause displaced=m1e+main-1790454088-93948-21671b@2026-10-02T03:11:13Z ack
+Integrity: sha256=48e1b2dbc4a0fef147862fb50ebb2fcbd6585e98173724815351a97df1d07ba3

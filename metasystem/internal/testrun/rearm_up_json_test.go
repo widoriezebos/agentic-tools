@@ -3,12 +3,12 @@ package testrun
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -28,7 +28,7 @@ func rearmUpEngine(t *testing.T) []byte {
 			return
 		}
 		rearmUpEnginePath = filepath.Join(dir, "metasystem")
-		build := exec.Command("go", "build", "-trimpath", "-o", rearmUpEnginePath, filepath.Join("..", "..", "cmd", "metasystem"))
+		build := testenv.Go("build", "-trimpath", "-o", rearmUpEnginePath, filepath.Join("..", "..", "cmd", "metasystem"))
 		if output, err := build.CombinedOutput(); err != nil {
 			rearmUpEngineErr = err
 			t.Logf("%s", output)

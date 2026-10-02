@@ -122,11 +122,17 @@ func TestProcessTreeCPUSecondsReadsTheKernelNotAProgram(t *testing.T) {
 	if rootErr != nil || childErr != nil || childCPU <= 0 {
 		t.Fatalf("per-process CPU root=%v (%v) child=%v (%v)", rootCPU, rootErr, childCPU, childErr)
 	}
-	total, ok := processTreeCPUSeconds(command.Process.Pid)
+	// The tree is read from a table of exactly the test's processes, never
+	// the host's.
+	tree := identity.ListedProcessTable{root, grandchild}
+	total, ok := processTreeCPUSeconds(tree, command.Process.Pid)
 	if !ok || total < rootCPU+childCPU {
 		t.Fatalf("tree CPU = %v, %v; want at least root %v plus grandchild %v", total, ok, rootCPU, childCPU)
 	}
-	if _, ok := processTreeCPUSeconds(os.Getpid() + 1_000_000); ok {
+	if rootOnly, ok := processTreeCPUSeconds(identity.ListedProcessTable{root}, command.Process.Pid); !ok || rootOnly >= total {
+		t.Fatalf("a table without the grandchild reads tree CPU %v, %v; want only the root's, below %v", rootOnly, ok, total)
+	}
+	if _, ok := processTreeCPUSeconds(tree, os.Getpid()+1_000_000); ok {
 		t.Fatal("an absent process must report no sample")
 	}
 }

@@ -53,12 +53,14 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	}
 	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		f.Close()
+		unlockAndClose(f)
 		return nil, err
 	}
-	defer want.Close()
+	// The queued hold ends with an unlock: a sibling's fork copy of the
+	// want description would otherwise keep the sweeper yielding.
+	defer unlockAndClose(want)
 	if err := flockWaiting(want, unix.LOCK_SH); err != nil {
-		f.Close()
+		unlockAndClose(f)
 		return nil, err
 	}
 	beforeArbitrationWait()
@@ -94,7 +96,7 @@ func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	// No want file means no waiter has ever queued, and none is created here.
 	if want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_RDONLY, 0); err == nil {
 		queued := unix.Flock(int(want.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		want.Close()
+		unlockAndClose(want)
 		if queued != nil {
 			if errors.Is(queued, unix.EWOULDBLOCK) || errors.Is(queued, unix.EAGAIN) {
 				return nil, ErrArbitrationHeld
@@ -129,7 +131,7 @@ func ProbeArbitration(repoRoot string) (free bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer unlockAndClose(f)
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return false, nil
@@ -141,8 +143,16 @@ func ProbeArbitration(repoRoot string) (free bool, err error) {
 
 // Release ends the critical section.
 func (l *ArbitrationLock) Release() {
-	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
-	_ = l.f.Close()
+	unlockAndClose(l.f)
+}
+
+// unlockAndClose ends a hold on file: the flock is released on the open file
+// description first, so a duplicate a concurrent fork made before its exec
+// cannot keep the lock after the holder has ended. Unlocking a description
+// that holds nothing is a no-op.
+func unlockAndClose(file *os.File) {
+	_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	_ = file.Close()
 }
 
 // The enrollment fence: a counter every enrollment bumps under the

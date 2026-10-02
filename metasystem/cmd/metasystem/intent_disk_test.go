@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -71,6 +72,9 @@ func newDiskBed(t *testing.T) *diskBed {
 			pass.Home, pass.TempRoots, pass.Volumes, pass.Checkouts = bed.home, []string{bed.tmp}, []string{root}, []string{}
 			pass.Proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskProof{}}
 			pass.Clock = func() time.Time { return diskNow }
+			// The bed starts no process: the pass's use census reads an
+			// empty table, never the host's.
+			pass.Processes = identity.ListedProcessTable{}
 			pass.UserHome = filepath.Join(root, "user")
 			pass.Facts = func(context.Context, string) (diskstore.CheckoutFacts, error) {
 				return diskstore.CheckoutFacts{}, errors.New("the fixture runs no git")

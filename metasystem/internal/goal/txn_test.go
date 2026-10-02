@@ -909,7 +909,7 @@ func TestPushedEntryBlocksTheWholeClone(t *testing.T) {
 	if _, err := CreateEntry(a.Root, "op-stuck", "mac-a", "l1", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkPushed(a.Root, "op-stuck", "sometip", 1, time.Now().Add(time.Minute)); err != nil {
+	if err := MarkPushed(a.Root, "op-stuck", "sometip", 1, pushDeadlineNeverReached); err != nil {
 		t.Fatal(err)
 	}
 	mutated := false

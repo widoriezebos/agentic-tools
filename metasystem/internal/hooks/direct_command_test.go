@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -360,12 +361,15 @@ func runHookTestEngine() int {
 			return os.WriteFile(filepath.Join(installation, "rebuild-started"), []byte("rebuild\n"), 0o600)
 		}
 	}
-	origin := time.Now()
+	// The monotonic clock is artificial, a millisecond further at each
+	// read: the cost trace it feeds is never asserted on these beds, and
+	// nothing the bed proves may rest on how long the host took.
+	var monotonic atomic.Int64
 	return RunRuntimeHook(Invocation{
 		Runtime: args[2], Event: args[3], Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(),
 		Installation: installation,
-		Now:          time.Now, Monotonic: func() time.Duration { return time.Since(origin) },
+		Now:          time.Now, Monotonic: func() time.Duration { return time.Duration(monotonic.Add(int64(time.Millisecond))) },
 		// No deadline fires: the worker's exit is the event the parent waits
 		// on, so nothing here waits on wall time.
 		After: func(time.Duration) <-chan time.Time { return nil }, Sleep: func(time.Duration) { runtime.Gosched() },

@@ -2,6 +2,7 @@ package diskstore
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -52,13 +53,10 @@ func processScratchHelper() (code int, handled bool) {
 		// reads the parent test's pipe, so it ends when the test closes it.
 		child := exec.Command("cat")
 		child.Stdin, child.Stdout = os.Stdin, os.Stdout
-		if err := PrepareChild(child); err != nil {
+		if err := StartChild(child); err != nil {
 			return fail(err)
 		}
-		if err := child.Start(); err != nil {
-			return fail(err)
-		}
-		fmt.Println("ready")
+		fmt.Printf("child=%d\nready\n", child.Process.Pid)
 		wait := make(chan os.Signal, 1)
 		signal.Notify(wait, syscall.SIGTERM)
 		<-wait
@@ -95,17 +93,14 @@ func processScratchHelper() (code int, handled bool) {
 		// G and ends while G runs.
 		child := exec.Command(os.Args[0])
 		child.Stdin = os.Stdin
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-"+strings.TrimPrefix(mode, "grand-"))
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=grand-child-"+strings.TrimPrefix(mode, "grand-"))
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
 		fmt.Printf("child-%s", output)
 		if os.Getenv("DISKSTORE_SCRATCH_EXIT") == "" {
-			if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+			if err := ReleaseProcessScratch(context.Background()); err != nil {
 				fmt.Printf("parent-release=%v\n", err)
 			}
 		}
@@ -116,11 +111,8 @@ func processScratchHelper() (code int, handled bool) {
 		// to the child's root (the reader's parent-extra probe).
 		child := exec.Command(os.Args[0])
 		child.Stdin = os.Stdin
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-bare")
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=grand-child-bare")
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
@@ -159,14 +151,11 @@ func processScratchHelper() (code int, handled bool) {
 			}
 			grandchild.ExtraFiles = []*os.File{read}
 		}
-		if err := PrepareChild(grandchild); err != nil {
-			return fail(err)
-		}
-		if err := grandchild.Start(); err != nil {
+		if err := StartChild(grandchild); err != nil {
 			return fail(err)
 		}
 		fmt.Printf("grandchild=%d\ngrandchild-dir=%s\n", grandchild.Process.Pid, dir)
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			fmt.Printf("child-release=%v\n", err)
 		}
 		return 0, true
@@ -184,28 +173,25 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(err)
 		}
 		done()
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	case "nested":
 		child := exec.Command(os.Args[0])
-		if err := PrepareChild(child); err != nil {
-			return fail(err)
-		}
-		child.Env = append(child.Env, processScratchHelperEnv+"=nested-child")
-		output, err := child.Output()
+		child.Env = append(os.Environ(), processScratchHelperEnv+"=nested-child")
+		output, err := startedOutput(child)
 		if err != nil {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
 		fmt.Printf("child-%s", output)
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	case "nested-child":
 		fmt.Printf("tmpdir=%s\n", os.Getenv("TMPDIR"))
-		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
 			return fail(err)
 		}
 		return 0, true
@@ -213,17 +199,48 @@ func processScratchHelper() (code int, handled bool) {
 	return fail(fmt.Errorf("unknown helper mode %q", mode))
 }
 
+// startedOutput is cmd.Output through the seam: it starts cmd with
+// StartChild and returns its standard output once it has exited.
+func startedOutput(cmd *exec.Cmd) ([]byte, error) {
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := StartChild(cmd); err != nil {
+		return nil, err
+	}
+	err := cmd.Wait()
+	return output.Bytes(), err
+}
+
 // scratchBed is a helper process's TMPDIR and home state root, both inside
-// the test's own directory.
+// the test's own directory, and the processes the test started: the process
+// proof's owner-group verdict reads only those, never the host's table, so
+// another test's process (or a pid reused into a helper's ended session)
+// never decides a bed's verdict.
 type scratchBed struct {
 	temp, home string
 	registry   Registry
+	processes  *identity.ListedProcessTable
+}
+
+// list adds processes the test started to the bed's process table; a pid
+// it already lists is listed once.
+func (b scratchBed) list(pids ...int) {
+	for _, pid := range pids {
+		if !slices.Contains(*b.processes, int64(pid)) {
+			*b.processes = append(*b.processes, int64(pid))
+		}
+	}
+}
+
+// proof is the process proof over the bed's own processes.
+func (b scratchBed) proof(prober identity.Prober) ProcessProof {
+	return ProcessProof{Prober: prober, Table: append(identity.ListedProcessTable(nil), *b.processes...)}
 }
 
 func newScratchBed(t *testing.T) scratchBed {
 	t.Helper()
 	dir := realDir(t)
-	bed := scratchBed{temp: filepath.Join(dir, "tmp"), home: filepath.Join(dir, "home")}
+	bed := scratchBed{temp: filepath.Join(dir, "tmp"), home: filepath.Join(dir, "home"), processes: &identity.ListedProcessTable{}}
 	for _, path := range []string{bed.temp, bed.home} {
 		if err := os.Mkdir(path, 0o700); err != nil {
 			t.Fatal(err)
@@ -264,12 +281,17 @@ func (b scratchBed) onlyRecord(t *testing.T) Record {
 	return records[0]
 }
 
-// sweep runs a pass with the kernel's use census; an unreadable process
-// with no metasystem ancestor is not a holder (the census's ancestry
-// rule), and a test bed records no metasystem process.
-func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
+// sweep runs a pass with the kernel's use census of the bed's own
+// processes (its table, which gains the pids given here), the pids its test started (helpers' children and grandchildren
+// included), never the whole host: a host-wide census also reads the other
+// parallel tests' processes, and a child another test forks holds a copy of
+// this binary's descriptors until it execs. An unreadable process with no
+// metasystem ancestor is not a holder (the census's ancestry rule), and a
+// test bed records no metasystem process.
+func (b scratchBed) sweep(t *testing.T, prober identity.Prober, bed ...int) Report {
 	t.Helper()
-	reader := KernelCensusReader(uint32(os.Getuid()))
+	b.list(bed...)
+	reader := KernelCensusReader(append(identity.ListedProcessTable(nil), *b.processes...), uint32(os.Getuid()))
 	// No process of a test bed is the metasystem's, so by the census's
 	// ancestry rule every unreadable process (a zombie another test has
 	// not reaped yet, whose parent chain the kernel no longer answers) is
@@ -282,7 +304,7 @@ func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
 func (b scratchBed) sweepWith(t *testing.T, prober identity.Prober, reader *CensusReader) Report {
 	t.Helper()
 	options := passOptions(b.registry, realDir(t),
-		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: prober}}})
+		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: b.proof(prober)}})
 	options.CensusReader = reader
 	report, err := RunPass(context.Background(), options)
 	if err != nil {
@@ -323,7 +345,13 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	for lines.Scan() && lines.Text() != "ready" {
 		printed = append(printed, lines.Text())
 	}
-	root := helperValue(t, strings.Join(printed, "\n"), "root")
+	output := strings.Join(printed, "\n")
+	root := helperValue(t, output, "root")
+	child, err := strconv.Atoi(helperValue(t, output, "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bed.list(helper.Process.Pid, child)
 	if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
@@ -342,32 +370,26 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	if state := identity.AliveRef(identity.KernelProber{}, ref); state != identity.Dead {
 		t.Fatalf("the killed owner reads %s", state)
 	}
-	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Keep {
+	if verdict := bed.proof(identity.KernelProber{}).Observe(context.Background(), record); verdict.Decision != Keep {
 		t.Fatalf("with the child alive the proof says %+v; want keep", verdict)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, child)
 	if _, err := os.Lstat(root); err != nil {
 		t.Fatalf("a sweep removed a root its child still holds: %v", err)
 	}
-	// Closing the pipe ends cat. A blocking LOCK_EX through a description
-	// of the test's own returns exactly when cat's inherited copy closed.
+	// Closing the pipe ends cat. Its writer lock frees when its files
+	// close, before the kernel marks it exited, and it stays a member of
+	// the owner's session until init reaps it: its end is awaited on the
+	// kernel's process table, never inferred from the lock.
 	_ = stdin.Close()
-	waiter, err := os.Open(filepath.Join(root, WriterLockName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := unix.Flock(int(waiter.Fd()), unix.LOCK_EX); err != nil {
-		t.Fatal(err)
-	}
-	_ = unix.Flock(int(waiter.Fd()), unix.LOCK_UN)
-	_ = waiter.Close()
+	awaitGone(t, child)
 	if free, err := ProbeWriterLock(record); err != nil || !free {
 		t.Fatalf("after the child exited the writer lock probe = free %v, %v; want free", free, err)
 	}
-	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Release {
+	if verdict := bed.proof(identity.KernelProber{}).Observe(context.Background(), record); verdict.Decision != Release {
 		t.Fatalf("after the child exited the proof says %+v; want release", verdict)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, child)
 	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the sweep left the dead process's root: %v", err)
 	}
@@ -591,6 +613,38 @@ func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 	}
 }
 
+// A child another test of this binary forks holds a copy of every
+// descriptor the binary had open until it execs, so a census of the whole
+// host can read that copy as a holder of a file in this bed's root and keep
+// a dead owner's root ("the dead owner's root stayed",
+// TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot). The bed's
+// census reads only the processes the bed itself started. The stand-in for
+// the other test's child is a process outside the bed holding the root's
+// payload open.
+func TestProcessScratchBedCensusReadsOnlyTheBedsProcesses(t *testing.T) {
+	t.Parallel()
+	bed, record := deadScratch(t)
+	payload, err := os.Open(filepath.Join(record.Path, "payload"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := exec.Command("/bin/sh", "-c", "read line || true")
+	foreign.ExtraFiles = []*os.File{payload}
+	stdin, err := foreign.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := foreign.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = payload.Close()
+	t.Cleanup(func() { _ = stdin.Close(); _ = foreign.Wait() })
+	report := bed.sweep(t, fixedProber{state: identity.Dead})
+	if _, err := os.Lstat(record.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a process outside the bed kept the dead owner's root: %v\nkept %+v\npending %+v", err, report.Kept, report.Pending)
+	}
+}
+
 // Fail-closed rule 4: a removal cut short stays releasing, and every retry
 // re-checks use: a writer lock held again keeps it, an owner alive keeps
 // it, and only a free lock and a dead owner finish it.
@@ -718,6 +772,7 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			bed.list(helper.Process.Pid, child)
 			if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
 				t.Fatal(err)
 			}
@@ -726,7 +781,7 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			if free, err := ProbeWriterLock(record); err != nil || !free {
 				t.Fatalf("the child never inherited the lock, yet the probe = free %v, %v", free, err)
 			}
-			bed.sweep(t, identity.KernelProber{})
+			bed.sweep(t, identity.KernelProber{}, child)
 			if _, err := os.Lstat(root); err != nil {
 				t.Fatalf("the sweeper removed a root a live child uses (%s): %v", mode, err)
 			}
@@ -736,13 +791,8 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			// Closing the pipe ends the child; its end is awaited on the
 			// kernel's process table, never on a clock.
 			_ = stdin.Close()
-			for unix.Kill(child, 0) == nil {
-				if t.Context().Err() != nil {
-					t.Fatal("the child did not end")
-				}
-				runtime.Gosched()
-			}
-			bed.sweep(t, identity.KernelProber{})
+			awaitGone(t, child)
+			bed.sweep(t, identity.KernelProber{}, child)
 			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("after the child ended the root stayed: %v", err)
 			}
@@ -772,5 +822,45 @@ func TestProcessProofKeepsARootTheCensusCannotClear(t *testing.T) {
 				t.Fatalf("%s: record %s; want kept", name, record.State)
 			}
 		})
+	}
+}
+
+// The owner-group verdict reads the process table its proof is given, never
+// the host's: a live process in the recorded group and session keeps the
+// root only when it is in that table, so a test bed's verdict never depends
+// on what else runs on the host.
+func TestOwnerGroupVerdictReadsOnlyTheTableItIsGiven(t *testing.T) {
+	t.Parallel()
+	member := exec.Command("cat")
+	member.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	stdin, err := member.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := member.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
+	pid := int64(member.Process.Pid)
+	record := Record{OwnerGroup: pid, OwnerSession: pid}
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{pid}); verdict.Decision != Keep {
+		t.Fatalf("a running member in the table does not keep the root: %+v", verdict)
+	}
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{}); verdict.Decision != Release {
+		t.Fatalf("a member outside the table kept the root: %+v", verdict)
+	}
+}
+
+// The kernel use census reads the processes of the table it is given and no
+// other: a table of the test's own process is a census of exactly that one.
+func TestKernelCensusReaderReadsOnlyItsTable(t *testing.T) {
+	t.Parallel()
+	self := int64(os.Getpid())
+	census := TakeUseCensus(context.Background(), KernelCensusReader(identity.ListedProcessTable{self}, uint32(os.Getuid())))
+	if !census.Taken || len(census.Processes)+len(census.Unreadable)+len(census.NotOurs) != 1 {
+		t.Fatalf("census of a one-process table = %+v; want exactly this process", census)
+	}
+	if empty := TakeUseCensus(context.Background(), KernelCensusReader(identity.ListedProcessTable{}, uint32(os.Getuid()))); !empty.Complete() || len(empty.Processes) != 0 {
+		t.Fatalf("census of an empty table = %+v; want taken and empty", empty)
 	}
 }

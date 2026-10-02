@@ -7,7 +7,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -186,7 +186,7 @@ func TestGoalLandingGoManifestSelectionCoversCurrentPackages(t *testing.T) {
 	if !slices.Equal(selection.Changed, []string{"./..."}) {
 		t.Fatalf("manifest change selected %v, want ./...", selection.Changed)
 	}
-	command := exec.Command("go", "list", "./...")
+	command := testenv.Go("list", "./...")
 	command.Dir, command.Env = module, environment
 	output, err := command.CombinedOutput()
 	if err != nil {

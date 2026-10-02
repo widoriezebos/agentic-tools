@@ -38,12 +38,9 @@ func launchWorker(engine, installation, runtime string, env []string, stdin, std
 	command.Dir = installation
 	command.Env = env
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
-	// The worker inherits the scratch root's writer lock: a Stop killed at
-	// its budget leaves a root its surviving worker still holds.
-	if err := diskstore.PrepareChild(command); err != nil {
-		return nil, err
-	}
-	if err := command.Start(); err != nil {
+	// The worker holds a writer lock of the scratch root of its own: a Stop
+	// killed at its budget leaves a root its surviving worker still holds.
+	if err := diskstore.StartChild(command); err != nil {
 		return nil, err
 	}
 	worker := &engineWorker{pid: command.Process.Pid, done: make(chan struct{})}

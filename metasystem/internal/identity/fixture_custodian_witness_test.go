@@ -286,12 +286,7 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		deaths = append(deaths, armWitnessDeath(t, shell))
 	}
 	_ = command.Process.Kill()
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	_ = waitWitnessCommand(t, dir, command, done, func() string {
-		data, _ := os.ReadFile(filepath.Join(dir, "launcher.stderr"))
-		return string(data)
-	})
+	_ = command.Wait()
 	for _, death := range deaths {
 		waitWitnessDead(t, dir, death)
 	}
@@ -334,12 +329,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	waitWitnessFile(t, dir, string(recordsPath))
 	custodianDeath := armWitnessDeath(t, custodian)
 	checkWitness(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o600))
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	if err := waitWitnessCommand(t, dir, command, done, func() string {
-		output, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
-		return string(output)
-	}); err != nil {
+	if err := command.Wait(); err != nil {
 		output, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
 		t.Fatalf("quiet owner exit: %v output=%q", err, output)
 	}
@@ -369,12 +359,7 @@ func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	command.Stdout, command.Stderr = output, output
 	checkWitness(t, command.Start())
 	t.Cleanup(func() { _ = command.Process.Kill() })
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	waitErr := waitWitnessCommand(t, dir, command, done, func() string {
-		data, _ := os.ReadFile(output.Name())
-		return string(data)
-	})
+	waitErr := command.Wait()
 	exit, ok := waitErr.(*exec.ExitError)
 	data, _ := os.ReadFile(output.Name())
 	if !ok || exit.ExitCode() != 2 || !strings.Contains(string(data), "descriptor 3") {
@@ -397,9 +382,7 @@ func TestCustodianRejectsMissingReadyDescriptor(t *testing.T) {
 	started, _ := ParseRef(liveWitnessProcessRef(t, int64(command.Process.Pid), 0))
 	checkWitness(t, recordWitnessRef(dir, "custodian", started))
 	t.Cleanup(func() { _ = SignalExact(KernelProber{}, started, syscall.SIGKILL) })
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	waitErr := waitWitnessCommand(t, dir, command, done, output.String)
+	waitErr := command.Wait()
 	exit, ok := waitErr.(*exec.ExitError)
 	if !ok || exit.ExitCode() != 2 || !strings.Contains(output.String(), "descriptor 4") {
 		t.Fatalf("custodian exit=%v output=%q; want exit 2 naming descriptor 4", waitErr, output.String())
@@ -450,12 +433,7 @@ func custodianWitness(t *testing.T, hard bool) {
 	} else {
 		_ = command.Process.Kill()
 	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	_ = waitWitnessCommand(t, dir, command, done, func() string {
-		data, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
-		return string(data)
-	})
+	_ = command.Wait()
 	for _, death := range deaths {
 		waitWitnessDead(t, dir, death)
 	}
@@ -805,71 +783,6 @@ func waitWitnessDead(t *testing.T, dir string, death witnessDeath) {
 
 func publishWitnessPID(path string, pid int) error {
 	return publishWitnessFile(path, []byte(strconv.Itoa(pid)), 0o600)
-}
-
-func waitWitnessCommand(t *testing.T, dir string, command *exec.Cmd, done <-chan error, output func() string) error {
-	t.Helper()
-	started := time.Now()
-	bound := witnessKernelBound(witnessCustodianPoll, witnessCustodianBound)
-	timer := time.NewTimer(bound)
-	defer timer.Stop()
-	select {
-	case err := <-done:
-		return err
-	case <-timer.C:
-		elapsed := time.Since(started)
-		reapTimer := time.NewTimer(bound)
-		defer reapTimer.Stop()
-		atBound, stopErr, waitErr, reaped := captureWitnessTimeout(func() string {
-			exact, state, probeErr := (KernelProber{}).Probe(int64(command.Process.Pid))
-			return fmt.Sprintf("state=%s zombie=%t probe=%v\n%s", state, exact.Zombie, probeErr, witnessDiagnostics(dir, elapsed))
-		}, command.Process.Kill, done, reapTimer.C)
-		if !reaped {
-			exact, state, probeErr := (KernelProber{}).Probe(int64(command.Process.Pid))
-			t.Fatalf("timed out waiting for process %d to exit after %s (bound %s): observed-at-bound={%s}; stop-error=%v; after stop it did not report Wait within another %s: state=%s zombie=%t probe=%v",
-				command.Process.Pid, elapsed, bound, atBound, stopErr, bound, state, exact.Zombie, probeErr)
-		}
-		t.Fatalf("timed out waiting for process %d to exit after %s (bound %s): observed-at-bound={%s} stop-error=%v wait-after-stop=%v output=%q",
-			command.Process.Pid, elapsed, bound, atBound, stopErr, waitErr, output())
-		return waitErr
-	}
-}
-
-func captureWitnessTimeout(observe func() string, stop func() error, done <-chan error, bound <-chan time.Time) (string, error, error, bool) {
-	observation := observe()
-	stopErr := stop()
-	select {
-	case err := <-done:
-		return observation, stopErr, err, true
-	case <-bound:
-		return observation, stopErr, nil, false
-	}
-}
-
-func TestWitnessCommandTimeoutCapturesStateBeforeKill(t *testing.T) {
-	t.Parallel()
-
-	done := make(chan error, 1)
-	done <- errors.New("killed")
-	bound := make(chan time.Time)
-	var order []string
-	stopFailure := errors.New("kill refused")
-	observation, stopErr, err, reaped := captureWitnessTimeout(func() string {
-		order = append(order, "observe")
-		return "alive at bound"
-	}, func() error {
-		order = append(order, "kill")
-		return stopFailure
-	}, done, bound)
-	if observation != "alive at bound" || !errors.Is(stopErr, stopFailure) || err == nil || !reaped || !slices.Equal(order, []string{"observe", "kill"}) {
-		t.Fatalf("timeout observation=%q stopErr=%v err=%v reaped=%t order=%v", observation, stopErr, err, reaped, order)
-	}
-	expired := make(chan time.Time, 1)
-	expired <- time.Unix(1, 0)
-	_, stopErr, err, reaped = captureWitnessTimeout(func() string { return "still alive" }, func() error { return nil }, make(chan error), expired)
-	if stopErr != nil || err != nil || reaped {
-		t.Fatalf("second bound stopErr=%v err=%v reaped=%t, want bounded unreaped result", stopErr, err, reaped)
-	}
 }
 
 func waitWitness(t *testing.T, dir, want string, arm func() witnessEventSource, observe func() (bool, string)) {

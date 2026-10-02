@@ -160,6 +160,32 @@ func TestHostStartVerifiedMatrix(t *testing.T) {
 	}
 }
 
+// A group member counts only when it is in the table the probe is given:
+// a live member with readable argv is substantive work in a table holding
+// it, and nothing outside the table is ever counted.
+func TestGroupHasSubstantiveMemberReadsOnlyItsTable(t *testing.T) {
+	t.Parallel()
+	member := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+"read -r _")
+	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := member.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.StartReady(member); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
+	pid := member.Process.Pid
+	// StartReady returns once the member's own image runs, so its argv is
+	// published: no wait for it to become readable.
+	if !groupHasSubstantiveMember(identity.ListedProcessTable{int64(pid)}, pid) {
+		t.Fatal("a live member in the table is not substantive")
+	}
+	if groupHasSubstantiveMember(identity.ListedProcessTable{}, pid) {
+		t.Fatal("a member outside the table was counted")
+	}
+}
+
 // The group probes against real processes: our own group is alive; a
 // pgid that cannot exist is not; ownership needs the tag on a live member.
 func TestGroupProbes(t *testing.T) {

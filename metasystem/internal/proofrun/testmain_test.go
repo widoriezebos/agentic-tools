@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -60,9 +61,15 @@ func TestMain(m *testing.M) {
 	if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
 		os.Exit(code)
 	}
-	installDeterministicTestLoadReaders()
+	loadSeams = deterministicTestLoadReaders()
 	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
 		panic(err)
+	}
+	// A host-resource helper process's binary directory is the one its
+	// parent test handed it on the command line.
+	helperDirectory, helperAdmission := helperHostAdmissionDirectory(os.Args)
+	if helperAdmission {
+		hostAdmissionDirectoryForTest = helperDirectory
 	}
 	declarations := []testenv.Declaration{}
 	helperProcess := proofrunSubprocessHelper() || os.Getenv("METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE") == "1"
@@ -84,20 +91,79 @@ func TestMain(m *testing.M) {
 	// tests exercising real contention explicitly replace this directory with
 	// their shared fixture directory.
 	var setup func() error
-	if !helperProcess {
-		setup = isolateHostAdmissionDirectory
+	if !helperProcess && !helperAdmission {
+		setup = func() error {
+			directory, err := isolatedHostAdmissionDirectory()
+			if err != nil {
+				return err
+			}
+			hostAdmissionDirectoryForTest = directory
+			binaryHostAdmissionDirectory = directory
+			return nil
+		}
 	}
 	os.Exit(testenv.MainWithSetup(m, setup, declarations...))
 }
 
-func isolateHostAdmissionDirectory() error {
+func isolatedHostAdmissionDirectory() (string, error) {
 	root, err := os.MkdirTemp("", "metasystem-proofrun-admission.")
 	if err != nil {
-		return fmt.Errorf("create test host admission directory: %w", err)
+		return "", fmt.Errorf("create test host admission directory: %w", err)
 	}
-	hostAdmissionDirectoryForTest = filepath.Join(root, "host-admission")
-	return nil
+	return filepath.Join(root, "host-admission"), nil
 }
+
+// helperHostAdmissions name the host-resource helper tests a parent re-execs
+// with an admission directory, and the directory's place after "--".
+var helperHostAdmissions = map[string]int{
+	"-test.run=^TestGLEHostResourceCustodyProcessHelper$": 2,
+	"-test.run=^TestHostResourceNestedCustodySubprocess$": 2,
+	"-test.run=^TestHostResourceReviewSubprocess$":        1,
+	"-test.run=^TestHostResourceNestedLeaseSubprocess$":   1,
+	"-test.run=^TestHostResourceSubprocess$":              2,
+}
+
+// helperHostAdmissionDirectory returns the admission directory a helper
+// invocation was handed, so TestMain sets it as that binary's directory.
+func helperHostAdmissionDirectory(args []string) (string, bool) {
+	if len(args) < 3 || args[2] != "--" {
+		return "", false
+	}
+	offset, ok := helperHostAdmissions[args[1]]
+	if !ok || len(args) <= 2+offset || args[2+offset] == "" {
+		return "", false
+	}
+	return args[2+offset], true
+}
+
+// binaryHostAdmissionDirectory is the one admission directory TestMain gives
+// this test binary. Every parallel test sharing it took the same
+// admission.lock, so a test's reservation was refused "host proof admission
+// is busy" whenever another test reserved at the same moment.
+var binaryHostAdmissionDirectory string
+
+// reserveLocked is ReserveLocked for this package's tests. While the
+// binary's own admission directory is in force, a request whose control
+// root is a fake-runtime fixture gets a directory private to that root, so
+// only a test's own requests contend; any other request (its root may not
+// select a directory) reserves under binaryReservations, so two tests never
+// take the binary's admission.lock at once. A test that installed a
+// directory of its own (hostAdmissionDirectoryForTest) keeps it.
+// TestEveryReservationInTheProofrunTestsIsPrivate holds that the package's
+// tests reserve only through here.
+func reserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
+	if request.testHostAdmissionDirectory != "" || hostAdmissionDirectoryForTest == "" || hostAdmissionDirectoryForTest != binaryHostAdmissionDirectory {
+		return ReserveLocked(request)
+	}
+	if fixtureauth.FixtureModeRoot(request.ControlRoot) {
+		return ReserveLocked(WithTestHostAdmissionDirectory(request, filepath.Join(request.ControlRoot, "artifacts", "agents", "host-admission-fixture")))
+	}
+	binaryReservations.Lock()
+	defer binaryReservations.Unlock()
+	return ReserveLocked(request)
+}
+
+var binaryReservations sync.Mutex
 
 func TestHostAdmissionDirectoryIsInsideTheTestNamespace(t *testing.T) {
 	if hostAdmissionDirectoryForTest == "" || filepath.Base(hostAdmissionDirectoryForTest) != "host-admission" ||
@@ -381,8 +447,11 @@ func (deadTestProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return identity.Exact{}, identity.Dead, nil
 }
 
-func installDeterministicTestLoadReaders() {
-	loadSeams = loadReaders{
+// deterministicTestLoadReaders are the package default TestMain sets before
+// any test runs: an idle 18-core host with no other launcher and an empty
+// process table, so a test that hands no readers never reads the machine.
+func deterministicTestLoadReaders() loadReaders {
+	return loadReaders{
 		host: func(now time.Time) hostload.Sample {
 			return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}
 		},
@@ -390,18 +459,8 @@ func installDeterministicTestLoadReaders() {
 		fixtureNamespaceLaunchers: func(int64) (int, bool) { return 0, true },
 		nested:                    func(int64) (bool, bool) { return false, true },
 		prober:                    deadTestProber{},
-		pids:                      func() ([]int64, error) { return nil, nil },
-		parent:                    func(int64) (int64, bool) { return 0, false },
+		processes:                 identity.FixedProcessTable{},
 	}
-}
-
-// useRealLoadReaders is the only opt-in from package tests to the machine's
-// load and process census. Tests that do not call it stay host-independent.
-func useRealLoadReaders(t *testing.T) {
-	t.Helper()
-	previous := loadSeams
-	loadSeams = realLoadReaders()
-	t.Cleanup(func() { loadSeams = previous })
 }
 
 func proofrunSubprocessHelper() bool {

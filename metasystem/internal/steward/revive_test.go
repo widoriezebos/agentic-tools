@@ -35,13 +35,6 @@ func handoffProbe(binding HandoffBinding, state identity.Liveness, includeTag bo
 	})
 }
 
-func useHandoffProber(t *testing.T, prober identity.Prober) {
-	t.Helper()
-	previous := handoffProber
-	handoffProber = prober
-	t.Cleanup(func() { handoffProber = previous })
-}
-
 func stagedRevivalHandoff(t *testing.T, nonce string) (string, Intent) {
 	t.Helper()
 	root := stagedRepo(t)
@@ -206,7 +199,7 @@ func jobProcessRecordOnDisk(t *testing.T, root, jobId, status string, pid, start
 	body := map[string]any{
 		"jobId": jobId, "status": status, "endedAt": "", "pid": pid,
 		"pidStartedAt": started, "pgid": pid, "instanceTag": tag,
-		"capDeadline": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		"capDeadline": time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -439,7 +432,7 @@ func TestSeatIdleIntentStillHonorsOneActiveContinuationGuard(t *testing.T) {
 func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("alive predecessor", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000001")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold ||
 			!strings.Contains(decision.Reason, intent.Nonce) || !strings.Contains(decision.Reason, "pid 4242 is alive") {
@@ -449,7 +442,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("unknown predecessor", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000002")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Unknown, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Unknown, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || decision.Verdict != VerdictUnknown ||
 			!strings.Contains(decision.Reason, intent.Nonce) || !strings.Contains(decision.Reason, "pid 4242 is unknown") {
@@ -459,7 +452,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("dead predecessor", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000003")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActRevive || !strings.Contains(decision.Reason, "observed-dead predecessor pid 4242") {
 			t.Fatalf("only observed predecessor death may reach revival: %+v %v", decision, err)
@@ -468,7 +461,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("live seat main after predecessor death", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000010")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		census := fakeCensus{workers: Workers{Live: 1, LiveSeatMains: 1, CensusComplete: true}}
 		decision, _, err := revival.decide(TickConfig{}, census, Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || decision.Verdict != VerdictHealthy ||
@@ -490,7 +483,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				revival, intent := stagedRevivalFixture(t, tc.nonce)
-				useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+				revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 				decision, _, err := revival.decide(TickConfig{}, fakeCensus{workers: tc.workers}, Evidence{}, intent)
 				if err != nil || decision.Action != ActHold || decision.Verdict != VerdictUnknown ||
 					!strings.Contains(decision.Reason, "death not provable") {
@@ -502,12 +495,12 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("matching identity with missing tag", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000004")
-		useHandoffProber(t, handoffProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		revival.dependencies.HandoffProber = handoffProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
 			return identity.Exact{
 				Pid: pid, StartedAt: time.Unix(intent.Handoff.Predecessor.StartedAtSec, 0),
 				Argv: []string{"fixture", "some-other-tag"}, ArgvKnown: true,
 			}, identity.Alive, nil
-		}))
+		})
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || decision.Verdict != VerdictUnknown ||
 			!strings.Contains(decision.Reason, "pid 4242 is unknown") {
@@ -517,7 +510,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("matching identity with unreadable argv", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000014")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || decision.Verdict != VerdictUnknown ||
 			!strings.Contains(decision.Reason, "pid 4242 is unknown") {
@@ -527,12 +520,12 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("reused predecessor identity", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000015")
-		useHandoffProber(t, handoffProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		revival.dependencies.HandoffProber = handoffProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
 			return identity.Exact{
 				Pid: pid, StartedAt: time.Unix(intent.Handoff.Predecessor.StartedAtSec+1, 0),
 				Argv: []string{"fixture", intent.Handoff.PredecessorTag}, ArgvKnown: true,
 			}, identity.Alive, nil
-		}))
+		})
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActRevive {
 			t.Fatalf("a reused pid must not be mistaken for the recorded predecessor: %+v %v", decision, err)
@@ -542,7 +535,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("untagged identity does not require argv", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000005")
 		intent.Handoff.PredecessorTag = ""
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || decision.Verdict != VerdictHealthy ||
 			!strings.Contains(decision.Reason, "pid 4242 is alive") {
@@ -558,7 +551,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		if err := MintIntent(root, other); err != nil {
 			t.Fatal(err)
 		}
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "another continuation is open and unreaped") {
 			t.Fatalf("an existing continuation must keep the handoff staged: %+v %v", decision, err)
@@ -571,7 +564,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		other := testIntent("consumed-continuation")
 		other.JobId = "consumed-job"
 		consumedIntentOnDisk(t, root, other)
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "another continuation is open and unreaped") {
 			t.Fatalf("an unreaped consumed continuation must keep the handoff staged: %+v %v", decision, err)
@@ -586,7 +579,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		if err := MintIntent(root, other); err != nil {
 			t.Fatal(err)
 		}
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 1}, deadCensus(), Evidence{DryRevivals: 1}, intent)
 		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "another continuation is open and unreaped") {
 			t.Fatalf("an existing continuation must hold before the dry cap is considered: %+v %v", decision, err)
@@ -595,7 +588,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 	t.Run("dry revival cap", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000007")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 2}, deadCensus(), Evidence{DryRevivals: 2}, intent)
 		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "2 revivals produced no progress") {
 			t.Fatalf("the existing dry cap must terminate a dead-predecessor handoff: %+v %v", decision, err)
@@ -608,7 +601,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "provider is overloaded") {
 			t.Fatalf("an outage must hold rather than spend a launch: %+v %v", decision, err)
@@ -624,7 +617,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		if err := MintIntent(root, testIntent("other-while-predecessor-lives")); err != nil {
 			t.Fatal(err)
 		}
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 1}, deadCensus(), Evidence{DryRevivals: 1}, intent)
 		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "pid 4242 is alive") {
 			t.Fatalf("no later guard may terminate a handoff before predecessor death: %+v %v", decision, err)
@@ -637,7 +630,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 1}, deadCensus(), Evidence{DryRevivals: 1}, intent)
 		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "revivals produced no progress") {
 			t.Fatalf("the existing dry cap must terminate even during an outage: %+v %v", decision, err)
@@ -648,7 +641,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000009")
 		root := revival.root
 		writeLedger(t, root, "# Goals\n\n## Current goal: another-goal — Repair something else\n- Origin: main\n- Next step: Repair it.\n")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "no longer names a goal claimed or landing") {
 			t.Fatalf("a missing target must terminate the authorization: %+v %v", decision, err)
@@ -668,7 +661,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("invalid binding", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "300000000000000a")
 		intent.Handoff.StateDigest = "invalid"
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{}, deadCensus(), Evidence{}, intent)
 		if err == nil || decision.Action == ActRevive || !strings.Contains(err.Error(), "invalid handoff binding") {
 			t.Fatalf("an invalid binding must remain live for inspection and launch nothing: %+v %v", decision, err)
@@ -683,7 +676,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 			t.Fatalf("fixture process identity: %s %v", state, err)
 		}
 		jobProcessRecordOnDisk(t, root, "running-goal-job", "running", int64(os.Getpid()), exact.StartedAt.Unix(), "")
-		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		liveJobCensus := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 		decision, _, err := revival.decide(TickConfig{}, liveJobCensus, Evidence{}, intent)
 		if err != nil || decision.Action != ActRevive {
@@ -694,12 +687,10 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 
 func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000001")
-	previous := handoffProber
-	defer func() { handoffProber = previous }()
-	handoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
+	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			t.Fatal("a live predecessor launched its successor")
 			return nil
 		})
@@ -718,7 +709,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 		t.Fatalf("held ticks must not spend the dry revival cap: %+v %v", evidence, err)
 	}
 
-	handoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
+	prober = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	type result struct {
 		outcome ReviveOutcome
 		err     error
@@ -728,7 +719,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	results := make(chan result, 2)
 	var launches atomic.Int32
 	go func() {
-		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			close(launchEntered)
 			<-releaseLaunch
@@ -738,7 +729,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	}()
 	<-launchEntered
 	go func() {
-		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			return nil
 		})
@@ -772,9 +763,9 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 
 func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000002")
-	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -785,8 +776,8 @@ func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 
 func TestCancellingAHeldHandoffClearsItsNotice(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000003")
-	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
+	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
+	if outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
 		t.Fatalf("fixture handoff did not hold: %+v %v", outcome, err)
 	}
 	if err := CancelIntent(root, intent.Nonce, "superseded by 4000000000000004"); err != nil {
@@ -802,8 +793,8 @@ func TestCancellingAHeldHandoffClearsItsNotice(t *testing.T) {
 
 func TestEnrollmentAfterReservationCancelsHeldHandoff(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000007")
-	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
+	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
+	if outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
 		t.Fatalf("fixture handoff did not hold: %+v %v", outcome, err)
 	}
 	arbitration, err := AcquireArbitration(root)
@@ -816,7 +807,7 @@ func TestEnrollmentAfterReservationCancelsHeldHandoff(t *testing.T) {
 	}
 	arbitration.Release()
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -844,7 +835,7 @@ func TestMissingHandoffTargetCancelsThroughTheTerminalPath(t *testing.T) {
 	}
 	writeLedger(t, root, "# Goals\n\n## Current goal: another-goal — Repair something else\n- Origin: main\n- Next step: Repair it.\n")
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, identity.KernelProber{}, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -865,7 +856,7 @@ func TestMissingHandoffTargetCancelsThroughTheTerminalPath(t *testing.T) {
 
 func TestMissingHandoffStateFileCancelsThroughTheTerminalPath(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "400000000000000b")
-	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
+	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	if err := QueueNotification(root, PendingNotification{
 		Nonce: handoffNoticeNonce(intent.Nonce), Message: "steward: old hold",
 	}); err != nil {
@@ -875,7 +866,7 @@ func TestMissingHandoffStateFileCancelsThroughTheTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -900,7 +891,7 @@ func TestUnreadableHandoffGoalRefusesWithoutCancelling(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000009")
 	writeLedger(t, root, "# Goals\n\n## Current goal: malformed — Repair it\n- Unknown field: refuse\n")
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, identity.KernelProber{}, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -925,7 +916,7 @@ func TestHandoffCancellationReportsNoticeCleanupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeLedger(t, root, "# Goals\n\n## Current goal: another-goal — Repair something else\n- Origin: main\n- Next step: Repair it.\n")
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, identity.KernelProber{}, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		t.Fatal("a missing target launched")
 		return nil
 	})
@@ -975,13 +966,13 @@ func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000006")
 	var recordErr error
 	var observations atomic.Int32
-	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, func() {
+	prober := handoffProbe(*intent.Handoff, identity.Dead, false, func() {
 		if observations.Add(1) == 1 {
 			_, recordErr = outage.Record(root, "overloaded", "API Error: 529", "test", time.Now())
 		}
-	}))
+	})
 	launches := 0
-	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})

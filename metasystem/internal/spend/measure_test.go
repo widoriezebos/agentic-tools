@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/build"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -855,15 +857,92 @@ func TestAdmissionNeverConsultsSpend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("go", "list", "-deps", "./internal/dispatch", "./internal/goal", "./internal/goalbudget")
-	command.Dir = moduleRoot
-	output, err := command.CombinedOutput()
+	dependencies, err := moduleDependencies(moduleRoot, "internal/dispatch", "internal/goal", "internal/goalbudget")
 	if err != nil {
-		t.Fatalf("dependency proof did not run: %v\n%s", err, output)
+		t.Fatalf("dependency proof did not run: %v", err)
 	}
-	for _, dependency := range strings.Fields(string(output)) {
-		if strings.HasSuffix(dependency, "/internal/spend") {
+	if len(dependencies) < 3 {
+		t.Fatalf("dependency proof read too little: %v", dependencies)
+	}
+	for _, dependency := range dependencies {
+		if dependency == "internal/spend" {
 			t.Fatalf("an admission package imports spend: %s", dependency)
 		}
+	}
+}
+
+// moduleDependencies is what `go list -deps` names of the module's own
+// packages for roots: the roots and every module package their non-test
+// files import, transitively, read from source under the default build
+// context. It runs no toolchain.
+func moduleDependencies(moduleRoot string, roots ...string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(moduleRoot, "go.mod"))
+	if err != nil {
+		return nil, err
+	}
+	module := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+			module = strings.Trim(strings.TrimSpace(name), `"`)
+			break
+		}
+	}
+	if module == "" {
+		return nil, fmt.Errorf("%s/go.mod names no module", moduleRoot)
+	}
+	seen := map[string]bool{}
+	queue := append([]string(nil), roots...)
+	for len(queue) > 0 {
+		relative := queue[0]
+		queue = queue[1:]
+		if seen[relative] {
+			continue
+		}
+		seen[relative] = true
+		listed, err := build.Default.ImportDir(filepath.Join(moduleRoot, filepath.FromSlash(relative)), 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, imported := range listed.Imports {
+			if inside, ok := strings.CutPrefix(imported, module+"/"); ok {
+				queue = append(queue, inside)
+			}
+		}
+	}
+	dependencies := make([]string, 0, len(seen))
+	for relative := range seen {
+		dependencies = append(dependencies, relative)
+	}
+	sort.Strings(dependencies)
+	return dependencies, nil
+}
+
+func TestModuleDependenciesFollowImportsTransitively(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":      "module example.test/m\n\ngo 1.27\n",
+		"a/a.go":      "package a\n\nimport _ \"example.test/m/b\"\n",
+		"a/a_test.go": "package a\n\nimport _ \"example.test/m/spend\"\n",
+		"b/b.go":      "package b\n\nimport (\n\t_ \"example.test/m/c\"\n\t_ \"strings\"\n)\n",
+		"c/c.go":      "package c\n",
+		"spend/s.go":  "package spend\n",
+		"other/o.go":  "package other\n\nimport _ \"example.test/m/spend\"\n",
+	}
+	for name, source := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dependencies, err := moduleDependencies(root, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a", "b", "c"}; !slices.Equal(dependencies, want) {
+		t.Fatalf("dependencies = %v, want %v", dependencies, want)
 	}
 }

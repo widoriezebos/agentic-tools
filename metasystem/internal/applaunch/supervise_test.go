@@ -149,14 +149,20 @@ func TestSuperviseReportsASpawnThatCannotRun(t *testing.T) {
 
 // A readiness timeout ends the application by its own recorded ref, never
 // only the supervisor: a run must not outlive the engine's belief that it
-// never started.
+// never started. The wait's end is an event the test fires once the wait has
+// begun, never a clock racing the host's load.
 func TestSuperviseReadinessTimeoutEndsTheApplication(t *testing.T) {
 	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
-		"start":   map[string]any{"argv": []string{app, "--no-listen"}},
-		"ready":   map[string]any{"kind": "log", "pattern": "^NEVER$"},
-		"readyMs": 700, "stopMs": 1500})
+		"start":  map[string]any{"argv": []string{app, "--no-listen"}},
+		"ready":  map[string]any{"kind": "log", "pattern": "^NEVER$"},
+		"stopMs": 1500})
+	expire := make(chan time.Time)
+	bed.options.ReadyDeadline = func(time.Duration) <-chan time.Time {
+		close(expire)
+		return expire
+	}
 	var failure string
 	bed.options.Failed = func(message string) { failure = message }
 	var spawned int
@@ -180,6 +186,62 @@ func TestSuperviseReadinessTimeoutEndsTheApplication(t *testing.T) {
 	exact, state, _ := identity.KernelProber{}.Probe(int64(spawned))
 	if state == identity.Alive && exact.ArgvKnown {
 		t.Fatal("the application must be ended by its own ref when readiness times out")
+	}
+}
+
+// Readiness is the event the application signals, never a race against the
+// clock: with the contract's wait at one millisecond and a deadline that
+// never fires, the supervisor reports ready when the line is written however
+// long after the wait began that is.
+func TestSuperviseReadinessIsTheEventNotTheClock(t *testing.T) {
+	t.Parallel()
+	app := mustApp(t)
+	bed := newSuperviseBed(t, map[string]any{
+		"start":   map[string]any{"argv": []string{app, "--no-listen"}},
+		"ready":   map[string]any{"kind": "log", "pattern": "^READY$"},
+		"readyMs": 1, "stopMs": 1500})
+	begun := make(chan struct{})
+	bed.options.ReadyDeadline = func(time.Duration) <-chan time.Time {
+		close(begun)
+		return nil
+	}
+	ready := make(chan string, 1)
+	bed.options.Ready = func(address string) { ready <- address }
+	failed := make(chan string, 1)
+	bed.options.Failed = func(message string) { failed <- message }
+	done := make(chan error, 1)
+	go func() { done <- Supervise(bed.options) }()
+	select {
+	case <-begun:
+	case err := <-done:
+		t.Fatalf("the supervisor left before its readiness wait began: %v", err)
+	}
+	log, err := os.OpenFile(DefaultLogPath(bed.stateRoot, StandingKey), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := log.WriteString("READY\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = log.Close()
+	select {
+	case <-ready:
+	case message := <-failed:
+		t.Fatalf("readiness was reported failed while the deadline never fired: %s", message)
+	}
+	record, err := ReadRecord(bed.stateRoot, StandingKey)
+	if err != nil || record.ReadyAt == "" {
+		t.Fatalf("the record says readiness was observed: %+v %v", record, err)
+	}
+	ref, _, err := record.ChildRef()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -312,24 +374,28 @@ func TestAwaitReadyFormsAndEarlyExit(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("starting\nREADY\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A deadline that has already fired: every form still asks once before
+	// it answers, so a timeout here means the one answer was not ready.
+	expired := make(chan time.Time)
+	close(expired)
 	none := Contract{}
-	if err := AwaitReady(context.Background(), none, "", "", 0, func() bool { return true }, time.Second); err != nil {
+	if err := AwaitReady(context.Background(), none, "", "", 0, func() bool { return true }, expired); err != nil {
 		t.Fatalf("the none form means alive is ready: %v", err)
 	}
-	if err := AwaitReady(context.Background(), none, "", "", 0, func() bool { return false }, time.Second); !ExitedBeforeReady(err) {
+	if err := AwaitReady(context.Background(), none, "", "", 0, func() bool { return false }, expired); !ExitedBeforeReady(err) {
 		t.Fatalf("a dead application is never ready: %v", err)
 	}
 	logForm := Contract{Ready: &Ready{Kind: ReadyLog, Pattern: "^READY$"}}
-	if err := AwaitReady(context.Background(), logForm, "", logPath, 0, func() bool { return true }, time.Second); err != nil {
+	if err := AwaitReady(context.Background(), logForm, "", logPath, 0, func() bool { return true }, expired); err != nil {
 		t.Fatalf("the log form reads the log: %v", err)
 	}
 	// From this run's offset the earlier READY line is not this run's.
 	offset := int64(len("starting\nREADY\n"))
-	if err := AwaitReady(context.Background(), logForm, "", logPath, offset, func() bool { return true }, 300*time.Millisecond); !ReadyTimeout(err) {
+	if err := AwaitReady(context.Background(), logForm, "", logPath, offset, func() bool { return true }, expired); !ReadyTimeout(err) {
 		t.Fatalf("a line before this run's offset must not make it ready: %v", err)
 	}
 	httpForm := Contract{Address: "127.0.0.1:1", Ready: &Ready{Kind: ReadyHTTP, URL: "http://127.0.0.1:1/-/health"}}
-	if err := AwaitReady(context.Background(), httpForm, "127.0.0.1:1", "", 0, func() bool { return true }, 300*time.Millisecond); !ReadyTimeout(err) {
+	if err := AwaitReady(context.Background(), httpForm, "127.0.0.1:1", "", 0, func() bool { return true }, expired); !ReadyTimeout(err) {
 		t.Fatalf("an http form that never answers times out: %v", err)
 	}
 	if err := ProbeOnce(logForm, ""); !NotProbed(err) {
@@ -418,7 +484,7 @@ func TestStopRunsTheContractsOwnStopCommand(t *testing.T) {
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 20 * time.Second, ProjectRoot: b.root, Environment: os.Environ()})
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 20 * time.Second, ProjectRoot: b.root, Environment: os.Environ(), Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +501,7 @@ func TestRejoinRefusesARunThatIsNotStarting(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	contract := Contract{Start: &Command{Argv: []string{"x"}}}
-	status, err := Rejoin(context.Background(), root, StandingKey, contract, ReadOptions{}, 200*time.Millisecond)
+	status, err := rejoin(context.Background(), root, StandingKey, contract, ReadOptions{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("a rejoin of nothing is a refusal: %v %v", status.State, err)
 	}

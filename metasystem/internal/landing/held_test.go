@@ -354,7 +354,6 @@ func TestHeldRejectsAMovedBaseWithoutWalkingHistory(t *testing.T) {
 
 	started := time.Now()
 	got := requireHeldVerdict(t, f, movedBase, tip, "origin", "refs/heads/main")
-	elapsed := time.Since(started)
 	assertHeldRefusal(t, got, 2, "range-not-linear", tip, movedBase+" is not a first-parent ancestor of "+tip)
 	calls, err := os.ReadFile(callLog)
 	if err != nil {
@@ -364,7 +363,7 @@ func TestHeldRejectsAMovedBaseWithoutWalkingHistory(t *testing.T) {
 	if callCount != 3 {
 		t.Fatalf("moved-base check used %d Git calls; want two resolutions and one range query", callCount)
 	}
-	t.Logf("moved-base held check over 96 historical commits used %d Git calls in %s", callCount, elapsed)
+	t.Logf("moved-base held check over 96 historical commits used %d Git calls; the test took %s", callCount, time.Since(started))
 }
 
 func TestHeldDefaultAdapterReadsConcreteParentLedger(t *testing.T) {

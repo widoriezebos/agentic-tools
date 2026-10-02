@@ -710,6 +710,7 @@ type stageGroupDependencies struct {
 	runGroup          func(context.Context, TestRunRequest, testpolicy.Group) GroupResult
 	deliverCompletion func(chan<- stageGroupCompletion, stageGroupCompletion)
 	beforeDispatch    func(string)
+	beforeAcquire     func(string)
 	afterAdmission    func(map[string]GroupResult)
 }
 
@@ -724,6 +725,7 @@ func stageGroupDependenciesFromContext(ctx context.Context) stageGroupDependenci
 			completion <- outcome
 		},
 		beforeDispatch: func(string) {},
+		beforeAcquire:  func(string) {},
 		afterAdmission: func(map[string]GroupResult) {},
 	}
 	if injected, ok := ctx.Value(stageGroupDependenciesContextKey{}).(stageGroupDependencies); ok {
@@ -735,6 +737,9 @@ func stageGroupDependenciesFromContext(ctx context.Context) stageGroupDependenci
 		}
 		if injected.beforeDispatch != nil {
 			dependencies.beforeDispatch = injected.beforeDispatch
+		}
+		if injected.beforeAcquire != nil {
+			dependencies.beforeAcquire = injected.beforeAcquire
 		}
 		if injected.afterAdmission != nil {
 			dependencies.afterAdmission = injected.afterAdmission
@@ -1001,7 +1006,9 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 		}
 	}
 	defer stopAllWaiting()
-	tryLaunch := func(index int) (bool, <-chan struct{}, error) {
+	// olderRefusedAt is the pool change an older group in the same scan was
+	// refused against; see tryAcquireTestWorkers.
+	tryLaunch := func(index int, olderRefusedAt <-chan struct{}) (bool, <-chan struct{}, error) {
 		group := groups[ids[index]]
 		if group.Adapter == "go" {
 			launch(index, nil)
@@ -1015,7 +1022,8 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 			return false, nil, err
 		}
 		stopWaiting(index)
-		release, changed, stop, acquired, err := tryAcquireTestWorkers(acquireCtx, workers)
+		dependencies.beforeAcquire(ids[index])
+		release, changed, stop, acquired, err := tryAcquireTestWorkers(acquireCtx, workers, olderRefusedAt)
 		if err != nil {
 			return false, nil, err
 		}
@@ -1152,7 +1160,7 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 			if err != nil {
 				admitError(drainFor, err)
 			} else if ready && len(blockers) == 0 && (groups[ids[drainFor]].Kind != "performance" || active == 0) {
-				admitted, changed, err := tryLaunch(drainFor)
+				admitted, changed, err := tryLaunch(drainFor, nil)
 				if err != nil {
 					admitError(drainFor, err)
 				} else if admitted {
@@ -1184,7 +1192,11 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 				if groups[ids[index]].Kind == "performance" && active != 0 {
 					continue
 				}
-				admitted, changed, err := tryLaunch(index)
+				var olderRefusedAt <-chan struct{}
+				if oldestBlocked >= 0 {
+					olderRefusedAt = capacityChanged
+				}
+				admitted, changed, err := tryLaunch(index, olderRefusedAt)
 				if err != nil {
 					admitError(index, err)
 					break

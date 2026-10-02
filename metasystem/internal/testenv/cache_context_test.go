@@ -21,7 +21,7 @@ func TestANestedChildUnderAReplacedHomeResolvesTheOuterPairThroughTheContext(t *
 	t.Parallel()
 	const helper = "TESTENV_CACHE_CONTEXT_HELPER"
 	if os.Getenv(helper) == "1" {
-		output, err := exec.Command("go", "env", "GOCACHE").Output()
+		output, err := Go("env", "GOCACHE").Output()
 		if err != nil {
 			t.Fatal(err)
 		}

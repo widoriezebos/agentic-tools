@@ -50,7 +50,7 @@ type ReaperConfig struct {
 	Custodian func(pid, start int64, tag string) identity.Liveness
 	// Survivors reports live tagged processes besides the custodian —
 	// the group-death half of the proof (a dead custodian with tagged
-	// survivors is a live group). nil binds identity.TaggedSurvivors;
+	// survivors is a live group). nil binds identity.TaggedSurvivors on the kernel table;
 	// tests bind a fake. certain=false defers like Unknown does.
 	Survivors func(tag string, exclude, pgid int64) (alive bool, certain bool)
 	// ReturnComplete binds the same role validator as dispatch recollection.
@@ -168,7 +168,9 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// it stamps. Indeterminacy defers the same way.
 	survivors := cfg.Survivors
 	if survivors == nil {
-		survivors = identity.TaggedSurvivors
+		survivors = func(tag string, exclude, pgid int64) (bool, bool) {
+			return identity.TaggedSurvivors(identity.KernelProcessTable{}, tag, exclude, pgid)
+		}
 	}
 	recPgid, _ := recordInt(record["pgid"])
 	if alive, certain := survivors(tag, pid, recPgid); !certain || alive {

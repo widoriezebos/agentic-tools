@@ -134,28 +134,51 @@ func awaitHostStart(
 // We never signal without proof; we also never die over a group that already
 // stopped being ours. Anything genuinely left behind is UNTRACKED to the
 // census, which is the safety net designed to catch it.
-// windDown is the wind-down's clock and kernel, one seam: production reads
-// the kernel and the wall clock; a test drives every function from a fake
-// process table and an artificial clock, so the ladder's verdicts (TERM
-// worked, KILL was needed, a group was foreign, a group is down to zombies)
-// are proven without a scheduler in the loop (R-104-m1e).
+// windDownSeam is the wind-down's clock and kernel, one seam: production
+// reads the kernel and the wall clock; a test drives every function from a
+// fake process table and an artificial clock, so the ladder's verdicts
+// (TERM worked, KILL was needed, a group was foreign, a group is down to
+// zombies) are proven without a scheduler in the loop (R-104-m1e). It is
+// handed per engine (Engine.windDown) or per stop (StopOptions), never
+// swapped as a package variable; a nil field reads the kernel or the wall
+// clock.
 type windDownSeam struct {
 	now                       func() time.Time
 	sleep                     func(time.Duration)
 	groupAlive                func(pgid int) bool
 	groupHasSubstantiveMember func(pgid int) bool
 	groupOwnership            func(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome
+	signal                    func(pid int, signal syscall.Signal) error
 }
 
-var windDown = windDownSeam{
-	now: time.Now, sleep: time.Sleep, groupAlive: groupAlive,
-	groupHasSubstantiveMember: groupHasSubstantiveMember, groupOwnership: groupOwnership,
+// resolved fills every field the caller left nil with the kernel's reader.
+func (seam windDownSeam) resolved() windDownSeam {
+	if seam.now == nil {
+		seam.now = time.Now
+	}
+	if seam.sleep == nil {
+		seam.sleep = time.Sleep
+	}
+	if seam.groupAlive == nil {
+		seam.groupAlive = groupAlive
+	}
+	if seam.groupHasSubstantiveMember == nil {
+		seam.groupHasSubstantiveMember = func(pgid int) bool { return groupHasSubstantiveMember(identity.KernelProcessTable{}, pgid) }
+	}
+	if seam.groupOwnership == nil {
+		seam.groupOwnership = groupOwnership
+	}
+	if seam.signal == nil {
+		seam.signal = func(pid int, signal syscall.Signal) error { return unix.Kill(pid, signal) }
+	}
+	return seam
 }
 
 // killThroughFloor is the minimum post-SIGKILL observation window.
 const killThroughFloor = time.Second
 
 func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, error) {
+	windDown := e.windDown.resolved()
 	if !windDown.groupAlive(pgid) {
 		return TerminationAlreadyGone, nil
 	}
@@ -196,7 +219,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 	e.emit("wind-down", fmt.Sprintf("group %d", pgid), map[string]string{
 		"missionId": e.Mission, "action": "sigterm",
 	})
-	_ = stopSignal(-pgid, syscall.SIGTERM)
+	_ = windDown.signal(-pgid, syscall.SIGTERM)
 	// Process death is a REAL fact: a compressed test scale must not
 	// shrink the TERM grace below the time a live group actually needs
 	// to exit, or every compressed run abandons half-dead groups into
@@ -227,7 +250,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 			})
 			return TerminationTerm, nil
 		}
-		_ = stopSignal(-pgid, syscall.SIGKILL)
+		_ = windDown.signal(-pgid, syscall.SIGKILL)
 		killFloor, floorErr := ScaledWaitAtLeast(1, killThroughFloor)
 		if floorErr != nil {
 			return "", floorErr

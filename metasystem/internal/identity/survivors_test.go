@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,7 @@ import (
 
 func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// No tag recorded: nothing to scan for, no claim either way.
-	if alive, certain := TaggedSurvivors("", 0, 0); alive || !certain {
+	if alive, certain := TaggedSurvivors(FixedProcessTable{}, "", 0, 0); alive || !certain {
 		t.Fatalf("an empty tag scans nothing: %v %v", alive, certain)
 	}
 
@@ -37,30 +36,22 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	childGroup := int64(child.Process.Pid)
-	if _, err := AllPids(); errors.Is(err, syscall.EPERM) {
-		prior := survivorPids
-		survivorPids = func() ([]int64, error) { return []int64{childGroup}, nil }
-		t.Cleanup(func() { survivorPids = prior })
-	}
+	// The scan reads only the test's own child: no other process of the
+	// host (another test's, or a pid reused into childGroup) decides it.
+	processes := ListedProcessTable{childGroup}
 	defer func() {
 		_ = child.Process.Kill()
 		_, _ = child.Process.Wait()
 	}()
-	deadline := time.Now().Add(wiringBound)
-	for {
-		alive, certain := TaggedSurvivors(tag, 0, childGroup)
-		if alive && certain {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the live tagged child is a survivor: %v %v", alive, certain)
-		}
+	// The scan reads the kernel; the wait ends on the fact, and only the
+	// test binary's deadline ends a wait for a fact that never comes.
+	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); !alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
 	// The recorded custodian itself is excluded: a scan that counted
 	// the dead-but-probed custodian would defer forever.
-	if alive, certain := TaggedSurvivors(tag, int64(child.Process.Pid), childGroup); alive || !certain {
+	if alive, certain := TaggedSurvivors(processes, tag, int64(child.Process.Pid), childGroup); alive || !certain {
 		t.Fatalf("the custodian pid is not its own survivor: %v %v", alive, certain)
 	}
 
@@ -68,15 +59,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// may conclude.
 	_ = child.Process.Kill()
 	_, _ = child.Process.Wait()
-	deadline = time.Now().Add(wiringBound)
-	for {
-		alive, certain := TaggedSurvivors(tag, 0, childGroup)
-		if !alive && certain {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("a dead group scans clear: %v %v", alive, certain)
-		}
+	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }

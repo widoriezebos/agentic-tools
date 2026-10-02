@@ -54,10 +54,6 @@ func notifyTermination(root string, c chan<- os.Signal) (stop func()) {
 	return func() { signal.Stop(c) }
 }
 
-// protocolSignalBound is how long a signalled process waits for the
-// in-process client's courtesy cancel before it ends regardless.
-const protocolSignalBound = 3 * time.Second
-
 // signalExitCode is the shell's status for a death by signal.
 func signalExitCode(sig os.Signal) int32 {
 	if sig == os.Interrupt {
@@ -68,31 +64,27 @@ func signalExitCode(sig os.Signal) int32 {
 
 // signalGuard turns TERM or INT into the client's cancellation, so the
 // courtesy cancel and the typed cancelled outcome still happen. The caller
-// returns the recorded code through its own flow; a flow that has not
-// finished within the bound is ended with it after cleanup.
+// returns the recorded code through its own flow once the client has ended.
+// The guard never ends the process itself: the cancelled client is bounded
+// by its own waits (the cancel grace, then the quiesce), and the flow
+// already waits on it (child.terminate); a wall-clock exit shorter than
+// those waits killed the supervisor mid-settle on a loaded host, and the
+// whole test binary in-process (no-flaky-tests, 2026-10-02).
 type signalGuard struct {
 	code     atomic.Int32
 	finished chan struct{}
 	stop     func()
 }
 
-func guardSignals(root string, cancel, cleanup func()) *signalGuard {
+func guardSignals(root string, cancel func()) *signalGuard {
 	g := &signalGuard{finished: make(chan struct{})}
 	signals := make(chan os.Signal, 1)
 	g.stop = notifyTermination(root, signals)
 	go func() {
 		select {
 		case sig := <-signals:
-			code := signalExitCode(sig)
-			g.code.Store(code)
+			g.code.Store(signalExitCode(sig))
 			cancel()
-			select {
-			case <-g.finished:
-				return
-			case <-time.After(protocolSignalBound):
-			}
-			cleanup()
-			os.Exit(int(code))
 		case <-g.finished:
 		}
 	}()
@@ -249,10 +241,7 @@ func (s *Supervision) driveProtocol(t *Turn, ops Operations, launch Launch) (sta
 	unblockOnDeath(pipes, server.done, client.done)
 	s.appendEventLine(fmt.Sprintf(`{"type":"%s-launched","server_pid":%d,"client_pid":%d,"client":"in-process","mode":"%s"}`,
 		p.Kind, server.pid, client.pid, p.Mode))
-	guard := guardSignals(s.d.Root, client.stop, func() {
-		server.terminate()
-		pipes.Remove()
-	})
+	guard := guardSignals(s.d.Root, client.stop)
 	defer guard.done()
 
 	// The handshake loop: the session surfaces MID-TURN (critique F1), and
@@ -357,7 +346,7 @@ func RunHostProtocol(d Deps, t *Turn, launch Launch) (status int, exit *int) {
 	defer stopServer()
 	client := protocolClient(&p, pipes, t.Workspace, t.Log)
 	unblockOnDeath(pipes, serverDone, client.done)
-	guard := guardSignals(d.Root, client.stop, pipes.Remove)
+	guard := guardSignals(d.Root, client.stop)
 	defer guard.done()
 	status = client.wait()
 	if signalled := guard.signalled(); signalled != 0 {

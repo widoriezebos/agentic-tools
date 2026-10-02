@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -306,7 +307,7 @@ func main(){
 	if err := os.WriteFile(workerSource, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("go", "build", "-p=2", "-o", worker, workerSource)
+	build := testenv.Go("build", "-p=2", "-o", worker, workerSource)
 	build.Env = append(os.Environ(), "GOMAXPROCS=2")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build detached worker: %v: %s", err, output)
@@ -320,7 +321,7 @@ func main(){
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +359,7 @@ func main(){
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("clean fixture left capacity held: %v", err)
 	}

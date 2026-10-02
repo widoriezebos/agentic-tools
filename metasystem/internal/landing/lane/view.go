@@ -70,6 +70,8 @@ type ViewSources struct {
 	// Ready says whether the lane can run at root (a *Refusal naming the
 	// fix when it cannot); asked only when no agent runs. nil asks nothing.
 	Ready func(root string) error
+	// Wake are the reads of the keeper's wake, shown as the view's wake.
+	Wake WakeSources
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -92,7 +94,7 @@ func BuildView(sources ViewSources) View {
 		return view
 	}
 	view.Owner = ownerView(sources, record.Root)
-	wake := ReadWake(record, WakeSources{})
+	wake := ReadWake(record, sources.Wake)
 	if _, err := ReadAgentState(sources.Home); err != nil {
 		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
 	}

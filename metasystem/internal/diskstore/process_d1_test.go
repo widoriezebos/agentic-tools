@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
@@ -70,6 +69,7 @@ func TestProcessScratchKeepsANestedRootWhileItsGrandchildLives(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				bed.list(grandchild)
 				if filepath.Dir(child) != filepath.Dir(parent) {
 					t.Fatalf("the nested root %s is not flat beside its parent's %s", child, parent)
 				}
@@ -79,15 +79,23 @@ func TestProcessScratchKeepsANestedRootWhileItsGrandchildLives(t *testing.T) {
 				if _, err := os.Lstat(dir); err != nil {
 					t.Fatalf("the owners' releases removed a root a live grandchild uses:\n%s", output)
 				}
-				bed.sweep(t, identity.KernelProber{})
+				// G holds P's lock through the description C was started
+				// with and passed on: P's release, after C has exited, keeps
+				// P's root while that orphaned holder lives.
+				if _, err := os.Lstat(parent); err != nil {
+					t.Fatalf("the parent's release removed its root under a live orphaned grandchild:\n%s", output)
+				}
+				bed.sweep(t, identity.KernelProber{}, grandchild)
 				if _, err := os.Lstat(dir); err != nil {
 					t.Fatalf("the sweeper removed a root a live grandchild uses: %v", err)
 				}
 				_ = stdin.Close()
 				awaitGone(t, grandchild)
-				bed.sweep(t, identity.KernelProber{})
-				if _, err := os.Lstat(child); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("after the grandchild ended the child's root stayed: %v", err)
+				bed.sweep(t, identity.KernelProber{}, grandchild)
+				for _, root := range []string{child, parent} {
+					if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("after the grandchild ended the root %s stayed: %v", root, err)
+					}
 				}
 			})
 		}
@@ -102,16 +110,17 @@ func TestProcessScratchReleaseKeepsTheRootWhileAPreparedChildLives(t *testing.T)
 	runOwnerScenario(t, "prepared")
 }
 
-// Round D1 F-1(b): the seam appends the writer lock after the launcher's
-// own descriptors and names its number in the child's environment.
-func TestPrepareChildAppendsTheLockAndNamesItsDescriptor(t *testing.T) {
+// Round D1 F-1(b): the seam appends a writer lock description of the
+// child's own after the launcher's descriptors and names its number in the
+// child's environment.
+func TestStartChildAppendsTheLockAndNamesItsDescriptor(t *testing.T) {
 	t.Parallel()
 	bed := newScratchBed(t)
 	created, err := newProcessScratch(bed.temp, bed.registry, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(created.closeWriter)
+	t.Cleanup(func() { _ = unlockAndClose(created.writer) })
 	read, write, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -119,14 +128,96 @@ func TestPrepareChildAppendsTheLockAndNamesItsDescriptor(t *testing.T) {
 	t.Cleanup(func() { _ = read.Close(); _ = write.Close() })
 	child := exec.Command("true")
 	child.ExtraFiles = []*os.File{read}
-	if err := created.prepare(child); err != nil {
+	if err := created.start(child); err != nil {
 		t.Fatal(err)
 	}
-	if len(child.ExtraFiles) < 2 || child.ExtraFiles[0] != read || child.ExtraFiles[1] != created.writer {
-		t.Fatalf("extra files = %v; want the launcher's first, then the writer lock", child.ExtraFiles)
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if len(child.ExtraFiles) < 2 || child.ExtraFiles[0] != read || child.ExtraFiles[1] == created.writer ||
+		child.ExtraFiles[1].Name() != filepath.Join(created.record.Path, WriterLockName) {
+		t.Fatalf("extra files = %v; want the launcher's first, then a writer lock description of the child's own", child.ExtraFiles)
 	}
 	if !containsEntry(child.Env, scratchLockFDEnv+"=4") || !containsEntry(child.Env, scratchRootsEnv+"="+filepath.Dir(created.record.Path)) {
 		t.Fatalf("child environment lacks the lock descriptor or the roots directory: %v", child.Env)
+	}
+}
+
+// FL-START-001: an unregistered fallback root has no writer lock; the
+// child starts with the environment alone and no error.
+func TestStartChildStartsInTheFallback(t *testing.T) {
+	t.Parallel()
+	dir := realDir(t)
+	blocked := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fallback := openScratch(dir, Registry{Dir: filepath.Join(blocked, "stores")}, io.Discard)
+	if fallback == nil || !fallback.fallback {
+		t.Fatalf("an unwritable registry gave %+v", fallback)
+	}
+	if _, err := os.Lstat(filepath.Join(fallback.record.Path, WriterLockName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the fallback root has a writer lock: %v", err)
+	}
+	child := exec.Command("true")
+	child.Env = append(os.Environ(), scratchLockFDEnv+"=3")
+	if err := fallback.start(child); err != nil {
+		t.Fatalf("a fallback scratch did not start its child: %v", err)
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if len(child.ExtraFiles) != 0 {
+		t.Fatalf("a fallback child was given %v; want no lock", child.ExtraFiles)
+	}
+	for _, entry := range child.Env {
+		if strings.HasPrefix(entry, scratchLockFDEnv+"=") {
+			t.Fatalf("a fallback child names a lock descriptor: %s", entry)
+		}
+	}
+	if !containsEntry(child.Env, "TMPDIR="+fallback.record.Path) {
+		t.Fatalf("a fallback child's TMPDIR is not the fallback root: %v", child.Env)
+	}
+}
+
+// StartChild closes this process's copy of the child's description: once
+// the child has been waited for, no descriptor of this process is the lock
+// file but the owner's own.
+func TestStartChildLeavesNoParentCopy(t *testing.T) {
+	t.Parallel()
+	bed := newScratchBed(t)
+	created, err := newProcessScratch(bed.temp, bed.registry, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unlockAndClose(created.writer) })
+	child := exec.Command("true")
+	if err := created.start(child); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	var lock unix.Stat_t
+	if err := unix.Stat(filepath.Join(created.record.Path, WriterLockName), &lock); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		fd, err := strconv.Atoi(entry.Name())
+		if err != nil || uintptr(fd) == created.writer.Fd() {
+			continue
+		}
+		var stat unix.Stat_t
+		if unix.Fstat(fd, &stat) != nil {
+			continue
+		}
+		if stat.Dev == lock.Dev && stat.Ino == lock.Ino {
+			t.Fatalf("descriptor %d of this process is the writer lock of a child that has exited", fd)
+		}
 	}
 }
 
@@ -145,7 +236,7 @@ func TestProcessStorePreviewTakesTheCensus(t *testing.T) {
 	t.Parallel()
 	bed, record := deadScratch(t)
 	options := passOptions(bed.registry, realDir(t),
-		RegisteredStores{Registry: bed.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: fixedProber{state: identity.Dead}}}})
+		RegisteredStores{Registry: bed.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: bed.proof(fixedProber{state: identity.Dead})}})
 	options.CensusReader = fakeCensus(map[int64]identity.ProcessUse{4242: {Cwd: record.Path}}, nil)
 	options.Mode = ModePreview
 	report, err := RunPass(context.Background(), options)
@@ -175,80 +266,14 @@ func TestProcessScratchReleaseUnlinksSymlinks(t *testing.T) {
 	}
 }
 
-// The fork-copy witness: a copy of the owner's writer description that
-// goes away shortly after the owner closed its own (a sibling goroutine's
-// child between fork and exec) is waited out and the root released.
-// Before the drain, the owner's single probe left the root to the sweeper
-// and ReleaseProcessScratch returned "kept for the sweeper".
-func TestProcessScratchReleaseWaitsOutAForkCopyOfTheWriter(t *testing.T) {
+// The owner's release frees every fork copy of its own lock: a copy of the
+// owner's description held open across the release (a sibling goroutine's
+// child between fork and exec) no longer keeps the root for the sweeper.
+// Before, the owner closed its copy without LOCK_UN and the release
+// returned "kept for the sweeper". No fork and no clock are involved.
+func TestOwnerReleaseFreesForkCopiesOfItsLock(t *testing.T) {
 	t.Parallel()
-	runOwnerScenario(t, "fork-copy-drained")
-}
-
-// A copy that outlives the drain is a live writer: the root stays for the
-// sweeper, the release errors, and the drain stops at its bound.
-func TestProcessScratchReleaseDrainIsBoundedForALiveWriter(t *testing.T) {
-	t.Parallel()
-	runOwnerScenario(t, "fork-copy-alive")
-}
-
-// forkCopyHolder starts a child holding a duplicate of the owner's writer
-// description, outside the prepare seam (so the owner does not count it as
-// its child), as a child forked by another goroutine holds every
-// descriptor until it execs: the same open file description, so the same
-// flock. release ends it and waits for it.
-func forkCopyHolder(created *processScratch) (release func() error, err error) {
-	child := exec.Command("/bin/sh", "-c", "echo ready; read line || true")
-	child.ExtraFiles = []*os.File{created.writer}
-	stdin, err := child.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := child.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := child.Start(); err != nil {
-		return nil, err
-	}
-	ready := make([]byte, len("ready\n"))
-	if _, err := io.ReadFull(stdout, ready); err != nil || string(ready) != "ready\n" {
-		_ = stdin.Close()
-		_ = child.Wait()
-		return nil, fmt.Errorf("holder readiness = %q, %v", ready, err)
-	}
-	released := false
-	return func() error {
-		if released {
-			return nil
-		}
-		released = true
-		_ = stdin.Close()
-		return child.Wait()
-	}, nil
-}
-
-// fakeWriterDrain is the drain on an artificial clock: each sleep calls
-// onSleep, then advances the clock by the step; it never waits.
-func fakeWriterDrain(onSleep func()) (WriterDrain, *int) {
-	clock := time.Unix(0, 0)
-	sleeps := 0
-	return WriterDrain{Now: func() time.Time { return clock }, Sleep: func(step time.Duration) {
-		sleeps++
-		if onSleep != nil {
-			onSleep()
-		}
-		clock = clock.Add(step)
-	}}, &sleeps
-}
-
-// releaseAsTheProcess makes created this process's scratch and releases it
-// through ReleaseProcessScratch, as dispatch does at its end.
-func releaseAsTheProcess(created *processScratch, drain WriterDrain) error {
-	scratchMu.Lock()
-	currentScratch = created
-	scratchMu.Unlock()
-	return ReleaseProcessScratch(context.Background(), drain)
+	runOwnerScenario(t, "fork-copy-freed")
 }
 
 // Round D1 F-6: a temporary store whose creation was cut short after its
@@ -292,7 +317,7 @@ func TestProcessScratchKeepsTheCommandWorking(t *testing.T) {
 	if err != nil || !filepath.IsAbs(created.record.Path) {
 		t.Fatalf("a relative TMPDIR: %v, %+v", err, created)
 	}
-	created.closeWriter()
+	_ = unlockAndClose(created.writer)
 
 	blocked := filepath.Join(dir, "blocked")
 	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
@@ -348,7 +373,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersSessionLives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bed.sweep(t, identity.KernelProber{})
+	bed.sweep(t, identity.KernelProber{}, grandchild)
 	if unix.Kill(grandchild, 0) != nil {
 		t.Fatal("the grandchild ended before the witness looked")
 	}
@@ -357,7 +382,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersSessionLives(t *testing.T) {
 	}
 	_ = stdin.Close()
 	awaitGone(t, grandchild)
-	report := bed.sweep(t, identity.KernelProber{})
+	report := bed.sweep(t, identity.KernelProber{}, grandchild)
 	if _, err := os.Lstat(child); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("after the session ended the root stayed: %v\nkept %+v\npending %+v", err, report.Kept, report.Pending)
 	}
@@ -373,7 +398,8 @@ func TestProcessProofKeepsTheRootWhileTheOwnersGroupLives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created.closeWriter()
+	_ = unlockAndClose(created.writer)
+	bed.list(os.Getpid())
 	if created.record.OwnerGroup != int64(unix.Getpgrp()) || created.record.OwnerSession == 0 {
 		t.Fatalf("record group %d session %d", created.record.OwnerGroup, created.record.OwnerSession)
 	}
@@ -402,7 +428,7 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 		if err != nil {
 			return err
 		}
-		if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); released || err != nil {
+		if released, err := created.releaseIfIdle(context.Background()); released || err != nil {
 			return fmt.Errorf("a release with a user in flight = %v, %v; want kept", released, err)
 		}
 		if _, err := os.Lstat(dir); err != nil {
@@ -414,17 +440,14 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 	},
 	"prepared": func(created *processScratch) error {
 		child := exec.Command("sh", "-c", `exec 3>&-; exec cat`)
-		if err := created.prepare(child); err != nil {
-			return err
-		}
 		stdin, err := child.StdinPipe()
 		if err != nil {
 			return err
 		}
-		if err := child.Start(); err != nil {
+		if err := created.start(child); err != nil {
 			return err
 		}
-		if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); released || err != nil {
+		if released, err := created.releaseIfIdle(context.Background()); released || err != nil {
 			return fmt.Errorf("a release with a live prepared child = %v, %v; want kept", released, err)
 		}
 		if _, err := os.Lstat(created.record.Path); err != nil {
@@ -434,46 +457,16 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 		_ = child.Wait()
 		return releasedAndGone(created)
 	},
-	"fork-copy-drained": func(created *processScratch) error {
-		release, err := forkCopyHolder(created)
+	"fork-copy-freed": func(created *processScratch) error {
+		// A duplicate of the owner's description is a fork copy in
+		// everything but name: the same open file description, so the same
+		// flock, held until the copy closes.
+		copied, err := unix.Dup(int(created.writer.Fd()))
 		if err != nil {
 			return err
 		}
-		defer release()
-		var holderErr error
-		drain, sleeps := fakeWriterDrain(func() { holderErr = release() })
-		if err := releaseAsTheProcess(created, drain); err != nil {
-			return fmt.Errorf("a release with a transient fork copy = %v; want released", err)
-		}
-		if holderErr != nil {
-			return fmt.Errorf("holder: %v", holderErr)
-		}
-		if *sleeps != 1 {
-			return fmt.Errorf("the drain slept %d times; want exactly one re-probe", *sleeps)
-		}
-		if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("the root outlived its release: %v", err)
-		}
-		return nil
-	},
-	"fork-copy-alive": func(created *processScratch) error {
-		release, err := forkCopyHolder(created)
-		if err != nil {
-			return err
-		}
-		defer release()
-		drain, sleeps := fakeWriterDrain(nil)
-		err = releaseAsTheProcess(created, drain)
-		if err == nil || !strings.Contains(err.Error(), "kept for the sweeper") {
-			return fmt.Errorf("a release with a live writer = %v; want kept for the sweeper", err)
-		}
-		if want := int(WriterDrainWindow / WriterDrainStep); *sleeps != want {
-			return fmt.Errorf("the drain slept %d times; want %d", *sleeps, want)
-		}
-		if _, err := os.Lstat(created.record.Path); err != nil {
-			return fmt.Errorf("the root went while a writer lives: %v", err)
-		}
-		return nil
+		defer unix.Close(copied)
+		return releasedAndGone(created)
 	},
 	"symlinks": func(created *processScratch) error {
 		outside := os.Getenv("DISKSTORE_SCRATCH_OUTSIDE")
@@ -486,8 +479,15 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 	},
 }
 
+// start is StartChild for created, as mkdir is ScratchDir.
+func (s *processScratch) start(cmd *exec.Cmd) error {
+	scratchMu.Lock()
+	defer scratchMu.Unlock()
+	return s.startChild(cmd)
+}
+
 func releasedAndGone(created *processScratch) error {
-	if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); !released || err != nil {
+	if released, err := created.releaseIfIdle(context.Background()); !released || err != nil {
 		return fmt.Errorf("the release = %v, %v; want released", released, err)
 	}
 	if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {

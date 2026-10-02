@@ -92,9 +92,9 @@ exit 0`
 				}()
 
 				prober := identity.KernelProber{}
-				waitCustodyFileWhile(t, readyPath, 0, runEnded, func() error { return runErr })
-				root := waitCustodyRef(t, prober, rootPIDPath, 0)
-				child := waitCustodyRef(t, prober, childPIDPath, 0)
+				waitCustodyFileWhile(t, readyPath, runEnded, func() error { return runErr })
+				root := waitCustodyRef(t, prober, rootPIDPath)
+				child := waitCustodyRef(t, prober, childPIDPath)
 				group, err := syscall.Getpgid(int(root.Pid))
 				if err != nil || group == int(root.Pid) {
 					t.Fatalf("worker did not join a distinct live custodian group: root=%d group=%d err=%v", root.Pid, group, err)
@@ -313,7 +313,7 @@ func TestResourceCommandAlreadyCancelledStartsNothing(t *testing.T) {
 func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	directory, conf := isolatedHostResources(t)
-	first, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+	first, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,8 +344,8 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	})
 
 	prober := identity.KernelProber{}
-	waitCustodyFileWhile(t, readyPath, 0, runDone, func() error { return runErr })
-	child := waitCustodyRef(t, prober, pidPath, 0)
+	waitCustodyFileWhile(t, readyPath, runDone, func() error { return runErr })
+	child := waitCustodyRef(t, prober, pidPath)
 	childGroup, err := syscall.Getpgid(int(child.Pid))
 	if err != nil || childGroup == int(child.Pid) {
 		t.Fatalf("native descendant was not held by a distinct custodian group: child=%d group=%d err=%v", child.Pid, childGroup, err)
@@ -359,7 +359,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	}
 	// The trap's redirection creates the file before printf writes it, so
 	// existence alone could read an empty acknowledgement.
-	waitCustodyBarrier(t, termAckPath, 0, runDone, func() error { return runErr },
+	waitCustodyBarrier(t, termAckPath, runDone, func() error { return runErr },
 		func() bool { return completeCustodyRecord(termAckPath) })
 	termAck, err := os.ReadFile(termAckPath)
 	if err != nil || string(termAck) != "TERM\n" {
@@ -390,7 +390,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 			}
 		})
 		go func() {
-			next, acquireErr := AcquireHostResources(waitCtx, directory, conf, class, exclusive)
+			next, acquireErr := acquireHostResourcesIn(waitCtx, directory, directory, conf, class, exclusive, nil)
 			if acquireErr != nil {
 				waiting.result.err = acquireErr
 				close(waiting.finished)

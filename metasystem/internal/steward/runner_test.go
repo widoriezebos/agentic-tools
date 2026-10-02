@@ -3,6 +3,7 @@ package steward
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"os"
 	"os/exec"
@@ -341,42 +342,20 @@ func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initialWait, err := runnerStopWait(root, int((10*runnerConfirmationWait)/time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(initialWait)
-	becameHealthy := false
-	for time.Now().Before(deadline) {
-		if checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status == HealthAlive {
-			becameHealthy = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	testenv.Await(t, "the fixture runner's first generation-bound pass", func() bool {
+		return checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status == HealthAlive
+	})
 	before, alive := liveRunner(root)
-	if !becameHealthy || !alive || checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status != HealthAlive {
+	if !alive || checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status != HealthAlive {
 		t.Fatal("the fixture runner never completed its first generation-bound pass")
 	}
 	if err := syscall.Kill(int(before.Pid), syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	replacementWait, err := runnerStopWait(root, int((10*runnerReplacementKillWait)/time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadline = time.Now().Add(replacementWait)
-	died := false
-	for time.Now().Before(deadline) {
-		if _, stillAlive := liveRunner(root); !stillAlive {
-			died = true
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !died {
-		t.Fatalf("killed fixture runner pid %d remained alive after %s", before.Pid, replacementWait)
-	}
+	testenv.Await(t, fmt.Sprintf("killed fixture runner pid %d to exit", before.Pid), func() bool {
+		_, stillAlive := liveRunner(root)
+		return !stillAlive
+	})
 	outcome, err := RepairEnrolledRunner(root)
 	if err != nil {
 		t.Fatal(err)
@@ -535,7 +514,8 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := beginComponentAttempt(root, "steward-tick", 1, exact.Ref(), time.Now().Add(-2*time.Second)); err != nil {
+	// The attempt began at a fixed instant long past any configured patience.
+	if _, err := beginComponentAttempt(root, "steward-tick", 1, exact.Ref(), time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	repaired, err := RepairEnrolledRunner(root)

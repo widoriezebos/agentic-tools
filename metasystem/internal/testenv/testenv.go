@@ -337,13 +337,20 @@ func exitScan(code int, keys []identity.FixtureKey, scan fixtureScanFunc, prober
 	return code
 }
 
+// fixtureExited reads one probe of ref: the process has exited when it is
+// gone, its pid now names another process, or it is a zombie its parent has
+// not reaped yet (a zombie still answers kill(pid, 0)).
+func fixtureExited(exact identity.Exact, state identity.Liveness, err error, ref identity.Ref) bool {
+	return err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie))
+}
+
 func waitForFixtureExit(prober identity.Prober, ref identity.Ref, bound time.Duration, output io.Writer) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	deadline := time.After(bound)
 	for {
 		exact, state, err := prober.Probe(ref.Pid)
-		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
+		if fixtureExited(exact, state, err, ref) {
 			return
 		}
 		select {
@@ -790,7 +797,7 @@ func createRegistryHomeUnder(mkdirTemp func(string, string) (string, error), roo
 	closeOwner := true
 	defer func() {
 		if closeOwner {
-			_ = owner.Close()
+			_ = unlockAndClose(owner)
 		}
 	}()
 	if err := unix.Flock(int(owner.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {

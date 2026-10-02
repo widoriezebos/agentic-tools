@@ -59,6 +59,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -220,10 +221,7 @@ func (b *signedInLaunchBed) clone(destination string) error {
 func buildSignedInLaunchGit(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", filepath.Join(dir, "git"), "./testdata/signedinlaunchgit")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build the Git stand-in: %v\n%s", err, output)
-	}
+	testenv.Link(t, testenv.Built(t, "./cmd/metasystem/testdata/signedinlaunchgit"), filepath.Join(dir, "git"))
 	return dir
 }
 

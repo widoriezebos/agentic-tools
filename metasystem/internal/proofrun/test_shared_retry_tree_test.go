@@ -46,7 +46,7 @@ func TestSharedRetryUsesNewestObservationOnRequestedTree(t *testing.T) {
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(candidate)); err != nil || decided {
 		t.Fatalf("unseen tree inherited another tree's retry: decision=%+v decided=%t err=%v", decision, decided, err)
 	}
-	fresh, decision, err := ReserveLocked(candidateAdmission(candidate))
+	fresh, decision, err := reserveLocked(candidateAdmission(candidate))
 	if err != nil || decision.Disposition != DispositionExecuted || fresh.TestOwned["group"] != groupIdentity || fresh.TestSources["group"] != "" {
 		t.Fatalf("unseen tree did not own fresh execution: attempt=%+v decision=%+v err=%v", fresh, decision, err)
 	}
@@ -84,7 +84,7 @@ func TestSharedCandidatePassSupersedesItsEarlierFailure(t *testing.T) {
 	}
 	retry := request(treeB, "red-b", 2*time.Second)
 	retry.RetryDecisionPath = decisionPath
-	passed, decision, err := ReserveLocked(candidateAdmission(retry))
+	passed, decision, err := reserveLocked(candidateAdmission(retry))
 	if err != nil || decision.Disposition != DispositionExecuted || passed.PreviousAttempt != prior.AttemptID || passed.TestOwned["group"] != groupIdentity {
 		t.Fatalf("accountable retry did not own native group: attempt=%+v decision=%+v err=%v", passed, decision, err)
 	}
@@ -101,7 +101,7 @@ func TestSharedCandidatePassSupersedesItsEarlierFailure(t *testing.T) {
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(candidate)); err != nil || decided {
 		t.Fatalf("earlier red survived a newer pass on its tree: decision=%+v decided=%t err=%v", decision, decided, err)
 	}
-	fresh, decision, err := ReserveLocked(candidateAdmission(candidate))
+	fresh, decision, err := reserveLocked(candidateAdmission(candidate))
 	if err != nil || decision.Disposition != DispositionExecuted || fresh.TestOwned["group"] != groupIdentity || fresh.TestSources["group"] != "" {
 		t.Fatalf("newer cross-tree red was reused through or refenced by the superseded failure: attempt=%+v decision=%+v err=%v", fresh, decision, err)
 	}
@@ -120,7 +120,7 @@ func TestSharedNewerRedVetoesReuseButDifferentTreeOwnsFreshExecution(t *testing.
 	groups := map[string]string{"group": groupIdentity}
 	reserve := func(request AdmissionRequest) (Attempt, LaunchResult) {
 		t.Helper()
-		attempt, decision, err := ReserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(request), admission))
+		attempt, decision, err := reserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(request), admission))
 		if err != nil {
 			t.Fatal(err)
 		}

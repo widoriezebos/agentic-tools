@@ -62,8 +62,6 @@ func FixtureTag(exact Exact) (FixtureKey, FixtureCarrier, bool) {
 	return FixtureKey{}, "", false
 }
 
-var fixtureSurvivorProber Prober = KernelProber{}
-
 // FixtureProcessScope carries process-table facts that are outside an exact identity probe.
 type FixtureProcessScope struct {
 	Pgid, Sid  int64
@@ -71,7 +69,32 @@ type FixtureProcessScope struct {
 	Signalable bool
 }
 
-var fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+// fixtureSurvivorSource is where the fixture survivor wrappers below read
+// the host: the process table the pids come from, the prober of each pid,
+// and each pid's group, session and signalability. Its zero value is the
+// kernel's; a test hands its own per call, so no package variable is
+// swapped under a parallel test. ScanFixtureSurvivors takes its sources
+// from the caller.
+type fixtureSurvivorSource struct {
+	processes ProcessTable
+	prober    Prober
+	scope     func(int64) FixtureProcessScope
+}
+
+func (source fixtureSurvivorSource) resolved() fixtureSurvivorSource {
+	if source.processes == nil {
+		source.processes = KernelProcessTable{}
+	}
+	if source.prober == nil {
+		source.prober = KernelProber{}
+	}
+	if source.scope == nil {
+		source.scope = kernelFixtureProcessScope
+	}
+	return source
+}
+
+func kernelFixtureProcessScope(pid int64) FixtureProcessScope {
 	pgid, pgErr := unix.Getpgid(int(pid))
 	sid, sidErr := unix.Getsid(int(pid))
 	signalable := unix.Kill(int(pid), 0) == nil && pgErr == nil && sidErr == nil
@@ -87,20 +110,30 @@ type FixtureSurvivorSelection struct {
 
 // FixtureSurvivors returns processes for key, including unreadable processes only when their process group or session ties them to a certain result.
 func FixtureSurvivors(key FixtureKey) ([]FixtureSurvivor, error) {
-	pids, err := survivorPids()
+	return fixtureSurvivorSource{}.survivors(key)
+}
+
+func (source fixtureSurvivorSource) survivors(key FixtureKey) ([]FixtureSurvivor, error) {
+	source = source.resolved()
+	pids, err := source.processes.Pids()
 	if err != nil {
 		return nil, fmt.Errorf("identity: enumerate fixture processes: %w", err)
 	}
-	return ScanFixtureSurvivors(pids, fixtureSurvivorProber, fixtureSurvivorScope, FixtureSurvivorSelection{Key: &key})
+	return ScanFixtureSurvivors(pids, source.prober, source.scope, FixtureSurvivorSelection{Key: &key})
 }
 
 // FixtureSurvivorsOfDeadOwner returns processes for owner's fixtures, including unreadable processes under go-tmp or tied to a certain result by process group or session.
 func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, error) {
-	pids, err := survivorPids()
+	return fixtureSurvivorSource{}.survivorsOfDeadOwner(prober, owner)
+}
+
+func (source fixtureSurvivorSource) survivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, error) {
+	source = source.resolved()
+	pids, err := source.processes.Pids()
 	if err != nil {
 		return nil, fmt.Errorf("identity: enumerate fixture processes: %w", err)
 	}
-	return ScanFixtureSurvivors(pids, prober, fixtureSurvivorScope, FixtureSurvivorSelection{Owner: &owner})
+	return ScanFixtureSurvivors(pids, prober, source.scope, FixtureSurvivorSelection{Owner: &owner})
 }
 
 type fixtureObservation struct {

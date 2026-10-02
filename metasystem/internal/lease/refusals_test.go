@@ -253,45 +253,40 @@ func TestSweepFailsClosed(t *testing.T) {
 }
 
 func TestGroupOwnsTagUnprovableRows(t *testing.T) {
-	savedPids, savedPgid, savedCmd := sweepAllPids, sweepGetpgid, sweepProcessCommand
-	defer func() { sweepAllPids, sweepGetpgid, sweepProcessCommand = savedPids, savedPgid, savedCmd }()
+	t.Parallel()
+	member := identity.FixedProcessTable{{Pid: 7, Group: 42}}
 
 	// An empty scan has no live observation and cannot disprove ownership.
-	sweepAllPids = func() ([]int64, error) { return nil, nil }
-	if owned, provable := groupOwnsTag(42, "t", nil); owned || provable {
+	if owned, provable := groupOwnsTag(identity.FixedProcessTable{}, 42, "t", nil); owned || provable {
 		t.Fatalf("an empty scan must be unprovable: owned=%v provable=%v", owned, provable)
 	}
 
 	// Process table unreadable: unprovable.
-	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
-	if _, provable := groupOwnsTag(42, "t", nil); provable {
+	if _, provable := groupOwnsTag(identity.ScriptedProcessTable{PidsErr: errors.New("table down")}, 42, "t", nil); provable {
 		t.Fatal("an unreadable table was ruled provable")
 	}
 
 	// A member whose pgid read fails with anything but ESRCH: unprovable.
-	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
-	sweepGetpgid = func(pid int64) (int64, error) { return 0, errors.New("EIO") }
-	if _, provable := groupOwnsTag(42, "t", nil); provable {
+	if _, provable := groupOwnsTag(identity.ScriptedProcessTable{Rows: member, GroupErr: map[int64]error{7: unix.EIO}}, 42, "t", nil); provable {
 		t.Fatal("a failed pgid read was ruled provable")
 	}
 
 	// ESRCH contributes no live observation, so an otherwise empty scan is
 	// unprovable rather than disproof.
-	sweepGetpgid = func(pid int64) (int64, error) { return 0, unix.ESRCH }
-	if owned, provable := groupOwnsTag(42, "t", nil); owned || provable {
+	gone := identity.ScriptedProcessTable{Rows: member, GroupErr: map[int64]error{7: unix.ESRCH}}
+	if owned, provable := groupOwnsTag(gone, 42, "t", nil); owned || provable {
 		t.Fatalf("an ESRCH-only scan must be unprovable: owned=%v provable=%v", owned, provable)
 	}
 
 	// A live member with unreadable identity: unprovable, never disproven.
-	sweepGetpgid = func(pid int64) (int64, error) { return 42, nil }
-	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "", false }
-	if _, provable := groupOwnsTag(42, "t", nil); provable {
+	unreadable := groupOwnershipProbe{7: identity.FixtureEntry{StartedAt: 1, HasStartedAt: true}}
+	if _, provable := groupOwnsTag(member, 42, "t", unreadable); provable {
 		t.Fatal("an unreadable member identity was ruled provable")
 	}
 
 	// A live tagged member: owned and provable.
-	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "runner --tag t", true }
-	if owned, provable := groupOwnsTag(42, "t", nil); !owned || !provable {
+	tagged := groupOwnershipProbe{7: identity.FixtureEntry{StartedAt: 1, HasStartedAt: true, Command: "runner --tag t", HasCommand: true}}
+	if owned, provable := groupOwnsTag(member, 42, "t", tagged); !owned || !provable {
 		t.Fatalf("a tagged member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
 }
@@ -332,9 +327,9 @@ func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 // through cleanupStaleJobs — the fuse between a takeover sweep and
 // SIGTERM-ing a recycled process group.
 func TestSweepStopVerdictRows(t *testing.T) {
-	savedPids, savedPgid, savedCmd, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	savedCmd := sweepProcessCommand
 	defer func() {
-		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCmd, savedKill
+		sweepProcessCommand = savedCmd
 	}()
 
 	staleJob := func(t *testing.T, root string) string {
@@ -347,10 +342,10 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	}
 
 	// An empty ownership scan cannot authorize a signal.
-	sweepAllPids = func() ([]int64, error) { return nil, nil }
 	var emptyScanKills int
-	sweepKill = func(pgid int64, sig unix.Signal) error { emptyScanKills++; return nil }
 	c, _ := newClaimer(t.TempDir())
+	c.processes = identity.FixedProcessTable{}
+	c.kill = func(pgid int64, sig unix.Signal) error { emptyScanKills++; return nil }
 	err := c.stopStaleGroup(map[string]any{"pgid": float64(424242), "instanceTag": "stale-tag"}, "stale")
 	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership") {
 		t.Fatalf("an empty scan must stay unprovable: %v", err)
@@ -360,10 +355,10 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	}
 
 	// Unprovable ownership: the sweep refuses BEFORE any stamp.
-	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
 	root := t.TempDir()
 	recordPath := staleJob(t, root)
 	refusalClaimer, _ := newClaimer(root)
+	refusalClaimer.processes = identity.ScriptedProcessTable{PidsErr: errors.New("table down")}
 	err = refusalClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership of stale job stale") {
 		t.Fatalf("unprovable ownership must refuse the sweep: %v", err)
@@ -374,13 +369,13 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	}
 
 	// Owned and provable, but the kill is DENIED (EPERM): loud refusal.
-	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
-	sweepGetpgid = func(pid int64) (int64, error) { return 424242, nil }
+	owned := identity.FixedProcessTable{{Pid: 7, Group: 424242}}
 	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "runner stale-tag", true }
-	sweepKill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
 	root = t.TempDir()
 	staleJob(t, root)
 	secondClaimer, _ := newClaimer(root)
+	secondClaimer.processes = owned
+	secondClaimer.kill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
 	err = secondClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot stop stale job stale") {
 		t.Fatalf("a denied kill must refuse: %v", err)
@@ -388,10 +383,11 @@ func TestSweepStopVerdictRows(t *testing.T) {
 
 	// Owned, provable, kill lands: the record is stamped failed.
 	var killed []int64
-	sweepKill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
 	root = t.TempDir()
 	recordPath = staleJob(t, root)
 	thirdClaimer, _ := newClaimer(root)
+	thirdClaimer.processes = owned
+	thirdClaimer.kill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
 	if err := thirdClaimer.cleanupStaleJobs(5); err != nil {
 		t.Fatalf("a provable stale group must sweep cleanly: %v", err)
 	}

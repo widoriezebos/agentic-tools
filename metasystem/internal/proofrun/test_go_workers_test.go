@@ -16,12 +16,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -920,7 +920,7 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 	}
 	admissionRoot, conf := isolatedHostResources(t)
 	custodyContext := WithResourceCustodyExecutable(t.Context(), buildResourceCustodyEngine(t))
-	lease, err := AcquireHostResources(custodyContext, admissionRoot, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(custodyContext, admissionRoot, admissionRoot, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,11 +987,16 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 	if len(processes) != wantProcesses {
 		t.Fatalf("%s acknowledged partitions=%d want=%d: %+v", failure, len(processes), wantProcesses, processes)
 	}
+	// The drain ends when no member is live; a member it ended may still be
+	// exiting, and the descendant, reparented when its parent exited, is a
+	// zombie until init reaps it. Their ends are awaited, never read once: a
+	// member the drain never ended waits for its termination forever and
+	// outlasts the bound.
 	for _, process := range processes {
-		if err := syscall.Kill(process.child, 0); !errors.Is(err, syscall.ESRCH) {
+		if err := testenv.AwaitProcessTargetGone(process.child); err != nil {
 			t.Fatalf("%s returned before exact child %d drained: %v", failure, process.child, err)
 		}
-		if err := syscall.Kill(process.descendant, 0); !errors.Is(err, syscall.ESRCH) {
+		if err := testenv.AwaitProcessTargetGone(process.descendant); err != nil {
 			t.Fatalf("%s returned before exact descendant %d drained: %v", failure, process.descendant, err)
 		}
 	}
@@ -1015,7 +1020,7 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 		t.Fatal(err)
 	}
 	leaseOpen = false
-	probe, err := AcquireHostResources(t.Context(), admissionRoot, conf, "heavy", nil)
+	probe, err := acquireHostResourcesIn(t.Context(), admissionRoot, admissionRoot, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("%s returned before host lease was reusable: %v", failure, err)
 	}

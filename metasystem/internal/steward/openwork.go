@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 type openWorkDependencies struct {
@@ -21,6 +22,9 @@ type openWorkDependencies struct {
 	// Seat is the seat ladder's wiring (g1-s77); nil keeps the ladder
 	// without seat starts.
 	Seat *seatDependencies
+	// HandoffProber reads a seat handoff's predecessor; nil reads the
+	// kernel.
+	HandoffProber identity.Prober
 }
 
 func readOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {

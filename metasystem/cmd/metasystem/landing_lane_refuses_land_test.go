@@ -12,11 +12,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
-// laneRefusalLines are the two lines work land prints while this computer
-// has a landing lane: the lane's hand-in is not built yet, so a seat never
-// silently lands its own work beside it; line 2 is the one command.
+// laneRefusalLines are the two lines work land of a job or of a hand-made
+// change prints while this computer has a landing lane: the lane takes only
+// a goal's branch, so a seat never silently lands its own work beside it;
+// line 2 is the one command.
 const (
-	laneRefusalLine1 = "✗ this computer has a landing lane, whose hand-in isn't built yet"
+	laneRefusalLine1 = "✗ this computer has a landing lane, which lands only a goal's branch; nothing was landed"
 	laneRefusalLine2 = "  → metasystem landing unset  lets this seat land its own work"
 )
 
@@ -29,9 +30,10 @@ func expectLaneRefusal(t *testing.T, label string, code int, stderr string) {
 }
 
 // TestWorkLandRefusesWhileALaneIsRegistered: with a landing lane registered,
-// work land of a goal, of a job and of a hand-made change each refuse with
-// the two lines and land nothing; without a lane the same goal is read
-// for its own landing as before.
+// work land of a job and of a hand-made change each refuse with the two
+// lines and land nothing (a goal is handed in instead:
+// landing_plain_handin_test.go); without a lane the goal is read for its
+// own landing as before.
 func TestWorkLandRefusesWhileALaneIsRegistered(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
@@ -51,14 +53,8 @@ func TestWorkLandRefusesWhileALaneIsRegistered(t *testing.T) {
 		return code, stderr
 	}
 
-	code, stdout := run("work", "land", "g1")
-	expectLaneRefusal(t, "goal", code, stdout)
-	if branchReads != 0 {
-		t.Fatalf("goal: the goal branch was read %d times beside a lane", branchReads)
-	}
-
 	b.writeJob(map[string]any{"jobId": "j-1", "goalId": "g1"})
-	code, stdout = run("work", "land", "j2:j-1")
+	code, stdout := run("work", "land", "j2:j-1")
 	expectLaneRefusal(t, "job", code, stdout)
 
 	if output, err := exec.Command("git", "-C", b.install, "-c", "user.name=W", "-c", "user.email=w@example.com",

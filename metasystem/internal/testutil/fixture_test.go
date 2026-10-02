@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +25,11 @@ import (
 type recordingTB struct {
 	cleanups []func()
 	errs     []string
+	// deadline, when set, is the test binary deadline the recorder reports.
+	deadline time.Time
 }
+
+func (r *recordingTB) Deadline() (time.Time, bool) { return r.deadline, !r.deadline.IsZero() }
 
 var errRecordingFatal = errors.New("recording Fatalf")
 
@@ -335,7 +340,7 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
-		waitForFixtureExit(t, child.Ref(), fixtureProcessWaitBound(t))
+		waitForFixtureExit(t, child.Ref())
 	})
 	if childEnv != "" {
 		t.Fatalf("custodian variable reached live fixture child: %s", childEnv)
@@ -350,8 +355,11 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("helper error=%v output=%q", err, line+string(rest))
 	}
-	waitForFixtureExit(t, child.Ref(), fixtureProcessWaitBound(t))
-	if err := syscall.Kill(-helperGroup, 0); !errors.Is(err, syscall.ESRCH) {
+	waitForFixtureExit(t, child.Ref())
+	// The exit wait ends at the child's exit; reparented, it stays a zombie
+	// member of the group until init reaps it, so the group's end is awaited,
+	// never read once.
+	if err := testenv.AwaitProcessTargetGone(-helperGroup); err != nil {
 		t.Fatalf("helper process group %d still exists: %v", helperGroup, err)
 	}
 }
@@ -382,7 +390,7 @@ func TestBinaryExitScanHelper(t *testing.T) {
 		if signalErr != nil && signalErr != identity.ErrGone {
 			t.Fatalf("signal exit-scan child: %v", signalErr)
 		}
-		waitForFixtureExit(t, child.Ref(), fixture.waitBound)
+		waitForFixtureExit(t, child.Ref())
 		if waitErr := command.Wait(); waitErr == nil {
 			t.Fatal("exit-scan child ignored SIGKILL")
 		}
@@ -481,12 +489,14 @@ func TestHelperFailingBeforeItsKillPointLeavesNoChild(t *testing.T) {
 			prober, recorder := identity.KernelProber{}, &recordingTB{}
 			fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, prober, syscall.Kill)
 			fixture.scan = noFixtureSurvivors
-			command := fixture.Shell("trap '' TERM\nkill -STOP $$")
+			command := fixture.Shell(testexec.ReadyPrologue + "trap '' TERM\nkill -STOP $$")
 			output, err := command.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := command.Start(); err != nil {
+			// The failure text names the child's exe and argv, which its
+			// image publishes only once it runs.
+			if err := testexec.StartReady(command); err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = command.Process.Kill() }()
@@ -516,7 +526,7 @@ func TestHelperFailingBeforeItsKillPointLeavesNoChild(t *testing.T) {
 				if err := command.Process.Kill(); err != nil {
 					t.Fatal(err)
 				}
-				waitForFixtureZombie(t, output, prober, ref, fixture.waitBound)
+				waitForFixtureZombie(t, output, prober, ref)
 			}
 			recorder.cleanups[0]()
 			_ = command.Wait()
@@ -566,17 +576,16 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 		})
 		fixture := newProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(int, syscall.Signal) error { sent++; return nil })
 		fixture.scan = func(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
-		fixture.waitBound = time.Millisecond
 		if test.held {
 			fixture.Hold(500)
 		} else {
 			fixture.Record(500)
 		}
-		recorder.cleanups[0]()
+		fixture.teardown(cancelledContext())
 		failures := strings.Join(recorder.errs, "\n")
 		if sent != test.wantSent || len(recorder.errs) != test.wantFailures ||
 			test.wantFailures > 0 && !strings.Contains(failures, "finished child found running at teardown") ||
-			test.wantFailures > 1 && !strings.Contains(failures, "child did not exit after") {
+			test.wantFailures > 1 && !strings.Contains(failures, "child did not exit") {
 			t.Fatalf("case=%+v: sent=%d failures=%v", test, sent, recorder.errs)
 		}
 	}
@@ -628,9 +637,8 @@ func TestFixtureRecordsAndReleasesEachChild(t *testing.T) {
 				}
 				return nil
 			})
-			recorder.Cleanup(fixture.cleanup)
+			recorder.Cleanup(func() { fixture.teardown(cancelledContext()) })
 			fixture.scan = noFixtureSurvivors
-			fixture.waitBound = time.Millisecond
 			fixture.records = filepath.Join(t.TempDir(), "records")
 			failOnFixtureError(t, os.WriteFile(fixture.records, nil, 0o600))
 			if test.hold {
@@ -697,13 +705,13 @@ read -r _ <&3 || :`, ready)
 	}
 	defer identity.SignalExact(prober, grand.Ref(), syscall.SIGKILL)
 	failOnFixtureError(t, releaseWriter.Close())
-	waitForFixtureExit(t, ref, fixture.waitBound)
+	waitForFixtureExit(t, ref)
 	failOnFixtureError(t, command.Wait())
 	recorder.cleanups[0]()
 	if !strings.Contains(strings.Join(recorder.errs, "\n"), fmt.Sprintf("pid=%d ", grandPID)) {
 		t.Fatalf("cleanup failures do not name grandchild %d: %v", grandPID, recorder.errs)
 	}
-	waitForFixtureExit(t, grand.Ref(), fixture.waitBound)
+	waitForFixtureExit(t, grand.Ref())
 }
 
 func TestLeashedShellExitsWhenItsOwnerLetsGo(t *testing.T) {
@@ -714,7 +722,7 @@ func TestLeashedShellExitsWhenItsOwnerLetsGo(t *testing.T) {
 	// Close the leash before releasing the shell; on macOS, a reader entering read as the last writer closes can miss EOF.
 	_ = fixture.leash.Close()
 	_ = release.Close()
-	waitForFixtureExit(t, ref, fixture.waitBound)
+	waitForFixtureExit(t, ref)
 	_, _ = command.Wait()
 	recorder.cleanups[0]()
 	if sent != 0 || len(recorder.errs) != 0 {
@@ -729,14 +737,14 @@ func TestCleanupIsScopedToTheFixtureKey(t *testing.T) {
 	first, firstRef, _ := startLeashedShell(t, fixtures[0], false)
 	second, secondRef, _ := startLeashedShell(t, fixtures[1], false)
 	recorders[0].cleanups[0]()
-	waitForFixtureExit(t, firstRef, fixtures[0].waitBound)
+	waitForFixtureExit(t, firstRef)
 	_, _ = first.Wait()
 	exact, state, err := (identity.KernelProber{}).Probe(secondRef.Pid)
 	if err != nil || state != identity.Alive || !identity.SameIdentity(exact, secondRef) || exact.Zombie {
 		t.Fatalf("second fixture child changed after first cleanup: state=%v err=%v", state, err)
 	}
 	recorders[1].cleanups[0]()
-	waitForFixtureExit(t, secondRef, fixtures[1].waitBound)
+	waitForFixtureExit(t, secondRef)
 	_, _ = second.Wait()
 	if len(recorders[0].errs)+len(recorders[1].errs) != 0 {
 		t.Fatalf("cleanup failures: %v %v", recorders[0].errs, recorders[1].errs)
@@ -765,44 +773,20 @@ func killFixtureProcessAtCleanup(t *testing.T, fixture *ProcessFixture, process 
 	t.Cleanup(fixture.closeLeash)
 	t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); _, _ = process.Wait() })
 }
-func waitForFixtureExit(t *testing.T, ref identity.Ref, processWaitBound time.Duration) {
+
+// waitForFixtureExit waits for the kernel to report the process gone or a
+// zombie: that fact is the event, bounded only by the test binary's deadline.
+func waitForFixtureExit(t *testing.T, ref identity.Ref) {
 	t.Helper()
-	bound := fixtureExitObservationBound(processWaitBound)
-	ticker, deadline := time.NewTicker(10*time.Millisecond), time.After(bound)
-	defer ticker.Stop()
-	for {
-		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
-		if err == nil && (state == identity.Dead || state == identity.Alive && identity.SameIdentity(exact, ref) && exact.Zombie) {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-deadline:
-			t.Fatalf("fixture process %d did not exit after %s: state=%s same-identity=%t zombie=%t probe=%v",
-				ref.Pid, bound, state, identity.SameIdentity(exact, ref), exact.Zombie, err)
-		}
-	}
-}
-
-func fixtureProcessWaitBound(t *testing.T) time.Duration {
-	t.Helper()
-	bound, err := testenv.FixtureExitWaitBound()
-	failOnFixtureError(t, err)
-	return bound
-}
-
-func fixtureExitObservationBound(processWaitBound time.Duration) time.Duration {
-	return 10 * processWaitBound
-}
-
-func TestFixtureExitObservationBoundDerivesFromProcessFixture(t *testing.T) {
-	t.Parallel()
-
-	for _, processBound := range []time.Duration{50 * time.Second, 12500 * time.Millisecond} {
-		if got, want := fixtureExitObservationBound(processBound), 10*processBound; got != want {
-			t.Errorf("fixture exit observation bound for %s = %s, want %s", processBound, got, want)
-		}
-	}
+	var exact identity.Exact
+	var state identity.Liveness
+	var err error
+	testenv.AwaitOr(t, fmt.Sprintf("fixture process %d to exit", ref.Pid), func() bool {
+		exact, state, err = (identity.KernelProber{}).Probe(ref.Pid)
+		return err == nil && (state == identity.Dead || state == identity.Alive && identity.SameIdentity(exact, ref) && exact.Zombie)
+	}, func() string {
+		return fmt.Sprintf("state=%s same-identity=%t zombie=%t probe=%v", state, identity.SameIdentity(exact, ref), exact.Zombie, err)
+	})
 }
 func failOnFixtureError(t *testing.T, err error) {
 	t.Helper()
@@ -812,32 +796,30 @@ func failOnFixtureError(t *testing.T, err error) {
 }
 func noFixtureSurvivors(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
 
-type fixtureWaitTB interface {
-	Helper()
-	Fatalf(string, ...any)
+// cancelledContext ends a teardown's exit waits at once: a failure-path test
+// decides the outcome with its fake prober, and nothing waits on a clock.
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
-func waitForFixtureZombie(t fixtureWaitTB, output io.Reader, prober identity.Prober, ref identity.Ref, processWaitBound time.Duration) {
+// waitForFixtureZombie reads the killed child's stdout to its end and then
+// waits for the kernel to report the child a zombie of the same identity.
+func waitForFixtureZombie(t testenv.AwaitTB, output io.Reader, prober identity.Prober, ref identity.Ref) {
 	t.Helper()
 	if _, err := io.Copy(io.Discard, output); err != nil {
 		t.Fatalf("read killed child stdout to EOF: %v", err)
 	}
-	bound := fixtureExitObservationBound(processWaitBound)
-	started := time.Now()
-	ticker, deadline := time.NewTicker(10*time.Millisecond), time.After(bound)
-	defer ticker.Stop()
-	for {
-		exact, state, err := prober.Probe(ref.Pid)
-		if err == nil && state == identity.Alive && identity.SameIdentity(exact, ref) && exact.Zombie {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-deadline:
-			t.Fatalf("killed child stdout reached EOF without a matching zombie: bound=%s elapsed=%s state=%s same-identity=%t zombie=%t probe=%v",
-				bound, time.Since(started), state, identity.SameIdentity(exact, ref), exact.Zombie, err)
-		}
-	}
+	var exact identity.Exact
+	var state identity.Liveness
+	var err error
+	testenv.AwaitOr(t, "a matching zombie after the killed child's stdout reached EOF", func() bool {
+		exact, state, err = prober.Probe(ref.Pid)
+		return err == nil && state == identity.Alive && identity.SameIdentity(exact, ref) && exact.Zombie
+	}, func() string {
+		return fmt.Sprintf("state=%s same-identity=%t zombie=%t probe=%v", state, identity.SameIdentity(exact, ref), exact.Zombie, err)
+	})
 }
 
 func TestWaitForFixtureZombieWaitsForTheKernelFactAfterEOF(t *testing.T) {
@@ -859,7 +841,7 @@ func TestWaitForFixtureZombieWaitsForTheKernelFactAfterEOF(t *testing.T) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		waitForFixtureZombie(recorder, strings.NewReader(""), prober, ref, fixtureExitObservationBound(time.Millisecond))
+		waitForFixtureZombie(recorder, strings.NewReader(""), prober, ref)
 	}()
 	if probes < 4 {
 		t.Fatalf("wait made %d probes, want at least 4", probes)
@@ -868,19 +850,21 @@ func TestWaitForFixtureZombieWaitsForTheKernelFactAfterEOF(t *testing.T) {
 		t.Fatalf("successful wait panic=%v failures=%q", recovered, recorder.errs)
 	}
 
-	recorder = &recordingTB{}
+	// A recorder whose test binary deadline has passed: the wait gives up at
+	// its first unmet observation and names what it last saw.
+	recorder = &recordingTB{deadline: time.Unix(1, 0)}
 	recovered = nil
 	func() {
 		defer func() { recovered = recover() }()
 		waitForFixtureZombie(recorder, strings.NewReader(""), fixtureProbeFunc(func(int64) (identity.Exact, identity.Liveness, error) {
 			return exact, identity.Alive, nil
-		}), ref, time.Millisecond)
+		}), ref)
 	}()
 	failure := strings.Join(recorder.errs, "\n")
 	if recovered != errRecordingFatal {
 		t.Fatalf("non-zombie wait panic = %v, want fatal sentinel; failure=%q", recovered, failure)
 	}
-	for _, want := range []string{"bound=10ms", "elapsed=", "state=", "same-identity=", "zombie=false"} {
+	for _, want := range []string{"deadline", "state=", "same-identity=", "zombie=false"} {
 		if !strings.Contains(failure, want) {
 			t.Fatalf("non-zombie wait failure %q does not contain %q", failure, want)
 		}

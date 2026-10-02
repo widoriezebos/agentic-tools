@@ -36,9 +36,18 @@ func init() {
 
 // witnessAppStartRepeat: a second start of a running application rejoins it,
 // exits 0, launches nothing, and leaves the run record byte for byte as it was.
+//
+// What is witnessed is the repeat, so neither start carries a readiness
+// clock: the contract declares no probe (the supervisor answers once its
+// application is spawned, and the rejoin accepts a running run with no
+// probe at its first read). readyMs is 1 so that any readiness clock left on
+// this path fails the witness every time instead of on a loaded host.
 func witnessAppStartRepeat(t *testing.T) {
 	address := appFreePort(t)
-	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	contract := appHTTPContract(appFixtureApp(t), address)
+	contract["ready"] = map[string]any{"kind": applaunch.ReadyNone}
+	contract["readyMs"] = 1
+	bed := newAppBed(t, contract)
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("first start: %d\n%s", code, out)
 	}
@@ -80,7 +89,6 @@ func witnessAppStopRepeat(t *testing.T) {
 	contract["ready"] = map[string]any{"kind": applaunch.ReadyNone}
 	contract["readyMs"] = 1
 	bed := newAppBed(t, contract)
-	bed.supervisorWait = applaunch.WaitForReport
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("start: %d\n%s", code, out)
 	}

@@ -317,9 +317,10 @@ the engine's `metasystem goal` family (`internal/goal`).
   is to be proved and pushed: a separate checkout with the same engine and
   its own supervision, in which no agent works. The computer's lane record,
   `~/.metasystem/host/landing-lane.json`, names it; `metasystem landing set
-  PATH` writes the record and `landing status` reads it. Its hand-in is
-  being rebuilt: while a lane is registered `metasystem work land` refuses
-  and names `metasystem landing unset`. How it works and why:
+  PATH` writes the record and `landing status` reads it. While a lane is
+  registered, `metasystem work land G` hands the goal's branch to it: one
+  line in the lane's `queue.jsonl`, which its landing agent merges, proves
+  (`landing prove`) and pushes (`landing push`). How it works and why:
   `docs/concepts.md`, "Landing lane"; how to run it:
   `docs/working-with-agents.md`.
 - **Landing agent** — the one agent session per computer that works the
