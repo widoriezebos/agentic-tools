@@ -103,10 +103,13 @@ func fixtureOrphanTurn(t *testing.T) (string, Item, *heldOrphanProcess) {
 	return root, item, process
 }
 
-func installWindDownClockWaitingFor(t *testing.T, waited <-chan struct{}) {
+// windDownClockWaitingFor is an artificial clock whose every sleep waits
+// for waited, with the kernel's probes and signals.
+func windDownClockWaitingFor(t *testing.T, waited <-chan struct{}) windDownSeam {
 	t.Helper()
-	installFakeClock(t)
-	windDown.sleep = func(time.Duration) { <-waited }
+	seam := newFakeClock(t).seam
+	seam.sleep = func(time.Duration) { <-waited }
+	return seam
 }
 
 func TestInventoryFindsOrphanTurnWithoutRunner(t *testing.T) {
@@ -124,11 +127,9 @@ func TestStopTurnReportsSurvivorWhenSignalsDoNothing(t *testing.T) {
 	_, item, _ := fixtureOrphanTurn(t)
 	// The grace and kill windows pass on the artificial clock; the process
 	// probes stay real, and the group stays alive because nothing signals it.
-	installFakeClock(t)
-	original := stopSignal
-	stopSignal = func(int, syscall.Signal) error { return nil }
-	defer func() { stopSignal = original }()
-	outcome, err := Stop(item, StopOptions{})
+	seam := newFakeClock(t).seam
+	seam.signal = func(int, syscall.Signal) error { return nil }
+	outcome, err := Stop(item, StopOptions{windDown: seam})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +233,7 @@ func TestRunnerSignalClosesTurnWithoutChangingMissionState(t *testing.T) {
 
 func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 	root, turn, process := fixtureOrphanTurn(t)
-	installWindDownClockWaitingFor(t, process.done)
+	seam := windDownClockWaitingFor(t, process.done)
 
 	engine := NewEngine(root, "orphan")
 	recordPath, _, _ := engine.runnerPaths()
@@ -264,7 +265,7 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := Stop(runner, StopOptions{})
+	outcome, err := Stop(runner, StopOptions{windDown: seam})
 	if err != nil || outcome.Result != "already-gone" {
 		t.Fatalf("dead runner stop: %#v, %v", outcome, err)
 	}
@@ -289,7 +290,7 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 
 func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 	root, runner, process := fixtureOrphanTurn(t)
-	installWindDownClockWaitingFor(t, process.done)
+	seam := windDownClockWaitingFor(t, process.done)
 	runner.Kind = ItemRunner
 	engine := NewEngine(root, runner.MissionID)
 	runner.RecordPath, _, _ = engine.runnerPaths()
@@ -299,7 +300,7 @@ func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := Stop(runner, StopOptions{})
+	outcome, err := Stop(runner, StopOptions{windDown: seam})
 	if err != nil || outcome.Result != "stopped" || outcome.Signal != TerminationTerm {
 		t.Fatalf("live runner stop: %#v, %v", outcome, err)
 	}

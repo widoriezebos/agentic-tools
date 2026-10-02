@@ -25,48 +25,44 @@ type fakeGroup struct {
 }
 
 // fakeKernel drives the wind-down seam: an artificial clock that advances
-// by exactly what the ladder sleeps, and a process table it signals.
+// by exactly what the ladder sleeps, and a process table it signals. Its
+// seam is handed to the engine or the stop under test; no package variable
+// changes.
 type fakeKernel struct {
-	t        *testing.T
-	now      time.Time
-	groups   map[int]*fakeGroup
-	signals  []string
-	slept    time.Duration
-	previous struct {
-		windDown   windDownSeam
-		stopSignal func(int, syscall.Signal) error
-	}
+	t       *testing.T
+	now     time.Time
+	groups  map[int]*fakeGroup
+	signals []string
+	slept   time.Duration
+	seam    windDownSeam
 }
 
-// installFakeClock puts the wind-down and stop ladders on an artificial
-// clock and leaves their process probes and signals real: every wait costs
-// nothing, every fact stays a fact.
-func installFakeClock(t *testing.T) *fakeKernel {
+// newFakeClock puts a wind-down or stop ladder on an artificial clock and
+// leaves its process probes and signals real: every wait costs nothing,
+// every fact stays a fact.
+func newFakeClock(t *testing.T) *fakeKernel {
 	t.Helper()
 	kernel := &fakeKernel{t: t, now: time.Date(2026, 9, 12, 15, 0, 0, 0, time.UTC)}
-	kernel.previous.windDown = windDown
-	windDown.now = func() time.Time { return kernel.now }
-	windDown.sleep = func(d time.Duration) { kernel.now = kernel.now.Add(d); kernel.slept += d }
-	t.Cleanup(func() { windDown = kernel.previous.windDown })
+	kernel.seam.now = func() time.Time { return kernel.now }
+	kernel.seam.sleep = func(d time.Duration) { kernel.now = kernel.now.Add(d); kernel.slept += d }
 	return kernel
 }
 
-// installFakeKernel is the clock plus a process table: the probes answer
-// from the groups given here, and signals end the groups they say they do.
-func installFakeKernel(t *testing.T, groups map[int]*fakeGroup) *fakeKernel {
+// newFakeKernel is the clock plus a process table: the probes answer from
+// the groups given here, and signals end the groups they say they do.
+func newFakeKernel(t *testing.T, groups map[int]*fakeGroup) *fakeKernel {
 	t.Helper()
-	kernel := installFakeClock(t)
+	kernel := newFakeClock(t)
 	kernel.groups = groups
-	kernel.previous.stopSignal = stopSignal
-	windDown.groupAlive = func(pgid int) bool {
+	kernel.seam.groupAlive = func(pgid int) bool {
 		group, ok := kernel.groups[pgid]
 		return ok && group.alive
 	}
-	windDown.groupHasSubstantiveMember = func(pgid int) bool {
+	kernel.seam.groupHasSubstantiveMember = func(pgid int) bool {
 		group, ok := kernel.groups[pgid]
 		return ok && group.alive && group.substantive
 	}
-	windDown.groupOwnership = func(pgid int, _ string, _ fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
+	kernel.seam.groupOwnership = func(pgid int, _ string, _ fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
 		group, ok := kernel.groups[pgid]
 		if !ok {
 			return janitor.GroupNotOwned
@@ -77,7 +73,7 @@ func installFakeKernel(t *testing.T, groups map[int]*fakeGroup) *fakeKernel {
 		}
 		return group.ownership
 	}
-	stopSignal = func(pid int, signal syscall.Signal) error {
+	kernel.seam.signal = func(pid int, signal syscall.Signal) error {
 		kernel.signals = append(kernel.signals, signal.String()+" "+itoa(pid))
 		group, ok := kernel.groups[-pid]
 		if ok && group.alive && group.diesOn != 0 && signal == group.diesOn {
@@ -85,8 +81,13 @@ func installFakeKernel(t *testing.T, groups map[int]*fakeGroup) *fakeKernel {
 		}
 		return nil
 	}
-	t.Cleanup(func() { stopSignal = kernel.previous.stopSignal })
 	return kernel
+}
+
+// terminate runs engine's wind-down ladder on this kernel.
+func (kernel *fakeKernel) terminate(engine *Engine, pgid int, tag string) (string, error) {
+	engine.windDown = kernel.seam
+	return engine.terminateGroup(pgid, tag, false)
 }
 
 func itoa(value int) string { return strconv.Itoa(value) }
@@ -97,22 +98,22 @@ func TestWindDownLadderOnAFakeKernel(t *testing.T) {
 	tag := "metasystem-job-mr-owned-fake"
 
 	t.Run("a dead group is already gone and never signalled", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{})
-		result, err := engine.terminateGroup(4100, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{})
+		result, err := kernel.terminate(engine, 4100, tag)
 		if err != nil || result != TerminationAlreadyGone || len(kernel.signals) != 0 {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
 	})
 	t.Run("a live group that is not provably ours is left to the census", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4200: {alive: true, substantive: true, ownership: janitor.GroupNotOwned, diesOn: syscall.SIGTERM}})
-		result, err := engine.terminateGroup(4200, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4200: {alive: true, substantive: true, ownership: janitor.GroupNotOwned, diesOn: syscall.SIGTERM}})
+		result, err := kernel.terminate(engine, 4200, tag)
 		if err != nil || result != TerminationAlreadyGone || len(kernel.signals) != 0 || !kernel.groups[4200].alive {
 			t.Fatalf("result = %q, %v, signals %v, alive %v", result, err, kernel.signals, kernel.groups[4200].alive)
 		}
 	})
 	t.Run("an owned group that honours TERM ends on TERM alone", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4300: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM}})
-		result, err := engine.terminateGroup(4300, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4300: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM}})
+		result, err := kernel.terminate(engine, 4300, tag)
 		if err != nil || result != TerminationTerm || len(kernel.signals) != 1 || !strings.HasPrefix(kernel.signals[0], "terminated") {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
@@ -121,8 +122,8 @@ func TestWindDownLadderOnAFakeKernel(t *testing.T) {
 		}
 	})
 	t.Run("a TERM-immune owned group dies through KILL after the grace", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4400: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGKILL}})
-		result, err := engine.terminateGroup(4400, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4400: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGKILL}})
+		result, err := kernel.terminate(engine, 4400, tag)
 		if err != nil || result != TerminationKill || len(kernel.signals) != 2 || !strings.HasPrefix(kernel.signals[1], "killed") {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
@@ -131,15 +132,15 @@ func TestWindDownLadderOnAFakeKernel(t *testing.T) {
 		}
 	})
 	t.Run("a group that reads indeterminate while a member execs is probed again, then ended", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4500: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM, indeterminateProbes: 2}})
-		result, err := engine.terminateGroup(4500, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4500: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM, indeterminateProbes: 2}})
+		result, err := kernel.terminate(engine, 4500, tag)
 		if err != nil || result != TerminationTerm || len(kernel.signals) != 1 {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
 	})
 	t.Run("a group that stays indeterminate is never signalled", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4550: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM, indeterminateProbes: 99}})
-		result, err := engine.terminateGroup(4550, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4550: {alive: true, substantive: true, ownership: janitor.GroupOwned, diesOn: syscall.SIGTERM, indeterminateProbes: 99}})
+		result, err := kernel.terminate(engine, 4550, tag)
 		if err != nil || result != TerminationAlreadyGone || len(kernel.signals) != 0 {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
@@ -148,10 +149,10 @@ func TestWindDownLadderOnAFakeKernel(t *testing.T) {
 		// The owned group ignores TERM; by the time the grace has passed the
 		// ownership probe reads a foreign process on the same pgid, and the
 		// kill is skipped rather than aimed at a stranger.
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4600: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4600: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
 		termed := false
-		previous := stopSignal
-		stopSignal = func(pid int, signal syscall.Signal) error {
+		previous := kernel.seam.signal
+		kernel.seam.signal = func(pid int, signal syscall.Signal) error {
 			if signal == syscall.SIGTERM {
 				termed = true
 			}
@@ -160,34 +161,34 @@ func TestWindDownLadderOnAFakeKernel(t *testing.T) {
 			}
 			return previous(pid, signal)
 		}
-		windDown.groupOwnership = func(int, string, fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
+		kernel.seam.groupOwnership = func(int, string, fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
 			if termed {
 				return janitor.GroupNotOwned
 			}
 			return janitor.GroupOwned
 		}
-		result, err := engine.terminateGroup(4600, tag, false)
+		result, err := kernel.terminate(engine, 4600, tag)
 		if err != nil || result != TerminationTerm || len(kernel.signals) != 1 {
 			t.Fatalf("result = %q, %v, signals %v", result, err, kernel.signals)
 		}
 	})
 	t.Run("a group down to zombies after KILL is finished work", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4700: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
-		previous := stopSignal
-		stopSignal = func(pid int, signal syscall.Signal) error {
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4700: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
+		previous := kernel.seam.signal
+		kernel.seam.signal = func(pid int, signal syscall.Signal) error {
 			if signal == syscall.SIGKILL {
 				kernel.groups[4700].substantive = false // the shell is a zombie now; the pgid still answers
 			}
 			return previous(pid, signal)
 		}
-		result, err := engine.terminateGroup(4700, tag, false)
+		result, err := kernel.terminate(engine, 4700, tag)
 		if err != nil || result != TerminationKill {
 			t.Fatalf("result = %q, %v", result, err)
 		}
 	})
 	t.Run("a group that survives KILL with running work is a loud error", func(t *testing.T) {
-		kernel := installFakeKernel(t, map[int]*fakeGroup{4800: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
-		result, err := engine.terminateGroup(4800, tag, false)
+		kernel := newFakeKernel(t, map[int]*fakeGroup{4800: {alive: true, substantive: true, ownership: janitor.GroupOwned}})
+		result, err := kernel.terminate(engine, 4800, tag)
 		if err == nil || result != TerminationKill || !strings.Contains(err.Error(), "survived the kill-through window") {
 			t.Fatalf("result = %q, %v", result, err)
 		}
