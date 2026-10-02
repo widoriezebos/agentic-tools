@@ -1,6 +1,6 @@
 # steward-acts-on-behaviour-patterns
 
-- State: approved
+- State: claimed
 - Priority: 2
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that can pause a component and open goals on its own; a false positive pauses useful work, a miss leaves a stuck system unnoticed; actions are reversible and reported"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern Switch-on path (Wido 2026-10-01): extend patterns to SEATS before any unattended night: seat-stuck (no progress 45 min / 120 min total) and seat-spend (per launch / per seat per day), per the 2026-10-01 seat-patterns proposal (evidence behaviour-patterns-20260930/seat-patterns-proposal.md).
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 36
+- Revision: 37
 - Pinned: m1i
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T16:35:13Z revision=3 opid=8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a authority=proven digest=38868745f2bb242da1e3ec3e6a05667d783dbafad3c08781fd6245f9f4e9397a episode=3
+- Claimed: machine=m1i lineage=steward-seat at=2026-10-02T21:04:56Z revision=37 accountingRevision=37 episodeAt=2026-10-02T21:04:56Z episodeRevision=37
+- StopCapability: generation=37 revision=37 machine=m1i claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-30T16:34:33Z NYKAP8VJ5X06GBC87A8K6NM3ME-m1e-b6a4eb0a open actor=human:wido targets=steward-acts-on-behaviour-patterns
@@ -52,4 +54,5 @@ History:
 - 2026-10-02T20:52:44Z TGEDA81PVXQW048ZWTAYYRBRQ1-m1e-9c612d71 abandon actor=human:Wido targets=landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,landing-deploys-the-engine,steward-acts-on-behaviour-patterns,system-start-launches-your-agent,host-setup-from-scratch,transport-remote-absent-refuses-every-landing,enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:4 to=2:3
 - 2026-10-02T21:02:39Z BJWGJBCEEKDP2C4C1A0QB6TKJ6-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:04:39Z 0WHHWWZBDM376WF0G36NDVMZE3-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
-Integrity: sha256=f94fb0b1997612b267fa9bd0aba94ce93c469ee91c7b908d68dd48c925445502
+- 2026-10-02T21:04:56Z ZBVW5R48ABZVHEDW2QCHKNH8MF-m1i-71c5cb39 claim actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
+Integrity: sha256=d4691feabe655154086ef1036c72fc8d64bfcf84b3bd7f00d492daa66685718b
