@@ -229,6 +229,16 @@ func forkCopyHolder(created *processScratch) (release func() error, err error) {
 	}, nil
 }
 
+// The owner's release frees every fork copy of its own lock: a copy of the
+// owner's description held open across the release (a sibling goroutine's
+// child between fork and exec) no longer keeps the root for the sweeper.
+// Before, the owner closed its copy without LOCK_UN and the release
+// returned "kept for the sweeper". No fork and no clock are involved.
+func TestOwnerReleaseFreesForkCopiesOfItsLock(t *testing.T) {
+	t.Parallel()
+	runOwnerScenario(t, "fork-copy-freed")
+}
+
 // fakeWriterDrain is the drain on an artificial clock: each sleep calls
 // onSleep, then advances the clock by the step; it never waits.
 func fakeWriterDrain(onSleep func()) (WriterDrain, *int) {
@@ -476,6 +486,17 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 			return fmt.Errorf("the root went while a writer lives: %v", err)
 		}
 		return nil
+	},
+	"fork-copy-freed": func(created *processScratch) error {
+		// A duplicate of the owner's description is a fork copy in
+		// everything but name: the same open file description, so the same
+		// flock, held until the copy closes.
+		copied, err := unix.Dup(int(created.writer.Fd()))
+		if err != nil {
+			return err
+		}
+		defer unix.Close(copied)
+		return releasedAndGone(created)
 	},
 	"symlinks": func(created *processScratch) error {
 		outside := os.Getenv("DISKSTORE_SCRATCH_OUTSIDE")
