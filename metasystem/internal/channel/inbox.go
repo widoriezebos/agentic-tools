@@ -36,6 +36,9 @@ func (c PollConfig) receiveConfigured() bool {
 // installations polling one bot) is the ordinary case: nothing is received
 // this pass and the next poll retries.
 func receiveToInbox(ctx context.Context, c PollConfig, threads []MessageRef, endpoint func() (goal.Endpoint, error), result *PollResult) error {
+	if err := flushNotices(ctx, c, result); err != nil {
+		return err
+	}
 	inbound, batch, err := c.Provider.Receive(ctx, c.DestinationConfig, threads, "")
 	if IsKind(err, Busy) {
 		return nil
@@ -124,36 +127,109 @@ func draftInbound(c PollConfig, in Inbound) (goal.ChannelInbound, string) {
 	return rec, ""
 }
 
-// textWithoutCode is the message on one line with a trailing code removed,
-// so no code is ever committed.
+// textWithoutCode is the message on one line with a trailing code removed
+// and every other code-shaped field masked (FCG-SECRET-15), so no code is
+// ever committed and no repeated code can make a record the ledger refuses.
 func textWithoutCode(text string) string {
 	fields := strings.Fields(text)
-	if n := len(fields); n > 0 {
-		last := strings.TrimRight(fields[n-1], ".,;:!?")
-		if len(last) == 6 && strings.Trim(last, "0123456789") == "" {
-			fields = fields[:n-1]
+	if n := len(fields); n > 0 && codeShaped(fields[n-1]) {
+		fields = fields[:n-1]
+	}
+	for i, field := range fields {
+		if codeShaped(field) {
+			fields[i] = "[code]"
 		}
 	}
 	return strings.Join(fields, " ")
 }
 
+func codeShaped(field string) bool {
+	field = strings.TrimRight(field, ".,;:!?")
+	return len(field) == 6 && strings.Trim(field, "0123456789") == ""
+}
+
+// validateInboxCommit is the channel validation every inbox commit passes;
+// tests replace it to stage a record the ledger refuses.
+var validateInboxCommit = func(e goal.Endpoint, commit string) error {
+	if problems := goal.ValidateChannelTreeAt(e, commit); len(problems) > 0 {
+		return fmt.Errorf("%s", problems[0])
+	}
+	return nil
+}
+
 // commitInbound publishes one update's inbox record. The replay check runs on
 // the fetched tip: a step already on another message makes this one
-// replayed. It reports whether this installation won the commit; only the
-// winner tells the human a reply was not recorded, once per record.
+// replayed. It reports whether this installation won the commit. A record the
+// ledger refuses by name is replaced by a minimal skipped record, so no single
+// update ever blocks the queue. A rejected record's notice is queued by the
+// installation that committed it, before it is posted.
 func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbound, result *PollResult) (bool, error) {
 	if in.Ref.ID == "" || strings.ContainsAny(in.Ref.ID, "/ \t\n") {
 		return false, fmt.Errorf("inbox refused %s: the provider message id %q cannot name a record", updateName(in), in.Ref.ID)
 	}
 	draft, reason := draftInbound(c, in)
+	written, existing, res, err := publishInbound(c, ep, draft)
+	if err != nil {
+		return false, fmt.Errorf("inbox refused %s: %w", updateName(in), err)
+	}
+	if res.Outcome == goal.OutcomeRejected {
+		skipped := draft
+		skipped.Text, skipped.Step, skipped.Outcome, skipped.Question = "", nil, "skipped", "unmatched"
+		reason = "unrecordable"
+		if written, existing, res, err = publishInbound(c, ep, skipped); err != nil {
+			return false, fmt.Errorf("inbox refused %s: %w", updateName(in), err)
+		}
+	}
+	notices := noticesPath(c)
+	switch res.Outcome {
+	case goal.OutcomeLost:
+		// A record this installation committed earlier and never got to
+		// notice (a kill between its commit and its notice) is noticed now.
+		if existing == nil || existing.Outcome == "verified" {
+			return false, nil
+		}
+		if _, err := goal.ReadEntry(c.RepoRoot, existing.Opid); err != nil {
+			return false, nil
+		}
+		path := goal.ChannelInboxPath(c.Destination, existing)
+		if err := queueNotice(notices, path, noticeFor(reasonFor(*existing, c.Now)), existing.ReplyTo, in.ThreadID); err != nil {
+			return false, err
+		}
+		return false, flushNotices(ctx, c, result)
+	case goal.OutcomeConfirmed:
+	default:
+		return false, fmt.Errorf("inbox refused %s: %s %s", updateName(in), res.Outcome, res.Detail)
+	}
+	if err := fail(c, "inbox-published"); err != nil {
+		return false, err
+	}
+	if written.Outcome == "verified" {
+		return true, nil
+	}
+	if written.Outcome == "replayed" {
+		reason = "replayed code"
+	}
+	if err := queueNotice(notices, goal.ChannelInboxPath(c.Destination, &written), noticeFor(reason), written.ReplyTo, in.ThreadID); err != nil {
+		return false, err
+	}
+	if err := fail(c, "inbox-notice-pending"); err != nil {
+		return false, err
+	}
+	return true, flushNotices(ctx, c, result)
+}
+
+// publishInbound runs one inbox Publish of draft under a fresh opid. It
+// returns the record as written and, on a loss, the record already there.
+func publishInbound(c PollConfig, ep goal.Endpoint, draft goal.ChannelInbound) (goal.ChannelInbound, *goal.ChannelInbound, goal.PublishResult, error) {
 	ulid, err := goal.NewOperationULID()
 	if err != nil {
-		return false, err
+		return draft, nil, goal.PublishResult{}, err
 	}
 	opid := goal.Opid(ulid, c.Machine, c.Lineage)
 	draft.Opid, draft.ReceivedBy, draft.ReceivedAt = opid, c.Machine, c.Now.UTC().Format(channelRecordTime)
 	path := goal.ChannelInboxPath(c.Destination, &draft)
 	written := draft
+	var found *goal.ChannelInbound
 	res, err := goal.Publish(ep, goal.PublishRequest{
 		Opid: opid, Machine: c.Machine, Lineage: c.Lineage, Intent: goal.Intent{Verb: "inbox"},
 		Message: "channel inbox " + c.ProviderName + "-" + draft.MessageID,
@@ -171,6 +247,7 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 					return nil, err
 				}
 				if present {
+					found = existing
 					return nil, goal.LostToCompetitor{Winner: existing.Opid}
 				}
 				return nil, errors.New("inbox record present without its transaction")
@@ -190,40 +267,119 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 			}
 			return []goal.Change{{Path: path, Content: body}}, nil
 		},
-		Validate: func(commit string) error {
-			if problems := goal.ValidateChannelTreeAt(ep, commit); len(problems) > 0 {
-				return fmt.Errorf("%s", problems[0])
-			}
-			return nil
-		},
+		Validate: func(commit string) error { return validateInboxCommit(ep, commit) },
 	})
-	if err != nil {
-		return false, fmt.Errorf("inbox refused %s: %w", updateName(in), err)
-	}
-	switch res.Outcome {
-	case goal.OutcomeLost:
-		return false, nil
-	case goal.OutcomeConfirmed:
+	return written, found, res, err
+}
+
+func noticeFor(reason string) string {
+	return "not recorded: " + reason + ". Reply to the question above with your answer and your code"
+}
+
+// reasonFor names a committed record's rejection for a notice sent after the
+// fact.
+func reasonFor(rec goal.ChannelInbound, now time.Time) string {
+	switch rec.Outcome {
+	case "wrong-user":
+		return "wrong user"
+	case "no-code":
+		return "no code"
+	case "bad-code":
+		return "bad code"
+	case "replayed":
+		return "replayed code"
+	case "stale":
+		if sent, err := time.Parse(time.RFC3339, rec.SentAt); err == nil {
+			return fmt.Sprintf("code too old: sent %ds before the poll", int64(now.Sub(sent)/time.Second))
+		}
+		return "code too old"
 	default:
-		return false, fmt.Errorf("inbox refused %s: %s %s", updateName(in), res.Outcome, res.Detail)
+		return "unrecordable"
 	}
-	if written.Outcome == "replayed" {
-		reason = "replayed code"
+}
+
+// The notice ledger is local to the committing installation: a notice is
+// queued before it is posted and marked posted after, so a failed post or a
+// kill is retried on the next tick. A kill between the post and its mark
+// may post one duplicate; nothing posts zero.
+type pendingNotice struct {
+	Record   string `json:"record"`
+	Text     string `json:"text"`
+	ReplyTo  string `json:"replyTo,omitempty"`
+	ThreadID string `json:"threadID,omitempty"`
+}
+
+type noticeLedger struct {
+	Pending []pendingNotice `json:"pending"`
+	Posted  []string        `json:"posted"`
+}
+
+func noticesPath(c PollConfig) string {
+	return filepath.Join(channelRoot(c.RepoRoot), c.Destination, "notices.json")
+}
+
+func readNotices(path string) (noticeLedger, error) {
+	var ledger noticeLedger
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ledger, nil
 	}
-	if written.Outcome != "verified" {
+	if err != nil {
+		return ledger, err
+	}
+	return ledger, json.Unmarshal(b, &ledger)
+}
+
+func queueNotice(path, record, text string, replyTo *string, threadID string) error {
+	ledger, err := readNotices(path)
+	if err != nil {
+		return err
+	}
+	for _, posted := range ledger.Posted {
+		if posted == record {
+			return nil
+		}
+	}
+	for _, pending := range ledger.Pending {
+		if pending.Record == record {
+			return nil
+		}
+	}
+	notice := pendingNotice{Record: record, Text: text, ThreadID: threadID}
+	if replyTo != nil {
+		notice.ReplyTo = *replyTo
+	}
+	ledger.Pending = append(ledger.Pending, notice)
+	return writeJSON(path, ledger)
+}
+
+// flushNotices posts every queued notice in its question's thread; one whose
+// post fails stays queued for the next tick.
+func flushNotices(ctx context.Context, c PollConfig, result *PollResult) error {
+	path := noticesPath(c)
+	ledger, err := readNotices(path)
+	if err != nil || len(ledger.Pending) == 0 {
+		return err
+	}
+	var kept []pendingNotice
+	for _, notice := range ledger.Pending {
 		var thread *MessageRef
-		if written.ReplyTo != nil {
-			root := in.ThreadID
+		if notice.ReplyTo != "" {
+			root := notice.ThreadID
 			if root == "" {
-				root = *written.ReplyTo
+				root = notice.ReplyTo
 			}
-			thread = &MessageRef{ID: *written.ReplyTo, ThreadID: root}
+			thread = &MessageRef{ID: notice.ReplyTo, ThreadID: root}
 		}
-		if _, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+". Reply to the question above with your answer and your code", thread); err != nil {
+		if _, err := c.Provider.Post(ctx, c.DestinationConfig, notice.Text, thread); err != nil {
 			result.Undelivered++
+			kept = append(kept, notice)
+			continue
 		}
+		ledger.Posted = append(ledger.Posted, notice.Record)
 	}
-	return true, nil
+	ledger.Pending = kept
+	return writeJSON(path, ledger)
 }
 
 func updateName(in Inbound) string {

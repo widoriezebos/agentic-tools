@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -139,5 +140,83 @@ func TestUnconfiguredInstallationReceivesNothing(t *testing.T) {
 	}
 	if p.receives != 0 || p.confirms != 0 || len(bed.inbox()) != 0 || len(p.posts) != 0 {
 		t.Fatalf("receives=%d confirms=%d inbox=%v posts=%v", p.receives, p.confirms, bed.inbox(), p.posts)
+	}
+}
+
+// F-1: a message with two code-shaped fields must not poison the queue; every
+// code-shaped field is masked before the record is built.
+func TestTwoCodeFieldsDoNotBlockTheQueue(t *testing.T) {
+	bed, p, q, now := pollLedgerBed(t)
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{
+		{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 123456 123456", SentAt: now, Ack: "6", UpdateID: 5},
+		{Ref: MessageRef{ID: "7", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: now, Ack: "8", UpdateID: 7},
+	}
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
+		t.Fatal(err)
+	}
+	inbox := bed.inbox()
+	first, good := inbox["plans/channel/inbox/fleet/fake-5.json"], inbox["plans/channel/inbox/fleet/fake-7.json"]
+	if first.Outcome == "" || first.Outcome == "verified" || strings.Contains(first.Text, "123456") || good.Outcome != "verified" {
+		t.Fatalf("first=%+v good=%+v", first, good)
+	}
+	if len(p.confirmed) < 2 || p.confirmed[0] != "6" || p.confirmed[1] != "8" {
+		t.Fatalf("confirmed=%v", p.confirmed)
+	}
+	if got, _ := ReadQuestion(bed.root, q.ID); got.Answer == nil || got.Answer.Text != "approved" {
+		t.Fatalf("question=%+v", got)
+	}
+}
+
+// F-2: a notice whose post failed is retried on the next tick, once.
+func TestFailedNoticeIsRetriedOnTheNextTick(t *testing.T) {
+	bed, p, _, now := pollLedgerBed(t)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 000000", SentAt: now, Ack: "6", UpdateID: 5}}
+	p.failPosts = 1
+	cfg := pollBedConfig(bed, p, now)
+	if r, err := bed.poll(context.Background(), cfg); err != nil || r.Undelivered != 1 || len(p.posts) != 0 {
+		t.Fatalf("result=%+v posts=%v err=%v", r, p.posts, err)
+	}
+	p.inbound = nil
+	for i := 0; i < 2; i++ {
+		if _, err := bed.poll(context.Background(), cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(p.posts) != 1 || !strings.HasPrefix(p.posts[0], "not recorded: bad code.") || p.postThreads[0] == nil || p.postThreads[0].ID != "1" {
+		t.Fatalf("posts=%v", p.posts)
+	}
+}
+
+// F-2: a kill between the commit and the notice still yields one notice,
+// whether it falls before or after the notice is queued.
+func TestKillBetweenCommitAndNoticeStillNotices(t *testing.T) {
+	for _, point := range []string{"inbox-published", "inbox-notice-pending"} {
+		t.Run(point, func(t *testing.T) {
+			bed, p, _, now := pollLedgerBed(t)
+			p.inbound = []Inbound{{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "stranger", Text: "hi", SentAt: now, Ack: "6", UpdateID: 5}}
+			cfg := pollBedConfig(bed, p, now)
+			cfg.FailurePoint = func(got string) error {
+				if got == point {
+					return errors.New("killed")
+				}
+				return nil
+			}
+			if _, err := bed.poll(context.Background(), cfg); err == nil {
+				t.Fatal("the kill did not fire")
+			}
+			if len(p.posts) != 0 || p.confirms != 0 {
+				t.Fatalf("posts=%v confirms=%d", p.posts, p.confirms)
+			}
+			cfg.FailurePoint = nil
+			for i := 0; i < 2; i++ {
+				if _, err := bed.poll(context.Background(), cfg); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(p.posts) != 1 || p.posts[0] != "not recorded: wrong user. Reply to the question above with your answer and your code" || len(bed.inbox()) != 1 {
+				t.Fatalf("posts=%v inbox=%v", p.posts, bed.inbox())
+			}
+		})
 	}
 }
