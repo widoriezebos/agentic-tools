@@ -140,3 +140,33 @@ func (table FixedProcessTable) Parent(pid int64) (int64, bool) {
 	row, ok := table.row(pid)
 	return row.Parent, ok
 }
+
+// ScriptedProcessTable is a FixedProcessTable that fails where a test
+// scripts a failure: PidsErr fails the whole table, GroupErr one process's
+// group read. A unit test of a scan's refusal rows (a table that cannot be
+// read, a member whose group is unreadable) writes them here.
+type ScriptedProcessTable struct {
+	Rows     FixedProcessTable
+	PidsErr  error
+	GroupErr map[int64]error
+}
+
+func (table ScriptedProcessTable) Pids() ([]int64, error) {
+	if table.PidsErr != nil {
+		return nil, table.PidsErr
+	}
+	return table.Rows.Pids()
+}
+
+func (table ScriptedProcessTable) Group(pid int64) (int64, error) {
+	if err := table.GroupErr[pid]; err != nil {
+		return 0, err
+	}
+	return table.Rows.Group(pid)
+}
+
+func (table ScriptedProcessTable) Session(pid int64) (int64, error) {
+	return table.Rows.Session(pid)
+}
+
+func (table ScriptedProcessTable) Parent(pid int64) (int64, bool) { return table.Rows.Parent(pid) }

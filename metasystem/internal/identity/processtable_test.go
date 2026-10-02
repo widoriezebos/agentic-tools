@@ -113,3 +113,33 @@ func TestFixedProcessTableAnswersFromItsRows(t *testing.T) {
 		t.Fatal("an absent pid's parent reads known")
 	}
 }
+
+// A scripted table answers from its rows and fails where the test scripts a
+// failure: the whole table, or one process's group read.
+func TestScriptedProcessTableFailsWhereScripted(t *testing.T) {
+	t.Parallel()
+	rows := FixedProcessTable{{Pid: 7, Group: 42, Session: 3, Parent: 1}, {Pid: 8, Group: 42}}
+	table := ScriptedProcessTable{Rows: rows, GroupErr: map[int64]error{8: unix.EIO}}
+	if pids, err := table.Pids(); err != nil || !slices.Equal(pids, []int64{7, 8}) {
+		t.Fatalf("scripted pids = %v, %v; want [7 8]", pids, err)
+	}
+	if group, err := table.Group(7); err != nil || group != 42 {
+		t.Fatalf("group of 7 = %d, %v; want 42", group, err)
+	}
+	if _, err := table.Group(8); !errors.Is(err, unix.EIO) {
+		t.Fatalf("group of 8 = %v; want the scripted EIO", err)
+	}
+	if _, err := table.Group(9); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("group of an absent pid = %v; want ESRCH", err)
+	}
+	if session, err := table.Session(7); err != nil || session != 3 {
+		t.Fatalf("session of 7 = %d, %v; want 3", session, err)
+	}
+	if parent, known := table.Parent(7); !known || parent != 1 {
+		t.Fatalf("parent of 7 = %d, %v; want 1", parent, known)
+	}
+	down := ScriptedProcessTable{Rows: rows, PidsErr: unix.EPERM}
+	if pids, err := down.Pids(); !errors.Is(err, unix.EPERM) || pids != nil {
+		t.Fatalf("a table scripted down = %v, %v; want no pids and EPERM", pids, err)
+	}
+}
