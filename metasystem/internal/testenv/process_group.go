@@ -59,11 +59,22 @@ type resolvedFixtureProcessGroup struct {
 // written by the child they own.
 func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanups ...FixtureCleanup) {
 	t.Helper()
-	exitBound, err := FixtureExitWaitBound()
+	ops, err := defaultFixtureProcessGroupOps()
 	if err != nil {
 		t.Fatalf("derive fixture process-group exit bound: %v", err)
 	}
-	reapFixtureProcessGroups(t, groups, cleanups, fixtureProcessGroupOps{
+	reapFixtureProcessGroups(t, groups, cleanups, ops)
+}
+
+// defaultFixtureProcessGroupOps is the reaper's production wiring: the kernel
+// for groups, signals, births and exits, the orderly-stop bound, and the exit
+// bound for a group that was never signaled.
+func defaultFixtureProcessGroupOps() (fixtureProcessGroupOps, error) {
+	exitBound, err := FixtureExitWaitBound()
+	if err != nil {
+		return fixtureProcessGroupOps{}, err
+	}
+	return fixtureProcessGroupOps{
 		groupID: syscall.Getpgid,
 		signal:  syscall.Kill,
 		birth:   func(pid int) (time.Time, bool) { return identity.ProcessBirth(int64(pid)) },
@@ -74,7 +85,7 @@ func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanu
 		exitContext: func() (context.Context, context.CancelFunc) {
 			return context.WithTimeout(context.Background(), exitBound)
 		},
-	})
+	}, nil
 }
 
 func reapFixtureProcessGroups(t fixtureProcessGroupTB, groups []FixtureProcessGroup, cleanups []FixtureCleanup, ops fixtureProcessGroupOps) {
