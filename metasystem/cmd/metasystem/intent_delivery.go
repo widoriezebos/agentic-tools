@@ -1701,7 +1701,7 @@ func (inv *intentInvocation) deliveredRefusal() *intentResult {
 		return nil
 	}
 	return &intentResult{Outcome: intentRefused, code: 2,
-		Summary: "the --delivered sentence is read by a person on a phone, so it needs plain words, without commit hashes or file paths; nothing was done",
+		Summary: "a --delivered sentence is read on a phone: plain words, no commit hashes or paths; nothing was done",
 		next:    append(withoutOption(inv.typedArgv(), "delivered"), "--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE")}
 }
 
