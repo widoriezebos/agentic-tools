@@ -312,7 +312,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 	t.Parallel()
 	f := newWholeOwnerLanding(t)
 	landingRoot := filepath.Join(t.TempDir(), "landing")
-	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", f.upstream, landingRoot)
+	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
 	owners := defaultIntentOwners()
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
