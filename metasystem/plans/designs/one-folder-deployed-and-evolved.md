@@ -44,7 +44,7 @@ They run `metasystem system adopt` in their repository. Afterwards the visible t
 
 # Part 2: Design
 
-This page folds two critique rounds (Codex Astra). Round 1 had 10 material findings: R1-05 and R1-06 are answered by deferring this repository's move to step 2, and the rest are in step 1. Round 2 had 4. Three of those (R2-02, R2-03, R2-04) belong to one class: a call site that mixes the installation root with the state root. They are answered by one rule at one boundary, plus an audit that enumerates the violations. The page no longer lists call sites one by one.
+This page folds three critique rounds (Codex Astra: 10, 4, then 2 material findings). R1-05 and R1-06 are answered by deferring this repository's move to step 2. The root-mixing class (R2-02 to R2-04, R3-02) is answered by giving the two roots distinct Go types, so the compiler finds every crossing. Everything else, including R3-01, is in step 1.
 
 ## Threat model and rabbit-hole risks (read before critiquing)
 
@@ -88,8 +88,8 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 **The owners.**
 
-- **State root:** `stateroot.RootForInstallation(installation)` and `stateroot.StateRoot(kind)` (`metasystem/internal/stateroot/stateroot.go:120-153`). For an adopted installation it is `<installation>/project`. For the template it stays the installation until step 2, which deletes that branch. Every `stateRoot` or `StateRoot` value a caller holds (`inv.stateRoot`, `roots.StateRoot`, `scope.StateRoot`) comes from these and from nowhere else. Project paths inside Git trees are built from the state root's repository-relative path, never from a literal.
-- **Installation root:** the executable's installation, `bin/..` holding `metasystem.conf` (`stateroot.go:304-320`, exported as `stateroot.Installation()`). For a checkout that is named explicitly, the owner is `Layout.InstallationRoot` from `stateroot.ResolveLayout`, or `stateroot.RootForCandidate`. Configuration readers (`internal/config`) and `ledgerfence.Ensure` take only this root.
+- **State root:** `stateroot.RootForInstallation(installation)` and `stateroot.StateRoot(kind)` (`metasystem/internal/stateroot/stateroot.go:120-153`). For an adopted installation it is `<installation>/project`. For the template it stays the installation until step 2, which deletes that branch. Project paths inside Git trees are built from the state root's repository-relative path.
+- **Installation root:** the executable's installation, `bin/..` holding `metasystem.conf` (`stateroot.go:304-320`, exported as `stateroot.ExecutableInstallation()`). For a checkout named explicitly, the owners are `Layout.InstallationRoot` from `stateroot.ResolveLayout` and `stateroot.RootForCandidate`.
 - **Machine state:** `Steward` (`stateroot.go:297`) resolves under the installation's `artifacts/`.
 
 **Layout.** For a non-template installation, `ResolveLayout` (`stateroot.go:164-213`) accepts only `<git top>/metasystem`. That gives `RepositoryRoot = GitRoot` and `InstallationRel = "metasystem"`. Anything else is refused:
@@ -98,20 +98,17 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 **Contract defaults.** `testing.contract` and `launch.contract` default to `project/testing.json` and `project/launch.json` (`metasystem/internal/config/defaults.go:65-67`). Registration's own `testing.json` fallback goes (`metasystem/internal/hookswitch/switch.go:113-122`). This repository sets both keys back to the old names until step 2.
 
-## The audit that enforces the boundary
+## Two root types: the compiler enforces the boundary
 
-**B5, a root-mixing scan.** The build writes it first, in `internal/audit`, and it runs in the static gate. It parses every non-test Go file outside `internal/stateroot` and refuses two kinds of call:
+**Types.** `stateroot` defines `type Installation string` and `type State string`. Only the resolver's constructors produce them: the installation owners above return `Installation`, and `RootForInstallation` returns `State`. Configuration readers, `ledgerfence.Ensure`, hooks and runtime discovery take `Installation`. The goal store, registers, records, the covenant check, the contract readers and landing take `State`. Structs such as `lifecycle.Roots`, `processScope` and `adapter.ToolGateOptions` carry typed fields. A crossing like `Installation: stateRoot` (`metasystem/cmd/metasystem/adapter_runtime_verbs.go:62`) is then a compile error.
 
-1. **State joined onto the installation.** A path join whose base is installation-named (`installation`, `InstallationRoot`, `roots.Installation`, `scope.Installation` and their case variants) carries a state segment (`memory`, `records`, `plans`, `docs/intent`, `docs/doctrine`, `docs/decisions`, `covenant`, `testing.json`, `launch.json`). Any literal `metasystem/memory`, `metasystem/plans`, `metasystem/records` or `metasystem/testing.json` is refused too.
-2. **Installation things resolved from the state root.** `ledgerfence.Ensure`, a configuration reader, or a `metasystem.conf` or `bin` join is given a state-root-named value.
+**The build's first act** converts the signatures, and the compiler then lists every site to fix. Examples known now, not a complete list: fence enrollment given the state root (`metasystem/cmd/metasystem/intent_operations.go:372`), any directory named `metasystem` taken as the state root (`metasystem/internal/goal/project.go:333`), the covenant search skipping the state root (`metasystem/cmd/metasystem/intent_process.go:1779`), and the tool hook above.
 
-**The build's first act** is running B5 and fixing every site it lists. Three sites are known now, as examples only, not as the complete list:
+**The conversion rule.** A typed root becomes a string path only through its own method, `Path(segments ...string) string`, and only at the call that touches the filesystem, Git or a child process. That string is never stored back into a root-typed value. Where a string re-enters, for example a `--root` flag of a child process or a JSON field, it goes back through `stateroot.ParseInstallation` or `stateroot.ParseState`, which check the shape. A plain cast such as `State(x)` or `Installation(x)` outside `stateroot` and its tests is never legitimate.
 
-- fence enrollment at `goal sync --upgrade` and later mutations receives the state root (`metasystem/cmd/metasystem/intent_operations.go:372`);
-- the goal resolver treats any directory named `metasystem` as the state root, so Stop reads the installation's goals (`metasystem/internal/goal/project.go:333`);
-- `system check` searches for the covenant at the installation and the checkout instead of the state root (`metasystem/cmd/metasystem/intent_process.go:1779`).
+**B5 shrinks to what types cannot see.** It is a static-gate scan that refuses `State(` and `Installation(` casts outside `stateroot`, and the literals `metasystem/memory`, `metasystem/plans`, `metasystem/records` and `metasystem/testing.json`, which are Git-tree paths that bypass the state root. Its limit: a `Path()` string handed to the wrong consumer as a plain string is still invisible to it. Consumers therefore take typed roots, never a pre-joined string, and B2 catches what remains by behaviour.
 
-**Why a scan is precise enough, and its limit.** The scan keys on names, so a hit is nearly always a real violation. It misses roots passed under neutral names such as `root` or `repoRoot`. The scan therefore also lists each neutral-named root that reaches a state segment or a fence or configuration call. The builder classifies each one once, renames it `stateRoot` or `installation` so the scan covers it from then on, and the list is committed empty. What the scan still misses is caught by behaviour: the end-to-end adoption test B2 runs with the two roots apart, so a mixed call reads or writes in the wrong place there.
+**Landing classification (R3-01).** Ownership and landing policy are separate. `project/**` stays app-owned, so an upgrade never replaces it. Landing, however, no longer treats an app-owned path under the state root's repository path as `Outside` (`metasystem/internal/pathclass/pathclass.go:232`). The existing record and ledger rules classify it, keyed relative to the state root as the template's are keyed relative to the installation. The existing append-only comparisons use the same key (`metasystem/internal/landing/observe.go:1118`, `:1162`; `metasystem/internal/landing/landpath/commit.go:605`).
 
 **Other boundary checks.**
 
@@ -150,7 +147,8 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 | Effect | From | To | Code |
 |---|---|---|---|
-| Reaching project state or installation things | call sites mixing the two roots | the stateroot owner for state, the installation root for config, fence and engine; enumerated by B5 | `metasystem/cmd/metasystem/intent_operations.go:372`, `metasystem/internal/goal/project.go:333`, `metasystem/cmd/metasystem/intent_process.go:1779` |
+| Reaching project state or installation things | plain strings that cross roots | typed `State` and `Installation`; the compiler lists every site | `metasystem/cmd/metasystem/intent_operations.go:372`, `metasystem/internal/goal/project.go:333`, `metasystem/cmd/metasystem/intent_process.go:1779`, `metasystem/cmd/metasystem/adapter_runtime_verbs.go:62` |
+| Classifying an adopter's record and ledger landings | app-owned means `Outside` | record and ledger rules keyed on the state root | `metasystem/internal/pathclass/pathclass.go:232`, `metasystem/internal/landing/observe.go:1118` |
 | Choosing where adopted state lives | Git top | `<installation>/project` | `metasystem/internal/stateroot/stateroot.go:145-153` |
 | Keeping steward machine state | state root plus `artifacts/agents/steward` | installation plus `artifacts/agents/steward` | `metasystem/internal/stateroot/stateroot.go:297` |
 | Accepting an adopted installation's placement | root or nested at any depth | `<git top>/metasystem` only | `metasystem/internal/stateroot/stateroot.go:164-213` |
@@ -169,13 +167,14 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 1. **stateroot.** The adopted state root is `<installation>/project`; the template's is unchanged. `Steward` resolves under `artifacts/`. Adopted installations at the Git top or at `vendor/metasystem` are refused.
 2. **Owner.** Each class, checked with a mutation that flips it.
-3. **B5.** One fixture per refused shape is refused. A neutral-named root reaching a state segment is listed. The engine tree passes after the build.
-4. **Adoption end to end (B2).** Adopt into a target that already has `go.mod`, `cmd/`, `docs/`, and populated `AGENTS.md` and `CLAUDE.md`, and use the configuration adoption produces. Then run, in order: `goal sync --upgrade`; `goal open`; `goal budget G norm` with a non-default tier budget; Stop with populated goals; `system check` with a covenant written as inception directs; `settings check` and test selection against a completed `project/testing.json`; `app` against `project/launch.json`; the Application page with populated known issues; `design list` and `receipt add` from the application root, from `metasystem/` and from a subdirectory; and the workflow's three commands. Every state read and write lands under `metasystem/project/`, and the application's text in the pointer files survives.
-5. **B1 and B3.** A payload containing `launch.json`, and a text with a bare `docs/x.md`, are each refused. The shipped tree passes.
+3. **Types and B5.** A cast outside `stateroot` and a literal `metasystem/plans` are each refused. `ParseState` refuses a path without the state shape.
+4. **Separated-root fixtures.** On a fresh adopter, a receipt-only landing succeeds and a receipt rewrite refuses. The tool hook applies non-default context thresholds from `metasystem.conf`.
+5. **Adoption end to end (B2).** Adopt into a target that already has `go.mod`, `cmd/`, `docs/`, and populated `AGENTS.md` and `CLAUDE.md`, and use the configuration adoption produces. Then run, in order: `goal sync --upgrade`; `goal open`; `goal budget G norm` with a non-default tier budget; Stop with populated goals; `system check` with a covenant written as inception directs; `settings check` and test selection against a completed `project/testing.json`; `app` against `project/launch.json`; the Application page with populated known issues; `design list` and `receipt add` from the application root, from `metasystem/` and from a subdirectory; and the workflow's three commands. Every state read and write lands under `metasystem/project/`, and the application's text in the pointer files survives.
+6. **B1 and B3.** A payload containing `launch.json`, and a text with a bare `docs/x.md`, are each refused. The shipped tree passes.
 
 ## Step 1
 
-Step 1 is fresh adoption in the one-folder layout, plus the engine rules it needs. It covers the adopted state-root and layout rules; the two-roots boundary, with B5 written first and every site it lists fixed; the contract defaults, and the dropped contract overrides; the ownership classifier; adoption into `metasystem/`, with its exclusions, seeding, instruction-file merge and CI workflow; pointer files for every installation; the citation rewrite; and B1, B3 and the B2 test. This repository keeps its layout.
+Step 1 is fresh adoption in the one-folder layout, plus the engine rules it needs. It covers the adopted state-root and layout rules; the two root types, with the signatures converted first and every site the compiler lists fixed, and the shrunken B5; landing classification keyed on the state root; the contract defaults, and the dropped contract overrides; the ownership classifier; adoption into `metasystem/`, with its exclusions, seeding, instruction-file merge and CI workflow; pointer files for every installation; the citation rewrite; and B1, B3 and the B2 test. This repository keeps its layout.
 
 ## Deferred
 
@@ -193,11 +192,11 @@ Parity: `goal list`, `design list` and `receipt status` give the same counts bef
 
 | Item | Builds on |
 |---|---|
-| Step 2, this repository's move (above) | R1-05 and R1-06; the step-1 boundary and B5 |
+| Step 2, this repository's move (above) | R1-05 and R1-06; the step-1 root types |
 | Migrating existing root-placed or `vendor/`-placed adopters | the `ResolveLayout` refusal and the `Owner` classes |
 | A `system upgrade` verb | `Owner`'s never-touched list and B1 |
 | An installed-SHA marker outside `project/` | the seeded marker (`metasystem/internal/adopt/adopt.go:424`) |
-| `metasystem.conf` into `project/`, `.local` into `local/` | configuration read only at the installation (B5) |
+| `metasystem.conf` into `project/`, `.local` into `local/` | configuration readers typed `Installation` |
 | `artifacts/` renamed to `local/` | the `Steward` kind and the runtime class in `Owner` |
 | Go messages printing state paths relative to the repository root | `Layout.GitRoot` |
 | The CWD fallback `.metasystem/` (`metasystem/internal/registry/selection.go:23`) | the installation's `artifacts/` |
