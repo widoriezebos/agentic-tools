@@ -119,13 +119,11 @@ func TestDisarmReportsRunnerThatSurvivesKill(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	originalSignal := runnerSignal
 	var signals []syscall.Signal
-	runnerSignal = func(_ int, signal syscall.Signal) error {
+	signal := func(_ int, signal syscall.Signal) error {
 		signals = append(signals, signal)
 		return nil
 	}
-	t.Cleanup(func() { runnerSignal = originalSignal })
 	clockNow := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
 	originalNow, originalSleep := runnerNow, runnerSleep
 	sleeps := 0
@@ -139,7 +137,7 @@ func TestDisarmReportsRunnerThatSurvivesKill(t *testing.T) {
 	}
 	t.Cleanup(func() { runnerNow, runnerSleep = originalNow, originalSleep })
 
-	outcome, err := Disarm(root)
+	outcome, err := disarmSignalling(root, signal)
 	if err != nil || outcome.Result != "not-stopped" || outcome.Signal != "kill" ||
 		outcome.Record.FenceGeneration != 2 || !strings.Contains(outcome.Reason, "remained alive") {
 		t.Fatalf("surviving runner outcome is not honest: %+v %v", outcome, err)

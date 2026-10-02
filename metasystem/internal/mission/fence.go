@@ -686,8 +686,8 @@ type JobMeasurement struct {
 // probeGroupGone probes whether a recorded process group is provably absent.
 // Only ESRCH proves it — the shipped group-exists semantics: success or a
 // permission denial proves existence, and any other failure proves nothing.
-// Overridable in tests.
-var probeGroupGone = func(pgid int64) (gone bool, detail string) {
+// Tests hand their own probe to aggregateUsageProbing.
+func probeGroupGone(pgid int64) (gone bool, detail string) {
 	switch err := unix.Kill(-int(pgid), 0); err {
 	case unix.ESRCH:
 		return true, ""
@@ -716,6 +716,12 @@ var custodianProver = identity.Custodian
 // rounds array, and a content-equal aggregate skips the write entirely, so
 // updatedAt changes exactly when content changes.
 func AggregateUsage(repo, mission string) error {
+	return aggregateUsageProbing(repo, mission, probeGroupGone)
+}
+
+// aggregateUsageProbing is AggregateUsage with the whole-group death probe
+// handed in per call.
+func aggregateUsageProbing(repo, mission string, groupGone func(int64) (bool, string)) error {
 	dir, _, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -740,7 +746,7 @@ func AggregateUsage(repo, mission string) error {
 	paths, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	sort.Strings(paths)
 	for _, recordPath := range paths {
-		measurement := JobUsageAt(repo, recordPath)
+		measurement := jobUsageAtProbing(repo, recordPath, groupGone)
 		record := measurement.Record
 		if measurement.Provenance == usageUnreadable {
 			continue
@@ -826,6 +832,10 @@ func AggregateUsage(repo, mission string) error {
 // callers decide whether to retain it or preserve the mission aggregate's
 // historical skip behavior.
 func JobUsageAt(repo, recordPath string) JobMeasurement {
+	return jobUsageAtProbing(repo, recordPath, probeGroupGone)
+}
+
+func jobUsageAtProbing(repo, recordPath string, groupGone func(int64) (bool, string)) JobMeasurement {
 	record, err := readJSONObjectFile(recordPath)
 	if err != nil {
 		return JobMeasurement{
@@ -846,7 +856,7 @@ func JobUsageAt(repo, recordPath string) JobMeasurement {
 		if jobID == "" {
 			jobID = strings.TrimSuffix(filepath.Base(recordPath), ".json")
 		}
-		provenance, source, detail = deriveRoundUsage(repo, jobsDir, jobID, provider, record, units)
+		provenance, source, detail = deriveRoundUsage(repo, jobsDir, jobID, provider, record, units, groupGone)
 	}
 	measurement := JobMeasurement{
 		Record: record, Tokens: map[string]float64{}, Provenance: provenance,
@@ -926,12 +936,12 @@ func addReportedUsage(units map[[2]string]float64, provider string, rawUsage any
 // proven dead; a still-provable-alive group defers to a later pass, and a
 // record whose stream cannot prove anything aggregates unavailable. The
 // derived value is summed in memory and never written back.
-func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]any, units map[[2]string]float64) (provenance string, source, detail any) {
+func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]any, units map[[2]string]float64, groupGone func(int64) (bool, string)) (provenance string, source, detail any) {
 	pgid, ok := intValue(record["pgid"])
 	if !ok || pgid < 1 {
 		return usageUnavailable, nil, "no recorded pgid: whole-group death is unprovable"
 	}
-	gone, why := probeGroupGone(pgid)
+	gone, why := groupGone(pgid)
 	if !gone {
 		return usagePendingProof, nil, why
 	}

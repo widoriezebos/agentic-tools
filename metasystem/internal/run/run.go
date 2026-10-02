@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -258,6 +259,10 @@ type Store struct {
 	// GroupPresent is the kernel's direct process-group existence proof.
 	// Production leaves it nil; tests can pin absent, present, or unknown.
 	GroupPresent func(pgid int64) (present, certain bool)
+	// GroupSignal sends a stop signal to a recorded process group.
+	// Production leaves it nil for the kernel's kill of the group; tests
+	// whose groups are synthetic record the signals instead.
+	GroupSignal func(pgid int64, signal syscall.Signal) error
 	// AdmitGoverned is mandatory only for a standing shared run or a run that
 	// explicitly names an obligation revision.
 	AdmitGoverned   func(GovernedAdmissionRequest) (GovernedAdmissionResult, error)

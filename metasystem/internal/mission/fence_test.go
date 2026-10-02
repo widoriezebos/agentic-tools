@@ -480,16 +480,14 @@ func TestAggregateUsageGroupDeathGate(t *testing.T) {
 	}
 	writeText(t, events, `{"usage":{"output_tokens":9999}}`+"\n")
 
-	oldProbe := probeGroupGone
-	probeGroupGone = func(pgid int64) (bool, string) {
+	groupGone := func(pgid int64) (bool, string) {
 		if pgid == 1 {
 			return false, "process group 1 exists (permission denial proves existence)"
 		}
-		return oldProbe(pgid)
+		return probeGroupGone(pgid)
 	}
-	t.Cleanup(func() { probeGroupGone = oldProbe })
 
-	if err := AggregateUsage(repo, mission); err != nil {
+	if err := aggregateUsageProbing(repo, mission, groupGone); err != nil {
 		t.Fatalf("aggregate: %v", err)
 	}
 	entries := readAggregateRounds(t, repo, mission)

@@ -313,7 +313,7 @@ func TestResourceCommandAlreadyCancelledStartsNothing(t *testing.T) {
 func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	directory, conf := isolatedHostResources(t)
-	first, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+	first, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 			}
 		})
 		go func() {
-			next, acquireErr := AcquireHostResources(waitCtx, directory, conf, class, exclusive)
+			next, acquireErr := acquireHostResourcesIn(waitCtx, directory, directory, conf, class, exclusive, nil)
 			if acquireErr != nil {
 				waiting.result.err = acquireErr
 				close(waiting.finished)

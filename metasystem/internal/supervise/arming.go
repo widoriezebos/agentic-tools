@@ -59,6 +59,8 @@ type EnsureOptions struct {
 	WaitScaleMilli  int
 	OwnerTagPrefix  string
 	FenceGeneration int64
+	// ownerProbe reads the launched owner's identity; nil reads the kernel.
+	ownerProbe func(int64) (identity.Exact, identity.Liveness, error)
 }
 
 // EnsureResult describes whether arming joined, established, took over, or
@@ -383,7 +385,6 @@ func signalGroup(pid int64, signal syscall.Signal) error {
 
 var (
 	armingOwnerSignal = signalGroup
-	armingOwnerProbe  = (identity.KernelProber{}).Probe
 	armingNow         = time.Now
 	armingSleep       = time.Sleep
 )
@@ -808,6 +809,12 @@ func takeoverComponents(root, metasystemRoot, ownerTag string) ([]Held, error) {
 // ReadInventory returns live owner and component identities from the caller's
 // single process snapshot. It performs no writes and sends no signals.
 func ReadInventory(root string, processes []census.Process) ([]InventoryItem, error) {
+	return readInventoryWith(kernelComponentControl(), root, processes)
+}
+
+// readInventoryWith is ReadInventory with the component control handed in
+// per call.
+func readInventoryWith(control recordedComponentControl, root string, processes []census.Process) ([]InventoryItem, error) {
 	owner, ownerErr := ReadArmingOwner(root)
 	if ownerErr != nil && !os.IsNotExist(ownerErr) {
 		return nil, ownerErr
@@ -854,7 +861,6 @@ func ReadInventory(root string, processes []census.Process) ([]InventoryItem, er
 	if err != nil {
 		return nil, err
 	}
-	control := takeoverComponentControl()
 	for _, component := range held {
 		authErr := authenticateRecordedComponent(control, component)
 		if errors.Is(authErr, errRecordedComponentGone) {
@@ -871,7 +877,10 @@ func ReadInventory(root string, processes []census.Process) ([]InventoryItem, er
 	return items, nil
 }
 
-var takeoverComponentControl = func() recordedComponentControl {
+// kernelComponentControl is the production control over recorded
+// components: the kernel's prober, group-absence proof and group signal.
+// Tests hand their own control to the call instead.
+func kernelComponentControl() recordedComponentControl {
 	return recordedComponentControl{
 		prober: identity.KernelProber{}, groupAbsent: kernelGroupAbsent,
 		signalGroup: func(pgid int64, signal syscall.Signal) error {
@@ -883,12 +892,11 @@ var takeoverComponentControl = func() recordedComponentControl {
 	}
 }
 
-func stopTakeoverComponents(root, metasystemRoot, ownerTag string, scaleMilli int, ownerOrderly bool) ([]ComponentOutcome, error) {
+func stopTakeoverComponents(control recordedComponentControl, root, metasystemRoot, ownerTag string, scaleMilli int, ownerOrderly bool) ([]ComponentOutcome, error) {
 	held, err := takeoverComponents(root, metasystemRoot, ownerTag)
 	if err != nil {
 		return nil, err
 	}
-	control := takeoverComponentControl()
 	var outcomes []ComponentOutcome
 	var failures []error
 	for _, component := range held {
@@ -992,11 +1000,15 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 		return ArmingOwner{}, err
 	}
 	pid := int64(cmd.Process.Pid)
+	probe := options.ownerProbe
+	if probe == nil {
+		probe = (identity.KernelProber{}).Probe
+	}
 	deadline := armingNow().Add(scaledWait(5, options.WaitScaleMilli))
 	var exact identity.Exact
 	for armingNow().Before(deadline) {
 		var state identity.Liveness
-		exact, state, _ = armingOwnerProbe(pid)
+		exact, state, _ = probe(pid)
 		if state == identity.Alive {
 			break
 		}
@@ -1180,7 +1192,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 				return EnsureResult{}, err
 			}
-			if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
+			if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
 				return EnsureResult{}, fmt.Errorf("dead-owner takeover refused: %w", err)
 			}
 			if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
@@ -1223,7 +1235,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "an engine-generation replacement at session start"); err != nil {
 			return EnsureResult{}, err
 		}
-		if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
+		if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
 			return EnsureResult{}, fmt.Errorf("the supervisor was not replaced: %w", err)
 		}
 		if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
@@ -1243,6 +1255,12 @@ func Shutdown(root, requestedStateRoot, expectedTagPrefix string, scaleMilli int
 // ShutdownAt stops repository supervision while using the installed
 // metasystem's authorized census source for the final tag sweep.
 func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix string, scaleMilli int) (ShutdownReport, error) {
+	return shutdownAtWith(kernelComponentControl(), root, metasystemRoot, requestedStateRoot, expectedTagPrefix, scaleMilli)
+}
+
+// shutdownAtWith is ShutdownAt with the component control handed in per
+// call.
+func shutdownAtWith(control recordedComponentControl, root, metasystemRoot, requestedStateRoot, expectedTagPrefix string, scaleMilli int) (ShutdownReport, error) {
 	var report ShutdownReport
 	owner, err := ReadArmingOwner(root)
 	if os.IsNotExist(err) {
@@ -1256,7 +1274,7 @@ func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix stri
 		} else if !os.IsNotExist(publishedErr) {
 			return report, publishedErr
 		}
-		componentOutcomes, componentErr := stopTakeoverComponents(root, metasystemRoot, ownerTag, scaleMilli, false)
+		componentOutcomes, componentErr := stopTakeoverComponents(control, root, metasystemRoot, ownerTag, scaleMilli, false)
 		report.Outcomes = append(report.Outcomes, componentOutcomes...)
 		return report, componentErr
 	}
@@ -1280,7 +1298,7 @@ func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix stri
 	ownerOutcome, ownerErr := stopOwner(root, owner, scaleMilli, "a supervision shutdown")
 	report.Outcomes = append(report.Outcomes, ownerOutcome)
 	ownerOrderly := ownerOutcome.Result == ShutdownStopped && ownerOutcome.Signal == ShutdownSignalTerm
-	componentOutcomes, componentErr := stopTakeoverComponents(root, metasystemRoot, owner.InstanceTag, scaleMilli, ownerOrderly)
+	componentOutcomes, componentErr := stopTakeoverComponents(control, root, metasystemRoot, owner.InstanceTag, scaleMilli, ownerOrderly)
 	report.Outcomes = append(report.Outcomes, componentOutcomes...)
 	if ownerOutcome.Signal == ShutdownSignalKill {
 		if err := appendShutdownEscalated(root, owner, report.Outcomes, componentErr != nil, scaleMilli); err != nil {

@@ -36,12 +36,12 @@ func TestHostResourceForgedOpenPeerSlotDoesNotBorrowHeavy(t *testing.T) {
 	directory, conf := isolatedHostResources(t)
 	fixture := newOwnershipFixture(t)
 	parent, _ := fixture.reserve("nested-goal", "nested-plan", map[string]string{"native": strings.Repeat("a", 64)}, "", "", 0)
-	cheap, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	cheap, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = MarkHostResourcesClean(cheap.Files()); _ = cheap.Close() }()
-	peer, err := AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
+	peer, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,12 +61,12 @@ func TestHostResourceForgedOpenPeerExclusiveDoesNotBorrowName(t *testing.T) {
 	directory, conf := isolatedHostResources(t)
 	fixture := newOwnershipFixture(t)
 	parent, _ := fixture.reserve("nested-goal", "nested-plan", map[string]string{"native": strings.Repeat("c", 64)}, "", "", 0)
-	cheap, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	cheap, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = MarkHostResourcesClean(cheap.Files()); _ = cheap.Close() }()
-	peer, err := AcquireHostResources(context.Background(), directory, conf, "cheap", []string{"fixture-db"})
+	peer, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 		observed := make(chan struct{})
 		waitCtx := WithHostResourceWaitObserver(ctx, func() { close(observed) })
 		go func() {
-			contender, acquireErr := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
+			contender, acquireErr := acquireHostResourcesIn(waitCtx, directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 			finished <- outcome{lease: contender, err: acquireErr}
 		}()
 		select {
@@ -292,14 +292,13 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 	if releasePath == "" {
 		t.Fatal("nested custody release descriptor path is unavailable")
 	}
-	hostAdmissionDirectoryForTest = directory
 	if mode == "launcher" {
 		fixture := newOwnershipFixture(t)
 		attempt, _ := fixture.reserve("nested-custody", "nested-custody-plan", map[string]string{"native": strings.Repeat("d", 64)}, "", "", 0)
 		if err := os.WriteFile(filepath.Join(directory, "control-root"), []byte(fixture.root), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+		lease, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -328,7 +327,7 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 		t.Fatal("invalid nested custody mode")
 	}
 	controlRoot := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT")
-	lease, err := AcquireHostResources(context.Background(), controlRoot, conf, "heavy", []string{"fixture-db"})
+	lease, err := acquireHostResourcesIn(context.Background(), directory, controlRoot, conf, "heavy", []string{"fixture-db"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +392,7 @@ func TestHostResourceBorrowerCannotCleanOuterDirtyMarker(t *testing.T) {
 	directory, conf := isolatedHostResources(t)
 	fixture := newOwnershipFixture(t)
 	parent, _ := fixture.reserve("nested-goal", "nested-plan", map[string]string{"native": strings.Repeat("b", 64)}, "", "", 0)
-	outer, err := AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
+	outer, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +437,7 @@ func TestHostResourceBorrowerCannotCleanOuterDirtyMarker(t *testing.T) {
 	observed := make(chan struct{})
 	waitCtx := WithHostResourceWaitObserver(ctx, func() { close(observed) })
 	go func() {
-		contender, acquireErr := AcquireHostResources(waitCtx, directory, conf, "heavy", nil)
+		contender, acquireErr := acquireHostResourcesIn(waitCtx, directory, directory, conf, "heavy", nil, nil)
 		finished <- outcome{lease: contender, err: acquireErr}
 	}()
 	select {
@@ -472,7 +471,7 @@ func TestHostResourceLockedEmptyMarkerRefusesAdmission(t *testing.T) {
 		t.Fatalf("lock empty marker: acquired=%v err=%v", acquired, err)
 	}
 	defer marker.Close()
-	lease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", nil, nil)
 	if lease != nil {
 		_ = lease.Close()
 		t.Fatal("locked empty marker was ignored")
@@ -494,18 +493,18 @@ func TestHostResourceAdmissionReclaimsOnlyValidatedCleanUnlockedMarkers(t *testi
 		t.Fatal("resource lease has no marker")
 		return ""
 	}
-	clean, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	clean, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cleanPath := markerPath(clean)
-	busy, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	busy, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = MarkHostResourcesClean(busy.Files()); _ = busy.Close() }()
 	busyPath := markerPath(busy)
-	dirty, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	dirty, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +521,7 @@ func TestHostResourceAdmissionReclaimsOnlyValidatedCleanUnlockedMarkers(t *testi
 	if err := clean.Close(); err != nil {
 		t.Fatal(err)
 	}
-	trigger, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
+	trigger, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +540,7 @@ func TestHostResourceAdmissionReclaimsOnlyValidatedCleanUnlockedMarkers(t *testi
 		t.Fatalf("lock unknown marker: acquired=%v err=%v", acquired, err)
 	}
 	defer unknown.Close()
-	if contender, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil); err == nil {
+	if contender, err := acquireHostResourcesIn(context.Background(), directory, directory, conf, "cheap", nil, nil); err == nil {
 		_ = contender.Close()
 		t.Fatal("unknown locked marker was ignored")
 	}
@@ -565,12 +564,11 @@ func TestHostResourceReviewSubprocess(t *testing.T) {
 		t.Fatal("invalid resource review child arguments")
 	}
 	directory, conf, class, resource, mode := os.Args[separator+1], os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5]
-	hostAdmissionDirectoryForTest = directory
 	var exclusive []string
 	if resource != "" {
 		exclusive = []string{resource}
 	}
-	lease, err := AcquireHostResources(context.Background(), os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), conf, class, exclusive)
+	lease, err := acquireHostResourcesIn(context.Background(), directory, os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), conf, class, exclusive, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

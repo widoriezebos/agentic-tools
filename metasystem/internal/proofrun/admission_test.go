@@ -566,10 +566,9 @@ func TestAdmissionCapHasNoWaitPath(t *testing.T) {
 	assertAdmissionHasNoWaitPath(t)
 }
 
+// Not parallel: it holds the guard of the binary's default namespace
+// (TestMain's), which a request with no directory of its own reserves under.
 func TestHeldHostAdmissionGuardRefusesWithoutAllocatingAttempt(t *testing.T) {
-	previousDirectory := hostAdmissionDirectoryForTest
-	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
-	t.Cleanup(func() { hostAdmissionDirectoryForTest = previousDirectory })
 	directory, err := hostAdmissionDirectory()
 	if err != nil {
 		t.Fatal(err)

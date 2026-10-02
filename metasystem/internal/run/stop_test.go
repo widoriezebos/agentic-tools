@@ -82,9 +82,8 @@ func TestCreatorRaceAfterWrapperSpawnEndsGroupAndFailsLaunch(t *testing.T) {
 	if record.Status != StatusRunning || record.FenceGeneration != 7 {
 		t.Fatalf("spawned wrapper record = %+v", record)
 	}
-	originalSignal := stopSignal
 	var signals []syscall.Signal
-	stopSignal = func(group int64, signal syscall.Signal) error {
+	s.GroupSignal = func(group int64, signal syscall.Signal) error {
 		if group != pid {
 			return errors.New("wrong wrapper group")
 		}
@@ -92,7 +91,6 @@ func TestCreatorRaceAfterWrapperSpawnEndsGroupAndFailsLaunch(t *testing.T) {
 		probe.alive = false
 		return nil
 	}
-	t.Cleanup(func() { stopSignal = originalSignal })
 	if err := s.CompleteLaunch("race-launch", generation); err == nil || !strings.Contains(err.Error(), "while run race-launch started") {
 		t.Fatalf("second-read result = %v", err)
 	}
@@ -145,9 +143,7 @@ func TestCreatorRaceAfterStopAndArmPrintsRetryInsteadOfIncompleteStop(t *testing
 	if err := s.Bind("rearmed-launch", nonce, pid, pid); err != nil {
 		t.Fatal(err)
 	}
-	originalSignal := stopSignal
-	stopSignal = func(int64, syscall.Signal) error { probe.alive = false; return nil }
-	t.Cleanup(func() { stopSignal = originalSignal })
+	s.GroupSignal = func(int64, syscall.Signal) error { probe.alive = false; return nil }
 	err = s.CompleteLaunch("rearmed-launch", creation.Generation)
 	if err == nil || !strings.Contains(err.Error(), "was stopped and armed again") || !strings.Contains(err.Error(), "start it again") || strings.Contains(err.Error(), "stop incomplete") {
 		t.Fatalf("rearmed creator refusal = %v", err)
@@ -168,10 +164,8 @@ func TestRegisterRaceFailsRecordAndNeverSignalsForeignProcess(t *testing.T) {
 		}
 		return closedFence(), nil
 	}
-	originalSignal := stopSignal
 	signals := 0
-	stopSignal = func(int64, syscall.Signal) error { signals++; return nil }
-	t.Cleanup(func() { stopSignal = originalSignal })
+	s.GroupSignal = func(int64, syscall.Signal) error { signals++; return nil }
 	err := s.Register(mainCaller, LaunchParams{Id: "race-register", Kind: "custom", Log: "run.log"}, 51, "")
 	if err == nil || !strings.Contains(err.Error(), "while run race-register started") {
 		t.Fatalf("register race = %v", err)
@@ -195,10 +189,8 @@ func TestStopNeverSignalsAdoptedCustody(t *testing.T) {
 	if err := s.Register(mainCaller, LaunchParams{Id: "foreign-run", Kind: "custom", Log: "run.log"}, 54, ""); err != nil {
 		t.Fatal(err)
 	}
-	originalSignal := stopSignal
 	signals := 0
-	stopSignal = func(int64, syscall.Signal) error { signals++; return nil }
-	t.Cleanup(func() { stopSignal = originalSignal })
+	s.GroupSignal = func(int64, syscall.Signal) error { signals++; return nil }
 	outcome, err := s.Stop("foreign-run")
 	if err != nil || outcome.Result != StopResultNotStopped || outcome.Reason != "not the metasystem's process, not signalled" {
 		t.Fatalf("adopted outcome = %+v err=%v", outcome, err)
@@ -232,10 +224,8 @@ func TestAdoptRaceFailsRecordAndNeverSignalsForeignProcess(t *testing.T) {
 		}
 		return closedFence(), nil
 	}
-	originalSignal := stopSignal
 	signals := 0
-	stopSignal = func(int64, syscall.Signal) error { signals++; return nil }
-	t.Cleanup(func() { stopSignal = originalSignal })
+	s.GroupSignal = func(int64, syscall.Signal) error { signals++; return nil }
 	err := s.Adopt(mainCaller, "race-adopt", 53)
 	if err == nil || !strings.Contains(err.Error(), "while run race-adopt started") {
 		t.Fatalf("adopt race = %v", err)
@@ -286,9 +276,8 @@ func boundWrappedForStop(t *testing.T) (*Store, *argvProber, int64) {
 
 func TestStopWrappedRunReprovesAndConcludes(t *testing.T) {
 	s, probe, pid := boundWrappedForStop(t)
-	originalSignal := stopSignal
 	var signals []syscall.Signal
-	stopSignal = func(pgid int64, signal syscall.Signal) error {
+	s.GroupSignal = func(pgid int64, signal syscall.Signal) error {
 		if pgid != pid {
 			return errors.New("wrong group")
 		}
@@ -296,7 +285,6 @@ func TestStopWrappedRunReprovesAndConcludes(t *testing.T) {
 		probe.alive = false
 		return nil
 	}
-	t.Cleanup(func() { stopSignal = originalSignal })
 	outcome, err := s.Stop("stop-wrapped")
 	if err != nil || outcome.Result != StopResultStopped || outcome.Signal != StopSignalTerm || outcome.Status != StatusEndedUnknown {
 		t.Fatalf("stop outcome = %+v err=%v", outcome, err)
@@ -316,9 +304,8 @@ func TestStopPreservesSidecarVerdictWrittenDuringOrderlySignal(t *testing.T) {
 	if err != nil || record == nil {
 		t.Fatalf("read wrapped run: record=%+v err=%v", record, err)
 	}
-	originalSignal := stopSignal
 	var signals []syscall.Signal
-	stopSignal = func(pgid int64, signal syscall.Signal) error {
+	s.GroupSignal = func(pgid int64, signal syscall.Signal) error {
 		if pgid != pid {
 			return errors.New("wrong group")
 		}
@@ -329,7 +316,6 @@ func TestStopPreservesSidecarVerdictWrittenDuringOrderlySignal(t *testing.T) {
 		probe.alive = false
 		return nil
 	}
-	t.Cleanup(func() { stopSignal = originalSignal })
 	outcome, err := s.Stop("stop-wrapped")
 	if err != nil || outcome.Result != StopResultStopped || outcome.Signal != StopSignalTerm || outcome.Status != StatusRed {
 		t.Fatalf("stop outcome = %+v err=%v", outcome, err)
@@ -361,13 +347,11 @@ func TestStopReportsWrappedRunThatSurvivesKill(t *testing.T) {
 	// The liveness seam stays present even after both injected signals: a
 	// successful signal syscall is not proof that the group ended.
 	s.GroupPresent = func(int64) (bool, bool) { return true, true }
-	originalSignal := stopSignal
 	var signals []syscall.Signal
-	stopSignal = func(_ int64, signal syscall.Signal) error {
+	s.GroupSignal = func(_ int64, signal syscall.Signal) error {
 		signals = append(signals, signal)
 		return nil
 	}
-	t.Cleanup(func() { stopSignal = originalSignal })
 	outcome, err := s.Stop("stop-wrapped")
 	if err != nil || outcome.Result != StopResultNotStopped || outcome.Signal != StopSignalKill || outcome.Reason != "group survived KILL" {
 		t.Fatalf("survivor outcome = %+v err=%v", outcome, err)

@@ -47,7 +47,7 @@ func TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner(t 
 	ownerDead := false
 	var signals []syscall.Signal
 	priorLiveness, priorSignal := armingOwnerLiveness, armingOwnerSignal
-	priorControl, priorEnumeration := takeoverComponentControl, enumerateTakeoverProcesses
+	priorEnumeration := enumerateTakeoverProcesses
 	armingOwnerLiveness = func(ArmingOwner) identity.Liveness {
 		if ownerDead {
 			return identity.Dead
@@ -65,25 +65,23 @@ func TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner(t 
 		return nil
 	}
 	componentSignals := 0
-	takeoverComponentControl = func() recordedComponentControl {
-		return recordedComponentControl{
-			prober: &armingComponentProbe{state: identity.Dead},
-			groupAbsent: func(int64) (bool, error) {
-				return true, nil
-			},
-			signalGroup: func(int64, syscall.Signal) error {
-				componentSignals++
-				return nil
-			},
-		}
+	control := recordedComponentControl{
+		prober: &armingComponentProbe{state: identity.Dead},
+		groupAbsent: func(int64) (bool, error) {
+			return true, nil
+		},
+		signalGroup: func(int64, syscall.Signal) error {
+			componentSignals++
+			return nil
+		},
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() {
 		armingOwnerLiveness, armingOwnerSignal = priorLiveness, priorSignal
-		takeoverComponentControl, enumerateTakeoverProcesses = priorControl, priorEnumeration
+		enumerateTakeoverProcesses = priorEnumeration
 	})
 
-	report, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1)
+	report, err := shutdownAtWith(control, root, root, root, "metasystem-supervision-owner-test-", 1)
 	if err != nil || !report.Complete() {
 		t.Fatalf("orderly shutdown = %+v err=%v", report, err)
 	}

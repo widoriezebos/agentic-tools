@@ -24,7 +24,7 @@ import (
 func TestResourceCustodyStreamsLiveCapNoteAndRetainsSpools(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func (writer *gatedSuiteOutput) Write(data []byte) (int, error) {
 func TestManagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild(t *testing.
 
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +482,7 @@ waitForResult:
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("large-output failure left host capacity held: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestResourceCustodySpoolFinalDrainAndFailedPublicWriter(t *testing.T) {
 func TestResourceCustodyPublicWriterFailureStillDrainsAndReleasesCapacity(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
-	lease, err := AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+	next, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatalf("public writer failure left capacity held: %v", err)
 	}
@@ -595,7 +595,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 		if err := next.Close(); err != nil {
 			t.Fatal(err)
 		}
-		released, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
+		released, err := acquireHostResourcesIn(t.Context(), root, root, conf, "heavy", nil, nil)
 		if err != nil {
 			t.Fatalf("managed suite retained capacity: %v", err)
 		}

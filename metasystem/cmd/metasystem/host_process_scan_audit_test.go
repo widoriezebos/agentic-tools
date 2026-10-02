@@ -253,13 +253,27 @@ func scan() {
 	}
 }
 
-// processSeamMarkers are the names whose mention makes a package variable a
-// process-table seam: identity's host-table readers and the table type; the
-// kernel's per-process group and session reads count too (kernelGroupReaders).
-// A one-pid identity.Prober seam is not a table: it answers for the pid a
-// test names, never for another test's processes.
+// processSeamMarkers are the identity names whose mention makes a package
+// variable a process seam: the host-table readers, the table type, and the
+// one-pid Prober and KernelProber. A swapped one-pid prober is shared by
+// every test of the package as much as a table is, so it is a seam too
+// (flaky-leftovers part 3).
 var processSeamMarkers = map[string]bool{
 	"AllPids": true, "TakeProcessCensus": true, "KernelProcessTable": true, "ProcessTable": true,
+	"Prober": true, "KernelProber": true,
+}
+
+// kernelSeamMarkers are the unix/syscall names whose mention makes a package
+// variable a process seam: the group and session reads, and the signal
+// sender and its signal type.
+var kernelSeamMarkers = map[string]bool{"Getpgid": true, "Getsid": true, "Kill": true, "Signal": true}
+
+// processConfigurationVariables are package variables that configure a
+// process-wide resource (the host admission directory, the load sampler's
+// options). The binary's default is set once, in TestMain or a production
+// init; a test that needs another value hands it to the call or request.
+var processConfigurationVariables = map[string]map[string]bool{
+	"internal/proofrun:proofrun": {"hostAdmissionDirectoryForTest": true, "commandLoadOptions": true},
 }
 
 type processSeamAssignment struct {
@@ -268,8 +282,8 @@ type processSeamAssignment struct {
 }
 
 // mentionsProcessSeam reports whether node names a process seam marker:
-// identity's (unqualified inside identity itself) or unix/syscall Getpgid
-// and Getsid.
+// identity's (unqualified inside identity itself) or a unix/syscall one
+// (kernelSeamMarkers).
 func mentionsProcessSeam(node ast.Node, file *ast.File, insideIdentity bool) bool {
 	identityLocal := importedAs(file, identityImportPath, "identity")
 	kernel := map[string]bool{}
@@ -284,7 +298,7 @@ func mentionsProcessSeam(node ast.Node, file *ast.File, insideIdentity bool) boo
 		case *ast.SelectorExpr:
 			if pkg, ok := expression.X.(*ast.Ident); ok {
 				if identityLocal != "" && pkg.Name == identityLocal && processSeamMarkers[expression.Sel.Name] ||
-					kernel[pkg.Name] && kernelGroupReaders[expression.Sel.Name] {
+					kernel[pkg.Name] && kernelSeamMarkers[expression.Sel.Name] {
 					found = true
 				}
 			}
@@ -350,6 +364,13 @@ func processSeamAssignments(fileSet *token.FileSet, production, tests map[string
 	if len(seams) == 0 {
 		return nil
 	}
+	return packageVariableAssignments(fileSet, tests, seams, map[string]bool{"TestMain": true})
+}
+
+// packageVariableAssignments lists the assignments in a package's test
+// files to the package-level variables named, outside the top-level
+// functions allowed (a local of the same name is not the variable).
+func packageVariableAssignments(fileSet *token.FileSet, tests map[string]*ast.File, variables, allowed map[string]bool) []processSeamAssignment {
 	var found []processSeamAssignment
 	names := make([]string, 0, len(tests))
 	for name := range tests {
@@ -359,7 +380,7 @@ func processSeamAssignments(fileSet *token.FileSet, production, tests map[string
 	for _, name := range names {
 		for _, declaration := range tests[name].Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Body == nil || function.Recv == nil && function.Name.Name == "TestMain" {
+			if !ok || function.Body == nil || function.Recv == nil && allowed[function.Name.Name] {
 				continue
 			}
 			ast.Inspect(function.Body, func(node ast.Node) bool {
@@ -386,7 +407,7 @@ func processSeamAssignments(fileSet *token.FileSet, production, tests map[string
 						}
 						break
 					}
-					if identifier, ok := root.(*ast.Ident); ok && identifier.Obj == nil && seams[identifier.Name] {
+					if identifier, ok := root.(*ast.Ident); ok && identifier.Obj == nil && variables[identifier.Name] {
 						found = append(found, processSeamAssignment{file: name, seam: identifier.Name, line: fileSet.Position(identifier.Pos()).Line})
 					}
 				}
@@ -397,12 +418,21 @@ func processSeamAssignments(fileSet *token.FileSet, production, tests map[string
 	return found
 }
 
+// processSeamAuditSkipsDirectory names the directories the seam audit does
+// not parse: fixtures, vendored and node trees, dot-directories, and
+// artifacts/, whose agent worktree copies are stale trees of their own.
+func processSeamAuditSkipsDirectory(name string) bool {
+	return name == "testdata" || name == "vendor" || name == "node_modules" || name == "artifacts" || strings.HasPrefix(name, ".")
+}
+
 // TestAuditNoTestAssignsAProcessSeam: a package variable holding a process
-// table or a group or session reader that a test swaps is shared by every
-// parallel test of the package, so one test's scripted processes decide
-// another's verdict, and the race detector sees the write (flaky-test
-// clusters B and F). A test hands its table per call or per struct;
-// TestMain alone sets a package default, before any test runs.
+// table, a group or session reader, a one-pid prober or a signal sender
+// that a test swaps is shared by every parallel test of the package, so one
+// test's scripted processes decide another's verdict, and the race detector
+// sees the write (flaky-test clusters B and F, flaky-leftovers part 3). A
+// test hands its seam per call or per struct; TestMain alone sets a package
+// default, before any test runs. The process configuration variables
+// (processConfigurationVariables) are set only in TestMain or init.
 func TestAuditNoTestAssignsAProcessSeam(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
@@ -415,7 +445,7 @@ func TestAuditNoTestAssignsAProcessSeam(t *testing.T) {
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if path != root && (name == "testdata" || name == "vendor" || name == "node_modules" || strings.HasPrefix(name, ".")) {
+			if path != root && processSeamAuditSkipsDirectory(name) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -453,6 +483,12 @@ func TestAuditNoTestAssignsAProcessSeam(t *testing.T) {
 		for _, assignment := range processSeamAssignments(fileSet, files.production, files.tests, insideIdentity) {
 			t.Errorf("%s:%d assigns the package process seam %s; hand the test's table or group reader to the call or the struct instead (TestMain alone may set a package default)",
 				assignment.file, assignment.line, assignment.seam)
+		}
+		if variables := processConfigurationVariables[key]; variables != nil {
+			for _, assignment := range packageVariableAssignments(fileSet, files.tests, variables, map[string]bool{"TestMain": true, "init": true}) {
+				t.Errorf("%s:%d assigns the package configuration variable %s; hand the test's value to the call or the request instead (TestMain or init alone set the binary's default)",
+					assignment.file, assignment.line, assignment.seam)
+			}
 		}
 	}
 }
@@ -539,5 +575,83 @@ func TestSurvivors(t *testing.T) { survivorPids = nil }
 		map[string]*ast.File{"identity_test.go": parse("identity_test.go", identityTest)}, true)
 	if len(inside) != 1 || inside[0].seam != "survivorPids" || inside[0].line != 5 {
 		t.Fatalf("identity assignments = %+v; want survivorPids at line 5", inside)
+	}
+}
+
+// The seam audit's markers reach one-pid probers and signal senders, its
+// configuration list holds a variable to TestMain and init, and its walk
+// skips artifacts/ (flaky-leftovers part 3).
+func TestAuditNoTestAssignsAProcessSeamFindsProbersSignalsAndConfiguration(t *testing.T) {
+	t.Parallel()
+	production := `package p
+
+import (
+	"syscall"
+
+	id "` + identityImportPath + `"
+	"golang.org/x/sys/unix"
+)
+
+type control struct {
+	prober id.Prober
+}
+
+var prober id.Prober = id.KernelProber{}
+var probe = (id.KernelProber{}).Probe
+var kill = func(pgid int64, sig unix.Signal) error { return unix.Kill(int(-pgid), sig) }
+var signal = syscall.Kill
+var takeover = func() control { return control{prober: id.KernelProber{}} }
+var directory string
+var plain = 3
+`
+	tests := `package p
+
+import "testing"
+
+func TestMain(m *testing.M) { directory = "binary" }
+
+func init() { directory = "init" }
+
+func TestSwap(t *testing.T) {
+	prober = nil
+	probe = nil
+	kill = nil
+	signal = nil
+	takeover = nil
+	directory = "swapped"
+	plain = 4
+}
+`
+	fileSet := token.NewFileSet()
+	parse := func(name, source string) *ast.File {
+		parsed, err := parser.ParseFile(fileSet, name, source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	testFiles := map[string]*ast.File{"p_test.go": parse("p_test.go", tests)}
+	got := processSeamAssignments(fileSet, map[string]*ast.File{"p.go": parse("p.go", production)}, testFiles, false)
+	want := []processSeamAssignment{
+		{file: "p_test.go", seam: "prober", line: 10}, {file: "p_test.go", seam: "probe", line: 11},
+		{file: "p_test.go", seam: "kill", line: 12}, {file: "p_test.go", seam: "signal", line: 13},
+		{file: "p_test.go", seam: "takeover", line: 14},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("seam assignments = %+v; want %+v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("seam assignments = %+v; want %+v", got, want)
+		}
+	}
+	configuration := packageVariableAssignments(fileSet, testFiles, map[string]bool{"directory": true}, map[string]bool{"TestMain": true, "init": true})
+	if len(configuration) != 1 || configuration[0] != (processSeamAssignment{file: "p_test.go", seam: "directory", line: 15}) {
+		t.Fatalf("configuration assignments = %+v; want directory at line 15 only", configuration)
+	}
+	for name, skipped := range map[string]bool{"artifacts": true, "testdata": true, "vendor": true, ".git": true, "internal": false, "cmd": false} {
+		if processSeamAuditSkipsDirectory(name) != skipped {
+			t.Errorf("processSeamAuditSkipsDirectory(%q) = %t; want %t", name, !skipped, skipped)
+		}
 	}
 }

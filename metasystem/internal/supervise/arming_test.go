@@ -285,29 +285,25 @@ func TestProductionArmingTakeoverStopsAnOlderEnginesLandingOwnerAndNeverRelaunch
 	if err := os.WriteFile(filepath.Join(SupervisionDir(root), "state.json"), payload, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	originalControl := takeoverComponentControl
-	t.Cleanup(func() { takeoverComponentControl = originalControl })
 	alive := map[int64]bool{41: true, 42: true, 43: true}
 	tags := map[int64]string{41: "old-watcher", 42: "old-reaper", 43: "old-landing-owner"}
-	takeoverComponentControl = func() recordedComponentControl {
-		return recordedComponentControl{
-			prober: armingProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
-				if alive[pid] {
-					return identity.Exact{Pid: pid, StartedAt: time.Unix(pid+60, 0), Argv: []string{tags[pid]}, ArgvKnown: true}, identity.Alive, nil
-				}
-				return identity.Exact{}, identity.Dead, nil
-			}),
-			groupAbsent: func(pid int64) (bool, error) { return !alive[pid], nil },
-			signalGroup: func(pid int64, signal syscall.Signal) error {
-				if signal != syscall.SIGTERM {
-					t.Fatalf("takeover signal=%v, want TERM", signal)
-				}
-				alive[pid] = false
-				return nil
-			},
-		}
+	control := recordedComponentControl{
+		prober: armingProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+			if alive[pid] {
+				return identity.Exact{Pid: pid, StartedAt: time.Unix(pid+60, 0), Argv: []string{tags[pid]}, ArgvKnown: true}, identity.Alive, nil
+			}
+			return identity.Exact{}, identity.Dead, nil
+		}),
+		groupAbsent: func(pid int64) (bool, error) { return !alive[pid], nil },
+		signalGroup: func(pid int64, signal syscall.Signal) error {
+			if signal != syscall.SIGTERM {
+				t.Fatalf("takeover signal=%v, want TERM", signal)
+			}
+			alive[pid] = false
+			return nil
+		},
 	}
-	stopped, err := stopTakeoverComponents(root, root, "", 1, false)
+	stopped, err := stopTakeoverComponents(control, root, root, "", 1, false)
 	if err != nil || len(stopped) != len(recordedComponentSet) {
 		t.Fatalf("production takeover stopped=%+v err=%v", stopped, err)
 	}
@@ -839,7 +835,7 @@ func TestTakeoverRefusalNamesTheRecordedComponent(t *testing.T) {
 	prior := enumerateTakeoverProcesses
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
-	_, err = stopTakeoverComponents(root, root, "owner", 1, false)
+	_, err = stopTakeoverComponents(kernelComponentControl(), root, root, "owner", 1, false)
 	var componentFailure *ComponentFailure
 	if !errors.As(err, &componentFailure) || componentFailure.Component != "job-reaper" || !strings.Contains(err.Error(), "no longer tag-authenticated") {
 		t.Fatalf("takeover refusal lost the component and authentication reason: %v", err)
@@ -1042,30 +1038,28 @@ func TestShutdownWithoutOwnerSweepsRecordedComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	priorControl, priorEnumeration := takeoverComponentControl, enumerateTakeoverProcesses
+	priorEnumeration := enumerateTakeoverProcesses
 	absent := map[int64]bool{}
 	var signals []string
-	takeoverComponentControl = func() recordedComponentControl {
-		return recordedComponentControl{
-			prober: armingProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
-				started := map[int64]int64{71: 200, 72: 201}[pid]
-				tag := map[int64]string{71: ownerTag + "-watcher-3", 72: ownerTag + "-reaper-3"}[pid]
-				return identity.Exact{Pid: pid, StartedAt: time.Unix(started, 0), Argv: []string{"metasystem", tag}, ArgvKnown: true}, identity.Alive, nil
-			}),
-			groupAbsent: func(pid int64) (bool, error) { return absent[pid], nil },
-			signalGroup: func(pid int64, signal syscall.Signal) error {
-				signals = append(signals, fmt.Sprintf("%d:%d", pid, signal))
-				absent[pid] = true
-				return nil
-			},
-		}
+	control := recordedComponentControl{
+		prober: armingProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+			started := map[int64]int64{71: 200, 72: 201}[pid]
+			tag := map[int64]string{71: ownerTag + "-watcher-3", 72: ownerTag + "-reaper-3"}[pid]
+			return identity.Exact{Pid: pid, StartedAt: time.Unix(started, 0), Argv: []string{"metasystem", tag}, ArgvKnown: true}, identity.Alive, nil
+		}),
+		groupAbsent: func(pid int64) (bool, error) { return absent[pid], nil },
+		signalGroup: func(pid int64, signal syscall.Signal) error {
+			signals = append(signals, fmt.Sprintf("%d:%d", pid, signal))
+			absent[pid] = true
+			return nil
+		},
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() {
-		takeoverComponentControl, enumerateTakeoverProcesses = priorControl, priorEnumeration
+		enumerateTakeoverProcesses = priorEnumeration
 	})
 
-	report, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1)
+	report, err := shutdownAtWith(control, root, root, root, "metasystem-supervision-owner-test-", 1)
 	if err != nil || !report.Complete() || len(report.Outcomes) != 2 {
 		t.Fatalf("ownerless shutdown = %+v err=%v", report, err)
 	}
@@ -1154,7 +1148,7 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	}
 	now := time.Unix(1000, 0)
 	priorNow, priorSleep := armingNow, armingSleep
-	priorProbe, priorRelease := armingOwnerProbe, releaseLaunchedOwner
+	priorRelease := releaseLaunchedOwner
 	armingNow = func() time.Time { return now }
 	sleeps := 0
 	armingSleep = func(duration time.Duration) {
@@ -1162,7 +1156,7 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 		now = now.Add(duration)
 	}
 	probes := 0
-	armingOwnerProbe = func(pid int64) (identity.Exact, identity.Liveness, error) {
+	ownerProbe := func(pid int64) (identity.Exact, identity.Liveness, error) {
 		probes++
 		if probes < 3 {
 			return identity.Exact{}, identity.Unknown, os.ErrPermission
@@ -1172,11 +1166,12 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	releaseLaunchedOwner = func(command *exec.Cmd) error { return command.Wait() }
 	t.Cleanup(func() {
 		armingNow, armingSleep = priorNow, priorSleep
-		armingOwnerProbe, releaseLaunchedOwner = priorProbe, priorRelease
+		releaseLaunchedOwner = priorRelease
 	})
 
 	clockOptions := armingOptions(clockRoot)
 	clockOptions.WaitScaleMilli = 1
+	clockOptions.ownerProbe = ownerProbe
 	clockOptions.Command = func(...string) (*exec.Cmd, error) {
 		return exec.Command("sh", "-c", "exit 0"), nil
 	}
@@ -1241,9 +1236,8 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 		var mkdirErr error
 		var gate string
 		var holder *ownedHeldProcess
-		priorProbe := armingOwnerProbe
 		readyObserved := false
-		armingOwnerProbe = func(pid int64) (identity.Exact, identity.Liveness, error) {
+		options.ownerProbe = func(pid int64) (identity.Exact, identity.Liveness, error) {
 			if !readyObserved {
 				if holder == nil {
 					t.Fatal("start-gate holder was not constructed before identity probe")
@@ -1251,9 +1245,8 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 				holder.requireReady(t)
 				readyObserved = true
 			}
-			return priorProbe(pid)
+			return (identity.KernelProber{}).Probe(pid)
 		}
-		t.Cleanup(func() { armingOwnerProbe = priorProbe })
 		options.Command = func(args ...string) (*exec.Cmd, error) {
 			gate = processArgument(args, "--gate")
 			mkdirErr = os.Mkdir(gate, 0o755)
@@ -1490,22 +1483,20 @@ func TestTakeoverSweepSignalsLinuxIdentifiedPrePublicationWatcher(t *testing.T) 
 		t.Run(testCase.name, func(t *testing.T) {
 			absent := false
 			var signals []string
-			priorControl, priorEnumeration := takeoverComponentControl, enumerateTakeoverProcesses
-			takeoverComponentControl = func() recordedComponentControl {
-				return recordedComponentControl{
-					prober: armingProbeFunc(func(probed int64) (identity.Exact, identity.Liveness, error) {
-						if probed != pid || absent {
-							return identity.Exact{}, identity.Dead, nil
-						}
-						return identity.Exact{Pid: pid, StartedAt: started, StartTicks: ticks, BootID: bootID, Argv: argv, ArgvKnown: true}, identity.Alive, nil
-					}),
-					groupAbsent: func(int64) (bool, error) { return absent, nil },
-					signalGroup: func(group int64, signal syscall.Signal) error {
-						signals = append(signals, fmt.Sprintf("%d:%d", group, signal))
-						absent = true
-						return nil
-					},
-				}
+			priorEnumeration := enumerateTakeoverProcesses
+			control := recordedComponentControl{
+				prober: armingProbeFunc(func(probed int64) (identity.Exact, identity.Liveness, error) {
+					if probed != pid || absent {
+						return identity.Exact{}, identity.Dead, nil
+					}
+					return identity.Exact{Pid: pid, StartedAt: started, StartTicks: ticks, BootID: bootID, Argv: argv, ArgvKnown: true}, identity.Alive, nil
+				}),
+				groupAbsent: func(int64) (bool, error) { return absent, nil },
+				signalGroup: func(group int64, signal syscall.Signal) error {
+					signals = append(signals, fmt.Sprintf("%d:%d", group, signal))
+					absent = true
+					return nil
+				},
 			}
 			enumerateTakeoverProcesses = func(string) ([]census.Process, error) {
 				return []census.Process{{
@@ -1513,9 +1504,9 @@ func TestTakeoverSweepSignalsLinuxIdentifiedPrePublicationWatcher(t *testing.T) 
 					Alive: true, Argv: testCase.argv, Unreadable: testCase.argv == "",
 				}}, nil
 			}
-			t.Cleanup(func() { takeoverComponentControl, enumerateTakeoverProcesses = priorControl, priorEnumeration })
+			t.Cleanup(func() { enumerateTakeoverProcesses = priorEnumeration })
 
-			outcomes, err := stopTakeoverComponents(root, root, ownerTag, 1000, false)
+			outcomes, err := stopTakeoverComponents(control, root, root, ownerTag, 1000, false)
 			if err != nil {
 				t.Fatalf("takeover sweep: %v", err)
 			}
@@ -1668,7 +1659,7 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 			return
 		}
 		_, _ = stopOwner(root, owner, 1, "test cleanup")
-		_, _ = stopTakeoverComponents(root, root, owner.InstanceTag, 1, false)
+		_, _ = stopTakeoverComponents(kernelComponentControl(), root, root, owner.InstanceTag, 1, false)
 		_ = releaseDeadOwnerLock(root, owner)
 	}
 	t.Cleanup(func() {
@@ -2151,21 +2142,19 @@ func TestReadInventoryCarriesOwnerAndComponentFenceGeneration(t *testing.T) {
 	if err := writeArmingHelperJSON(filepath.Join(SupervisionDir(root), "state.json"), document); err != nil {
 		t.Fatal(err)
 	}
-	priorLiveness, priorControl := armingOwnerLiveness, takeoverComponentControl
+	priorLiveness := armingOwnerLiveness
 	armingOwnerLiveness = func(ArmingOwner) identity.Liveness { return identity.Alive }
-	takeoverComponentControl = func() recordedComponentControl {
-		return recordedComponentControl{
-			prober: &armingComponentProbe{state: identity.Alive, exact: identity.Exact{
-				Pid: 71, StartedAt: time.Unix(200, 0), Argv: []string{"owner-tag-watcher-7"}, ArgvKnown: true,
-			}},
-			groupAbsent: func(int64) (bool, error) { return false, nil },
-		}
+	control := recordedComponentControl{
+		prober: &armingComponentProbe{state: identity.Alive, exact: identity.Exact{
+			Pid: 71, StartedAt: time.Unix(200, 0), Argv: []string{"owner-tag-watcher-7"}, ArgvKnown: true,
+		}},
+		groupAbsent: func(int64) (bool, error) { return false, nil },
 	}
 	t.Cleanup(func() {
-		armingOwnerLiveness, takeoverComponentControl = priorLiveness, priorControl
+		armingOwnerLiveness = priorLiveness
 	})
 
-	items, err := ReadInventory(root, nil)
+	items, err := readInventoryWith(control, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2342,7 +2331,7 @@ func TestOrderlyOwnerWithUnprovenComponentDoesNotAppendReapedRow(t *testing.T) {
 
 	ownerDead := false
 	priorLiveness, priorSignal := armingOwnerLiveness, armingOwnerSignal
-	priorControl, priorEnumeration := takeoverComponentControl, enumerateTakeoverProcesses
+	priorEnumeration := enumerateTakeoverProcesses
 	armingOwnerLiveness = func(ArmingOwner) identity.Liveness {
 		if ownerDead {
 			return identity.Dead
@@ -2357,22 +2346,20 @@ func TestOrderlyOwnerWithUnprovenComponentDoesNotAppendReapedRow(t *testing.T) {
 		}
 		return nil
 	}
-	takeoverComponentControl = func() recordedComponentControl {
-		return recordedComponentControl{
-			prober: &armingComponentProbe{state: identity.Alive, exact: identity.Exact{
-				Pid: 71, StartedAt: time.Unix(200, 0), Argv: []string{component.Tag}, ArgvKnown: true,
-			}},
-			groupAbsent: func(int64) (bool, error) { return false, nil },
-			signalGroup: func(int64, syscall.Signal) error { return nil },
-		}
+	control := recordedComponentControl{
+		prober: &armingComponentProbe{state: identity.Alive, exact: identity.Exact{
+			Pid: 71, StartedAt: time.Unix(200, 0), Argv: []string{component.Tag}, ArgvKnown: true,
+		}},
+		groupAbsent: func(int64) (bool, error) { return false, nil },
+		signalGroup: func(int64, syscall.Signal) error { return nil },
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() {
 		armingOwnerLiveness, armingOwnerSignal = priorLiveness, priorSignal
-		takeoverComponentControl, enumerateTakeoverProcesses = priorControl, priorEnumeration
+		enumerateTakeoverProcesses = priorEnumeration
 	})
 
-	report, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1)
+	report, err := shutdownAtWith(control, root, root, root, "metasystem-supervision-owner-test-", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

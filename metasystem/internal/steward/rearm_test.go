@@ -1265,15 +1265,14 @@ func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 
 func TestSignalFailureNamesStopAttempted(t *testing.T) {
 	bed := newRearmBed(t, true)
-	original := runnerSignal
-	runnerSignal = func(pid int, signal syscall.Signal) error {
+	deps := bed.successDeps(t)
+	deps.signal = func(pid int, signal syscall.Signal) error {
 		if signal == syscall.SIGTERM {
 			return errors.New("injected termination failure")
 		}
-		return original(pid, signal)
+		return syscall.Kill(pid, signal)
 	}
-	t.Cleanup(func() { runnerSignal = original })
-	outcome, err := bed.rearm(t)
+	outcome, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
 	if err == nil || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "stop runner pid") {
 		t.Fatalf("signal failure transition: %+v %v", outcome, err)
 	}

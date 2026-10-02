@@ -195,8 +195,15 @@ func (s *Store) completeForeignCreation(id string, generation int64) error {
 	return fmt.Errorf("%v; run %s record has been failed", verificationErr, id)
 }
 
-var stopSignal = func(pgid int64, signal syscall.Signal) error {
-	return syscall.Kill(int(-pgid), signal)
+// groupSignal is the Store's process-group signal sender: GroupSignal when
+// a test hands one, else a kill of the whole group.
+func (s *Store) groupSignal() func(int64, syscall.Signal) error {
+	if s.GroupSignal != nil {
+		return s.GroupSignal
+	}
+	return func(pgid int64, signal syscall.Signal) error {
+		return syscall.Kill(int(-pgid), signal)
+	}
 }
 
 type stopMechanism struct {
@@ -222,7 +229,7 @@ func (s *Store) stopWithNote(id, note string) (StopOutcome, error) {
 			return fmt.Errorf("no run record %s", id)
 		}
 		held := s.stopHeld(record, note, stopMechanism{
-			proof: s.groupOwnsNonce, signal: stopSignal, escalate: true,
+			proof: s.groupOwnsNonce, signal: s.groupSignal(), escalate: true,
 		})
 		outcome = held.StopOutcome
 		if held.err != nil || held.Result == StopResultNotStopped {

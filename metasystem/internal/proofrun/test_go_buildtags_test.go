@@ -84,7 +84,7 @@ func TestNativeDiscoveryGoListCompletesUnderHeldResourceCustody(t *testing.T) {
 	}
 	admissionRoot, conf := isolatedHostResources(t)
 	ctx := WithResourceCustodyExecutable(context.Background(), engine)
-	lease, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+	lease, err := acquireHostResourcesIn(ctx, admissionRoot, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
