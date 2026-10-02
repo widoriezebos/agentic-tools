@@ -20,3 +20,23 @@ func TestOwnerRejectionCarriesItsRunLineAsTheNextStep(t *testing.T) {
 		t.Fatalf("rejection = %+v", result)
 	}
 }
+
+// A rejection is a rule's refusal: the same command would be refused again,
+// so it offers no retry and its sentence stands alone. A lost race, whose
+// cause passes, offers the same command again.
+func TestOwnerResultOffersARetryOnlyWhenTheCauseMayPass(t *testing.T) {
+	t.Parallel()
+	for _, detail := range []string{
+		"the human approved this intent; unapprove the goal, edit it, then approve the new intent",
+		"goal g1 is not open; set-priority changes live backlog goals only",
+	} {
+		result := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeRejected, Detail: detail}}, 1, intentResult{})
+		if result.Outcome != intentRefused || result.Summary != detail || result.retry != "" || len(result.next) != 0 {
+			t.Fatalf("rejection %q = %+v; want the sentence alone, no retry", detail, result)
+		}
+	}
+	lost := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeLost, Detail: "winner: other-opid"}}, 1, intentResult{})
+	if lost.Outcome != intentRefused || lost.retry != "the goals changed meanwhile; try again" {
+		t.Fatalf("lost race = %+v; want the retry", lost)
+	}
+}

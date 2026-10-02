@@ -1,4 +1,4 @@
-2 jobs running in m1e
+2 jobs running among this host's launches and m1e's jobs
 
 JOB                      GOAL                 KIND            STATE     SINCE
 ● j1:review-verbs-3a7c   verbs-match-intent   review launch   running   10:46

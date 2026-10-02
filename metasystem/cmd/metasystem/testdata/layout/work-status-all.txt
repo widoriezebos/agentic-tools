@@ -1,4 +1,4 @@
-4 jobs known in m1e
+4 jobs known among this host's launches and m1e's jobs
 
 JOB                      GOAL                 KIND              STATE       SINCE
 ○ j1:build-trial-91e2    switch-on-trial      build launch      completed   07:58

@@ -629,6 +629,22 @@ type landingRunData struct {
 	Reasons []string          `json:"reasons,omitempty"`
 }
 
+// wakeWords says why the landing agent was started as a person reads it;
+// --json keeps the lane's own reasons.
+func wakeWords(reasons []string) string {
+	words := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		switch reason {
+		case plain.WakeQueued:
+			reason = "queued work"
+		case plain.WakeProofFinished:
+			reason = "a finished proof"
+		}
+		words = append(words, reason)
+	}
+	return strings.Join(words, " and ")
+}
+
 func runIntentLandingRun(inv *intentInvocation) int {
 	owners, home, record, problem := inv.laneContext(true)
 	if problem != nil {
@@ -657,7 +673,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	details := []string{run.Line}
 	switch run.Outcome {
 	case lane.AgentStarted:
-		summary := "started the landing agent " + run.Launch + " for " + strings.Join(run.Reasons, " and ")
+		summary := "started the landing agent " + run.Launch + " for " + wakeWords(run.Reasons)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status"), nextReason: "shows what it lands",
 			view: func(page *textui.Page) { page.Done(summary) }})

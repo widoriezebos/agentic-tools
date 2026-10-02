@@ -1185,8 +1185,14 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
+		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1),
 			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
+		// A rejection is a rule's refusal: the same command is refused
+		// again, so its sentence is the whole message. Any other outcome
+		// here (a lost race, a passed deadline) has a cause that may pass.
+		if report.result.Outcome != goal.OutcomeRejected {
+			result.retry = "the goals changed meanwhile; try again"
+		}
 		// A rejection whose second line names the command that clears it
 		// ("run: CMD  (why)") carries that command as the next step. A
 		// second line in another form (the helm's force proposal appended
