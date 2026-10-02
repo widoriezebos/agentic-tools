@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 const blockedQuestionSecret = "JBSWY3DPEHPK3PXP"
@@ -37,23 +38,25 @@ func blockedQuestionRoot(t *testing.T) (string, string) {
 	return root, providerDir
 }
 
-// postedQuestion waits, boundedly, for the wait's own poll to deliver the
-// question to the provider, and returns the delivered record.
+// postedQuestion waits for the wait's own poll to deliver the question to
+// the provider, and returns the delivered record. The wait ending first is
+// a failure; the only time bound is the test binary's deadline.
 func postedQuestion(t *testing.T, root, id string, done <-chan struct{}) channel.Question {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Minute)
-	for time.Now().Before(deadline) {
+	var posted channel.Question
+	testenv.Await(t, "the wait's poll to deliver question "+id, func() bool {
 		if q, err := channel.ReadQuestion(root, id); err == nil && q.Thread != nil {
-			return q
+			posted = q
+			return true
 		}
 		select {
 		case <-done:
 			t.Fatal("the wait ended before its poll delivered the question")
-		case <-time.After(100 * time.Millisecond):
+		default:
 		}
-	}
-	t.Fatal("the wait's poll did not deliver the question within two minutes")
-	return channel.Question{}
+		return false
+	})
+	return posted
 }
 
 // replyInThread scripts the person's coded reply in the question's thread.
@@ -145,11 +148,14 @@ func TestBlockedAgentAsksAndTheStopLetsItWait(t *testing.T) {
 
 	replyInThread(t, providerDir, posted, "lift")
 	var answered waited
-	select {
-	case answered = <-finished:
-	case <-time.After(5 * time.Minute):
-		t.Fatal("the background wait did not return the answer within five minutes")
-	}
+	testenv.Await(t, "the background wait to return the answer", func() bool {
+		select {
+		case answered = <-finished:
+			return true
+		default:
+			return false
+		}
+	})
 	ownerLines, _ := answered.result.Data.(map[string]any)["owner"].([]any)
 	if answered.code != 0 || answered.result.Outcome != intentConfirmed || len(ownerLines) == 0 || fmt.Sprint(ownerLines[len(ownerLines)-1]) != "lift" {
 		t.Fatalf("the wait returns the answer: code=%d %+v", answered.code, answered.result)
@@ -214,24 +220,29 @@ func TestGoallessQuestionWaitReturnsTheRecordedAnswer(t *testing.T) {
 		}
 		return metarun.Waiter{}, false
 	}
-	for deadline := time.Now().Add(2 * time.Minute); !registered(); {
+	testenv.Await(t, "the waiting session's human wait to be registered", func() bool {
+		if registered() {
+			return true
+		}
 		select {
 		case <-done:
 			t.Fatalf("the wait ended before registering its human wait: stdout=%q stderr=%q", stdout.String(), stderr.String())
-		case <-time.After(100 * time.Millisecond):
+		default:
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the waiting session's human wait was not registered within two minutes")
-		}
-	}
+		return false
+	})
 	replyInThread(t, providerDir, posted, "return it")
-	select {
-	case code := <-exit:
-		if code != 0 || strings.TrimSpace(stdout.String()) != "return it" {
-			t.Fatalf("goal-less wait: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	var code int
+	testenv.Await(t, "the goal-less wait to return", func() bool {
+		select {
+		case code = <-exit:
+			return true
+		default:
+			return false
 		}
-	case <-time.After(5 * time.Minute):
-		t.Fatal("the goal-less wait did not return within five minutes")
+	})
+	if code != 0 || strings.TrimSpace(stdout.String()) != "return it" {
+		t.Fatalf("goal-less wait: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	if row, ok := humanWait(); !ok || row.State == metarun.WaiterStatePending {
 		t.Fatalf("the human wait ends with the wait: %+v %t", row, ok)

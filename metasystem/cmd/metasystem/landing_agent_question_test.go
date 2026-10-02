@@ -115,6 +115,17 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The lane's goal ledger on its origin: the steward's poll records each
+	// reply in the ledger inbox, as on every installation (Decision 8).
+	writeTestingFixtureFile(t, filepath.Join(module, "plans", "goals", "backlog.md"), goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1}), 0o644)
+	goalSyncMutationGit(t, module, "add", "plans/goals/backlog.md")
+	goalSyncMutationGit(t, module, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "lane ledger fixture")
+	goalSyncMutationGit(t, module, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, module, "update-ref", goal.AcceptedRef, "HEAD")
+	origin := filepath.Join(base, "origin.git")
+	goalSyncMutationGit(t, base, "init", "-q", "--bare", origin)
+	goalSyncMutationGit(t, module, "remote", "add", "origin", origin)
+	goalSyncMutationGit(t, module, "push", "-q", "origin", "HEAD:main")
 	registerLane(t, home, checkout, "a-person", time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
 	module = resolvedPath(module)
 	now := time.Now().UTC()
@@ -130,9 +141,7 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 	tick := func() string {
 		t.Helper()
 		line := keeper.Step()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		if _, err := channelphase.Run(ctx, module); err != nil {
+		if _, err := channelphase.Run(context.Background(), module); err != nil {
 			t.Fatalf("the lane steward's channel duty: %v", err)
 		}
 		return line

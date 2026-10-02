@@ -2,7 +2,7 @@ package channel
 
 import (
 	"context"
-	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -67,32 +67,38 @@ func TestGoallessAskRefusesWhatItCannotRecord(t *testing.T) {
 }
 
 // The answer to a goal-less question is recorded on the question record
-// alone: no goal ledger act, straight to recorded, then receipted and
-// closed as any answer is.
+// alone: its reply has its one inbox record on the ledger as every reply
+// does (Decision 8), no goal is answered on the ledger (Decision 3), and the
+// answer closes locally with no receipt posted (Decision 7).
 func TestGoallessAnswerIsRecordedWithoutTheGoalLedger(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	now := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+	bed, p, _, now := pollLedgerBed(t)
+	if err := os.Remove(questionPath(bed.root, "01J5X0000000000000000000Q0")); err != nil {
+		t.Fatal(err)
+	}
 	q := Question{ID: "01J5X0000000000000000000L0", About: "lane", Kind: "other", Machine: "machine", Lineage: "landing-agent", OpenedAt: now,
 		Facts: []string{"Return the branch?"}, Thread: &MessageRef{ID: "1", ThreadID: "1"}, State: "open"}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+	if err := writeJSON(questionPath(bed.root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
+	history := len(bed.canonicalGoal(t, "g").History)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
-	p := &testProvider{cursor: "done", inbound: []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "return it " + code}}}
-	noLedger := func(string) (goal.Endpoint, error) {
-		return goal.Endpoint{}, errors.New("a goal-less answer reached the goal ledger")
-	}
-	config := PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "UWIDO", TOTPSecret: "JBSWY3DPEHPK3PXP", Machine: "machine", Lineage: "lineage", Provider: p, Now: now}
-	if _, err := pollWithEndpoint(context.Background(), config, noLedger); err != nil {
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "return it " + code}}
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadQuestion(root, q.ID)
+	got, err := ReadQuestion(bed.root, q.ID)
 	if err != nil || got.Answer == nil || got.Answer.Text != "return it" || got.Answer.Phase != "closed" || got.State != "closed" {
 		t.Fatalf("goal-less answer = %+v %v", got, err)
 	}
-	if last := p.posts[len(p.posts)-1]; !strings.Contains(last, "the landing lane") || strings.Contains(last, "ledger operation") {
-		t.Fatalf("the receipt names what was answered and no ledger act: %q", last)
+	if after := len(bed.canonicalGoal(t, "g").History); after != history {
+		t.Fatalf("a goal-less answer wrote %d goal history lines", after-history)
+	}
+	if inbox := bed.inbox(); len(inbox) != 1 {
+		t.Fatalf("the reply's inbox records = %+v; want exactly one", inbox)
+	}
+	if len(p.posts) != 0 {
+		t.Fatalf("an answered goal-less question posts no receipt: %q", p.posts)
 	}
 }
 
