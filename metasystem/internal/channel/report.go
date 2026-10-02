@@ -120,7 +120,7 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 			backlog = backlogStatusLines(p, c.Machine, frontier)
 		}
 		if id := markedNextGoal(p, c.Machine); id != "" && !questionGoals[id] {
-			needs = append(needs, approvalRequestLine(id))
+			needs = append(needs, approvalRequestLine(id, answerCodeOffOrOn(c.RepoRoot)))
 			approvalGoal = id
 		}
 		if frontierErr == nil {
@@ -180,7 +180,7 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 		lines = append(lines, fmt.Sprintf("Undelivered: %d channel messages, oldest %d min", c.Undelivered, age))
 	}
 	text := strings.Join(lines, "\n")
-	if approvalGoal != "" && !strings.Contains(text, approvalRequestLine(approvalGoal)) {
+	if approvalGoal != "" && !strings.Contains(text, approvalRequestLine(approvalGoal, answerCodeOffOrOn(c.RepoRoot))) {
 		approvalGoal = ""
 	}
 	return text, approvalGoal, nil
@@ -254,7 +254,10 @@ func markedNextGoal(p goal.Projection, machine string) string {
 	return marked
 }
 
-func approvalRequestLine(id string) string {
+func approvalRequestLine(id string, codeOff bool) string {
+	if codeOff {
+		return "Needs you: " + featureName(id) + " — Reply in this thread with this token verbatim: start " + id
+	}
 	return "Needs you: " + featureName(id) + " — Reply in this thread with this token verbatim, followed by your code: start " + id
 }
 

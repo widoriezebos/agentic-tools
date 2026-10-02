@@ -63,7 +63,7 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 		case p == nil:
 			return errors.New("no channel provider is configured")
 		}
-		ref, postErr := p.Post(ctx, d, renderQuestion(q), nil)
+		ref, postErr := p.Post(ctx, d, renderQuestion(q, answerCodeOffOrOn(repo)), nil)
 		if postErr != nil {
 			q.Undelivered++
 			outcome = RetryUndelivered

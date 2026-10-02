@@ -1,9 +1,7 @@
 package channel
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -24,20 +22,14 @@ type PollConfig struct {
 	Now                                                                            time.Time
 	MaxDispositions                                                                int
 	FailurePoint                                                                   func(string) error
+	// answerCodeOff is channel.human.answer-code=off, read once per poll.
+	answerCodeOff bool
+	// validateInbox replaces the inbox commit validation in tests.
+	validateInbox func(goal.Endpoint, string) error
 }
 type PollResult struct {
 	Busy                                bool
 	Received, Dispositions, Undelivered int
-}
-type consumedRow struct {
-	Step                            int64 `json:"step"`
-	Destination, Provider, ThreadID string
-	Ref                             MessageRef `json:"ref"`
-	QID                             string     `json:"qid"`
-}
-type cursorRecord struct {
-	Provider string `json:"provider"`
-	Cursor   Cursor `json:"cursor"`
 }
 
 const channelPollInterval = 2 * time.Minute
@@ -67,6 +59,9 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		return result, err
 	}
 	defer held.Release()
+	if c.answerCodeOff, err = AnswerCodeOff(c.RepoRoot); err != nil {
+		return result, err
+	}
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
 		return result, err
@@ -77,7 +72,7 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		}
 		q := &questions[i]
 		if q.State == "open" && q.Thread == nil {
-			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q), nil)
+			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q, c.answerCodeOff), nil)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++
@@ -97,218 +92,60 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		q := &questions[i]
 		if q.Answer != nil && q.Answer.Phase != "closed" {
 			if err = advanceAnswerWithEndpoint(ctx, c, q, resolveEndpoint); err != nil {
-				var postErr receiptPostError
-				if errors.As(err, &postErr) {
-					result.Undelivered++
-					result.Dispositions++
-					continue
-				}
 				return result, scrubErr(err, c)
 			}
 			result.Dispositions++
 		}
 	}
-	threads := []MessageRef{}
-	byThread := map[string]string{}
-	matchedRefs := map[MessageRef]bool{}
 	status := LoadStatusState(c.RepoRoot)
 	statusRoot := status.Ref.ThreadID
 	if statusRoot == "" {
 		statusRoot = status.Ref.ID
 	}
+	threads := []MessageRef{}
 	if status.GoalID != "" && statusRoot != "" {
 		threads = append(threads, MessageRef{ID: status.Ref.ID, ThreadID: statusRoot})
 	}
 	for _, q := range questions {
-		if q.Answer != nil {
-			matchedRefs[q.Answer.Ref] = true
-		}
 		if q.State == "open" && q.Thread != nil {
-			root := q.Thread.ThreadID
-			if root == "" {
-				root = q.Thread.ID
-			}
-			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: root})
-			for _, rejection := range q.Rejected {
-				if rejection.PostRef != nil {
-					threads = append(threads, MessageRef{ID: rejection.PostRef.ID, ThreadID: root})
-				}
-			}
-			byThread[root] = q.ID
+			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: threadRoot(*q.Thread)})
 		}
 	}
-	curPath := filepath.Join(channelRoot(c.RepoRoot), c.Destination, "cursor.json")
-	var old cursorRecord
-	if b, e := os.ReadFile(curPath); e == nil {
-		_ = json.Unmarshal(b, &old)
+	var ep *goal.Endpoint
+	endpoint := func() (goal.Endpoint, error) {
+		if ep == nil {
+			resolved, err := resolveEndpoint(c.RepoRoot)
+			if err != nil {
+				return goal.Endpoint{}, err
+			}
+			ep = &resolved
+		}
+		return *ep, nil
 	}
-	if old.Provider != c.ProviderName {
-		old.Cursor = ""
+	var receiveErr error
+	if c.receiveConfigured() {
+		receiveErr = receiveToInbox(ctx, c, threads, endpoint, &result)
 	}
-	inbound, next, err := c.Provider.Receive(ctx, c.DestinationConfig, threads, old.Cursor)
-	if err != nil {
-		return result, scrubErr(err, c)
+	if err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result); err != nil {
+		return result, errors.Join(receiveErr, err)
 	}
-	result.Received = len(inbound)
-	allDurable := true
-	for _, in := range inbound {
-		if matchedRefs[in.Ref] {
-			continue
-		}
-		if result.Dispositions >= c.MaxDispositions {
-			allDurable = false
-			break
-		}
-		qid := byThread[in.ThreadID]
-		if qid == "" && status.GoalID != "" && in.ThreadID == statusRoot {
-			if err = disposeStatusReplyWithEndpoint(ctx, c, status, in, resolveEndpoint); err != nil {
-				return result, scrubErr(err, c)
-			}
-			result.Dispositions++
-			continue
-		}
-		if qid == "" {
-			if unmatchedAlready(filepath.Join(channelRoot(c.RepoRoot), c.Destination, "unmatched.jsonl"), in.Ref) {
-				continue
-			}
-			if err = appendJSONL(filepath.Join(channelRoot(c.RepoRoot), c.Destination, "unmatched.jsonl"), in); err != nil {
-				return result, err
-			}
-			result.Dispositions++
-			continue
-		}
-		q, err := ReadQuestion(c.RepoRoot, qid)
-		if err != nil {
-			return result, err
-		}
-		if alreadyRejected(q, in.Ref) {
-			continue
-		}
-		answer, code, hasCode := SplitTOTP(in.Text)
-		step, reason := verifyInbound(c, in, code, hasCode)
-		if reason == "" {
-			row := consumedRow{Step: step, Destination: c.Destination, Provider: c.ProviderName, ThreadID: in.ThreadID, Ref: in.Ref, QID: q.ID}
-			ok, e := consume(c.RepoRoot, row, c.Now)
-			if e != nil {
-				return result, e
-			}
-			if !ok {
-				reason = "replayed code"
-			}
-		}
-		if reason != "" {
-			posted := len(q.Rejected) < 3
-			q.Rejected = append(q.Rejected, Rejection{Ref: in.Ref, Reason: reason, At: c.Now, Posted: posted})
-			if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
-				return result, err
-			}
-			if err = fail(c, "rejection-recorded"); err != nil {
-				return result, err
-			}
-			if posted {
-				ref, e := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with your answer and your code", q.Thread)
-				if e != nil {
-					q.Undelivered++
-					result.Undelivered++
-					if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
-						return result, err
-					}
-				} else {
-					if err = fail(c, "rejection-posted"); err != nil {
-						return result, err
-					}
-					q.Rejected[len(q.Rejected)-1].PostRef = &ref
-					if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
-						return result, err
-					}
-				}
-			}
-			result.Dispositions++
-			continue
-		}
-		ulid, e := goal.NewOperationULID()
-		if e != nil {
-			return result, e
-		}
-		opid := goal.Opid(ulid, c.Machine, c.Lineage)
-		approvalULID := ""
-		if q.Kind == "budget-above-norm" && strings.TrimSpace(answer) == q.Wants {
-			approvalULID, e = goal.NewOperationULID()
-			if e != nil {
-				return result, e
-			}
-		}
-		q.Answer = &Answer{Text: answer, UserID: in.UserID, Ref: in.Ref, At: c.Now, Step: step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
-		q.State = "answered"
-		if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
-			return result, err
-		}
-		if err = fail(c, "matched"); err != nil {
-			return result, err
-		}
-		if err = advanceAnswerWithEndpoint(ctx, c, &q, resolveEndpoint); err != nil {
-			return result, scrubErr(err, c)
-		}
-		result.Dispositions++
-	}
-	if allDurable {
-		if err = fail(c, "before-cursor"); err != nil {
-			return result, err
-		}
-		if err = writeJSON(curPath, cursorRecord{Provider: c.ProviderName, Cursor: next}); err != nil {
-			return result, err
-		}
-		if err = fail(c, "cursor"); err != nil {
-			return result, err
-		}
-	}
-	return result, nil
+	return result, receiveErr
 }
 
-func verifyInbound(c PollConfig, in Inbound, code string, hasCode bool) (int64, string) {
-	if strings.TrimSpace(c.HumanUserID) == "" || strings.TrimSpace(c.TOTPSecret) == "" {
-		return 0, "unconfigured"
-	}
-	if in.UserID != c.HumanUserID {
-		return 0, "wrong user"
-	}
-	if !hasCode {
-		return 0, "no code"
-	}
-	if !in.SentAt.IsZero() && c.Now.Sub(in.SentAt) > channelPollInterval+time.Duration(TOTPStep)*time.Second {
-		return 0, fmt.Sprintf("code too old: sent %ds before the poll", int64(c.Now.Sub(in.SentAt)/time.Second))
-	}
-	verificationTime := c.Now
-	if !in.SentAt.IsZero() {
-		verificationTime = in.SentAt
-	}
-	step, ok := VerifyTOTP(c.TOTPSecret, code, verificationTime)
-	if !ok {
-		return 0, "bad code"
-	}
-	return step, ""
-}
-
-func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status StatusState, in Inbound, resolveEndpoint pollEndpointResolver) error {
-	answer, code, hasCode := SplitTOTP(in.Text)
-	step, reason := verifyInbound(c, in, code, hasCode)
-	token := "start " + status.GoalID
-	if reason == "" && strings.TrimSpace(answer) != token {
+// disposeStatusReplyWithEndpoint answers a verified inbox record that replies
+// to the status post: its sender, code and replay were checked when it was
+// committed, so only the start token is read here.
+func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status StatusState, in *goal.ChannelInbound, resolveEndpoint pollEndpointResolver) error {
+	reason := ""
+	if strings.TrimSpace(in.Text) != "start "+status.GoalID {
 		reason = "wrong token"
 	}
 	if reason == "" {
-		row := consumedRow{Step: step, Destination: c.Destination, Provider: c.ProviderName, ThreadID: in.ThreadID, Ref: in.Ref, QID: "status:" + in.ThreadID}
-		ok, err := consume(c.RepoRoot, row, c.Now)
-		if err != nil {
-			return err
+		replyTo := ""
+		if in.ReplyTo != nil {
+			replyTo = *in.ReplyTo
 		}
-		if !ok {
-			reason = "replayed code"
-		}
-	}
-	unmatchedPath := filepath.Join(channelRoot(c.RepoRoot), c.Destination, "unmatched.jsonl")
-	if reason == "" {
-		recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: in.UserID, MessageRef: in.Ref.ThreadID + "/" + in.Ref.ID, ContextID: in.ThreadID, Step: step}
+		recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: in.UserID, MessageRef: replyTo + "/" + in.MessageID, ContextID: replyTo, Step: *in.Step}
 		proof, err := humanauthority.VerifiedChannelAnswerProof(c.RepoRoot, recorded, c.Now)
 		if err != nil {
 			return err
@@ -331,12 +168,11 @@ func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status St
 			return err
 		}
 	}
-	if !unmatchedAlready(unmatchedPath, in.Ref) {
-		if err := appendJSONL(unmatchedPath, in); err != nil {
-			return err
-		}
+	ask := "; reply with the token and your code"
+	if c.answerCodeOff {
+		ask = "; reply with the token"
 	}
-	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with the token and your code", &status.Ref)
+	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+ask, &status.Ref)
 	return err
 }
 
@@ -405,28 +241,9 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 			return err
 		}
 	}
-	if a.Phase == "recorded" {
-		receipt := a.Receipt
-		if receipt == "" && q.Goal == "" {
-			receipt = "recorded as your answer about " + QuestionSubject(*q) + "; the agent that asked reads it"
-		} else if receipt == "" {
-			receipt = "recorded as your word on " + strings.ReplaceAll(q.Goal, "-", " ") + ", ledger operation " + a.Opid
-		}
-		_, err := c.Provider.Post(ctx, c.DestinationConfig, receipt, q.Thread)
-		if err != nil {
-			q.Undelivered++
-			_ = writeJSON(questionPath(c.RepoRoot, q.ID), q)
-			return receiptPostError{err}
-		}
-		a.Phase = "receipted"
-		if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
-			return err
-		}
-		if err = fail(c, "receipted"); err != nil {
-			return err
-		}
-	}
-	if a.Phase == "receipted" {
+	// Decision 7: the answer receipt is no longer posted; a recorded answer,
+	// or a receipted one from an older engine, closes locally.
+	if a.Phase == "recorded" || a.Phase == "receipted" {
 		a.Phase = "closed"
 		q.State = "closed"
 		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
@@ -439,8 +256,6 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	return nil
 }
 
-type receiptPostError struct{ error }
-
 func fail(c PollConfig, phase string) error {
 	if c.FailurePoint != nil {
 		return c.FailurePoint(phase)
@@ -449,65 +264,4 @@ func fail(c PollConfig, phase string) error {
 }
 func scrubErr(err error, c PollConfig) error {
 	return fmt.Errorf("%s", Scrub(err.Error(), append(c.DestinationConfig.Secrets, c.TOTPSecret)...))
-}
-func alreadyRejected(q Question, r MessageRef) bool {
-	for _, x := range q.Rejected {
-		if x.Ref == r {
-			return true
-		}
-	}
-	return false
-}
-func appendJSONL(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err = json.NewEncoder(f).Encode(v); err == nil {
-		err = f.Sync()
-	}
-	return err
-}
-func unmatchedAlready(path string, ref MessageRef) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var in Inbound
-		if json.Unmarshal(scanner.Bytes(), &in) == nil && in.Ref == ref {
-			return true
-		}
-	}
-	return false
-}
-func consume(repo string, row consumedRow, now time.Time) (bool, error) {
-	path := filepath.Join(channelRoot(repo), "totp-consumed.json")
-	rows := []consumedRow{}
-	if b, err := os.ReadFile(path); err == nil {
-		if err = json.Unmarshal(b, &rows); err != nil {
-			return false, err
-		}
-	}
-	min := now.Unix()/TOTPStep - int64(channelPollInterval/time.Second)/TOTPStep - 1
-	kept := rows[:0]
-	for _, x := range rows {
-		if x.Step >= min {
-			kept = append(kept, x)
-		}
-		if x.Step == row.Step {
-			if x.Destination == row.Destination && x.Provider == row.Provider && x.ThreadID == row.ThreadID && x.Ref == row.Ref && x.QID == row.QID {
-				return true, nil
-			}
-			return false, nil
-		}
-	}
-	kept = append(kept, row)
-	return true, writeJSON(path, kept)
 }
