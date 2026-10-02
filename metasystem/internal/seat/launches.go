@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -87,9 +88,10 @@ func launchJobs(root, store string) ([]JobRecord, []string) {
 			}
 			goal = goals[record.ID]
 		}
+		started := launchTime(record.StartedAt)
 		job := JobRecord{
 			Job: record.ID, Role: launchRole(record), Goal: goal, Round: record.Round,
-			StartedAt: record.StartedAt, CreatedAt: record.StartedAt, Status: status,
+			StartedAt: started, CreatedAt: started, Status: status,
 		}
 		if record.MaxRounds > 0 {
 			limit := record.MaxRounds
@@ -98,6 +100,17 @@ func launchJobs(root, store string) ([]JobRecord, []string) {
 		records = append(records, job)
 	}
 	return records, problems
+}
+
+// launchTime is a launch's start in presence's own form: a launch stamps it
+// to the microsecond, and presence times carry whole seconds, so an
+// unconverted stamp would read as a job with no start and no minutes.
+func launchTime(value string) string {
+	at, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	return FormatTime(at)
 }
 
 // launchStatus is a launch's state in the job vocabulary: running is being
