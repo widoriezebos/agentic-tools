@@ -606,7 +606,10 @@ func isReviewRole(role string) bool {
 // briefAuthority is brief_authority.
 func (s *session) briefAuthority(brief, baseTree string) error {
 	_, err := dispatch.ReadBriefAdmissionAtRoot(brief, s.root, baseTree, s.repoScope, false)
-	return s.verbFailure(err)
+	if err != nil {
+		s.noteRefusal(err)
+	}
+	return err
 }
 
 // appendReturnPathForm is append_return_path_form.
