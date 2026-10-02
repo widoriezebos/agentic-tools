@@ -138,7 +138,11 @@ func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, 
 	if cfg.BreachStopReady != nil && !cfg.BreachStopReady() {
 		return nil
 	}
-	return runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop, cfg.Stopping)
+	reports := runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop, cfg.Stopping)
+	// The stop producer is unchanged; a completed stop also tells the
+	// person, once per stopped goal revision.
+	reportBreachStopNotices(repoRoot, reports, cfg.now())
+	return reports
 }
 
 func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
@@ -361,6 +365,7 @@ func defaultTickContinuationDependencies() tickContinuationDependencies {
 			evaluate: evaluateHealthRoles,
 			now:      tickHealthNow,
 			deliver:  deliver,
+			lane:     hostLaneSilence,
 		},
 	}
 }
@@ -505,6 +510,7 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 		evaluate: evaluateHealthRoles,
 		now:      tickHealthNow,
 		deliver:  deliver,
+		lane:     hostLaneSilence,
 	})
 }
 
@@ -512,6 +518,9 @@ type tickHealthDependencies struct {
 	evaluate healthRoleEvaluator
 	now      func() time.Time
 	deliver  func(string, string) error
+	// lane reads the host landing lane for the lane-silent signal; nil
+	// reads no lane.
+	lane func(string, time.Time) LaneSilence
 }
 
 func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
@@ -548,6 +557,12 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	}
 	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
+	}
+	if dependencies.lane != nil {
+		at := healthNow()
+		if err := updateLaneSilentEpisodes(repoRoot, dependencies.lane(repoRoot, at), at); err != nil {
+			return fmt.Errorf("update lane-silent alert episode: %w", err)
+		}
 	}
 	return nil
 }
