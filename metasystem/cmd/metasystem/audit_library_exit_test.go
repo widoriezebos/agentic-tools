@@ -73,14 +73,14 @@ func TestAuditNoLibraryExitsFromAGoroutineOrSelect(t *testing.T) {
 func TestAuditLibraryExitWitnessSeesEachWay(t *testing.T) {
 	t.Parallel()
 	for source, want := range map[string]int{
-		`package p; import "os"; func f() { go func() { os.Exit(1) }() }`:                                                                       1,
-		`package p; import ("os"; "time"); func f(c chan int) { select { case <-c: case <-time.After(time.Second): os.Exit(143) } }`:            1,
+		`package p; import "os"; func f() { go func() { os.Exit(1) }() }`:                                                                         1,
+		`package p; import ("os"; "time"); func f(c chan int) { select { case <-c: case <-time.After(time.Second): os.Exit(143) } }`:              1,
 		`package p; import ("os"; "time"); func f(c chan int) { go func() { select { case <-c: return; case <-time.After(1): }; os.Exit(2) }() }`: 1,
-		`package p; import ("os"; "time"); func f(c chan int) { go func() { select { case <-c: os.Exit(3) } }() }`:                              1,
-		`package p; import "syscall"; func f() { go syscall.Exit(1) }`:                                                                          1,
-		`package main; import "os"; func f() { go func() { os.Exit(1) }() }`:                                                                    0,
-		`package p; import "os"; func f() { os.Exit(1) }`:                                                                                       0,
-		`package p; func f(exit func(int), c chan int) { go func() { <-c; exit(1) }() }`:                                                        0,
+		`package p; import ("os"; "time"); func f(c chan int) { go func() { select { case <-c: os.Exit(3) } }() }`:                                1,
+		`package p; import "syscall"; func f() { go syscall.Exit(1) }`:                                                                            1,
+		`package main; import "os"; func f() { go func() { os.Exit(1) }() }`:                                                                      0,
+		`package p; import "os"; func f() { os.Exit(1) }`:                                                                                         0,
+		`package p; func f(exit func(int), c chan int) { go func() { <-c; exit(1) }() }`:                                                          0,
 	} {
 		fileSet := token.NewFileSet()
 		parsed, err := parser.ParseFile(fileSet, "x.go", source, 0)
