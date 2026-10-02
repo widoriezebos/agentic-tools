@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 40
+- Sequence: 39
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without a same-input comparison a behaviour change hides behind a text change, as a Stop-message build did on 2026-09-13; novelty 2: the engine has no notion of running one input against two trees; exposure 3: every landing that changes an output the seat or the human reads; accumulation 2: each hand-crafted comparison is redone per landing"
 - Tier: 2
 - Intent: What: A command that runs the same input through current main and through a proposed change and shows where their outputs differ (a decision, only text, or only evidence), so a change that claims to change only wording can be proven to change only wording. Why: Twice in September a change altered a decision while claiming to be wording only, and was caught only by a comparison made by hand. Pros: Proves "text only" claims with one reusable tool instead of one-off scripts. Cons: A general command is sizeable work, and the case that triggered it is already covered by a dedicated audit test.
 - Origin: human
 - Next step: Next: When it comes back, design the comparison command (what an input is, how main's version is set up beside the change, how differences are classified) and the declaration a landing carries; then build. Done when: a landing declared as text-only is refused when the comparison shows a changed decision.
 - OpenedAt: 2026-09-14T19:26:09Z
-- Revision: 127
+- Revision: 128
 - BudgetExceptions: 0
 - Parked: by=human:wido at=2026-09-30T18:43:52Z because=Parked: the case that caused it (stop decisions) is now covered by an audit test. Bring it back when another change declared as wording-only turns out to have changed a decision.
 
@@ -141,4 +141,5 @@ History:
 - 2026-10-02T20:59:33Z R5QYQM97D0V1V5DE0FS4J7J0M6-m1e-9c612d71 done actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,machinery-blocks-of-2026-10-02,one-goal-act-one-ledger-commit,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:43 to=2:42
 - 2026-10-02T20:59:57Z SX5WNT2FENZZCCVKJXH1FB3F4R-m1e-9c612d71 abandon actor=human:Wido targets=land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:42 to=2:41
 - 2026-10-02T21:00:16Z 64WRXC2N0XRTJC4F3K853E30DP-m1e-9c612d71 done actor=human:Wido targets=actionable-metrics,failed-job-attention,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,machinery-blocks-of-2026-10-02,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:41 to=2:40
-Integrity: sha256=371e13c6830efca0db969dda3a3a409719c8f57c4841567d0d2d2840813cd708
+- 2026-10-02T21:00:28Z K4A0AE4BVRC9XS7D07FWCP8YB2-m1e-9c612d71 abandon actor=human:Wido targets=adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:40 to=2:39
+Integrity: sha256=df027dbf1791bfe2e765a2111b5c34ed9c2900a6343d4749a20d6df57c1e98df
