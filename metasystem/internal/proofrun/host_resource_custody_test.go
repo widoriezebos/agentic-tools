@@ -409,7 +409,6 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 	}
 	directory, conf, watchdog, workerPID, grandPID, ready, grandRelease := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7], os.Args[separator+8]
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
 	if err != nil {
 		t.Fatal(err)

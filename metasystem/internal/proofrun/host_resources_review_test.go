@@ -293,7 +293,6 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 		t.Fatal("nested custody release descriptor path is unavailable")
 	}
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	if mode == "launcher" {
 		fixture := newOwnershipFixture(t)
 		attempt, _ := fixture.reserve("nested-custody", "nested-custody-plan", map[string]string{"native": strings.Repeat("d", 64)}, "", "", 0)
@@ -567,7 +566,6 @@ func TestHostResourceReviewSubprocess(t *testing.T) {
 	}
 	directory, conf, class, resource, mode := os.Args[separator+1], os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5]
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	var exclusive []string
 	if resource != "" {
 		exclusive = []string{resource}

@@ -1461,6 +1461,12 @@ func FinalizeAttemptLocked(root, id, result string, exitStatus int, reason strin
 // FinalizeAttemptWithTestResultLocked atomically commits the terminal state
 // and the normalized schema-2 testing result under the existing proof lock.
 func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int, reason string, deliveryReceipt json.RawMessage, testResult *TestResult, now time.Time) (Attempt, error) {
+	return finalizeAttemptLocked(root, id, result, exitStatus, reason, deliveryReceipt, testResult, now)
+}
+
+// finalizeAttemptLocked takes the end sample with options, so a caller can
+// hand the sample its readers; the exported finalizers pass none.
+func finalizeAttemptLocked(root, id, result string, exitStatus int, reason string, deliveryReceipt json.RawMessage, testResult *TestResult, now time.Time, options ...loadSampleOption) (Attempt, error) {
 	attempt, err := ReadAttempt(root, id)
 	if err != nil {
 		return Attempt{}, err
@@ -1512,7 +1518,7 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 	// load caused, and carries the sample without the label. An attempt
 	// reserved before the attribution landed has no start sample, and the
 	// record says so rather than inventing one.
-	end := sampleLoad(root, id, attempt.Launcher.Pid, now)
+	end := sampleLoad(root, id, attempt.Launcher.Pid, now, options...)
 	if attempt.Load == nil {
 		attempt.Load = &AttemptLoad{Start: LoadSample{Sample: hostload.Sample{Detail: "not sampled at start"}}}
 	}

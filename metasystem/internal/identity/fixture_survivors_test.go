@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type fixtureScanProber struct {
@@ -49,20 +51,39 @@ func fixtureWord(t *testing.T, key FixtureKey) string {
 	return fixtureOwnerPrefix + encoded
 }
 
-func installFixtureScanTable(t *testing.T, table fixtureTable) {
-	oldPids, oldProber, oldScope := survivorPids, fixtureSurvivorProber, fixtureSurvivorScope
-	survivorPids = func() ([]int64, error) {
-		pids := make([]int64, 0, len(table))
-		for pid := range table {
-			pids = append(pids, pid)
-		}
-		return pids, nil
+// Pids, Group, Session and Parent make a fixtureTable the test's own process
+// table, read live, so a process the test deletes is gone from the next scan.
+func (table fixtureTable) Pids() ([]int64, error) {
+	pids := make([]int64, 0, len(table))
+	for pid := range table {
+		pids = append(pids, pid)
 	}
-	fixtureSurvivorProber = table
-	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+	return pids, nil
+}
+
+func (table fixtureTable) Group(pid int64) (int64, error) {
+	if _, ok := table[pid]; !ok {
+		return 0, unix.ESRCH
+	}
+	return 900, nil
+}
+
+func (table fixtureTable) Session(pid int64) (int64, error) {
+	if _, ok := table[pid]; !ok {
+		return 0, unix.ESRCH
+	}
+	return 901, nil
+}
+
+func (table fixtureTable) Parent(pid int64) (int64, bool) { _, ok := table[pid]; return 0, ok }
+
+// fixtureScanSource is the test's own scan source: exactly table's pids,
+// probed from table, each in group 900 and session 901 unless the test
+// scripts its scope. It is handed to the call; no package variable changes.
+func fixtureScanSource(table fixtureTable) fixtureSurvivorSource {
+	return fixtureSurvivorSource{processes: table, prober: table, scope: func(pid int64) FixtureProcessScope {
 		return FixtureProcessScope{Pgid: 900, Sid: 901, Signalable: true}
-	}
-	t.Cleanup(func() { survivorPids, fixtureSurvivorProber, fixtureSurvivorScope = oldPids, oldProber, oldScope })
+	}}
 }
 
 func TestCleanupIsScopedToTheFixtureKey(t *testing.T) {
@@ -74,21 +95,21 @@ func TestCleanupIsScopedToTheFixtureKey(t *testing.T) {
 	childB := fixtureExact(702, 72)
 	childB.Environ, childB.EnvironKnown = []string{fixtureWord(t, keyB)}, true
 	table := fixtureTable{700: fixtureExact(700, 70), 701: childA, 702: childB}
-	installFixtureScanTable(t, table)
-	got, err := FixtureSurvivors(keyA)
+	source := fixtureScanSource(table)
+	got, err := source.survivors(keyA)
 	if err != nil || len(got) != 1 || got[0].Ref.Pid != 701 {
 		t.Fatalf("FixtureSurvivors(key A) = %#v, %v; want child A only", got, err)
 	}
-	got, err = FixtureSurvivorsOfDeadOwner(table, owner)
+	got, err = source.survivorsOfDeadOwner(table, owner)
 	if err == nil || got != nil {
 		t.Fatalf("live-owner scan = %#v, %v; want no results and an error", got, err)
 	}
-	got, err = FixtureSurvivorsOfDeadOwner(fakeProber{state: Unknown}, owner)
+	got, err = source.survivorsOfDeadOwner(fakeProber{state: Unknown}, owner)
 	if err == nil || got != nil {
 		t.Fatalf("unknown-owner scan = %#v, %v; want no results and an error", got, err)
 	}
 	delete(table, 700)
-	got, err = FixtureSurvivorsOfDeadOwner(table, owner)
+	got, err = source.survivorsOfDeadOwner(table, owner)
 	if err != nil || len(got) != 2 || got[0].Ref.Pid != 701 || got[0].Carrier != FixtureCarrierArgvWord ||
 		got[1].Ref.Pid != 702 || got[1].Carrier != FixtureCarrierEnvironment {
 		t.Fatalf("dead-owner scan = %#v, %v; want argv child then environment child", got, err)
@@ -102,11 +123,11 @@ func TestFixtureScanClassifiesScopedUnreadableProcess(t *testing.T) {
 	child.Argv, child.ArgvKnown = []string{"/bin/sh", fixtureWord(t, key)}, true
 	unreadable := fixtureExact(702, 72)
 	table := fixtureTable{701: child, 702: unreadable}
-	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+	source := fixtureScanSource(table)
+	source.scope = func(pid int64) FixtureProcessScope {
 		return FixtureProcessScope{Pgid: 701, Sid: pid + 100, Signalable: true}
 	}
-	got, err := FixtureSurvivorsOfDeadOwner(table, owner)
+	got, err := source.survivorsOfDeadOwner(table, owner)
 	if err != nil || len(got) != 2 || got[1].Class != FixtureSurvivorUnreadable {
 		t.Fatalf("scan = %#v, %v; want a separate unreadable class", got, err)
 	}
@@ -120,11 +141,11 @@ func TestFixtureScanClassifiesGoTmpUnreadableProcess(t *testing.T) {
 	unreadable := fixtureExact(702, 72)
 	unreadable.Exe, unreadable.ExeKnown = filepath.Join(t.TempDir(), "go-tmp", "TestOther99", "metasystem"), true
 	table := fixtureTable{701: child, 702: unreadable}
-	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+	source := fixtureScanSource(table)
+	source.scope = func(pid int64) FixtureProcessScope {
 		return FixtureProcessScope{Pgid: pid, Sid: pid + 100, Signalable: true}
 	}
-	got, err := FixtureSurvivorsOfDeadOwner(table, owner)
+	got, err := source.survivorsOfDeadOwner(table, owner)
 	if err != nil || len(got) != 2 || got[1].Ref.Pid != 702 || got[1].Class != FixtureSurvivorUnreadable {
 		t.Fatalf("scan = %#v, %v; want the unrelated go-tmp process in the unreadable class", got, err)
 	}
@@ -139,8 +160,8 @@ func TestFixtureSurvivorsRequiresUnreadableProcessToBeLedByCertainSurvivor(t *te
 	shared := fixtureExact(703, 73)
 	shared.Exe, shared.ExeKnown = filepath.Join(t.TempDir(), "go-tmp", "TestOther99", "metasystem"), true
 	table := fixtureTable{701: child, 702: led, 703: shared, 704: fixtureExact(704, 74)}
-	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+	source := fixtureScanSource(table)
+	source.scope = func(pid int64) FixtureProcessScope {
 		switch pid {
 		case 701:
 			return FixtureProcessScope{Pgid: 900, Sid: 1001, Signalable: true}
@@ -152,7 +173,7 @@ func TestFixtureSurvivorsRequiresUnreadableProcessToBeLedByCertainSurvivor(t *te
 			return FixtureProcessScope{Pgid: pid, Sid: pid + 100, Signalable: true}
 		}
 	}
-	got, err := FixtureSurvivors(key)
+	got, err := source.survivors(key)
 	if err != nil || len(got) != 2 || got[0].Ref.Pid != 701 || got[0].Class != FixtureSurvivorCertain ||
 		got[0].Carrier != FixtureCarrierArgvWord || got[1].Ref.Pid != 702 ||
 		got[1].Class != FixtureSurvivorUnreadable || got[1].Carrier != "" {
@@ -176,8 +197,8 @@ func TestFixtureScanUsesOwnershipRecordWhereTestRan(t *testing.T) {
 			child := fixtureExact(701, 71)
 			child.Exe, child.ExeKnown = fixtureRecordExecutable(t, test.directory, key), true
 			table := fixtureTable{701: child}
-			installFixtureScanTable(t, table)
-			got, err := FixtureSurvivorsOfDeadOwner(table, owner)
+			source := fixtureScanSource(table)
+			got, err := source.survivorsOfDeadOwner(table, owner)
 			if err != nil || len(got) != test.want || test.want == 1 && (got[0].Ref.Pid != 701 || got[0].Class != FixtureSurvivorCertain || got[0].Carrier != FixtureCarrierRecord) {
 				t.Fatalf("record-backed scan = %#v, %v; want %d certain record survivors", got, err, test.want)
 			}
@@ -190,12 +211,12 @@ func TestFixtureScanUsesOwnershipRecordWhereTestRan(t *testing.T) {
 		child.Exe, child.ExeKnown = fixtureRecordExecutable(t, "TestRecord", recordKey), true
 		child.Environ, child.EnvironKnown = []string{fixtureWord(t, tagKey)}, true
 		table := fixtureTable{703: child}
-		installFixtureScanTable(t, table)
-		got, err := FixtureSurvivors(recordKey)
+		source := fixtureScanSource(table)
+		got, err := source.survivors(recordKey)
 		if err != nil || len(got) != 0 {
 			t.Fatalf("record-key scan = %#v, %v; want tagged process excluded", got, err)
 		}
-		got, err = FixtureSurvivors(tagKey)
+		got, err = source.survivors(tagKey)
 		if err != nil || len(got) != 1 || got[0].Ref.Pid != 703 || got[0].Class != FixtureSurvivorCertain || got[0].Carrier != FixtureCarrierEnvironment {
 			t.Fatalf("tag-key scan = %#v, %v; want pid 703 as one certain environment survivor", got, err)
 		}
@@ -254,12 +275,6 @@ func TestFixtureScanReadsTheGivenSource(t *testing.T) {
 		},
 		unknown: map[int64]bool{801: true},
 	}
-	oldPids, oldProber, oldScope := survivorPids, fixtureSurvivorProber, fixtureSurvivorScope
-	survivorPids = func() ([]int64, error) { return nil, errors.New("package pid source used") }
-	fixtureSurvivorProber = fakeProber{state: Unknown, err: errors.New("package prober used")}
-	fixtureSurvivorScope = func(int64) FixtureProcessScope { panic("package scope used") }
-	t.Cleanup(func() { survivorPids, fixtureSurvivorProber, fixtureSurvivorScope = oldPids, oldProber, oldScope })
-
 	pids := []int64{900, 901, 902, 903, 904, 905}
 	got, err := ScanFixtureSurvivors(pids, prober, func(pid int64) FixtureProcessScope {
 		return FixtureProcessScope{Pgid: pid, Sid: pid, Ppid: 1, Signalable: true}

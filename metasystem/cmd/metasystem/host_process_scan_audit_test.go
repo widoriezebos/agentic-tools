@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -249,5 +250,294 @@ func scan() {
 		reads[1] != (kernelGroupRead{reader: "syscall.Getsid", line: 20}) ||
 		reads[2] != (kernelGroupRead{reader: "syscall.Getpgid", line: 23}) {
 		t.Fatalf("looped reads = %+v; want sys.Getpgid at 19, syscall.Getsid at 20 and syscall.Getpgid at 23", reads)
+	}
+}
+
+// processSeamMarkers are the names whose mention makes a package variable a
+// process-table seam: identity's host-table readers and the table type; the
+// kernel's per-process group and session reads count too (kernelGroupReaders).
+// A one-pid identity.Prober seam is not a table: it answers for the pid a
+// test names, never for another test's processes.
+var processSeamMarkers = map[string]bool{
+	"AllPids": true, "TakeProcessCensus": true, "KernelProcessTable": true, "ProcessTable": true,
+}
+
+type processSeamAssignment struct {
+	file, seam string
+	line       int
+}
+
+// mentionsProcessSeam reports whether node names a process seam marker:
+// identity's (unqualified inside identity itself) or unix/syscall Getpgid
+// and Getsid.
+func mentionsProcessSeam(node ast.Node, file *ast.File, insideIdentity bool) bool {
+	identityLocal := importedAs(file, identityImportPath, "identity")
+	kernel := map[string]bool{}
+	for path := range kernelGroupReaderPackages {
+		if local := importedAs(file, path, filepath.Base(path)); local != "" {
+			kernel[local] = true
+		}
+	}
+	found := false
+	ast.Inspect(node, func(child ast.Node) bool {
+		switch expression := child.(type) {
+		case *ast.SelectorExpr:
+			if pkg, ok := expression.X.(*ast.Ident); ok {
+				if identityLocal != "" && pkg.Name == identityLocal && processSeamMarkers[expression.Sel.Name] ||
+					kernel[pkg.Name] && kernelGroupReaders[expression.Sel.Name] {
+					found = true
+				}
+			}
+			return !found
+		case *ast.Ident:
+			if insideIdentity && processSeamMarkers[expression.Name] {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// processSeamAssignments lists the assignments in one package's test files
+// to a package-level variable its production files declare as a process
+// seam: a variable whose type or value names a process-table reader, or
+// whose type is a struct of the package that holds one. TestMain alone may
+// set such a variable, once, before any test runs.
+func processSeamAssignments(fileSet *token.FileSet, production, tests map[string]*ast.File, insideIdentity bool) []processSeamAssignment {
+	seamTypes := map[string]bool{}
+	for _, file := range production {
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range general.Specs {
+				if typeSpec := spec.(*ast.TypeSpec); mentionsProcessSeam(typeSpec.Type, file, insideIdentity) {
+					seamTypes[typeSpec.Name.Name] = true
+				}
+			}
+		}
+	}
+	seams := map[string]bool{}
+	for _, file := range production {
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range general.Specs {
+				valueSpec := spec.(*ast.ValueSpec)
+				seam := false
+				if valueSpec.Type != nil {
+					if named, ok := valueSpec.Type.(*ast.Ident); ok && seamTypes[named.Name] || mentionsProcessSeam(valueSpec.Type, file, insideIdentity) {
+						seam = true
+					}
+				}
+				for _, value := range valueSpec.Values {
+					if mentionsProcessSeam(value, file, insideIdentity) {
+						seam = true
+					}
+				}
+				for _, name := range valueSpec.Names {
+					if seam {
+						seams[name.Name] = true
+					}
+				}
+			}
+		}
+	}
+	if len(seams) == 0 {
+		return nil
+	}
+	var found []processSeamAssignment
+	names := make([]string, 0, len(tests))
+	for name := range tests {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, declaration := range tests[name].Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil || function.Recv == nil && function.Name.Name == "TestMain" {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				assignment, ok := node.(*ast.AssignStmt)
+				if !ok || assignment.Tok == token.DEFINE {
+					return true
+				}
+				for _, target := range assignment.Lhs {
+					root := target
+					for {
+						switch expression := root.(type) {
+						case *ast.SelectorExpr:
+							root = expression.X
+							continue
+						case *ast.IndexExpr:
+							root = expression.X
+							continue
+						case *ast.ParenExpr:
+							root = expression.X
+							continue
+						case *ast.StarExpr:
+							root = expression.X
+							continue
+						}
+						break
+					}
+					if identifier, ok := root.(*ast.Ident); ok && identifier.Obj == nil && seams[identifier.Name] {
+						found = append(found, processSeamAssignment{file: name, seam: identifier.Name, line: fileSet.Position(identifier.Pos()).Line})
+					}
+				}
+				return true
+			})
+		}
+	}
+	return found
+}
+
+// TestAuditNoTestAssignsAProcessSeam: a package variable holding a process
+// table or a group or session reader that a test swaps is shared by every
+// parallel test of the package, so one test's scripted processes decide
+// another's verdict, and the race detector sees the write (flaky-test
+// clusters B and F). A test hands its table per call or per struct;
+// TestMain alone sets a package default, before any test runs.
+func TestAuditNoTestAssignsAProcessSeam(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	type packageFiles struct{ production, tests map[string]*ast.File }
+	packages := map[string]*packageFiles{}
+	fileSet := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if path != root && (name == "testdata" || name == "vendor" || name == "node_modules" || strings.HasPrefix(name, ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(filepath.Dir(relative)) + ":" + parsed.Name.Name
+		files := packages[key]
+		if files == nil {
+			files = &packageFiles{production: map[string]*ast.File{}, tests: map[string]*ast.File{}}
+			packages[key] = files
+		}
+		if strings.HasSuffix(name, "_test.go") {
+			files.tests[relative] = parsed
+		} else {
+			files.production[relative] = parsed
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the Go tree: %v", err)
+	}
+	for key, files := range packages {
+		insideIdentity := strings.HasPrefix(key, "internal/identity:")
+		for _, assignment := range processSeamAssignments(fileSet, files.production, files.tests, insideIdentity) {
+			t.Errorf("%s:%d assigns the package process seam %s; hand the test's table or group reader to the call or the struct instead (TestMain alone may set a package default)",
+				assignment.file, assignment.line, assignment.seam)
+		}
+	}
+}
+
+// The seam audit finds an assignment to a package variable whose type is a
+// struct holding a process table, to one defaulting to an identity reader
+// (unqualified inside identity), and to one whose value reads Getpgid, in a
+// test, a helper and a cleanup; it leaves TestMain, a local of the same
+// name, and a variable with no process seam alone.
+func TestAuditNoTestAssignsAProcessSeamFindsEverySwap(t *testing.T) {
+	t.Parallel()
+	production := `package p
+
+import (
+	id "` + identityImportPath + `"
+	"golang.org/x/sys/unix"
+)
+
+type readers struct {
+	table id.ProcessTable
+	count int
+}
+
+var seams readers
+var pids = id.AllPids
+var scope = func(pid int) int { group, _ := unix.Getpgid(pid); return group }
+var plain = 3
+`
+	tests := `package p
+
+import "testing"
+
+func TestMain(m *testing.M) { seams = readers{} }
+
+func helper(t *testing.T) {
+	previous := seams
+	seams.table = nil
+	t.Cleanup(func() { seams = previous })
+}
+
+func TestSwap(t *testing.T) {
+	pids = nil
+	scope = nil
+	plain = 4
+	seams := readers{}
+	seams.count = 1
+}
+`
+	identitySource := `package identity
+
+func AllPids() ([]int64, error) { return nil, nil }
+
+var survivorPids = AllPids
+`
+	identityTest := `package identity
+
+import "testing"
+
+func TestSurvivors(t *testing.T) { survivorPids = nil }
+`
+	fileSet := token.NewFileSet()
+	parse := func(name, source string) *ast.File {
+		parsed, err := parser.ParseFile(fileSet, name, source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	got := processSeamAssignments(fileSet, map[string]*ast.File{"p.go": parse("p.go", production)},
+		map[string]*ast.File{"p_test.go": parse("p_test.go", tests)}, false)
+	want := []processSeamAssignment{
+		{file: "p_test.go", seam: "seams", line: 9}, {file: "p_test.go", seam: "seams", line: 10},
+		{file: "p_test.go", seam: "pids", line: 14}, {file: "p_test.go", seam: "scope", line: 15},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("assignments = %+v; want %+v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("assignments = %+v; want %+v", got, want)
+		}
+	}
+	inside := processSeamAssignments(fileSet, map[string]*ast.File{"identity.go": parse("identity.go", identitySource)},
+		map[string]*ast.File{"identity_test.go": parse("identity_test.go", identityTest)}, true)
+	if len(inside) != 1 || inside[0].seam != "survivorPids" || inside[0].line != 5 {
+		t.Fatalf("identity assignments = %+v; want survivorPids at line 5", inside)
 	}
 }
