@@ -1,6 +1,6 @@
 # critique-stops-on-convergence
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
@@ -9,12 +9,9 @@
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- NormApproval: approvedRef=QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=8
-- Approved: by=human:Wido at=2026-10-02T11:43:41Z revision=9 opid=QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 authority=proven digest=10f1a396550c31105306bd6e6bb5b71dd3489c1737301efa0f0e03515b147f25 episode=9
 
 History:
 - 2026-10-02T10:12:16Z DGM1ZK0JGJ8198MGJ0A44NHWHE-m1e-9c612d71 open actor=human:Wido targets=critique-stops-on-convergence
@@ -26,4 +23,5 @@ History:
 - 2026-10-02T10:24:58Z MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:19:09Z 6QW1PNP9G71DNQZNRZC9RDC29J-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=critique-stops-on-convergence from=1:27 to=1:3 requested-sequence=3
 - 2026-10-02T11:43:41Z QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
-Integrity: sha256=ec3b0715fe0c35a19493a024cdb7f7b939c77e62491b01c36bf348406e88fe0a
+- 2026-10-02T11:51:16Z Z0AMFKKG6RX8JKC8V477KGM367-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=fold Wido's 2026-10-02 steward-watch ruling into the intent
+Integrity: sha256=410d303d12b3ae29d1535417dfcdbe98ad61f8ef7a091df08672abb2dd3ab935
