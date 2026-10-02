@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -146,6 +147,13 @@ func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 		},
 		Tips:    gitGoalTips,
 		Machine: goal.ResolveMachine,
+		OpenQuestions: func(root string) []goal.OpenQuestion {
+			stateRoot, err := goal.ResolveStateRoot(root)
+			if err != nil {
+				return nil
+			}
+			return channel.GoalOpenQuestions(stateRoot)
+		},
 		Gate: func(root string) (goal.GateSettings, error) {
 			stateRoot, err := goal.ResolveStateRoot(root)
 			if err != nil {
@@ -348,6 +356,9 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 	tips, err := dependencies.Tips(repoRoot, shared.Landing)
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, "the goal branch tips cannot be read for the landing gate: " + err.Error()}, nil, true
+	}
+	if dependencies.OpenQuestions != nil {
+		shared.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
 	}
 	world := SeatWorldFrom(shared, live, settings, tips, now)
 	if owned && !seatStepDue(world) && holdsForeign(world) {

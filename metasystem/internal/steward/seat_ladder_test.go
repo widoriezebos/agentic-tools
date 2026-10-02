@@ -70,6 +70,8 @@ type seatBed struct {
 	tips     map[string]string
 	fence    string
 	settings goal.GateSettings
+	// questions are the open channel questions the ladder reads.
+	questions []goal.OpenQuestion
 }
 
 func newSeatBed(t *testing.T, goals ...*goal.GoalFile) *seatBed {
@@ -131,6 +133,9 @@ func (b *seatBed) seatDependencies() *seatDependencies {
 		Fence:    func(string) (bool, string, error) { return b.fence != "", b.fence, nil },
 		Classify: outage.ClassifyProviderResult,
 		Now:      func() time.Time { return b.now },
+		OpenQuestions: func(string) []goal.OpenQuestion {
+			return append([]goal.OpenQuestion(nil), b.questions...)
+		},
 	}
 }
 
