@@ -1,6 +1,6 @@
 # critique-stops-on-convergence
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 20
+- Revision: 21
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T11:55:32Z revision=21 opid=ENWHBG70Q20ATMYQV3MZV6KSJK-m1e-9c612d71 authority=proven digest=b3a270e09b9d1860db2ae8daf92e60529b9fddfa775a0049fe0431dee13ddc73 episode=21
 
 History:
 - 2026-10-02T10:12:16Z DGM1ZK0JGJ8198MGJ0A44NHWHE-m1e-9c612d71 open actor=human:Wido targets=critique-stops-on-convergence
@@ -34,4 +36,5 @@ History:
 - 2026-10-02T11:54:16Z V3CEK16M66CG75VA05MH18GEDS-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:55:24Z VERNWF01V63E3EFJTX4AG4NRY5-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=Wido 2026-10-02: tier 1 opt-in critique with a hard cap
 - 2026-10-02T11:55:28Z WZT2WY34M1YTQYKKZME5SWBA3D-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
-Integrity: sha256=17672ab3653ecb7c53bd4b1cd97c8a4d3ea382e944ea1a8a8e65a31766d012d8
+- 2026-10-02T11:55:32Z ENWHBG70Q20ATMYQV3MZV6KSJK-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
+Integrity: sha256=1e4c1bbe83f25dbc804bf02e719db2f17cbc7441f4f075391e6c8313093ddf08
