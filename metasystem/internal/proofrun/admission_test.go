@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"golang.org/x/sys/unix"
 )
 
 type admissionCensusProcess struct {
@@ -48,7 +49,8 @@ func (c *admissionCensus) Probe(pid int64) (identity.Exact, identity.Liveness, e
 	return process.exact, identity.Alive, nil
 }
 
-func (c *admissionCensus) pids() ([]int64, error) {
+// The census is the test's whole process table: its pids and their parents.
+func (c *admissionCensus) Pids() ([]int64, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	pids := make([]int64, 0, len(c.processes))
@@ -59,7 +61,16 @@ func (c *admissionCensus) pids() ([]int64, error) {
 	return pids, nil
 }
 
-func (c *admissionCensus) parent(pid int64) (int64, bool) {
+func (c *admissionCensus) Group(pid int64) (int64, error) {
+	if _, known := c.Parent(pid); !known {
+		return 0, unix.ESRCH
+	}
+	return pid, nil
+}
+
+func (c *admissionCensus) Session(pid int64) (int64, error) { return c.Group(pid) }
+
+func (c *admissionCensus) Parent(pid int64) (int64, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	process, ok := c.processes[pid]
@@ -80,8 +91,7 @@ func installAdmissionCensus(t *testing.T, census *admissionCensus, cores int) {
 	loadSeams.fixtureNamespaceLaunchers = countProofLaunchersOutsideFixtures
 	loadSeams.nested = nestedProofLauncher
 	loadSeams.prober = census
-	loadSeams.pids = census.pids
-	loadSeams.parent = census.parent
+	loadSeams.processes = census
 	t.Cleanup(func() { loadSeams = previous })
 }
 
