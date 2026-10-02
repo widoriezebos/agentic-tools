@@ -21,6 +21,7 @@ func main() {
 	listen := flag.String("listen", "", "address to listen on (default: METASYSTEM_APP_ADDRESS)")
 	readyAfter := flag.Duration("ready-after", 0, "answer 200 only after this long")
 	darkFile := flag.String("dark-file", "", "stop answering 200 while this file exists, while staying alive")
+	readyFile := flag.String("ready-file", "", "answer 200 only once this file exists")
 	listenAfter := flag.Duration("listen-after", 0, "start listening only after this long")
 	readyLine := flag.String("ready-line", "", "write this line to the log once ready")
 	ignoreTerm := flag.Bool("ignore-term", false, "ignore SIGTERM")
@@ -79,6 +80,12 @@ func main() {
 			if time.Since(started) < *readyAfter {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
+			}
+			if *readyFile != "" {
+				if _, err := os.Stat(*readyFile); err != nil {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
 			}
 			if *darkFile != "" {
 				if _, err := os.Stat(*darkFile); err == nil {

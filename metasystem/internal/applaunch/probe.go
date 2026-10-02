@@ -95,10 +95,16 @@ func LogMatch(path, pattern string, offset int64) (bool, error) {
 	return false, scanner.Err()
 }
 
-// AwaitReady waits for the contract's readiness form until the deadline. An
-// alive check that answers false ends the wait at once: an application that
-// exited before it was ready is reported as such, never as running.
-func AwaitReady(ctx context.Context, contract Contract, address, logPath string, logOffset int64, alive func() bool, wait time.Duration) error {
+// AwaitReady waits for the contract's readiness form until expired fires.
+// An alive check that answers false ends the wait at once: an application
+// that exited before it was ready is reported as such, never as running.
+//
+// The wait's end is an event the caller owns: Supervise passes the timer of
+// the contract's ready wait, and a nil channel never fires, so readiness is
+// then the application's own signal or its exit alone. The form is asked at
+// least once before expired is read, so an end that has already fired still
+// answers from one look.
+func AwaitReady(ctx context.Context, contract Contract, address, logPath string, logOffset int64, alive func() bool, expired <-chan time.Time) error {
 	kind := contract.ReadyKind()
 	if kind == ReadyNone {
 		if alive != nil && !alive() {
@@ -106,7 +112,6 @@ func AwaitReady(ctx context.Context, contract Contract, address, logPath string,
 		}
 		return nil
 	}
-	deadline := time.Now().Add(wait)
 	for {
 		var ready bool
 		var err error
@@ -128,12 +133,16 @@ func AwaitReady(ctx context.Context, contract Contract, address, logPath string,
 		if ready {
 			return nil
 		}
-		if !time.Now().Before(deadline) {
+		select {
+		case <-expired:
 			return errReadyTimeout
+		default:
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-expired:
+			return errReadyTimeout
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
