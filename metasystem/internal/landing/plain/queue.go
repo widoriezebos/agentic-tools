@@ -1,4 +1,5 @@
-// Package plain is the plain landing lane (plain-lane design, revision 3):
+// Package plain is the plain landing lane (plain-lane design, revision 3;
+// first landed through itself on 2026-10-02):
 // seats hand goal branches to the lane by one line in a queue file, the
 // landing agent merges and proves them, and landing push puts a proven HEAD
 // on main. Nothing is settled: a line is landed when main contains its sha,
