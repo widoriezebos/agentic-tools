@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Smallest design: what makes a seat unreachable (no presence for a set time, or no checkout on this computer), the verb and the fleet-card button; build; land
 - OpenedAt: 2026-10-02T21:14:43Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:14:52Z revision=2 opid=XRQ07ZVDSNKTWKD998Y6CMM25G-m1e-9c612d71 authority=proven digest=1bf31cc6246bef2c814691fb3c0607b4d70ed066d0ae6d209dad12cc82c710f0 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-10-02T21:14:43Z FGMBYJ6Y46YB2AYB1F7CMHRJHZ-m1e-9c612d71 open actor=human:Wido targets=fleet-forgets-an-unreachable-seat
 - 2026-10-02T21:14:52Z XRQ07ZVDSNKTWKD998Y6CMM25G-m1e-9c612d71 approve actor=human:Wido targets=fleet-forgets-an-unreachable-seat
-Integrity: sha256=c733d0b3b523e39e49ada84bf749a9c92593faaea9d8864128130db48f16eed0
+- 2026-10-02T21:15:00Z 7ZYVDXNF8TJKA1JEKHK4W937RQ-m1e-9c612d71 set-pin actor=human:Wido targets=fleet-forgets-an-unreachable-seat
+Integrity: sha256=0867805b6abdc707dcd21e0e9457fed3ed6a98206dd6c87304d51b788aed96f5
