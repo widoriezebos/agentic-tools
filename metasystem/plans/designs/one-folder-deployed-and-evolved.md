@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M3YG08QFSF1W2HW3RN8WXWMZ
 - Status: draft
+- Goals: one-folder-deployed-and-evolved
 
 Facts were read at `5fa845565` on 2026-10-02, unless marked *(recited)*. The inventory is `agentic-tools-evidence/shipped-folder-20261002/inventory.md`. All paths on this page are relative to this repository's root.
 
