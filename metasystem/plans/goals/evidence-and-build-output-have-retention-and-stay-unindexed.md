@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 15
+- Sequence: 16
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: disk and indexing churn that slows every seat, no correctness harm; novelty 2: durable-copy acknowledgement and pins before deletion, and path moves across every reader; exposure 3: every proof run writes these stores; accumulation 3: grows by gigabytes per day until pruned"
 - Tier: 2
 - Intent: What: Kept test evidence, pinned engine copies and temporary build output are stored where the Mac's Spotlight search and malware scanner do not index them. Cleanup of these stores already exists (it was built under the disk-lifetimes goal); only the indexing part is left. Why: Tens of thousands of copied source files are indexed and scanned in the background, which slows the machine and wastes disk and CPU while seats work. Pros: Less background load on every seat machine. Cons: Moving stores means every reader and writer must follow them, and a missed one breaks a lookup.
 - Origin: human
 - Next step: Next: Keep the evidence folders, engine pins and build output out of Spotlight, either by placing them in a folder Spotlight skips or by marking each root as not to be indexed, and then count indexed files and disk use over one day of work on three seats. Done when: After that day, the Spotlight index holds none of those files and the counts stay under the thresholds written in the goal.
 - OpenedAt: 2026-09-15T09:05:39Z
-- Revision: 135
+- Revision: 136
 - BudgetExceptions: 0
 
 History:
@@ -148,4 +148,5 @@ History:
 - 2026-10-02T21:01:12Z 65Y5SXEEP1FF7NZ7RX3YHR94GD-m1e-9c612d71 abandon actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:18 to=1:17
 - 2026-10-02T21:01:40Z FV1SKKGNSTB9NZPAVAQPPAXW7A-m1e-9c612d71 abandon actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:17 to=1:16
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:16 to=1:15
-Integrity: sha256=f22d5cbd87b9a879a92f149c0f1ae50a3e512a6ee3c52ccb7a49965792901ad9
+- 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:15 to=1:16 requested-sequence=1
+Integrity: sha256=5b96b33da38c6693424b4b51ecbd41f9de156dab051b2338485d299bad68d8ab

@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 16
+- Sequence: 17
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a wrong findings file could refuse a legitimate follow-up or let a failing bed through; novelty 2: the round proof gains an output the dispatcher reads; exposure 2: every follow-up round; accumulation 2: later rounds build on the recorded findings"
 - Tier: 2
 - Intent: What: When a build round fails its tests, the next round automatically receives the failing test output, so nobody has to copy test failures into the next instructions by hand. Why: Review findings already flow into the next round, but a test failure ends the round and its output is not passed on. In earlier builds a person relayed failures into more than twenty sets of instructions by hand. Pros: Faster fix rounds; the builder sees the exact failure; less relay work for the seat. Cons: Large test logs could crowd the builder's input, so only the failing steps' output may be passed on.
 - Origin: human
 - Next step: Next: In the launch unit runner (internal/launch/unit_run.go), when a round ends with failing tests, add each failing step's kept output to the next round's inputs, next to the review findings, with a unit test. Drop the older design that aimed at the retired dispatch lane. Done when: a round that fails its tests leads to a next round whose inputs contain the failing output, and a green round adds nothing.
 - OpenedAt: 2026-09-14T15:32:06Z
-- Revision: 167
+- Revision: 168
 - BudgetExceptions: 0
 
 History:
@@ -180,4 +180,5 @@ History:
 - 2026-10-02T21:01:12Z 65Y5SXEEP1FF7NZ7RX3YHR94GD-m1e-9c612d71 abandon actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:19 to=1:18
 - 2026-10-02T21:01:40Z FV1SKKGNSTB9NZPAVAQPPAXW7A-m1e-9c612d71 abandon actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:18 to=1:17
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:17 to=1:16
-Integrity: sha256=84677a019158dc3f0821e741253587b294affd05937b72efef2b5422efd58e47
+- 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:16 to=1:17 requested-sequence=1
+Integrity: sha256=838dc432d4688ead1f33e44b9ba89b5c3b9fd38c86c8eca05a844429cc21c13d

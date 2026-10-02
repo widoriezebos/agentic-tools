@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 17
+- Sequence: 18
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: What: When one test area must always run the same tests as another, testing.json says so, and a missing test group is refused when the file is read instead of being found later in a long test run. Why: On 09-14 a new test group was added to one area and not to its twin; it surfaced only in a full package run. Pros: The mistake cannot be written, and no long run is needed to find it. Cons: It adds a field to the test configuration format, and the tool that generates testing.json must support it.
 - Origin: human
 - Next step: Next: testing.json is generated, so add a "mirrors" field to the test-area schema that metasystem testing add-tests and the contract reader both honour; move context-budget to it; refuse a mirror with a missing group when the file is loaded. Done when: repeating the 09-14 mistake is refused when testing.json is loaded, naming the group and the area.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 190
+- Revision: 191
 - BudgetExceptions: 0
 
 History:
@@ -203,4 +203,5 @@ History:
 - 2026-10-02T21:01:12Z 65Y5SXEEP1FF7NZ7RX3YHR94GD-m1e-9c612d71 abandon actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:20 to=1:19
 - 2026-10-02T21:01:40Z FV1SKKGNSTB9NZPAVAQPPAXW7A-m1e-9c612d71 abandon actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:19 to=1:18
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:18 to=1:17
-Integrity: sha256=ea4d69512dbce7417b20a093a2a7a1d8caae04df040375421d973ff0a0b5985a
+- 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:17 to=1:18 requested-sequence=1
+Integrity: sha256=f443063577e92a6765461a29ed05fc5bc1521768931d1f1bff5446a6d94124b1

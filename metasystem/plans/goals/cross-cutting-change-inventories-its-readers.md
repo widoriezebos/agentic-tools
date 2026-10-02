@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 18
+- Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: each missed reader costs a critic round plus a fold round, and the chain can hit the review ceiling before the last one is found; novelty 2: a new preflight step that turns a brief's concept into a search and dispositions its hits; exposure 3: every chain that changes a predicate read in more than one place; accumulation 3: chain bsws-build1b-20260909 paid three reads and three folds for seven sites, one or two per round"
 - Tier: 3
 - Intent: What: When a change redefines a shared idea that many places rely on, the brief lists every place that relies on it before the build starts. Why: One such change needed seven critique rounds because each round found one more place still using the old meaning. A list made up front would have saved most of those rounds. Pros: Fewer rounds for wide changes; critics check a list instead of hunting. Cons: One more step in such briefs. The automatic check first designed for it sits in the old dispatch lane, which no longer runs.
 - Origin: main
 - Next step: Next: Slice 1: add one question to the design-critique skill (skills/design-critique/SKILL.md): "What does this build on, where does that live, and which behaviour wins?". Only if still wanted afterwards, slice 2: the launch lane's build admission checks that the brief accounts for every place its search pattern finds. Done when: the skill carries the question and the next critique round answers it.
 - OpenedAt: 2026-09-10T08:42:28Z
-- Revision: 193
+- Revision: 194
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -207,4 +207,5 @@ History:
 - 2026-10-02T21:01:12Z 65Y5SXEEP1FF7NZ7RX3YHR94GD-m1e-9c612d71 abandon actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:21 to=1:20
 - 2026-10-02T21:01:40Z FV1SKKGNSTB9NZPAVAQPPAXW7A-m1e-9c612d71 abandon actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:20 to=1:19
 - 2026-10-02T21:01:45Z 9KFKKJ7WGZQC29QEVMV0QJMX9A-m1e-9c612d71 abandon actor=human:Wido targets=design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers reason=priority-order from=1:19 to=1:18
-Integrity: sha256=a4cab22842f462374ebb74b0a595183a83795b607f7e31d10feabd5d374ceaf5
+- 2026-10-02T21:07:03Z G9DB1SGW3QTW5NESM169XX6XPF-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=seat-claim-takes-the-next-ready-goal from=1:18 to=1:19 requested-sequence=1
+Integrity: sha256=d7f5ae621673198819fc61c18cee34afa149f04e2531fb16121baf9b15185bfc
