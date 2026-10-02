@@ -25,37 +25,50 @@ func (p *censusProber) Probe(pid int64) (identity.Exact, identity.Liveness, erro
 	return identity.Exact{}, identity.Dead, nil
 }
 
-// installFakeLoad scripts the host sample and the host-wide launcher count
-// the attribution reads, so no scheduler is in the loop.
-func installFakeLoad(t *testing.T, sample hostload.Sample, launchers int, known bool) {
-	t.Helper()
-	previous := loadSeams
-	loadSeams.host = func(now time.Time) hostload.Sample {
+// fakeLoadReaders script the host sample and the host-wide launcher count
+// the attribution reads, so no scheduler is in the loop. A test hands them
+// to the call that samples.
+func fakeLoadReaders(sample hostload.Sample, launchers int, known bool) loadReaders {
+	readers := deterministicTestLoadReaders()
+	readers.host = func(now time.Time) hostload.Sample {
 		sample.At = now.UTC().Format(time.RFC3339Nano)
 		return sample
 	}
-	loadSeams.launchers = func(int64) (int, bool) { return launchers, known }
-	t.Cleanup(func() { loadSeams = previous })
+	readers.launchers = func(int64) (int, bool) { return launchers, known }
+	return readers
 }
 
+// finalizeWithReaders finalizes under the proof lock with the end sample
+// taken from readers.
+func finalizeWithReaders(t *testing.T, readers loadReaders, root, id, result string, exitStatus int, reason string, now time.Time) (Attempt, error) {
+	t.Helper()
+	lock, err := AcquireMutation(root)
+	if err != nil {
+		return Attempt{}, err
+	}
+	defer lock.Release()
+	return finalizeAttemptLocked(root, id, result, exitStatus, reason, nil, nil, now, withLoadReaders(readers))
+}
+
+// The export samples with the package default readers, which TestMain makes
+// the idle deterministic host: the proof census, not a second sampler.
 func TestSampleLoadExportUsesTheProofCensus(t *testing.T) {
 	now := time.Unix(7, 0)
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 12, Load1m: 3}, 4, true)
 	got := SampleLoad(t.TempDir(), "proof-self", 41, now)
-	if !got.OverlapKnown || got.OverlappingHost != 4 || got.Cores != 12 || got.Load1m != 3 || got.At != now.UTC().Format(time.RFC3339Nano) {
+	if !got.OverlapKnown || got.OverlappingHost != 0 || got.Cores != 18 || !got.Available || got.At != now.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("exported load sample=%+v", got)
 	}
 }
 
 func TestSubprocessHostLoadSeamOverridesReadersOnlyWhenSet(t *testing.T) {
 	now := time.Unix(7, 0)
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 12, Load1m: 6}, 2, true)
-	production := SampleLoad(t.TempDir(), "proof-self", 41, now)
+	fake := fakeLoadReaders(hostload.Sample{Available: true, Cores: 12, Load1m: 6}, 2, true)
+	production := sampleLoad(t.TempDir(), "proof-self", 41, now, withLoadReaders(fake))
 	if production.Cores != 12 || production.Load1m != 6 || production.OverlappingHost != 2 || !production.OverlapKnown {
-		t.Fatalf("unset subprocess seam changed the installed readers: %+v", production)
+		t.Fatalf("unset subprocess seam changed the handed readers: %+v", production)
 	}
 
-	isolated := sampleLoad(t.TempDir(), "proof-self", 41, now, withTestHostLoad("3"))
+	isolated := sampleLoad(t.TempDir(), "proof-self", 41, now, withLoadReaders(fake), withTestHostLoad("3"))
 	if isolated.Cores != 18 || isolated.Load1m != 0 || isolated.OverlappingHost != 3 || !isolated.OverlapKnown || isolated.At != now.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("subprocess seam sample = %+v", isolated)
 	}
@@ -65,9 +78,8 @@ func TestSubprocessHostLoadSeamOverridesReadersOnlyWhenSet(t *testing.T) {
 }
 
 func TestRealLoadReadersRequireExplicitOptIn(t *testing.T) {
-	useRealLoadReaders(t)
 	now := time.Unix(7, 0)
-	sample := SampleLoad(t.TempDir(), "proof-self", int64(os.Getpid()), now)
+	sample := sampleLoad(t.TempDir(), "proof-self", int64(os.Getpid()), now, withLoadReaders(realLoadReaders()))
 	if sample.At != now.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("real sampler timestamp = %q, want %q", sample.At, now.UTC().Format(time.RFC3339Nano))
 	}
@@ -124,16 +136,15 @@ func TestCensusCountsRunningBatchProof(t *testing.T) {
 	}, 999)); got != 1 {
 		t.Fatalf("a batch owner with its nested engine run counted %d launcher(s), want 1", got)
 	}
-	previousProcesses := loadSeams.processes
-	loadSeams.processes = identity.ScriptedProcessTable{PidsErr: os.ErrPermission}
-	t.Cleanup(func() { loadSeams.processes = previousProcesses })
-	if got, known := countProofLaunchers(999); got != 0 || known {
+	unreadable := deterministicTestLoadReaders()
+	unreadable.processes = identity.ScriptedProcessTable{PidsErr: os.ErrPermission}
+	if got, known := countProofLaunchers(unreadable, 999); got != 0 || known {
 		t.Fatalf("an unreadable process table returned %d, known=%v", got, known)
 	}
 }
 
 func TestCensusUsesInjectedProber(t *testing.T) {
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 8, Load1m: 1}, 0, true)
+	readers := fakeLoadReaders(hostload.Sample{Available: true, Cores: 8, Load1m: 1}, 0, true)
 	root, proofIdentity := proofAttemptFixture(t, "injected-census")
 	now := time.Date(2026, 9, 16, 18, 0, 0, 0, time.UTC)
 	fakeLauncher := identity.Exact{Pid: 313131, StartedAt: now, Argv: []string{"metasystem", "test", "run"}, ArgvKnown: true}
@@ -141,11 +152,12 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 	fake := &censusProber{processes: map[int64]identity.Exact{
 		fakeLauncher.Pid: fakeLauncher, fakeAttempt.Pid: fakeAttempt,
 	}, calls: map[int64]int{}}
-	loadSeams.prober = fake
-	loadSeams.processes = identity.FixedProcessTable{{Pid: fakeLauncher.Pid, Group: fakeLauncher.Pid, Parent: 1}}
+	readers.prober = fake
+	readers.processes = identity.FixedProcessTable{{Pid: fakeLauncher.Pid, Group: fakeLauncher.Pid, Parent: 1}}
 	launcher := processIdentity(identity.Exact{Pid: 515151, StartedAt: now.Add(-2 * time.Hour)}, 0)
 	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now,
+		loadOptions: []loadSampleOption{withLoadReaders(readers)}}))
 
 	if err != nil {
 		t.Fatal(err)
@@ -154,8 +166,8 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 	if err := writeAttempt(attempt); err != nil {
 		t.Fatal(err)
 	}
-	loadSeams.launchers = countProofLaunchers
-	sample := sampleLoad(root, "proof-other", 0, now)
+	readers.launchers = nil
+	sample := sampleLoad(root, "proof-other", 0, now, withLoadReaders(readers))
 	if sample.OverlappingHost != 1 || !sample.OverlapKnown || sample.OverlappingLocal != 1 {
 		t.Fatalf("injected census sample = %+v, want one host launcher and one local attempt", sample)
 	}
@@ -232,7 +244,7 @@ func TestConsumptionBounded(t *testing.T) {
 }
 
 func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 25.2, Load5m: 21.8, Load15m: 17.8}, 2, true)
+	crowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 25.2, Load5m: 21.8, Load15m: 17.8}, 2, true)
 	root, identity := proofAttemptFixture(t, "load-attribution")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
@@ -244,7 +256,8 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf}
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf,
+		loadOptions: []loadSampleOption{withLoadReaders(crowded)}}
 	attempt, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
@@ -258,8 +271,9 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 		t.Fatalf("the start sample did not survive the record: %+v, %v", stored.Load, err)
 	}
 	// A failure while the host is still crowded is attributed to the load.
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 30, Load5m: 25, Load15m: 20}, 3, true)
-	failed, err := FinalizeAttempt(root, attempt.AttemptID, TerminalFailed, 23, "gate failed", nil, now.Add(2*time.Minute))
+	stillCrowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 30, Load5m: 25, Load15m: 20}, 3, true)
+	request.loadOptions = []loadSampleOption{withLoadReaders(stillCrowded)}
+	failed, err := finalizeWithReaders(t, stillCrowded, root, attempt.AttemptID, TerminalFailed, 23, "gate failed", now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +289,7 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	succeeded, err = FinalizeAttempt(root, succeeded.AttemptID, TerminalSuccess, 0, "green", nil, now.Add(time.Minute))
+	succeeded, err = finalizeWithReaders(t, stillCrowded, root, succeeded.AttemptID, TerminalSuccess, 0, "green", now.Add(time.Minute))
 	if err != nil || succeeded.Load.End == nil || succeeded.Terminal.Attribution != "" {
 		t.Fatalf("success under load = %+v, %v", succeeded.Terminal, err)
 	}
@@ -289,12 +303,13 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelled, err = FinalizeAttempt(root, cancelled.AttemptID, TerminalCancelled, 1, "stop", nil, now.Add(time.Minute))
+	cancelled, err = finalizeWithReaders(t, stillCrowded, root, cancelled.AttemptID, TerminalCancelled, 1, "stop", now.Add(time.Minute))
 	if err != nil || cancelled.Load.End == nil || !cancelled.Load.End.Loaded() || cancelled.Terminal.Attribution != "" {
 		t.Fatalf("cancellation under load = %+v, %v", cancelled.Terminal, err)
 	}
 	// A failure on a quiet host is nobody's load.
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 2, Load5m: 2, Load15m: 2}, 0, true)
+	quietHost := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 2, Load5m: 2, Load15m: 2}, 0, true)
+	request.loadOptions = []loadSampleOption{withLoadReaders(quietHost)}
 	quiet := identity
 	quiet.CommandClass = "failed-quietly"
 	quiet.IdentityDigest = quiet.digest()
@@ -303,14 +318,14 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lonely, err = FinalizeAttempt(root, lonely.AttemptID, TerminalFailed, 1, "red", nil, now.Add(time.Minute))
+	lonely, err = finalizeWithReaders(t, quietHost, root, lonely.AttemptID, TerminalFailed, 1, "red", now.Add(time.Minute))
 	if err != nil || lonely.Terminal.Attribution != "" || lonely.Load.End.Loaded() {
 		t.Fatalf("quiet failure = %+v, %+v, %v", lonely.Terminal, lonely.Load.End, err)
 	}
 }
 
 func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 30}, 2, true)
+	crowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 30}, 2, true)
 	root, identity := proofAttemptFixture(t, "old-record")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
@@ -318,7 +333,8 @@ func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}))
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now,
+		loadOptions: []loadSampleOption{withLoadReaders(crowded)}}))
 
 	if err != nil {
 		t.Fatal(err)
@@ -328,7 +344,7 @@ func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
 	if err := writeAttempt(attempt); err != nil {
 		t.Fatal(err)
 	}
-	finished, err := FinalizeAttempt(root, attempt.AttemptID, TerminalFailed, 1, "red", nil, now.Add(2*time.Minute))
+	finished, err := finalizeWithReaders(t, crowded, root, attempt.AttemptID, TerminalFailed, 1, "red", now.Add(2*time.Minute))
 	if err != nil || finished.Load == nil || finished.Load.Start.Available || finished.Load.Start.Detail != "not sampled at start" ||
 		finished.Load.End == nil || !finished.Load.End.Available || finished.Terminal.Attribution != LoadAttribution {
 		t.Fatalf("old record finalized = %+v, terminal %+v, %v", finished.Load, finished.Terminal, err)
@@ -336,7 +352,7 @@ func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
 }
 
 func TestRetryDecisionNamesThePriorAttemptsLoad(t *testing.T) {
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 25.2, Load5m: 21.8, Load15m: 17.8}, 2, true)
+	crowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 25.2, Load5m: 21.8, Load15m: 17.8}, 2, true)
 	root, identity := proofAttemptFixture(t, "retry-under-load")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
@@ -344,12 +360,13 @@ func TestRetryDecisionNamesThePriorAttemptsLoad(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now,
+		loadOptions: []loadSampleOption{withLoadReaders(crowded)}}
 	failed, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := FinalizeAttempt(root, failed.AttemptID, TerminalFailed, 23, "gate failed", nil, now.Add(2*time.Minute)); err != nil {
+	if _, err := finalizeWithReaders(t, crowded, root, failed.AttemptID, TerminalFailed, 23, "gate failed", now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	evidencePath := filepath.Join(root, "failure.log")
@@ -416,7 +433,7 @@ func TestFilePatienceDefectsNamesFailedConsumptionBoundedGroups(t *testing.T) {
 }
 
 func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
-	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 1}, 0, true)
+	readers := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 1}, 0, true)
 	root, proofIdentity := proofAttemptFixture(t, "skip-unreadable")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
@@ -426,7 +443,7 @@ func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 	if launcher.PidStartedAtMicro != 0 {
 		startedAt = time.UnixMicro(launcher.PidStartedAtMicro)
 	}
-	loadSeams.prober = &censusProber{processes: map[int64]identity.Exact{
+	readers.prober = &censusProber{processes: map[int64]identity.Exact{
 		launcher.Pid: {
 			Pid: launcher.Pid, StartedAt: startedAt,
 			StartTicks: launcher.PidStartTicks, BootID: launcher.BootID,
@@ -434,7 +451,8 @@ func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 	}, calls: map[int64]int{}}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	good, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: proofIdentity, Launcher: launcher, Now: now}))
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: proofIdentity, Launcher: launcher, Now: now,
+		loadOptions: []loadSampleOption{withLoadReaders(readers)}}))
 
 	if err != nil {
 		t.Fatal(err)
@@ -458,7 +476,7 @@ func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 	if err != nil || len(live) != 2 || live[0].Unreadable == "" || live[1].AttemptID != good.AttemptID {
 		t.Fatalf("live = %+v, %v", live, err)
 	}
-	if liveAttemptsOtherThan(root, "proof-other") != 1 {
+	if liveAttemptsOtherThan(readers, root, "proof-other") != 1 {
 		t.Fatal("the live count lost the readable attempt")
 	}
 }

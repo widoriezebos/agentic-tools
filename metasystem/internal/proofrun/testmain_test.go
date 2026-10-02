@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 	if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
 		os.Exit(code)
 	}
-	installDeterministicTestLoadReaders()
+	loadSeams = deterministicTestLoadReaders()
 	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
 		panic(err)
 	}
@@ -381,8 +381,11 @@ func (deadTestProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return identity.Exact{}, identity.Dead, nil
 }
 
-func installDeterministicTestLoadReaders() {
-	loadSeams = loadReaders{
+// deterministicTestLoadReaders are the package default TestMain sets before
+// any test runs: an idle 18-core host with no other launcher and an empty
+// process table, so a test that hands no readers never reads the machine.
+func deterministicTestLoadReaders() loadReaders {
+	return loadReaders{
 		host: func(now time.Time) hostload.Sample {
 			return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}
 		},
@@ -392,15 +395,6 @@ func installDeterministicTestLoadReaders() {
 		prober:                    deadTestProber{},
 		processes:                 identity.FixedProcessTable{},
 	}
-}
-
-// useRealLoadReaders is the only opt-in from package tests to the machine's
-// load and process census. Tests that do not call it stay host-independent.
-func useRealLoadReaders(t *testing.T) {
-	t.Helper()
-	previous := loadSeams
-	loadSeams = realLoadReaders()
-	t.Cleanup(func() { loadSeams = previous })
 }
 
 func proofrunSubprocessHelper() bool {

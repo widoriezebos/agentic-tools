@@ -45,9 +45,12 @@ const TestHostLoadEnvironment = "METASYSTEM_TEST_PROOF_HOST_LOAD"
 
 const testHostLoadCommandPrefix = "metasystem-test-proof-host-load="
 
-// loadSeams are the readers the sample is taken from; tests script them.
+// loadReaders are the readers a sample is taken from. A caller hands them
+// per call (withLoadReaders, or a parameter); a test scripts its own there.
 type loadReaders struct {
-	host      func(now time.Time) hostload.Sample
+	host func(now time.Time) hostload.Sample
+	// launchers, nested and fixtureNamespaceLaunchers override the census
+	// over processes and prober; nil reads that census.
 	launchers func(self int64) (int, bool)
 	nested    func(self int64) (bool, bool)
 	prober    identity.Prober
@@ -61,6 +64,9 @@ type loadReaders struct {
 	fixtureNamespaceLaunchers func(self int64) (int, bool)
 }
 
+// loadSeams is the package default a caller that hands no readers uses:
+// the kernel's, set at init. Only a package's TestMain replaces it, once,
+// before any test runs; a test hands its readers per call instead.
 var loadSeams loadReaders
 var commandLoadOptions []loadSampleOption
 
@@ -73,6 +79,45 @@ type loadSampleSettings struct {
 	// admissionDirectory is the namespace whose admission guard the caller
 	// holds; the slot census reads only that namespace.
 	admissionDirectory string
+	// readers, when set, replace the package default for this call.
+	readers *loadReaders
+}
+
+// withLoadReaders takes this one sample from readers instead of the
+// package default.
+func withLoadReaders(readers loadReaders) loadSampleOption {
+	return func(settings *loadSampleSettings) {
+		settings.readers = &readers
+	}
+}
+
+func (settings loadSampleSettings) loadReaders() loadReaders {
+	if settings.readers != nil {
+		return *settings.readers
+	}
+	return loadSeams
+}
+
+// launcherCount is the host-wide census of other top-level launchers.
+func (readers loadReaders) launcherCount(self int64) (int, bool) {
+	if readers.launchers != nil {
+		return readers.launchers(self)
+	}
+	return countProofLaunchers(readers, self)
+}
+
+func (readers loadReaders) fixtureNamespaceLauncherCount(self int64) (int, bool) {
+	if readers.fixtureNamespaceLaunchers != nil {
+		return readers.fixtureNamespaceLaunchers(self)
+	}
+	return countProofLaunchersOutsideFixtures(readers, self)
+}
+
+func (readers loadReaders) nestedLauncher(self int64) (bool, bool) {
+	if readers.nested != nil {
+		return readers.nested(self)
+	}
+	return nestedProofLauncher(readers, self)
 }
 
 // withAdmissionDirectory makes the slot census read the namespace whose
@@ -119,10 +164,7 @@ func TestHostLoadCommandName(raw string) string {
 
 func realLoadReaders() loadReaders {
 	return loadReaders{
-		host: hostload.Read, launchers: countProofLaunchers,
-		fixtureNamespaceLaunchers: countProofLaunchersOutsideFixtures,
-		nested:                    nestedProofLauncher, prober: identity.KernelProber{},
-		processes: identity.KernelProcessTable{},
+		host: hostload.Read, prober: identity.KernelProber{}, processes: identity.KernelProcessTable{},
 	}
 }
 
@@ -145,7 +187,7 @@ func sampleNestedProofLauncher(self int64, options ...loadSampleOption) (bool, b
 	if settings.fixtureSet {
 		return false, true
 	}
-	return loadSeams.nested(self)
+	return settings.loadReaders().nestedLauncher(self)
 }
 
 // sampleLoad reads the host, this checkout's other live attempts, and the
@@ -161,6 +203,7 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 		option(&settings)
 	}
 	sample := LoadSample{}
+	readers := settings.loadReaders()
 	if settings.scripted != nil {
 		sample.Sample = *settings.scripted
 		sample.Sample.At = now.UTC().Format(time.RFC3339Nano)
@@ -168,8 +211,8 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 	} else if settings.fixtureSet {
 		sample.Sample, sample.OverlappingHost, sample.OverlapKnown = testHostLoad(settings.fixtureRaw, now)
 	} else {
-		sample.Sample = loadSeams.host(now)
-		if count, known := hostLauncherCensus(root, launcher); known {
+		sample.Sample = readers.host(now)
+		if count, known := hostLauncherCensus(readers, root, launcher); known {
 			sample.OverlappingHost, sample.OverlapKnown = count, true
 		}
 		if sample.OverlapKnown {
@@ -183,11 +226,11 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 				sample.OverlapKnown = false
 			} else {
 				sample.OverlappingHost += active
-				sample.OwnHost = min(familyHostSlots(directory, launcher), sample.OverlappingHost)
+				sample.OwnHost = min(familyHostSlots(readers, directory, launcher), sample.OverlappingHost)
 			}
 		}
 	}
-	sample.OverlappingLocal = liveAttemptsOtherThan(root, selfAttempt)
+	sample.OverlappingLocal = liveAttemptsOtherThan(readers, root, selfAttempt)
 	return sample
 }
 
@@ -232,11 +275,11 @@ func (s LoadSample) Describe() string {
 // hold a slot and whose owner is self or a live descendant of self. A lease
 // that cannot be read or placed counts as not self's: the census never
 // discounts what it cannot attribute.
-func familyHostSlots(directory string, self int64) int {
+func familyHostSlots(readers loadReaders, directory string, self int64) int {
 	if self <= 0 {
 		return 0
 	}
-	rows, known := readProcessRows()
+	rows, known := readProcessRows(readers)
 	if !known {
 		return 0
 	}
@@ -292,18 +335,18 @@ type processRow struct {
 // namespaces (the scenarios of one bed, or beds on two seats) wait on each
 // other's waiting launchers forever. Real launchers still count, so a
 // fixture never masks production load.
-func hostLauncherCensus(root string, self int64) (int, bool) {
+func hostLauncherCensus(readers loadReaders, root string, self int64) (int, bool) {
 	if _, selected, err := FixtureHostAdmissionDirectory(root); err == nil && selected {
-		return loadSeams.fixtureNamespaceLaunchers(self)
+		return readers.fixtureNamespaceLauncherCount(self)
 	}
-	return loadSeams.launchers(self)
+	return readers.launcherCount(self)
 }
 
 // countProofLaunchers counts the top-level proof launchers alive on the
 // host outside self's family; a table that cannot be read reports unknown
 // rather than zero.
-func countProofLaunchers(self int64) (int, bool) {
-	rows, known := readProcessRows()
+func countProofLaunchers(readers loadReaders, self int64) (int, bool) {
+	rows, known := readProcessRows(readers)
 	if !known {
 		return 0, false
 	}
@@ -312,8 +355,8 @@ func countProofLaunchers(self int64) (int, bool) {
 
 // countProofLaunchersOutsideFixtures is countProofLaunchers without the
 // top-level launchers whose root is a fake-runtime fixture checkout.
-func countProofLaunchersOutsideFixtures(self int64) (int, bool) {
-	rows, known := readProcessRows()
+func countProofLaunchersOutsideFixtures(readers loadReaders, self int64) (int, bool) {
+	rows, known := readProcessRows(readers)
 	if !known {
 		return 0, false
 	}
@@ -349,18 +392,18 @@ func fixtureLauncherArgv(argv []string) bool {
 	return false
 }
 
-func readProcessRows() ([]processRow, bool) {
-	pids, err := loadSeams.processes.Pids()
+func readProcessRows(readers loadReaders) ([]processRow, bool) {
+	pids, err := readers.processes.Pids()
 	if err != nil {
 		return nil, false
 	}
 	rows := make([]processRow, 0, len(pids))
 	for _, pid := range pids {
 		row := processRow{pid: pid}
-		if parent, ok := loadSeams.processes.Parent(pid); ok {
+		if parent, ok := readers.processes.Parent(pid); ok {
 			row.parent = parent
 		}
-		exact, state, err := loadSeams.prober.Probe(pid)
+		exact, state, err := readers.prober.Probe(pid)
 		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) &&
 			!managedProofProcess(exact) {
 			row.launcher = true
@@ -371,8 +414,8 @@ func readProcessRows() ([]processRow, bool) {
 	return rows, true
 }
 
-func nestedProofLauncher(self int64) (bool, bool) {
-	rows, known := readProcessRows()
+func nestedProofLauncher(readers loadReaders, self int64) (bool, bool) {
+	rows, known := readProcessRows(readers)
 	if !known {
 		return false, false
 	}
@@ -450,14 +493,14 @@ func isProofLauncherArgv(argv []string) bool {
 // liveAttemptsOtherThan counts this checkout's attempts without a terminal
 // whose launcher is alive, other than self. Unreadable records are skipped:
 // one damaged record must not hide the others.
-func liveAttemptsOtherThan(root, self string) int {
+func liveAttemptsOtherThan(readers loadReaders, root, self string) int {
 	attempts, _ := readAttemptsSkippingUnreadable(root)
 	count := 0
 	for _, attempt := range attempts {
 		if attempt.AttemptID == self || attempt.Terminal != nil {
 			continue
 		}
-		if identity.AliveRef(loadSeams.prober, attempt.Launcher.Ref()) == identity.Alive {
+		if identity.AliveRef(readers.prober, attempt.Launcher.Ref()) == identity.Alive {
 			count++
 		}
 	}

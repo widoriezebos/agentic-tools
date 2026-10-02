@@ -545,13 +545,13 @@ func hostResourceNames(exclusive []string) ([]string, error) {
 // An authenticated nested launcher can borrow only an inherited, still-locked
 // parent lease that already covers every requested resource. A proof locator
 // by itself does not represent an active capacity slot.
-func borrowHostResources(directory string, parent Attempt, class string, exclusive []string) (*HostResourceLease, error) {
+func borrowHostResources(readers loadReaders, directory string, parent Attempt, class string, exclusive []string) (*HostResourceLease, error) {
 	raw := os.Getenv(inheritedHostResourceFDs)
 	if raw == "" {
 		if len(exclusive) != 0 {
 			return nil, fmt.Errorf("the older parent test run holds no named resource lease")
 		}
-		rows, known := readProcessRows()
+		rows, known := readProcessRows(readers)
 		if !known {
 			return nil, fmt.Errorf("the older parent test run's capacity count is unreadable")
 		}
@@ -669,7 +669,7 @@ func WithHostResourceWaitObserver(ctx context.Context, observe func()) context.C
 	return context.WithValue(ctx, hostResourceWaitObserverKey{}, observe)
 }
 
-func resourceLegacyLauncherCount(controlRoot string) (int, bool, error) {
+func resourceLegacyLauncherCount(readers loadReaders, controlRoot string) (int, bool, error) {
 	// The existing fixture executable's scripted host count also governs its
 	// resource phase, but only in an explicitly selected temporary admission
 	// namespace owned by this same fake-runtime checkout. Ordinary engines and
@@ -693,7 +693,7 @@ func resourceLegacyLauncherCount(controlRoot string) (int, bool, error) {
 			}
 		}
 	}
-	count, known := hostLauncherCensus(controlRoot, int64(os.Getpid()))
+	count, known := hostLauncherCensus(readers, controlRoot, int64(os.Getpid()))
 	return count, known, nil
 }
 
@@ -711,6 +711,12 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 // acquireHostResourcesIn acquires in one explicit admission namespace, so a
 // parallel test owns its namespace without replacing the package default.
 func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
+	return acquireHostResourcesWith(ctx, loadSeams, directory, controlRoot, confPath, class, exclusive, check)
+}
+
+// acquireHostResourcesWith acquires with the launcher census and process
+// table of readers: a test hands its own, never by replacing the package's.
+func acquireHostResourcesWith(ctx context.Context, readers loadReaders, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
 	if class != "cheap" && class != "heavy" {
 		return nil, fmt.Errorf("unknown test-run resource class %q", class)
 	}
@@ -726,7 +732,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 		if err != nil {
 			return nil, fmt.Errorf("the nested test run's resources: %w", err)
 		}
-		return borrowHostResources(directory, parent, class, resources)
+		return borrowHostResources(readers, directory, parent, class, resources)
 	}
 	cores := hostload.Read(time.Now().UTC()).Cores
 	if cores < 1 {
@@ -781,7 +787,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 			files = append(files, file)
 		}
 		if available && class == "heavy" && capacity.Max > 0 {
-			legacy, known, censusErr := resourceLegacyLauncherCount(controlRoot)
+			legacy, known, censusErr := resourceLegacyLauncherCount(readers, controlRoot)
 			active, countErr := activeHostResourceSlots(directory)
 			if countErr != nil || censusErr != nil || !known {
 				closeHostFiles(files)

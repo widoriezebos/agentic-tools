@@ -39,12 +39,10 @@ func isolatedHostResources(t *testing.T) (string, string) {
 	if err := os.Chmod(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	previousDirectory, previousReaders := hostAdmissionDirectoryForTest, loadSeams
+	previousDirectory := hostAdmissionDirectoryForTest
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	t.Cleanup(func() {
 		hostAdmissionDirectoryForTest = previousDirectory
-		loadSeams = previousReaders
 	})
 	conf := filepath.Join(directory, "admission.conf")
 	if err := os.WriteFile(conf, []byte(AdmissionCapKey+"=1\n"), 0o600); err != nil {
@@ -140,10 +138,10 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 	})
 	t.Run("fixture_namespace_census_skips_other_fixture_launchers", checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers)
 	t.Run("fixture_census_authority", func(t *testing.T) {
-		previousDirectory, previousReaders, previousOptions := hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions
+		previousDirectory, previousOptions := hostAdmissionDirectoryForTest, commandLoadOptions
 		hostAdmissionDirectoryForTest = ""
 		t.Cleanup(func() {
-			hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions = previousDirectory, previousReaders, previousOptions
+			hostAdmissionDirectoryForTest, commandLoadOptions = previousDirectory, previousOptions
 		})
 		fakeRoot, realRoot := t.TempDir(), t.TempDir()
 		for _, fixture := range []struct{ root, mode string }{{fakeRoot, "fake"}, {realRoot, "real"}} {
@@ -159,14 +157,15 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", fakeRoot)
 		realCount, realCalls := 2, 0
-		loadSeams.launchers = func(int64) (int, bool) {
+		readers := deterministicTestLoadReaders()
+		readers.launchers = func(int64) (int, bool) {
 			realCalls++
 			return realCount, true
 		}
 		commandLoadOptions = []loadSampleOption{withTestHostLoad("0")}
 		t.Run("real_target_uses_real_census", func(t *testing.T) {
 			before := realCalls
-			count, known, err := resourceLegacyLauncherCount(realRoot)
+			count, known, err := resourceLegacyLauncherCount(readers, realRoot)
 			if err != nil || !known || count != realCount || realCalls != before+1 {
 				t.Fatalf("unrelated fake fixture masked real target census: count=%d known=%t calls=%d err=%v", count, known, realCalls-before, err)
 			}
@@ -174,7 +173,7 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 		t.Run("no_namespace_uses_real_census", func(t *testing.T) {
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 			before := realCalls
-			count, known, err := resourceLegacyLauncherCount(fakeRoot)
+			count, known, err := resourceLegacyLauncherCount(readers, fakeRoot)
 			if err != nil || !known || count != realCount || realCalls != before+1 {
 				t.Fatalf("unselected fixture masked real census: count=%d known=%t calls=%d err=%v", count, known, realCalls-before, err)
 			}
@@ -405,10 +404,10 @@ func TestHostResourceNestedLeaseSubprocess(t *testing.T) {
 	}
 	directory, conf, class, resource, mode := os.Args[separator+1], os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5]
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
+	readers := deterministicTestLoadReaders()
 	if mode == "legacy" {
-		loadSeams.processes = identity.ListedProcessTable{int64(os.Getppid())}
-		loadSeams.prober = hostResourceLegacyProber{}
+		readers.processes = identity.ListedProcessTable{int64(os.Getppid())}
+		readers.prober = hostResourceLegacyProber{}
 	}
 	if os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT") == "" || os.Getenv("METASYSTEM_PROOF_ATTEMPT") == "" {
 		t.Fatal("nested fixture proof locator was not inherited")
@@ -417,7 +416,11 @@ func TestHostResourceNestedLeaseSubprocess(t *testing.T) {
 	if resource != "" {
 		exclusive = []string{resource}
 	}
-	lease, err := AcquireHostResources(context.Background(), os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), conf, class, exclusive)
+	admission, err := hostAdmissionDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := acquireHostResourcesWith(context.Background(), readers, admission, os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), conf, class, exclusive, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +691,6 @@ func TestHostResourceSubprocess(t *testing.T) {
 	mode := args[separator+1]
 	directory, conf, ready, release, middlePID := args[separator+2], args[separator+3], args[separator+4], args[separator+5], args[separator+6]
 	hostAdmissionDirectoryForTest = directory
-	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	switch mode {
 	case "hold":
 		lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
@@ -765,11 +767,11 @@ func TestHostResourceSubprocess(t *testing.T) {
 // skips launchers of other fake-runtime fixture roots and still counts every
 // launcher it cannot place as a fixture.
 func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
-	previousDirectory, previousReaders, previousOptions := hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions
+	previousDirectory, previousOptions := hostAdmissionDirectoryForTest, commandLoadOptions
 	hostAdmissionDirectoryForTest = ""
 	commandLoadOptions = nil
 	t.Cleanup(func() {
-		hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions = previousDirectory, previousReaders, previousOptions
+		hostAdmissionDirectoryForTest, commandLoadOptions = previousDirectory, previousOptions
 	})
 	ownRoot, otherFixtureRoot, realRoot := t.TempDir(), t.TempDir(), t.TempDir()
 	for _, fixture := range []struct{ root, mode string }{{ownRoot, "fake"}, {otherFixtureRoot, "fake"}, {realRoot, "real"}} {
@@ -788,24 +790,24 @@ func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
 		13: launcher(13, "test", "run", "--root", "relative/fixture"),
 		14: launcher(14, "internal", "test", "run"),
 	}, calls: map[int64]int{}}
-	loadSeams.prober = census
-	loadSeams.processes = identity.FixedProcessTable{
+	readers := deterministicTestLoadReaders()
+	readers.launchers, readers.fixtureNamespaceLaunchers = nil, nil
+	readers.prober = census
+	readers.processes = identity.FixedProcessTable{
 		{Pid: 10, Group: 10, Parent: 1}, {Pid: 11, Group: 11, Parent: 1}, {Pid: 12, Group: 12, Parent: 1},
 		{Pid: 13, Group: 13, Parent: 1}, {Pid: 14, Group: 14, Parent: 1},
 	}
-	loadSeams.launchers = countProofLaunchers
-	loadSeams.fixtureNamespaceLaunchers = countProofLaunchersOutsideFixtures
 
 	directory := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", ownRoot)
-	if count, known, err := resourceLegacyLauncherCount(ownRoot); err != nil || !known || count != 3 {
+	if count, known, err := resourceLegacyLauncherCount(readers, ownRoot); err != nil || !known || count != 3 {
 		t.Fatalf("selected fixture namespace census = %d known=%t err=%v, want 3 (the real launcher and the two it cannot place)", count, known, err)
 	}
-	if count, known, err := resourceLegacyLauncherCount(realRoot); err != nil || !known || count != 5 {
+	if count, known, err := resourceLegacyLauncherCount(readers, realRoot); err != nil || !known || count != 5 {
 		t.Fatalf("a real root in a fixture environment counted %d known=%t err=%v, want all 5", count, known, err)
 	}
-	if sample := sampleLoad(ownRoot, "proof-none", 0, started); !sample.OverlapKnown || sample.OverlappingHost != 3 {
+	if sample := sampleLoad(ownRoot, "proof-none", 0, started, withLoadReaders(readers)); !sample.OverlapKnown || sample.OverlappingHost != 3 {
 		t.Fatalf("attempt admission inside the namespace saw %+v, want 3 host launchers", sample)
 	}
 
@@ -818,7 +820,11 @@ func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
 	}
 	waited := false
 	ctx := WithHostResourceWaitObserver(t.Context(), func() { waited = true })
-	lease, err := AcquireHostResourcesWithWaitCheck(ctx, ownRoot, conf, "heavy", nil, func() error {
+	admission, err := hostAdmissionDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := acquireHostResourcesWith(ctx, readers, admission, ownRoot, conf, "heavy", nil, func() error {
 		if waited {
 			return errors.New("the fixture namespace waited on another namespace's launchers")
 		}
@@ -836,7 +842,7 @@ func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
 
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 	hostAdmissionDirectoryForTest = t.TempDir()
-	if count, known, err := resourceLegacyLauncherCount(ownRoot); err != nil || !known || count != 5 {
+	if count, known, err := resourceLegacyLauncherCount(readers, ownRoot); err != nil || !known || count != 5 {
 		t.Fatalf("a fixture root outside a selected namespace counted %d known=%t err=%v, want all 5", count, known, err)
 	}
 }
