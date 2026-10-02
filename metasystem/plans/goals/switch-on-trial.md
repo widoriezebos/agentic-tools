@@ -1,14 +1,16 @@
 # switch-on-trial
 
-- State: queued
+- State: approved
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Register-only change (append lines to receipts.log and the narrator digest); no code; reverts cleanly"
 - Tier: 1
 - Intent: Prove the landing lane end to end at switch-on: land m1e's uncommitted register lines as a goal-bound change
 - Origin: human
 - Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 7
+- Revision: 8
+- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T12:27:18Z revision=8 opid=PE0WJSGREFKN39RRF7PY6ZXB5E-m1e-9c612d71 authority=proven digest=3719166eef0040b090622951c1fe0ea4b2315f94be69812443c6415955114360 episode=8
 
 History:
 - 2026-09-30T08:57:48Z R8BJDZ82WCT5276TRREY12TP9C-m1e-b6a4eb0a open actor=human:wido targets=switch-on-trial
@@ -18,4 +20,5 @@ History:
 - 2026-09-30T19:03:58Z 55SPYBGEXF8CGJ147B4JDADGHQ-m1e-b6a4eb0a abandon actor=human:wido targets=switch-on-trial displaced=m1e+main-1790454088-93948-21671b@2026-09-30T08:58:05Z stopId=stop-switch-on-trial-r3-f1 carried=landing-lane-runtime-redesign reason=The lane path this trial used failed. The end-to-end rehearsal in landing-lane-runtime-redesign replaces it.
 - 2026-10-02T12:27:09Z 8Q6SRYQ18GFKSDSFRFX00BH1N0-m1e-9c612d71 reopen actor=human:Wido targets=switch-on-trial
 - 2026-10-02T12:27:13Z GTSYYJJKFRAZFQSYSMPRNKWYSB-m1e-9c612d71 edit actor=human:Wido targets=switch-on-trial
-Integrity: sha256=1ba50ad2a52e97e743b32010c6085ddb14fad8e89b5dfd337b3f0af8a156bc26
+- 2026-10-02T12:27:18Z PE0WJSGREFKN39RRF7PY6ZXB5E-m1e-9c612d71 approve actor=human:Wido targets=switch-on-trial
+Integrity: sha256=a19171cd9b6c970e1c545e8dc2b5938369b7952b7661d42ba212685465beb2e6
