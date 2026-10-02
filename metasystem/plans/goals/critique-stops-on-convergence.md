@@ -5,11 +5,11 @@
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
 - Tier: 2
-- Intent: Critique loops (design and code) stop on a trusted per-tier criterion, few rounds being the norm (Wido 2026-10-02: many rounds only for a too-large or truly complex problem). Before a loop starts, its brief names the threat model and the rabbit-hole risks with their mitigations (required at tier 3, short at tier 2). Dispatch decides each round from recorded material counts: zero = stop; otherwise continue. The steward watches every loop and alerts the AGENT running the critique, never the human: past the tier's watch threshold (e.g. round 3 at tier 2), count not falling, or findings mostly in the last fold; each alert carries advice drawn from the loop's own named risks: it matches the current findings to the risk they show and gives that risk's mitigation as the next step, so the loop converges under guidance. If guided convergence fails, the loop runs into the per-tier cap (20), and only there does the failure bubble up to the human, with the signals and the advice given. The steward records each loop's end cause (criterion, guided convergence, cap) so trust in the criterion is measured.
+- Intent: Critique loops stop on a trusted per-tier criterion, few rounds being the norm (Wido 2026-10-02). Tier 1: no critique required; one is allowed when asked for (today tier 1 refuses every critic role), with a HARD cap of 1 round and none of the guidance machinery; a material finding that cannot be fixed locally means the tier was wrong and the goal moves to tier 2. Tiers 2 and 3: before a loop starts, its brief names the threat model and the rabbit-hole risks with mitigations (short at tier 2, required at tier 3); dispatch decides each round from recorded material counts (zero = stop, else continue); the steward watches every loop and alerts the AGENT running the critique, never the human (past the tier's watch threshold e.g. round 3 at tier 2, count not falling, findings mostly in the last fold), each alert carrying advice drawn from the loop's own named risks (match findings to a risk, give its mitigation as the next step) so the loop converges under guidance; if that fails the loop runs into the far-away cap (20) and only there does failure bubble up to the human, with the signals and advice given. The steward records each loop's end cause (criterion, guided convergence, cap, re-tier) so trust in the criterion is measured.
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 19
+- Revision: 20
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -33,4 +33,5 @@ History:
 - 2026-10-02T11:54:11Z HZ1KE8V3PMG3P4J1Q6HE8Z4HYB-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:54:16Z V3CEK16M66CG75VA05MH18GEDS-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:55:24Z VERNWF01V63E3EFJTX4AG4NRY5-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=Wido 2026-10-02: tier 1 opt-in critique with a hard cap
-Integrity: sha256=662f1a98f8e28106e81a1425b9f77e5052e24f80f39c28b4a108ab1ec2d1bf3b
+- 2026-10-02T11:55:28Z WZT2WY34M1YTQYKKZME5SWBA3D-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
+Integrity: sha256=17672ab3653ecb7c53bd4b1cd97c8a4d3ea382e944ea1a8a8e65a31766d012d8
