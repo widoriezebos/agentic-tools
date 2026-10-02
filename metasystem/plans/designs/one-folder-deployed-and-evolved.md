@@ -44,171 +44,183 @@ They run `metasystem system adopt` in their repository. Afterwards the visible t
 
 # Part 2: Design
 
+Round 1 of the critique (Codex Astra, 10 material findings) is folded below. R1-05 and R1-06 are answered by deferring this repository's own move to step 2. The other eight are part of step 1.
+
 ## Threat model and rabbit-hole risks (read before critiquing)
 
 This is the template default. Our own agents and operators make mistakes: a seat writes state to the old path, a text cites a bare path, an upgrade copies over a project file. Nobody attacks.
 
 | Rabbit hole | Mitigation |
 |---|---|
-| A migration framework for every past layout | One hard cutover. This repository moves in one commit. Root-placed and `vendor/`-placed adopters are deferred, and the new engine refuses those layouts with one line of guidance. |
-| Making every path configurable | One fixed folder name, `metasystem`, always at the repository root. No key names a path. |
-| Moving class 4 off the repository entirely | Class 4 stays in `metasystem/artifacts/`, ignored by Git. The evidence root that already lives outside the repository stays as it is. |
-| Redesigning root resolution beyond the one rule | Only the state-root rule changes. Locating the installation from `bin/..` stays as it is. |
-| Touching unrelated docs | Only texts that cite paths are rewritten, and only their path tokens. This repository's `development/`, `paper/`, `environment/` and `redesign/` stay where they are. |
-| Moving the configuration files in step 1 | 169 Go sites join `metasystem.conf` onto the installation (*grep count*). The files stay where they are in step 1 and are listed by name as never touched. Moving them is deferred. |
-| Renaming `artifacts/` to `local/` in step 1 | `artifacts` appears at 403 Go sites. `local/` is named in the layout and reserved, and the rename is deferred. |
+| A migration framework for every past layout | Step 1 covers fresh adoptions only. This repository's move is step 2, a separate decision. Existing adopters are deferred. The new engine refuses old adopted layouts with one line of guidance. |
+| Making every path configurable | One fixed folder name, `metasystem`, at the repository root. No new key is added. |
+| Moving class 4 off the repository | Class 4 stays in `metasystem/artifacts/`, ignored by Git. |
+| Redesigning root resolution beyond the one rule | Only the state-root rule changes. Locating the installation from `bin/..` stays as it is, and configuration keeps being read at the installation. |
+| Touching unrelated docs | Only texts that cite paths are rewritten, and only their path tokens. |
+| Moving the configuration files in step 1 | 169 Go sites join `metasystem.conf` onto the installation (*grep count*). The files stay where they are and are listed by name as never touched. Moving them is deferred. |
+| Renaming `artifacts/` to `local/` in step 1 | `artifacts` appears at 403 Go sites. `local/` is reserved, and the rename is deferred. |
 | Rewriting the engine's ~120 Go messages that print state paths | Deferred. Step 1 fixes the texts agents route by. |
-| Keeping a fallback for the old layout | None. Mixed engine versions are parked; old installations keep their old engine. |
-| Moving the runtime discovery files into the folder | This is impossible: runtimes read `.claude/`, `.codex/`, `.agents/` and `.devin/` at the launch directory, and GitHub reads `.github/` at the root. They stay generated, and are never hand-edited. |
-| Rewriting Git history for the move | `git mv` only. |
+| Keeping a fallback for old adopted layouts | None. Mixed engine versions are parked. |
+| Moving the runtime discovery files into the folder | Impossible. Runtimes read `.claude/`, `.codex/`, `.agents/` and `.devin/` at the launch directory, and GitHub reads `.github/` at the root. These stay generated. |
 
 ## The layout
 
 ```
 <app>/
-  AGENTS.md, CLAUDE.md          pointer files (managed block only)
+  AGENTS.md, CLAUDE.md          pointer files (managed block; app text kept)
   .claude/ .agents/ .codex/ .devin/ .github/workflows/metasystem.yml   generated registrations
   metasystem/                   class 1, replaced as a whole on upgrade
     AGENTS.md wow.md docs/ skills/ cmd/ internal/ go.mod bin/ ...
-    metasystem.conf             class 3, committed (stays here in step 1)
-    metasystem.conf.local       class 3, ignored (stays here in step 1)
+    metasystem.conf             class 3, committed (stays here for now)
+    metasystem.conf.local       class 3, ignored (stays here for now)
     artifacts/                  class 4, ignored (becomes local/ later)
     project/                    classes 2+3, committed, never shipped
       plans/ (goals/, designs/, reviews/, briefs, goals.md)
-      memory/ records/ testing.json
+      memory/ records/ testing.json launch.json
       docs/intent/ docs/doctrine/ docs/decisions/ docs/project-rules.md
     local/                      reserved, ignored, never shipped
 ```
 
-This repository has exactly the same shape. The only difference is that its `metasystem.conf` carries `metasystem.template=true`.
+This repository keeps its current shape until step 2, when it takes exactly this one.
 
 ## How the engine resolves roots after the change
 
 - **Installation root:** unchanged. It is `bin/..` of the running executable and must hold `metasystem.conf` (`metasystem/internal/stateroot/stateroot.go:304-320`).
-- **State root, the one rule:** the state root is `<installation>/project`, in every layout. `RootForInstallation` (`stateroot.go:145-153`) loses both its template branch and its `repositoryTop` branch. Template mode no longer decides where state lives.
-- **Machine state:** `Steward` (`stateroot.go:297`) resolves against the installation, not the state root, so it stays in `metasystem/artifacts/agents/steward`.
-- **Layout:** `ResolveLayout` (`stateroot.go:164-213`) accepts one placement, `<git top>/metasystem`. That gives `RepositoryRoot = GitRoot` and `InstallationRel = "metasystem"`. The engine then refuses an installation at the Git top, or at any other depth, with this guidance:
+- **Configuration:** always read at the installation root. A caller that hands the state root to a configuration reader is a defect (R1-04). Budget calls (`metasystem/cmd/metasystem/intent_goals.go:509-514`) pass the state root for ledger operations and the installation for `metasystem.conf`.
+- **State root, the one rule:** for an adopted installation, the state root is `<installation>/project`. `RootForInstallation` (`stateroot.go:145-153`) replaces its `repositoryTop` branch with this rule. The template branch, which returns the installation itself, stays until step 2 and is deleted there.
+- **Project paths in Git trees:** code that names a project path in a Git tree (landing rows, metrics, the testing-contract driver) builds it from the state root's path relative to the repository: `metasystem/project` when adopted, `metasystem` in the template. It never uses a literal.
+- **Machine state:** `Steward` (`stateroot.go:297`) resolves against the installation, so it stays in `metasystem/artifacts/agents/steward`.
+- **Layout:** for a non-template installation, `ResolveLayout` (`stateroot.go:164-213`) accepts only `<git top>/metasystem`. That gives `RepositoryRoot = GitRoot` and `InstallationRel = "metasystem"`. An installation at the Git top, or at any other depth, is refused:
   > This installation uses an older layout. Adopt the current MetaSystem into a clean repository, or keep the engine it came with.
-- **Readers of Git trees** join the prefix `metasystem/project/` before `RelativeRoot(kind)` (`stateroot.go:287`).
-- **Second design homes:** both go away (`metasystem/internal/project/project.go:213-219`). The checkout's own `plans/designs/` moves into the state root. The flat historical designs are now under `project/plans/` and are read from there.
+- **Contract defaults:** the defaults of `testing.contract` and `launch.contract` become `project/testing.json` and `project/launch.json`, still relative to the installation (`metasystem/internal/config/defaults.go:65-67`).
+  - This repository sets both keys back to the old names in its `metasystem.conf` until step 2.
+  - Registration drops its own `testing.json` fallback and reads the configured value (`metasystem/internal/hookswitch/switch.go:113-122`).
 
 ## The upgrade rule
 
 - **Replaced:** every path inside `metasystem/` that `stateroot.Owner` classes as `metasystem-generic`.
-- **Never touched:** `project/**`, `local/**`, `artifacts/**`, `metasystem.conf` and `metasystem.conf.local`.
+- **Never touched:** `project/**` (and with it `testing.json` and `launch.json`), `local/**`, `artifacts/**`, `metasystem.conf` and `metasystem.conf.local`.
 - **Rebuilt:** `bin/`.
 - **Enforced by:**
-  - The classifier (`metasystem/internal/stateroot/owner.go:96-120`) becomes the single list. `project/` is app-owned. `artifacts/`, `bin/` and `local/` are runtime. The two configuration files are app-owned. The rest of the installation is generic. The root-inventory branch (`owner.go:110-160`) is deleted, because no installation sits at the root any more.
-  - The payload never contains a never-touched path (audit B1). Replacing the generic set therefore cannot carry project content in either direction.
-  - The upgrade verb itself is deferred. Today's manual checklist in `docs/metasystem-reconciliation.md` is rewritten to "replace everything but these five names".
-
-## The move in this repository
-
-The move is one commit made with `git mv`, while the lane is paused and no seat is writing, because the receipts and the digest are live. Every seat rebuilds its engine afterwards.
-
-- `metasystem/{plans,memory,records}` move to `metasystem/project/{plans,memory,records}`.
-- `metasystem/docs/{intent,doctrine,decisions,project-rules.md}`, and the files in `docs/stop-decision-moves/` other than its README, move under `metasystem/project/docs/`.
-- `metasystem/testing.json`, `testing-coverage-floors*.json` and `testing-parallel-ratchet.json` move to `metasystem/project/`. Their `paths` and `inputs` that name moved files are rewritten.
-- The root `plans/**`, designs included (no name collides, checked), moves to `metasystem/project/plans/`.
-- `metasystem/.gitattributes` union lines gain the `project/` prefix. `metasystem/.gitignore` gains `local/`.
-- The three READMEs (`plans/`, `memory/`, `records/`) move with their folders. Adoption seeds them once.
+  - The adopted branch of the classifier (`metasystem/internal/stateroot/owner.go:96-160`) becomes the single list. `project/` is app-owned. `artifacts/`, `bin/` and `local/` are runtime. The two configuration files are app-owned. The rest of the installation is generic. The root-inventory branch (`owner.go:110-160`) goes, because no adopted installation sits at the root any more.
+  - The payload never contains a never-touched path (audit B1). This is the preservation check.
+  - The upgrade verb itself is deferred.
 
 ## How adoption creates the layout
 
-- The payload is `git archive HEAD:metasystem` minus `project/`, `local/`, `artifacts/`, `bin/` and the `.local` file. The stripping code (`metasystem/internal/adopt/adopt.go:650`, `:684-687`, `:747`) is deleted, because nothing app-owned is left in the archive to strip.
-- The payload is copied to `<target>/metasystem/`. `bin/metasystem` goes to `<target>/metasystem/bin/`.
-- Adoption then seeds `metasystem/project/` once:
-  - goal genesis, written to `metasystem/project` instead of the target (`adopt.go:408`);
-  - the empty registers and READMEs;
-  - `plans/goals.md`;
-  - an incomplete `testing.json`;
-  - `docs/project-rules.md` with the SHA marker.
-- `artifacts/` and its ignore line go inside `metasystem/` (`adopt.go:418-421`).
-- `collide()` now looks only at `metasystem/`, the two pointer files and the registrations. An application's own `go.mod`, `cmd/` and `docs/` can no longer collide.
-- **Pointer files.** `system setup` writes the managed block into the root `AGENTS.md` and `CLAUDE.md` for every installation, not only the template (`metasystem/internal/hostsetup/setup.go:131`). The block reads:
+- **Payload.** The payload is `git archive HEAD:metasystem` minus `project/`, `local/`, `artifacts/`, `bin/`, `launch.json`, `testing.json` and the `.local` file. The template's own project files are therefore never shipped (R1-01). The stripping code (`metasystem/internal/adopt/adopt.go:650`, `:684-687`, `:747`) is deleted.
+- **Placement.** The payload is copied to `<target>/metasystem/`. `bin/metasystem` goes to `<target>/metasystem/bin/`.
+- **Seeding `metasystem/project/`, once:**
+  - The empty registers and READMEs, `plans/goals.md`, an incomplete `testing.json`, and `docs/project-rules.md` with the SHA marker.
+  - Goal genesis gets two roots (R1-02). The goal store takes `metasystem/project`. The commit-fence enrollment stays at `metasystem/`, because it needs `<root>/bin/metasystem` (`metasystem/cmd/metasystem/intent_adopt.go:194-202`, `metasystem/internal/ledgerfence/fence.go:36-46`).
+- **Ignore rules.** `artifacts/` and its ignore line go inside `metasystem/` (`adopt.go:418-421`).
+- **Instruction files (R1-08).**
+  - `AGENTS.md` and `CLAUDE.md` leave the blanket preflight refusal list (`metasystem/internal/adopt/adopt.go:73-76`, used at `:528-532`).
+  - The managed-block merger (`metasystem/internal/hostsetup/setup.go:237-266`) keeps the application's existing text and adds the block.
+  - `collide()` now looks only inside `metasystem/`. An application's own `go.mod`, `cmd/` and `docs/` no longer collide.
+- **CI workflow (R1-07).** The generated GitHub workflow takes `go-version-file: metasystem/go.mod`, builds with `cd metasystem && go build -o bin/metasystem ./cmd/metasystem`, and runs `metasystem/bin/metasystem test run` (`metasystem/internal/adopt/github-actions-metasystem.yml:13-21`).
+- **Pointer files.** `system setup` writes the managed block for every installation, not only the template (`setup.go:131`). The block reads:
   > MetaSystem is installed in `metasystem/`. Its agent contract is `metasystem/AGENTS.md`; route with `metasystem/wow.md`. This application's plans, decisions and records are in `metasystem/project/`. Paths in MetaSystem's texts are relative to this repository's root.
 
-  The `development/` line stays template-only (`setup.go:228-235`). Text outside the markers belongs to the application and survives.
-- **Why files and not a folder:** Claude Code, Codex and Devin discover instructions only as a file named `CLAUDE.md` or `AGENTS.md` in the directory they start in. A pointer file is the least that works, it adds no folder, and the application can keep its own text in it.
+  The `development/` line stays template-only (`setup.go:228-235`).
+- **Why files and not a folder:** Claude Code, Codex and Devin discover instructions only as a file named `CLAUDE.md` or `AGENTS.md` in their start directory. A pointer file is the least that works, it adds no folder, and it keeps the application's own text.
 
 ## Citing files from any working directory
 
-- **One base for every agent-facing text:** the repository root, which is `git rev-parse --show-toplevel` of the checkout or worktree the agent is in.
-  - MetaSystem's files are cited as `metasystem/...`.
-  - The application's are cited as `metasystem/project/...`.
-- This matches Git paths, the return schemas (`^metasystem/.+`) and the testing contract, all of which already use it.
+- **One base for agent-facing texts:** the repository root of the checkout or worktree. MetaSystem's files are cited as `metasystem/...` and the application's as `metasystem/project/...`. This matches Git paths, the return schemas (`^metasystem/.+`) and the testing contract.
 - **What gets rewritten, token by token:**
   - the bare paths in `AGENTS.md`, `wow.md`, the role files, the brief templates and every shipped `SKILL.md`;
-  - the self-hosted `R0/metasystem` base in `design-common.md`.
-- The base sentence opens `metasystem/AGENTS.md` and `metasystem/wow.md`.
-- Commands that must run inside the installation say so explicitly: "`cd metasystem && go run ./cmd/devgate static`".
-- The design-critique skill's three dangling citations become plain prose with no path.
+  - the `R0/metasystem` base in `design-common.md`.
+- The base sentence opens `metasystem/AGENTS.md` and `metasystem/wow.md`. Commands that must run inside the installation say so: "`cd metasystem && go run ./cmd/devgate static`".
+- The design-critique skill's three dangling citations become plain prose.
+- **This repository until step 2.** Its template-only pointer line adds: "Until this repository's move, `metasystem/project/X` is at `metasystem/X`."
 
 ## The audit that keeps the boundary
 
-These checks are added to `metasystem audit` (`metasystem/internal/audit/metasystem.go:74`) and run in the static gate:
-
-- **B1, payload:** the staged payload holds nothing under `project/`, `local/`, `artifacts/` or `bin/`, and no `*.local` file.
-- **B2, shape:** a fresh adoption into a temporary Git repository changes the top level only by `metasystem/`, `AGENTS.md`, `CLAUDE.md` and the registration entries. `git status` after one goal-and-design round shows changes only under `metasystem/project/`.
-- **B3, citations:** every backticked path in a shipped agent text starts with `metasystem/`. It must either exist in the shipped tree, or be a seeded file or home under `metasystem/project/`. This is derived from the texts and replaces the hardcoded list of 32 paths in `TestShippedInstallationRoutedAssetsExist` (`metasystem/internal/audit/shipped_installation_test.go:109`).
-- **B4, engine:** outside `internal/stateroot`, no non-test Go file contains `metasystem/memory`, `metasystem/plans`, `metasystem/records` or `metasystem/testing.json`. This is a literal check, and its limit is that a join built in pieces escapes it. B2 catches that case by behaviour.
+- **B1, payload:** added to `metasystem audit` (`metasystem/internal/audit/metasystem.go:74`). The staged payload holds nothing under `project/`, `local/`, `artifacts/` or `bin/`, and no `launch.json`, `testing.json` or `*.local` file.
+- **B2, shape (R1-09):** this is not part of the production audit. Adoption already calls that audit (`metasystem/internal/adopt/adopt.go:444-453`), so a fresh adoption inside the audit would loop. B2 is instead an end-to-end adoption test in the static selection. A fresh adoption must change the top level only by `metasystem/`, the two pointer files and the registrations. After one goal-and-design round, `git status` must show changes only under `metasystem/project/`.
+- **B3, citations:** every backticked path in a shipped agent text starts with `metasystem/`. It either exists in the shipped tree or is in the seed list for `metasystem/project/`. This replaces the hardcoded list of 32 paths (`metasystem/internal/audit/shipped_installation_test.go:109`).
+- **B4, engine:** outside `internal/stateroot`, no non-test Go file contains the literals `metasystem/memory`, `metasystem/plans`, `metasystem/records` or `metasystem/testing.json`. A join built in pieces escapes this check; B2 catches it by behaviour.
 
 ## Moved effects
 
 | Effect | From | To | Code |
 |---|---|---|---|
-| Choosing where application state lives | Git top for adopters; installation for the template | `<installation>/project` for both | `metasystem/internal/stateroot/stateroot.go:145-153` |
+| Choosing where adopted state lives | Git top | `<installation>/project` | `metasystem/internal/stateroot/stateroot.go:145-153` |
 | Keeping steward machine state | state root plus `artifacts/agents/steward` | installation plus `artifacts/agents/steward` | `metasystem/internal/stateroot/stateroot.go:297` |
-| Accepting an installation's placement | root, nested at any depth, or template | `<git top>/metasystem` only | `metasystem/internal/stateroot/stateroot.go:164-213` |
+| Accepting an adopted installation's placement | root or nested at any depth | `<git top>/metasystem` only | `metasystem/internal/stateroot/stateroot.go:164-213` |
+| Reading a goal's budget configuration | the state root passed as the configuration root | the installation's `metasystem.conf` | `metasystem/cmd/metasystem/intent_goals.go:509-514`, `metasystem/internal/config/budget.go:256-261` |
+| Locating the testing contract | installation `testing.json`; registration's own fallback | `project/testing.json` default; one reader | `metasystem/internal/config/defaults.go:65`, `metasystem/internal/hookswitch/switch.go:113-122` |
+| Locating the launch contract | installation `launch.json`, shippable | `project/launch.json`, never shipped | `metasystem/internal/config/defaults.go:67`, `metasystem/cmd/metasystem/app.go:49-69` |
 | Placing an adoption | target root | `<target>/metasystem` | `metasystem/internal/adopt/adopt.go:381`, `metasystem/internal/adopt/adopt.go:386` |
-| Keeping project content out of the payload | stripping after archive | archive excludes `project/` | `metasystem/internal/adopt/adopt.go:650`, `metasystem/internal/adopt/adopt.go:747` |
-| Seeding goal genesis | target root | `<target>/metasystem/project` | `metasystem/internal/adopt/adopt.go:408` |
+| Keeping project content out of the payload | stripping after archive | archive excludes project files | `metasystem/internal/adopt/adopt.go:650`, `metasystem/internal/adopt/adopt.go:747` |
+| Seeding goal genesis | target root for store and fence | store at `metasystem/project`, fence at `metasystem/` | `metasystem/cmd/metasystem/intent_adopt.go:194-202`, `metasystem/internal/ledgerfence/fence.go:36-46` |
 | Ignoring runtime state | target `.gitignore` | `metasystem/.gitignore` | `metasystem/internal/adopt/adopt.go:418-421` |
+| Treating existing instruction files | blanket preflight refusal | managed-block merge | `metasystem/internal/adopt/adopt.go:73-76`, `metasystem/internal/adopt/adopt.go:528-532` |
+| Building and running the engine in CI | root `go.mod`, root `bin/metasystem` | `metasystem/go.mod`, `metasystem/bin/metasystem` | `metasystem/internal/adopt/github-actions-metasystem.yml:13-21` |
 | Writing the root pointer files | template only | every installation | `metasystem/internal/hostsetup/setup.go:131`, `metasystem/internal/hostsetup/setup.go:228-235` |
 | Classifying what an upgrade may replace | prefix rule plus root inventory | `project/` app-owned, rest generic | `metasystem/internal/stateroot/owner.go:96-160` |
-| Reading the self-hosted design homes | checkout `plans/designs`, installation `plans` | state root only | `metasystem/internal/project/project.go:213-219` |
+| Running the shape check | the production audit, as drafted | end-to-end adoption test, not the production audit | `metasystem/internal/adopt/adopt.go:444-453` |
 | Locking the receipts log | installation `memory/` | state root `memory/` | `metasystem/internal/receiptlog/receiptlog.go:81` |
 | Reading rulings | installation or `repoRoot/memory` | state root `memory/` | `metasystem/cmd/metasystem/ui.go:768`, `metasystem/internal/dispatch/slice.go:115` |
+| Reading known issues and linking to them | installation `memory/` | `roots.StateRoot` | `metasystem/cmd/metasystem/ui.go:780-783`, `metasystem/cmd/metasystem/ui.go:1312-1313` |
 | Finding mission contracts | Git top `plans/` | state root `plans/` | `metasystem/cmd/metasystem/intent_process.go:2337` |
-| Writing a landing's receipt row | `metasystem/memory/receipts.log` | `metasystem/project/memory/receipts.log` | `metasystem/internal/goal/branch/land.go:481` |
-| Naming the testing contract in Git | `metasystem/testing.json` | `metasystem/project/testing.json` | `metasystem/internal/testpolicy/contractgit/driver.go:16` |
-| Copying a critique's design input | `metasystem/plans` | `metasystem/project/plans` | `metasystem/internal/launch/codex.go:118` |
-| Reading metrics from Git trees | prefix plus `plans/` | prefix plus `project/plans/` | `metasystem/internal/metrics/data.go:221`, `metasystem/internal/metrics/data.go:317` |
-| Stating where designs live | `design-obligation-gate.md` (adopter root `plans/designs/`) | `metasystem/project/plans/designs/` everywhere | `metasystem/docs/design/design-obligation-gate.md:34` |
+| Writing a landing's receipt row | literal `metasystem/memory` | state root's repository path | `metasystem/internal/goal/branch/land.go:481` |
+| Naming the testing contract in Git | literal `metasystem/testing.json` | state root's repository path | `metasystem/internal/testpolicy/contractgit/driver.go:16` |
+| Copying a critique's design input | literal `metasystem/plans` | state root `plans/` | `metasystem/internal/launch/codex.go:118` |
+| Reading metrics from Git trees | prefix plus `plans/` | state root's repository path | `metasystem/internal/metrics/data.go:221`, `metasystem/internal/metrics/data.go:317` |
+| Stating where an adopter's designs live | the application's root `plans/designs/` | `metasystem/project/plans/designs/` | `metasystem/docs/design/design-obligation-gate.md:34` |
 
 ## Tests
 
-1. **stateroot.** The state root is `<installation>/project` with and without template mode. `Steward` resolves under the installation's `artifacts/`. `<git>/metasystem` resolves with `InstallationRel "metasystem"`. An installation at the Git top, or at `vendor/metasystem`, is refused with the guidance line.
-2. **Owner.** `project/x` is app-owned. `artifacts/x`, `bin/x` and `local/x` are runtime. The configuration files are app-owned. `docs/x` and `skills/x` are generic. Each case is checked with a mutation that flips the rule.
-3. **Adoption end to end.** Adopt into a fresh repository that already has its own `go.mod`, `cmd/` and `docs/`; it succeeds. Then run `goal add`, `design list`, `receipt add` and `question list`, each from the application root, from `metasystem/` and from a subdirectory. Every read and write lands under `metasystem/project/`. Audits B1 and B2 pass.
-4. **Each moved-effect site** is driven in the new layout: the receipt lock, rulings, mission contracts, the landing receipt row, the testing-contract merge driver, the critique input copy and the metrics prefix.
-5. **Audits B3 and B4.** A fixture text with a bare `docs/x.md`, a `metasystem/docs/missing.md` or a Go literal `metasystem/plans` is refused. The shipped tree passes.
-6. **Self-hosted parity.** `goal list`, `design list` and `receipt status` give the same counts before and after the move in this repository.
+1. **stateroot.** An adopted installation's state root is `<installation>/project`; the template's is unchanged. `Steward` resolves under `artifacts/`. `<git>/metasystem` resolves with `InstallationRel "metasystem"`. An adopted installation at the Git top or at `vendor/metasystem` is refused with the guidance line.
+2. **Owner.** `project/x` is app-owned. `artifacts/x`, `bin/x` and `local/x` are runtime. The configuration files are app-owned. `docs/x` is generic. Each case has a mutation that flips it.
+3. **Adoption end to end (B2).**
+   - The target already has `go.mod`, `cmd/`, `docs/`, and populated `AGENTS.md` and `CLAUDE.md`. Adoption succeeds, and the application's text survives around the managed block.
+   - Genesis enrolls the fence with `metasystem/bin/metasystem`.
+   - `goal add`, `design list`, `receipt add` and `question list` are each run from the application root, from `metasystem/` and from a subdirectory, and every one lands under `metasystem/project/`.
+   - The generated workflow's three commands run green in the target.
+4. **Configuration cutover.** `metasystem.conf` sets a tier budget that differs from the compiled default, and `goal budget G norm` applies it. A completed `project/testing.json` is read by `settings check` and by test selection. `project/launch.json` is what `app` reads.
+5. **Each moved-effect site** is driven in the new layout: the receipt lock, rulings, the Application page with a populated known-issues register, mission contracts, the landing receipt row, the merge driver, the critique input copy and the metrics prefix.
+6. **Audits B1, B3 and B4.** A payload containing `launch.json`, a text with a bare `docs/x.md`, and a Go literal `metasystem/plans` are each refused. The shipped tree passes.
 
 ## Step 1
 
-Step 1 is one slice, landed as a hard cutover:
+Step 1 is fresh adoption in the one-folder layout, plus the engine rules that adoption needs:
 
-- the state-root rule and the layout rule;
+- the adopted state-root and layout rules;
+- configuration read at the installation;
+- the contract defaults;
 - the ownership classifier;
-- adoption into `metasystem/` with the payload exclusions and seeding;
+- adoption into `metasystem/`, with its exclusions, seeding, two-root genesis, the instruction-file merge and the CI workflow;
 - pointer files for every installation;
-- the eleven bypass sites in the Moved effects table;
-- the citation base sentence and the token rewrite of shipped agent texts;
-- audits B1 to B4;
-- the move in this repository;
-- the design-home rule text.
+- the bypass sites in the Moved effects table;
+- the citation rewrite;
+- audits B1, B3 and B4, plus the B2 test.
 
-After step 1, a person adopting into an existing application gets one folder plus two pointer files, and every agent finds its files.
+This repository keeps its layout. After step 1, a person adopting into an existing application gets one folder plus two pointer files, and every agent finds its files.
 
 ## Deferred
 
+**Step 2: this repository's own move.** It is a separate decision, taken after step 1 works. Its plan:
+
+- In one `git mv` commit, with the lane paused, `metasystem/{plans,memory,records}`, `docs/{intent,doctrine,decisions,project-rules.md}`, `testing*.json`, `launch.json` and the root `plans/**` (no name collides) move under `metasystem/project/`; the `.gitattributes` union lines gain `project/`.
+- Afterwards the template branch of `RootForInstallation`, the second design homes (`metasystem/internal/project/project.go:213-219`) and this repository's contract keys are deleted.
+
+Two prerequisites must be specified and proven before step 2 lands:
+
+- **R1-05:** an identity-preserving transition of the accepted goal-ledger ref to the moved tree. The next normal fetch must validate after it (`metasystem/internal/goal/fetchadvance.go:100-129`).
+- **R1-06:** the record and ledger landing classifications, and their carriage path comparisons, move with the files (`metasystem/internal/pathclass/path-classes.txt:28-42`, `metasystem/internal/landing/observe.go:1074-1124`). A receipt-only landing is exercised after the move.
+
+The parity test for step 2: `goal list`, `design list` and `receipt status` give the same counts before and after the move.
+
 | Item | Builds on |
 |---|---|
+| Step 2, this repository's move (above) | R1-05 and R1-06 as prerequisites; the step-1 state-root rule |
 | Migrating existing root-placed or `vendor/`-placed adopters | the `ResolveLayout` refusal and the `Owner` classes |
-| A `system upgrade` verb that replaces the generic set | `Owner`'s never-touched list and audit B1 |
-| An installed-SHA marker outside `project/` (needed by upgrade) | the seeded `docs/project-rules.md` marker (`adopt.go:424`) |
-| `metasystem.conf` into `project/`, `.local` into `local/` | one configuration-path helper replacing the joins (`metasystem/internal/config/template.go:18` is the pattern) |
-| `artifacts/` renamed to `local/` | the `Steward` kind and the `artifacts`/`local` runtime class in `Owner` |
+| A `system upgrade` verb | `Owner`'s never-touched list and audit B1 |
+| An installed-SHA marker outside `project/` | the seeded `docs/project-rules.md` marker (`metasystem/internal/adopt/adopt.go:424`) |
+| `metasystem.conf` into `project/`, `.local` into `local/` | configuration read at the installation (one place to change) |
+| `artifacts/` renamed to `local/` | the `Steward` kind and the runtime class in `Owner` |
 | Go messages printing state paths relative to the repository root | `Layout.GitRoot` |
-| The CWD fallback `.metasystem/` in `metasystem/internal/registry/selection.go:23` | the installation's `artifacts/` |
+| The CWD fallback `.metasystem/` (`metasystem/internal/registry/selection.go:23`) | the installation's `artifacts/` |
