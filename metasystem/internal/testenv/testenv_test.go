@@ -23,6 +23,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+// agedPastEverySweep is a fixed modification time older than any age the
+// registry sweep waits for, so a file stamped with it is aged however long
+// the test ran.
+var agedPastEverySweep = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
 func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *testing.T) {
 	hostileRegistry := filepath.Join(t.TempDir(), "metasystem-test-registry-hostile")
 	if err := os.Mkdir(hostileRegistry, 0o700); err != nil {
@@ -270,7 +275,7 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	if err := os.Symlink(unrelated, symlink); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-8 * 24 * time.Hour)
+	old := agedPastEverySweep
 	for _, path := range []string{live.path, unrelated} {
 		if err := os.Chtimes(path, old, old); err != nil {
 			t.Fatal(err)
@@ -337,7 +342,7 @@ func TestSweepKeepsSidecarsWithoutAuthenticatedDeadHome(t *testing.T) {
 	live, err := createRegistryHomeUnder(os.MkdirTemp, root)
 	checkTestenv(t, err)
 	t.Cleanup(func() { _ = live.cleanupReporting(io.Discard) })
-	old := time.Now().Add(-8 * 24 * time.Hour)
+	old := agedPastEverySweep
 	makeFile := func(name string) string {
 		path := filepath.Join(root, name)
 		checkTestenv(t, os.WriteFile(path, []byte("diagnostic\n"), 0o600))
@@ -451,7 +456,7 @@ func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 	registry := filepath.Join(t.TempDir(), "registry")
 	ref, records, err := startFixtureCustodian(func() *exec.Cmd { command = exec.Command(os.Args[0]); return command }, registry)
 	checkTestenv(t, err)
-	reapCustodianAfterTest(t, command, ref, testPoll, testBound)
+	reapCustodianAfterTest(t, command, ref)
 	if info, statErr := os.Stat(records); statErr != nil || !info.Mode().IsRegular() || records != fmt.Sprintf("%s.fixture-refs-%d", registry, os.Getpid()) {
 		t.Fatalf("custodian records = %q, info=%v err=%v", records, info, statErr)
 	}
@@ -471,7 +476,7 @@ func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 			return timedCommand
 		}, timedRegistry)
 		checkTestenv(t, err)
-		reapCustodianAfterTest(t, timedCommand, timedRef, 17*time.Millisecond, 500*time.Millisecond)
+		reapCustodianAfterTest(t, timedCommand, timedRef)
 		for _, want := range []string{
 			identity.FixtureCustodianPollEnv + "=17ms",
 			identity.FixtureCustodianBoundEnv + "=500ms",
@@ -485,40 +490,19 @@ func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 			}
 		}
 	})
-	t.Run("cleanup wait is bounded", func(t *testing.T) {
-		expired := make(chan time.Time, 1)
-		expired <- time.Unix(1, 0)
-		if custodianReaped(make(chan error), expired) {
-			t.Fatal("expired custodian cleanup reported a reap")
-		}
-	})
 }
 
-func reapCustodianAfterTest(t *testing.T, command *exec.Cmd, ref identity.Ref, poll, bound time.Duration) {
+// reapCustodianAfterTest kills the custodian the test started when the test
+// ends and joins it: the custodian is this process's child, so its Wait is
+// the exit event, with no bound of its own.
+func reapCustodianAfterTest(t *testing.T, command *exec.Cmd, ref identity.Ref) {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	t.Cleanup(func() {
-		started := time.Now()
 		_ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL)
-		timer := time.NewTimer(10 * (bound + poll))
-		defer timer.Stop()
-		if custodianReaped(done, timer.C) {
-			return
-		}
-		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
-		t.Errorf("custodian %d did not report exit after %s (bound %s): state=%s same=%t zombie=%t probe=%v",
-			ref.Pid, time.Since(started), 10*(bound+poll), state, identity.SameIdentity(exact, ref), exact.Zombie, err)
+		<-done
 	})
-}
-
-func custodianReaped(done <-chan error, bound <-chan time.Time) bool {
-	select {
-	case <-done:
-		return true
-	case <-bound:
-		return false
-	}
 }
 
 func liveTestOwner(t *testing.T) identity.Ref {
@@ -604,7 +588,7 @@ func TestHelperProcessReusesAuthenticatedParentRegistryHome(t *testing.T) {
 
 func TestLiveRegistryHomeSurvivesAnotherProcessMainWhenBackdated(t *testing.T) {
 	command, home := startRegistryOwnerProcess(t)
-	old := time.Now().Add(-2 * time.Hour)
+	old := agedPastEverySweep
 	if err := os.Chtimes(home, old, old); err != nil {
 		t.Fatal(err)
 	}
@@ -700,10 +684,7 @@ func stopRegistryOwnerProcess(t *testing.T, command *exec.Cmd) {
 // still locked by its running custodian.
 func waitRegistryCustodiansExited(t *testing.T, home string) {
 	t.Helper()
-	bound, err := FixtureExitWaitBound()
-	checkTestenv(t, err)
-	deadline := time.Now().Add(bound)
-	for {
+	Await(t, "every custodian log beside "+home+" to be unlocked", func() bool {
 		logs, err := filepath.Glob(home + ".custodian-*.log")
 		checkTestenv(t, err)
 		held := 0
@@ -717,14 +698,8 @@ func waitRegistryCustodiansExited(t *testing.T, home string) {
 			}
 			_ = log.Close()
 		}
-		if held == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d custodian logs beside %s stayed locked for %s", held, home, bound)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return held == 0
+	})
 }
 
 func runRegistryScavenger(t *testing.T) {

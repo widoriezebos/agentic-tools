@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -93,7 +92,7 @@ func TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian(t *testing.T) 
 	checkTestenv(t, os.WriteFile(runningRecords, nil, 0o600))
 	checkTestenv(t, os.WriteFile(runningLog, []byte("running custodian diagnostic\n"), 0o600))
 	checkTestenv(t, os.WriteFile(finishedLog, []byte("finished custodian diagnostic\n"), 0o600))
-	old := time.Now().Add(-8 * 24 * time.Hour)
+	old := agedPastEverySweep
 	for _, path := range []string{runningRecords, runningLog} {
 		checkTestenv(t, os.Chtimes(path, old, old))
 	}
@@ -202,7 +201,7 @@ func TestRegistrySidecarCleanupKeepsRecordsWhenLiveCustodianLogIsUnlinked(t *tes
 	checkTestenv(t, err)
 	records, log := owner.path+".fixture-refs-4242", owner.path+".custodian-4242.log"
 	checkTestenv(t, os.WriteFile(records, []byte("recorded fixture\n"), 0o600))
-	old := time.Now().Add(-8 * 24 * time.Hour)
+	old := agedPastEverySweep
 	checkTestenv(t, os.Chtimes(records, old, old))
 	// The stand-in blocks on its stdin pipe, so it is alive until stopped.
 	stopCustodian := startSidecarCustodian(t, log)
