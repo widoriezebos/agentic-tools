@@ -900,7 +900,9 @@ func TestLogTailAndFollow(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var out strings.Builder
+	// Follow writes from its own goroutine while the test reads: the
+	// builder is guarded.
+	var out guardedBuilder
 	done := make(chan error, 1)
 	go func() { done <- Follow(ctx, path, &out, 20*time.Millisecond) }()
 	time.Sleep(100 * time.Millisecond)
@@ -974,4 +976,23 @@ func TestADescendantLeftBeforeReadinessKeepsTheRunUnended(t *testing.T) {
 	if b.record(StandingKey).Ended == nil {
 		t.Fatal("once the descendant is ended, the record ends")
 	}
+}
+
+// guardedBuilder is a strings.Builder one goroutine writes while another
+// reads.
+type guardedBuilder struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (g *guardedBuilder) Write(p []byte) (int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.b.Write(p)
+}
+
+func (g *guardedBuilder) String() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.b.String()
 }
