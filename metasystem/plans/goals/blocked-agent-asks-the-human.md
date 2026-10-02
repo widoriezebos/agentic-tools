@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Inventory what question ask/answer/wait, the Telegram channel, the UI and the peer-message bridge already do; design step 1; critique; build
 - OpenedAt: 2026-10-02T12:24:05Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T12:24:12Z revision=2 opid=4XYQCHAHJH99A9J7AZAM569JG5-m1e-9c612d71 authority=proven digest=b064e83f870e0bf1e75fa2fe97035937d0e90af4e67d38129402f7f3b6599ef0 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-10-02T12:24:05Z FV4HRFVE842X06TWH326PZXQHJ-m1e-9c612d71 open actor=human:Wido targets=blocked-agent-asks-the-human
 - 2026-10-02T12:24:12Z 4XYQCHAHJH99A9J7AZAM569JG5-m1e-9c612d71 approve actor=human:Wido targets=blocked-agent-asks-the-human
-Integrity: sha256=a1e3480a81e8872347d1c26119ae25e229717cf25cf4fb13eeea2336c3fb169c
+- 2026-10-02T12:24:19Z 26ZZJC6E5YSPFZ2ZM308BKBMS3-m1e-9c612d71 set-pin actor=human:Wido targets=blocked-agent-asks-the-human
+Integrity: sha256=8fa12055cef4eef3c0c4e57643ade657c4c32a2ea4e2ef8e22d1c7c6f6d3ebc7
