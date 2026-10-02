@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 27
+- Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
 - Tier: 2
 - Intent: Critique loops (design and code) stop on a trusted per-tier criterion, the cap only a backstop: before a tier 3 loop starts, the brief names the threat model and the rabbit-hole risks for this case with their mitigations (Wido 2026-10-02), and findings are judged against both; the machinery decides each round from recorded material counts (zero = stop; falling and under half in the last fold = continue; otherwise go to the human); the per-tier cap sits above normal convergence; each loop records whether it ended by criterion, divergence or cap so trust is measured
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=5
 - BudgetExceptions: 0
@@ -23,4 +23,5 @@ History:
 - 2026-10-02T10:24:49Z FAM6WB0PQGXER3NN7WMWMVYY6T-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=fold Wido's 2026-10-02 rabbit-hole exercise into the intent
 - 2026-10-02T10:24:53Z 0MVGJHJYKHNDF1G2PAZDT8NCA0-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T10:24:58Z MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
-Integrity: sha256=2b21d22d86b100dad4e369ccdfdd96e4c33a683eb00c7f52c82254dfdde8c916
+- 2026-10-02T11:19:09Z 6QW1PNP9G71DNQZNRZC9RDC29J-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=critique-stops-on-convergence from=1:27 to=1:3 requested-sequence=3
+Integrity: sha256=897099c331c1a1c0fd7de4a2a0697524fdb5fe1e70bc62230a0c6b60a3dc3fa1
