@@ -1,6 +1,6 @@
 # critique-stops-on-convergence
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Governs every critique loop's spend and its stop (severity 2); a new decision rule in dispatch (novelty 2); every seat and adopter's critique lane (exposure 2); runs on every loop (accumulation 2)"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-02T11:54:16Z revision=18 opid=V3CEK16M66CG75VA05MH18GEDS-m1e-9c612d71 authority=proven digest=dd2e2e86bff9e9871914bae0e8e54775261a689db1cce2f9e89a4822c6f772ab episode=18
 
 History:
 - 2026-10-02T10:12:16Z DGM1ZK0JGJ8198MGJ0A44NHWHE-m1e-9c612d71 open actor=human:Wido targets=critique-stops-on-convergence
@@ -34,4 +32,5 @@ History:
 - 2026-10-02T11:54:07Z Q7MRQ8CPM361ADBMF5Y9QW51AW-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=Wido 2026-10-02: alert advice comes from the up-front rabbit-hole risks; failure bubbles up only at the cap
 - 2026-10-02T11:54:11Z HZ1KE8V3PMG3P4J1Q6HE8Z4HYB-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:54:16Z V3CEK16M66CG75VA05MH18GEDS-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
-Integrity: sha256=f5e5fe056ca691322a44f8b01aefbe27ca3e318e28e399aed98cd10f99776aa3
+- 2026-10-02T11:55:24Z VERNWF01V63E3EFJTX4AG4NRY5-m1e-9c612d71 unapprove actor=human:Wido targets=critique-stops-on-convergence reason=Wido 2026-10-02: tier 1 opt-in critique with a hard cap
+Integrity: sha256=662f1a98f8e28106e81a1425b9f77e5052e24f80f39c28b4a108ab1ec2d1bf3b
