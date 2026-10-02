@@ -1,6 +1,6 @@
 # land-verb-writes-the-receipt
 
-- State: queued
+- State: abandoned
 - Priority: 2
 - Sequence: 39
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="The land verb sits on every code delivery and writes audit evidence; a wrong transaction can block delivery or misstate the repository's rework history."
@@ -9,9 +9,10 @@
 - Origin: human
 - Next step: Next: Measure receipt coverage over the lane's landings since 09-26. If at least 90 percent carry a receipt with the right outcome, conclude; otherwise add the Repairs: trailer to the lane's receipt writer. Done when: the coverage figure is recorded, and either the goal is concluded or a test shows a commit with a Repairs: trailer is recorded as reworked.
 - OpenedAt: 2026-09-16T21:03:07Z
-- Revision: 40
+- Revision: 41
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Abandoned: by=human:Wido at=2026-10-02T20:59:57Z revision=41 opid=SX5WNT2FENZZCCVKJXH1FB3F4R-m1e-9c612d71 because=Obsolete (audit 2026-10-02): it measures receipts from the deleted batch lane; the plain lane writes no receipts
 
 History:
 - 2026-09-16T21:03:07Z 7XEQTQYB3G2BS0R0ZWQV99EWN3-m1e-c6925449 open actor=human:Wido targets=land-verb-writes-the-receipt
@@ -54,4 +55,5 @@ History:
 - 2026-10-02T20:52:44Z TGEDA81PVXQW048ZWTAYYRBRQ1-m1e-9c612d71 abandon actor=human:Wido targets=landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,landing-deploys-the-engine,steward-acts-on-behaviour-patterns,system-start-launches-your-agent,host-setup-from-scratch,transport-remote-absent-refuses-every-landing,enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:42 to=2:41
 - 2026-10-02T20:58:46Z VZA02XPXH29ZBJRQJHQT9YVABB-m1e-9c612d71 abandon actor=human:Wido targets=fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:41 to=2:40
 - 2026-10-02T20:59:33Z R5QYQM97D0V1V5DE0FS4J7J0M6-m1e-9c612d71 done actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,machinery-blocks-of-2026-10-02,one-goal-act-one-ledger-commit,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:40 to=2:39
-Integrity: sha256=08256529f7b9f84eca15c5303850db890291c5ac1d075bb2588113ae265d5eb5
+- 2026-10-02T20:59:57Z SX5WNT2FENZZCCVKJXH1FB3F4R-m1e-9c612d71 abandon actor=human:Wido targets=land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=Obsolete (audit 2026-10-02): it measures receipts from the deleted batch lane; the plain lane writes no receipts
+Integrity: sha256=244bd64487fd83eb0eedf1f8ac75169d2c3f9e730a0fab5291586964138d3505
