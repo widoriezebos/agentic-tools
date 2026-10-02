@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: What: work review --commit SHA --goal G reliably starts its independent critic and reports its findings. On 2026-10-01 a ui seat's run left a half-made request: 'whether the critic started isn't known yet', no launch record, no critic process, and a rerun treated it as possibly in flight. Why: tier 2 and 3 goals (most of the backlog) need this read to land; machinery seats can't get past it. Pros: tier 2/3 work can land unattended. Cons: the review dispatch path is old and wide; scope to making one request start or fail cleanly.
 - Origin: human
-- Next step: Reproduce on current main with a tier-2 goal branch; find where the request is recorded before the critic launches; make a failed launch fail cleanly so a repeat starts it
+- Next step: Reproduce on current main with a tier-2 goal branch; find where the request is recorded before the critic launches; make a failed launch fail cleanly so a repeat starts it; ASKED TGKJ5VPN0KZ63TD6EW1C1R2JQ8 (other): work-review-starts-its-critic: the fix is built and was read twice by Sol, but its own review cannot close, so this seat cannot land it alone. How should it land?
 - OpenedAt: 2026-10-01T15:55:55Z
-- Revision: 29
+- Revision: 30
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -48,4 +48,5 @@ History:
 - 2026-10-02T21:54:59Z M0TSVAQNR16NW151930292CY3V-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-shows-true-facts,work-review-starts-its-critic reason=priority-order subject=ui-shows-true-facts from=1:5 to=1:6 requested-sequence=4
 - 2026-10-02T21:55:18Z M5SNS9E2687N391M87QKYDC658-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-reads-well-on-a-phone-in-plain-words,work-review-starts-its-critic reason=priority-order subject=ui-reads-well-on-a-phone-in-plain-words from=1:6 to=1:7 requested-sequence=5
 - 2026-10-02T21:59:35Z XP2F8DD2PWQE15G7HEM7HGAXN2-ui-71c5cb39 slice-start actor=ui+steward-seat targets=work-review-starts-its-critic
-Integrity: sha256=944cbd026c00436b60d2e2e047c58e240da62e14e1b7e618878f8f8165ca9f94
+- 2026-10-02T22:40:20Z 3T2XKMCXQKYWWYVPMD6E9RY3T5-ui-71c5cb39 ask actor=ui+steward-seat targets=work-review-starts-its-critic
+Integrity: sha256=c803e81421b651a1f71bce284f05a2e8d6a9933a80ca565fdd4710c6cdb1e459
