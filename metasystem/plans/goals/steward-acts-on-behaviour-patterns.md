@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The steward detects behaviour patterns across the machinery and acts on them: each pattern is a small detector over signals the machinery already records, with actions from a fixed set (report first in status, pause the component, open a step-back goal, ask the person), thresholds and on/off in metasystem.conf; adding a pattern is one detector plus one config row. First patterns: a component that keeps failing in new ways (stagnation) and the machinery churning main with repeated records
 - Origin: main
-- Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern Switch-on path (Wido 2026-10-01): extend patterns to SEATS before any unattended night: seat-stuck (no progress 45 min / 120 min total) and seat-spend (per launch / per seat per day), per the 2026-10-01 seat-patterns proposal (evidence behaviour-patterns-20260930/seat-patterns-proposal.md).
+- Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern Switch-on path (Wido 2026-10-01): extend patterns to SEATS before any unattended night: seat-stuck (no progress 45 min / 120 min total) and seat-spend (per launch / per seat per day), per the 2026-10-01 seat-patterns proposal (evidence behaviour-patterns-20260930/seat-patterns-proposal.md).; ASKED 6TCSQYY79Q0HD34BAN4B0ME61F (other): Seat patterns: when a headless seat passes 120 minutes in total but did make progress (commits on its goal branch), should the steward only cancel that session, or also hold new seat starts until you acknowledge?
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 38
+- Revision: 39
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T16:35:13Z revision=3 opid=8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a authority=proven digest=38868745f2bb242da1e3ec3e6a05667d783dbafad3c08781fd6245f9f4e9397a episode=3
@@ -55,4 +55,5 @@ History:
 - 2026-10-02T21:04:39Z 0WHHWWZBDM376WF0G36NDVMZE3-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:04:56Z ZBVW5R48ABZVHEDW2QCHKNH8MF-m1i-71c5cb39 claim actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:05:49Z QH6BN98BX7YVCVDS2JJ1GNTAF8-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
-Integrity: sha256=040f2952019576cc1bfcf76cf5fc940b52eaa412c94683b842a35d9d7adde81c
+- 2026-10-02T21:20:17Z ZK61TJK0Q0DV3X9CHCZQ5XCK6Q-m1i-71c5cb39 ask actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
+Integrity: sha256=89cdef118fc23889c7bd5c9a1397f28538e3b9ea4bb0164ed7ba6a1be2366528
