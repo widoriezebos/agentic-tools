@@ -75,6 +75,10 @@ type Store struct {
 	// goal package does not reach the landing and dispatch owners; nil takes
 	// nothing and shows the due step.
 	TakeHolderStep func(HolderStep) string
+	// OpenQuestions reads the open channel questions of this installation.
+	// The channel owner keeps them, and it imports this package, so the
+	// command layer supplies the read; nil reads none.
+	OpenQuestions func() []OpenQuestion
 }
 
 func (s *Store) prober() identity.Prober {

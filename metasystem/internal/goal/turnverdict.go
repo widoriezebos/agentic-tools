@@ -139,6 +139,16 @@ type GoalFacts struct {
 	Intent   string `json:"intent"`
 	NextStep string `json:"nextStep"`
 	Revision string `json:"revision"`
+	// AskedOpen says an open channel question names this goal: like a
+	// pending human word, it leaves the goal to the person.
+	AskedOpen bool `json:"askedOpen,omitempty"`
+}
+
+// OpenQuestion is one open channel question as the Stop judgment and the
+// claim choices read it: the goal it names (or what it is about when it
+// names none) and the machine and owner lineage of the session that asked.
+type OpenQuestion struct {
+	ID, Goal, About, Machine, Lineage string
 }
 
 // Verdict is the verb's structured decision.

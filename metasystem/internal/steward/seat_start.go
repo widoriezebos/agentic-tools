@@ -541,6 +541,9 @@ type seatDependencies struct {
 	Fence    func(root string) (closed bool, reason string, err error)
 	Classify func(path string) (class, evidence string, ok bool)
 	Now      func() time.Time
+	// OpenQuestions reads the open channel questions; a goal one names is
+	// left to the person, like a goal waiting on a human word. Nil reads none.
+	OpenQuestions func(root string) []goal.OpenQuestion
 	// Recheck re-reads, under the start's lock, what the tick's decision
 	// rested on and answers the decision now (SOL-A-03); nil re-reads
 	// nothing.
