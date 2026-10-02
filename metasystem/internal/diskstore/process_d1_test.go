@@ -70,6 +70,7 @@ func TestProcessScratchKeepsANestedRootWhileItsGrandchildLives(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				bed.list(grandchild)
 				if filepath.Dir(child) != filepath.Dir(parent) {
 					t.Fatalf("the nested root %s is not flat beside its parent's %s", child, parent)
 				}
@@ -145,7 +146,7 @@ func TestProcessStorePreviewTakesTheCensus(t *testing.T) {
 	t.Parallel()
 	bed, record := deadScratch(t)
 	options := passOptions(bed.registry, realDir(t),
-		RegisteredStores{Registry: bed.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: fixedProber{state: identity.Dead}}}})
+		RegisteredStores{Registry: bed.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: bed.proof(fixedProber{state: identity.Dead})}})
 	options.CensusReader = fakeCensus(map[int64]identity.ProcessUse{4242: {Cwd: record.Path}}, nil)
 	options.Mode = ModePreview
 	report, err := RunPass(context.Background(), options)
@@ -348,6 +349,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersSessionLives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bed.list(grandchild)
 	bed.sweep(t, identity.KernelProber{})
 	if unix.Kill(grandchild, 0) != nil {
 		t.Fatal("the grandchild ended before the witness looked")
@@ -374,6 +376,7 @@ func TestProcessProofKeepsTheRootWhileTheOwnersGroupLives(t *testing.T) {
 		t.Fatal(err)
 	}
 	created.closeWriter()
+	bed.list(os.Getpid())
 	if created.record.OwnerGroup != int64(unix.Getpgrp()) || created.record.OwnerSession == 0 {
 		t.Fatalf("record group %d session %d", created.record.OwnerGroup, created.record.OwnerSession)
 	}

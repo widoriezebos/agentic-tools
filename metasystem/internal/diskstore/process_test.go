@@ -58,7 +58,7 @@ func processScratchHelper() (code int, handled bool) {
 		if err := child.Start(); err != nil {
 			return fail(err)
 		}
-		fmt.Println("ready")
+		fmt.Printf("child=%d\nready\n", child.Process.Pid)
 		wait := make(chan os.Signal, 1)
 		signal.Notify(wait, syscall.SIGTERM)
 		<-wait
@@ -214,16 +214,32 @@ func processScratchHelper() (code int, handled bool) {
 }
 
 // scratchBed is a helper process's TMPDIR and home state root, both inside
-// the test's own directory.
+// the test's own directory, and the processes the test started: the process
+// proof's owner-group verdict reads only those, never the host's table, so
+// another test's process (or a pid reused into a helper's ended session)
+// never decides a bed's verdict.
 type scratchBed struct {
 	temp, home string
 	registry   Registry
+	processes  *identity.ListedProcessTable
+}
+
+// list adds processes the test started to the bed's process table.
+func (b scratchBed) list(pids ...int) {
+	for _, pid := range pids {
+		*b.processes = append(*b.processes, int64(pid))
+	}
+}
+
+// proof is the process proof over the bed's own processes.
+func (b scratchBed) proof(prober identity.Prober) ProcessProof {
+	return ProcessProof{Prober: prober, Table: append(identity.ListedProcessTable(nil), *b.processes...)}
 }
 
 func newScratchBed(t *testing.T) scratchBed {
 	t.Helper()
 	dir := realDir(t)
-	bed := scratchBed{temp: filepath.Join(dir, "tmp"), home: filepath.Join(dir, "home")}
+	bed := scratchBed{temp: filepath.Join(dir, "tmp"), home: filepath.Join(dir, "home"), processes: &identity.ListedProcessTable{}}
 	for _, path := range []string{bed.temp, bed.home} {
 		if err := os.Mkdir(path, 0o700); err != nil {
 			t.Fatal(err)
@@ -282,7 +298,7 @@ func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
 func (b scratchBed) sweepWith(t *testing.T, prober identity.Prober, reader *CensusReader) Report {
 	t.Helper()
 	options := passOptions(b.registry, realDir(t),
-		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: prober}}})
+		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: b.proof(prober)}})
 	options.CensusReader = reader
 	report, err := RunPass(context.Background(), options)
 	if err != nil {
@@ -324,6 +340,11 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 		printed = append(printed, lines.Text())
 	}
 	root := helperValue(t, strings.Join(printed, "\n"), "root")
+	child, err := strconv.Atoi(helperValue(t, strings.Join(printed, "\n"), "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bed.list(helper.Process.Pid, child)
 	if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +363,7 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	if state := identity.AliveRef(identity.KernelProber{}, ref); state != identity.Dead {
 		t.Fatalf("the killed owner reads %s", state)
 	}
-	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Keep {
+	if verdict := bed.proof(identity.KernelProber{}).Observe(context.Background(), record); verdict.Decision != Keep {
 		t.Fatalf("with the child alive the proof says %+v; want keep", verdict)
 	}
 	bed.sweep(t, identity.KernelProber{})
@@ -364,7 +385,7 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	if free, err := ProbeWriterLock(record); err != nil || !free {
 		t.Fatalf("after the child exited the writer lock probe = free %v, %v; want free", free, err)
 	}
-	if verdict := (ProcessProof{Prober: identity.KernelProber{}}).Observe(context.Background(), record); verdict.Decision != Release {
+	if verdict := bed.proof(identity.KernelProber{}).Observe(context.Background(), record); verdict.Decision != Release {
 		t.Fatalf("after the child exited the proof says %+v; want release", verdict)
 	}
 	bed.sweep(t, identity.KernelProber{})
@@ -718,6 +739,7 @@ func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			bed.list(helper.Process.Pid, child)
 			if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
 				t.Fatal(err)
 			}
@@ -772,5 +794,31 @@ func TestProcessProofKeepsARootTheCensusCannotClear(t *testing.T) {
 				t.Fatalf("%s: record %s; want kept", name, record.State)
 			}
 		})
+	}
+}
+
+// The owner-group verdict reads the process table its proof is given, never
+// the host's: a live process in the recorded group and session keeps the
+// root only when it is in that table, so a test bed's verdict never depends
+// on what else runs on the host.
+func TestOwnerGroupVerdictReadsOnlyTheTableItIsGiven(t *testing.T) {
+	t.Parallel()
+	member := exec.Command("cat")
+	member.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	stdin, err := member.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := member.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
+	pid := int64(member.Process.Pid)
+	record := Record{OwnerGroup: pid, OwnerSession: pid}
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{pid}); verdict.Decision != Keep {
+		t.Fatalf("a running member in the table does not keep the root: %+v", verdict)
+	}
+	if verdict := ownerGroupVerdict(record, identity.ListedProcessTable{}); verdict.Decision != Release {
+		t.Fatalf("a member outside the table kept the root: %+v", verdict)
 	}
 }
