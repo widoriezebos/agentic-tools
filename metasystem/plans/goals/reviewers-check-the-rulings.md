@@ -1,6 +1,6 @@
 # reviewers-check-the-rulings
 
-- State: claimed
+- State: approved
 - Priority: 2
 - Sequence: 10
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="review process change for every critic dispatch; no product behaviour change; every seat"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: Next: Fable writes a short design (where the rulings are read from, how a critic reports the rulings it checked, how a conflict is reported), one Astra critique round, then Opus builds it into the design-critic and code-critic roles and skills with tests, Sol reviews the code, and it lands. Done when: a critic dispatched on a goal lists the rulings it checked in its return, and a planted conflict with a ruling is reported as material.
 - OpenedAt: 2026-09-30T20:38:45Z
-- Revision: 38
+- Revision: 39
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T07:54:04Z revision=9 opid=J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf authority=proven digest=2778966e6d0b60e3db4fb97e4114a58b6f96311e630eb3791470009314b1ef2c episode=9
 - Sliced: machine=ui lineage=main-1790664507-87928-61899b revision=37 at=2026-10-02T14:49:37Z
-- Claimed: machine=ui lineage=main-1790664507-87928-61899b at=2026-10-02T14:32:52Z revision=37 accountingRevision=10 episodeAt=2026-10-01T07:54:10Z episodeRevision=10 idleSeconds=103675
-- StopCapability: generation=37 revision=37 machine=ui claimEpoch=2 fenceEpoch=0
+- Episode: machine=ui lineage=main-1790664507-87928-61899b accountingRevision=10 episodeAt=2026-10-01T07:54:10Z episodeRevision=10 idleSeconds=103675 released=2026-10-02T14:58:23Z
 
 History:
 - 2026-09-30T20:38:45Z 7PTYSF4TX48MAA3GD0YVH8B9KE-ui-bc2fda53 open actor=human:Wido targets=reviewers-check-the-rulings
@@ -56,4 +55,5 @@ History:
 - 2026-10-02T12:29:01Z J5N4EKHXR25E84TSA8RKNVNY5V-m1e-9c612d71 set-priority actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,design-gate-at-dispatch,design-rounds-read-less-and-repeat-less,enrollment-proves-a-human-not-a-terminal,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-approval-gate,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,reviewers-check-the-rulings,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=reviewers-check-the-rulings from=1:5 to=2:10 requested-sequence=10
 - 2026-10-02T14:32:52Z B9S89J4D110FGHBP654DJ6R2R1-ui-d4023bb7 claim actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
 - 2026-10-02T14:49:37Z XWV2HHWDPTKWD3XWZDSJT685FG-ui-d4023bb7 slice-start actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
-Integrity: sha256=d1f72cd9eef58ea87bf7ea4d3bb52eb207340166568f48385636cbd77840cc4d
+- 2026-10-02T14:58:23Z Q6MD4KXWQEHTWZ3EJDMY98JX7E-ui-d4023bb7 release actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings reason=built and reviewed clean; its review close is stuck on an engine defect m1e is looking at; Land now goes first
+Integrity: sha256=29280159d5fd1aa841e697e1696eddd978a89d48c34eb1d26e2b021d49584c41
