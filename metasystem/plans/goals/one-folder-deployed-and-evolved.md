@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Astra critique of the design (tier 3: threat model and rabbit-hole risks named up front), then build step 1
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T14:27:24Z revision=2 opid=J4DDF6HKHD2PQVRBVK0E4BZR2X-m1e-9c612d71 authority=proven digest=427db9e3d13e3794fe6adfc0bb4315aa91e8df721ed56128aeb42752da9b759f episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-10-02T14:27:17Z 835YY2SYJ5EB97ZYCSK1FZJDB5-m1e-9c612d71 open actor=human:Wido targets=one-folder-deployed-and-evolved
 - 2026-10-02T14:27:24Z J4DDF6HKHD2PQVRBVK0E4BZR2X-m1e-9c612d71 approve actor=human:Wido targets=one-folder-deployed-and-evolved
-Integrity: sha256=ec76a1b778f37624ad371966864f94d5fd6fe397aac8c2d4a8a1f766282647e7
+- 2026-10-02T14:27:30Z X97YDE3PK7ZETEXDH7G1XZMACF-m1e-9c612d71 set-pin actor=human:Wido targets=one-folder-deployed-and-evolved
+Integrity: sha256=f40db31c3867c7b3d68a37a325159facf35b686e1e9c6db17d222fdd485d3645
