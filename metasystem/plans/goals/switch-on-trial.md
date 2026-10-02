@@ -1,6 +1,6 @@
 # switch-on-trial
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 2
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Register-only change (append lines to receipts.log and the narrator digest); no code; reverts cleanly"
@@ -9,12 +9,9 @@
 - Origin: human
 - Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- NormApproval: approvedRef=9BRJM352K9WGFA2RBFQ78S0Y5R-m1e-9c612d71 minutes=1200 reviewRounds=20 goalRevision=11
-- Approved: by=human:Wido at=2026-10-02T14:05:34Z revision=12 opid=9BRJM352K9WGFA2RBFQ78S0Y5R-m1e-9c612d71 authority=proven digest=54d1e829257d4931b08c1f400bae178ed2ca7722d0134b46cb886f3fdf7c7580 episode=12
 
 History:
 - 2026-09-30T08:57:48Z R8BJDZ82WCT5276TRREY12TP9C-m1e-b6a4eb0a open actor=human:wido targets=switch-on-trial
@@ -30,4 +27,5 @@ History:
 - 2026-10-02T12:49:24Z EQFW4CYPEQWW7Z9Z92KDJGB0YP-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,flaky-leftovers,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:4 to=1:3
 - 2026-10-02T14:05:34Z 9BRJM352K9WGFA2RBFQ78S0Y5R-m1e-9c612d71 approve actor=human:Wido targets=switch-on-trial
 - 2026-10-02T17:03:29Z Y8AT6TM53TN357Y4RPN3095FV9-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:3 to=1:2
-Integrity: sha256=d2709759279b0380299038cb055fd310f31fffb8ffc923818a44c995195cf4b4
+- 2026-10-02T17:10:02Z GVB4J2JWMYTRMDRQ7HKX5VT9G2-m1e-9c612d71 unapprove actor=human:Wido targets=switch-on-trial reason=coordinator goal: m1e concludes it by observing the real seats
+Integrity: sha256=8d3db841fb8f27ab491b9ee5852046903457305321e447c45aaa24595607a458
