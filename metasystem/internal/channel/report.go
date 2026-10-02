@@ -28,11 +28,6 @@ type ReportConfig struct {
 	OldestUndelivered time.Time
 }
 
-func ComposeReport(c ReportConfig) (string, error) {
-	text, _, err := ComposeStatusReport(c)
-	return text, err
-}
-
 // ComposeStatusReport returns the rendered post and the goal named by its
 // execution-approval line, when that line fits in the post.
 func ComposeStatusReport(c ReportConfig) (string, string, error) {
@@ -376,8 +371,4 @@ func LoadStatusState(repo string) StatusState {
 }
 func SaveStatusState(repo string, s StatusState) error {
 	return writeJSON(filepath.Join(channelRoot(repo), "status.json"), s)
-}
-
-func ShouldPost(s StatusState, now time.Time, interval time.Duration, text string, force bool) bool {
-	return force || (now.Sub(s.LastPost) >= interval && s.ContentDigest != Digest(text))
 }

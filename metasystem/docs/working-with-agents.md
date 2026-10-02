@@ -77,7 +77,7 @@ Use `metasystem help administration` for MetaSystem setup and maintenance. Appli
 
 ## Running the landing lane
 
-The landing lane is the one checkout per computer where every seat's work is to be proved and pushed (`docs/concepts.md`, "Landing lane", says why). While a lane is registered, `work land G` hands the goal's branch to it, its landing agent proves and pushes it, and a repeated `work land G` says whether it waits, landed or was returned; each seat without a lane lands its own work.
+The landing lane is the one checkout per computer where every seat's work is to be proved and pushed (`docs/concepts.md`, "Landing lane", says why). While a lane is registered, `work land G` hands the goal's branch to it, its landing agent proves and pushes it, and a repeated `work land G` says whether it waits, landed or was returned; each seat without a lane lands its own work. Give `work land G` one plain sentence of what the work delivers for a person reading on a phone, with no goal ids, hashes or paths (`--delivered "TEXT"`): when it reaches main, the channel posts exactly that sentence, and a landing without one posts nothing.
 
 **Set one up on a new computer.** Clone a checkout next to the seats' checkouts, give it a machine nickname, build its engine, set it up, register it as the lane and start it, at your own terminal:
 

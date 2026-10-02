@@ -131,7 +131,6 @@ type fakeOps struct {
 	stopInput      func(StopInputRequest, io.Writer) int
 	stopPresent    func(string, string, io.Writer) int
 	stopOutput     func(string, string, string, io.Writer) int
-	channelPost    func(io.Writer, io.Writer) int
 	evidenceGC     func(io.Writer) int
 	git            func(args ...string) (string, error)
 	engineBehind   func() (bool, error)
@@ -510,14 +509,6 @@ func (f *fakeOps) StopOutput(runtime, input, output string, stderr io.Writer) in
 func writeTestFile(path, content string) int {
 	if os.WriteFile(path, []byte(content), 0o600) != nil {
 		return 1
-	}
-	return 0
-}
-
-func (f *fakeOps) ChannelStatusPost(root string, stdout, stderr io.Writer) int {
-	f.record("channel status --post")
-	if f.channelPost != nil {
-		return f.channelPost(stdout, stderr)
 	}
 	return 0
 }

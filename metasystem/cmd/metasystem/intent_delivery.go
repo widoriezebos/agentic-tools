@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -144,7 +146,7 @@ func intentDeliveryCommands() []intentCommand {
 		},
 		{
 			object: "work", action: "land", laidOut: true, primary: true, audience: "both", summary: "land a goal's reviewed work",
-			usage: []string{"metasystem work land G [--through COMMIT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
+			usage: []string{"metasystem work land G [--through COMMIT] [--delivered TEXT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
 				"metasystem work land G --using-exception ID",
 				"metasystem work land [G] --message FILE (--staged | --path P...) [--chain J | --direct-fix CLASS ...]"},
@@ -167,6 +169,7 @@ func intentDeliveryCommands() []intentCommand {
 			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
+				{name: "delivered", value: "TEXT", usage: "one plain sentence of what this delivers, posted to the channel when it reaches main"},
 				{name: "exception", value: "CODE", advanced: true, usage: "a person's exception: the one refusal code or group:NAME this landing is carried past"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "with --exception: why"},
 				{name: "by", value: "NAME", advanced: true, usage: "with --exception: the person deciding, at the enrolled terminal"},
@@ -1507,6 +1510,9 @@ func nonEmptyLines(text string) []string {
 // ---- land
 
 func runIntentLand(inv *intentInvocation) int {
+	if refused := inv.deliveredRefusal(); refused != nil {
+		return inv.render(*refused)
+	}
 	if inv.input.has("message") {
 		return runIntentLandStaged(inv)
 	}
@@ -1661,10 +1667,55 @@ type intentLanded struct {
 	// Exception names the recorded exception an exception route's record
 	// belongs to (work land G --exception / --using-exception).
 	Exception string `json:",omitempty"`
+	// Delivered is the landing's plain sentence of what it delivers
+	// (work land G --delivered), posted to the channel once on main.
+	Delivered string `json:",omitempty"`
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
-	return inv.noteLanded(goalID, inv.landGoalRoute(goalID, through))
+	return inv.deliveredHint(goalID, inv.noteLanded(goalID, inv.landGoalRoute(goalID, through)))
+}
+
+// A hash of seven or more hex digits (with a digit in it), and a path: what
+// a sentence for a person must not carry.
+var (
+	deliveredHash = regexp.MustCompile(`(?i)\b[0-9a-f]*[0-9][0-9a-f]*\b`)
+	deliveredPath = regexp.MustCompile(`\S/\S`)
+)
+
+// deliveredRefusal is the light guard on work land --delivered: the
+// sentence is for a person reading on a phone, so a commit hash or a path
+// is refused in plain words.
+func (inv *intentInvocation) deliveredRefusal() *intentResult {
+	if !inv.input.has("delivered") {
+		return nil
+	}
+	text := strings.TrimSpace(inv.input.text("delivered"))
+	technical := text == "" || deliveredPath.MatchString(text)
+	for _, word := range deliveredHash.FindAllString(text, -1) {
+		if len(word) >= 7 && strings.ContainsAny(strings.ToLower(word), "abcdef") {
+			technical = true
+		}
+	}
+	if !technical {
+		return nil
+	}
+	return &intentResult{Outcome: intentRefused, code: 2,
+		Summary: "a --delivered sentence is read on a phone: plain words, no commit hashes or paths; nothing was done",
+		next:    append(withoutOption(inv.typedArgv(), "delivered"), "--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE")}
+}
+
+// deliveredHint turns a successful landing or hand-in without --delivered
+// into its plain hint: line 1 says the channel will stay silent, line 2 is
+// the same command with --delivered.
+func (inv *intentInvocation) deliveredHint(goalID string, result intentResult) intentResult {
+	if inv.input.has("delivered") || result.Outcome != intentConfirmed {
+		return result
+	}
+	result.Summary += "; when it reaches main the channel will say nothing, because no sentence says what it delivers"
+	result.next = inv.publicArgv("work", "land", goalID, "--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE")
+	result.nextReason = "the channel posts that sentence when it lands"
+	return result
 }
 
 func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
@@ -1707,6 +1758,15 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		selected := state.BranchTip
 		if through != "" && selected != "" {
 			selected = through
+		}
+		if delivered := strings.TrimSpace(inv.input.text("delivered")); delivered != "" {
+			// A repeat that says what it delivers keeps that sentence with
+			// the waiting hand-in.
+			if err := plain.Say(install, goalID, selected, delivered); err != nil {
+				return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+					Summary: "the landing lane's queue can't be written, so the sentence was not kept",
+					next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			}
 		}
 		if result := inv.laneQueueState(targets, install, goalID, selected, state.EndpointTip); result != nil {
 			return *result
@@ -1841,7 +1901,8 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 			Summary: fmt.Sprintf("the landing of %s is proved and prepared in %s but not pushed: %v", goalID, prepared, err),
 			next:    inv.sameCommand(), nextReason: "pushes the prepared landing; its checks are reused"}
 	}
-	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet}
+	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet,
+		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	data["landing"] = landed
 	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {

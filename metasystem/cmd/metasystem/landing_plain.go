@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -67,7 +68,8 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 // pushed. A repeat at the same sha appends nothing.
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
 	now := inv.delivery().now()
-	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot), At: now.UTC().Format(time.RFC3339)}
+	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot), At: now.UTC().Format(time.RFC3339),
+		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	_, added, err := plain.HandIn(install, line)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,

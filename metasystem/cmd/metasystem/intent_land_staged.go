@@ -53,7 +53,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			return refuse("--"+other+" is for landing a goal's reviewed work, not a change made by hand", "drop --"+other+", or drop --message to land the goal's work")
 		}
 	}
-	request := landpath.LandRequest{
+	request := landpath.LandRequest{Delivered: strings.TrimSpace(inv.input.text("delivered")),
 		MessageFile: inv.input.text("message"), StagedOnly: inv.input.switched("staged"),
 		Pathspecs: inv.input.values["path"], Chain: inv.input.text("chain"), Recertification: inv.input.text("recertification"),
 		TestReceipt: inv.input.text("test-receipt"), DirectFix: inv.input.text("direct-fix"), RevertOf: inv.input.text("revert-of"),

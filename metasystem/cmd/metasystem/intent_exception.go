@@ -258,7 +258,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	// seat's lineage is read once here, at the entry, and named on it. Its
 	// stop is the result's two lines; its step log the result's details.
 	stop := &landpath.Stop{}
-	ran := inv.delivery().landCarried(landpath.LandRequest{Root: primary, MessageFile: message, Goal: goalID, GoalSet: true,
+	ran := inv.delivery().landCarried(landpath.LandRequest{Root: primary, MessageFile: message, Goal: goalID, GoalSet: true, Delivered: strings.TrimSpace(inv.input.text("delivered")),
 		Carried: opid, StagedOnly: true, AllowNewPlan: acknowledgePlans, OwnerLineage: os.Getenv("METASYSTEM_OWNER_LINEAGE"), Stop: stop}, inv.pushGate(),
 		inv.exceptionRelease(primary, goalID, opid))
 	// A landing recovered from its recorded consumption pushed nothing in

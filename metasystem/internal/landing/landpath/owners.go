@@ -155,6 +155,11 @@ type Owners struct {
 	// is reported and never stops the landing: nothing is then released.
 	RecordRelease func(commit, branch string) error
 	ReleaseLanded func(commit string)
+	// Landed tells the channel of a commit pushed to main by its plain
+	// sentence of what it delivered, once per sha (Decision 7 of the
+	// blocked-agent-asks-the-human design). Its error is reported in the
+	// details and never stops the landing. A nil owner tells nothing.
+	Landed        func(root, delivered, commit string) error
 	WeightAdd     func(root, commit, prefix, goal string, numstat []byte, stdout, stderr io.Writer) int
 	SyncTransport func(root, branch string, stdout, stderr io.Writer) int
 

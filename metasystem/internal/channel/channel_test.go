@@ -268,18 +268,11 @@ func TestGitWindowRemainsUTC(t *testing.T) {
 	}
 }
 
-func TestStatusCadenceAndDigestGate(t *testing.T) {
-	now := time.Unix(10000, 0)
-	s := StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest("same")}
-	if ShouldPost(s, now, 4*time.Hour, "same", false) {
-		t.Fatal("unchanged digest posted")
+func TestStatusDigestIgnoresHeaderTime(t *testing.T) {
+	if Digest("same") == Digest("new") {
+		t.Fatal("changed content kept its digest")
 	}
-	if !ShouldPost(s, now, 4*time.Hour, "new", false) {
-		t.Fatal("changed due digest skipped")
-	}
-	old := "m status 2026-09-04 08:00 +0200\nNext up: first"
-	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200\nNext up: first", false) {
+	if Digest("m status 2026-09-04 08:00 +0200\nNext up: first") != Digest("m status 2026-09-04 13:00 +0200\nNext up: first") {
 		t.Fatal("a changed header timestamp defeated the content digest")
 	}
 	legacy := "m status 2026-09-04 08:00Z\nNext up: first"
@@ -287,10 +280,8 @@ func TestStatusCadenceAndDigestGate(t *testing.T) {
 	if Digest(legacy) != Digest(offset) {
 		t.Fatal("legacy Z and offset-bearing status headlines produced different content digests")
 	}
-	old = "m status 2026-09-04 08:00 +0200"
-	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200", false) {
-		t.Fatal("an empty fleet posted again because only its header time changed")
+	if Digest("m status 2026-09-04 08:00 +0200") != Digest("m status 2026-09-04 13:00 +0200") {
+		t.Fatal("an empty fleet's report changed because only its header time changed")
 	}
 }
 
@@ -463,9 +454,8 @@ func TestReportPriority(t *testing.T) {
 		if !strings.Contains(first, "accepted tree") || !strings.Contains(second, "accepted tree") {
 			t.Fatalf("staleness notice was not visible at both ages:\nfirst:\n%s\nsecond:\n%s", first, second)
 		}
-		state := StatusState{LastPost: firstNow, ContentDigest: Digest(first)}
-		if ShouldPost(state, secondNow, time.Hour, second, false) {
-			t.Fatalf("a change only in tree age triggered another post:\nfirst:\n%s\nsecond:\n%s", first, second)
+		if Digest(first) != Digest(second) {
+			t.Fatalf("a change only in tree age changed the report's digest:\nfirst:\n%s\nsecond:\n%s", first, second)
 		}
 	})
 
