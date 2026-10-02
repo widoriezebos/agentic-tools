@@ -25,6 +25,10 @@ It first resolves the file as the goal's design record, the same resolution `met
 
 The critic's first question, answered before any other finding: does the design name **step 1** — what exists and is usable after one slice — and list what it defers? A design that does not is not complete enough to attack; the critique returns that single finding and stops. This is the human's standing law (R-121, 2026-09-22): every design is first the design of the smallest thing that works, whatever the size of the ask, and iteration is a separate decision taken after step 1 has value. The rest of this skill runs inside that anchor.
 
+## Check the Rulings
+
+Before the materiality test, read the standing rulings register, `memory/rulings.md`, and the human decisions on the goal the brief names (`metasystem goal show <goal> --history --json`: its `Intent`, its `NextStep`, and every `History` entry whose `Actor` begins `human:`, with its reason; the plain view truncates). Work that contradicts a ruling or a goal decision is a material finding whatever else is true, because it takes authority a human did not give: its id is `RULING-` followed by the ruling id (`RULING-R-124-m1u`) or the goal id, its claim quotes the ruling's words, its evidence cites the text under review that breaks them, and its rigor row is classified from the boundary facts like any other finding. The return lists what was checked in one `evidence` row: `command` names the register and the goal, `observed` lists the ruling ids read and says `no conflict` or names the findings, and `level` is `read`. A brief that names no goal checks the register alone and says so in that row; a register or goal the critic could not read is a `gaps` entry, never silence.
+
 ## The Materiality Criterion
 
 Apply this test to every finding, and give it to the critic verbatim so findings arrive pre-sorted; the criterion binds the critic, not just the adjudicator:
