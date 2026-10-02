@@ -28,11 +28,6 @@ type ReportConfig struct {
 	OldestUndelivered time.Time
 }
 
-func ComposeReport(c ReportConfig) (string, error) {
-	text, _, err := ComposeStatusReport(c)
-	return text, err
-}
-
 // ComposeStatusReport returns the rendered post and the goal named by its
 // execution-approval line, when that line fits in the post.
 func ComposeStatusReport(c ReportConfig) (string, string, error) {

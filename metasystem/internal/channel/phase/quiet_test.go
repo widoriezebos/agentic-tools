@@ -86,6 +86,7 @@ func quietRoot(t *testing.T) (root, dir string) {
 // report's content changed and its interval has passed; the channel only
 // carries landings and what needs a response.
 func TestTickPostsNoPeriodicStatusReport(t *testing.T) {
+	t.Parallel()
 	root, dir := quietRoot(t)
 	if err := channel.SaveStatusState(root, channel.StatusState{ContentDigest: channel.Digest("an older report")}); err != nil {
 		t.Fatal(err)
@@ -116,6 +117,7 @@ func (unreachable) Credential(context.Context, channel.DestinationConfig) (chann
 
 // A landing line whose post failed is retried by the next tick, once.
 func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
+	t.Parallel()
 	root, dir := quietRoot(t)
 	sha := "0123456789abcdef0123456789abcdef01234567"
 	if err := channel.PostLanded(context.Background(), root, unreachable{}, channel.DestinationConfig{}, []string{"goal-a"}, sha, time.Now()); err == nil {
@@ -133,6 +135,7 @@ func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
 
 // NotifyLanded with no channel configured does nothing and records nothing.
 func TestNotifyLandedWithoutChannelDoesNothing(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := phase.NotifyLanded(context.Background(), root, []string{"goal-a"}, "0123456789abcdef", time.Now()); err != nil {
 		t.Fatal(err)
