@@ -1,11 +1,14 @@
 package identity
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"slices"
 	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // The kernel table answers this process's group, session and parent as the
@@ -83,5 +86,30 @@ func TestCensusOfTheKernelTableIsTheKernelCensus(t *testing.T) {
 	}
 	if parent, known := census.Parent(self); !known || parent != int64(os.Getppid()) {
 		t.Fatalf("kernel census parent = %d, %v", parent, known)
+	}
+}
+
+// A fixed table answers from its rows alone: a row's group, session and
+// parent as written, and an absent pid as ESRCH and an unknown parent.
+func TestFixedProcessTableAnswersFromItsRows(t *testing.T) {
+	t.Parallel()
+	table := FixedProcessTable{{Pid: 4100, Group: 4100, Session: 4000, Parent: 1}, {Pid: 4101, Group: 4100, Session: 4000, Parent: 4100}}
+	if pids, err := table.Pids(); err != nil || !slices.Equal(pids, []int64{4100, 4101}) {
+		t.Fatalf("pids = %v, %v", pids, err)
+	}
+	if group, err := table.Group(4101); err != nil || group != 4100 {
+		t.Fatalf("group = %d, %v", group, err)
+	}
+	if session, err := table.Session(4101); err != nil || session != 4000 {
+		t.Fatalf("session = %d, %v", session, err)
+	}
+	if parent, known := table.Parent(4101); !known || parent != 4100 {
+		t.Fatalf("parent = %d, %v", parent, known)
+	}
+	if _, err := table.Group(4242); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("an absent pid's group reads %v; want ESRCH", err)
+	}
+	if _, known := table.Parent(4242); known {
+		t.Fatal("an absent pid's parent reads known")
 	}
 }

@@ -30,13 +30,14 @@ func TestProductionCensusReadsTheArgvVectorNotAShellLine(t *testing.T) {
 		}}
 	}
 	source := productionProcessSource{
-		pids: func() ([]int64, error) { return []int64{outside, inside}, nil },
+		table: identity.FixedProcessTable{
+			{Pid: outside, Group: outside, Session: outside, Parent: 1},
+			{Pid: inside, Group: inside, Session: inside, Parent: 1},
+		},
 		prober: productionProbe{
 			outside: exact(outside, "metasystem-fake-agent", "-p", "review the run's reading"),
 			inside:  exact(inside, "metasystem-fake-agent", "--workspace", quoted),
 		},
-		processGroup:  func(pid int) (int, error) { return pid, nil },
-		parentProcess: func(int64) (int64, bool) { return 1, true },
 	}
 	resolve := func(pids []int64) map[int64]cwdResult {
 		out := map[int64]cwdResult{}

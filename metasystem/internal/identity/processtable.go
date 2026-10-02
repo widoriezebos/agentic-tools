@@ -92,3 +92,51 @@ func CensusOf(table ProcessTable) (ProcessCensus, error) {
 	}
 	return census, nil
 }
+
+// ProcessRow is one process of a FixedProcessTable.
+type ProcessRow struct {
+	Pid, Group, Session, Parent int64
+}
+
+// FixedProcessTable is a process table written out in full: it answers from
+// its rows alone and reads nothing from the kernel. A unit test that needs
+// processes it cannot start writes them here.
+type FixedProcessTable []ProcessRow
+
+func (table FixedProcessTable) row(pid int64) (ProcessRow, bool) {
+	for _, row := range table {
+		if row.Pid == pid {
+			return row, true
+		}
+	}
+	return ProcessRow{}, false
+}
+
+func (table FixedProcessTable) Pids() ([]int64, error) {
+	pids := make([]int64, 0, len(table))
+	for _, row := range table {
+		pids = append(pids, row.Pid)
+	}
+	return pids, nil
+}
+
+func (table FixedProcessTable) Group(pid int64) (int64, error) {
+	row, ok := table.row(pid)
+	if !ok {
+		return 0, unix.ESRCH
+	}
+	return row.Group, nil
+}
+
+func (table FixedProcessTable) Session(pid int64) (int64, error) {
+	row, ok := table.row(pid)
+	if !ok {
+		return 0, unix.ESRCH
+	}
+	return row.Session, nil
+}
+
+func (table FixedProcessTable) Parent(pid int64) (int64, bool) {
+	row, ok := table.row(pid)
+	return row.Parent, ok
+}
