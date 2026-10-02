@@ -921,7 +921,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	// (finding_register.go).
 	rounds = min(rounds, designCritiqueRounds)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
-		"the threat model the design page states for itself, and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
+		"the threat model the design page states for itself (where it states none: our own agents and operators make mistakes, nobody attacks), and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),
 		filepath.Join(git, filepath.FromSlash(gitRel)),
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
@@ -1023,7 +1023,7 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-review", "job-"+job)
 	brief := filepath.Join(dir, "brief.md")
 	briefText := reviewBrief("code-critique", "job "+job, goalID, rounds, calls,
-		"the threat model of the design and brief job "+job+" implements; a true finding outside it closes as out-of-scope.",
+		"the threat model of the design and brief job "+job+" implements (where they state none: our own agents and operators make mistakes, nobody attacks); a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("implementer job %s's recorded diff against its brief; unchanged code is out of scope.", job),
 		recordText(record, "workspaceRoot"),
 		fmt.Sprintf("job %s: base %s, branch %s", job, recordText(record, "baseSha"), recordText(record, "branch")),
