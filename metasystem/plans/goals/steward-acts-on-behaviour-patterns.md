@@ -1,6 +1,6 @@
 # steward-acts-on-behaviour-patterns
 
-- State: claimed
+- State: parked
 - Priority: 2
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that can pause a component and open goals on its own; a false positive pauses useful work, a miss leaves a stuck system unnoticed; actions are reversible and reported"
@@ -9,12 +9,9 @@
 - Origin: main
 - Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern Switch-on path (Wido 2026-10-01): extend patterns to SEATS before any unattended night: seat-stuck (no progress 45 min / 120 min total) and seat-spend (per launch / per seat per day), per the 2026-10-01 seat-patterns proposal (evidence behaviour-patterns-20260930/seat-patterns-proposal.md).; ASKED 6TCSQYY79Q0HD34BAN4B0ME61F (other): Seat patterns: when a headless seat passes 120 minutes in total but did make progress (commits on its goal branch), should the steward only cancel that session, or also hold new seat starts until you acknowledge?
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 39
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 40
 - BudgetExceptions: 0
-- Approved: by=human:wido at=2026-09-30T16:35:13Z revision=3 opid=8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a authority=proven digest=38868745f2bb242da1e3ec3e6a05667d783dbafad3c08781fd6245f9f4e9397a episode=3
-- Claimed: machine=m1i lineage=steward-seat at=2026-10-02T21:04:56Z revision=37 accountingRevision=37 episodeAt=2026-10-02T21:04:56Z episodeRevision=37
-- StopCapability: generation=37 revision=37 machine=m1i claimEpoch=1 fenceEpoch=0
+- Parked: by=human:Wido at=2026-10-02T22:18:44Z displaced=m1i+steward-seat@2026-10-02T21:04:56Z because=approval revoked: Re-arm after idle-backlog-dead: seats ended turns to wait on background jobs (fixed in the seat brief, 8df19cc3a); seat engine restarted with the fix.
 
 History:
 - 2026-09-30T16:34:33Z NYKAP8VJ5X06GBC87A8K6NM3ME-m1e-b6a4eb0a open actor=human:wido targets=steward-acts-on-behaviour-patterns
@@ -56,4 +53,5 @@ History:
 - 2026-10-02T21:04:56Z ZBVW5R48ABZVHEDW2QCHKNH8MF-m1i-71c5cb39 claim actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:05:49Z QH6BN98BX7YVCVDS2JJ1GNTAF8-m1e-9c612d71 set-pin actor=human:Wido targets=steward-acts-on-behaviour-patterns
 - 2026-10-02T21:20:17Z ZK61TJK0Q0DV3X9CHCZQ5XCK6Q-m1i-71c5cb39 ask actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns
-Integrity: sha256=89cdef118fc23889c7bd5c9a1397f28538e3b9ea4bb0164ed7ba6a1be2366528
+- 2026-10-02T22:18:44Z 2SWV9QB7BA0NZEZY1XRNZN15F4-m1e-9c612d71 unapprove actor=human:Wido targets=steward-acts-on-behaviour-patterns displaced=m1i+steward-seat@2026-10-02T21:04:56Z reason=Re-arm after idle-backlog-dead: seats ended turns to wait on background jobs (fixed in the seat brief, 8df19cc3a); seat engine restarted with the fix.
+Integrity: sha256=203456a9e2b30883b798ce1b242c9b0a798a7d585143c18cc0c17cbbe907270e
