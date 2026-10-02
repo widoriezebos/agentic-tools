@@ -1615,14 +1615,14 @@ func TestPendingWaitOldPhysicalObservationUsesSemanticClock(t *testing.T) {
 		t.Fatalf("process-owned waiter rows=%+v err=%v", rows, err)
 	}
 	row := rows[0]
-	delayedObservation := time.Now().UTC().Add(-time.Minute)
+	// The physical observation is a fixed instant long before the wall
+	// clock; the semantic clock stands thirty seconds after it, inside the
+	// wait's deadline.
+	delayedObservation := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	row.RegisteredAt = delayedObservation.Add(-time.Second).Format(time.RFC3339Nano)
 	row.LastObservedAt = delayedObservation.Format(time.RFC3339Nano)
 	row.Deadline = delayedObservation.Add(time.Minute).Format(time.RFC3339Nano)
 	writeWaiterFixture(t, root, row)
-	if time.Since(delayedObservation) <= 30*time.Second {
-		t.Fatal("fixture did not separate physical and semantic observation time")
-	}
 	t.Setenv(goalNowEnvironment, delayedObservation.Add(30*time.Second).Format(time.RFC3339Nano))
 	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, session, mainID),
 		fmt.Sprintf("WAITING: registered wait %s covers job wait-stop-job until %s", row.WaitID, row.Deadline))
@@ -1892,7 +1892,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	if err := sleepProblem.Close(); err != nil {
 		t.Fatal(err)
 	}
-	deadStartedAt := time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano)
+	deadStartedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
 	deadOperationID := strings.Repeat("f", 32)
 	deadJob := map[string]any{
 		"jobId": "dead-wait-job", "operationId": deadOperationID, "status": "pending", "goalId": "wait-stop-goal",

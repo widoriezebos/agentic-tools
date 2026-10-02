@@ -236,7 +236,7 @@ func TestHelmReturnEndToEnd(t *testing.T) {
 	helmMust(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755))
 	seat, err := helm.Locate(root)
 	helmMust(t, err)
-	take := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	take := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	_, err = helm.Write(root, helm.Record{By: "wido", At: take.Format(time.RFC3339), Reason: "e2e", Checkout: seat.Checkout})
 	helmMust(t, err)
 	helmCommitAt(t, root, "one.txt", "first at the helm")

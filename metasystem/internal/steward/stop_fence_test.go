@@ -158,11 +158,12 @@ func TestDisarmReportsRunnerThatSurvivesKill(t *testing.T) {
 func TestStoppedHealthDoesNotAdvanceFailureCounters(t *testing.T) {
 	root := t.TempDir()
 	closeProcessFence(t, root, 1)
-	first, err := ObserveHealth(root, time.Now(), nil)
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	first, err := ObserveHealth(root, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := ObserveHealth(root, time.Now().Add(time.Second), nil)
+	second, err := ObserveHealth(root, now.Add(time.Second), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

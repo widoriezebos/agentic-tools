@@ -813,6 +813,22 @@ func TestWaitLockClockAndFetchBounds(t *testing.T) {
 	})
 }
 
+// waitBudgetKey carries, on a context made by recordWaitBudgets, the budget
+// the wait gave the bounded call.
+type waitBudgetKey struct{}
+
+// recordWaitBudgets is a WithTimeout that starts no timer: it hands the call
+// a cancellable context carrying the budget it was given, so a test reads
+// the cap the wait chose instead of the wall time left on a real timer.
+func recordWaitBudgets(ctx context.Context, budget time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.WithValue(ctx, waitBudgetKey{}, budget))
+}
+
+func waitBudget(ctx context.Context) (time.Duration, bool) {
+	budget, ok := ctx.Value(waitBudgetKey{}).(time.Duration)
+	return budget, ok
+}
+
 func TestWaitRegistrationAndTypedFailureExits(t *testing.T) {
 	baseOptions := func() WaitOptions {
 		return WaitOptions{
@@ -828,10 +844,10 @@ func TestWaitRegistrationAndTypedFailureExits(t *testing.T) {
 	t.Run("adapter failure leaves a visible registering row and returns 65", func(t *testing.T) {
 		root := t.TempDir()
 		options := baseOptions()
+		options.WithTimeout = recordWaitBudgets
 		options.Deliver = func(ctx context.Context, waitID, _ string, _ time.Time, _ string) (string, bool, error) {
-			deadline, ok := ctx.Deadline()
-			if !ok || time.Until(deadline) > 10*time.Second+time.Second {
-				t.Fatalf("adapter delivery was not capped at ten seconds: %v", deadline)
+			if budget, ok := waitBudget(ctx); !ok || budget > 10*time.Second {
+				t.Fatalf("adapter delivery was not capped at ten seconds: budget=%s bounded=%t", budget, ok)
 			}
 			row, _, err := LoadWaiterByID(root, waitID)
 			if err != nil || row.State != "registering" {
@@ -920,9 +936,10 @@ func TestWaitRegistrationAndTypedFailureExits(t *testing.T) {
 		options.Deliver = func(context.Context, string, string, time.Time, string) (string, bool, error) {
 			return "blocking", false, nil
 		}
+		options.WithTimeout = recordWaitBudgets
 		options.Actionable = func(ctx context.Context, _ Waiter) (string, bool, error) {
-			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 10*time.Second+time.Second {
-				t.Fatalf("actionable check did not have the ten-second ceiling: %v", deadline)
+			if budget, ok := waitBudget(ctx); !ok || budget > 10*time.Second {
+				t.Fatalf("actionable check did not have the ten-second ceiling: budget=%s bounded=%t", budget, ok)
 			}
 			now = start.Add(5 * time.Second)
 			boot += 5 * time.Second

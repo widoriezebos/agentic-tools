@@ -97,10 +97,13 @@ func TestContentTimesMakeCheckoutsOfOneTreeStatIdentical(t *testing.T) {
 	_, first := checkout("s0", one)
 	_, second := checkout("s1", one)
 	_, changed := checkout("s2", two)
+	// Every content time lies in the fixed span after the epoch, decades
+	// before any checkout's own time.
+	contentTimeCeiling := contentTimeEpoch.Add(time.Duration(contentTimeSpan))
 	for _, rel := range []string{"pkg/a.go", "pkg/b.go", "pkg/link", "pkg", "."} {
 		a, al := stat(filepath.Join(first, rel))
 		b, bl := stat(filepath.Join(second, rel))
-		if !a.Equal(b) || !al.Equal(bl) || time.Since(a) < 24*time.Hour {
+		if !a.Equal(b) || !al.Equal(bl) || !a.Before(contentTimeCeiling) || a.Before(contentTimeEpoch) {
 			t.Fatalf("%s: %v/%v vs %v/%v", rel, a, al, b, bl)
 		}
 	}

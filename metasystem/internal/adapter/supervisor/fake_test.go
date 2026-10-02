@@ -367,11 +367,18 @@ func TestFakeCustodialCritique(t *testing.T) {
 		release := filepath.Join(t.TempDir(), "release")
 		f := newFakeInstall(t, installOptions{prompt: "  FAKE:custodial-critique=" + release + "\n"})
 		f.env["METASYSTEM_HEARTBEAT_INTERVAL_MS"] = "20"
+		ended := make(chan struct{})
+		defer close(ended)
 		go func() {
-			// The hold records its argv before the release stops it.
-			deadline := time.Now().Add(20 * time.Second)
-			for len(f.holds()) != 1 && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
+			// The hold records its argv before the release stops it; a run
+			// that ended without one stops this wait with it.
+			for len(f.holds()) != 1 {
+				select {
+				case <-ended:
+					return
+				default:
+					time.Sleep(10 * time.Millisecond)
+				}
 			}
 			os.WriteFile(release, nil, 0o644)
 		}()
@@ -868,13 +875,18 @@ func TestFakeProbe(t *testing.T) {
 	})
 	t.Run("old aged", func(t *testing.T) {
 		f := newFakeInstall(t, installOptions{})
+		before := time.Now()
 		if code := probe(f, "--profile", "old", "--age-days", "3"); code != 0 {
 			t.Fatalf("exit %d, stderr %s", code, f.stderr.String())
 		}
+		after := time.Now()
 		value := snapshot(t, f)
 		captured, _ := time.Parse(time.RFC3339, value["capturedAt"].(string))
-		if value["profile"] != "old" || time.Since(captured) < 71*time.Hour {
-			t.Fatalf("snapshot = %v", value)
+		// Three days before the probe's own reading of the clock, which lies
+		// between the two readings around it (capturedAt keeps seconds).
+		earliest, latest := before.Add(-72*time.Hour).Truncate(time.Second), after.Add(-72*time.Hour)
+		if value["profile"] != "old" || captured.Before(earliest) || captured.After(latest) {
+			t.Fatalf("snapshot = %v, want capturedAt between %s and %s", value, earliest, latest)
 		}
 	})
 	for _, tc := range []struct {

@@ -493,7 +493,7 @@ func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 	calls.assertConsumed() // Fresh lock refusal precedes HEAD and anchoring.
 	// A STALE lock (a crashed claimant) is stolen and the session
 	// proceeds.
-	old := time.Now().Add(-11 * time.Minute)
+	old := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	if err := os.Chtimes(lock, old, old); err != nil {
 		t.Fatal(err)
 	}

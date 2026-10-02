@@ -578,8 +578,10 @@ func TestNewIDMintsAULID(t *testing.T) {
 	minted := time.Date(2026, 9, 22, 10, 11, 12, 345_000_000, time.UTC)
 	predictable, err := newID(minted, zeroes{})
 	testutil.Require(t, "mint an id from a known instant", err, nil)
+	before := time.Now().UnixMilli()
 	first, err := NewID()
 	testutil.Require(t, "mint an id", err, nil)
+	after := time.Now().UnixMilli()
 	second, err := NewID()
 	testutil.Require(t, "mint a second id", err, nil)
 
@@ -595,8 +597,9 @@ func TestNewIDMintsAULID(t *testing.T) {
 		minted.UnixMilli())
 	testutil.Expect(t, "what eighty zero bits of randomness spell",
 		predictable[10:], "0000000000000000")
-	testutil.Expect(t, "the clock's own id is stamped now",
-		time.Since(time.UnixMilli(ulidMillis(t, first))) < time.Minute, true)
+	stamped := ulidMillis(t, first)
+	testutil.Expect(t, "the clock's own id is stamped between the readings around its minting",
+		before <= stamped && stamped <= after, true)
 }
 
 // zeroes is randomness a test can predict, so a minted id is its timestamp and

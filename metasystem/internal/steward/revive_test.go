@@ -206,7 +206,7 @@ func jobProcessRecordOnDisk(t *testing.T, root, jobId, status string, pid, start
 	body := map[string]any{
 		"jobId": jobId, "status": status, "endedAt": "", "pid": pid,
 		"pidStartedAt": started, "pgid": pid, "instanceTag": tag,
-		"capDeadline": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		"capDeadline": time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}
 	data, err := json.Marshal(body)
 	if err != nil {

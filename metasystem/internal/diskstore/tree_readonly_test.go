@@ -94,8 +94,9 @@ func TestStraysRemoveAReadOnlyTreeAndNameATruthfulRemedy(t *testing.T) {
 	temp := filepath.Join(root, "tmp")
 	item := filepath.Join(temp, "steward-test-home-528179668")
 	readOnlyModuleTree(t, item, filepath.Join(root, "outside"))
-	// The symlink inside keeps its own time, so the act runs three days on.
-	later := time.Now().Add(72 * time.Hour)
+	// The symlink inside keeps its own time, so the act runs at a fixed
+	// instant past any age the pass waits for.
+	later := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
 	options := passOptions(Registry{Dir: filepath.Join(root, "stores")}, root, TempStrays{Roots: []string{temp}})
 	options.Mode, options.Now = ModePreview, later
 	report, err := RunPass(context.Background(), options)

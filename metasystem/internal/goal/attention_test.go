@@ -100,6 +100,10 @@ func TestWaitGoalShortDeadlineStillObserves(t *testing.T) {
 	transcript := newWaitObservationTranscript(t, endpoint, client)
 	transcript.declare(opened.Tip, baseTip)
 	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "landing", After: opened.Tip}
+	// The wait reads its remaining budget on an injected clock that never
+	// moves, so the deadline is the same distance away at every read
+	// however long the host takes to run the observation.
+	now := time.Date(2026, time.September, 20, 9, 0, 0, 0, time.UTC)
 	for _, deadline := range []time.Duration{5 * time.Second, 2 * time.Second} {
 		transcript.endpoint("", "")
 		transcript.expect("refs/remotes/origin/main\n", "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
@@ -107,7 +111,9 @@ func TestWaitGoalShortDeadlineStillObserves(t *testing.T) {
 		transcript.acceptance(opened.Tip, opened.Tip)
 		transcript.files(opened.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
 		transcript.cleanup()
-		ctx, cancel := context.WithCancel(fixedDeadline{withWaitGitDependencies(context.Background(), transcript.dependencies()), time.Now().Add(deadline)})
+		dependencies := transcript.dependencies()
+		dependencies.now = func() time.Time { return now }
+		ctx, cancel := context.WithCancel(fixedDeadline{withWaitGitDependencies(context.Background(), dependencies), now.Add(deadline)})
 		observed, observeErr := ObserveLedger(ctx, repo, selector, metarun.WaiterTarget{}, opened.Tip)
 		cancel()
 		if observeErr != nil || !observed.Pending || observed.Temporary || observed.ExitCode != 0 {
@@ -118,7 +124,7 @@ func TestWaitGoalShortDeadlineStillObserves(t *testing.T) {
 	if grace := waitCaptureGrace(context.Background()); grace != boundedCaptureGrace {
 		t.Fatalf("a wait without a deadline reserves %s, want %s", grace, boundedCaptureGrace)
 	}
-	short, cancel := context.WithCancel(fixedDeadline{context.Background(), time.Now().Add(2 * time.Second)})
+	short, cancel := context.WithCancel(fixedDeadline{withWaitGitDependencies(context.Background(), waitGitDependencies{now: func() time.Time { return now }}), now.Add(2 * time.Second)})
 	defer cancel()
 	if grace := waitCaptureGrace(short); grace <= 0 || grace > time.Second {
 		t.Fatalf("a 2s wait reserves %s, want at most half its deadline", grace)
@@ -1277,20 +1283,6 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 		if exitErr != nil || !exited {
 			t.Fatalf("transport member %d survived after exit witness: exited=%t err=%v", pid, exited, exitErr)
 		}
-	}
-}
-
-// transportExitBound bounds the wait for a killed transport member's exit:
-// a SIGKILLed process exits at once, so reaching it is a defect, reported
-// as a failure instead of a hang. It bounds a hang, never a timing claim.
-const transportExitBound = 30 * time.Second
-
-// The exit wait is bounded: a process that does not exit fails the wait
-// with a plain error instead of hanging the test.
-func TestAwaitTransportMemberExitIsBounded(t *testing.T) {
-	t.Parallel()
-	if err := awaitTransportMemberExitWithin(os.Getpid(), time.Millisecond); err == nil || !strings.Contains(err.Error(), "did not exit within") {
-		t.Fatalf("waiting on a live process = %v; want the bound's failure", err)
 	}
 }
 

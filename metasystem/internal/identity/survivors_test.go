@@ -43,15 +43,9 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		_ = child.Process.Kill()
 		_, _ = child.Process.Wait()
 	}()
-	deadline := time.Now().Add(wiringBound)
-	for {
-		alive, certain := TaggedSurvivors(processes, tag, 0, childGroup)
-		if alive && certain {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the live tagged child is a survivor: %v %v", alive, certain)
-		}
+	// The scan reads the kernel; the wait ends on the fact, and only the
+	// test binary's deadline ends a wait for a fact that never comes.
+	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); !alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -65,15 +59,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// may conclude.
 	_ = child.Process.Kill()
 	_, _ = child.Process.Wait()
-	deadline = time.Now().Add(wiringBound)
-	for {
-		alive, certain := TaggedSurvivors(processes, tag, 0, childGroup)
-		if !alive && certain {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("a dead group scans clear: %v %v", alive, certain)
-		}
+	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }

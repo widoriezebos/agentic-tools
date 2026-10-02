@@ -48,7 +48,7 @@ func dedupGroup(id string, packages []string, tests string, tags ...string) test
 // runDedupStage prepares and runs one stage through the real scheduler and
 // group runner, returning results by group and native `run` events per test
 // counted from the go test JSON shard logs.
-func runDedupStage(t *testing.T, alphaTwo string, groups []testpolicy.Group) (map[string]GroupResult, map[string]int, TestRunRequest, time.Duration) {
+func runDedupStage(t *testing.T, alphaTwo string, groups []testpolicy.Group) (map[string]GroupResult, map[string]int, TestRunRequest) {
 	t.Helper()
 	root := t.TempDir()
 	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("d", 40), dedupFixtureFiles(alphaTwo), 1+len(groups))
@@ -69,7 +69,7 @@ func runDedupStage(t *testing.T, alphaTwo string, groups []testpolicy.Group) (ma
 	request.PreparedGroups, request.ComponentIdentities = prepared, identities
 	started := time.Now()
 	results, _, err := runStageGroups(context.Background(), request, byID, ids, &progressWriter{}, false)
-	elapsed := time.Since(started)
+	t.Logf("stage wall time %s", time.Since(started))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func runDedupStage(t *testing.T, alphaTwo string, groups []testpolicy.Group) (ma
 			}
 		}
 	}
-	return out, runs, request, elapsed
+	return out, runs, request
 }
 
 func dedupTestResult(attemptID string, groups ...GroupResult) TestResult {
@@ -131,14 +131,14 @@ func cloneGroupResult(group GroupResult) GroupResult {
 
 func TestGoDedupRunsEachRequiredTestOnceAndKeepsDistinctConfigurations(t *testing.T) {
 	t.Parallel()
-	results, runs, _, elapsed := runDedupStage(t, "", []testpolicy.Group{
+	results, runs, _ := runDedupStage(t, "", []testpolicy.Group{
 		dedupGroup("alpha-all", []string{"internal/alpha"}, `"all"`),
 		dedupGroup("alpha-named", []string{"internal/alpha"}, `["TestA1","TestA3"]`),
 		dedupGroup("span-named", []string{"internal/alpha", "internal/beta"}, `["TestA2","TestB1"]`),
 		dedupGroup("alpha-tagged", []string{"internal/alpha"}, `["TestA1"]`, "dedupfixture"),
 		dedupGroup("beta-named", []string{"internal/beta"}, `["TestB1"]`),
 	})
-	t.Logf("stage wall time %s; native run events %v", elapsed, runs)
+	t.Logf("native run events %v", runs)
 	for id, result := range results {
 		if result.Status != "passed" || !result.CollectionComplete {
 			t.Fatalf("%s did not pass: %+v", id, result)
@@ -294,7 +294,7 @@ func TestGoDedupRunsEachRequiredTestOnceAndKeepsDistinctConfigurations(t *testin
 
 func TestGoDedupFailedSourceGivesNoCredit(t *testing.T) {
 	t.Parallel()
-	results, runs, _, _ := runDedupStage(t, `t.Fatal("red")`, []testpolicy.Group{
+	results, runs, _ := runDedupStage(t, `t.Fatal("red")`, []testpolicy.Group{
 		dedupGroup("alpha-all", []string{"internal/alpha"}, `"all"`),
 		dedupGroup("alpha-named", []string{"internal/alpha"}, `["TestA1","TestA3"]`),
 	})
@@ -418,7 +418,7 @@ func TestGoDedupKeepsDistinctBudgetAndShardConfigurations(t *testing.T) {
 	budgeted.CPUBudgetSeconds = &budget
 	sharded := dedupGroup("alpha-sharded", []string{"internal/alpha"}, `["TestA3"]`)
 	sharded.Shards = 1
-	results, runs, request, _ := runDedupStage(t, "", []testpolicy.Group{
+	results, runs, request := runDedupStage(t, "", []testpolicy.Group{
 		dedupGroup("alpha-all", []string{"internal/alpha"}, `"all"`), budgeted, sharded,
 	})
 	byID := map[string]testpolicy.Group{}

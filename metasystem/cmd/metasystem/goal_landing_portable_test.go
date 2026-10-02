@@ -311,8 +311,11 @@ func (fixture *portableProofFixture) counts() (builds int, native map[string]int
 	return builds, native
 }
 
+// observe reports one scenario's builds and native runs, and the wall time
+// from started to this observation; the time is reported, never judged.
 func (fixture *portableProofFixture) observe(scenario, tree string, started time.Time) {
 	fixture.t.Helper()
+	observed := time.Now()
 	builds, native := fixture.counts()
 	observation := struct {
 		Scenario       string         `json:"scenario"`
@@ -320,7 +323,7 @@ func (fixture *portableProofFixture) observe(scenario, tree string, started time
 		WallDurationMS int64          `json:"wallDurationMs"`
 		Builds         int            `json:"builds"`
 		Native         map[string]int `json:"native"`
-	}{scenario, tree, time.Since(started).Milliseconds(), builds, native}
+	}{scenario, tree, observed.Sub(started).Milliseconds(), builds, native}
 	encoded, err := json.Marshal(observation)
 	if err != nil {
 		fixture.t.Fatal(err)

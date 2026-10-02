@@ -12,7 +12,8 @@ import (
 // limits means reached, witnessed through the engine.
 func TestFenceReachedThroughTheEngine(t *testing.T) {
 	root := t.TempDir()
-	engine := &Engine{Root: root, Mission: "mr-fence"}
+	now := time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)
+	engine := &Engine{Root: root, Mission: "mr-fence", Now: func() time.Time { return now }}
 	values := map[string]string{
 		"fence.wall-clock-hours": "1",
 		"fence.cycles":           "2",
@@ -27,7 +28,7 @@ func TestFenceReachedThroughTheEngine(t *testing.T) {
 	// Counters at the cycle limit: reached.
 	dir := filepath.Dir(engine.fencesPath())
 	os.MkdirAll(dir, 0o755)
-	startedAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	startedAt := now.Add(-time.Minute).Format(time.RFC3339)
 	counters := `{"startedAt":"` + startedAt + `","cycles":2,"reservations":[]}` + "\n"
 	if err := os.WriteFile(engine.fencesPath(), []byte(counters), 0o644); err != nil {
 		t.Fatal(err)

@@ -45,13 +45,13 @@ func (b *bed) acceptGoals() {
 	b.git("update-ref", goal.AcceptedRef, tip)
 }
 
-// alignClock puts the lifecycle clock just behind the wall clock the real
-// record owner stamps creation and termination with, so the lifecycle's
-// ownership proof lands between them as it does in production, and re-arms
-// supervision at that time.
+// alignClock puts the lifecycle clock at a fixed instant behind every wall
+// time the real record owner stamps creation and termination with, so the
+// lifecycle's ownership proof lands before them as it does in production
+// however long the host takes, and re-arms supervision at that time.
 func (b *bed) alignClock() time.Time {
 	b.t.Helper()
-	now := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second)
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	b.doubles.Clock.Current = now
 	b.armSupervision()
 	return now

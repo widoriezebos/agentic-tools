@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,19 +82,13 @@ type scratchPublicFixture struct {
 }
 
 // command shadows the shared fixture's unbounded call: every CLI call of
-// this fixture runs in its own reaped process group. The fixture exit bound
-// is a hang detector measured by progress, not by the clock: it fails the
-// phase only after the call made no progress (no new output and no change
-// under the control root's proof-run records) for the whole bound, so a
-// loaded host that slows a converging run does not fail it. A hung call is
-// asked for its goroutine dump (SIGQUIT) before its group is killed, so the
-// failure names where it stood. Output is read only after join.
+// this fixture runs in its own reaped process group. The call's exit is the
+// event it waits for, however long a loaded host takes to converge; only
+// the test binary's deadline ends the wait, and then the call is asked for
+// its goroutine dump (SIGQUIT) and joined, so the failure names where it
+// stood. Output is read only after join.
 func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	f.t.Helper()
-	bound, err := testenv.FixtureExitWaitBound()
-	if err != nil {
-		f.t.Fatal(err)
-	}
 	command := f.proofCommand.command(f.commandEnvironment(), f.engine, args...)
 	command.Dir = f.root
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -110,45 +103,22 @@ func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	pid = command.Process.Pid
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
-	records := filepath.Join(f.control, "artifacts", "agents", "proof-runs")
-	lastOutput, lastRecords := output.size(), newestModification(records)
-	idleSince := time.Now()
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	// One ticker paces everything: the progress check, the grace after the
-	// dump request, and the join after the kill.
 	var waitErr error
-	dumpTicks, killTicks := -1, -1
-wait:
-	for {
+	testenv.AwaitOr(f.t, "metasystem "+strings.Join(args, " ")+" to exit", func() bool {
 		select {
 		case waitErr = <-done:
-			break wait
-		case <-tick.C:
-		}
-		switch {
-		case killTicks >= 0:
-			if killTicks++; time.Duration(killTicks)*time.Second >= bound {
-				f.t.Fatalf("metasystem %s made no progress for %s and was not joined after SIGKILL", strings.Join(args, " "), bound)
-			}
-		case dumpTicks >= 0:
-			if dumpTicks++; dumpTicks >= 5 {
-				_ = syscall.Kill(-pid, syscall.SIGKILL)
-				killTicks = 0
-			}
+			return true
 		default:
-			if size, newest := output.size(), newestModification(records); size != lastOutput || newest.After(lastRecords) {
-				lastOutput, lastRecords, idleSince = size, newest, time.Now()
-			} else if time.Since(idleSince) >= bound {
-				_ = syscall.Kill(pid, syscall.SIGQUIT)
-				dumpTicks = 0
-			}
+			return false
 		}
-	}
-	if dumpTicks >= 0 {
+	}, func() string {
+		// A Go engine prints its goroutine dump on SIGQUIT and exits; its
+		// exit is the event that makes the dump whole.
+		_ = syscall.Kill(pid, syscall.SIGQUIT)
+		<-done
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		f.t.Fatalf("metasystem %s made no progress for %s; output (with its goroutine dump)=%s", strings.Join(args, " "), bound, output.String())
-	}
+		return "output (with its goroutine dump)=" + output.String()
+	})
 	if waitErr == nil {
 		return 0, output.String()
 	}
@@ -159,7 +129,7 @@ wait:
 	return exit.ExitCode(), output.String()
 }
 
-// progressBuffer is the call's combined output, safe to measure while the
+// progressBuffer is the call's combined output, safe to read while the
 // command's copier writes it.
 type progressBuffer struct {
 	mu     sync.Mutex
@@ -172,32 +142,10 @@ func (b *progressBuffer) Write(data []byte) (int, error) {
 	return b.buffer.Write(data)
 }
 
-func (b *progressBuffer) size() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buffer.Len()
-}
-
 func (b *progressBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buffer.String()
-}
-
-// newestModification is the latest modification time under root (zero when
-// root is absent): the proof-run records a converging call keeps writing.
-func newestModification(root string) time.Time {
-	var newest time.Time
-	_ = filepath.WalkDir(root, func(_ string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info, infoErr := entry.Info(); infoErr == nil && info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-		return nil
-	})
-	return newest
 }
 
 func (f *scratchPublicFixture) requireCommand(args ...string) string {
@@ -609,22 +557,17 @@ type blockedScratchRun struct {
 	done           chan error
 	output         bytes.Buffer
 	ready, release *os.File
-	bound          time.Duration
 	exited         error
 }
 
-// startBlockedScratchRun starts the real CLI and waits, within the fixture
-// exit bound, for the workload's readiness byte.
+// startBlockedScratchRun starts the real CLI and waits for the workload's
+// readiness byte or the launcher's exit, whichever comes first.
 func (f *scratchPublicFixture) startBlockedScratchRun(resultPath string) *blockedScratchRun {
 	t := f.t
 	t.Helper()
-	bound, err := testenv.FixtureExitWaitBound()
-	if err != nil {
-		t.Fatal(err)
-	}
-	run := &blockedScratchRun{f: f, bound: bound, done: make(chan error, 1)}
+	run := &blockedScratchRun{f: f, done: make(chan error, 1)}
 	// A nonblocking descriptor makes the FIFO pollable (os.OpenFile's is
-	// not on darwin), so the readiness read honors a deadline.
+	// not on darwin), so an early launcher exit can wake the readiness read.
 	readyFD, err := unix.Open(f.ready, unix.O_RDWR|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -644,11 +587,8 @@ func (f *scratchPublicFixture) startBlockedScratchRun(resultPath string) *blocke
 	if err := run.command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	// The read ends at the deadline, and an early
-	// launcher exit wakes it explicitly, so the reader is always joined.
-	if err := run.ready.SetReadDeadline(time.Now().Add(bound)); err != nil {
-		t.Fatalf("readiness FIFO has no deadline: %v", err)
-	}
+	// The read ends at the readiness byte, and an early launcher exit wakes
+	// it explicitly, so the reader is always joined.
 	pid = run.command.Process.Pid
 	go func() { run.done <- run.command.Wait() }()
 	readiness := make(chan error, 1)
@@ -660,7 +600,7 @@ func (f *scratchPublicFixture) startBlockedScratchRun(resultPath string) *blocke
 	select {
 	case err := <-readiness:
 		if err != nil {
-			run.fail("no readiness within %s: %v", bound, err)
+			run.fail("the readiness read failed: %v", err)
 		}
 	case err := <-run.done:
 		run.done <- err
@@ -673,14 +613,9 @@ func (f *scratchPublicFixture) startBlockedScratchRun(resultPath string) *blocke
 	return run
 }
 
-// join waits for the launcher within the bound, then its output is safe.
-func (r *blockedScratchRun) join() bool {
-	select {
-	case r.exited = <-r.done:
-		return true
-	case <-time.After(r.bound):
-		return false
-	}
+// join waits for the launcher's exit, then its output is safe.
+func (r *blockedScratchRun) join() {
+	r.exited = <-r.done
 }
 
 // fail stops the launcher group, releases the FIFOs, joins, and only then
@@ -690,12 +625,9 @@ func (r *blockedScratchRun) fail(format string, args ...any) {
 	_ = syscall.Kill(-r.command.Process.Pid, syscall.SIGKILL)
 	r.ready.Close()
 	r.release.Close()
-	output := "(launcher not joined)"
-	if r.join() {
-		output = r.output.String()
-	}
+	r.join()
 	r.f.records()
-	r.f.t.Fatalf(format+"; output=%s", append(args, output)...)
+	r.f.t.Fatalf(format+"; output=%s", append(args, r.output.String())...)
 }
 
 // liveScratchWorld proves the blocked workload's tokens exist in its
@@ -808,9 +740,7 @@ func TestTestRunScratchCancellationDrainsAndDeletes(t *testing.T) {
 	if err := proofrun.RequestCancellation(f.control, attempt, "scratch cleanup cancellation"); err != nil {
 		t.Fatal(err)
 	}
-	if !blocked.join() {
-		blocked.fail("cancelled run did not terminate within %s", blocked.bound)
-	}
+	blocked.join()
 	output := blocked.output.String()
 	if blocked.exited == nil || blocked.command.ProcessState.ExitCode() == proofrun.ExitReusableSuccess {
 		t.Fatalf("cancelled run exited %v; output=%s", blocked.exited, output)
@@ -864,9 +794,7 @@ func TestTestRunScratchLauncherCrashWaitsForDrainThenRecovers(t *testing.T) {
 	if err := blocked.command.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	if !blocked.join() {
-		blocked.fail("killed launcher did not exit within %s", blocked.bound)
-	}
+	blocked.join()
 	// The workload still holds the writer lock: recovery must wait.
 	for _, outcome := range proofrun.ReconcileScratch(f.control, proofrun.ScratchOptions{}) {
 		if outcome.AttemptID == "scratch:"+run && outcome.Action != proofrun.ReconcileScratchPending {
@@ -879,37 +807,25 @@ func TestTestRunScratchLauncherCrashWaitsForDrainThenRecovers(t *testing.T) {
 	if _, err := blocked.release.Write([]byte("x\n")); err != nil {
 		t.Fatal(err)
 	}
-	bound := blocked.bound
 	workload := f.workloadPID()
-	deadline := time.Now().Add(bound)
-	removed := false
 	// Recovery goes through the standing reconciliation entry, which
 	// settles the orphaned attempt first and then its scratch root.
-	for !removed && time.Now().Before(deadline) {
-		if err := unix.Kill(workload, 0); errors.Is(err, unix.ESRCH) {
-			outcomes, err := proofrun.ReconcileAttempts(f.control, proofrun.ReconcileOptions{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, outcome := range outcomes {
-				if outcome.AttemptID == "scratch:"+run && outcome.Action == proofrun.ReconcileScratchRefused {
-					t.Fatalf("recovery refused a drained root: %+v", outcome)
-				}
-			}
-			_, present := f.records()[run]
-			removed = !present
+	testenv.Await(t, "drained root "+run+" to be recovered", func() bool {
+		if err := unix.Kill(workload, 0); !errors.Is(err, unix.ESRCH) {
+			return false
 		}
-		if !removed {
-			select {
-			case <-t.Context().Done():
-				t.Fatal(t.Context().Err())
-			case <-time.After(50 * time.Millisecond):
+		outcomes, err := proofrun.ReconcileAttempts(f.control, proofrun.ReconcileOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, outcome := range outcomes {
+			if outcome.AttemptID == "scratch:"+run && outcome.Action == proofrun.ReconcileScratchRefused {
+				t.Fatalf("recovery refused a drained root: %+v", outcome)
 			}
 		}
-	}
-	if !removed {
-		t.Fatalf("drained root %s was not recovered within %s", run, bound)
-	}
+		_, present := f.records()[run]
+		return !present
+	})
 	late, _ := os.ReadFile(filepath.Join(f.probe, "late"))
 	// Custody may stop the orphan instead of letting it finish; it must
 	// never find its root already deleted.

@@ -96,7 +96,9 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if accepted.Obligation == nil || accepted.Obligation.State != goal.ObligationEnforced || string(acceptedBytes) != string(localBytes) {
 		t.Fatal("accepted goal-a bytes differ from the enforced local obligation")
 	}
-	started := time.Now().UTC().Add(-3 * time.Minute)
+	// The launch reads the clock once, after every fixture time the goal
+	// records; the pass then concludes on that same clock.
+	started := time.Now().UTC().Truncate(time.Second)
 	weightGeneration := uint64(0)
 	store := &run.Store{Root: root, Now: func() time.Time { return started },
 		AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
@@ -118,6 +120,10 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The pass concludes on the launch's clock, just past the launch fence:
+	// the attempt fails its launch and its observed cost is the fence,
+	// however long the host takes.
+	concludingStore.Now = func() time.Time { return started.Add(run.LaunchFenceMin * time.Minute) }
 	if err := runPassWithStore(t.Output(), root, identity.Ref{Pid: 71, StartedAtSec: 72}, concludingStore); err != nil {
 		t.Fatal(err)
 	}

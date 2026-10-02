@@ -1605,14 +1605,9 @@ func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
 
 func TestGoalTemporaryAuthorityIgnoresFixtureClock(t *testing.T) {
 	root, facts := goalAuthorityRefusalRoot(t)
-	wallDate := time.Now().UTC().AddDate(0, 0, -1)
-	horizon, err := time.Parse("2006-01-02", "2026-09-06")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wallDate.After(horizon) {
-		wallDate = horizon
-	}
+	// A review date in the wall clock's past and the fixture clock's future:
+	// a decision read on the fixture clock would accept it.
+	wallDate := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	reviewBy := wallDate.Format("2006-01-02")
 	t.Setenv("METASYSTEM_GOAL_NOW", wallDate.AddDate(0, 0, -1).Format(time.RFC3339))
 	args := append(completeSetObligationArgs(root),

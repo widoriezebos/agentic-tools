@@ -130,8 +130,11 @@ while [ ! -e "$done_path" ] && kill -0 "$suite_pid" 2>/dev/null; do sleep 0.01; 
 		}
 		processFile := filepath.Join(root, "processes.json")
 		t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
+		// The survivor started after any attempt this launch can record: a
+		// fixed instant past every run of this test, not the wall clock.
 		fresh := rows[0]
-		fresh.Started, fresh.StartedExactMicro = time.Now().Add(time.Hour).Unix(), time.Now().Add(time.Hour).UnixMicro()
+		afterEveryLaunch := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
+		fresh.Started, fresh.StartedExactMicro = afterEveryLaunch.Unix(), afterEveryLaunch.UnixMicro()
 		writeProofProcessTable(t, processFile, []census.Process{fresh})
 		var recorded []int
 		logPath := filepath.Join(root, "suite.log")

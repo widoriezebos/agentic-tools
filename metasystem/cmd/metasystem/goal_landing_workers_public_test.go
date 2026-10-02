@@ -270,43 +270,38 @@ func testOrdinaryPublicApplicationCancellationIsolated(t *testing.T) {
 		}
 		readyByte <- readErr
 	}()
+	// The readiness byte, the launcher's running record and the runner's
+	// result are the events this bed waits for, however long a loaded host
+	// takes to produce them.
 	select {
 	case err := <-readyByte:
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(60 * time.Second):
-		t.Fatal("ordinary public command did not become ready")
+	case early := <-runnerDone:
+		t.Fatalf("the runner ended before the public command became ready: status=%d err=%v", early.status, early.err)
 	}
 	children := publicApplicationChildren(t, state, workers)
-	launcherDeadline := time.After(10 * time.Second)
-	for {
-		liveAttempt, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
-		if readErr == nil && len(liveAttempt.ProcessKeys) != 0 {
-			record, recordErr := proofrun.ReadProcessRecord(root, liveAttempt.ProcessKeys[0])
-			if recordErr == nil && record.Status == proofrun.StatusRunning {
-				break
-			}
-			readErr = recordErr
-		}
+	testenv.Await(t, "the proof launcher's running process record", func() bool {
 		select {
-		case <-time.After(10 * time.Millisecond):
-		case <-launcherDeadline:
-			t.Fatalf("proof launcher did not start: attempt=%+v err=%v", liveAttempt, readErr)
+		case early := <-runnerDone:
+			t.Fatalf("the runner ended before the proof launcher ran: status=%d err=%v", early.status, early.err)
+		default:
 		}
-	}
+		liveAttempt, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
+		if readErr != nil || len(liveAttempt.ProcessKeys) == 0 {
+			return false
+		}
+		record, recordErr := proofrun.ReadProcessRecord(root, liveAttempt.ProcessKeys[0])
+		return recordErr == nil && record.Status == proofrun.StatusRunning
+	})
 	if active := activePublicApplicationAttempt(t, root, ordinaryProjectTree); active != attempt.AttemptID {
 		t.Fatalf("ready worker attempt=%s admitted=%s", active, attempt.AttemptID)
 	}
 	if err := proofrun.RequestCancellation(root, attempt.AttemptID, "ordinary public application cancellation"); err != nil {
 		t.Fatal(err)
 	}
-	var finished outcome
-	select {
-	case finished = <-runnerDone:
-	case <-time.After(60 * time.Second):
-		t.Fatal("ordinary public cancellation was not observed by the runner")
-	}
+	finished := <-runnerDone
 	if finished.status == 0 || finished.result.Delivery.Sufficient || len(finished.result.Groups) != 1 || finished.result.Groups[0].Status != "cancelled" || !finished.result.Groups[0].NativeLaunched {
 		t.Fatalf("ordinary cancelled result status=%d err=%v result=%+v", finished.status, finished.err, finished.result)
 	}

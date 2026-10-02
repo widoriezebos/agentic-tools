@@ -46,7 +46,7 @@ func strandEntryAt(t *testing.T, root, opid, machine string, phase Phase, intent
 		t.Fatal(err)
 	}
 	if phase == PhasePushed {
-		if err := MarkPushed(root, opid, "sometip", 1, time.Now().Add(-time.Minute)); err != nil {
+		if err := MarkPushed(root, opid, "sometip", 1, pushDeadlinePassed); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -823,7 +823,7 @@ func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
 	if _, err := CreateEntry(a, ownPushed, "mac-a", "lin-1", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkPushed(a, ownPushed, "sometip", 1, time.Now().Add(-time.Minute)); err != nil {
+	if err := MarkPushed(a, ownPushed, "sometip", 1, pushDeadlinePassed); err != nil {
 		t.Fatal(err)
 	}
 	reports, err := Recover(aEndpoint)

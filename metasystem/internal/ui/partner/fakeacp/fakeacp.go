@@ -300,6 +300,11 @@ func (s *server) dispatch(in frame) {
 		// prompt itself: a cancel that arrived before its goroutine ran would
 		// otherwise be forgotten.
 		s.cancelled.Store(false)
+		// A wake tripped for an earlier turn is spent with it.
+		select {
+		case <-s.wake:
+		default:
+		}
 		asked := promptText(in.Params)
 		if s.script.Prompted != nil {
 			s.script.Prompted <- asked
@@ -381,10 +386,7 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 				{"optionId": "no", "kind": "reject_once", "name": "Refuse"},
 			},
 		})
-		select {
-		case <-s.permission:
-		case <-time.After(10 * time.Second):
-		}
+		s.awaitPermission()
 	}
 	if s.script.Permission != "" {
 		kind := s.script.PermissionKind
@@ -401,10 +403,7 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 				{"optionId": "no", "kind": "reject_once", "name": "Refuse"},
 			},
 		})
-		select {
-		case <-s.permission:
-		case <-time.After(10 * time.Second):
-		}
+		s.awaitPermission()
 	}
 	for _, chunk := range chunks {
 		if s.cancelled.Load() || s.stopped.Load() {
@@ -431,6 +430,17 @@ func (s *server) prompt(id json.RawMessage, asked string) {
 		reason = "end_turn"
 	}
 	s.answer(id, map[string]any{"stopReason": reason})
+}
+
+// awaitPermission waits for the client's answer to the permission request
+// just sent, or for the turn to be cancelled or the endpoint closed. The
+// answer is the event; however long the client takes to give it, the turn
+// never runs on without it.
+func (s *server) awaitPermission() {
+	select {
+	case <-s.permission:
+	case <-s.wake:
+	}
 }
 
 // sleep waits, but wakes as soon as the turn is cancelled, so a Stop lands

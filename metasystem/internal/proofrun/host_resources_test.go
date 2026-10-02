@@ -579,9 +579,9 @@ func TestHostResourceLaunchSuiteCleansUnforwardedGrandchildBeforeRelease(t *test
 		_ = os.WriteFile(childRelease, []byte("release"), 0o600)
 		<-runDone
 	})
-	waitCustodyFile(t, ready, 0)
+	waitCustodyFile(t, ready)
 	prober := identity.KernelProber{}
-	child := waitCustodyRef(t, prober, childPID, 0)
+	child := waitCustodyRef(t, prober, childPID)
 	t.Cleanup(func() { _ = identity.SignalExact(prober, child, syscall.SIGKILL, syscall.Kill) })
 	type acquireResult struct {
 		lease *HostResourceLease

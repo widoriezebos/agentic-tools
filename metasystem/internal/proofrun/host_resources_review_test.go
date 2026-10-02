@@ -171,9 +171,9 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 	if err != nil || string(nestedDone) != "done" {
 		t.Fatalf("nested completion acknowledgement lacks durable evidence: data=%q err=%v", nestedDone, err)
 	}
-	waitCustodyFile(t, filepath.Join(directory, "grandchild.ready"), 0)
-	worker = waitCustodyRef(t, prober, filepath.Join(directory, "worker.pid"), 0)
-	grandchild = waitCustodyRef(t, prober, filepath.Join(directory, "grandchild.pid"), 0)
+	waitCustodyFile(t, filepath.Join(directory, "grandchild.ready"))
+	worker = waitCustodyRef(t, prober, filepath.Join(directory, "worker.pid"))
+	grandchild = waitCustodyRef(t, prober, filepath.Join(directory, "grandchild.pid"))
 	controlRootBytes, err := os.ReadFile(filepath.Join(directory, "control-root"))
 	if err != nil {
 		t.Fatal(err)
