@@ -122,7 +122,7 @@ func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 		ExecutableDigests: legacyMetadata.ExecutableDigests, Argv: legacyMetadata.Argv, Expected: legacyMetadata.Expected,
 		Status: "passed", NativeLaunched: true, CollectionComplete: true, EndedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
 	legacyAttempt := Attempt{SchemaVersion: IdentityAttemptSchemaVersion, AttemptID: "legacy-bridge",
-		StartedAt:         time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano),
+		StartedAt:         "2026-09-20T09:00:00Z",
 		PendingTestGroups: map[string]string{"a": legacyIdentities["a"]},
 		Terminal:          &AttemptTerminal{Result: TerminalSuccess}, TestResult: &legacyResult}
 	legacyRevalidated, err := RevalidateRetainedGroupExecutionIdentities(context.Background(), legacyRequest, []Attempt{legacyAttempt})
