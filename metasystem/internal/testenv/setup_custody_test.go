@@ -106,9 +106,12 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 	}
 	_ = command.Wait()
 
+	// The wait ends when the child has exited: gone, or a zombie its new
+	// parent has not reaped yet. A zombie still answers kill(pid, 0), so the
+	// end is the wait's own verdict (it logs only when its bound expired).
 	var waitLog strings.Builder
 	waitForFixtureExit(identity.KernelProber{}, childRef, 20*time.Second, &waitLog)
-	if survivors, err := identity.FixtureSurvivors(key); err != nil || len(survivors) != 0 || syscall.Kill(childPid, 0) == nil {
+	if survivors, err := identity.FixtureSurvivors(key); err != nil || len(survivors) != 0 || waitLog.Len() != 0 {
 		t.Fatalf("the custodian did not end the setup child: survivors=%v err=%v %s", survivors, err, waitLog.String())
 	}
 

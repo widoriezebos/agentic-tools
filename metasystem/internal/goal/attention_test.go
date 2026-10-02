@@ -1036,16 +1036,10 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 		if exitErr != nil {
 			t.Fatalf("probe blocking transport member %d: %v", pid, exitErr)
 		}
+		// The awaited exit decides it: a zombie awaiting its reap has
+		// exited, and still answers kill(pid, 0).
 		if !exited {
 			t.Fatalf("blocking transport member %d survived after capture returned", pid)
-		}
-	}
-	if err := syscall.Kill(childID, 0); err == nil {
-		// A killed child may remain briefly as a zombie. Its process state,
-		// not kill(0), decides whether any transport work survived.
-		stateOut, stateErr := exec.Command("ps", "-o", "stat=", "-p", fmt.Sprint(childID)).CombinedOutput()
-		if stateErr == nil && !strings.HasPrefix(strings.TrimSpace(string(stateOut)), "Z") {
-			t.Fatalf("transport descendant %d survived group termination with state %q", childID, stateOut)
 		}
 	}
 }

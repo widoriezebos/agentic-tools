@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestResourceCustodyStreamsLiveCapNoteAndRetainsSpools(t *testing.T) {
@@ -262,8 +263,13 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 	if status := <-finished; status == 0 {
 		t.Fatal("ordinary grandchild was silently accepted as a clean launch")
 	}
-	if state := identity.AliveRef(identity.KernelProber{}, grandchild); state == identity.Alive {
-		t.Fatal("no-file custodian left its ordinary grandchild live")
+	// The custodian's drain returns once no member of the group is live; a
+	// killed grandchild may then still be exiting, or a zombie awaiting its
+	// reap after reparenting. Its exit is awaited on the process table, never
+	// read once: a grandchild the custodian left running (sleep 60) never
+	// exits within the bound.
+	if err := testutil.AwaitExactExit(identity.KernelProber{}, grandchild); err != nil {
+		t.Fatalf("no-file custodian left its ordinary grandchild live: %v", err)
 	}
 	if !strings.Contains(output.String(), "borrowed-suite-tail") {
 		t.Fatalf("no-file suite output lost final line: %q", output.String())

@@ -2,8 +2,11 @@ package testenv
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -92,6 +95,58 @@ func TestFixtureExitWaitBoundDerivesFromCustodianTiming(t *testing.T) {
 	}{{1000, 50 * time.Second}, {250, 12500 * time.Millisecond}} {
 		if got := fixtureExitWaitBound(5*time.Second, test.scale); got != test.want {
 			t.Errorf("fixture exit wait bound at scale %d = %s, want %s", test.scale, got, test.want)
+		}
+	}
+}
+
+// A process that has exited but is not yet reaped (a zombie: its parent, or
+// init after a reparenting, has not collected it) still answers kill(pid, 0)
+// on Linux and EPERM to a group signal on Darwin. AwaitProcessTargetGone
+// returns only once the target is reaped: here the test's own child stays a
+// zombie until the test collects it.
+func TestAwaitProcessTargetGoneWaitsForTheReap(t *testing.T) {
+	t.Parallel()
+	child := exec.Command("true")
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := child.Process.Pid
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			_ = child.Wait()
+		}
+	})
+	for {
+		exact, state, err := (identity.KernelProber{}).Probe(int64(pid))
+		if err != nil || state != identity.Alive {
+			t.Fatalf("probe the unreaped child: state=%s err=%v", state, err)
+		}
+		if exact.Zombie {
+			break
+		}
+		if t.Context().Err() != nil {
+			t.Fatal("the child never exited")
+		}
+		runtime.Gosched()
+	}
+	// While the child is a zombie the wait does not end: given no time, it
+	// reports the target still present.
+	expired, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, target := range []int{pid, -pid} {
+		if err := waitForFixtureProcessTarget(expired, target); err == nil {
+			t.Fatalf("the wait for %d ended while the target was a zombie", target)
+		}
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	reaped = true
+	for _, target := range []int{pid, -pid} {
+		if err := AwaitProcessTargetGone(target); err != nil {
+			t.Fatalf("the wait for %d after the reap: %v", target, err)
 		}
 	}
 }
