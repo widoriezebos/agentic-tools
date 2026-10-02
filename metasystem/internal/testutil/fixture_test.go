@@ -481,12 +481,14 @@ func TestHelperFailingBeforeItsKillPointLeavesNoChild(t *testing.T) {
 			prober, recorder := identity.KernelProber{}, &recordingTB{}
 			fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, prober, syscall.Kill)
 			fixture.scan = noFixtureSurvivors
-			command := fixture.Shell("trap '' TERM\nkill -STOP $$")
+			command := fixture.Shell(testexec.ReadyPrologue + "trap '' TERM\nkill -STOP $$")
 			output, err := command.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := command.Start(); err != nil {
+			// The failure text names the child's exe and argv, which its
+			// image publishes only once it runs.
+			if err := testexec.StartReady(command); err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = command.Process.Kill() }()

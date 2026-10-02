@@ -774,7 +774,7 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 	runAsHolder := func(arguments []string, extraEnv []string) (string, int) {
 		t.Helper()
 		gate := filepath.Join(bed, "holder-gate-"+strconv.FormatInt(time.Now().UnixNano(), 10))
-		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done
+		script := testexec.ReadyPrologue + `while [[ ! -e "$1" ]]; do sleep 0.01; done
 shift
 "$@" &
 child=$!
@@ -793,7 +793,10 @@ exit "$status"`
 		command.Env = env
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
-		if err := command.Start(); err != nil {
+		// The holder is announced by its command line, which a just-exec'd
+		// child may not have published yet: it starts once its own image
+		// reports ready.
+		if err := testexec.StartReady(command); err != nil {
 			t.Fatal(err)
 		}
 		pid := int64(command.Process.Pid)
@@ -963,8 +966,8 @@ exit "$status"`
 		t.Fatal(err)
 	}
 	holderGate := filepath.Join(bed, "park-holder-gate")
-	holder := exec.Command("bash", "-c", `while [[ ! -e "$1" ]]; do sleep 0.01; done`, "holder", holderGate)
-	if err := holder.Start(); err != nil {
+	holder := exec.Command("bash", "-c", testexec.ReadyPrologue+`while [[ ! -e "$1" ]]; do sleep 0.01; done`, "holder", holderGate)
+	if err := testexec.StartReady(holder); err != nil {
 		t.Fatal(err)
 	}
 	holderPid := int64(holder.Process.Pid)

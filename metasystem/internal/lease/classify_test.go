@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // childOf spawns a child whose parent is this test process, so classifying the
@@ -358,8 +359,9 @@ func stageStewardInstall(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	// "<bin> steward" runs this script from bin's directory: it reports
-	// that the stand-in is running, then holds until stdin closes.
-	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "steward"), []byte("printf ready\nread line\n"), 0o644); err != nil {
+	// that the stand-in is running (testexec.StartReady), then holds until
+	// stdin closes.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "steward"), []byte(testexec.ReadyPrologue+"\nread line\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	idPath := steward.RepoIdentityPath(top)
@@ -389,19 +391,10 @@ func spawnAndSettle(t *testing.T, bin string) int64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ready, readyWriter, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd.Stdout = readyWriter
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	_ = readyWriter.Close()
-	t.Cleanup(func() { _ = hold.Close(); _ = ready.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	if _, err := ready.Read(make([]byte, 1)); err != nil {
+	if err := testexec.StartReady(cmd); err != nil {
 		t.Fatalf("spawned steward never reported running: %v", err)
 	}
+	t.Cleanup(func() { _ = hold.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	pid := int64(cmd.Process.Pid)
 	want := bin + " steward"
 	if command, ok := ProcessCommand(pid, nil); !ok || command != want {

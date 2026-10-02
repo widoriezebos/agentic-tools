@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // TestStartedAtNeedsNoCommandLine: a process's start time is readable before
@@ -21,9 +22,9 @@ func TestStartedAtNeedsNoCommandLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("/bin/sh", "-c", "read value")
+	command := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+"read value")
 	command.Stdin = read
-	if err := command.Start(); err != nil {
+	if err := testexec.StartReady(command); err != nil {
 		t.Fatal(err)
 	}
 	_ = read.Close()
