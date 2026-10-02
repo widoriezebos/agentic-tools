@@ -1,15 +1,15 @@
 # ledger-authentication
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 24
 - Intent: What: Records only a person may make in the goal ledger (approvals, stops, resumes) are signed, so a forged one is rejected. Why: Today anyone with write access to the checkout could write a record that looks like your act. Pros: Closes the forgery threat for person-only acts. Cons: A large design touching every person-only command, and no forgery has been seen.
 - Origin: main
 - Next step: Next: When triggered, design it: which acts are signed, how keys are kept, and whether signing is per act or per tree, keeping ordinary agent ledger commands unsigned. Done when: the design is accepted and a test refuses a forged person-only record.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 97
+- Revision: 98
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-13T08:23:45Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-09-02 deferred true forge-proofing to this foundational design program; nothing signs ledger records; never-idle-ironclad explicitly excludes forged history from its readiness claim; back of queue until Wido prioritises; wide blast radius, multi-slice design.
+- Abandoned: by=human:Wido at=2026-10-02T20:59:07Z revision=98 opid=7710WJXD5GTW9K5QFH1FYHPABQ-m1e-9c612d71 because=Obsolete (audit 2026-10-02): signing ledger records defends only against forgery, outside the nobody-attacks threat model
 
 History:
 - 2026-09-02T11:31:48Z QTBA5B021YKN5DPBQRV2A5YWVY-m0-c5dbf036 open actor=human:Wido targets=ledger-authentication
@@ -109,4 +109,5 @@ History:
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
-Integrity: sha256=1886eacb3644189a3cdf6275e5658d6e68e10775388bcc60d2aafa51d6081c86
+- 2026-10-02T20:59:07Z 7710WJXD5GTW9K5QFH1FYHPABQ-m1e-9c612d71 abandon actor=human:Wido targets=ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=Obsolete (audit 2026-10-02): signing ledger records defends only against forgery, outside the nobody-attacks threat model
+Integrity: sha256=2f52a77d01c2115921cdcbfab3fe464a2128939e9334bbdccec8609056eb2aa9

@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 25
+- Sequence: 24
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no data or process is at risk, but a design delegate refuses its own brief and the goal stalls until a human notices; novelty 1: the rule is one table row and one role prohibition list; exposure 3: every design round on every machine, on the lane Wido chose for design authoring; accumulation 2: every design brief has to carry an override paragraph, and each one is a place the override can be forgotten or misquoted"
 - Tier: 3
 - Intent: What: The rule "helpers may not write the design" applies to builders only; a helper started to write a design may do so. Why: The working-modes rule forbids design writing to every helper. A design helper once refused its job because of it, and design briefs now need an override paragraph to get past it. Pros: A small text change that removes a trap and keeps builders out of design. Cons: None worth noting.
 - Origin: main
 - Next step: Next: Edit the Design row of the Working Modes table in docs/orchestration.md (and working-modes.md if it mirrors it) so a design helper may write the design and a builder may not; check that brief composition picks up the new row. Done when: a design helper's composed prompt allows writing the design and a builder's still forbids it.
 - OpenedAt: 2026-09-08T06:22:17Z
-- Revision: 96
+- Revision: 97
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -110,4 +110,5 @@ History:
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
-Integrity: sha256=4e94954cc1c9f8828c81a24a1a2e4d12ce197322a496fef254723a9b76880ffd
+- 2026-10-02T20:59:07Z 7710WJXD5GTW9K5QFH1FYHPABQ-m1e-9c612d71 abandon actor=human:Wido targets=ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
+Integrity: sha256=f49dcedc42e35c710e8586b36f4fbd403243fe5118d6b2972a7eb19d0b6edb74
