@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
@@ -350,4 +351,41 @@ func seatStandings(t *testing.T, root string) seat.StandingsState {
 		t.Fatal(err)
 	}
 	return state
+}
+
+// A seat the steward started runs as a launch of the host's launch lane, not
+// as a delegate job record; the record this machine publishes says it is
+// working, on the goal the steward started it for.
+func TestPresenceSaysASeatLaunchIsWorkingOnItsGoal(t *testing.T) {
+	t.Parallel()
+	root := seatPresenceRoot(t)
+	seatGit(t, root, "init", "-q", "-b", "main")
+	seatGit(t, root, "config", "user.name", "fixture")
+	seatGit(t, root, "config", "user.email", "fixture@example.invalid")
+	seatGit(t, root, "config", "metasystem.goal.machine", "m1e")
+	seatGit(t, root, "config", "goal.sync-remote", "local")
+	store, err := launch.DefaultRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "seat-presence-says-working"
+	if err := (launch.Store{Root: store}).Create(launch.Record{ID: id, Kind: "seat", WorkingDirectory: root,
+		State: launch.Running, StartedAt: seatFixtureClock.Add(-12 * time.Minute).Format(time.RFC3339Nano)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSeatRecord(root, SeatRecord{Schema: 1, LaunchID: id, Goal: "fleet-panel-ux", Machine: "m1e"}); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &seat.RunnerContext{RepoIdentity: "repo-a", Generation: 4, Engine: "3f9c1e2", ArmedLineage: "lineage-7", TickSeconds: 600}
+	if report := runSeatPresenceForTest(t, root, runner, 4, seatFixtureClock); report.Outcome != seat.OutcomePublished {
+		t.Fatalf("report = %+v", report)
+	}
+	record, err := seat.ParseRecord([]byte(seatGit(t, root, "cat-file", "blob", "refs/metasystem/presence/m1e:presence.json")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if words := seat.PhaseWords(record.Working, seatFixtureClock); words != "working on fleet-panel-ux · running 12 min" {
+		t.Fatalf("the published record says %q", words)
+	}
 }

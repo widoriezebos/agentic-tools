@@ -78,7 +78,7 @@ func ReadStandings(checkout string) map[string]seat.Observation {
 // This seat's own jobs are read by the caller now, once, because two things
 // are composed from them — the newest chain this seat's fact line says, and
 // every job in flight its row opens to — and two reads a moment apart could
-// disagree. seat.ReadJobs and seat.NewestChain are what it calls; a wrapper
+// disagree. seat.ReadWork and seat.NewestChain are what it calls; a wrapper
 // here would only hide which of them failed.
 
 // ReadPresence reads one namespace of the presence copy and says where it
