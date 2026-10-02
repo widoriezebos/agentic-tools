@@ -34,10 +34,34 @@ type ProcIdentity struct {
 // the process table (start time + command). This one-source rule is why a main
 // can recognize its own announcement.
 func AuthIdentity(pid int64, probe identity.FixtureProbe) (ProcIdentity, error) {
-	if entry, ok := probeFixture(probe, pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
+	if entry, ok := authFixture(probe, pid); ok {
 		return ProcIdentity{Pid: pid, PidStartedAt: entry.StartedAt, Command: entry.Command}, nil
 	}
 	return kernelIdentity(pid)
+}
+
+// AuthStartedAt is AuthIdentity's start second without its command: the
+// same source decides (a fixture row AuthIdentity would answer from, else
+// the kernel), but the kernel read is the start record alone. A process's
+// start is readable before its new image has published argv (Linux, right
+// after exec) and after argv is gone (an unreaped exit), so a caller that
+// needs only the start must not fail on an unreadable command.
+func AuthStartedAt(pid int64, probe identity.FixtureProbe) (int64, error) {
+	if entry, ok := authFixture(probe, pid); ok {
+		return entry.StartedAt, nil
+	}
+	exact, state, err := identity.KernelProber{}.ReadStart(pid)
+	if err != nil || state != identity.Alive {
+		return 0, fmt.Errorf("no such process: %d", pid)
+	}
+	return exact.StartedAt.Unix(), nil
+}
+
+// authFixture is the fixture row the authentication identity answers from:
+// one with both a start and a non-empty command.
+func authFixture(probe identity.FixtureProbe, pid int64) (identity.FixtureEntry, bool) {
+	entry, ok := probeFixture(probe, pid)
+	return entry, ok && entry.HasStartedAt && entry.HasCommand && entry.Command != ""
 }
 
 func kernelIdentity(pid int64) (ProcIdentity, error) {
