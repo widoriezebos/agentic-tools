@@ -91,9 +91,17 @@ All facts exist: plain lane status (queue, running_proof, last_proof, last_push;
 - **No invented facts (R1-04):** progress shows only what the board records (review round N of M, proof sections done of total) and the proof's elapsed time; no build-unit counts, no "usual duration".
 - **Verdict honesty (R1-05):** the verdict is "All good" only when every section read succeeded and Needs you is empty; a failed read makes the verdict "Can't read <section>" (and lane status must surface its queue/result read errors instead of swallowing them).
 
+
+### Folded from critique round 2 (5 material; count not falling: scope cut, per the rabbit-hole rule)
+
+- **Step 1 is read-only plus the existing Land now (R2-1, R2-6).** Pause, Resume and Stop need the signed-in session carried into their command owners, an authority bridge Land now does not provide; they move to step 2 as one unit ("UI actions carry the person's session"), together with the rule that Stop is offered only for machines on this computer. Step 1 shows each fix as the plain sentence of what to do, not a command to copy, and keeps Land now as today.
+- **No log link (R2-9):** a red proof shows its recorded failure reason; opening the log needs a server endpoint that does not exist yet (Deferred).
+- **Superseded returns (R2-7):** a returned entry whose goal was handed in again later counts as history in "Came back", never in Needs you.
+- **Verdict scope (R2-8):** the verdict states what it checked: "All good on this computer" covers this computer's seats, the lane and this checkout's questions; questions on other computers are named as not checked until a fleet-wide question read exists (Deferred).
+
 ### Step 1 and Deferred
 
-Step 1: the verdict strip, Needs you (lane, returned, red proof, open questions), Seats cards with Stop, the lane block with Pause/Resume/Land now and the four lists, Details disclosures, one wording, phone layout. Deferred: [Talk] (goal ui-connects-to-a-running-agent), [Forget] (goal fleet-forgets-an-unreachable-seat) — the cards reserve their place; progress bars where the board has no N of M yet.
+Step 1 (after round 2): the verdict strip with its scope, Needs you (lane, unsuperseded returns, red proof, this checkout's open questions), the fleet table with a true Doing column, the lane block with Land now and the four lists, Details disclosures, one wording, phone layout. Step 2: Pause, Resume and Stop carrying the signed-in session; the proof-log endpoint; fleet-wide questions. Deferred: [Talk] (goal ui-connects-to-a-running-agent), [Forget] (goal fleet-forgets-an-unreachable-seat) — the cards reserve their place; progress bars where the board has no N of M yet.
 
 ### Threat model and rabbit-hole risks
 
