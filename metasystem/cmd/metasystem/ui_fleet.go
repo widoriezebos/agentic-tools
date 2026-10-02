@@ -69,7 +69,7 @@ func fleetReader(
 		// read: the newest chain this seat's fact line says, and every job in
 		// flight its row opens to. Two reads a moment apart could name one
 		// job as newest and then list a set it is not in.
-		jobs := seat.ReadJobs(roots.Checkout)
+		jobs := seat.ReadWork(roots.Checkout)
 		running, runningProblem := seat.NewestChain(jobs)
 		// The launches this host holds, reconciled on the way in: a running
 		// record whose process is dead is marked failed here, because a read
