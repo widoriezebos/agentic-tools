@@ -5,9 +5,9 @@
 - Tier: 1
 - Intent: Prove the landing lane end to end at switch-on: land m1e's uncommitted register lines as a goal-bound change
 - Origin: human
-- Next step: work land switch-on-trial --message with the staged receipts and narrator digest
+- Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 6
+- Revision: 7
 - BudgetExceptions: 0
 
 History:
@@ -17,4 +17,5 @@ History:
 - 2026-09-30T10:36:56Z G4K02BNFJKDX8TMBWVP56PBJ2E-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=switch-on-trial
 - 2026-09-30T19:03:58Z 55SPYBGEXF8CGJ147B4JDADGHQ-m1e-b6a4eb0a abandon actor=human:wido targets=switch-on-trial displaced=m1e+main-1790454088-93948-21671b@2026-09-30T08:58:05Z stopId=stop-switch-on-trial-r3-f1 carried=landing-lane-runtime-redesign reason=The lane path this trial used failed. The end-to-end rehearsal in landing-lane-runtime-redesign replaces it.
 - 2026-10-02T12:27:09Z 8Q6SRYQ18GFKSDSFRFX00BH1N0-m1e-9c612d71 reopen actor=human:Wido targets=switch-on-trial
-Integrity: sha256=6729bafaf93e4ad7c620192ab84200e188612726678282dc0854fe19ca0a5077
+- 2026-10-02T12:27:13Z GTSYYJJKFRAZFQSYSMPRNKWYSB-m1e-9c612d71 edit actor=human:Wido targets=switch-on-trial
+Integrity: sha256=1ba50ad2a52e97e743b32010c6085ddb14fad8e89b5dfd337b3f0af8a156bc26
