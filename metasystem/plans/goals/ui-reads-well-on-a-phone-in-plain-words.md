@@ -7,9 +7,9 @@
 - Tier: 1
 - Intent: The web UI reads well on a phone in plain English (UI audit 2026-10-02, report.md section UX and BROKEN item 9): the header works at 390 px, no hashes, ids, config keys or internal codes shown by default (behind a Details disclosure where needed), titles without 'What:', one time format (local, 24h), one name per thing, goal pages show title/tier/priority/next step with buttons instead of 'edit at a terminal', no jargon ('no kind claimed'), no double fetches.
 - Origin: main
-- Next step: Fix the UX items in report.md; verify each page at 1480 and 390 px with Playwright screenshots before and after
+- Next step: Fix the UX items in report.md; verify each page at 1480 and 390 px with Playwright screenshots before and after; ASKED MGZWNQWNM9187QHCBNC2CADXQK (other): The seat on m1i can't commit its finished, proven UI work: 'work review' is refused by the commit guard ('an agent commits here only through metasystem work land (HEAD names no branch)'). The engine commits from a scratch copy whose HEAD names no branch, and the guard there finds no landing token. Tried twice, the same refusal both times. The result (proof green, 1,889 web tests) is staged in the goal's worktree, agentic-tools-m1i-ui-reads-well-on-a-phone-in-plain-words. How should it get committed?
 - OpenedAt: 2026-10-02T21:55:06Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=BM7GRAHX0ZQ4MNRCNRBDAEQ5ZZ-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=3
@@ -23,4 +23,5 @@ History:
 - 2026-10-02T21:55:18Z M5SNS9E2687N391M87QKYDC658-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-reads-well-on-a-phone-in-plain-words,work-review-starts-its-critic reason=priority-order subject=ui-reads-well-on-a-phone-in-plain-words from=unranked to=1:5 requested-sequence=5
 - 2026-10-02T21:55:29Z BM7GRAHX0ZQ4MNRCNRBDAEQ5ZZ-m1e-9c612d71 approve actor=human:Wido targets=ui-reads-well-on-a-phone-in-plain-words
 - 2026-10-02T22:29:18Z P1RYV5X29AE0XXNMPAR32AB841-m1i-71c5cb39 claim actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words
-Integrity: sha256=e80472e714d193506eef59be832ad0c59e2a7f45c0e866522201acee23fe4a5d
+- 2026-10-02T23:22:14Z ZYSW5NDC8M8CAM6DTWH034Z04B-m1i-71c5cb39 ask actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words
+Integrity: sha256=f0c30f100fa7908ef535af16ea52f5ac6843018cdf023c7e235384f2a06d33c5
