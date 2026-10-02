@@ -329,9 +329,11 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "question", action: "ask", primary: true, audience: "agent", summary: "ask the person a question through the channel",
-			usage: []string{"metasystem question ask G --question TEXT --option TEXT...", "metasystem question ask G --question TEXT --option 'LABEL: CONSEQUENCE'... [--recommend LABEL]"},
+			usage: []string{"metasystem question ask G --question TEXT --option TEXT...", "metasystem question ask G --question TEXT --option 'LABEL: CONSEQUENCE'... [--recommend LABEL]",
+				"metasystem question ask --about lane|machine --question TEXT --option TEXT..."},
 			details: []string{
 				"The person answers in the channel thread; the answer is authenticated there, never by a local command.",
+				"--about lane or --about machine asks about the landing lane or this machine when no goal is involved; such a question is an ordinary question and carries no authority kind.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
 				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",
 				"It reaches a person, never another agent; to ask the agent on another seat of this host, or whoever works on a goal, run metasystem agent ask.",
@@ -340,6 +342,7 @@ func processIntentCommands() []intentCommand {
 				intentTargetFlag,
 				{name: "question", value: "TEXT", usage: "the question, the first line the person reads"},
 				fileFlag("question", "read the question from FILE"),
+				{name: "about", value: "lane|machine", usage: "with no goal: what the question is about"},
 				{name: "option", value: "TEXT", repeat: true, usage: "one answer, as 'label: consequence' (repeatable)"},
 				{name: "option-file", value: "FILE", repeat: true, advanced: true, usage: "read one answer from each FILE; answers keep the order given (repeatable)"},
 				{name: "recommend", value: "LABEL", usage: "the option you recommend"},
@@ -349,9 +352,10 @@ func processIntentCommands() []intentCommand {
 				{name: "wants", value: "TOKEN", advanced: true, usage: "the exact answer token (carry questions)"},
 				{name: "budget", value: "BOX", advanced: true, usage: "the proposed compact box for stop and budget-above-norm"},
 			},
-			maxArgs:  1,
-			examples: []string{"metasystem question ask verbs-match-intent --question 'Land slice 2 now?' --option 'yes: land it' --option 'no: wait for review' --recommend yes"},
-			run:      runIntentAsk,
+			maxArgs: 1,
+			examples: []string{"metasystem question ask verbs-match-intent --question 'Land slice 2 now?' --option 'yes: land it' --option 'no: wait for review' --recommend yes",
+				"metasystem question ask --about lane --question 'Return the conflicting branch?' --fact 'merge conflict in internal/goal' --option 'return: its seat fixes it'"},
+			run: runIntentAsk,
 		},
 		{
 			object: "question", action: "retry", audience: "agent", summary: "deliver one stored, undelivered question once more",
@@ -392,10 +396,15 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentQuestionShow,
 		},
 		{
-			object: "question", action: "list", audience: "both", summary: "the channel questions still open",
-			usage:    []string{"metasystem question list"},
+			object: "question", action: "list", audience: "both", summary: "the channel questions still open, or those answered or withdrawn",
+			usage: []string{"metasystem question list", "metasystem question list --answered [--since 7d] [--verbose]"},
+			details: []string{
+				"--answered reads the questions that ended, answered or withdrawn, grouped by the refusal that made an agent ask (its first fact), most frequent first, with counts and the median time to answer.",
+			},
+			flags: []intentFlag{{name: "answered", usage: "the questions answered or withdrawn, grouped by refusal"},
+				{name: "since", value: "AGE", usage: "with --answered: questions asked within this age (7d, 36h or 90m)"}, intentVerboseFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem question list"},
+			examples: []string{"metasystem question list", "metasystem question list --answered --since 7d"},
 			run:      runIntentQuestionList,
 		},
 		{
@@ -1424,8 +1433,19 @@ func runIntentAsk(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question ask needs the goal the question is about, so nothing was asked",
+	about := inv.input.text("about")
+	switch {
+	case about != "" && about != "lane" && about != "machine":
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("a question without a goal is about the lane or the machine, not %s, so nothing was asked", shellCommand([]string{about})),
+			next: inv.retryWith([]string{"about"}, "--about", "lane"), nextReason: "or --about machine"})
+	case about != "" && id != "":
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a question names a goal or says what it is about, not both, so nothing was asked",
+			next: inv.retryWith([]string{"about"}), nextReason: "about the goal alone"})
+	case about != "" && inv.input.text("kind") != "" && inv.input.text("kind") != "other":
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("a %s question carries authority over a goal, so it cannot be asked --about %s; nothing was asked", inv.input.text("kind"), about),
+			next: inv.retryWith([]string{"kind", "budget", "wants"}), nextReason: "as an ordinary question"})
+	case id == "" && about == "":
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question ask needs the goal the question is about, or --about lane or machine, so nothing was asked",
 			next: inv.retryWith(nil, "GOAL"), nextReason: "with the goal's id"})
 	}
 	question := strings.TrimSpace(inv.input.text("question"))
@@ -1437,16 +1457,21 @@ func runIntentAsk(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	// A question about the lane or the machine names no goal target.
+	var askTargets []intentTarget
+	if id != "" {
+		askTargets = inv.targets(id)
+	}
 	kind := inv.input.text("kind")
 	if kind == "" {
 		// An ordinary question; the other kinds carry authority.
 		kind = "other"
 	}
-	in := channelAskInput{Goal: id, Kind: kind, Facts: append([]string{question}, inv.input.values["fact"]...),
+	in := channelAskInput{Goal: id, About: about, Kind: kind, Facts: append([]string{question}, inv.input.values["fact"]...),
 		Options: inv.input.values["option"], Recommendation: inv.input.text("recommend"), Wants: inv.input.text("wants")}
 	if inv.input.has("budget") {
 		if kind != "stop" && kind != "budget-above-norm" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
 				Summary: "--budget belongs to a stop or budget question only; nothing was asked",
 				next:    inv.retryWith([]string{"budget"}), nextReason: "without --budget"})
 		}
@@ -1457,7 +1482,7 @@ func runIntentAsk(inv *intentInvocation) int {
 		}
 		budget, err := goalbudget.ParseBox(inv.input.text("budget"), nil, reviewRoundMax)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
 				Summary: fmt.Sprintf("--budget %s is not a whole budget box, so nothing was asked", shellCommand([]string{inv.input.text("budget")})),
 				next:    inv.retryWith([]string{"budget"}, "--budget", "1d/10/720m/1/3"), nextReason: "with your own numbers in this shape", Details: []string{err.Error()}})
 		}
@@ -1467,21 +1492,25 @@ func runIntentAsk(inv *intentInvocation) int {
 			in.Budget = &budget
 		}
 	} else if kind == "stop" || kind == "budget-above-norm" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
 			Summary: fmt.Sprintf("a %s question proposes a budget box, so nothing was asked", kind),
 			next:    inv.retryWith(nil, "--budget", "1d/10/720m/1/3"), nextReason: "with your own numbers in this shape"})
 	}
 	if kind == "carry" && !goal.ValidCarryToken(in.Wants) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
 			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
 			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
 	q, warnings, code, err := inv.owners.processes.ask(inv.stateRoot, in)
 	if err != nil && q.ID == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: inv.targets(id), Summary: err.Error() + "; nothing was asked", text: warnings,
+		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: askTargets, Summary: err.Error() + "; nothing was asked", text: warnings,
 			retry: "once the cause above is fixed"})
 	}
 	targets := []intentTarget{{Kind: "goal", ID: id}, {Kind: "question", ID: q.ID}}
+	subject := "goal " + id
+	if id == "" {
+		targets, subject = targets[1:], "the "+about
+	}
 	delivery, pending := "posted to the channel", false
 	switch {
 	case q.Thread == nil && q.Undelivered > 0:
@@ -1497,7 +1526,7 @@ func runIntentAsk(inv *intentInvocation) int {
 		// The same question already stands open (R-129-ui): success, and
 		// nothing was written, posted or published again.
 		repeat := intentResult{Outcome: intentUnchanged, Targets: targets, text: lines, Data: data,
-			Summary: "question " + q.ID + " is already open for goal " + id + " with this text and these options (" + delivery + "); nothing was asked again",
+			Summary: "question " + q.ID + " is already open for " + subject + " with this text and these options (" + delivery + "); nothing was asked again",
 			next:    wait, nextReason: "wait for the authenticated answer"}
 		if pending && q.Undelivered > 0 {
 			repeat.next, repeat.nextReason = poll, "delivers exactly this stored question once more"
@@ -2367,8 +2396,15 @@ func runIntentMissionNamed(inv *intentInvocation, verb string) int {
 // runIntentQuestionList lists the open channel questions of this
 // repository through the channel's own question walk.
 func runIntentQuestionList(inv *intentInvocation) int {
+	if inv.input.has("since") && !inv.input.switched("answered") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since narrows the answered questions only, so nothing was listed",
+			next: append(inv.typedArgv(), "--answered"), nextReason: "the questions answered or withdrawn in that window"})
+	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
+	}
+	if inv.input.switched("answered") {
+		return inv.render(inv.answeredQuestions())
 	}
 	questions, unreadable := channel.WalkOpenQuestions(inv.stateRoot)
 	lines, views := []string{}, []map[string]any{}
