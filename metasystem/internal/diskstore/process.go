@@ -517,6 +517,16 @@ func openWriterLock(record Record) (*os.File, error) {
 // description. It releases through its own sequence.
 type ProcessProof struct {
 	Prober identity.Prober
+	// Table is the process table the owner-group verdict reads; nil is the
+	// kernel's. A test bed passes the processes it started.
+	Table identity.ProcessTable
+}
+
+func (p ProcessProof) table() identity.ProcessTable {
+	if p.Table != nil {
+		return p.Table
+	}
+	return identity.KernelProcessTable{}
 }
 
 func (ProcessProof) Kind() OwnerKind { return OwnerProcess }
@@ -540,7 +550,7 @@ func (p ProcessProof) Observe(_ context.Context, record Record) Verdict {
 	case identity.Unknown:
 		return pending("its process's liveness cannot be read")
 	}
-	if verdict := ownerGroupVerdict(record); verdict.Decision != Release {
+	if verdict := ownerGroupVerdict(record, p.table()); verdict.Decision != Release {
 		return verdict
 	}
 	free, err := ProbeWriterLock(record)
@@ -565,8 +575,8 @@ func (ProcessProof) Apply(context.Context, *Critical) error {
 // just before the removal: any holder, or a census not taken or
 // incomplete, keeps the root, pending, for the next pass (fail-closed
 // rules 1 and 4).
-func (ProcessProof) Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict {
-	if verdict := ownerGroupVerdict(critical.Record()); verdict.Decision != Release {
+func (p ProcessProof) Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict {
+	if verdict := ownerGroupVerdict(critical.Record(), p.table()); verdict.Decision != Release {
 		return verdict
 	}
 	if verdict := useVerdict(census, critical.Record()); verdict.Decision != Release {
@@ -582,28 +592,28 @@ func (ProcessProof) Release(ctx context.Context, critical *Critical, census *Use
 // record without them, an unreadable process table or an unreadable id
 // keeps the root (fail-closed rule 1). A grandchild that left both (setsid)
 // is out of this rule's reach; the use census still sees it if it holds
-// anything in the root.
-func ownerGroupVerdict(record Record) Verdict {
+// anything in the root. The processes are table's.
+func ownerGroupVerdict(record Record, table identity.ProcessTable) Verdict {
 	pending := func(reason string) Verdict {
 		return Verdict{Decision: Pending, Reason: reason, Command: "metasystem disk show"}
 	}
 	if record.OwnerGroup <= 0 || record.OwnerSession <= 0 {
 		return pending("its owner's process group and session are not recorded")
 	}
-	pids, err := identity.AllPids()
+	pids, err := table.Pids()
 	if err != nil {
 		return pending("the process table is unreadable: " + err.Error())
 	}
 	for _, pid := range pids {
-		group, groupErr := unix.Getpgid(int(pid))
-		session, sessionErr := unix.Getsid(int(pid))
+		group, groupErr := table.Group(pid)
+		session, sessionErr := table.Session(pid)
 		if errors.Is(groupErr, unix.ESRCH) || errors.Is(sessionErr, unix.ESRCH) {
 			continue
 		}
 		if groupErr != nil || sessionErr != nil {
 			return pending(fmt.Sprintf("the process group or session of pid %d is unreadable", pid))
 		}
-		if int64(group) == record.OwnerGroup || int64(session) == record.OwnerSession {
+		if group == record.OwnerGroup || session == record.OwnerSession {
 			// An exited member awaiting collection holds nothing: only a
 			// live, non-zombie member keeps the root, as the proof lease
 			// reclaim counts group members. An unreadable one keeps it.

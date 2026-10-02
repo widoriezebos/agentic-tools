@@ -298,7 +298,7 @@ func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identit
 // custodian group. Two complete empty censuses while its leader is still live
 // are required; unknown membership or an uninspectable identity fails closed.
 func drainResourceGroup(group int64, prober identity.Prober, limit time.Duration) (bool, error) {
-	return drainResourceGroupWith(group, prober, limit, custodyGroupMembers, syscall.Kill, time.Now, func() {
+	return drainResourceGroupWith(group, prober, limit, kernelCustodyGroupMembers, syscall.Kill, time.Now, func() {
 		time.Sleep(50 * time.Millisecond)
 	})
 }
@@ -589,7 +589,7 @@ func (custody *resourceCustody) bind(ref identity.Ref) error {
 }
 
 func (custody *resourceCustody) signal(signal syscall.Signal, prober identity.Prober, sender identity.SignalFunc) []identity.Ref {
-	return signalResourceGroupWith(int64(custody.group), custody.leader, signal, prober, custodyGroupMembers, sender)
+	return signalResourceGroupWith(int64(custody.group), custody.leader, signal, prober, kernelCustodyGroupMembers, sender)
 }
 
 func signalResourceGroupWith(group int64, leader identity.Ref, signal syscall.Signal, prober identity.Prober,
@@ -851,4 +851,36 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 		return abort(err)
 	}
 	return finish, custody.signal, exact.Ref(), nil
+}
+
+// kernelCustodyGroupMembers is custodyGroupMembers over the kernel's table.
+func kernelCustodyGroupMembers(group int64) ([]int64, error) {
+	return custodyGroupMembers(identity.KernelProcessTable{}, group)
+}
+
+// tableGroupMembers walks table for the members of group, the leader
+// omitted: a pid gone between the listing and its read is skipped, any
+// other unreadable group makes the membership indeterminable.
+func tableGroupMembers(table identity.ProcessTable, group int64) ([]int64, error) {
+	pids, err := table.Pids()
+	if err != nil {
+		return nil, fmt.Errorf("resource group membership is indeterminable: %w", err)
+	}
+	var members []int64
+	for _, pid := range pids {
+		if pid == group {
+			continue
+		}
+		pgid, err := table.Group(pid)
+		if errors.Is(err, syscall.ESRCH) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resource group membership is indeterminable at pid %d: %w", pid, err)
+		}
+		if pgid == group {
+			members = append(members, pid)
+		}
+	}
+	return members, nil
 }

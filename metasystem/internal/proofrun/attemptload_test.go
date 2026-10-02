@@ -124,9 +124,9 @@ func TestCensusCountsRunningBatchProof(t *testing.T) {
 	}, 999)); got != 1 {
 		t.Fatalf("a batch owner with its nested engine run counted %d launcher(s), want 1", got)
 	}
-	previousPids := loadSeams.pids
-	loadSeams.pids = func() ([]int64, error) { return nil, os.ErrPermission }
-	t.Cleanup(func() { loadSeams.pids = previousPids })
+	previousProcesses := loadSeams.processes
+	loadSeams.processes = identity.ScriptedProcessTable{PidsErr: os.ErrPermission}
+	t.Cleanup(func() { loadSeams.processes = previousProcesses })
 	if got, known := countProofLaunchers(999); got != 0 || known {
 		t.Fatalf("an unreadable process table returned %d, known=%v", got, known)
 	}
@@ -142,8 +142,7 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 		fakeLauncher.Pid: fakeLauncher, fakeAttempt.Pid: fakeAttempt,
 	}, calls: map[int64]int{}}
 	loadSeams.prober = fake
-	loadSeams.pids = func() ([]int64, error) { return []int64{fakeLauncher.Pid}, nil }
-	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
+	loadSeams.processes = identity.FixedProcessTable{{Pid: fakeLauncher.Pid, Group: fakeLauncher.Pid, Parent: 1}}
 	launcher := processIdentity(identity.Exact{Pid: 515151, StartedAt: now.Add(-2 * time.Hour)}, 0)
 	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))

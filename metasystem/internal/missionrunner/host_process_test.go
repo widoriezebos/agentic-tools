@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -157,6 +158,42 @@ func TestHostStartVerifiedMatrix(t *testing.T) {
 	if err != nil || !haveStarted || !verified || started != 77 || probes != 2 || heartbeats != 1 || sleeps != 1 || nowCalls < 2 {
 		t.Fatalf("artificial host-start result: started=%d have=%v verified=%v err=%v probes=%d heartbeats=%d sleeps=%d now=%d",
 			started, haveStarted, verified, err, probes, heartbeats, sleeps, nowCalls)
+	}
+}
+
+// A group member counts only when it is in the table the probe is given:
+// a live member with readable argv is substantive work in a table holding
+// it, and nothing outside the table is ever counted.
+func TestGroupHasSubstantiveMemberReadsOnlyItsTable(t *testing.T) {
+	t.Parallel()
+	member := exec.Command("cat")
+	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := member.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := member.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
+	pid := member.Process.Pid
+	// The member's argv is published once its exec has completed, which a
+	// probe proves; it is awaited on the probe, never on a clock.
+	for {
+		exact, state, err := (identity.KernelProber{}).Probe(int64(pid))
+		if err == nil && state == identity.Alive && exact.ArgvKnown {
+			break
+		}
+		if t.Context().Err() != nil {
+			t.Fatal("the member's argv never became readable")
+		}
+		runtime.Gosched()
+	}
+	if !groupHasSubstantiveMember(identity.ListedProcessTable{int64(pid)}, pid) {
+		t.Fatal("a live member in the table is not substantive")
+	}
+	if groupHasSubstantiveMember(identity.ListedProcessTable{}, pid) {
+		t.Fatal("a member outside the table was counted")
 	}
 }
 

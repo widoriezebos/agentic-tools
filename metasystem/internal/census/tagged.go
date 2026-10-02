@@ -117,9 +117,11 @@ type TaggedProcessScanner interface {
 // TaggedScanDependencies keeps process-table access injectable while the
 // result and its completeness law remain owned here.
 type TaggedScanDependencies struct {
-	PIDs       func() ([]int64, error)
+	// Processes is the process table the scan reads every pid and each
+	// pid's group from; nil is the kernel's. A test hands it exactly the
+	// processes it describes.
+	Processes  identity.ProcessTable
 	Signal     func(pid int64) error
-	PGID       func(pid int64) (int64, error)
 	Reader     identity.VerificationReader
 	MatchesTag func(argv []string, tag string) bool
 	// A zero time preserves the fixture and non-adoption scanner behavior:
@@ -131,24 +133,18 @@ type TaggedScanDependencies struct {
 // ordered identity sandwich to candidates. Probe failures become explicit
 // indeterminate entries; only definitive exits disappear from the live result.
 func ScanTaggedProcesses(tag string, dependencies TaggedScanDependencies) TaggedProcessCensus {
-	if dependencies.PIDs == nil {
-		dependencies.PIDs = identity.AllPids
+	if dependencies.Processes == nil {
+		dependencies.Processes = identity.KernelProcessTable{}
 	}
 	if dependencies.Signal == nil {
 		dependencies.Signal = func(pid int64) error {
 			return unix.Kill(int(pid), 0)
 		}
 	}
-	if dependencies.PGID == nil {
-		dependencies.PGID = func(pid int64) (int64, error) {
-			group, err := unix.Getpgid(int(pid))
-			return int64(group), err
-		}
-	}
 	if dependencies.Reader == nil {
 		dependencies.Reader = identity.KernelProber{}
 	}
-	pids, err := dependencies.PIDs()
+	pids, err := dependencies.Processes.Pids()
 	if err != nil {
 		return TaggedProcessCensus{EnumerationError: err.Error()}
 	}
@@ -170,7 +166,7 @@ func ScanTaggedProcesses(tag string, dependencies TaggedScanDependencies) Tagged
 		})
 		switch verification.Outcome {
 		case identity.VerificationVerified:
-			group, groupErr := dependencies.PGID(pid)
+			group, groupErr := dependencies.Processes.Group(pid)
 			if groupErr != nil {
 				if errors.Is(groupErr, unix.ESRCH) {
 					continue

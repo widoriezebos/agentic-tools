@@ -179,6 +179,17 @@ type DiskPass struct {
 	// EvidenceSeams adjusts the machine pass's evidence bound (fixtures);
 	// nil is production.
 	EvidenceSeams func(*evidence.BoundClass)
+	// Processes is the process table the pass's process proofs and use
+	// census read; nil is the kernel's. A test bed passes its own.
+	Processes identity.ProcessTable
+}
+
+// processes is the pass's process table: the kernel's unless one is given.
+func (p DiskPass) processes() identity.ProcessTable {
+	if p.Processes != nil {
+		return p.Processes
+	}
+	return identity.KernelProcessTable{}
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -194,7 +205,7 @@ func (p DiskPass) machineProofs(home string) map[diskstore.OwnerKind]diskstore.O
 	if p.Proofs != nil {
 		return p.Proofs
 	}
-	proofs := diskOwnerProofs()
+	proofs := diskOwnerProofs(p.processes())
 	proofs[diskstore.OwnerUnit] = diskstore.UnitFindingsProof{UnitRoot: filepath.Join(home, "unit")}
 	return proofs
 }
@@ -266,7 +277,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			checkoutOptions.Notes = append(checkoutOptions.Notes, "suite-failure bundles are not aged this pass: "+err.Error())
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
-		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))
+		checkoutOptions.CensusReader = KernelCensusReader(pass.processes(), home, append(armedCheckouts(), top))
 	}
 	var err error
 	result.Checkout, err = diskstore.RunPass(ctx, checkoutOptions)
@@ -376,7 +387,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.FloorMinAge = own.Duration(config.DiskFloorMinAgeKey)
 	options.CensusMinBudget = host.Duration(config.DiskCensusMinBudgetKey)
-	options.CensusReader = KernelCensusReader(home, checkouts)
+	options.CensusReader = KernelCensusReader(pass.processes(), home, checkouts)
 	options.Headroom = func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
 		measured, err := janitor.Headroom(paths, floor)
 		var volumes []diskstore.VolumeFree
@@ -673,17 +684,18 @@ func registeredPaths(home string, checkouts, gitRoots []string) map[string]bool 
 // the engine and the interface; each owner kind's proof lands with its unit
 // (process scratch U1a, attempts U5b, launches, units and leases U5d, goal
 // and session worktrees U5e, delegate workspaces U5f, workspaces U6b), and a
-// record whose kind has no proof yet is kept and reported pending.
-func diskOwnerProofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
-	return map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskstore.ProcessProof{Prober: identity.KernelProber{}}}
+// record whose kind has no proof yet is kept and reported pending. The
+// process proof reads processes.
+func diskOwnerProofs(processes identity.ProcessTable) map[diskstore.OwnerKind]diskstore.OwnerProof {
+	return map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskstore.ProcessProof{Prober: identity.KernelProber{}, Table: processes}}
 }
 
-// KernelCensusReader is the production use census: the kernel's process
-// table, with the metasystem's own processes (its records and engine
-// binaries) as the "ours" the census judges an unreadable process's
-// ancestry against.
-func KernelCensusReader(home string, checkouts []string) *diskstore.CensusReader {
-	reader := diskstore.KernelCensusReader(uint32(os.Getuid()))
+// KernelCensusReader is the production use census over processes (the
+// kernel's table in production), with the metasystem's own processes (its
+// records and engine binaries) as the "ours" the census judges an
+// unreadable process's ancestry against.
+func KernelCensusReader(processes identity.ProcessTable, home string, checkouts []string) *diskstore.CensusReader {
+	reader := diskstore.KernelCensusReader(processes, uint32(os.Getuid()))
 	recorded := recordedProcesses(home, checkouts)
 	reader.Ours = recorded.Ours
 	return &reader

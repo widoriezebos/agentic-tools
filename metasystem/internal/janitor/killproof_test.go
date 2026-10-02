@@ -249,33 +249,22 @@ func TestGroupOwnershipDependencyTable(t *testing.T) {
 			42: {"rg", tag},
 		},
 	}
+	rows := identity.FixedProcessTable{{Pid: 41, Group: 700}, {Pid: 42, Group: 700}, {Pid: 43}, {Pid: 44, Group: 701}}
 	base := groupOwnershipDependencies{
-		PIDs: func() ([]int64, error) { return []int64{41, 42, 43, 44}, nil },
-		PGID: func(pid int64) (int64, error) {
-			switch pid {
-			case 41, 42:
-				return 700, nil
-			case 43:
-				return 0, syscall.ESRCH
-			default:
-				return 701, nil
-			}
-		},
-		Reader: reader,
+		Processes: identity.ScriptedProcessTable{Rows: rows, GroupErr: map[int64]error{43: syscall.ESRCH}},
+		Reader:    reader,
 	}
 	if got := groupOwnership(700, tag, base); got != GroupOwned {
 		t.Fatalf("verified member ownership = %s, want OWNED", got)
 	}
-	base.PGID = func(pid int64) (int64, error) {
-		if pid == 43 {
-			return 0, syscall.EPERM
-		}
-		return 701, nil
+	base.Processes = identity.ScriptedProcessTable{
+		Rows:     identity.FixedProcessTable{{Pid: 41, Group: 701}, {Pid: 42, Group: 701}, {Pid: 43}, {Pid: 44, Group: 701}},
+		GroupErr: map[int64]error{43: syscall.EPERM},
 	}
 	if got := groupOwnership(700, tag, base); got != GroupIndeterminate {
 		t.Fatalf("unreadable group membership = %s, want INDETERMINATE", got)
 	}
-	base.PIDs = func() ([]int64, error) { return nil, syscall.EPERM }
+	base.Processes = identity.ScriptedProcessTable{Rows: rows, PidsErr: syscall.EPERM}
 	if got := groupOwnership(700, tag, base); got != GroupIndeterminate {
 		t.Fatalf("unreadable process table = %s, want INDETERMINATE", got)
 	}

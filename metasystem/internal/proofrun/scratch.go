@@ -701,7 +701,7 @@ func ReconcileScratch(control string, options ScratchOptions) []ReconcileOutcome
 		options.Prober = identity.KernelProber{}
 	}
 	if options.GroupMembers == nil {
-		options.GroupMembers = liveGroupMembers
+		options.GroupMembers = kernelGroupMembers
 	}
 	if options.RemoveWorktree == nil {
 		options.RemoveWorktree = gittree.RemoveRecordedWorktree

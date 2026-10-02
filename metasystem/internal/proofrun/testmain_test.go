@@ -421,8 +421,7 @@ func installDeterministicTestLoadReaders() {
 		fixtureNamespaceLaunchers: func(int64) (int, bool) { return 0, true },
 		nested:                    func(int64) (bool, bool) { return false, true },
 		prober:                    deadTestProber{},
-		pids:                      func() ([]int64, error) { return nil, nil },
-		parent:                    func(int64) (int64, bool) { return 0, false },
+		processes:                 identity.FixedProcessTable{},
 	}
 }
 

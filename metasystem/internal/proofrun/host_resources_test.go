@@ -407,7 +407,7 @@ func TestHostResourceNestedLeaseSubprocess(t *testing.T) {
 	hostAdmissionDirectoryForTest = directory
 	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	if mode == "legacy" {
-		loadSeams.pids = func() ([]int64, error) { return []int64{int64(os.Getppid())}, nil }
+		loadSeams.processes = identity.ListedProcessTable{int64(os.Getppid())}
 		loadSeams.prober = hostResourceLegacyProber{}
 	}
 	if os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT") == "" || os.Getenv("METASYSTEM_PROOF_ATTEMPT") == "" {
@@ -789,8 +789,10 @@ func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
 		14: launcher(14, "internal", "test", "run"),
 	}, calls: map[int64]int{}}
 	loadSeams.prober = census
-	loadSeams.pids = func() ([]int64, error) { return []int64{10, 11, 12, 13, 14}, nil }
-	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
+	loadSeams.processes = identity.FixedProcessTable{
+		{Pid: 10, Group: 10, Parent: 1}, {Pid: 11, Group: 11, Parent: 1}, {Pid: 12, Group: 12, Parent: 1},
+		{Pid: 13, Group: 13, Parent: 1}, {Pid: 14, Group: 14, Parent: 1},
+	}
 	loadSeams.launchers = countProofLaunchers
 	loadSeams.fixtureNamespaceLaunchers = countProofLaunchersOutsideFixtures
 

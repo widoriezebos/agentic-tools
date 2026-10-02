@@ -19,12 +19,10 @@ func (p groupOwnershipProbe) FixtureEntry(pid int64) (identity.FixtureEntry, boo
 }
 
 func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
-	savedPids, savedPgid, savedCmd, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	savedCmd, savedKill := sweepProcessCommand, sweepKill
 	defer func() {
-		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCmd, savedKill
+		sweepProcessCommand, sweepKill = savedCmd, savedKill
 	}()
-	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
-	sweepGetpgid = func(pid int64) (int64, error) { return 999999, nil }
 	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "different-tag", true }
 	sweepKill = func(pgid int64, sig unix.Signal) error {
 		t.Fatal("a provably unowned group must not be signaled")
@@ -45,6 +43,7 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 		`{"jobId":"job-c","claimEpoch":1,"status":"completed"}`)
 
 	sweepClaimer, _ := newClaimer(root)
+	sweepClaimer.processes = identity.FixedProcessTable{{Pid: 7, Group: 999999}}
 	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -64,20 +63,8 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 }
 
 func TestGroupOwnsTag(t *testing.T) {
-	savedPids, savedPgid, savedCommand := sweepAllPids, sweepGetpgid, sweepProcessCommand
-	defer func() {
-		sweepAllPids, sweepGetpgid, sweepProcessCommand = savedPids, savedPgid, savedCommand
-	}()
-
 	const pgid int64 = 42
-	sweepAllPids = func() ([]int64, error) { return []int64{101, 102, 201}, nil }
-	sweepGetpgid = func(pid int64) (int64, error) {
-		if pid == 201 {
-			return 99, nil
-		}
-		return pgid, nil
-	}
-	sweepProcessCommand = ProcessCommand
+	table := identity.FixedProcessTable{{Pid: 101, Group: pgid}, {Pid: 102, Group: pgid}, {Pid: 201, Group: 99}}
 	probe := groupOwnershipProbe{}
 	for pid, command := range map[int64]string{
 		101: "runner --tag owned-tag",
@@ -90,17 +77,16 @@ func TestGroupOwnsTag(t *testing.T) {
 		}
 	}
 
-	if owned, provable := groupOwnsTag(pgid, "owned-tag", probe); !owned || !provable {
+	if owned, provable := groupOwnsTag(table, pgid, "owned-tag", probe); !owned || !provable {
 		t.Fatalf("tagged fixture member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
-	if owned, provable := groupOwnsTag(pgid, "absent-from-42", probe); owned || !provable {
+	if owned, provable := groupOwnsTag(table, pgid, "absent-from-42", probe); owned || !provable {
 		t.Fatalf("readable fixture members must prove an absent tag: owned=%v provable=%v", owned, provable)
 	}
 
 	// An empty member scan contains no observation that could disprove
 	// ownership.
-	sweepAllPids = func() ([]int64, error) { return nil, nil }
-	if owned, provable := groupOwnsTag(pgid, "owned-tag", probe); owned || provable {
+	if owned, provable := groupOwnsTag(identity.FixedProcessTable{}, pgid, "owned-tag", probe); owned || provable {
 		t.Fatalf("an empty member scan must be unprovable: owned=%v provable=%v", owned, provable)
 	}
 }
@@ -175,6 +161,7 @@ func TestCleanupStaleJobsHonorsTheCancellingMarker(t *testing.T) {
 		`{"jobId":"job-plain","claimEpoch":4,"status":"running","instanceTag":"tag-p"}`)
 
 	sweepClaimer, _ := newClaimer(root)
+	sweepClaimer.processes = identity.FixedProcessTable{{Pid: 7, Group: 999999}}
 	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}

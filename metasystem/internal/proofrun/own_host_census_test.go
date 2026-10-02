@@ -28,13 +28,14 @@ func TestSampleLoadNamesTheSlotsHeldByTheCallersOwnFamily(t *testing.T) {
 	}
 	hostAdmissionDirectoryForTest = directory
 	const self, child, grandchild, foreign = 500, 501, 502, 601
-	parents := map[int64]int64{self: 1, child: self, grandchild: child, foreign: 1}
 	loadSeams.host = func(time.Time) hostload.Sample { return hostload.Sample{Available: true, Cores: 16, Load1m: 1} }
 	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	loadSeams.fixtureNamespaceLaunchers = loadSeams.launchers
 	loadSeams.prober = &censusProber{processes: map[int64]identity.Exact{}, calls: map[int64]int{}}
-	loadSeams.pids = func() ([]int64, error) { return []int64{1, self, child, grandchild, foreign}, nil }
-	loadSeams.parent = func(pid int64) (int64, bool) { parent, ok := parents[pid]; return parent, ok }
+	loadSeams.processes = identity.FixedProcessTable{
+		{Pid: 1, Group: 1}, {Pid: self, Group: self, Parent: 1}, {Pid: child, Group: self, Parent: self},
+		{Pid: grandchild, Group: self, Parent: child}, {Pid: foreign, Group: foreign, Parent: 1},
+	}
 
 	var held []*os.File
 	t.Cleanup(func() { closeHostFiles(held) })

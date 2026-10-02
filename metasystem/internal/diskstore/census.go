@@ -66,11 +66,12 @@ type CensusReader struct {
 	Ours func(pid int64) bool
 }
 
-// KernelCensusReader reads this host's processes for the user uid.
-func KernelCensusReader(uid uint32) CensusReader {
+// KernelCensusReader reads the processes of table (the kernel's in
+// production) for the user uid.
+func KernelCensusReader(table identity.ProcessTable, uid uint32) CensusReader {
 	prober := identity.KernelProber{}
 	return CensusReader{
-		UID: uid, Pids: identity.AllPids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse, Parent: identity.ParentPid,
+		UID: uid, Pids: table.Pids, ProcessUID: identity.ProcessUID, Use: identity.ReadProcessUse, Parent: table.Parent,
 		Command: func(pid int64) string {
 			argv, known := prober.ReadArgv(pid)
 			if !known {

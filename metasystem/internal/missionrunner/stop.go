@@ -291,7 +291,7 @@ func stopTurn(item Item, byRunner bool) (StopOutcome, error) {
 		return outcome, nil
 	}
 	outcome.Signal = termination
-	if groupAlive(int(item.Pgid)) && groupHasSubstantiveMember(int(item.Pgid)) {
+	if groupAlive(int(item.Pgid)) && groupHasSubstantiveMember(identity.KernelProcessTable{}, int(item.Pgid)) {
 		outcome.Result, outcome.Reason = "not-stopped", "host group death is unproven"
 		return outcome, nil
 	}

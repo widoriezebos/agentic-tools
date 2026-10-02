@@ -61,14 +61,11 @@ func TestProductionInventoryDropsUnreadableProcesses(t *testing.T) {
 		deadPID: {state: identity.Dead},
 	}
 	source := productionProcessSource{
-		pids:   func() ([]int64, error) { return []int64{livePID, deadPID}, nil },
+		table: identity.FixedProcessTable{
+			{Pid: livePID, Group: livePID, Session: livePID, Parent: 1},
+			{Pid: deadPID, Group: deadPID, Session: deadPID, Parent: 1},
+		},
 		prober: probe,
-		processGroup: func(pid int) (int, error) {
-			return pid, nil
-		},
-		parentProcess: func(pid int64) (int64, bool) {
-			return 1, true
-		},
 	}
 	inventory, err := source.enumerate()
 	if err != nil {

@@ -69,7 +69,7 @@ func (s TaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time
 		if readerErr != nil {
 			return census.TaggedProcessCensus{EnumerationError: readerErr.Error()}
 		}
-		pids := make([]int64, 0, len(processes))
+		table := make(identity.FixedProcessTable, 0, len(processes))
 		byPID := make(map[int64]census.Process, len(processes))
 		argv := make(map[int64][]string, len(processes))
 		argvKnown := make(map[int64]bool, len(processes))
@@ -77,7 +77,7 @@ func (s TaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time
 			if !process.Alive {
 				continue
 			}
-			pids = append(pids, process.Pid)
+			table = append(table, identity.ProcessRow{Pid: process.Pid, Group: process.PGID, Parent: process.PPID})
 			byPID[process.Pid] = process
 			// Fixture process rows store a flat command string. Only simple
 			// whitespace-separated commands can recover exact token
@@ -88,19 +88,12 @@ func (s TaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time
 				argvKnown[process.Pid] = true
 			}
 		}
-		dependencies.PIDs = func() ([]int64, error) { return pids, nil }
+		dependencies.Processes = table
 		dependencies.Signal = func(pid int64) error {
 			if _, exists := byPID[pid]; !exists {
 				return unix.ESRCH
 			}
 			return nil
-		}
-		dependencies.PGID = func(pid int64) (int64, error) {
-			process, exists := byPID[pid]
-			if !exists {
-				return 0, unix.ESRCH
-			}
-			return process.PGID, nil
 		}
 		dependencies.Reader = configuredProcessReader{starts: reader, argv: argv, argvKnown: argvKnown}
 	}

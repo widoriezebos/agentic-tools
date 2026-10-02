@@ -66,7 +66,7 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	store := dispatch.NewConcludingRunStore(c.root, nil)
 	return store.SweepStale(epoch,
-		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce, nil) },
+		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(c.processTable(), pgid, nonce, nil) },
 		func(pgid int64) error {
 			switch err := sweepKill(pgid, unix.SIGTERM); err {
 			case nil, unix.ESRCH:
@@ -188,7 +188,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	// SIGNAL authorization is KERNEL-ONLY: a
 	// fixture row must never be the evidence that TERMs a real process
 	// group. The claimer's probe serves classification reads, not this.
-	owned, provable := groupOwnsTag(pgid, tag, nil)
+	owned, provable := groupOwnsTag(c.processTable(), pgid, tag, nil)
 	if !provable {
 		return fmt.Errorf("claim sweep cannot prove ownership of stale job %s", stem)
 	}
@@ -205,32 +205,28 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	}
 }
 
-// groupOwnsTag reports whether any live process in the given process group
-// carries tag in its command line. A scan with no live group-member
-// observations proves neither ownership nor non-ownership.
-// The sweep's process-table reads go through seams so the refusal rows —
-// the branches standing between a takeover sweep and SIGTERM-ing a
-// recycled group — are testable.
+// The sweep's member identity read and its signal go through seams so the
+// refusal rows — the branches standing between a takeover sweep and
+// SIGTERM-ing a recycled group — are testable. Its process-table read is
+// the claimer's table (processTable), which a test hands its own processes.
 var (
-	sweepAllPids = identity.AllPids
-	sweepGetpgid = func(pid int64) (int64, error) {
-		pg, err := unix.Getpgid(int(pid))
-		return int64(pg), err
-	}
 	sweepProcessCommand = ProcessCommand
 	sweepKill           = func(pgid int64, sig unix.Signal) error {
 		return unix.Kill(int(-pgid), sig)
 	}
 )
 
-func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, provable bool) {
-	pids, err := sweepAllPids()
+// groupOwnsTag reports whether any live process of processes in the given
+// process group carries tag in its command line. A scan with no live
+// group-member observations proves neither ownership nor non-ownership.
+func groupOwnsTag(processes identity.ProcessTable, pgid int64, tag string, probe identity.FixtureProbe) (owned, provable bool) {
+	pids, err := processes.Pids()
 	if err != nil {
 		return false, false
 	}
 	observations := 0
 	for _, pid := range pids {
-		pg, err := sweepGetpgid(pid)
+		pg, err := processes.Group(pid)
 		if err != nil {
 			// Only ESRCH proves the member is gone;
 			// any other inspection failure means this

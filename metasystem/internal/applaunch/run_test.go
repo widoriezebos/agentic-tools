@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,7 +153,7 @@ func (b *bed) cleanup(key string) {
 			_ = identity.SignalExact(prober, ref, syscall.SIGKILL)
 		}
 	}
-	if members, err := KernelGroup(record.Group); err == nil {
+	if members, err := b.group(key)(record.Group); err == nil {
 		for _, member := range members {
 			if ref, err := identity.ParseRef(member.Ref); err == nil && member.Pid != int64(os.Getpid()) {
 				_ = identity.SignalExact(prober, ref, syscall.SIGKILL)
@@ -170,7 +171,7 @@ func (b *bed) cleanup(key string) {
 				alive = true
 			}
 		}
-		if members, err := KernelGroup(record.Group); err == nil && len(members) > 0 {
+		if members, err := b.group(key)(record.Group); err == nil && len(members) > 0 {
 			alive = true
 		}
 		if !alive {
@@ -191,9 +192,46 @@ func reap(pid int) {
 	}
 }
 
+// processes is the bed's own process table: the recorded supervisor and
+// application, and every process the fixture application said it was or
+// spawned in the run's log. A group census of the bed reads only these,
+// never the host's table, so another test's process (or a pid reused into
+// the bed's ended group) never decides what a bed test sees.
+func (b *bed) processes(key string) identity.ListedProcessTable {
+	record, err := ReadRecord(b.stateRoot, key)
+	if err != nil {
+		return nil
+	}
+	var table identity.ListedProcessTable
+	for _, encoded := range []string{record.Supervisor, record.Child} {
+		if ref, err := identity.ParseRef(encoded); err == nil {
+			table = append(table, ref.Pid)
+		}
+	}
+	log, _ := os.ReadFile(record.Log)
+	for _, line := range strings.Split(string(log), "\n") {
+		for _, prefix := range []string{"fixtureapp: pid ", "fixtureapp: descendant "} {
+			if value, ok := strings.CutPrefix(line, prefix); ok {
+				if pid, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+					table = append(table, pid)
+				}
+			}
+		}
+	}
+	return table
+}
+
+// group is the bed's group reader: the kernel's census over the bed's own
+// processes, read afresh at each call.
+func (b *bed) group(key string) GroupReader {
+	return func(pgid int64) ([]Member, error) {
+		return groupCensus(b.processes(key), pgid, identity.KernelProber{})
+	}
+}
+
 func (b *bed) status(key string) Status {
 	b.t.Helper()
-	status, err := Read(b.stateRoot, key, b.contract, ReadOptions{Probe: ProbeOnce})
+	status, err := Read(b.stateRoot, key, b.contract, ReadOptions{Probe: ProbeOnce, Group: b.group(key)})
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -329,7 +367,7 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	}
 	var signalled []string
 	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{
-		Probe: ProbeOnce, Wait: time.Second,
+		Probe: ProbeOnce, Wait: time.Second, Group: b.group(StandingKey),
 		Send: func(pid int, sig syscall.Signal) error {
 			signalled = append(signalled, strconv.Itoa(pid)+":"+sig.String())
 			return nil
@@ -378,7 +416,7 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	})
 	signalled = nil
 	result, err = Stop(b.stateRoot, StandingKey, b.contract, StopOptions{
-		Probe: ProbeOnce, Wait: time.Second,
+		Probe: ProbeOnce, Wait: time.Second, Group: b.group(StandingKey),
 		Send: func(pid int, sig syscall.Signal) error {
 			signalled = append(signalled, strconv.Itoa(pid)+":"+sig.String())
 			return nil
@@ -407,7 +445,7 @@ func TestStatusSaysStartingBeforeReadiness(t *testing.T) {
 		record, err := ReadRecord(b.stateRoot, StandingKey)
 		return err == nil && record.Child != ""
 	})
-	status, err := Read(b.stateRoot, StandingKey, b.contract, ReadOptions{Probe: ProbeOnce})
+	status, err := Read(b.stateRoot, StandingKey, b.contract, ReadOptions{Probe: ProbeOnce, Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +653,7 @@ func TestARecordedPidReusedByAnUnrelatedProcessIsRefusedByName(t *testing.T) {
 	}
 	var signalled []string
 	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{
-		Probe: ProbeOnce, Wait: time.Second,
+		Probe: ProbeOnce, Wait: time.Second, Group: b.group(StandingKey),
 		Send: func(pid int, sig syscall.Signal) error {
 			signalled = append(signalled, strconv.Itoa(pid)+":"+sig.String())
 			return nil
@@ -645,7 +683,7 @@ func TestStopProvesDeathForAChildThatIgnoresTERM(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	record := b.record(StandingKey)
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second})
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second, Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +725,16 @@ func TestStopEndsTheOwnedTreeThroughTheSupervisorsGroup(t *testing.T) {
 		return err == nil
 	})
 	record := b.record(StandingKey)
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second})
+	// The bed's table holds the whole owned tree, so the census below that
+	// proves the group empty reads every process it must.
+	written, err := os.ReadFile(descendant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pid, err := strconv.ParseInt(string(written), 10, 64); err != nil || !slices.Contains(b.processes(StandingKey), pid) {
+		t.Fatalf("the bed's process table %v lacks the descendant %s", b.processes(StandingKey), written)
+	}
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second, Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +745,7 @@ func TestStopEndsTheOwnedTreeThroughTheSupervisorsGroup(t *testing.T) {
 	if !strings.Contains(lines, "asked the supervisor to end its own group") {
 		t.Errorf("only the group's living leader may signal the group:\n%s", lines)
 	}
-	if members, err := KernelGroup(record.Group); err != nil || len(members) != 0 {
+	if members, err := b.group(StandingKey)(record.Group); err != nil || len(members) != 0 {
 		t.Fatalf("the group must have no member left: %v %v", members, err)
 	}
 	if _, err := ReadRecord(b.stateRoot, StandingKey); err != nil {
@@ -743,7 +790,7 @@ func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
 	// The rejoin's wait has no deadline: it ends on readiness observed or a
 	// run that is not starting, never on a clock.
 	status, err := rejoin(context.Background(), b.stateRoot, StandingKey, b.contract,
-		ReadOptions{Probe: ProbeOnce}, nil)
+		ReadOptions{Probe: ProbeOnce, Group: b.group(StandingKey)}, nil)
 	if err != nil {
 		t.Fatalf("a second start rejoins the live run: %v", err)
 	}
@@ -808,7 +855,7 @@ func TestRestartReplacesTheProcessAndTheRecord(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	first := b.record(StandingKey)
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second})
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Probe: ProbeOnce, Wait: 25 * time.Second, Group: b.group(StandingKey)})
 	if err != nil || !result.Proven {
 		t.Fatalf("stop before start: %v %s", err, result.Outcome)
 	}
@@ -838,6 +885,7 @@ func TestALogReadinessFormStopsOnDeathAlone(t *testing.T) {
 	probed := false
 	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{
 		Wait:  25 * time.Second,
+		Group: b.group(StandingKey),
 		Probe: func(Contract, string) error { probed = true; return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -922,7 +970,7 @@ func TestADescendantLeftBeforeReadinessKeepsTheRunUnended(t *testing.T) {
 		t.Fatalf("status says descendants alive, got %s: %s", status.State, status.Problem)
 	}
 	record := b.record(StandingKey)
-	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 25 * time.Second})
+	result, err := Stop(b.stateRoot, StandingKey, b.contract, StopOptions{Wait: 25 * time.Second, Group: b.group(StandingKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -931,7 +979,7 @@ func TestADescendantLeftBeforeReadinessKeepsTheRunUnended(t *testing.T) {
 		log, _ := os.ReadFile(record.Log)
 		t.Fatalf("the descendant is ended by the supervisor's own group signal, got %s\n%s\nlog:\n%s", result.Outcome, lines, log)
 	}
-	if members, err := KernelGroup(record.Group); err != nil || len(members) != 0 {
+	if members, err := b.group(StandingKey)(record.Group); err != nil || len(members) != 0 {
 		t.Fatalf("the group must have no member left: %v %v", members, err)
 	}
 	if b.record(StandingKey).Ended == nil {

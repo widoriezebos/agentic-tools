@@ -32,6 +32,8 @@ func main() {
 	exitNow := flag.Bool("exit-now", false, "exit before anything is ready")
 	live := flag.String("live-file", "", "touch this file while alive and remove it on exit")
 	flag.Parse()
+	// A test bed's process table lists the application by this line.
+	fmt.Println("fixtureapp: pid", os.Getpid())
 
 	if *exitNow {
 		fmt.Println("fixtureapp: exiting before readiness")

@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -93,21 +91,22 @@ type GroupReader func(pgid int64) ([]Member, error)
 // the census is what proves a group empty, and a process it cannot name is
 // not proof of anything.
 func KernelGroup(pgid int64) ([]Member, error) {
-	return groupCensus(pgid, identity.KernelProber{})
+	return groupCensus(identity.KernelProcessTable{}, pgid, identity.KernelProber{})
 }
 
-func groupCensus(pgid int64, prober Prober) ([]Member, error) {
+// groupCensus is the census of one group's members in table.
+func groupCensus(table identity.ProcessTable, pgid int64, prober Prober) ([]Member, error) {
 	if pgid < 1 {
 		return nil, nil
 	}
-	pids, err := identity.AllPids()
+	pids, err := table.Pids()
 	if err != nil {
 		return nil, err
 	}
 	var members []Member
 	for _, pid := range pids {
-		group, err := unix.Getpgid(int(pid))
-		if err != nil || int64(group) != pgid {
+		group, err := table.Group(pid)
+		if err != nil || group != pgid {
 			continue
 		}
 		exact, state, err := prober.Probe(pid)

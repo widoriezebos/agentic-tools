@@ -208,68 +208,67 @@ func TestRegistryLedgerRecords(t *testing.T) {
 }
 
 // The group count is real and its error paths are
-// verdicts, not silence.
+// verdicts, not silence. Each case hands the count its own table, so no
+// process of the host and no other test's seam decides it.
 func TestProcessGroupMembersErrorPaths(t *testing.T) {
-	savedPids, savedPgid := groupAllPids, groupGetpgid
-	defer func() { groupAllPids, groupGetpgid = savedPids, savedPgid }()
+	t.Parallel()
+	rows := identity.FixedProcessTable{{Pid: 10, Group: 42}, {Pid: 11, Group: 42}, {Pid: 12, Group: 99}}
 
 	// Real members are counted by pgid.
-	groupAllPids = func() ([]int64, error) { return []int64{10, 11, 12}, nil }
-	groupGetpgid = func(pid int64) (int64, error) {
-		if pid == 12 {
-			return 99, nil
-		}
-		return 42, nil
-	}
-	if n, err := processGroupMembers(42); err != nil || n != 2 {
+	if n, err := processGroupMembers(rows, 42); err != nil || n != 2 {
 		t.Fatalf("count = %d, %v; want 2 members", n, err)
 	}
 
 	// ESRCH is genuine absence, not an error.
-	groupGetpgid = func(pid int64) (int64, error) {
-		if pid == 11 {
-			return 0, syscall.ESRCH
-		}
-		return 42, nil
+	gone := identity.ScriptedProcessTable{
+		Rows:     identity.FixedProcessTable{{Pid: 10, Group: 42}, {Pid: 11, Group: 42}, {Pid: 12, Group: 42}},
+		GroupErr: map[int64]error{11: syscall.ESRCH},
 	}
-	if n, err := processGroupMembers(42); err != nil || n != 2 {
+	if n, err := processGroupMembers(gone, 42); err != nil || n != 2 {
 		t.Fatalf("ESRCH member: count = %d, %v; want 2", n, err)
 	}
 
 	// Any other Getpgid failure is indeterminable.
-	groupGetpgid = func(pid int64) (int64, error) { return 0, syscall.EPERM }
-	if _, err := processGroupMembers(42); err == nil {
+	denied := identity.ScriptedProcessTable{Rows: rows, GroupErr: map[int64]error{10: syscall.EPERM}}
+	if _, err := processGroupMembers(denied, 42); err == nil {
 		t.Fatal("a denied probe must be indeterminable, not an undercount")
 	}
 
 	// An unreadable process table is indeterminable.
-	groupAllPids = func() ([]int64, error) { return nil, syscall.EIO }
-	if _, err := processGroupMembers(42); err == nil {
+	if _, err := processGroupMembers(identity.ScriptedProcessTable{Rows: rows, PidsErr: syscall.EIO}, 42); err == nil {
 		t.Fatal("an unreadable table must be indeterminable")
+	}
+}
+
+// GroupCount reads the table its components were given: the held groups'
+// members in that table, and nothing else on the host.
+func TestGroupCountReadsTheGivenTable(t *testing.T) {
+	t.Parallel()
+	comps := &ProcComponents{Processes: identity.FixedProcessTable{
+		{Pid: 50, Group: 50}, {Pid: 51, Group: 50}, {Pid: 60, Group: 60}, {Pid: 70, Group: 70},
+	}}
+	held := []Held{{Identity: identity.Ref{Pid: 50}}, {Identity: identity.Ref{Pid: 60}}}
+	if n, err := comps.GroupCount(held); err != nil || n != 3 {
+		t.Fatalf("group count = %d, %v; want 3 members of groups 50 and 60", n, err)
 	}
 }
 
 // GroupMemberPids: the kill domain "own group minus self", same
 // indeterminability contract as the ceiling count.
 func TestGroupMemberPids(t *testing.T) {
-	restoreAll, restoreGet := groupAllPids, groupGetpgid
-	defer func() { groupAllPids, groupGetpgid = restoreAll, restoreGet }()
-	groupAllPids = func() ([]int64, error) { return []int64{10, 11, 12, 13}, nil }
-	groupGetpgid = func(pid int64) (int64, error) {
-		switch pid {
-		case 10, 11, 12:
-			return 42, nil
-		case 13:
-			return 0, syscall.ESRCH // gone between enumeration and probe
-		}
-		return 0, syscall.EPERM
+	t.Parallel()
+	table := identity.ScriptedProcessTable{
+		Rows: identity.FixedProcessTable{
+			{Pid: 10, Group: 42}, {Pid: 11, Group: 42}, {Pid: 12, Group: 42}, {Pid: 13, Group: 42},
+		},
+		GroupErr: map[int64]error{13: syscall.ESRCH}, // gone between enumeration and probe
 	}
-	members, err := GroupMemberPids(42, 11)
+	members, err := GroupMemberPids(table, 42, 11)
 	if err != nil || len(members) != 2 || members[0] != 10 || members[1] != 12 {
 		t.Fatalf("members = %v, %v", members, err)
 	}
-	groupGetpgid = func(pid int64) (int64, error) { return 0, syscall.EPERM }
-	if _, err := GroupMemberPids(42, 0); err == nil {
+	table.GroupErr = map[int64]error{10: syscall.EPERM}
+	if _, err := GroupMemberPids(table, 42, 0); err == nil {
 		t.Fatal("an unreadable probe must refuse, not undercount")
 	}
 }

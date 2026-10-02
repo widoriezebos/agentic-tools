@@ -195,7 +195,7 @@ func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) 
 		GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Now: time.Now().UTC(), By: "the goal-branch sweep",
 		TakeCensus: func() *diskstore.UseCensus {
 			home, _ := HomeStateRoot()
-			census := diskstore.TakeUseCensus(context.Background(), *KernelCensusReader(home, append(ArmedCheckouts(), root)))
+			census := diskstore.TakeUseCensus(context.Background(), *KernelCensusReader(identity.KernelProcessTable{}, home, append(ArmedCheckouts(), root)))
 			return &census
 		},
 		Remove: sweep})

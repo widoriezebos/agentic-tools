@@ -283,7 +283,7 @@ func (s *Store) allPids() ([]int64, error) {
 	if s.AllPids != nil {
 		return s.AllPids()
 	}
-	return identity.AllPids()
+	return identity.KernelProcessTable{}.Pids()
 }
 
 func (s *Store) groupPresent(pgid int64) (present, certain bool) {

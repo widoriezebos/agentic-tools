@@ -51,8 +51,9 @@ type loadReaders struct {
 	launchers func(self int64) (int, bool)
 	nested    func(self int64) (bool, bool)
 	prober    identity.Prober
-	pids      func() ([]int64, error)
-	parent    func(pid int64) (int64, bool)
+	// processes is the process table the launcher census reads every pid
+	// and each pid's parent from: the kernel's in production.
+	processes identity.ProcessTable
 
 	// fixtureNamespaceLaunchers is the census an engine inside a selected
 	// fixture admission namespace reads: every launcher launchers counts
@@ -121,7 +122,7 @@ func realLoadReaders() loadReaders {
 		host: hostload.Read, launchers: countProofLaunchers,
 		fixtureNamespaceLaunchers: countProofLaunchersOutsideFixtures,
 		nested:                    nestedProofLauncher, prober: identity.KernelProber{},
-		pids: identity.AllPids, parent: identity.ParentPid,
+		processes: identity.KernelProcessTable{},
 	}
 }
 
@@ -349,14 +350,14 @@ func fixtureLauncherArgv(argv []string) bool {
 }
 
 func readProcessRows() ([]processRow, bool) {
-	pids, err := loadSeams.pids()
+	pids, err := loadSeams.processes.Pids()
 	if err != nil {
 		return nil, false
 	}
 	rows := make([]processRow, 0, len(pids))
 	for _, pid := range pids {
 		row := processRow{pid: pid}
-		if parent, ok := loadSeams.parent(pid); ok {
+		if parent, ok := loadSeams.processes.Parent(pid); ok {
 			row.parent = parent
 		}
 		exact, state, err := loadSeams.prober.Probe(pid)

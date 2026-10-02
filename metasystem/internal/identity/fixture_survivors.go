@@ -62,6 +62,11 @@ func FixtureTag(exact Exact) (FixtureKey, FixtureCarrier, bool) {
 	return FixtureKey{}, "", false
 }
 
+// survivorPids, fixtureSurvivorProber and fixtureSurvivorScope are the
+// kernel sources of the fixture survivor wrappers below; ScanFixtureSurvivors
+// takes its sources from the caller.
+var survivorPids = AllPids
+
 var fixtureSurvivorProber Prober = KernelProber{}
 
 // FixtureProcessScope carries process-table facts that are outside an exact identity probe.
