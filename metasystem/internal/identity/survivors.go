@@ -6,8 +6,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var survivorPids = AllPids
-
 // TaggedSurvivors reports whether any live process OTHER than the
 // recorded custodian still carries the instance tag in its argv.
 // This is the fact a kill-less reaper must hold before it may claim
@@ -24,13 +22,16 @@ var survivorPids = AllPids
 // group that is ALSO unreadable is the census's stray problem, not
 // this proof's. pgid<=1 means no group was recorded, and any
 // signalable unreadable process then defers conservatively.
-func TaggedSurvivors(tag string, exclude, pgid int64) (alive bool, certain bool) {
+//
+// The scan reads processes: the kernel's table in production, a test's own
+// processes in a test.
+func TaggedSurvivors(processes ProcessTable, tag string, exclude, pgid int64) (alive bool, certain bool) {
 	if tag == "" {
 		// No tag was ever recorded: there is nothing to scan for and
 		// no survivor claim to make either way.
 		return false, true
 	}
-	pids, err := survivorPids()
+	pids, err := processes.Pids()
 	if err != nil {
 		return false, false
 	}
@@ -49,7 +50,7 @@ func TaggedSurvivors(tag string, exclude, pgid int64) (alive bool, certain bool)
 			if unix.Kill(int(pid), 0) == nil {
 				if pgid <= 1 {
 					uncertain = true
-				} else if got, pgErr := unix.Getpgid(int(pid)); pgErr == nil && int64(got) == pgid {
+				} else if got, pgErr := processes.Group(pid); pgErr == nil && got == pgid {
 					uncertain = true
 				}
 			}

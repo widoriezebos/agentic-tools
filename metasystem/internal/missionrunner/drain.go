@@ -324,7 +324,7 @@ func (e *Engine) taggedSurvivors(tag string, exclude, pgid int64) (bool, bool) {
 	if e.survivorsFn != nil {
 		return e.survivorsFn(tag, exclude, pgid)
 	}
-	return identity.TaggedSurvivors(tag, exclude, pgid)
+	return identity.TaggedSurvivors(identity.KernelProcessTable{}, tag, exclude, pgid)
 }
 
 // custodian proves a recorded custodian through the engine's bound prober:
