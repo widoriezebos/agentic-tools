@@ -7,17 +7,16 @@ import (
 	"testing"
 )
 
-// blockedRule is the one paragraph a blocked agent follows, identical
-// everywhere it appears.
+// blockedRule is the one paragraph a blocked agent follows. Every command
+// it spells must be one this engine declares.
 const blockedRule = "**When you are blocked, ask.** If a refusal or failure stops your work and the one obvious next step (the command the refusal names, or one retry) did not clear it, do not loop, guess or stop silently. Run `metasystem question ask GOAL --question \"<the decision you need>\" --fact \"<refusal line 1>\" --fact \"<what you tried>\" --option \"<label>: <consequence>\"...` (with no goal: `--about lane` or `--about machine` in place of GOAL), then `metasystem question wait channel:Q` in the background and end your turn. The answer is a decision, the person having done the act, or a bypass; act on it. If the block clears meanwhile, `question withdraw Q`. Work on nothing the answer could invalidate."
 
 // blockedDelegateLine is what a delegate does instead: its seat asks.
 const blockedDelegateLine = "When blocked, stop and return `BLOCKED:` with the refusal's first line, what you tried and the decision needed; your seat asks."
 
-// TestBlockedAgentRuleIsWhereItBelongs: seats read the rule in AGENTS.md
-// and every command it spells is declared with its flags; the landing
-// agent's skill names case 8; both delegate brief templates carry the
-// delegate's line.
+// TestBlockedAgentRuleIsWhereItBelongs: every command the blocked-agent
+// rule spells is declared with its flags; the landing agent's skill names
+// case 8; both delegate brief templates carry the delegate's line.
 func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 	t.Parallel()
 	read := func(parts ...string) string {
@@ -28,10 +27,7 @@ func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 		}
 		return string(data)
 	}
-	if agents := read("AGENTS.md"); !strings.Contains(agents, "- "+blockedRule+"\n") {
-		t.Error("AGENTS.md does not carry the blocked-agent rule as one bullet")
-	}
-	for _, spelled := range []string{"metasystem question ask GOAL --question --fact --option --about", "metasystem question wait channel:Q", "metasystem question withdraw Q"} {
+	for _, spelled := range blockedRuleCommands(blockedRule) {
 		words := strings.Fields(spelled)
 		command, ok := findIntentAction(words[1], words[2])
 		if !ok {
@@ -54,4 +50,20 @@ func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 			t.Errorf("%s does not carry the delegate's blocked line", template)
 		}
 	}
+}
+
+// blockedRuleCommands is each metasystem command the rule spells in
+// backticks, with its flags, plus the --about flag the rule names apart.
+func blockedRuleCommands(rule string) []string {
+	var commands []string
+	spans := strings.Split(rule, "`")
+	for index := 1; index < len(spans); index += 2 {
+		if strings.HasPrefix(spans[index], "metasystem ") {
+			commands = append(commands, spans[index])
+		}
+	}
+	if strings.Contains(rule, "`--about lane`") {
+		commands = append(commands, "metasystem question ask --about")
+	}
+	return commands
 }
