@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: Wait for the unblock log after switch-on; fix the most frequent block first, one at a time, by subtraction Added 2026-10-02 night (coordinator m1e), fix each by the smallest change with a test, by frequency: (9) agent ask --goal G says 'not open (no goal by that id)' for a goal claimed and in progress (worked around with agent ask MACHINE); (10) question withdraw refuses the channel:<id> form that question list prints; (11) landing run prints 'started the landing agent ... for queued' (a word is missing); (12) the goal edit of an approved intent and prioritize of a non-open goal print 'the goals changed meanwhile; try again' instead of the true remedy; (13) work status in one checkout lists every machine's jobs without saying so (label it 'on this host'); (14) a fresh seat set up by hand does not fetch the goal ledger. Items (1)-(8) above stay. Already fixed tonight: the seat claim fallback (3681afe27).
 - OpenedAt: 2026-10-02T12:29:50Z
-- Revision: 16
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 17
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-02T21:26:02Z revision=15 opid=HC2RZQWDAH61B5226G29G3TSYR-m1e-9c612d71 authority=proven digest=d10194819aff10d8c1502399c1f44fd733c9c44677688e3237530d436443242b episode=15
+- NormApproval: approvedRef=G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=16
+- Approved: by=human:Wido at=2026-10-02T21:26:21Z revision=17 opid=G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 authority=proven digest=32cd38ee0eaa6cd59329b1e6929c61fe7179b954e8106c38f762b0e56742c57d episode=17
 
 History:
 - 2026-10-02T12:29:50Z 2R9JM2HYAZY2AZW272ZF1ZEV2X-m1e-9c612d71 open actor=human:Wido targets=machinery-blocks-of-2026-10-02
@@ -31,4 +32,5 @@ History:
 - 2026-10-02T21:25:55Z QEJF0FHGJF8YHVF1R0F79DAJXY-m1e-9c612d71 edit actor=human:Wido targets=machinery-blocks-of-2026-10-02
 - 2026-10-02T21:26:02Z HC2RZQWDAH61B5226G29G3TSYR-m1e-9c612d71 approve actor=human:Wido targets=machinery-blocks-of-2026-10-02
 - 2026-10-02T21:26:09Z R2HYT0B7AQQAFK3RXJAFY14GW8-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,machinery-blocks-of-2026-10-02,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order subject=machinery-blocks-of-2026-10-02 from=2:39 to=1:3 requested-sequence=3
-Integrity: sha256=b9c6ee92aba968a14a9e7fc368028b124592c87274c04f2528ab5bc302e6398a
+- 2026-10-02T21:26:21Z G0C0JH5CB376PMRF1QXD2HV8ZP-m1e-9c612d71 approve actor=human:Wido targets=machinery-blocks-of-2026-10-02
+Integrity: sha256=381e39aa9e99a74f74f07a0c8d2b86b351d8ccb6f24770e2aa8b9a11cd435f1f
