@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"io"
 	"net"
 	"net/http"
@@ -35,7 +36,7 @@ func buildWalkthrough(t *testing.T) string {
 			return
 		}
 		walkthroughBinary.path = filepath.Join(directory, "walkthrough")
-		output, err := exec.Command("go", "build", "-trimpath", "-o", walkthroughBinary.path, ".").CombinedOutput()
+		output, err := testenv.Go("build", "-trimpath", "-o", walkthroughBinary.path, ".").CombinedOutput()
 		if err != nil {
 			walkthroughBinary.err = errors.New(string(output))
 		}

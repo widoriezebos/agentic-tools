@@ -1,7 +1,6 @@
 package testenv
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -14,7 +13,7 @@ import (
 // under load). The namespace records telemetry as off before any test runs.
 func TestTheNamespaceTurnsGoTelemetryOff(t *testing.T) {
 	t.Parallel()
-	output, err := exec.Command("go", "env", "GOTELEMETRY").Output()
+	output, err := Go("env", "GOTELEMETRY").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

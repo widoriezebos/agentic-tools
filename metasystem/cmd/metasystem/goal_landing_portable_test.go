@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -100,7 +101,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 			t.Fatalf("baseline source is %s, want frozen 9498700a9 source", got)
 		}
 		linker := enginebuild.StampLinkerFlags(base)
-		command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", linker, "-o", fixture.engine, "./cmd/metasystem")
+		command := testenv.Go("build", "-buildvcs=false", "-ldflags", linker, "-o", fixture.engine, "./cmd/metasystem")
 		command.Dir = baselineSource
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("build frozen baseline policy engine: %v: %s", err, output)

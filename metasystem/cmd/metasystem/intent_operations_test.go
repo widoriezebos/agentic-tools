@@ -2,43 +2,21 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
-)
-
-var (
-	intentEngineOnce sync.Once
-	intentEnginePath string
-	intentEngineErr  error
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // intentTestEngine is this package built once as the real engine the
 // administrative choices run as their owner process.
 func intentTestEngine(t *testing.T) string {
 	t.Helper()
-	intentEngineOnce.Do(func() {
-		directory, err := os.MkdirTemp("", "intent-engine-")
-		if err != nil {
-			intentEngineErr = err
-			return
-		}
-		intentEnginePath = filepath.Join(directory, "metasystem")
-		if output, err := exec.Command("go", "build", "-o", intentEnginePath, ".").CombinedOutput(); err != nil {
-			intentEngineErr = err
-			t.Logf("%s", output)
-		}
-	})
-	if intentEngineErr != nil {
-		t.Fatalf("build engine: %v", intentEngineErr)
-	}
-	return intentEnginePath
+	return testenv.Engine(t)
 }
 
 // TestIntentRepairAuthority: every administrative choice reaches its real

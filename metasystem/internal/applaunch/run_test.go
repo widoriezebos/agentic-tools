@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 var (
@@ -37,7 +37,7 @@ func fixtures(t *testing.T) (app, supervisor string) {
 			return
 		}
 		for _, pair := range [][2]string{{"fixtureapp", "./testdata/fixtureapp"}, {"fixturesupervisor", "./testdata/supervisor"}} {
-			build := exec.Command("go", "build", "-o", filepath.Join(fixtureDir, pair[0]), pair[1])
+			build := testenv.Go("build", "-o", filepath.Join(fixtureDir, pair[0]), pair[1])
 			if out, err := build.CombinedOutput(); err != nil {
 				fixtureErr = fmt.Errorf("build %s: %v\n%s", pair[1], err, out)
 				return

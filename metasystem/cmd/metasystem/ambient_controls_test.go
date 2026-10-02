@@ -94,7 +94,7 @@ func setUpWaitCandidate() error {
 		return fmt.Errorf("create wait candidate directory: %w", err)
 	}
 	candidate := filepath.Join(directory, "metasystem")
-	build := exec.Command("go", "build", "-trimpath", "-o", candidate, ".")
+	build := testenv.Go("build", "-trimpath", "-o", candidate, ".")
 	build.Env = append(os.Environ(), tag)
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {

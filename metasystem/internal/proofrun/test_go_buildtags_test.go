@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -66,12 +67,7 @@ func TestNativeDiscoveryUsesExplicitGoPlatformAndBuildTags(t *testing.T) {
 }
 
 func TestNativeDiscoveryGoListCompletesUnderHeldResourceCustody(t *testing.T) {
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, "./cmd/metasystem")
-	build.Dir = filepath.Join("..", "..")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build discovery custodian: %v\n%s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	root := t.TempDir()
 	for path, content := range map[string]string{
 		"go.mod":          "module example.invalid/custodied-discovery\n\ngo 1.27\n",

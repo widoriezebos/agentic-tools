@@ -1,0 +1,4 @@
+internal/proofrun/test_command_test.go	1	The production native discovery is the subject: it runs on a t.TempDir module of one package and must refuse a missing test; it cannot run through testenv.Go.
+internal/proofrun/test_go_buildtags_test.go	5	The production native discovery is the subject: each call lists a t.TempDir module of one package under build tags or held resource custody; it cannot run through testenv.Go.
+internal/proofrun/test_go_packagebuild_test.go	1	The production native discovery is the subject: it lists a t.TempDir module of one package that has no tests and must refuse it; it cannot run through testenv.Go.
+internal/proofrun/test_go_workers_test.go	3	The production go gate is the subject: each call runs the go gate over a t.TempDir module of a few packages; it cannot run through testenv.Go.

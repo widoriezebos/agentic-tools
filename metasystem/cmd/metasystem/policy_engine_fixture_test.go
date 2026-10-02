@@ -6,7 +6,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -68,7 +68,7 @@ func enrollFixturePolicyEngine(t *testing.T, root string, now time.Time, commit 
 func buildFixturePolicyEngine(t *testing.T, commit, engine string) {
 	t.Helper()
 	sourceRoot := testutil.MustSourceRoot(t)
-	command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", engine, "./cmd/metasystem")
+	command := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(commit), "-o", engine, "./cmd/metasystem")
 	command.Dir = sourceRoot
 	command.Env = os.Environ()
 	if output, buildErr := command.CombinedOutput(); buildErr != nil {

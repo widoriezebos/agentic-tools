@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -35,12 +36,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, "./cmd/metasystem")
-	build.Dir = moduleRoot
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build engine: %v: %s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 	cases := []struct {
 		name, brief, mode, model string
 	}{

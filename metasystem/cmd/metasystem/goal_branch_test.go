@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -717,15 +718,7 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	build := exec.Command("go", "build", "-o", filepath.Join(bin, "metasystem"), "./cmd/metasystem")
-	build.Dir = moduleRoot
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fixture engine: %s: %v", output, err)
-	}
+	testenv.Link(t, testenv.Engine(t), filepath.Join(bin, "metasystem"))
 	// The hook runs the built engine's pre-commit entry: the production guard.
 	common := goalSyncMutationGit(t, root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	hook := filepath.Join(common, "hooks", "pre-commit")

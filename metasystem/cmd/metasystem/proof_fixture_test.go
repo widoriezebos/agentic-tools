@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -159,11 +160,7 @@ func TestProofAttemptBinaryLaunchesUseSharedIsolation(t *testing.T) {
 }
 
 func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build metasystem binary: %v\n%s", err, output)
-	}
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
 
 	// The binary runs against the real resource clock. Keep the goal's elapsed
 	// budget and its reserved proof deadline live for both admission probes.

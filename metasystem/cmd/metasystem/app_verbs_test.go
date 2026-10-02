@@ -18,13 +18,13 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var (
 	appFixtureOnce   sync.Once
 	appFixtureBinary string
-	appEngineBinary  string
 	appFixtureError  error
 )
 
@@ -40,20 +40,16 @@ func appFixtureApp(t *testing.T) string {
 			return
 		}
 		appFixtureBinary = filepath.Join(dir, "fixtureapp")
-		build := exec.Command("go", "build", "-o", appFixtureBinary, "../../internal/applaunch/testdata/fixtureapp")
+		build := testenv.Go("build", "-o", appFixtureBinary, "../../internal/applaunch/testdata/fixtureapp")
 		if out, err := build.CombinedOutput(); err != nil {
 			appFixtureError = fmt.Errorf("build fixture application: %v\n%s", err, out)
 			return
 		}
-		// A verb's start launches the engine's own `app serve`. Under `go
-		// test` this process is the test binary, so the tests supervise with
-		// a real engine built for the purpose.
-		appEngineBinary = filepath.Join(dir, "metasystem")
-		engine := exec.Command("go", "build", "-o", appEngineBinary, ".")
-		if out, err := engine.CombinedOutput(); err != nil {
-			appFixtureError = fmt.Errorf("build the engine: %v\n%s", err, out)
-		}
 	})
+	// A verb's start launches the engine's own `app serve`. Under `go test`
+	// this process is the test binary, so the tests supervise with the real
+	// engine this binary builds once.
+	appEngineBinary := testenv.Engine(t)
 	if appFixtureError != nil {
 		t.Fatal(appFixtureError)
 	}

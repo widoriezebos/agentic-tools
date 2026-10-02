@@ -1,13 +1,12 @@
 package layering
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"go/build"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -41,7 +40,6 @@ type listedPackage struct {
 	TestImports  []string
 	XTestImports []string
 	Deps         []string
-	Error        *struct{ Err string }
 }
 
 // allImports is a package's code and test imports: a test that imports a
@@ -81,11 +79,12 @@ func declaredBuildTags(t *testing.T, module string) []string {
 	return tags
 }
 
-// listModule runs go list -e -deps over the whole module, under every build
-// tag the testing contract declares, and keeps the module's own packages
-// with their code and test imports, keyed by module-relative path. -e keeps
-// a package that fails to load (an import cycle) in the listing with its
-// imports, so the witness can name the offending edge.
+// listModule reads every package of the module from source, under every
+// build tag the testing contract declares, and keeps the module's own
+// packages with their code and test imports and the transitive module
+// packages their code imports (Deps), keyed by module-relative path. It
+// starts no toolchain: a whole-module go list -deps under a full suite was
+// one more toolchain beside every package's tests.
 func listModule(t *testing.T) map[string]listedPackage {
 	t.Helper()
 	module, err := filepath.Abs(filepath.Join("..", ".."))
@@ -95,38 +94,75 @@ func listModule(t *testing.T) map[string]listedPackage {
 	if _, err := os.Stat(filepath.Join(module, "go.mod")); err != nil {
 		t.Fatalf("module root %s has no go.mod: %v", module, err)
 	}
-	args := []string{"list", "-e", "-deps", "-json=ImportPath,Imports,TestImports,XTestImports,Deps,Error"}
-	if tags := declaredBuildTags(t, module); len(tags) > 0 {
-		args = append(args, "-tags", strings.Join(tags, ","))
-	}
-	command := exec.Command("go", append(args, "./...")...)
-	command.Dir = module
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		t.Fatalf("go list -e -deps ./... failed: %v\n%s", err, stderr.String())
-	}
-	packages := map[string]listedPackage{}
-	decoder := json.NewDecoder(&stdout)
-	for {
-		var listed listedPackage
-		err := decoder.Decode(&listed)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("go list output is not a JSON package stream: %v", err)
-		}
-		if relative, ok := moduleRelative(listed.ImportPath); ok {
-			listed.Imports = moduleRelativeAll(listed.Imports)
-			listed.TestImports = moduleRelativeAll(listed.TestImports)
-			listed.XTestImports = moduleRelativeAll(listed.XTestImports)
-			listed.Deps = moduleRelativeAll(listed.Deps)
-			packages[relative] = listed
-		}
+	packages, err := readModulePackages(module, declaredBuildTags(t, module))
+	if err != nil {
+		t.Fatal(err)
 	}
 	return packages
+}
+
+func readModulePackages(module string, tags []string) (map[string]listedPackage, error) {
+	context := build.Default
+	context.BuildTags = tags
+	packages := map[string]listedPackage{}
+	err := filepath.WalkDir(module, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		name := entry.Name()
+		if path != module {
+			if name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+				return filepath.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+				return filepath.SkipDir
+			}
+		}
+		listed, err := context.ImportDir(path, 0)
+		var noGo *build.NoGoError
+		if errors.As(err, &noGo) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read package %s: %w", path, err)
+		}
+		relative, err := filepath.Rel(module, path)
+		if err != nil {
+			return err
+		}
+		packages[filepath.ToSlash(relative)] = listedPackage{
+			ImportPath:   modulePath + "/" + filepath.ToSlash(relative),
+			Imports:      moduleRelativeAll(listed.Imports),
+			TestImports:  moduleRelativeAll(listed.TestImports),
+			XTestImports: moduleRelativeAll(listed.XTestImports),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for path, listed := range packages {
+		seen := map[string]bool{}
+		queue := append([]string(nil), listed.Imports...)
+		for len(queue) > 0 {
+			next := queue[0]
+			queue = queue[1:]
+			if seen[next] {
+				continue
+			}
+			seen[next] = true
+			queue = append(queue, packages[next].Imports...)
+		}
+		for dependency := range seen {
+			listed.Deps = append(listed.Deps, dependency)
+		}
+		sort.Strings(listed.Deps)
+		packages[path] = listed
+	}
+	return packages, nil
 }
 
 func moduleRelative(importPath string) (string, bool) {
