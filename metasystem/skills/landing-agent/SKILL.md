@@ -45,6 +45,8 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 7. **The proof won't run** (`running_proof.state` is `died`, or the command fails before testing
    anything): prove once more; if it fails again, return the waiting goals with what you saw as
    the reason, and say it in your final message.
+8. **Blocked outside cases 1-7:** ask with `--about lane`, then end your turn; the keeper holds you
+   until it is answered.
 
 Never end your session with a `waiting` line you could act on: push it, return it, or have a
 proof running.

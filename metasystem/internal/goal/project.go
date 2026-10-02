@@ -467,6 +467,17 @@ func ClaimableWorkFromProjection(projection Projection, machine string, prober i
 	return work, nil
 }
 
+// MarkAskedOpen marks each goal an open channel question names: the goal
+// waits on the person's answer, whoever asked.
+func (w *ClaimableBudgetedWork) MarkAskedOpen(questions []OpenQuestion) {
+	for _, question := range questions {
+		if facts, ok := w.GoalFacts[question.Goal]; ok && question.Goal != "" {
+			facts.AskedOpen = true
+			w.GoalFacts[question.Goal] = facts
+		}
+	}
+}
+
 func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudgetedWork, error) {
 	store := &Store{Root: root}
 	ledger, problems, err := store.ReadLedger()

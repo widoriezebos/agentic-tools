@@ -345,6 +345,20 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	if a == nil {
 		return nil
 	}
+	if a.Phase == "matched" && q.Goal == "" {
+		// A question without a goal has no goal file: its answer is recorded
+		// on the question record alone.
+		if err := fail(c, "recorded-commit"); err != nil {
+			return err
+		}
+		a.Phase = "recorded"
+		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+			return err
+		}
+		if err := fail(c, "recorded"); err != nil {
+			return err
+		}
+	}
 	if a.Phase == "matched" {
 		ep, err := resolveEndpoint(c.RepoRoot)
 		if err != nil {
@@ -393,7 +407,9 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	}
 	if a.Phase == "recorded" {
 		receipt := a.Receipt
-		if receipt == "" {
+		if receipt == "" && q.Goal == "" {
+			receipt = "recorded as your answer about " + QuestionSubject(*q) + "; the agent that asked reads it"
+		} else if receipt == "" {
 			receipt = "recorded as your word on " + strings.ReplaceAll(q.Goal, "-", " ") + ", ledger operation " + a.Opid
 		}
 		_, err := c.Provider.Post(ctx, c.DestinationConfig, receipt, q.Thread)

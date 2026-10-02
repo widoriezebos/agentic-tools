@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -594,6 +595,7 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
 		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
+		store.OpenQuestions = func() []goal.OpenQuestion { return channel.GoalOpenQuestions(stateRoot) }
 		// The holder takes its due landing or revision on this Stop through
 		// the public command, from the session's checkout (g1-s70 D3).
 		if checkout, absErr := filepath.Abs(*root); absErr == nil {

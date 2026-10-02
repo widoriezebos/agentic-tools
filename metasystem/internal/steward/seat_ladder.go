@@ -62,7 +62,8 @@ type SeatSelection struct {
 
 // SeatWorldFrom reads one claimable-work snapshot and its accepted goal files
 // into the seat ladder's world. A working claim whose next step waits on a
-// human word is not due, as the Stop path reads a held goal (SOL-A-01). A
+// human word, or that an open question names, is not due, as the Stop path
+// reads a held goal (SOL-A-01); a ready goal either way waits for a person. A
 // landing claim is held work for a successor only when HolderStepsDue names a
 // step for it and no review hold stands on the goal (the gate's own reading
 // of holds): LandingDue does not see a hold placed after a clear-to-land,
@@ -74,7 +75,9 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 	for _, id := range work.Claimed {
 		file, _ := work.OwnedClaim(id)
 		held := SeatHeld{Goal: id, Lineage: claimLineage(file), StepDue: true, ApprovalOpid: approvalOpid(file)}
-		if goal.NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+		if facts := work.GoalFacts[id]; facts.AskedOpen {
+			held.StepDue, held.Wait = false, "an open question on it waits on a person's answer"
+		} else if goal.NextStepNamesAPendingHumanWord(facts.NextStep) {
 			held.StepDue, held.Wait = false, "its next step waits on a human word"
 		}
 		world.Held = append(world.Held, held)
@@ -108,7 +111,7 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 		world.Held = append(world.Held, held)
 	}
 	for _, id := range work.Claimable {
-		ready := SeatReady{Goal: id, HumanWord: goal.NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep)}
+		ready := SeatReady{Goal: id, HumanWord: work.GoalFacts[id].AskedOpen || goal.NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep)}
 		ready.ApprovalOpid = approvalOpid(live[id])
 		world.Ready = append(world.Ready, ready)
 	}

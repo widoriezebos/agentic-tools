@@ -59,3 +59,5 @@ Every path in your return (diffBoundary, files) is relative to the repository ro
 # Gap Rule
 
 stop and report a gap; never fill it silently.
+
+When blocked, stop and return `BLOCKED:` with the refusal's first line, what you tried and the decision needed; your seat asks.
