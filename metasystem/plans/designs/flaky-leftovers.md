@@ -66,7 +66,7 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 | 5 | `testenv/testenv.go:350` `time.After(bound)` | A SIGKILLed survivor exiting, after `m.Run` | Real deadline: keep |
 | 6 | `testutil/fixture.go:247` ticker | `WaitForNoUnrecordedChildren`, which ends on the fact or the caller's context | Pacing: keep |
 | 7 | `testutil/fixture.go:352` ticker | Pace in `awaitExits` | Pacing: keep |
-| 8 | `testutil/fixture.go:354` `time.After(bound)` | A SIGKILLed recorded child exiting (teardown, and `AwaitExactExit`) | Bound: remove it |
+| 8 | `testutil/fixture.go:354` `time.After(bound)` | A SIGKILLed recorded child exiting (teardown, and `AwaitExactExit`) | Removed for teardown. Kept for `AwaitExactExit`. |
 
 **Why the bounds are flake sources.**
 - Bounds 1, 2 and 8 run inside `t.Cleanup` or a test body. Each fails the test when the event is merely slow: 15 s for a stop, and 10 × the custodian bound × scale (50 s by default, `testenv.go:89-118`) for a SIGKILLed exit.
@@ -87,19 +87,19 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 
 **Fix (subtraction).**
 - **#1, orderly stops** (`process_group.go:117-129`): keep `cleanupContext`. When `ctx.Err() != nil` after `Run`, the stop has expired. That is no longer an error; cleanup goes on to the identity re-check and SIGKILL (`:131-160`). A `Run` error while the context is still live stays a failure.
-- **#2, the post-kill wait** (`:163-172`): a signaled group waits with `context.Background()`. A leaderless group keeps `exitContext`, because it was never killed and its exit is not guaranteed.
-- **#8, teardown:** `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown and `AwaitExactExit` pass `context.Background()`. Delete `ProcessFixture.waitBound`, `awaitExactExitWithin` and the bound in the error text.
-- `FixtureExitWaitBound` stays, for #2 (leaderless only) and #5.
+- **#2, the post-kill wait** (`:163-172`): a signaled group waits with `context.Background()`. A leaderless group keeps `exitContext`, because it was never killed and its exit is not guaranteed. `FixtureExitWaitBound` stays, for #2 (leaderless only), `AwaitExactExit` and #5.
+- **#8:** `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown, which waits after the fixture's own SIGKILL, passes `context.Background()`. Delete `ProcessFixture.waitBound`. `AwaitExactExit` keeps its bound as `context.WithTimeout(FixtureExitWaitBound)` (FL-EXIT-001).
+  - A wait that observes an exit the test itself caused needs no bound. A wait that asserts someone else's cleanup needs one, or a survivor would exit naturally and pass silently. That kind: `resource_custody_output_test.go:271` (grandchild after cleanup) and `goal_branch_real_delegate_test.go:345` (runner after Disarm). Caused by the test, but kept bounded with the rest: `wait_verb_test.go:1191` (SIGKILL) and `signed_in_launch_e2e_test.go:355` (SIGTERM).
 
 **Tests.**
 - The failure-path tests that set `waitBound = time.Millisecond` (`testutil/fixture_test.go:578, 642`) and `testFixtureContext` (`protection_test.go`) pass an already-cancelled context instead, as `TestAwaitProcessTargetGoneWaitsForTheReap` already does (`fixture_exit_test.go:113-140`).
 - *Red before, #1:* `TestExpiredOrderlyStopEscalatesToTheKill`. The fake `cleanupContext` returns an already-cancelled context, and `Run` returns `ctx.Err()`. The old code reports "fixture cleanup failed"; the new code reports no error and sends exactly one SIGKILL to the group. Nothing is timed. The "fresh cleanup contexts" case (`protection_test.go:185-205`) changes the same way: the cancelled first stop is no longer an error, and the second stop still runs.
-- *Red before, #2* (`wait` is called once per group, `:166-168`). One signaled group, with a fake `wait` that returns `ctx.Err()` if its context carries a deadline and nil otherwise. The old code's bounded `exitContext` gives "fixture child outlived test"; the new code's Background gives no error. It is deterministic because the test reads the context, not a clock. This needs the production `ops` literal (`:64-77`) to become `defaultFixtureProcessGroupOps`, so the test can take it and swap only `groupID`, `signal`, `birth` and `wait`.
+- *Red before, #2* (`wait` is called once per group, `:166-168`). One signaled group, with a fake `wait` that records `ctx.Deadline()` and returns nil. Red on the old code: it hands `wait` a context with a deadline. Green on the new code: the context has none. No timing is involved. This needs the production `ops` literal (`:64-77`) to become `defaultFixtureProcessGroupOps`, so the test can take it and swap only `groupID`, `signal`, `birth` and `wait`.
 - *Red before, #8* (FL-PROOF-001): `TestFixtureTeardownOutwaitsASlowExit`. The fake prober answers Alive until the recorder holds an error or the 100th probe, then Dead.
   - Old code (1 ms bound): once the deadline has fired it stays ready, so reaching probe 100 needs the tick to win 99 selects in a row. The odds are 2^-99, and no sleeps are involved. The result is "child did not exit": red.
   - New code: probe 100 returns Dead, and teardown is clean.
 
-**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). `process_group.go` keeps 3 calls: #1 as an escalation, #2 for leaderless groups only, and the ticker. Its reason is rewritten to say so. Lower `testutil/fixture.go` 3→2, with the reason "pacing only". Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
+**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). `process_group.go` keeps 3 calls: #1 as an escalation, #2 for leaderless groups only, and the ticker. Its reason is rewritten to say so. `testutil/fixture.go` stays at 3: two pacing tickers, and `AwaitExactExit`'s `WithTimeout`, which replaces `time.After`. Its reason is rewritten to say so. Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
 
 ## 3. Swapped process seams in sequential tests
 
@@ -132,7 +132,7 @@ For the two configuration variables, add a two-name list to the same audit: "ass
 | Starting the child | the callers, after `PrepareChild` | `StartChild` in diskstore | `metasystem/cmd/metasystem/brain_boot.go:119`, `metasystem/internal/hooks/runtime_hook_worker.go:46` |
 | Freeing fork copies of the owner's lock | the 2 s re-probe | `LOCK_UN` on the owner's description at release | `metasystem/internal/diskstore/process.go:319-335`, `metasystem/internal/diskstore/process.go:400-404` |
 | Deciding that an orderly stop took too long | test failure at expiry | escalation to the existing group kill | `metasystem/internal/testenv/process_group.go:71-75` |
-| Ending the wait for a SIGKILLed exit | the exit bound | the exit itself | `metasystem/internal/testenv/process_group.go:71-75`, `metasystem/internal/testutil/fixture.go:354` |
+| Ending the wait for an exit the reaper or fixture caused by SIGKILL | the exit bound | the exit itself (`AwaitExactExit` keeps its bound) | `metasystem/internal/testenv/process_group.go:71-75`, `metasystem/internal/testutil/fixture.go:354` |
 
 ## Step 1
 
