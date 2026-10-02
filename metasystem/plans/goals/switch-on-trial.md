@@ -9,7 +9,8 @@
 - Origin: human
 - Next step: After blocked-agent-asks-the-human and the seat-works-without-a-person real run: switch on m1e and the lane; test the escape hatch end to end (a seat agent and the lane agent each hit a real block, the question reaches Telegram, the answer unblocks, the unblock is logged); then switch on
 - OpenedAt: 2026-09-30T08:57:48Z
-- Revision: 9
+- Revision: 10
+- Pinned: m1e
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T12:27:18Z revision=8 opid=PE0WJSGREFKN39RRF7PY6ZXB5E-m1e-9c612d71 authority=proven digest=3719166eef0040b090622951c1fe0ea4b2315f94be69812443c6415955114360 episode=8
@@ -24,4 +25,5 @@ History:
 - 2026-10-02T12:27:13Z GTSYYJJKFRAZFQSYSMPRNKWYSB-m1e-9c612d71 edit actor=human:Wido targets=switch-on-trial
 - 2026-10-02T12:27:18Z PE0WJSGREFKN39RRF7PY6ZXB5E-m1e-9c612d71 approve actor=human:Wido targets=switch-on-trial
 - 2026-10-02T12:27:24Z TSR9FTA5YHTZ48HMFBRMM70MY5-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,switch-on-trial,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=switch-on-trial from=unranked to=1:4 requested-sequence=4
-Integrity: sha256=313a6e60c041faa01920e3c9097785a048106a0106f8e4b42d6d7ddd0aa1efcc
+- 2026-10-02T12:27:31Z YAQGJ29JF4EE8BY07Y02KWZXSX-m1e-9c612d71 set-pin actor=human:Wido targets=switch-on-trial
+Integrity: sha256=98dc3a21d488f5d129ca9f3d3d4e44542d5600409ca6a35eaea95741564cf2a0
