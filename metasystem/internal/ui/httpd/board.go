@@ -19,7 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -42,9 +42,10 @@ type BoardSource struct {
 	Dial   func() (net.Conn, error)
 	Retry  func() (<-chan time.Time, func())
 	Silent func(time.Duration) <-chan time.Time
-	// Lane reads the host's landing lane (U12) at the server's clock; nil
-	// serves a lane with no root.
-	Lane func(now time.Time) lane.View
+	// Lane reads the host's landing lane (U12) at the server's clock, as
+	// landing status --json carries it (plain.Status); nil serves a lane
+	// with no root.
+	Lane func(now time.Time) plain.Status
 }
 
 // boardPayload is the classified board, and each seat's line as a person
@@ -52,9 +53,10 @@ type BoardSource struct {
 type boardPayload struct {
 	board.View
 	Lines []boardLine `json:"lines"`
-	// Lane is the host's landing lane, the view landing status renders;
-	// null when no lane is registered on this host.
-	Lane *lane.View `json:"lane"`
+	// Lane is the host's landing lane, landing status --json's data: the
+	// view, paused, agent_alive, the queue, the running proof, the last
+	// proof and the last push; null when no lane is registered on this host.
+	Lane *plain.Status `json:"lane"`
 }
 
 type boardLine struct {
@@ -76,7 +78,7 @@ func (h *handler) board(w http.ResponseWriter) {
 
 func (h *handler) boardView(source *BoardSource) boardPayload {
 	now := h.now()
-	var laneView *lane.View
+	var laneView *plain.Status
 	if source.Lane != nil {
 		if read := source.Lane(now); read.Root != nil {
 			laneView = &read

@@ -22,7 +22,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 	t.Parallel()
 	routes := []string{
 		routeCreateRecord, routeRecordStatus, routeRecordGoals, routeAskQuestion,
-		routeQuestionStatus, routeEditDocument, routePreviewSource, routeDiscardLaunch,
+		routeQuestionStatus, routeEditDocument, routePreviewSource, routeDiscardLaunch, routeLandNow,
 		routeSignIn, routeSignOut,
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
 		routePark, routeUnpark, routeEditGoal, routeAbandon,

@@ -57,17 +57,17 @@ export function HostBoard() {
       </section>
     );
   }
-  return board === null ? null : <HostBlocks board={board} />;
+  return board === null ? null : <HostBlocks board={board} onLanded={again} />;
 }
 
 /**
  * What one board read draws: the host's landing lane above its seats. Both
  * come from the one response, so the lane adds no request of its own.
  */
-export function HostBlocks({ board }: { board: BoardPayload }) {
+export function HostBlocks({ board, onLanded }: { board: BoardPayload; onLanded?: () => void }) {
   return (
     <>
-      <LaneBlock lane={board.lane} />
+      <LaneBlock lane={board.lane} onLanded={onLanded} />
       <BoardBlock board={board} />
     </>
   );

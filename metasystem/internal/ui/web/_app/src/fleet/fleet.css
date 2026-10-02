@@ -918,8 +918,7 @@
 }
 
 .ms-fleet-lane-owner,
-.ms-fleet-lane-batch,
-.ms-fleet-lane-waiting {
+.ms-fleet-lane-queue {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -997,6 +996,28 @@
   color: var(--ms-text);
   user-select: all;
   -webkit-user-select: all;
+  overflow-wrap: anywhere;
+}
+
+/* Land now (goal fleet-card-can-land-now): the button, and the verb's two lines. */
+.ms-fleet-lane-landnow,
+.ms-fleet-lane-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ms-fleet-lane-landnow-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ms-fleet-lane-answer-line {
+  display: block;
+  font-size: 13px;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 
