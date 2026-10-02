@@ -19,7 +19,7 @@ import (
 func TestFreezeHoldsTheProcessScratchAgainstAConcurrentRelease(t *testing.T) {
 	releaseScratch := func(t *testing.T) {
 		t.Helper()
-		if err := diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{}); err != nil {
+		if err := diskstore.ReleaseProcessScratch(context.Background()); err != nil {
 			t.Fatalf("release process scratch: %v", err)
 		}
 	}

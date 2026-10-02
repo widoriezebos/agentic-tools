@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -22,14 +20,15 @@ import (
 
 // Process scratch (3.2 "Process", R1, R2): every disposable temp need of an
 // engine process lands in one lazily created, registered root,
-// $TMPDIR/metasystem/<ulid>, owned by the process. Its writer lock is one
-// open file description the process holds and every child started through
-// PrepareChild inherits, so the lock lives while any writer lives. The
-// owner's release runs on the way to the exit code: it closes only its own
-// copy of the lock (never LOCK_UN, which would free every inheritor too),
-// takes the lock again through a fresh description, and removes the root
-// only if it gets it; otherwise the record stays for the sweeper's process
-// proof.
+// $TMPDIR/metasystem/<ulid>, owned by the process. Its writer lock is a
+// shared flock: the owner holds one description of it, and every child
+// started through StartChild holds a description of its own, which its
+// descendants inherit, so the lock lives while any writer lives. The owner's
+// release runs on the way to the exit code: it unlocks and closes its own
+// description (LOCK_UN frees every fork copy of it at once, and no child
+// shares it), takes the lock exclusive through a fresh description, and
+// removes the root only if it gets it; otherwise the record stays for the
+// sweeper's process proof.
 const (
 	// ProcessScratchClass is the class of a process's scratch root.
 	ProcessScratchClass = "process-scratch"
@@ -60,7 +59,7 @@ type processScratch struct {
 	released bool
 	// inherited are the ancestors' writer locks this process was given.
 	inherited []*os.File
-	// children are the commands prepared through the seam; the owner's
+	// children are the commands started through the seam; the owner's
 	// release keeps the root while one of them runs (Round D1 F-1(c)).
 	children []*exec.Cmd
 	// fallback is an unregistered private directory, used when the root
@@ -225,42 +224,67 @@ func (s *processScratch) use(remove func()) func() {
 	}
 }
 
-// PrepareChild is the launcher seam: the child inherits the writer lock
-// (and the ancestors' locks this process holds) through ExtraFiles, after
-// every descriptor the launcher set, with their numbers in
-// METASYSTEM_SCRATCH_LOCK_FD; its TMPDIR, TMP, TEMP and GOTMPDIR are the
-// root, and an engine child makes its own root flat beside this one. A
-// launcher that sets ExtraFiles sets them before this call. The owner's
-// release keeps the root while a prepared child runs.
-func PrepareChild(cmd *exec.Cmd) error {
+// StartChild is the launcher seam: it starts cmd holding a description of
+// the writer lock of its own, taken shared, and the ancestors' locks this
+// process holds, through ExtraFiles after every descriptor the launcher
+// set, with their numbers in METASYSTEM_SCRATCH_LOCK_FD; its TMPDIR, TMP,
+// TEMP and GOTMPDIR are the root, and an engine child makes its own root
+// flat beside this one. A launcher that sets ExtraFiles sets them before
+// this call. The owner's release keeps the root while a started child runs,
+// and the child's description keeps it while the child or a descendant
+// holds it. An unregistered fallback root has no writer lock: the child
+// starts with the environment alone.
+func StartChild(cmd *exec.Cmd) error {
 	scratchMu.Lock()
 	defer scratchMu.Unlock()
 	scratch, err := ensureScratch()
 	if err != nil {
 		return err
 	}
-	return scratch.prepareLocked(cmd)
+	return scratch.startChild(cmd)
 }
 
-func (s *processScratch) prepare(cmd *exec.Cmd) error {
-	scratchMu.Lock()
-	defer scratchMu.Unlock()
-	return s.prepareLocked(cmd)
-}
-
-// prepareLocked is PrepareChild for s; scratchMu is held.
-func (s *processScratch) prepareLocked(cmd *exec.Cmd) error {
+// startChild is StartChild for s; scratchMu is held. The child's
+// description is the child's alone: this process closes its copy once
+// Start has returned, never with LOCK_UN, which would free the child too.
+func (s *processScratch) startChild(cmd *exec.Cmd) error {
 	if s.fallback {
-		return nil
+		setChildEnv(cmd, s.record.Path, nil)
+		return cmd.Start()
 	}
 	if s.released {
 		return fmt.Errorf("process scratch %s is released", s.record.Path)
+	}
+	lock, err := os.OpenFile(filepath.Join(s.record.Path, WriterLockName), os.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return fmt.Errorf("process scratch writer lock: %w", err)
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
+		_ = lock.Close()
+		return fmt.Errorf("process scratch writer lock: %w", err)
 	}
 	var fds []string
 	for index := 0; index <= len(s.inherited); index++ {
 		fds = append(fds, strconv.Itoa(3+len(cmd.ExtraFiles)+index))
 	}
-	cmd.ExtraFiles = append(append(cmd.ExtraFiles, s.writer), s.inherited...)
+	cmd.ExtraFiles = append(append(cmd.ExtraFiles, lock), s.inherited...)
+	setChildEnv(cmd, s.record.Path, fds)
+	running := s.children[:0]
+	for _, child := range s.children {
+		if childRunning(child) {
+			running = append(running, child)
+		}
+	}
+	s.children = append(running, cmd)
+	startErr := cmd.Start()
+	_ = lock.Close()
+	return startErr
+}
+
+// setChildEnv points a child's temporary directories at root and names its
+// lock descriptors, replacing any its environment carried; no fds names
+// none.
+func setChildEnv(cmd *exec.Cmd, root string, fds []string) {
 	env := cmd.Env
 	if env == nil {
 		env = os.Environ()
@@ -273,17 +297,11 @@ func (s *processScratch) prepareLocked(cmd *exec.Cmd) error {
 		}
 		kept = append(kept, entry)
 	}
-	root := s.record.Path
-	cmd.Env = append(kept, "TMPDIR="+root, "TMP="+root, "TEMP="+root, "GOTMPDIR="+root,
-		scratchRootsEnv+"="+filepath.Dir(root), scratchLockFDEnv+"="+strings.Join(fds, ","))
-	running := s.children[:0]
-	for _, child := range s.children {
-		if childRunning(child) || child.Process == nil {
-			running = append(running, child)
-		}
+	kept = append(kept, "TMPDIR="+root, "TMP="+root, "TEMP="+root, "GOTMPDIR="+root, scratchRootsEnv+"="+filepath.Dir(root))
+	if len(fds) > 0 {
+		kept = append(kept, scratchLockFDEnv+"="+strings.Join(fds, ","))
 	}
-	s.children = append(running, cmd)
-	return nil
+	cmd.Env = kept
 }
 
 // childRunning reports a prepared child that was started and has not been
@@ -293,63 +311,21 @@ func childRunning(cmd *exec.Cmd) bool {
 	return cmd.Process != nil && cmd.ProcessState == nil && unix.Kill(cmd.Process.Pid, 0) == nil
 }
 
-// WriterDrain is the owner's clock for waiting out fork copies of its
-// writer lock. A fork by any goroutine of the owner's process duplicates
-// every descriptor, close-on-exec ones included, and the child keeps the
-// duplicate (and with it the flock) until it execs; on darwin the parent
-// releases syscall.ForkLock as soon as fork returns, before that exec, so
-// closing under ForkLock does not close the window. The copy goes at exec,
-// so the owner re-probes every WriterDrainStep for WriterDrainWindow; a
-// writer alive after that keeps the root for the sweeper. LOCK_UN is no
-// remedy: it would release every real inheritor too. This package reads no
-// clock (R13): the caller passes it. The zero value probes once.
-type WriterDrain struct {
-	Now   func() time.Time
-	Sleep func(time.Duration)
-}
-
-// The owner's drain bound: a fork-to-exec window is microseconds unloaded.
-const (
-	WriterDrainWindow = 2 * time.Second
-	WriterDrainStep   = 5 * time.Millisecond
-)
-
-// takeWriterLock takes lock LOCK_EX|LOCK_NB, re-probing while it is held
-// until the drain window has passed.
-func (d WriterDrain) takeWriterLock(lock *os.File) error {
-	var deadline time.Time
-	for {
-		err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil || !(errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) || d.Now == nil || d.Sleep == nil {
-			return err
-		}
-		now := d.Now()
-		if deadline.IsZero() {
-			deadline = now.Add(WriterDrainWindow)
-		}
-		if !now.Before(deadline) {
-			return err
-		}
-		d.Sleep(WriterDrainStep)
-	}
-}
-
 // ReleaseProcessScratch is the owner's release at the end of dispatch. A
 // root still in use in this process, or held by a child, stays for the
-// sweeper; any error leaves the record for it too. drain waits out fork
-// copies of the writer lock (see WriterDrain).
-func ReleaseProcessScratch(ctx context.Context, drain WriterDrain) error {
+// sweeper; any error leaves the record for it too.
+func ReleaseProcessScratch(ctx context.Context) error {
 	scratchMu.Lock()
 	scratch := currentScratch
 	scratchMu.Unlock()
 	if scratch == nil {
 		return nil
 	}
-	_, err := scratch.releaseIfIdle(ctx, drain)
+	_, err := scratch.releaseIfIdle(ctx)
 	return err
 }
 
-func (s *processScratch) releaseIfIdle(ctx context.Context, drain WriterDrain) (bool, error) {
+func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 	scratchMu.Lock()
 	defer scratchMu.Unlock()
 	if s.released {
@@ -374,33 +350,21 @@ func (s *processScratch) releaseIfIdle(ctx context.Context, drain WriterDrain) (
 	if currentScratch == s {
 		currentScratch = nil
 	}
-	s.closeWriter()
+	// The owner's description is its own: no child shares it, so LOCK_UN
+	// frees only the owner's hold and every fork copy of it.
+	_ = unlockAndClose(s.writer)
 	critical, err := s.registry.TryCritical(s.record.ID)
 	if err != nil {
 		return false, fmt.Errorf("process scratch %s is kept for the sweeper: %w", s.record.Path, err)
 	}
 	defer critical.Release()
-	if verdict := releaseScratchRoot(ctx, critical, "owner", drain); verdict.Decision != Release {
+	if verdict := releaseScratchRoot(ctx, critical, "owner"); verdict.Decision != Release {
 		return false, fmt.Errorf("process scratch %s is kept for the sweeper: %s", s.record.Path, verdict.Reason)
 	}
 	// A normal end leaves nothing. Fail-closed rule 3 keeps the records
 	// others count; nothing counts a process-scratch record, so its owner
 	// removes its own record and record lock, under that lock.
 	return true, errors.Join(os.Remove(s.registry.RecordPath(s.record.ID)), os.Remove(s.registry.LockPath(s.record.ID)))
-}
-
-// closeWriter closes only this process's copy of the writer lock, never
-// LOCK_UN: a child that inherited the description through ExtraFiles keeps
-// the lock, and with it the root, alive. It closes under syscall.ForkLock,
-// so no fork starts while the close runs and none after it can copy the
-// descriptor. That does not prove no copy remains: a child forked before
-// the close holds a duplicate until it execs, and on darwin the parent
-// releases ForkLock as soon as fork returns, before that exec. The owner's
-// release waits such copies out (WriterDrain).
-func (s *processScratch) closeWriter() {
-	syscall.ForkLock.RLock()
-	defer syscall.ForkLock.RUnlock()
-	_ = s.writer.Close()
 }
 
 // newProcessScratch registers and creates a root under tempRoot/metasystem.
@@ -466,12 +430,14 @@ func newProcessScratch(tempRoot string, registry Registry, entropy io.Reader) (*
 	if err != nil {
 		return nil, fmt.Errorf("process scratch writer lock: %w", err)
 	}
-	if err := unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+	// Shared: each child started through the seam holds a description of
+	// its own beside the owner's, and only an exclusive take proves none.
+	if err := unix.Flock(int(writer.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
 		return nil, errors.Join(fmt.Errorf("process scratch writer lock: %w", err), writer.Close())
 	}
 	if record, err = registry.Accept(record.ID); err != nil {
-		// No child holds the description yet: unlock it, so a fork copy
-		// cannot keep the root from the sweeper's process proof.
+		// Unlock it, so a fork copy cannot keep the root from the
+		// sweeper's process proof.
 		return nil, errors.Join(err, unlockAndClose(writer))
 	}
 	return &processScratch{registry: registry, record: record, writer: writer}, nil
@@ -582,7 +548,7 @@ func (p ProcessProof) Release(ctx context.Context, critical *Critical, census *U
 	if verdict := useVerdict(census, critical.Record()); verdict.Decision != Release {
 		return verdict
 	}
-	return releaseScratchRoot(ctx, critical, "sweeper", WriterDrain{})
+	return releaseScratchRoot(ctx, critical, "sweeper")
 }
 
 // ownerGroupVerdict keeps a dead owner's root while any live process is in
@@ -646,7 +612,7 @@ func ownerGroupVerdict(record Record, table identity.ProcessTable) Verdict {
 //     writer lock through a fresh description before anything is removed,
 //     and holds it through the last unlink;
 //  5. the root is the process's, never a person's.
-func releaseScratchRoot(ctx context.Context, critical *Critical, by string, drain WriterDrain) Verdict {
+func releaseScratchRoot(ctx context.Context, critical *Critical, by string) Verdict {
 	record := critical.Record()
 	pending := func(reason string) Verdict {
 		return Verdict{Decision: Pending, Reason: reason, Command: "metasystem disk show"}
@@ -681,7 +647,7 @@ func releaseScratchRoot(ctx context.Context, critical *Critical, by string, drai
 	if writer != nil {
 		// A fresh description of this process's own: unlock it before close.
 		defer unlockAndClose(writer)
-		if err := drain.takeWriterLock(writer); err != nil {
+		if err := unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 			if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 				return Verdict{Decision: Keep, Reason: "a process it started still holds its writer lock", Command: "metasystem disk clean, once that process has ended"}
 			}

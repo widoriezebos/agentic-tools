@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -260,7 +259,7 @@ func dispatch(args []string) int {
 // never replaces the root under another still running.
 func dispatchProcess(args []string, stdout, stderr io.Writer, registered []family) int {
 	defer func() {
-		_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
+		_ = diskstore.ReleaseProcessScratch(context.Background())
 	}()
 	return dispatchWithFamilies(args, stdout, stderr, registered)
 }
