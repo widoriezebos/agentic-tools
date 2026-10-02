@@ -83,7 +83,7 @@ func (f ownershipFixture) reserveWithPolicy(goal, plan string, groups map[string
 		f.t.Fatal(err)
 	}
 	defer guard.Release()
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -724,7 +724,7 @@ func TestForceGroupsRecoversTiedTerminalLegacyProducers(t *testing.T) {
 				t.Fatalf("ordinary admission accepted tied legacy history: decided=%t err=%v", decided, err)
 			}
 			request.ForceGroups = true
-			fresh, decision, err := ReserveLocked(WithTestHostAdmissionDirectory(request, f.admissionDir))
+			fresh, decision, err := reserveLocked(WithTestHostAdmissionDirectory(request, f.admissionDir))
 			if err != nil || decision.Disposition != DispositionExecuted || fresh.TestOwned["check"] != identity ||
 				fresh.TestAdmission == 0 || fresh.TestSources["check"] != "" || fresh.TestWaits["check"] != "" {
 				t.Fatalf("forced fresh ownership: attempt=%+v decision=%+v err=%v", fresh, decision, err)

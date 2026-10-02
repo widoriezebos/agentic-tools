@@ -153,7 +153,7 @@ func admissionRequest(t *testing.T, admissionMax, overlaps int, known, nested bo
 }
 func TestAdmissionCapExemptsNestedReceipts(t *testing.T) {
 	request := admissionRequest(t, 1, 3, true, true)
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("nested reserve = %+v, %+v, %v", attempt, decision, err)
 	}
@@ -173,7 +173,7 @@ func TestAdmissionCapRefusesAtTheCap(t *testing.T) {
 	}{{"at-cap", DispositionAdmissionRefused, 2}, {"below-cap", DispositionExecuted, 1}} {
 		t.Run(test.name, func(t *testing.T) {
 			request := admissionRequest(t, 2, test.overlaps, true, false)
-			attempt, decision, err := ReserveLocked(candidateAdmission(request))
+			attempt, decision, err := reserveLocked(candidateAdmission(request))
 			if err != nil || decision.Disposition != test.want {
 				t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 			}
@@ -194,7 +194,7 @@ func TestAdmissionCapAdmitsBesideIdleBatchOwner(t *testing.T) {
 	installAdmissionCensus(t, census, 8)
 
 	request := censusAdmissionRequest(t, 1, requester.exact, "beside-idle-owner", now)
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("top-level reserve beside idle owner = %+v, %+v, %v", attempt, decision, err)
 	}
@@ -215,7 +215,7 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 
 			firstRequest := censusAdmissionRequest(t, 1, first.exact, "slot-holder-"+ending, now)
 			firstRequest.AttemptID = "proof-slot-holder-" + ending
-			firstAttempt, firstDecision, err := ReserveLocked(firstRequest)
+			firstAttempt, firstDecision, err := reserveLocked(firstRequest)
 			if err != nil || firstDecision.Disposition != DispositionExecuted || firstAttempt.AttemptID == "" {
 				t.Fatalf("first top-level reserve = %+v, %+v, %v", firstAttempt, firstDecision, err)
 			}
@@ -226,7 +226,7 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 			secondRequest.ReservationOwner = &ReservationOwner{ControlRoot: secondRequest.ControlRoot, RunID: "run-" + ending,
 				RunGeneration: 1, LaunchNonce: "launch-" + ending, GoalRevision: secondRequest.GoalRevision,
 				ObligationRevision: 1, AttemptOrdinal: 1, Deadline: now.Add(time.Minute).Format(time.RFC3339Nano)}
-			refusedAttempt, refused, err := ReserveLocked(secondRequest)
+			refusedAttempt, refused, err := reserveLocked(secondRequest)
 			if err != nil || refused.Disposition != DispositionAdmissionRefused || refused.ExitStatus != ExitAdmissionRefused ||
 				!strings.Contains(refused.Reason, "retry=retry-when-a-launcher-ends") || !reflect.DeepEqual(refusedAttempt, Attempt{}) {
 				t.Fatalf("second top-level reserve = %+v, %+v, %v", refusedAttempt, refused, err)
@@ -252,7 +252,7 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 			// Reusing the refused attempt id proves that refusal left no record or
 			// reservation behind. The restarted launcher is self, not an overlap.
 			census.replace(second)
-			admitted, decision, err := ReserveLocked(secondRequest)
+			admitted, decision, err := reserveLocked(secondRequest)
 			if err != nil || decision.Disposition != DispositionExecuted || admitted.AttemptID != secondRequest.AttemptID {
 				t.Fatalf("reserve after %s = %+v, %+v, %v", ending, admitted, decision, err)
 			}
@@ -269,7 +269,7 @@ func TestAdmissionRefusalNamesItsExpiryAndRuling(t *testing.T) {
 }
 func TestAdmissionCapAdmitsWhenOverlapIsUnknown(t *testing.T) {
 	request := admissionRequest(t, 1, 99, false, false)
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.ExitStatus != ExitAdmissionRefused ||
 		!strings.Contains(decision.Reason, "ADMISSION_OVERLAP_UNKNOWN") || !reflect.DeepEqual(attempt, Attempt{}) {
 		t.Fatalf("unknown overlap reserve = %+v, %+v, %v", attempt, decision, err)
@@ -283,7 +283,7 @@ func TestAdmissionCapAdmitsWhenOverlapIsUnknown(t *testing.T) {
 func TestInvalidFixtureHostLoadRefusesUnknownOverlap(t *testing.T) {
 	request := admissionRequest(t, 1, 0, true, false)
 	request.loadOptions = []loadSampleOption{withTestHostLoad("invalid")}
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionAdmissionRefused ||
 		!strings.Contains(decision.Reason, "ADMISSION_OVERLAP_UNKNOWN") || !reflect.DeepEqual(attempt, Attempt{}) {
 		t.Fatalf("invalid fixture reserve = %+v, %+v, %v", attempt, decision, err)
@@ -326,7 +326,7 @@ func TestAdmissionCapUsesTheRecordedStartSample(t *testing.T) {
 		}
 		return 99, true
 	}
-	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || calls != 1 || attempt.Load.Start.OverlappingHost != 1 {
 		t.Fatalf("reserve sampled %d times: attempt=%+v decision=%+v error=%v", calls, attempt, decision, err)
 	}
@@ -350,7 +350,7 @@ func TestReserveSkipsTheNestedCensusWhenTheCapCannotRefuse(t *testing.T) {
 				calls++
 				return false, true
 			}
-			attempt, decision, err := ReserveLocked(candidateAdmission(request))
+			attempt, decision, err := reserveLocked(candidateAdmission(request))
 			wantDisposition := DispositionExecuted
 			if !test.overlapKnown && test.admissionMax > 0 {
 				wantDisposition = DispositionAdmissionRefused
@@ -376,7 +376,7 @@ type admissionBatteryEvent struct {
 // The first call competes for the real nonblocking host guard. A busy caller
 // retries only after the competing call has returned and released that guard.
 func reserveConcurrentBattery(request AdmissionRequest, returned chan<- struct{}, competitorReturned, abort <-chan struct{}) (Attempt, LaunchResult, error) {
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	close(returned)
 	if err == nil && decision.Disposition == DispositionAdmissionRefused && decision.Reason == "host proof admission is busy" {
 		select {
@@ -384,7 +384,7 @@ func reserveConcurrentBattery(request AdmissionRequest, returned chan<- struct{}
 		case <-abort:
 			return attempt, decision, err
 		}
-		return ReserveLocked(request)
+		return reserveLocked(request)
 	}
 	return attempt, decision, err
 }
@@ -564,7 +564,7 @@ func TestHeldHostAdmissionGuardRefusesWithoutAllocatingAttempt(t *testing.T) {
 		samples++
 		return hostload.Sample{Available: true, Cores: 18}
 	}
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := reserveLocked(request)
 	if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.ExitStatus != ExitAdmissionRefused ||
 		attempt.AttemptID != "" || samples != 0 {
 		t.Fatalf("contended admission allocated or sampled: attempt=%+v decision=%+v samples=%d err=%v", attempt, decision, samples, err)
