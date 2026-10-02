@@ -1,6 +1,6 @@
 # blocked-agent-asks-the-human
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Decides whether unattended agents stop safely and get unblocked (severity 2); builds on existing question and channel verbs (novelty 1); every seat and the lane (exposure 2); every block of every run (accumulation 2)"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Inventory what question ask/answer/wait, the Telegram channel, the UI and the peer-message bridge already do; design step 1; critique; build
 - OpenedAt: 2026-10-02T12:24:05Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T12:29:42Z revision=7 opid=YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 authority=proven digest=48b04d7686eaa4569893a5283340bb53ebc04468b30b581531164cc89416a033 episode=7
 
 History:
 - 2026-10-02T12:24:05Z FV4HRFVE842X06TWH326PZXQHJ-m1e-9c612d71 open actor=human:Wido targets=blocked-agent-asks-the-human
@@ -20,4 +22,5 @@ History:
 - 2026-10-02T12:24:25Z KS49YJBH3D4MGEAWVK9G8Y150S-m1e-9c612d71 set-priority actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=blocked-agent-asks-the-human from=unranked to=1:2 requested-sequence=2
 - 2026-10-02T12:29:31Z 6ZM9CX3F84JCZ26H99G3SMCS33-m1e-9c612d71 unapprove actor=human:Wido targets=blocked-agent-asks-the-human reason=add the two switch-on conditions
 - 2026-10-02T12:29:37Z EXXWF9H3V2NVPYGB2DDCK8Q4VD-m1e-9c612d71 edit actor=human:Wido targets=blocked-agent-asks-the-human
-Integrity: sha256=62e6770d3b48199d2b6a8bcc7aeaa03086a07cd06a4e8d1cbc2d8f0d9cfe7b37
+- 2026-10-02T12:29:42Z YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 approve actor=human:Wido targets=blocked-agent-asks-the-human
+Integrity: sha256=956a8fd59c4105b3e3512d6371c6095027cd4814ec26ac19774a5c26d217cb5e
