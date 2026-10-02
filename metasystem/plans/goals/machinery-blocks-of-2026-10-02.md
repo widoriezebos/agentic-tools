@@ -1,6 +1,6 @@
 # machinery-blocks-of-2026-10-02
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 39
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="Each block stops an agent but the escape hatch asks the human (severity 1); known defects with traced causes (novelty 1); every seat (exposure 2); recurs on every run (accumulation 2)"
@@ -9,9 +9,10 @@
 - Origin: main
 - Next step: Wait for the unblock log after switch-on; fix the most frequent block first, one at a time, by subtraction Added 2026-10-02 night (coordinator m1e), fix each by the smallest change with a test, by frequency: (9) agent ask --goal G says 'not open (no goal by that id)' for a goal claimed and in progress (worked around with agent ask MACHINE); (10) question withdraw refuses the channel:<id> form that question list prints; (11) landing run prints 'started the landing agent ... for queued' (a word is missing); (12) the goal edit of an approved intent and prioritize of a non-open goal print 'the goals changed meanwhile; try again' instead of the true remedy; (13) work status in one checkout lists every machine's jobs without saying so (label it 'on this host'); (14) a fresh seat set up by hand does not fetch the goal ledger. Items (1)-(8) above stay. Already fixed tonight: the seat claim fallback (3681afe27).
 - OpenedAt: 2026-10-02T12:29:50Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-02T21:26:02Z revision=15 opid=HC2RZQWDAH61B5226G29G3TSYR-m1e-9c612d71 authority=proven digest=d10194819aff10d8c1502399c1f44fd733c9c44677688e3237530d436443242b episode=15
 
 History:
 - 2026-10-02T12:29:50Z 2R9JM2HYAZY2AZW272ZF1ZEV2X-m1e-9c612d71 open actor=human:Wido targets=machinery-blocks-of-2026-10-02
@@ -28,4 +29,5 @@ History:
 - 2026-10-02T21:00:28Z K4A0AE4BVRC9XS7D07FWCP8YB2-m1e-9c612d71 abandon actor=human:Wido targets=adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:41 to=2:40
 - 2026-10-02T21:00:35Z VNGSNCZW70RGG931E6Y9XRKWYT-m1e-9c612d71 abandon actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:40 to=2:39
 - 2026-10-02T21:25:55Z QEJF0FHGJF8YHVF1R0F79DAJXY-m1e-9c612d71 edit actor=human:Wido targets=machinery-blocks-of-2026-10-02
-Integrity: sha256=f5a3411991031dc643b903c5354be1eba61a0d8c6e5dae2f3c61589c776f206d
+- 2026-10-02T21:26:02Z HC2RZQWDAH61B5226G29G3TSYR-m1e-9c612d71 approve actor=human:Wido targets=machinery-blocks-of-2026-10-02
+Integrity: sha256=5d333d9229d50d002f13be7274f1af42c13c99726b2ced7de31701ddbf7512b9
