@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M3ZA7QK4FLEETUX0000000001
-- Status: draft
+- Status: accepted
 - Goals: fleet-panel-ux
+
+Critique: Codex Astra (tier 2, run directly), closed after round 3 on convergence (material per round 5, 5, 1; round 2 folded by cutting scope to a read-only step 1 plus the existing Land now; round 3 folded by one rule that reuses the existing health record). Evidence: agentic-tools-evidence/fleet-panel-ux/.
 
 ## Part 1: Intent
 
@@ -70,7 +72,7 @@ Wido's screenshot (2026-10-02) showed: the table is liked; below it a stale lane
    - an open question for the person → [Answer] (link to where it is answered).
    Empty means the section is not shown at all.
 3. **Seats: the fleet table, kept and completed.** Wido likes the table (screenshot 2026-10-02); it stays the one place for machines, and the "This host" text list below it is removed (it repeats the table in worse words and shows stale cards, e.g. "m1g: one-folder-deployed-and-evolved unknown: claim moved to m1f"). Changes to the table:
-   - the Running column becomes **Doing**, filled from the board and the seat records: "building · 12 min", "reviewing · round 3 of 20", "waiting to land", "idle". Today it says "idle" for seats that are working (m1f in revise round 3, ui building): a data bug, fixed here;
+   - the Running column becomes **Doing**, filled from the board and the seat records: "building · 12 min", "reviewing · round 3 of 20", "waiting to land", "idle". The data comes from the reader landed at 46a3fc613 (internal/seat/launches.go); step 1 only presents it;
    - Holds shows the goal's title, with the id in the link;
    - Engine collapses to the short version; the generation number moves into the expanded row;
    - per-row actions in the expanded row: [Stop] for a running seat; [Talk] when ui-connects-to-a-running-agent lands; [Forget] for an unreachable seat (e.g. wr-m1, 3 days) when fleet-forgets-an-unreachable-seat lands;
@@ -98,6 +100,7 @@ All facts exist: plain lane status (queue, running_proof, last_proof, last_push;
 - **No log link (R2-9):** a red proof shows its recorded failure reason; opening the log needs a server endpoint that does not exist yet (Deferred).
 - **Superseded returns (R2-7):** a returned entry whose goal was handed in again later counts as history in "Came back", never in Needs you.
 - **Verdict scope (R2-8):** the verdict states what it checked: "All good on this computer" covers this computer's seats, the lane and this checkout's questions; questions on other computers are named as not checked until a fleet-wide question read exists (Deferred).
+- **Verdict covers local health (R3-01):** a local seat whose health record is unhealthy (for example its steward's runner is dead) is a Needs you item ("This computer's steward is not running"), so the verdict cannot say "All good" over it. It reads the existing health record (internal/ui/fleet/read.go); nothing new is collected.
 
 ### Step 1 and Deferred
 
