@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Design page from the recorded per-round material counts (internal/launch), Astra critique, build
 - OpenedAt: 2026-10-02T10:12:16Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=5
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-02T10:24:58Z revision=7 opid=MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 authority=proven digest=bb2fe7ab98d51c6d2b306a84d296b4eff47d157a5f1e8cfd60776a26b68fcb87 episode=7
+- NormApproval: approvedRef=QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 minutes=720 reviewRounds=20 goalRevision=8
+- Approved: by=human:Wido at=2026-10-02T11:43:41Z revision=9 opid=QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 authority=proven digest=10f1a396550c31105306bd6e6bb5b71dd3489c1737301efa0f0e03515b147f25 episode=9
 
 History:
 - 2026-10-02T10:12:16Z DGM1ZK0JGJ8198MGJ0A44NHWHE-m1e-9c612d71 open actor=human:Wido targets=critique-stops-on-convergence
@@ -24,4 +25,5 @@ History:
 - 2026-10-02T10:24:53Z 0MVGJHJYKHNDF1G2PAZDT8NCA0-m1e-9c612d71 edit actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T10:24:58Z MBH8V1QRDT0RNKQDTNAMZTW521-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
 - 2026-10-02T11:19:09Z 6QW1PNP9G71DNQZNRZC9RDC29J-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,landing-lane-runtime-redesign,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=critique-stops-on-convergence from=1:27 to=1:3 requested-sequence=3
-Integrity: sha256=897099c331c1a1c0fd7de4a2a0697524fdb5fe1e70bc62230a0c6b60a3dc3fa1
+- 2026-10-02T11:43:41Z QQ2F4Z8FHV0PW0DG23MBEQ8DPY-m1e-9c612d71 approve actor=human:Wido targets=critique-stops-on-convergence
+Integrity: sha256=ec3b0715fe0c35a19493a024cdb7f7b939c77e62491b01c36bf348406e88fe0a
