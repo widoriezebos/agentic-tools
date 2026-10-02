@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:cd87459d44a5e08951584d4bb97b20d142e79b6b7cd012934efd57d59a3d6dc8",
+  "sourceDigest": "sha256:c66bf771fb50bf12bbe7d6c5cda98e707785c305f9f83be0ebbb4e90966bd64d",
   "source": [
     {
       "path": ".npmrc",
@@ -296,7 +296,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "822d724036ecda517815f93e8caf8aee9df3f6bf3bf78e999d863cc7ab445e61"
+      "sha256": "e2d32afe4653ee35eddd532cc665b97e18294bce9c0e9f31697c928c6431dba0"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
@@ -408,15 +408,15 @@
     },
     {
       "path": "src/fleet/HostBoard.tsx",
-      "sha256": "c2ec0493de23a538dc9010bbbce6e88a8331ad940364aba8b3a57482712b76a9"
+      "sha256": "ad8c2f528f67cd4167a414741e4018800f2fa49e066720b1ab493133a4f7fd8f"
     },
     {
       "path": "src/fleet/LandingLane.test.tsx",
-      "sha256": "4de94a424403dc65af31e5c7cabc6f2ed453e6bda1b64a510631b753eafa1422"
+      "sha256": "fdc18d420e9f4ed912e0c43bf02031a263ed9c79ff4e588a1f63da5f2c7e2e9a"
     },
     {
       "path": "src/fleet/LandingLane.tsx",
-      "sha256": "c5fc84195d11552c955939852418b64ce0c64ab808140c6a5bb0db7f88bd6e33"
+      "sha256": "43c689f369cd6c3b4e8f8543af62d4ea5ede94d64f6ecc4a0467de6c78ce2cf0"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -436,7 +436,7 @@
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "6223c8ed58f1ec8e418606f1b961f49bd88284f0ef95229992386daa8dd438a2"
+      "sha256": "905c79793d4c89f0b862eef6686a8157fd985fe72ce3b91ebb862bb5bdca4261"
     },
     {
       "path": "src/fleet/breathing.test.tsx",
@@ -452,7 +452,7 @@
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "28aa65a3a2138ac73ab75b303ae6a5c2cb8fd5c2efe122fa17953c147b5b1b60"
+      "sha256": "72ee47d3dd715690533506cf252efdf4ef7d4f7552309374657da9ce42324d7e"
     },
     {
       "path": "src/fleet/fleet.ts",
@@ -1590,11 +1590,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "ab7379f12fe6f0e9395a170a7ae864c7c0bd7f2036da76ae0234a7d2f5d7ea59"
+      "sha256": "9eb221ce749666e4c9e55858216a7b90373df84f4bc472469a84a182862774c5"
     },
     {
       "path": "assets/index.js",
-      "sha256": "a2370bd2ee8cf64e926014d56b3fdd9dbc73985fc70e313122df6a06228cd52b"
+      "sha256": "05829e3c8407edbf7efd3a15b83f70ea0f1312f758594a82f48b1ae2206fb949"
     },
     {
       "path": "assets/info-A6RAGUB7.js",
