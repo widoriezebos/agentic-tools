@@ -51,13 +51,15 @@ func ProcessIdentity(pid int64, probe identity.FixtureProbe) (Identity, bool) {
 }
 
 // StartedAt is the process's start second from the one source. ok is false
-// when the pid is not live/readable.
+// when the pid is not live/readable. It reads the start alone, never the
+// command line, so a process whose argv is not (or no longer) readable still
+// has its start: ProcessIdentity's start, whenever that one reads.
 func StartedAt(pid int64, probe identity.FixtureProbe) (int64, bool) {
-	id, ok := ProcessIdentity(pid, probe)
-	if !ok {
+	started, err := census.AuthStartedAt(pid, probe)
+	if err != nil {
 		return 0, false
 	}
-	return id.StartedAt, true
+	return started, true
 }
 
 // ProcessCommand is the process's command line from the one source.

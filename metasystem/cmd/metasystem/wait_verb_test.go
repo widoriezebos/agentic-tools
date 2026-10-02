@@ -1830,17 +1830,12 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	assertUnwatchedWaitVerdict(t, pendingWaitVerdict(t, root, hostileSession, mainID))
 
 	// The dead waiter's process is a shell whose own argv carries the tag and
-	// which reports readiness from its running image, then blocks reading a
-	// pipe this test holds. A sleep started through a tagged symlink carried
+	// which reports readiness from its running image (testexec.StartReady),
+	// then blocks reading a pipe this test holds. A sleep started through a tagged symlink carried
 	// the tag only in argv, and Linux can read a just-exec'd process's argv
 	// empty until the new image publishes it ("executable=/usr/bin/sleep
 	// argv=[] does not carry fixture tag", batch 12 VM).
 	sleepTag := "metasystem-child-wait-dead-sleeper"
-	sleepReadyRead, sleepReadyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sleepReadyRead.Close()
 	sleepOutputDir := t.TempDir()
 	sleepOutput, err := os.Create(filepath.Join(sleepOutputDir, "sleep.stdout"))
 	if err != nil {
@@ -1851,24 +1846,20 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = sleepOutput.Close()
 		t.Fatal(err)
 	}
-	sleeper := exec.Command("/bin/sh", "-c", `printf 'ready\n' >&3; exec 3>&-; read -r _`, sleepTag)
+	sleeper := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+`read -r _`, sleepTag)
 	sleeper.Stdout, sleeper.Stderr = sleepOutput, sleepProblem
-	sleeper.ExtraFiles = []*os.File{sleepReadyWrite}
 	sleepHold, err := sleeper.StdinPipe()
 	if err != nil {
-		_ = sleepReadyWrite.Close()
 		_ = sleepOutput.Close()
 		_ = sleepProblem.Close()
 		t.Fatal(err)
 	}
 	defer sleepHold.Close()
-	if err := sleeper.Start(); err != nil {
-		_ = sleepReadyWrite.Close()
+	if err := testexec.StartReady(sleeper); err != nil {
 		_ = sleepOutput.Close()
 		_ = sleepProblem.Close()
 		t.Fatal(err)
 	}
-	_ = sleepReadyWrite.Close()
 	sleeperReaped := false
 	t.Cleanup(func() {
 		if sleeperReaped {
@@ -1881,9 +1872,6 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = sleepOutput.Close()
 		_ = sleepProblem.Close()
 	})
-	if line, readErr := bufio.NewReader(sleepReadyRead).ReadString('\n'); readErr != nil || line != "ready\n" {
-		t.Fatalf("dead-row sleeper readiness = %q, %v", line, readErr)
-	}
 	sleeperExact, sleeperState, err := (identity.KernelProber{}).Probe(int64(sleeper.Process.Pid))
 	if err != nil || sleeperState != identity.Alive {
 		t.Fatalf("dead-row sleeper identity=%+v state=%s err=%v", sleeperExact, sleeperState, err)
@@ -1977,27 +1965,18 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	releaseRead, releaseWrite, err := os.Pipe()
 	if err != nil {
-		_ = readyRead.Close()
-		_ = readyWrite.Close()
 		t.Fatal(err)
 	}
-	predecessor := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
-	predecessor.ExtraFiles = []*os.File{readyWrite, releaseRead}
-	if err := predecessor.Start(); err != nil {
-		_ = readyRead.Close()
-		_ = readyWrite.Close()
-		_ = releaseRead.Close()
-		_ = releaseWrite.Close()
-		t.Fatal(err)
-	}
-	_ = readyWrite.Close()
+	predecessor := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+"IFS= read -r _")
+	predecessor.Stdin = releaseRead
+	startErr := testexec.StartReady(predecessor)
 	_ = releaseRead.Close()
+	if startErr != nil {
+		_ = releaseWrite.Close()
+		t.Fatal(startErr)
+	}
 	predecessorDone := make(chan error, 1)
 	go func() { predecessorDone <- predecessor.Wait() }()
 	predecessorJoined := false
@@ -2008,11 +1987,6 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 			<-predecessorDone
 		}
 	})
-	ready, readyErr := bufio.NewReader(readyRead).ReadString('\n')
-	_ = readyRead.Close()
-	if readyErr != nil || ready != "ready\n" {
-		t.Fatalf("predecessor readiness=%q err=%v", ready, readyErr)
-	}
 	predecessorPID := int64(predecessor.Process.Pid)
 	predecessorExact, state, err := (identity.KernelProber{}).Probe(predecessorPID)
 	if err != nil || state != identity.Alive {

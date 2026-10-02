@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // Ports of lease-succession-fixtures.sh (verbs-object-action U7c). A mission
@@ -73,20 +75,12 @@ func TestConsecutiveHostTurnsRenewAndKeepTheInFlightDelegate(t *testing.T) {
 	root := t.TempDir()
 	const lineage = "mission-fixture-lineage"
 
-	first := exec.Command("/bin/sh", "-c", "printf r; read line || :")
+	first := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+"read line || :")
 	hold, err := first.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ready, err := first.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := first.Start(); err != nil {
-		t.Fatal(err)
-	}
-	var signal [1]byte
-	if _, err := ready.Read(signal[:]); err != nil {
+	if err := testexec.StartReady(first); err != nil {
 		t.Fatalf("first turn never reported ready: %v", err)
 	}
 	firstPid := int64(first.Process.Pid)

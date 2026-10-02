@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type armingComponentProbe struct {
@@ -157,18 +158,17 @@ func TestMain(m *testing.M) {
 	os.Exit(testenv.Main(m))
 }
 
-// takeoverComponentReadyFlag asks a component helper to report, on its first
-// extra file (fd 3), that it is running its own main. Only callers that pass
-// the flag also pass the pipe, so no helper writes to an fd it does not own.
+// takeoverComponentReadyFlag asks a component helper to report, on
+// testexec.ReadyFD, that it is running its own main. Only callers that start
+// it with testexec.StartReady pass the flag, so no helper writes to an fd it
+// does not own.
 const takeoverComponentReadyFlag = "--takeover-component-ready"
 
 func signalTakeoverComponentReady() {
 	if !slices.Contains(os.Args, takeoverComponentReadyFlag) {
 		return
 	}
-	ready := os.NewFile(3, "takeover-component-ready")
-	_, _ = ready.Write([]byte("ready\n"))
-	_ = ready.Close()
+	_ = testexec.ReportReady()
 }
 
 func armingOwnerHelper(args []string) error {
@@ -200,9 +200,11 @@ func armingOwnerHelper(args []string) error {
 	held := make([]Held, 0, len(productionComponentSet))
 	for _, component := range productionComponentSet {
 		componentTag := tag + "-" + string(component) + "-1"
-		command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", componentTag)
+		command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", componentTag, takeoverComponentReadyFlag)
 		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := command.Start(); err != nil {
+		// Its tag is read from argv by whatever sweeps the published
+		// state, so it is published only once the image is running.
+		if err := testexec.StartReady(command); err != nil {
 			return err
 		}
 		componentExact, componentState, componentErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
@@ -1398,17 +1400,16 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 		"-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", takeoverComponentReadyFlag,
 		"supervise", "component", "--component", "watcher", "--tag", watcherTag, "--generation", "1", "--repo", root,
 	}
-	readyReader, readyWriter, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	componentCommand := exec.Command(os.Args[0], componentArgs...)
 	componentCommand.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	componentCommand.ExtraFiles = []*os.File{readyWriter}
-	if err := componentCommand.Start(); err != nil {
-		t.Fatal(err)
+	// On Linux, Start returns once the exec has passed its point of no
+	// return, but /proc/<pid>/cmdline stays empty until the new image has
+	// laid out its arguments. A probe inside that window reads no argv, and a
+	// census row built from it carries no tag, so the sweep (correctly) never
+	// selects it. The helper reports from its own main, after that window.
+	if err := testexec.StartReady(componentCommand); err != nil {
+		t.Fatalf("pre-publication watcher readiness: %v", err)
 	}
-	_ = readyWriter.Close()
 	componentDone := make(chan error, 1)
 	go func() { componentDone <- componentCommand.Wait() }()
 	componentWaited := false
@@ -1418,16 +1419,6 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 			<-componentDone
 		}
 	})
-	// On Linux, Start returns once the exec has passed its point of no
-	// return, but /proc/<pid>/cmdline stays empty until the new image has
-	// laid out its arguments. A probe inside that window reads no argv, and a
-	// census row built from it carries no tag, so the sweep (correctly) never
-	// selects it. The helper reports from its own main, after that window.
-	line, readErr := bufio.NewReader(readyReader).ReadString('\n')
-	_ = readyReader.Close()
-	if readErr != nil || line != "ready\n" {
-		t.Fatalf("pre-publication watcher readiness = %q, %v", line, readErr)
-	}
 	componentExact, state, err := (identity.KernelProber{}).Probe(int64(componentCommand.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("read pre-publication watcher: state=%s err=%v", state, err)
@@ -1932,9 +1923,10 @@ func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 	root := t.TempDir()
 	registryPath := isolatedArmingRegistry(t)
 	ownerTag := "metasystem-supervision-owner-test-unpublished"
-	command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", ownerTag)
+	command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", ownerTag, takeoverComponentReadyFlag)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := command.Start(); err != nil {
+	// The owner's tag is read from its argv: it starts once its image runs.
+	if err := testexec.StartReady(command); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })

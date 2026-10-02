@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -94,34 +93,26 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 // pipe and waits for the process to be reaped.
 func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	t.Helper()
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	holdRead, holdWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", "-c", `printf x >&3; read -r _ <&4`,
+	cmd := exec.Command("bash", "-c", testexec.ReadyPrologue+`read -r _`,
 		"metasystem", "util", "hold", "--tag", tag)
-	cmd.ExtraFiles = []*os.File{readyWrite, holdRead}
+	cmd.Stdin = holdRead
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	readyWrite.Close()
+	startErr := testexec.StartReady(cmd)
 	holdRead.Close()
+	if startErr != nil {
+		holdWrite.Close()
+		t.Fatalf("tagged holder did not publish readiness: %v", startErr)
+	}
 	waited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() {
 		holdWrite.Close()
 		<-waited
-		readyRead.Close()
 	})
-	ready := []byte{0}
-	if _, err := io.ReadFull(readyRead, ready); err != nil || ready[0] != 'x' {
-		t.Fatalf("tagged holder pid %d did not publish readiness: byte=%q err=%v", cmd.Process.Pid, ready, err)
-	}
 	exact, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
 	if err != nil || state != identity.Alive || !exact.ArgvKnown ||
 		!strings.Contains(strings.Join(exact.Argv, " "), tag) {
