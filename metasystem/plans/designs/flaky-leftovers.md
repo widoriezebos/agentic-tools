@@ -59,8 +59,8 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 
 | # | Site | What it waits for | Verdict |
 |---|---|---|---|
-| 1 | `testenv/process_group.go:72` `WithTimeout(15s)` | An orderly stop action returning | Bound: remove it |
-| 2 | `testenv/process_group.go:75` `WithTimeout(exitBound)` | A SIGKILLed group being reaped (`kill(-pgid,0)` returns ESRCH) | Bound: remove it |
+| 1 | `testenv/process_group.go:72` `WithTimeout(15s)` | An orderly stop action returning | Bound kept. Expiry moves on to the group kill and is not a failure. |
+| 2 | `testenv/process_group.go:75` `WithTimeout(exitBound)` | A group being reaped (`kill(-pgid,0)` returns ESRCH) | Removed for SIGKILLed groups. Kept for leaderless groups, which were never signaled. |
 | 3 | `testenv/process_group.go:179` ticker | Pace of that probe | Pacing: keep |
 | 4 | `testenv/testenv.go:348` ticker | Pace of the exit-scan probe | Pacing: keep |
 | 5 | `testenv/testenv.go:350` `time.After(bound)` | A SIGKILLed survivor exiting, after `m.Run` | Real deadline: keep |
@@ -70,40 +70,36 @@ The wall-time allowance (`internal/testenv/testdata/walltime-allowance.tsv`) lis
 
 **Why the bounds are flake sources.**
 - Bounds 1, 2 and 8 run inside `t.Cleanup` or a test body. Each fails the test when the event is merely slow: 15 s for a stop, and 10 × the custodian bound × scale (50 s by default, `testenv.go:89-118`) for a SIGKILLed exit.
-- SIGKILL cannot be refused, so the exit always comes. The only open question is when.
-- The binary's own `go test -timeout` alarm already ends a wait that never comes. It is still armed while cleanups run *(recited: Go testing internals)*.
+- SIGKILL cannot be refused, so a killed process always exits. The only open question is when.
+- A slow orderly stop is not a defect either: the group kill that follows (`process_group.go:158`) ends the group anyway.
+- No outer deadline can be relied on. The real runner passes `-timeout 0` (`internal/proofrun/test_go.go:260`), so a hung stop would never reach the kill. That is why bound #1 stays, as an escalation.
 
 **Trace: would the custodian catch what the reaper would have killed? Only partly.** (Read.)
 - The groups that `ReapFixtureProcessGroups` reaps are not written anywhere the custodian reads. Its records file is fed only by `ProcessFixture` (`testutil/fixture.go` `appendRecord`). Its tag scan (`identity/fixture_survivors.go:186-205`) matches only processes that carry a fixture tag, and those tags are opt-in (`testenv.go:142-160`).
 - The steward and cmd/metasystem callers start their groups with the plain environment: `steward/runner.go:1032-1038` and `cmd/metasystem/goal_landing_portable_test.go:272-276`. The delegation caller's launch environment was not read.
 - What the custodian does catch is live descendants. Every 250 ms poll (`fixture_custodian.go:27`) it records the owner's descendants from a process census (`:188-189`, `:291-318`), and after the owner dies it kills them (`reapDeadOwner`, `:522-539`). A group leader the test started, together with its in-tree members, is therefore caught once one poll has seen it.
 - It misses group members that were reparented out of the owner's tree, and processes born after its last poll.
-- **Conclusion:** after a `-timeout` panic, the reaper's residual group kill is not fully replaced. It has to stay reachable.
-
-**Ending a stuck wait without a load bound.** Reuse `testenv.Await`'s one accepted bound: the test binary's own deadline, read through `t.Deadline()`, minus `awaitReserve`. Await already gives up at that point "so the test's cleanups still run before go test's timeout panic" (`await.go:9-12, 38-44`).
-- A slow host never reaches that point unless the whole binary is about to time out anyway, so it is not a flake source.
-- Without `-timeout`, the wait ends only on the event.
+- **Conclusion:** the custodian does not replace the reaper's residual group kill. That kill has to stay reachable even when an orderly stop hangs.
 
 **Why #5 stays.** It runs after `m.Run` returns. The `-timeout` alarm has stopped by then *(recited)*, so nothing else would end a wait for a process stuck in the kernel. And `exitScan` has already set the failing exit code (`testenv.go:313-332`), so the bound only ends a report on a run that has already failed. It is a deadline, not a flake source.
 
 **Not in the eight.** The custodian's own bounds (`fixture_custodian.go:454, 472, 490, 597, 626`) are deadlines for an owner it can no longer observe. They run on the injected `custodianClock`, and tests drive them with a fake. They stay.
 
 **Fix (subtraction).**
-- Add one helper next to `Await` in `await.go`: `DeadlineContext(t)`. If `t` has a deadline, it returns `context.WithDeadline(deadline - awaitReserve)`; otherwise it returns `context.Background()`.
-- In `fixtureProcessGroupOps`, replace `cleanupContext` and `exitContext` with one `done context.Context`. Production passes `DeadlineContext(t)`. Delete `fixtureCleanupBound`.
-- The orderly stops, the residual SIGKILL and the exit waits keep their order (`process_group.go:117-173`). A hung stop now ends at the binary deadline as a named `t.Errorf`, and the group kill still runs after it.
-- `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown passes `DeadlineContext(f.t)`. `AwaitExactExit` takes no `t` and passes `context.Background()`; only `-timeout` ends it.
-- Delete `ProcessFixture.waitBound`, `awaitExactExitWithin` and the bound in the error text.
-- `FixtureExitWaitBound` stays, for #5 only.
+- **#1, orderly stops** (`process_group.go:117-129`): keep `cleanupContext`. When `ctx.Err() != nil` after `Run`, the stop has expired. That is no longer an error; cleanup goes on to the identity re-check and SIGKILL (`:131-160`). A `Run` error while the context is still live stays a failure.
+- **#2, the post-kill wait** (`:163-172`): a signaled group waits with `context.Background()`. A leaderless group keeps `exitContext`, because it was never killed and its exit is not guaranteed.
+- **#8, teardown:** `awaitExits(prober, refs, bound, exited)` becomes `awaitExits(ctx, prober, refs, exited)`. Teardown and `AwaitExactExit` pass `context.Background()`. Delete `ProcessFixture.waitBound`, `awaitExactExitWithin` and the bound in the error text.
+- `FixtureExitWaitBound` stays, for #2 (leaderless only) and #5.
 
 **Tests.**
 - The failure-path tests that set `waitBound = time.Millisecond` (`testutil/fixture_test.go:578, 642`) and `testFixtureContext` (`protection_test.go`) pass an already-cancelled context instead, as `TestAwaitProcessTargetGoneWaitsForTheReap` already does (`fixture_exit_test.go:113-140`).
-- *Red before:* `TestFixtureTeardownOutwaitsASlowExit` (FL-PROOF-001). The fake prober answers Alive on the first two probes and Dead from the third.
-  - **Old code** (1 ms bound): after probe 1, the select's 1 ms deadline fires before the 10 ms tick. If a stall makes both ready and the tick wins, probe 2 is still Alive, and the deadline, already ready, is then the only ready case. Either way the result is "child did not exit after 1ms": red.
-  - **New code:** the third probe returns Dead and teardown is clean.
-  - Add the same case for `ReapFixtureProcessGroups`, with a fake `wait` that returns `ctx.Err()` until its third call.
+- *Red before, #1:* `TestExpiredOrderlyStopEscalatesToTheKill`. The fake `cleanupContext` returns an already-cancelled context, and `Run` returns `ctx.Err()`. The old code reports "fixture cleanup failed"; the new code reports no error and sends exactly one SIGKILL to the group. Nothing is timed. The "fresh cleanup contexts" case (`protection_test.go:185-205`) changes the same way: the cancelled first stop is no longer an error, and the second stop still runs.
+- *Red before, #2* (`wait` is called once per group, `:166-168`). One signaled group, with a fake `wait` that returns `ctx.Err()` if its context carries a deadline and nil otherwise. The old code's bounded `exitContext` gives "fixture child outlived test"; the new code's Background gives no error. It is deterministic because the test reads the context, not a clock. This needs the production `ops` literal (`:64-77`) to become `defaultFixtureProcessGroupOps`, so the test can take it and swap only `groupID`, `signal`, `birth` and `wait`.
+- *Red before, #8* (FL-PROOF-001): `TestFixtureTeardownOutwaitsASlowExit`. The fake prober answers Alive until the recorder holds an error or the 100th probe, then Dead.
+  - Old code (1 ms bound): once the deadline has fired it stays ready, so reaching probe 100 needs the tick to win 99 selects in a row. The odds are 2^-99, and no sleeps are involved. The result is "child did not exit": red.
+  - New code: probe 100 returns Dead, and teardown is clean.
 
-**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). Lower `process_group.go` 3→1 and `testutil/fixture.go` 3→2, and rewrite their reasons as "pacing only". Raise `await.go` 2→3 for `DeadlineContext`'s `WithDeadline`, because the audit counts it (`walltime_test.go:23`). The reason reads "the binary deadline, as Await". Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
+**Audit.** The wall-time audit already fails while an allowance is higher than the calls it covers (`walltime_test.go:127`). `process_group.go` keeps 3 calls: #1 as an escalation, #2 for leaderless groups only, and the ticker. Its reason is rewritten to say so. Lower `testutil/fixture.go` 3→2, with the reason "pacing only". Rewrite the `testenv.go` reason as "deadline after m.Run; outcome already failed".
 
 ## 3. Swapped process seams in sequential tests
 
@@ -133,9 +129,10 @@ For the two configuration variables, add a two-name list to the same audit: "ass
 
 | Effect | From | To | Code |
 |---|---|---|---|
-| Starting the child | `brain_boot.go:119`, `runtime_hook_worker.go:46` (`cmd.Start()` after `PrepareChild`) | `diskstore.StartChild` | `StartChild` calls `cmd.Start()`, then closes the parent's copy. The callers' own Wait, timers and kill logic stay where they are. |
-| Freeing fork copies of the owner's lock | the 2 s `WriterDrain` re-probe (`process.go:319-335`) | `LOCK_UN` on the owner's own description at release | `closeWriter` becomes `unlockAndClose` |
-| Ending a stuck orderly stop or exit wait | `WithTimeout(15s)` / `WithTimeout(exitBound)` (`process_group.go:72, 75`) and `time.After(bound)` (`testutil/fixture.go:354`) | the test binary's deadline minus `awaitReserve` (Await's rule). After a `-timeout` panic or a crash, the custodian's descendant kill takes over (partial, see the trace). | `testenv.DeadlineContext(t)` |
+| Starting the child | the callers, after `PrepareChild` | `StartChild` in diskstore | `metasystem/cmd/metasystem/brain_boot.go:119`, `metasystem/internal/hooks/runtime_hook_worker.go:46` |
+| Freeing fork copies of the owner's lock | the 2 s re-probe | `LOCK_UN` on the owner's description at release | `metasystem/internal/diskstore/process.go:319-335`, `metasystem/internal/diskstore/process.go:400-404` |
+| Deciding that an orderly stop took too long | test failure at expiry | escalation to the existing group kill | `metasystem/internal/testenv/process_group.go:71-75` |
+| Ending the wait for a SIGKILLed exit | the exit bound | the exit itself | `metasystem/internal/testenv/process_group.go:71-75`, `metasystem/internal/testutil/fixture.go:354` |
 
 ## Step 1
 
@@ -150,5 +147,6 @@ All three parts land as one slice each, in this order: 3 (mechanical), then 2, t
 
 - **The writer lock changes from exclusive to shared.** If any reader expects the owner to hold `LOCK_EX`, it would misread the lock. All three probes (`ProbeWriterLock`, the release take, the sweeper) take an exclusive lock through a fresh description, so a shared holder still reads "held". The existing `process_test.go` and `process_d1_test.go` suites cover the sweeper and nested children.
 - **A future `ExtraFiles` launcher that bypasses `StartChild`** would start a child with no lock. The removed export makes that a compile error.
-- **Teardown waits now end only at the binary deadline.** A stuck stop is reported later, but still as a named `t.Errorf`, and the residual group kill still runs. The red-before tests prove that a slow event no longer fails the test. A cleanup that itself outlasts `awaitReserve` still ends in the panic, with the custodian's partial cover described in the trace.
+- **An expired orderly stop is now silent.** Records that a stop would have cleaned may stay behind; the group itself is still killed. A stop that is always slow shows up as a slow test, not a red one.
+- **Post-kill waits have no bound.** A killed process stuck in the kernel would hang the binary (there is no `-timeout`). SIGKILL makes that a kernel defect, not a test flake.
 - **Seam conversion touches about 60 test sites.** The packages' own tests and their reverse dependents are the gate.
