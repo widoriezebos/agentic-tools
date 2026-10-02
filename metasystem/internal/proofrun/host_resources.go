@@ -287,7 +287,7 @@ func tryHostFile(path string) (*os.File, bool, error) {
 		return nil, false, err
 	}
 	if err := validateHostLockFile(path, file); err != nil {
-		file.Close()
+		releaseScratchLock(file)
 		return nil, false, err
 	}
 	return file, true, nil

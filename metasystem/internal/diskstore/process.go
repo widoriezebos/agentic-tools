@@ -470,7 +470,9 @@ func newProcessScratch(tempRoot string, registry Registry, entropy io.Reader) (*
 		return nil, errors.Join(fmt.Errorf("process scratch writer lock: %w", err), writer.Close())
 	}
 	if record, err = registry.Accept(record.ID); err != nil {
-		return nil, errors.Join(err, writer.Close())
+		// No child holds the description yet: unlock it, so a fork copy
+		// cannot keep the root from the sweeper's process proof.
+		return nil, errors.Join(err, unlockAndClose(writer))
 	}
 	return &processScratch{registry: registry, record: record, writer: writer}, nil
 }
@@ -667,7 +669,8 @@ func releaseScratchRoot(ctx context.Context, critical *Critical, by string, drai
 		return pending("its writer lock is unreadable: " + err.Error())
 	}
 	if writer != nil {
-		defer writer.Close()
+		// A fresh description of this process's own: unlock it before close.
+		defer unlockAndClose(writer)
 		if err := drain.takeWriterLock(writer); err != nil {
 			if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 				return Verdict{Decision: Keep, Reason: "a process it started still holds its writer lock", Command: "metasystem disk clean, once that process has ended"}

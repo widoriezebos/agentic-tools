@@ -111,7 +111,9 @@ func ProbeMaintenance(stateRoot string) (free bool, err error) {
 	if err != nil {
 		return false, fmt.Errorf("cannot open call store maintenance lock: %w", err)
 	}
-	defer file.Close()
+	// Unlock before close: a sibling's fork copy would otherwise keep the
+	// probe's shared hold after this returned "free".
+	defer func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }()
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
 			return false, nil
