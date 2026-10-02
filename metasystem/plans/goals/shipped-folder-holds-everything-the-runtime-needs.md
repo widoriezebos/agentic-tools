@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Inventory every reference from engine code and agent-facing texts that resolves outside the shipped set or ambiguously; classify each as shipped, project state or misplaced; then design the moves and the audit
 - OpenedAt: 2026-10-02T14:15:33Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T14:15:40Z revision=2 opid=7T6AP97VFEYF1VTADH9SQPA2EJ-m1e-9c612d71 authority=proven digest=7daeea5c97b701d823c82669080281a567641cf9b160cb8240701e1914d1d562 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-10-02T14:15:33Z 57S6AMPSN96W61BQX4VJRFA2PC-m1e-9c612d71 open actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs
 - 2026-10-02T14:15:40Z 7T6AP97VFEYF1VTADH9SQPA2EJ-m1e-9c612d71 approve actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs
-Integrity: sha256=1afdabf5cedafa4316ebbc69d32d0745c2fbc726bcb15bd8ea61a59c5b86571a
+- 2026-10-02T14:15:47Z 4KGRZ0BZE0WFYC107QNDX6A3TE-m1e-9c612d71 set-pin actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs
+Integrity: sha256=1dd6094efa32f7b5328d94ec43ceb92effc1ce6b13562e9db3c75d89f9ff91e9
