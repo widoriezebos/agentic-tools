@@ -194,22 +194,18 @@ func waitForFixtureProcessTarget(ctx context.Context, target int) error {
 	}
 }
 
-// AwaitProcessTargetGone waits, within the fixture exit bound, until
-// kill(target, 0) reports ESRCH: the process (target > 0), or every member of
-// the process group (target < 0), has exited and been reaped. A process
-// another process kills ends in stages (its files close, it exits, its
-// parent or init reaps it), so a test that saw an earlier stage (a pipe's
-// EOF, a lock freed, a drain that counts zombies as gone) waits here for the
-// last one before it asserts the target is gone, and never reads it once.
+// AwaitProcessTargetGone waits until kill(target, 0) reports ESRCH: the
+// process (target > 0), or every member of the process group (target < 0),
+// has exited and been reaped. A process another process kills ends in
+// stages (its files close, it exits, its parent or init reaps it), so a test
+// that saw an earlier stage (a pipe's EOF, a lock freed, a drain that counts
+// zombies as gone) waits here for the last one before it asserts the target
+// is gone, and never reads it once. The wait ends on that fact, never on a
+// clock: only the test binary's deadline ends a wait for a reap that never
+// comes (as testenv.Await).
 func AwaitProcessTargetGone(target int) error {
-	bound, err := FixtureExitWaitBound()
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), bound)
-	defer cancel()
-	if err := waitForFixtureProcessTarget(ctx, target); err != nil {
-		return fmt.Errorf("process target %d is still present after %s: %w", target, bound, err)
+	if err := waitForFixtureProcessTarget(context.Background(), target); err != nil {
+		return fmt.Errorf("process target %d: %w", target, err)
 	}
 	return nil
 }

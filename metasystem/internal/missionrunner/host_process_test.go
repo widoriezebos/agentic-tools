@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -166,29 +165,19 @@ func TestHostStartVerifiedMatrix(t *testing.T) {
 // it, and nothing outside the table is ever counted.
 func TestGroupHasSubstantiveMemberReadsOnlyItsTable(t *testing.T) {
 	t.Parallel()
-	member := exec.Command("cat")
+	member := exec.Command("/bin/sh", "-c", testexec.ReadyPrologue+"read -r _")
 	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, err := member.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := member.Start(); err != nil {
+	if err := testexec.StartReady(member); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stdin.Close(); _ = member.Wait() })
 	pid := member.Process.Pid
-	// The member's argv is published once its exec has completed, which a
-	// probe proves; it is awaited on the probe, never on a clock.
-	for {
-		exact, state, err := (identity.KernelProber{}).Probe(int64(pid))
-		if err == nil && state == identity.Alive && exact.ArgvKnown {
-			break
-		}
-		if t.Context().Err() != nil {
-			t.Fatal("the member's argv never became readable")
-		}
-		runtime.Gosched()
-	}
+	// StartReady returns once the member's own image runs, so its argv is
+	// published: no wait for it to become readable.
 	if !groupHasSubstantiveMember(identity.ListedProcessTable{int64(pid)}, pid) {
 		t.Fatal("a live member in the table is not substantive")
 	}

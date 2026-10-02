@@ -810,10 +810,10 @@ func TestTestRunScratchLauncherCrashWaitsForDrainThenRecovers(t *testing.T) {
 	workload := f.workloadPID()
 	// Recovery goes through the standing reconciliation entry, which
 	// settles the orphaned attempt first and then its scratch root.
+	if err := testenv.AwaitProcessTargetGone(workload); err != nil {
+		t.Fatal(err)
+	}
 	testenv.Await(t, "drained root "+run+" to be recovered", func() bool {
-		if err := unix.Kill(workload, 0); !errors.Is(err, unix.ESRCH) {
-			return false
-		}
 		outcomes, err := proofrun.ReconcileAttempts(f.control, proofrun.ReconcileOptions{})
 		if err != nil {
 			t.Fatal(err)
