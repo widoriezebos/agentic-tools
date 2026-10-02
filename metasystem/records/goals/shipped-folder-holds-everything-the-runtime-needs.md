@@ -1,6 +1,6 @@
 # shipped-folder-holds-everything-the-runtime-needs
 
-- State: approved
+- State: abandoned
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="An adopted repo breaks at runtime when a dependency is missing (severity 2); moving files and adding an audit (novelty 1); every adopter (exposure 3); every agent turn reads these files (accumulation 2)"
@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Inventory every reference from engine code and agent-facing texts that resolves outside the shipped set or ambiguously; classify each as shipped, project state or misplaced; then design the moves and the audit
 - OpenedAt: 2026-10-02T14:15:33Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T14:15:40Z revision=2 opid=7T6AP97VFEYF1VTADH9SQPA2EJ-m1e-9c612d71 authority=proven digest=7daeea5c97b701d823c82669080281a567641cf9b160cb8240701e1914d1d562 episode=2
+- Abandoned: by=human:Wido at=2026-10-02T14:27:43Z revision=6 opid=VKP47RTJAJ95G8GZRB38JYSENM-m1e-9c612d71 carried=one-folder-deployed-and-evolved because=Superseded by one-folder-deployed-and-evolved, which carries Wido's 2026-10-02 rulings (one folder; deployed vs evolved) and its design
 
 History:
 - 2026-10-02T14:15:33Z 57S6AMPSN96W61BQX4VJRFA2PC-m1e-9c612d71 open actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs
@@ -21,4 +22,5 @@ History:
 - 2026-10-02T14:15:47Z 4KGRZ0BZE0WFYC107QNDX6A3TE-m1e-9c612d71 set-pin actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs
 - 2026-10-02T14:15:53Z TRH5GDM36YYMTV93K14G425KTH-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,shipped-folder-holds-everything-the-runtime-needs,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order subject=shipped-folder-holds-everything-the-runtime-needs from=unranked to=1:5 requested-sequence=5
 - 2026-10-02T14:27:37Z 9C5K9E6BZE82WXNRWF4YMENF2S-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,shipped-folder-holds-everything-the-runtime-needs,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order subject=one-folder-deployed-and-evolved from=1:5 to=1:6 requested-sequence=5
-Integrity: sha256=8f921697016b392527838e9ac56cec753829b2138d823472c6f621b60a67e63c
+- 2026-10-02T14:27:43Z VKP47RTJAJ95G8GZRB38JYSENM-m1e-9c612d71 abandon actor=human:Wido targets=shipped-folder-holds-everything-the-runtime-needs,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,design-rounds-read-less-and-repeat-less,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,seat-successor-continues-a-handoff-without-a-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers carried=one-folder-deployed-and-evolved reason=Superseded by one-folder-deployed-and-evolved, which carries Wido's 2026-10-02 rulings (one folder; deployed vs evolved) and its design
+Integrity: sha256=67d669efd118687a6f02ea02b4bd1db05628967aab4b6e4b0211f798ec8a6db7
