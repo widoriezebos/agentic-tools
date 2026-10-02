@@ -34,9 +34,7 @@ novelty derive the tier; exposure and accumulation weight its proof.
 
 Programs START with `metasystem goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `metasystem goal list --ready`, one line every runtime has, hooks or none; a free seat runs `metasystem goal claim`, taking only that ready goal. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins, claim again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through goal actions; a person publishes reviewed manual edits through `metasystem goal sync --publish --goal G --by NAME`.
 
-When the one obvious step fails, `metasystem question ask` (refusal line 1, what you tried, the decision), `question wait` in the background; don't fight it (docs/working-with-agents.md).
-
-A headless seat session (started by the steward, nobody at the terminal) ends when its turn ends, and its background jobs die with it: never end a turn to wait for a job, critique, test run or answer; wait inside the turn with `metasystem work wait` or `question wait` (bounded by --timeout) and carry on.
+When the one obvious step fails, `metasystem question ask` (refusal line 1, what you tried, the decision), then wait inside the turn; don't fight it (docs/working-with-agents.md). A headless seat ends with its turn: wait with `metasystem work wait` or `question wait` (--timeout).
 
 For every governed Stop, blocked or allowed, run and read the exact printed `metasystem session status --id ...` command before ending the turn or acting again; follow its seat action within existing authority. If unavailable, preserve any established block, report the read failure, and recover current work through `goal list --ready`; never infer no work remains.
 
