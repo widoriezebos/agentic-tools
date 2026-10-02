@@ -82,15 +82,16 @@ func groupAlive(pgid int) bool {
 // and a zombie shell awaiting its parent's reap. A zombie-only group is
 // finished work: SIGKILL can do no more to it, and holding the wind-down
 // open for the parent's reaping debt reads as a leak that is not one
-// (the VM sweep's Linux finding: zombies keep the pgid signalable).
-func groupHasSubstantiveMember(pgid int) bool {
-	pids, err := identity.AllPids()
+// (the VM sweep's Linux finding: zombies keep the pgid signalable). The
+// members are table's.
+func groupHasSubstantiveMember(table identity.ProcessTable, pgid int) bool {
+	pids, err := table.Pids()
 	if err != nil {
 		return true // unknown: stay conservative, keep waiting
 	}
 	for _, pid := range pids {
-		memberGroup, err := unix.Getpgid(int(pid))
-		if err != nil || memberGroup != pgid {
+		memberGroup, err := table.Group(pid)
+		if err != nil || memberGroup != int64(pgid) {
 			continue
 		}
 		exact, state, err := identity.KernelProber{}.Probe(pid)

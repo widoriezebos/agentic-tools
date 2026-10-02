@@ -149,7 +149,8 @@ type windDownSeam struct {
 
 var windDown = windDownSeam{
 	now: time.Now, sleep: time.Sleep, groupAlive: groupAlive,
-	groupHasSubstantiveMember: groupHasSubstantiveMember, groupOwnership: groupOwnership,
+	groupHasSubstantiveMember: func(pgid int) bool { return groupHasSubstantiveMember(identity.KernelProcessTable{}, pgid) },
+	groupOwnership:            groupOwnership,
 }
 
 // killThroughFloor is the minimum post-SIGKILL observation window.
