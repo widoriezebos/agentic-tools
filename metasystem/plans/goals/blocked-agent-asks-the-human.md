@@ -1,6 +1,6 @@
 # blocked-agent-asks-the-human
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Decides whether unattended agents stop safely and get unblocked (severity 2); builds on existing question and channel verbs (novelty 1); every seat and the lane (exposure 2); every block of every run (accumulation 2)"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Inventory what question ask/answer/wait, the Telegram channel, the UI and the peer-message bridge already do; design step 1; critique; build
 - OpenedAt: 2026-10-02T12:24:05Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T12:29:42Z revision=7 opid=YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 authority=proven digest=48b04d7686eaa4569893a5283340bb53ebc04468b30b581531164cc89416a033 episode=7
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-02T12:49:53Z revision=9 accountingRevision=9 episodeAt=2026-10-02T12:49:53Z episodeRevision=9
+- StopCapability: generation=9 revision=9 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-02T12:24:05Z FV4HRFVE842X06TWH326PZXQHJ-m1e-9c612d71 open actor=human:Wido targets=blocked-agent-asks-the-human
@@ -24,4 +26,5 @@ History:
 - 2026-10-02T12:29:37Z EXXWF9H3V2NVPYGB2DDCK8Q4VD-m1e-9c612d71 edit actor=human:Wido targets=blocked-agent-asks-the-human
 - 2026-10-02T12:29:42Z YG7J36XV18ENV1D8TR55CX9E9A-m1e-9c612d71 approve actor=human:Wido targets=blocked-agent-asks-the-human
 - 2026-10-02T12:49:24Z EQFW4CYPEQWW7Z9Z92KDJGB0YP-m1e-f456f182 done actor=human:Wido targets=blocked-agent-asks-the-human,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,flaky-leftovers,fleet-doctor-repairs-what-stops-other-seats,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:2 to=1:1
-Integrity: sha256=58fa2e8ced4a1bae15d0056e448d897a8b9f5a58af2842dc77941df277cd20c3
+- 2026-10-02T12:49:53Z CK8M6D52004EHDQZ2JV69KEKWR-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=blocked-agent-asks-the-human
+Integrity: sha256=7821f844b6988a8e1fc9198f5b6521602565879abeb147f7a294cd26f836aa5b
