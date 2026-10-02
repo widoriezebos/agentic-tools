@@ -352,3 +352,30 @@ func TestLandingPathOwnersPostTheLandedLine(t *testing.T) {
 		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
 	}
 }
+
+// A goal that landed one slice and hands in its next without --delivered
+// does not repost the landed slice's sentence: only a returned hand-in's
+// sentence carries over.
+func TestNextSliceWithoutSentencePostsNothing(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
+	dir, _ := commandFakeBed(t)
+	appendChannelConf(t, bed.installation, dir)
+	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
+	bed.proveAndPush(t)
+	seat := filepath.Join(filepath.Dir(bed.checkout), "seat-goal-a")
+	bed.git(t, seat, "fetch", "--quiet", "origin")
+	bed.git(t, seat, "merge", "--quiet", "--no-edit", "origin/main")
+	bed.git(t, seat, "commit", "--quiet", "--allow-empty", "-m", "the next slice")
+	bed.git(t, seat, "push", "--quiet", "origin", "goal/goal-a")
+	next := bed.git(t, seat, "rev-parse", "HEAD")
+	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: next, Seat: "seat-goal-a", At: "2026-10-02T22:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	bed.merge(t, next)
+	bed.proveAndPush(t)
+	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
+		t.Fatalf("posts = %q; want only the first slice's [%q]", got, sentenceA)
+	}
+}

@@ -221,12 +221,14 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 			}
 		}
 		if line.Delivered == "" {
-			// A goal handed in again (after a return) without a sentence
-			// keeps the latest one it was handed in with; a new one
-			// replaces it.
+			// A goal handed in again after a return, without a sentence,
+			// keeps the returned line's; a landed or waiting line's
+			// sentence was for other work. A new sentence replaces it.
 			for index := len(entries) - 1; index >= 0; index-- {
-				if entries[index].Goal == line.Goal && entries[index].Delivered != "" {
-					line.Delivered = entries[index].Delivered
+				if entries[index].Goal == line.Goal {
+					if entries[index].State == StateReturned {
+						line.Delivered = entries[index].Delivered
+					}
 					break
 				}
 			}
