@@ -44,7 +44,7 @@ They run `metasystem system adopt` in their repository. Afterwards the visible t
 
 # Part 2: Design
 
-This page folds three critique rounds (Codex Astra: 10, 4, then 2 material findings). R1-05 and R1-06 are answered by deferring this repository's move to step 2. The root-mixing class (R2-02 to R2-04, R3-02) is answered by giving the two roots distinct Go types, so the compiler finds every crossing. Everything else, including R3-01, is in step 1.
+Nothing in Part 2 is built yet: every section describes work for step 1 or later, and the code citations name today's code that the work changes. The page folds four critique rounds (Codex Astra: 10, 4, 2, then 3 material findings). R1-05 and R1-06 are answered by deferring this repository's move to step 2. The root-mixing class (R2-02 to R2-04, R3-02) is answered by giving the two roots distinct Go types, so the compiler finds every crossing. Everything else, including R3-01 and round 4, is in step 1.
 
 ## Threat model and rabbit-hole risks (read before critiquing)
 
@@ -100,7 +100,7 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 ## Two root types: the compiler enforces the boundary
 
-**Types.** `stateroot` defines `type Installation string` and `type State string`. Only the resolver's constructors produce them: the installation owners above return `Installation`, and `RootForInstallation` returns `State`. Configuration readers, `ledgerfence.Ensure`, hooks and runtime discovery take `Installation`. The goal store, registers, records, the covenant check, the contract readers and landing take `State`. Structs such as `lifecycle.Roots`, `processScope` and `adapter.ToolGateOptions` carry typed fields. A crossing like `Installation: stateRoot` (`metasystem/cmd/metasystem/adapter_runtime_verbs.go:62`) is then a compile error.
+**Types.** A new leaf package, `internal/roots`, defines `type Installation string` and `type State string`, with `ParseInstallation`, `ParseState` and `Path`. It imports nothing from the engine, so both `config` and `stateroot` can import it; `stateroot` already imports `config` (`metasystem/internal/stateroot/stateroot.go:9`), so the types cannot live there (R4-01). `stateroot` re-exports them as aliases and keeps all resolution; `config` keeps its one parser. Only the resolver's constructors produce root values: the installation owners above return `Installation`, and `RootForInstallation` returns `State`. Configuration readers, `ledgerfence.Ensure`, hooks and runtime discovery take `Installation`. The goal store, registers, records, the covenant check, the contract readers and landing take `State`. Structs such as `lifecycle.Roots`, `processScope` and `adapter.ToolGateOptions` carry typed fields. A crossing like `Installation: stateRoot` (`metasystem/cmd/metasystem/adapter_runtime_verbs.go:62`) is then a compile error.
 
 **The build's first act** converts the signatures, and the compiler then lists every site to fix. Examples known now, not a complete list: fence enrollment given the state root (`metasystem/cmd/metasystem/intent_operations.go:372`), any directory named `metasystem` taken as the state root (`metasystem/internal/goal/project.go:333`), the covenant search skipping the state root (`metasystem/cmd/metasystem/intent_process.go:1779`), and the tool hook above.
 
@@ -114,7 +114,7 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 - **B1, payload:** in `metasystem audit` (`metasystem/internal/audit/metasystem.go:74`). The staged payload holds nothing under `project/`, `local/`, `artifacts/` or `bin/`, and no `launch.json`, `testing.json` or `*.local` file.
 - **B2, shape:** an end-to-end adoption test in the static selection, not the production audit, because adoption calls that audit (`metasystem/internal/adopt/adopt.go:444-453`). The top level changes only by `metasystem/`, the pointer files and the registrations. After a goal-and-design round, `git status` shows changes only under `metasystem/project/`.
-- **B3, citations:** every backticked path in a shipped agent text starts with `metasystem/`, and either exists in the shipped tree or is in the seed list for `metasystem/project/`. This replaces the hardcoded list of 32 paths (`metasystem/internal/audit/shipped_installation_test.go:109`).
+- **B3, citations:** B3 checks only citations into the installation or project trees. That is a backticked path whose first segment is a top-level name in the installation, or `plans`, `memory` or `records`. Each one must start with `metasystem/`, and either exist in the shipped tree or be in the seed list for `metasystem/project/`. Generated destinations are accepted as written, such as `.claude/agents/design-critique.md`; they are taken from the existing runtime registry (`metasystem/internal/runtimes/registration.go:59`), not from a second list (R4-02). This replaces the hardcoded list of 32 paths (`metasystem/internal/audit/shipped_installation_test.go:109`).
 
 ## The upgrade rule
 
@@ -140,7 +140,7 @@ This repository keeps its current shape until step 2, when it takes exactly this
 ## Citing files from any working directory
 
 - **One base for agent-facing texts:** the repository root of the checkout or worktree. MetaSystem's files are cited as `metasystem/...`, the application's as `metasystem/project/...`. This matches Git paths, the return schemas and the testing contract.
-- **Rewritten token by token:** the bare paths in `AGENTS.md`, `wow.md`, the role files, the brief templates and every shipped `SKILL.md` (including where inception writes the covenant), and the `R0/metasystem` base in `design-common.md`. The base sentence opens `metasystem/AGENTS.md` and `metasystem/wow.md`. The three dangling design-critique citations become prose.
+- **Rewritten token by token:** the bare paths in `AGENTS.md`, `wow.md`, the role files, the brief templates and every shipped `SKILL.md` (including where inception writes the covenant), and the `R0/metasystem` base in `design-common.md`. The same change rewrites the production audit's required marker `internal/runtimes` to `metasystem/internal/runtimes` (`metasystem/internal/audit/metasystem.go:449-452`), so the existing adoption audit keeps passing (R4-03). The base sentence opens `metasystem/AGENTS.md` and `metasystem/wow.md`. The three dangling design-critique citations become prose.
 - Until step 2, this repository's template-only pointer line says: "Until this repository's move, `metasystem/project/X` is at `metasystem/X`."
 
 ## Moved effects
@@ -160,6 +160,7 @@ This repository keeps its current shape until step 2, when it takes exactly this
 | Building and running the engine in CI | root `go.mod`, root `bin/metasystem` | `metasystem/go.mod`, `metasystem/bin/metasystem` | `metasystem/internal/adopt/github-actions-metasystem.yml:13-21` |
 | Writing the root pointer files | template only | every installation | `metasystem/internal/hostsetup/setup.go:131` |
 | Classifying what an upgrade may replace | prefix rule plus root inventory | `project/` app-owned, rest generic | `metasystem/internal/stateroot/owner.go:96-160` |
+| Requiring the runtime-pointer marker | exact `internal/runtimes` | `metasystem/internal/runtimes` | `metasystem/internal/audit/metasystem.go:449-452` |
 | Running the shape check | the production audit, as drafted | end-to-end adoption test | `metasystem/internal/adopt/adopt.go:444-453` |
 | Stating where an adopter's designs live | the application's root `plans/designs/` | `metasystem/project/plans/designs/` | `metasystem/docs/design/design-obligation-gate.md:34` |
 
@@ -170,7 +171,7 @@ This repository keeps its current shape until step 2, when it takes exactly this
 3. **Types and B5.** A cast outside `stateroot` and a literal `metasystem/plans` are each refused. `ParseState` refuses a path without the state shape.
 4. **Separated-root fixtures.** On a fresh adopter, a receipt-only landing succeeds and a receipt rewrite refuses. The tool hook applies non-default context thresholds from `metasystem.conf`.
 5. **Adoption end to end (B2).** Adopt into a target that already has `go.mod`, `cmd/`, `docs/`, and populated `AGENTS.md` and `CLAUDE.md`, and use the configuration adoption produces. Then run, in order: `goal sync --upgrade`; `goal open`; `goal budget G norm` with a non-default tier budget; Stop with populated goals; `system check` with a covenant written as inception directs; `settings check` and test selection against a completed `project/testing.json`; `app` against `project/launch.json`; the Application page with populated known issues; `design list` and `receipt add` from the application root, from `metasystem/` and from a subdirectory; and the workflow's three commands. Every state read and write lands under `metasystem/project/`, and the application's text in the pointer files survives.
-6. **B1 and B3.** A payload containing `launch.json`, and a text with a bare `docs/x.md`, are each refused. The shipped tree passes.
+6. **B1 and B3.** A payload containing `launch.json`, and a text with a bare `docs/x.md`, are each refused. A registry destination such as `.claude/agents/design-critique.md` passes. The shipped tree passes the existing adoption audit.
 
 ## Step 1
 
@@ -187,8 +188,7 @@ Two prerequisites must be specified and proven before step 2 lands:
 
 - **R1-05:** an identity-preserving transition of the accepted goal-ledger ref to the moved tree. The next normal fetch must validate after it (`metasystem/internal/goal/fetchadvance.go:100-129`).
 - **R1-06:** the record and ledger landing classifications, and their carriage path comparisons, move with the files (`metasystem/internal/pathclass/path-classes.txt:28-42`, `metasystem/internal/landing/observe.go:1074-1124`). A receipt-only landing is exercised after the move.
-
-Parity: `goal list`, `design list` and `receipt status` give the same counts before and after the move.
+- **Parity:** `goal list`, `design list` and `receipt status` give the same counts before and after the move.
 
 | Item | Builds on |
 |---|---|
