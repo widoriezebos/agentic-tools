@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -61,10 +63,13 @@ type landingAgent struct {
 	settings func(stateRoot string) (launch.Settings, error)
 	now      func() time.Time
 	nonce    func() (string, error)
+	// machine names this computer as the lane installation's goal ledger
+	// knows it: the machine a lane question records.
+	machine func(stateRoot string) (string, error)
 }
 
 func newLandingAgent() landingAgent {
-	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce}
+	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce, machine: goal.ResolveMachine}
 }
 
 func landingNonce() (string, error) {
@@ -173,12 +178,40 @@ func (a landingAgent) reapOutage(id string) error {
 	return err
 }
 
+// questionHold holds the start while a question about the lane asked on
+// this computer is open: the agent that asked ended its turn to wait for
+// the person, and the next one reads the answer with question show. A lane
+// question from another computer holds nothing here.
+func (a landingAgent) questionHold(root string) (string, error) {
+	module := batch.ModuleRoot(root)
+	open, _ := channel.WalkOpenQuestions(module)
+	var lane []channel.Question
+	for _, q := range open {
+		if q.Goal == "" && q.About == "lane" {
+			lane = append(lane, q)
+		}
+	}
+	if len(lane) == 0 {
+		return "", nil
+	}
+	machine, err := a.machine(module)
+	if err != nil {
+		return "", fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
+	}
+	for _, q := range lane {
+		if q.Machine == machine {
+			return fmt.Sprintf("the landing agent asked a person about the lane (question %s) and waits for the answer; it starts again once the question is answered or withdrawn\nrun: metasystem question show channel:%s", q.ID, q.ID), nil
+		}
+	}
+	return "", nil
+}
+
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
 // of self (simple lane §1, rail 2): it starts the agent when the plain
 // lane's queue holds work (queued, proof-finished), the lane is not paused
-// and none is alive. Its holds are a proof that runs and a standing
-// provider outage at the lane installation, and each ended launch is
-// reaped for its outage.
+// and none is alive. Its holds are a proof that runs, a standing provider
+// outage at the lane installation and an open question the landing agent
+// asked about the lane, and each ended launch is reaped for its outage.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
 		Holds: []func(string) (string, error){
@@ -189,6 +222,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				}
 				return "", nil
 			},
+			agent.questionHold,
 		},
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
