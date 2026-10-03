@@ -285,7 +285,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	data["published"] = subject.Published
 	args := []string{"--root", install, "--goal", goalID, "--unit", subject.Commit}
 	if review.BuildBrief != "" {
-		args = append(args, "--brief", review.BuildBrief)
+		// The work's own brief starts its read; a read the commit form
+		// already started for this build is joined.
+		args = append(args, "--brief", review.BuildBrief, "--join")
 	}
 	if inv.input.has("model") {
 		args = append(args, "--model", inv.input.text("model"))
@@ -471,6 +473,8 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			if inv.reviewWork == nil && inv.input.has("dispositions") {
 				// An explicitly named commit's review closes with the author's
 				// decisions through the whole close owner, then collects below.
+				// A work's newest attempt records the examination first.
+				inv.commitExamination(store, goalID, unit, result.RootJob)
 				closer := *inv
 				closer.layout.InstallationRoot = store
 				closed := closer.closeChain(result.RootJob)
@@ -486,6 +490,21 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				if !clean {
 					waiting.next = append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")
 					waiting.nextReason = "FILE decides every finding of " + result.RootJob
+					// The decisions template names the findings, as the work
+					// form's does, bound to the work when the commit is a
+					// work's newest attempt.
+					if binding, findings, template, ok := inv.commitExamination(store, goalID, unit, result.RootJob); ok && len(findings) > 0 {
+						if _, err := os.Stat(template); err != nil {
+							err = os.WriteFile(template, []byte(decisionsDocument(binding, findings)), 0o600)
+							ok = err == nil
+						}
+						if ok {
+							waiting.nextReason = "FILE decides every finding of " + result.RootJob + "; start from " + template
+							if data, _ := waiting.Data.(map[string]any); data != nil {
+								data["template"] = template
+							}
+						}
+					}
 					return *waiting
 				}
 				// A completed examination with no findings has nothing to
@@ -562,6 +581,73 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 // newest round completed with a readable return and no findings, retained
 // beside that return as the build review retains it. Any other round (still
 // running, failed, malformed or with findings) is not clean.
+// workOfCommit is the named work of goal goalID whose newest attempt is
+// commit, if any: a commit-form review of that commit examines the work.
+func (inv *intentInvocation) workOfCommit(goalID, commit string) *launch.NamedWork {
+	worktree, problem := inv.goalWorktree(goalID)
+	if problem != nil {
+		return nil
+	}
+	works, err := inv.unitRunner().NamedWork(worktree, goalID)
+	if err != nil {
+		return nil
+	}
+	for _, work := range works {
+		if work.Record == nil || work.Running() || len(work.Record.Rounds) == 0 {
+			continue
+		}
+		newest := work.Record.Rounds[len(work.Record.Rounds)-1].Number
+		for _, subject := range work.Record.Subjects {
+			if subject.Round == newest && subject.Commit == commit {
+				found := work
+				return &found
+			}
+		}
+	}
+	return nil
+}
+
+// commitExamination is commit-form examination rootJob of commit, once it
+// completed, as the binding of its decisions, its findings and the path of
+// its decisions template. When the commit is a named work's newest attempt,
+// the examination is recorded with that attempt, as the work form records
+// it, so the work's revise binds to it, and the binding names the work.
+func (inv *intentInvocation) commitExamination(store, goalID, commit, rootJob string) (reviewBinding, []intentFinding, string, bool) {
+	newest, err := inv.newestRoundAt(store, rootJob)
+	if err != nil || recordText(newest, "status") != "completed" {
+		return reviewBinding{}, nil, "", false
+	}
+	round := recordRound(newest)
+	returnPath := inv.returnPathAt(store, rootJob, round)
+	digest, _, readErr := reviewReturnDigest(returnPath)
+	findings, _, parseErr := readIntentFindings(returnPath)
+	if readErr != nil || parseErr != nil {
+		return reviewBinding{}, nil, "", false
+	}
+	binding := reviewBinding{Goal: goalID, Subject: commit, Examination: rootJob, Round: round, Return: digest}
+	if full, err := goalBranchGit(store, "rev-parse", "--verify", commit+"^{commit}"); err == nil {
+		if work := inv.workOfCommit(goalID, full); work != nil {
+			// A subject that can't be recorded leaves the binding to the
+			// commit alone; the work's revise then names what it lacks.
+			_ = inv.unitRunner().ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+				if review.Subject == nil || review.Subject.Commit != full {
+					return nil
+				}
+				if review.Subject.Examination != rootJob || review.Subject.ExaminationRound != round {
+					subject := *review.Subject
+					subject.Examination, subject.ExaminationRound = rootJob, round
+					if err := retain(subject); err != nil {
+						return err
+					}
+				}
+				binding.Work, binding.Attempt, binding.Subject = work.Unit, review.Round.Number, full
+				return nil
+			})
+		}
+	}
+	return binding, findings, filepath.Join(filepath.Dir(returnPath), "decisions.md"), true
+}
+
 func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob string) (string, bool) {
 	newest, err := inv.newestRoundAt(root, rootJob)
 	if err != nil || recordText(newest, "status") != "completed" {

@@ -31,6 +31,9 @@ type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	Collect                                                  bool
+	// Join has BriefPath start a read only: a read of this build already
+	// started (by the other review form, under its own brief) is joined.
+	Join bool
 	// Selected is the installation that asked for the read (the seat's
 	// checkout) when it is not Repo. A file the brief cites that the
 	// critic's tree lacks is frozen from it, or from Repo, into Repo.
@@ -553,6 +556,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	supplied, inputSHA256, err := branchReadInput(request.BriefPath)
 	if err != nil {
 		return result, err
+	}
+	if request.Join && record.RootJob != "" {
+		// A read is of one build: the request joins the one already started
+		// and its brief starts nothing.
+		supplied, inputSHA256 = nil, ""
 	}
 	if record.DispatchPending && record.RootJob == "" {
 		// An earlier dispatch never reported back. The job records say
