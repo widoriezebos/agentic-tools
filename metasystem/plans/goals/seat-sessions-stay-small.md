@@ -1,0 +1,16 @@
+# seat-sessions-stay-small
+
+- State: queued
+- Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A handoff that loses state loses work or a decision on every seat; the context budget and the successor machinery exist, the threshold policy and the proof of nothing-lost are new; it runs on every seat all day"
+- Tier: 3
+- Intent: A seat session's cost is bounded by how much it has to say, not by how long it has been running: a seat hands its work over to a fresh session of itself at a context threshold, with a note that carries everything the successor needs, and the machinery (not the person) decides the moment, so no detection, no review and no supervision is lost. Measured 2026-10-03 (all seats, 00:00-19:00): 2.86 billion tokens, of which about 80% are seat sessions re-reading their own cached context (500 to 1,800 model calls per seat per day, each re-reading 200-300 K tokens); all critic rounds together about 14%; all generated text 0.2%. The engine's context budget exists (trigger 105 K, proof line 150 K, ceiling 250 K; session handoff) but is switched off on every seat since 2026-09-20 ('no context cap anywhere'), and Wido ordered compaction back on 2026-09-29. Wido 2026-10-03: 'yes, immediately. But make sure to get it critiqued by machinery; need to get this right. Is at the heart of the system ... pure optimization without any functional change'.
+- Origin: human
+- Next step: Design first, tier 3, Astra critique to convergence under the stop rule; nothing functional may change: every signal, review, wait and decision a seat makes today is made the same way after the handoff. Part 1: measure per seat today the model calls, the cached tokens per call and the tokens per landed unit (the spend ledger has the rows), and find what makes the calls: polling loops, re-reading records, long briefs, the tool-call pattern of each role. Part 2: the handoff at a threshold: what the note carries (claim, work items, open questions, the last tool results that matter, the brief), who writes it (the session, prompted by the engine's context budget), how the successor starts (the steward's seat start with the note as its brief, the claim kept), and the proof that nothing is lost (a successor that cannot name its goal, work item and next act from the note alone fails the test). Part 3: the cheaper patterns that need no handoff: a bounded wait verb instead of a sleep loop, reading a record once, briefs that cite instead of copy. Part 4: switch the context budget back on per seat with the threshold from Part 1, one seat first, measured before and after; then all. Owners consumed: every-launched-agent-waits-inside-its-turn (the wait rule), seat-successor machinery as it exists, steward-acts-on-behaviour-patterns (the steward starts the successor). Done when: a seat's tokens per landed unit fall by half or more on the measured day with the same landings, reviews and signals.
+- OpenedAt: 2026-10-03T17:11:35Z
+- Revision: 1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 0
+
+History:
+- 2026-10-03T17:11:35Z S5EWYC5VA4SEWTB9MKKWJVTDR9-m1e-718ba0eb open actor=human:Wido targets=seat-sessions-stay-small
+Integrity: sha256=368be7ab37c6c385607ab9ce26c12f2e273df312f106adc258c009b2eba8febd
