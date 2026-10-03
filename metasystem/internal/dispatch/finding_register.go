@@ -499,8 +499,8 @@ func CritiqueRegisterDecisionFinding(repoRoot, rootJob, findingID, goalID string
 			if f.FindingID == findingID {
 				// The accepted-risk status is readable only so the three-step
 				// transaction can be replayed after all steps landed. Creation
-				// still transitions exclusively from open or disputed below.
-				if f.Status != "open" && f.Status != "disputed" && f.Status != "accepted-risk" {
+				// still transitions only from open, disputed or refuted below.
+				if f.Status != "open" && f.Status != "disputed" && f.Status != "accepted-risk" && !f.refuted() {
 					return fmt.Errorf("finding %s is not open or disputed", findingID)
 				}
 				if f.RigorClass == critiqueModel.Bounded {
@@ -613,7 +613,7 @@ func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid, accep
 					if register[i].Status == "accepted-risk" && register[i].DecisionOpID == opid && register[i].AcceptedDigest == acceptedDigest {
 						continue
 					}
-					if register[i].Status != "open" && register[i].Status != "disputed" {
+					if register[i].Status != "open" && register[i].Status != "disputed" && !register[i].refuted() {
 						return fmt.Errorf("finding %s is not open or disputed", findingID)
 					}
 					register[i].Status = "accepted-risk"
@@ -1862,4 +1862,11 @@ func digestJSON(value any) string {
 func canonicalJSON(value any) []byte {
 	data, _ := json.Marshal(value)
 	return data
+}
+
+// refuted is a finding its author refuted at a close that the critic has not
+// withdrawn: not landable by itself, and still open to a person's accepted
+// risk, which overrides the critic's standing finding (R-142).
+func (f registerFinding) refuted() bool {
+	return f.Status == "resolved" && f.Resolution == "refuted"
 }

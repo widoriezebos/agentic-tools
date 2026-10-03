@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 func registerFacts() map[string]any {
@@ -582,6 +584,43 @@ func TestCancelledRoundFoldsNeutrally(t *testing.T) {
 	}
 	if got := readRegisterRound(t, repo, "critic"); got != 1 {
 		t.Fatalf("the folded round did not advance: %d", got)
+	}
+}
+
+// TestPersonAcceptsTheRiskOfARefutedFinding: a severe finding its author
+// refuted at the close, which the critic has not withdrawn, does not land by
+// itself; a person may still accept its risk, bound to the content as shown,
+// and the register then lands.
+func TestPersonAcceptsTheRiskOfARefutedFinding(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1, []any{registerFindingValue("F-2", true, "evidence for F-2")}, []any{registerRigor("F-2", "severe")})
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		t.Fatalf("advance = %q, %v", outcome, err)
+	}
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	root["goalId"] = "goal-a"
+	entry := root[findingRegisterField].([]any)[0].(map[string]any)
+	entry["status"], entry["resolution"] = "resolved", "refuted"
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+	if landable, _, err := readsubject.LandableRegister(readJSONFile(t, rootPath)[findingRegisterField]); err != nil || landable {
+		t.Fatalf("a refuted finding landed by itself: %v %v", landable, err)
+	}
+	finding, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "goal-a")
+	if err != nil {
+		t.Fatalf("a refuted finding can't be read for a person's decision: %v", err)
+	}
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "person-op", finding.Digest); err != nil {
+		t.Fatalf("a person's accepted risk of a refuted finding: %v", err)
+	}
+	if entry := registerEntryByID(t, readRegister(t, repo, "critic"), "F-2"); entry["status"] != "accepted-risk" || entry["acceptedDigest"] != finding.Digest {
+		t.Fatalf("the accepted risk was not recorded: %v", entry)
+	}
+	if landable, _, err := readsubject.LandableRegister(readJSONFile(t, rootPath)[findingRegisterField]); err != nil || !landable {
+		t.Fatalf("the register with the person's accepted risk does not land: %v %v", landable, err)
 	}
 }
 
