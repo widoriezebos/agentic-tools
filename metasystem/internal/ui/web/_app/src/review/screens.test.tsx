@@ -9,8 +9,9 @@ import { describe, expect, it } from "vitest";
 import { Anchored } from "./anchors";
 import { ChangesShown, Desk, DiffShown, SourceShown } from "./Desk";
 import { ReviewItOrDoor } from "./Door";
-import { EndWays, Room } from "./ReviewRoom";
-import { NOD_LINE, type DeskItem } from "./room";
+import { Room } from "./ReviewRoom";
+import { Board as RoomBoard } from "./Board";
+import type { DeskItem } from "./room";
 import type { Backlog, Row } from "../backlog/api";
 import { Board } from "../backlog/Board";
 import { noFilters } from "../backlog/filters";
@@ -126,21 +127,21 @@ function roomHeld(source: string, face: "desk" | "board" = "desk") {
   };
 }
 
+/** The same room, shaping a design: the two panes stay a shaping sitting's (g1-s67). */
+function shapingHeld(source: string) {
+  const held = roomHeld(source);
+  return { ...held, sitting: { subject: { kind: "record", id: RECORD, title: "A design" }, purpose: "shape a design", startedAt: "" } };
+}
+
 describe("the room", () => {
-  it("is its own screen: the goal, the tip and the record's counts, Board and Step out, and no rail", () => {
+  it("is the guided review for a review: no rail, no desk pane, no Board or Step out (review-findings-read-as-decisions §3)", () => {
     const shown = around(<Room record={RECORD} />, roomHeld(REVIEW_SOURCE));
-    expect(shown).toContain("Reviewing");
-    expect(shown).toContain("g1-s64");
-    expect(shown).toContain(`at tip ${TIP.slice(0, 9)}`);
-    expect(shown).toContain("1 finding, 1 unanswered");
-    expect(shown).toContain(">Board<");
-    expect(shown).toContain(">Step out<");
-    expect(shown).toContain(">End<");
+    expect(shown).toContain("ms-guided");
+    expect(shown).toContain(">Leave for now<");
+    expect(shown).not.toContain(">Board<");
+    expect(shown).not.toContain(">Step out<");
+    expect(shown).not.toContain("ms-room-panes");
     expect(shown).not.toContain("ms-rail");
-    // The five walks are presses beside the conversation.
-    for (const walk of ["Asked", "Built", "Examined", "Proven", "Behaves"]) {
-      expect(shown).toContain(`>${walk}<`);
-    }
   });
 
   it("keeps a strip of what has been on the desk, newest first, the one up marked", () => {
@@ -150,7 +151,7 @@ describe("the room", () => {
   });
 
   it("puts the Latest pill on the composer's top edge, outside the conversation's scroller (UX-1)", () => {
-    const shown = around(<Room record={RECORD} />, roomHeld(REVIEW_SOURCE));
+    const shown = around(<Room record={RECORD} />, shapingHeld(REVIEW_SOURCE));
     expect(shown).toMatch(/<div class="ms-room-talk"><div class="ms-room-transcript/u);
     const css = readFileSync(fileURLToPath(new URL("./room.css", import.meta.url)), "utf8");
     expect(css).toMatch(/\.ms-room-talk \.ms-partner-latest \{[^}]*position: absolute;/u);
@@ -158,7 +159,7 @@ describe("the room", () => {
   });
 
   it("collapses an empty desk to its one line at phone width, and keeps a desk with an item (UX-2)", () => {
-    const held = roomHeld(REVIEW_SOURCE);
+    const held = shapingHeld(REVIEW_SOURCE);
     const empty = around(<Room record={RECORD} />, { ...held, room: { ...held.room, desk: { items: [], current: -1 } } });
     expect(empty).toContain("ms-room-desk ms-room-desk--empty");
     expect(around(<Room record={RECORD} />, held)).not.toContain("ms-room-desk--empty");
@@ -167,14 +168,12 @@ describe("the room", () => {
     expect(phone).toMatch(/\[data-panel\]:has\(> \.ms-room-desk--empty\) \{\s*flex: 0 0 auto !important;/u);
   });
 
-  it("flips to the board, where a finding carries its answers", () => {
-    const shown = around(<Room record={RECORD} />, roomHeld(REVIEW_SOURCE, "board"));
-    expect(shown).toContain(">Desk<");
+  it("puts a review's findings on its board with the four decisions", () => {
+    const shown = around(<RoomBoard />, roomHeld(REVIEW_SOURCE, "board"));
     expect(shown).toContain("a press that dies holds the lock");
-    expect(shown).toContain("Fix in this goal");
-    expect(shown).toContain("Follow-up goal");
-    expect(shown).toContain("Accept, with reason");
-    expect(shown).toContain("Leave open");
+    for (const decision of ["Must fix before landing", "Fix after landing", "Not a problem", "I accept this risk"]) {
+      expect(shown).toContain(decision);
+    }
   });
 });
 
@@ -246,7 +245,7 @@ describe("the finding card", () => {
     expect(shown).toContain(">Record it<");
   });
 
-  it("is recorded unanswered, and then offers the four answers with their consequences", () => {
+  it("is recorded, and then offers the four decisions with their consequences", () => {
     const entries: readonly Entry[] = entriesIn(REVIEW_SOURCE);
     const shown = around(<DepositCard id="deposit:t1#0" />, {
       deposits: [card({ id: "deposit:t1#0", standing: "recorded",
@@ -255,30 +254,10 @@ describe("the finding card", () => {
       table: { counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0, Findings: 1 }, entries,
         revision: "r1", source: REVIEW_SOURCE },
     });
-    expect(shown).toContain("unanswered");
-    expect(shown).toContain("the candidate will return to construction and be examined again");
-    expect(shown).toContain("Opens a new goal with this finding as its intent, and lets this one land.");
-    expect(shown).toContain("Records the risk as accepted, with your reason");
-    expect(shown).toContain("Keeps the question open, with its consequence");
-  });
-});
-
-describe("End", () => {
-  const entries = entriesIn(REVIEW_SOURCE);
-
-  it("refuses Clear to land while a recorded finding is unanswered, and lists it", () => {
-    const shown = around(<EndWays entries={entries} busy={false} onChoose={() => undefined} />);
-    expect(shown).toMatch(/<button[^>]*disabled=""[^>]*>Clear to land</u);
-    expect(shown).toContain("Clear to land waits until every finding is answered. These are not:");
-    expect(shown).toContain("<li>a press that dies holds the lock</li>");
-    expect(shown).toContain(">Send back<");
-    expect(shown).toContain(">End without a verdict<");
-    expect(shown).not.toContain(NOD_LINE);
-  });
-
-  it("says a nod plainly when the piles are empty", () => {
-    const shown = around(<EndWays entries={[]} busy={false} onChoose={() => undefined} />);
-    expect(shown).toContain(NOD_LINE);
-    expect(shown).not.toMatch(/<button[^>]*disabled=""[^>]*>Clear to land</u);
+    expect(shown).toContain("The builder gets this as a correction when you send the goal back; landing over it asks you first.");
+    expect(shown).toContain("A follow-up goal is opened with this finding. This goal may land.");
+    expect(shown).toContain("Say why. Your reason is recorded with the finding.");
+    expect(shown).toContain("Say why. Your acceptance and your reason are recorded on this review, in your name.");
+    expect(shown).not.toContain("Leave open");
   });
 });

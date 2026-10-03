@@ -230,7 +230,9 @@ type Info struct {
 	DesignReview func(signed *session.Session, design string, asked DesignAsked) (DesignAnswer, error)
 	DesignLoop   func(design string) (DesignLoop, error)
 	DesignDecide func(design string, round int64, row DesignRow) (DesignLoop, error)
-	Candidate    func(goal, action string) (Candidate, error)
+	// at is the commit the run is at — the version a review names (RF-04) —
+	// or "" for the goal's branch as it stands.
+	Candidate func(goal, at, action string) (Candidate, error)
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -556,7 +558,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if goal, ok := appGoal(r.URL.Path, appStatusPart); ok {
-		h.appStatus(w, goal)
+		h.appStatus(w, r, goal)
 		return
 	}
 	if id, loop := designReadOf(r.URL.Path); loop {

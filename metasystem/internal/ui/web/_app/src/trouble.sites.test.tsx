@@ -13,14 +13,13 @@ import { emptyStore, refused } from "./partner/conversation";
 import { DepositCard } from "./partner/Deposit";
 import { ProposalCard } from "./partner/Proposal";
 import { cardsIn } from "./partner/proposing";
-import type { Card, Entry } from "./partner/sitting";
+import type { Card } from "./partner/sitting";
 import { PartnerAs } from "./partner/store";
 import { SuggestionCard } from "./partner/Suggestion";
 import type { Offered } from "./partner/suggesting";
 import { Transcript } from "./partner/Transcript";
 import { Refused } from "./review/Desk";
-import { EndWays, SendBackBrief } from "./review/ReviewRoom";
-import { CLEAR_REFUSED, NO_FIX, UNANSWERED } from "./review/room";
+import { ReasonSheet } from "./review/Answers";
 import { TroublesAs } from "./shell/troubles";
 import { ASK_WHAT_HAPPENED } from "./shell/troubling";
 
@@ -78,10 +77,6 @@ function backlog(): Backlog {
   };
 }
 
-function finding(text: string, answer: string, mark: string): Entry {
-  return { when: "2026-09-29", who: "Wido", text, clause: "internal/owner.go:60", section: "Findings", mark, answer };
-}
-
 const noop = () => undefined;
 
 describe("a refusal the first build drew on its own", () => {
@@ -104,20 +99,15 @@ describe("a refusal the first build drew on its own", () => {
     expect(markup).toContain(ASK);
   });
 
-  it("in Send back, no finding answered fix is a trouble line", () => {
+  // The nod never refuses now (review-findings-read-as-decisions §3, R-142-m1e):
+  // what a decision's own write was refused with is the one refusal left there.
+  it("in a finding's decision, a write the record refused is a trouble line", () => {
     const markup = rendered(
-      <SendBackBrief entries={[finding("the log is noisy", UNANSWERED, "deposit:t1#1")]} brief="" busy={false} onEdit={noop} onSend={noop} onBack={noop} />,
+      <ReasonSheet said="Say why." title="a press that dies holds the lock" reason="history" busy={false}
+        refusal="The record changed while you were writing, so nothing was written." press="Record: not a problem"
+        onReason={noop} onLeave={noop} onPress={noop} />,
     );
-    expect(markup).toContain(NO_FIX);
-    expect(markup).toContain(ASK);
-  });
-
-  it("in End, Clear to land refused while a finding is unanswered is a trouble line, and still lists them", () => {
-    const markup = rendered(
-      <EndWays entries={[finding("a press that dies holds the lock", UNANSWERED, "deposit:t1#0")]} busy={false} onChoose={noop} />,
-    );
-    expect(markup).toContain(CLEAR_REFUSED);
-    expect(markup).toContain("<li>a press that dies holds the lock</li>");
+    expect(markup).toContain("The record changed while you were writing, so nothing was written.");
     expect(markup).toContain(ASK);
   });
 

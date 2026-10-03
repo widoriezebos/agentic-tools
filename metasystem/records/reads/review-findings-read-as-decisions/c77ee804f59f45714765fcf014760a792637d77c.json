@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "goal": "review-findings-read-as-decisions",
+  "unit": "room",
+  "subject": {
+    "commit": "c77ee804f59f45714765fcf014760a792637d77c",
+    "parent": "93ad2bde033ffe3e96095d11fb650f4155db6fd6",
+    "tree": "a839085877576cad657ad4b7daa32cf8568cb7c5",
+    "patchDigest": "2e4255fbe58ea512100fdb068e52a009aed20bbfe355c4aabb2b3ec40fbcae6f",
+    "unitDigest": "bc555cc3e47b7b38405b9f2c73e6927ac59e9719a70db379e96474bf8250ad1e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-530a7c874a7e7ee144997ade",
+    "round": 1,
+    "closureSha256": "87767a74ce1503aabf681b70e5132833b2527f06b72eb31dd0b5460553f86a9b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a839085877576cad657ad4b7daa32cf8568cb7c5",
+    "runId": "goal-read-gate-20261003t200738z-4048e07fcb1cda3c"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/ui_candidate_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/gittree/review_reads_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/act/review_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/review_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/verdicts_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/partner/depositing_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/partner/review_service_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/partner/skill_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/review/review_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/uitools/deposit_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    },
+    {
+      "path": "metasystem/internal/ui/uitools/review_test.go",
+      "readerWord": "reviewed by critic root code-critic-530a7c874a7e7ee144997ade"
+    }
+  ],
+  "sha256": "2865c9e70f4ddf15ccdf20f8449a289fae17913965cef0fa5149bfc30bc3798f"
+}

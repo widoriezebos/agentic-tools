@@ -1,4 +1,4 @@
-import { useContext, useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { usePartner } from "./store";
 import {
@@ -28,8 +28,8 @@ import {
   type Card,
 } from "./sitting";
 import { Copy } from "./Suggestion";
-import { AnchorPress, FindingAnswers, MovedFiles } from "../review/Answers";
-import { mayHaveMoved } from "../review/room";
+import { AnchorPress, FindingDecisions } from "../review/Answers";
+import { findingOfEntry, seeing, severityWord, type DeskItem, type RoomFinding } from "../review/room";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
@@ -150,8 +150,20 @@ export function DepositCard({ id }: { id: string }) {
     return <CaseCard card={card} />;
   }
 
-  // A finding is a review's (g1-s65 D8): an entry with its anchor and its
-  // consequence until it is recorded, and a question with four answers after.
+  // A finding the reviewer offered with its plain layers is decided where the
+  // review lists what it found (review-findings-read-as-decisions §3); under
+  // its answer the conversation says so, by its title, and nothing more.
+  if (card.kind === "finding" && (card.title ?? "").trim() !== "") {
+    return (
+      <p className="ms-deposit-pointer" data-deposit={id}>
+        <span className="ms-deposit-label">A finding</span>
+        {card.title} It is under What the reviewer found, with its decision.
+      </p>
+    );
+  }
+  // A finding the person made from what they selected, or one offered before
+  // findings had their layers: an entry with its anchor until it is recorded,
+  // and a finding to decide after (g1-s65 D8).
   if (card.kind === "finding") {
     return <FindingCard card={card} />;
   }
@@ -297,7 +309,6 @@ function FindingCard({ card }: { card: Card }) {
   const needs = missing(card.kind, card.mark);
   const frozen = !editable(card.standing);
   const entry = table.entries.find((one) => one.mark === card.id);
-  const changed = useContext(MovedFiles);
   return (
     <div className="ms-deposit ms-deposit--finding" data-deposit={card.id} data-kind={card.kind}>
       <p className="ms-deposit-head">
@@ -320,12 +331,7 @@ function FindingCard({ card }: { card: Card }) {
               {entry?.consequence ?? card.consequence}
             </p>
           )}
-          <FindingAnswers
-            mark={card.id}
-            text={card.mark.text}
-            answer={entry?.answer ?? ""}
-            moved={entry !== undefined && mayHaveMoved(entry, changed)}
-          />
+          {entry !== undefined && <FindingDecisions finding={findingOfEntry(entry)} />}
         </>
       ) : (
         <>
@@ -575,3 +581,73 @@ function DecideSheet({
     </Sheet>
   );
 }
+
+/**
+ * One finding, in layers, top to bottom (review-findings-read-as-decisions §3):
+ * how much it matters, the problem in the person's terms, why it matters, what
+ * the reviewer recommends and why, the person's decision, and the evidence
+ * folded — the finding as the reviewer wrote it, what it cites, and the two
+ * presses that open the change and the record it cites. An earlier one is
+ * muted and offers no decision.
+ */
+export function FindingLayers({
+  finding,
+  muted = false,
+  decision,
+  onSee,
+}: {
+  finding: RoomFinding;
+  muted?: boolean;
+  decision?: ReactNode;
+  onSee: (item: DeskItem) => void;
+}) {
+  const severity = severityWord(finding.severity);
+  const recommends = DECIDED[finding.recommend] ?? "";
+  const see = seeing(finding.anchor);
+  return (
+    <article
+      className={`ms-layered ms-layered--${finding.severity === "" ? "none" : finding.severity}${muted ? " ms-layered--muted" : ""}`}
+      data-finding={finding.id}
+    >
+      {severity !== "" && <span className="ms-layered-severity">{severity}</span>}
+      <h3 className="ms-layered-title">{finding.title}</h3>
+      {finding.why.trim() !== "" && (
+        <p className="ms-layered-why">
+          <b>Why it matters.</b> {finding.why}
+        </p>
+      )}
+      {recommends !== "" && (
+        <p className="ms-layered-recommends">
+          <b>The reviewer recommends:</b> {recommends}.{finding.reason.trim() === "" ? "" : ` ${finding.reason}`}
+        </p>
+      )}
+      {decision}
+      <details className="ms-layered-evidence">
+        <summary>Evidence, as the reviewer wrote it</summary>
+        <div className="ms-layered-evidence-body">
+          {finding.evidence.trim() !== "" && <p>{finding.evidence}</p>}
+          {finding.consequence.trim() !== "" && <p>If it is left: {finding.consequence}</p>}
+          {finding.anchor.trim() !== "" && <p className="ms-mono">{finding.anchor}</p>}
+          <p className="ms-layered-see">
+            <button type="button" className="ms-link-button" onClick={() => { onSee(see.change); }}>
+              See the change
+            </button>
+            {see.cites !== null && (
+              <button type="button" className="ms-link-button" onClick={() => { if (see.cites !== null) { onSee(see.cites); } }}>
+                See the record it cites
+              </button>
+            )}
+          </p>
+        </div>
+      </details>
+    </article>
+  );
+}
+
+/** The reviewer's recommendation, in the words its card says it. */
+const DECIDED: Readonly<Record<string, string>> = {
+  "must-fix": "must fix before landing",
+  "fix-later": "fix after landing",
+  "not-a-problem": "not a problem",
+  accept: "accept the risk",
+};

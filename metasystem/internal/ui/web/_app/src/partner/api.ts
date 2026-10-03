@@ -280,6 +280,17 @@ export type Deposit = {
    * and Record it refuses once the record names another.
    */
   tip?: string;
+  /**
+   * On a finding (review-findings-read-as-decisions §4): how much it matters
+   * (blocks, fix or note), the problem in a person's words, why it matters,
+   * and the decision the reviewer recommends (must-fix, fix-later,
+   * not-a-problem or accept), whose reason rides `reason`. The text, anchor
+   * and consequence are its evidence, as the reviewer wrote them.
+   */
+  severity?: string;
+  title?: string;
+  why?: string;
+  recommend?: string;
   /** Whether the human was shown it as something to record. */
   offered: boolean;
   /**

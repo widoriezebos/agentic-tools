@@ -322,9 +322,11 @@ func Catalogue() []Tool {
 				"a card, edits it if they like, and presses Record it, and only then does it enter the record. " +
 				"The outcome is the closing deposit, and it is offered when the interface asks you to close the " +
 				"sitting and not before. In a review sitting, a finding is a case the examination did not try or " +
-				"an assumption the checks share, with its anchor and the consequence of leaving it unanswered. " +
-				"Weigh nothing — a fact is anchored, an option carries its " +
-				"consequences, and the choice is the human's.",
+				"an assumption the checks share, with its anchor and the consequence of leaving it unanswered as " +
+				"its evidence, and the plain layers a person decides it by: its severity, a title, why it matters, " +
+				"and the one decision you recommend with its reason; the verdict stays the human's. Outside a " +
+				"review, Weigh nothing — a fact is anchored, an option carries its consequences, and the choice " +
+				"is the human's.",
 			InputSchema: schema(map[string]any{
 				"kind": map[string]any{
 					"type":        "string",
@@ -341,8 +343,30 @@ func Catalogue() []Tool {
 					"description": "On a fact or a finding: where it can be checked, as a path with a line or a record's own id. At most 500 characters.",
 				},
 				"reason": map[string]any{
+					"type": "string",
+					"description": "On a decision: the reason the human gave, in their own words as you heard them. " +
+						"On a finding: why you recommend the decision you recommend, in one plain sentence. At most 500 characters.",
+				},
+				"severity": map[string]any{
 					"type":        "string",
-					"description": "On a decision: the reason the human gave, in their own words as you heard them. At most 500 characters.",
+					"enum":        Severities,
+					"description": "On a finding: blocks (it must not land like this), fix (worth fixing) or note (nothing breaks).",
+				},
+				"title": map[string]any{
+					"type": "string",
+					"description": "On a finding: the problem in one plain sentence a person reads first, with no commit id, " +
+						"file path or timestamp; those go in the finding's own words. At most 500 characters.",
+				},
+				"why": map[string]any{
+					"type": "string",
+					"description": "On a finding: why it matters, in one or two plain sentences: what happens if it is ignored, " +
+						"and what is gained by acting. At most 500 characters.",
+				},
+				"recommend": map[string]any{
+					"type": "string",
+					"enum": Recommendations,
+					"description": "On a finding: the one decision you recommend: must-fix (before landing), fix-later (a " +
+						"follow-up goal after landing), not-a-problem, or accept (the risk). A note takes fix-later or not-a-problem.",
 				},
 				"consequence": map[string]any{
 					"type":        "string",

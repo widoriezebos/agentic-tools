@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { NavLink } from "react-router";
 
-import { AnchorPress, FindingAnswers } from "./Answers";
+import { AnchorPress, FindingDecisions } from "./Answers";
 import { remarksOn, sectionRemark, type Remark } from "./remarks";
 import { RemarkDrafts, RemarkNote } from "./RemarkNotes";
-import { mayHaveMoved, type DeskItem } from "./room";
+import { findingOfEntry, type DeskItem } from "./room";
 import { drawingsIn } from "../drawing/drawings";
 import { useStickies } from "../stickies/store";
 import { Help } from "../help/Help";
@@ -83,12 +83,7 @@ export function Board({ changed = [] }: { changed?: readonly string[] }) {
                       <p className="ms-table-entry-who">
                         {entry.who === "" ? entry.when : `${entry.who} · ${entry.when}`}
                       </p>
-                      <FindingAnswers
-                        mark={entry.mark}
-                        text={entry.text}
-                        answer={entry.answer ?? ""}
-                        moved={mayHaveMoved(entry, changed)}
-                      />
+                      <FindingDecisions finding={findingOfEntry(entry)} />
                     </div>
                   ) : (
                   <>

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
@@ -162,7 +163,15 @@ func (f fixtureGit) ResolveCommit(rev string) (string, error) {
 	return "", fmt.Errorf("gittree commit %q is unreadable", rev)
 }
 
-func (fixtureGit) MergeBases(_, tip string) ([]string, error) {
+// MergeBases is the fixture's history: main and each tip meet at the base, and
+// the push sits on the first tip.
+func (fixtureGit) MergeBases(left, right string) ([]string, error) {
+	if (left == commitTip && right == commitMoved) || (left == commitMoved && right == commitTip) {
+		return []string{commitTip}, nil
+	}
+	if left == right {
+		return []string{left}, nil
+	}
 	return []string{commitBase}, nil
 }
 
@@ -200,6 +209,19 @@ func (fixtureGit) CommitsCarrying(string, string) ([]string, error) { return nil
 
 // FetchBranch fetches nothing: the fixture's branches are its table.
 func (fixtureGit) FetchBranch(string) error { return nil }
+
+// CommitFacts says each fixture commit by a time and a builder, as a person is
+// told a version (review-findings-read-as-decisions §3): the first tip on 2
+// October and the push on 3 October.
+func (fixtureGit) CommitFacts(rev string) (gittree.CommitFacts, error) {
+	switch rev {
+	case commitTip:
+		return gittree.CommitFacts{At: time.Date(2026, 10, 2, 12, 19, 37, 0, time.UTC), Author: "m1e"}, nil
+	case commitMoved:
+		return gittree.CommitFacts{At: time.Date(2026, 10, 3, 7, 55, 2, 0, time.UTC), Author: "m1e"}, nil
+	}
+	return gittree.CommitFacts{}, fmt.Errorf("the fixture has no facts for %s", rev)
+}
 
 // LineCommits is never asked: the fixture's goals are reviewed at a tip.
 func (fixtureGit) LineCommits(string, string) ([]string, error) {
@@ -294,16 +316,32 @@ func branchesFile(checkout string) string {
 /* --------------------------------------------------- the canned review -- */
 
 // The phrases of the review's fixed requests the canned answers are narrowed to.
+// The opening of g1-s21's review offers three findings; g1-s90's is clean
+// (review-findings-read-as-decisions, the mocks blocking and clean).
 const (
 	reviewOpening = "Open this review"
 	reviewWalk    = "Walk me through Built"
 	reviewClose   = "Close this review"
+	findingsAsked = "recorded in plans/reviews/review-of-" + reviewedGoal + ".md"
+	cleanAsked    = "recorded in plans/reviews/review-of-" + secondGoal + ".md"
 )
 
-// reviewAnswers are the review's canned answers: the opening in five parts,
-// each claim anchored, and the Built walk.
+// reviewAnswers are the review's canned answers: the opening, a plain
+// paragraph first and then five parts, each claim anchored, and the Built walk.
 var reviewAnswers = []fakeacp.Answer{
+	{When: cleanAsked, Chunks: []string{
+		"The goal: the board reads every goal once, however many seats hold it. This version reads the " +
+			"ledger once per page and changes 2 files, both in the board's reader.\n\n",
+		"## Asked\n\nOne read per page (plans/designs/reading.md).\n\n",
+		"## Built\n\nThe reader in `internal/owner/owner.go:14-27`.\n\n",
+		"## Examined\n\nOne critique round, closed with nothing material.\n\n",
+		"## Proven\n\n`internal/owner/owner_test.go:5-13` proves it; 212 tests pass.\n\n",
+		"## Behaves\n\nThe board was opened at 1280 wide and read each goal once.\n",
+	}},
 	{When: reviewOpening, Chunks: []string{
+		"The goal: one lock held across publish and reconcile, so a reconcile never reads a half-published " +
+			"ledger. This version replaces the two locks with one and adds a test of the happy path. It changes " +
+			"2 files, both in the owner.\n\n",
 		"## Asked\n\nThe goal asks that one lock be held across publish and reconcile, so a reconcile never reads a " +
 			"half-published ledger (plans/designs/reading.md is the design it names).\n\n",
 		"## Built\n\nThe lock is taken once in `internal/owner/owner.go:14-27` and released on every return path " +
@@ -323,19 +361,39 @@ var reviewAnswers = []fakeacp.Answer{
 	{When: reviewClose, Chunks: []string{"Here is the Outcome as drafted, with your verdict first.\n"}},
 }
 
-// reviewReads are the review's canned tool calls: the finding the opening
-// offers, the desk items the Built walk puts up, and the Outcome of the close.
-var reviewReads = []fakeacp.Read{
-	{
-		When:  reviewOpening,
+// findingRead is one finding the opening of g1-s21's review offers, in the
+// deposit tool's own framing, with its plain layers.
+func findingRead(anchor, consequence, severity, title, why, recommend, reason, words string) fakeacp.Read {
+	return fakeacp.Read{
+		When:  findingsAsked,
 		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpDeposit,
 		Title: "deposit(finding)",
 		Result: uitools.DepositedLine + "\n" + uitools.DepositHeader + uitools.DepositFinding + "\n" +
-			uitools.DepositAnchor + "internal/owner/owner.go:21-24\n" +
-			uitools.DepositConsequence + "a press that dies after publishing holds the lock until the process ends\n" +
-			uitools.DepositSeparator + "\n" +
-			"Nothing recorded tries a press that dies between the publish and the reconcile.\n",
-	},
+			uitools.DepositAnchor + anchor + "\n" + uitools.DepositConsequence + consequence + "\n" +
+			uitools.DepositSeverity + severity + "\n" + uitools.DepositTitle + title + "\n" +
+			uitools.DepositWhy + why + "\n" + uitools.DepositRecommends + recommend + "\n" +
+			uitools.DepositReason + reason + "\n" + uitools.DepositSeparator + "\n" + words + "\n",
+	}
+}
+
+// reviewReads are the review's canned tool calls: the finding the opening
+// offers, the desk items the Built walk puts up, and the Outcome of the close.
+var reviewReads = []fakeacp.Read{
+	findingRead("internal/owner/owner.go:21-24", "a press that dies after publishing holds the lock until the process ends",
+		"blocks", "A press that dies halfway through leaves the ledger locked.",
+		"The next press waits for a lock nobody will release, and nothing tells anyone why. Every later press stalls until the process restarts.",
+		"must-fix", "Release the lock on every way out, and test a press that dies after publishing.",
+		"Nothing recorded tries a press that dies between the publish and the reconcile: owner.go:21-24 releases the lock only on the error paths it names, and owner_test.go:5-13 assumes both calls return."),
+	findingRead("internal/owner/owner_test.go:5-13", "a later change to the reconcile could break the lock without a failing test",
+		"fix", "Only the happy path is tested.",
+		"The test proves that one press publishes and reconciles. A change that breaks the failure paths would pass every test.",
+		"fix-later", "Open a follow-up goal to test each way a press can fail.",
+		"owner_test.go:5-13 is the only test; it calls begin once and asserts the lock is free afterwards. No test makes write() or read() fail."),
+	findingRead("plans/designs/reading.md", "nothing breaks",
+		"note", "The design still describes two locks.",
+		"The design was written before the change and says the owner holds two locks. Nothing breaks; a reader of the design may be confused.",
+		"not-a-problem", "The design is history; the code and its test say what holds now.",
+		"plans/designs/reading.md (Part 2) names a publish lock and a reconcile lock; the change at a1a1a1a removed the second."),
 	{
 		When:   reviewWalk,
 		Name:   "mcp__" + uitools.ServerName + "__" + uitools.OpPresent,

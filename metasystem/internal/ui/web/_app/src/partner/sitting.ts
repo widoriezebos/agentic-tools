@@ -59,8 +59,19 @@ export const REVIEW_SECTIONS = ["Facts", "Findings", "Decisions", "Open question
 
 export type Section = (typeof SECTIONS)[number] | "Findings";
 
+/**
+ * Where a review keeps what was raised about an earlier version, once the
+ * record moves on to the current one (review-findings-read-as-decisions
+ * RF-03): read as earlier, never decided again, and never counted as the
+ * version's own — the engine counts the Findings section alone.
+ */
+export const EARLIER = "Earlier findings";
+
 /** Every pile any sitting writes, which is what the record's reader looks for. */
 const ALL_SECTIONS: readonly string[] = [...SECTIONS, "Findings"];
+
+/** Every section the record's reader reads entries from: the piles, and a review's earlier findings. */
+const READ_SECTIONS: readonly string[] = [...ALL_SECTIONS, EARLIER];
 
 /** The piles one sitting's table shows, by what the sitting is for. */
 export function pilesOf(purpose: string): readonly Section[] {
@@ -78,8 +89,8 @@ export function pilesOf(purpose: string): readonly Section[] {
  */
 export const OUTCOME = "Outcome";
 
-/** Where one deposit is written: one of the four piles, or the Outcome. */
-export type Written = Section | typeof OUTCOME;
+/** Where one deposit is written: one of the four piles, or the Outcome; and where a review keeps its earlier findings. */
+export type Written = Section | typeof OUTCOME | typeof EARLIER;
 
 /** Which section each kind of deposit is written into. */
 const SECTION_OF: Readonly<Record<string, Written>> = {
@@ -203,6 +214,17 @@ export type Entry = {
    */
   consequence?: string;
   answer?: string;
+  /**
+   * On a finding read as a decision (review-findings-read-as-decisions §3):
+   * how much it matters (blocks, fix or note), why it matters, the decision
+   * the reviewer recommends and its reason, each a line of its own beside the
+   * anchor and the answer, so a reload and the board read the same card. The
+   * entry's words are the finding's title.
+   */
+  severity?: string;
+  why?: string;
+  recommends?: string;
+  reason?: string;
 };
 
 /** The separator between an entry's dated head and its words. */
@@ -245,6 +267,13 @@ export function lineOf(entry: Entry, kind: string): string {
     if (consequence !== "") {
       lines.push(`  - Consequence: ${oneLine(consequence)}`);
     }
+    for (const [label, said] of [
+      ["Severity", entry.severity], ["Why", entry.why], ["Recommends", entry.recommends], ["Reason", entry.reason],
+    ] as const) {
+      if ((said ?? "").trim() !== "") {
+        lines.push(`  - ${label}: ${oneLine(said ?? "")}`);
+      }
+    }
     lines.push(`  - Answer: ${oneLine(entry.answer ?? UNANSWERED)}`);
     return `${lines.join("\n")}\n`;
   }
@@ -264,7 +293,7 @@ function oneLine(said: string): string {
 }
 
 /** The line that opens a section. */
-function headingOf(section: Section): string {
+function headingOf(section: Section | typeof EARLIER): string {
   return `## ${section}`;
 }
 
@@ -279,32 +308,47 @@ function headingOf(section: Section): string {
  */
 export function entriesIn(source: string): readonly Entry[] {
   const found: Entry[] = [];
-  let section: Section | null = null;
+  let section: Section | typeof EARLIER | null = null;
   let last: Entry | null = null;
   for (const line of source.split("\n")) {
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     if (heading !== null) {
       const named = heading[1].trim();
-      section = ALL_SECTIONS.includes(named) ? (named as Section) : null;
+      section = READ_SECTIONS.includes(named) ? (named as Section | typeof EARLIER) : null;
       last = null;
       continue;
     }
     if (section === null) {
       continue;
     }
-    const clause = /^\s+[-*]\s+(Anchor|Reason|Consequence|Answer):\s*(.*)$/.exec(line);
+    const clause = /^\s+[-*]\s+(Anchor|Reason|Consequence|Answer|Severity|Why|Recommends):\s*(.*)$/.exec(line);
     if (clause !== null && last !== null) {
       const said = clause[2].trim();
-      if (section === "Findings") {
-        // A finding's block carries three labelled lines, each its own field.
-        if (clause[1] === "Answer") {
-          last.answer = said;
-        } else if (clause[1] === "Consequence") {
-          last.consequence = said;
-        } else {
-          last.clause = said;
+      if (section === "Findings" || section === EARLIER) {
+        // A finding's block carries its labelled lines, each its own field.
+        switch (clause[1]) {
+          case "Answer":
+            last.answer = said;
+            break;
+          case "Consequence":
+            last.consequence = said;
+            break;
+          case "Severity":
+            last.severity = said;
+            break;
+          case "Why":
+            last.why = said;
+            break;
+          case "Recommends":
+            last.recommends = said;
+            break;
+          case "Reason":
+            last.reason = said;
+            break;
+          default:
+            last.clause = said;
         }
-      } else if (clause[1] !== "Answer") {
+      } else if (clause[1] === "Anchor" || clause[1] === "Reason" || clause[1] === "Consequence") {
         last.clause = said;
       }
       continue;
@@ -526,6 +570,10 @@ export function ACCEPTED(reason: string): string {
   return `accepted — ${oneLine(reason)}`;
 }
 export const LEFT_OPEN = "left open";
+/** Not a problem, with the person's reason (review-findings-read-as-decisions §3). */
+export function NOT_A_PROBLEM(reason: string): string {
+  return `not a problem — ${oneLine(reason)}`;
+}
 
 /** Which of the answers one Answer line says: its words before the dash. */
 export function answerOf(said: string): string {
@@ -566,6 +614,24 @@ export function answered(source: string, mark: string, answer: string): string |
     return [...lines.slice(0, end), written, ...lines.slice(end)].join("\n");
   }
   return null;
+}
+
+/**
+ * The record's whole source with one finding decided (review-findings-read-as-
+ * decisions §3): its Answer line rewritten where the record carries it, and
+ * otherwise the finding written with that answer, in one write — a decision is
+ * the press that records a finding, and nothing is written as "unanswered"
+ * first. Null where the record does not carry the finding and there is no
+ * entry to write.
+ */
+export function decidedSource(source: string, mark: string, answer: string, entry: Entry | undefined): string | null {
+  if (recordedIn(source).has(mark)) {
+    return answered(source, mark, answer);
+  }
+  if (entry === undefined) {
+    return null;
+  }
+  return appended(source, { ...entry, mark, answer }, "finding");
 }
 
 /**
@@ -916,6 +982,16 @@ export function entryOf(card: Card, who: string, when: string, records?: Records
   if (said.kind === "finding") {
     entry.consequence = card.consequence ?? "";
     entry.answer = UNANSWERED;
+    // A finding offered with its plain layers is written under its title,
+    // with them; its own words stay the deposit's, as the evidence
+    // (review-findings-read-as-decisions §3).
+    if ((card.title ?? "").trim() !== "" && records === undefined) {
+      entry.text = card.title ?? "";
+      entry.severity = card.severity ?? "";
+      entry.why = card.why ?? "";
+      entry.recommends = card.recommend ?? "";
+      entry.reason = card.reason ?? "";
+    }
   }
   return entry;
 }
@@ -1146,6 +1222,9 @@ export const THE_INTERFACES = "asked by the interface, to open this sitting";
 export function interfaceLine(text: string): string {
   if (text === TROUBLE_REQUEST) {
     return "asked by the interface, at your press on Ask what happened";
+  }
+  if (text.startsWith("Open this review again")) {
+    return "asked by the interface, to look at this version afresh";
   }
   if (text.startsWith("Open this review")) {
     return "asked by the interface, to open this review";

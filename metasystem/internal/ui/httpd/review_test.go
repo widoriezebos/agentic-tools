@@ -74,6 +74,10 @@ func (deskGit) FetchBranch(string) error { return nil }
 
 func (deskGit) LineCommits(string, string) ([]string, error) { return nil, errors.New("no blame") }
 
+func (deskGit) CommitFacts(string) (gittree.CommitFacts, error) {
+	return gittree.CommitFacts{At: time.Date(2026, 10, 2, 12, 19, 37, 0, time.UTC), Author: "m1e"}, nil
+}
+
 // withALanding is the board with one goal built and waiting to land.
 func withALanding() snapshot.Observation {
 	observed := readObservation()
@@ -212,6 +216,9 @@ func TestTheDesksReadsAnswerFromTheReviewedTree(t *testing.T) {
 	testutil.Require(t, "the index decodes", json.Unmarshal(index.Body.Bytes(), &changes), nil)
 	testutil.Expect(t, "two files", len(changes.Files), 2)
 	testutil.Expect(t, "the branch now", changes.Current, reviewTip)
+	// review-findings-read-as-decisions §3: the version by its time and author.
+	testutil.Expect(t, "the answer says the version's time, author and the branch's time",
+		strings.Contains(index.Body.String(), `"at":"2026-10-02T12:19:37Z","by":"m1e","currentAt":"2026-10-02T12:19:37Z"`), true)
 
 	diff := get(t, served.handler, base+"/changes?path=internal/owner.go", nil)
 	testutil.Require(t, "one file's diff", diff.Code, http.StatusOK)

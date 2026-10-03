@@ -76,10 +76,10 @@ export function CardVerdict({ row }: { row: Row }) {
  * words.
  */
 export function PendingVerdict({ pending, busy, onPress }: { pending: ToPerform; busy: boolean; onPress: () => void }) {
-  const words = pending.asked.verdict === "send-back" ? "send back" : "clear to land";
+  const words = pending.asked.verdict === "send-back" ? "send it back" : "looks good, land it";
   return (
     <div className="ms-room-banner ms-send-back" role="status">
-      <p className="ms-sitting-said">The Outcome is recorded, and the verdict is not yet on the goal: {words}.</p>
+      <p className="ms-sitting-said">Your verdict is written in the review, and is not yet on the goal: {words}.</p>
       {pending.asked.brief !== "" && (
         <pre className="ms-send-back-brief" aria-label="The correction brief">
           {pending.asked.brief}

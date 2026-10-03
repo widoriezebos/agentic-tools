@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -22,6 +23,7 @@ type fakeGit struct {
 	diffs    map[string]string
 	carrying map[string][]string
 	blame    map[string][]string
+	facts    map[string]gittree.CommitFacts
 }
 
 func commit(letter string) string { return strings.Repeat(letter, 40) }
@@ -70,6 +72,13 @@ func (f fakeGit) LineCommits(rev, path string) ([]string, error) {
 }
 
 func (fakeGit) FetchBranch(string) error { return nil }
+
+func (f fakeGit) CommitFacts(rev string) (gittree.CommitFacts, error) {
+	if found, known := f.facts[rev]; known {
+		return found, nil
+	}
+	return gittree.CommitFacts{}, fmt.Errorf("no facts for %s", rev)
+}
 
 // A goal waiting to land: goal/g1-s64 at origin, its merge base with main, one
 // changed file and one added binary.
@@ -206,6 +215,37 @@ func TestTheChangeIndexOfADoneGoalIsEachCommitAgainstItsParent(t *testing.T) {
 		{Path: "a.go", Added: 3, Deleted: 1}, {Path: "b.go", Added: 5},
 	})
 	testutil.Expect(t, "no branch to compare", index.Current, "")
+}
+
+// review-findings-read-as-decisions §3: the index says the reviewed version by
+// its time and its author, and the branch's newer version by its time, so the
+// room's header needs no ids; a commit whose facts cannot be read says none.
+func TestTheChangeIndexSaysEachVersionByItsTimeAndAuthor(t *testing.T) {
+	t.Parallel()
+	git := waiting()
+	git.refs["origin/goal/g1-s64"] = commit("f")
+	reviewedAt := time.Date(2026, 10, 2, 12, 19, 0, 0, time.UTC)
+	git.facts = map[string]gittree.CommitFacts{
+		commit("e"): {At: reviewedAt, Author: "m1e"},
+		commit("f"): {At: reviewedAt.Add(19*time.Hour + 36*time.Minute), Author: "ui"},
+	}
+	owner := Owner{Git: git}
+
+	index, err := owner.Changes(Reviewed{Goal: "g1-s64", Tip: commit("e")})
+
+	testutil.Require(t, "the index", err, nil)
+	testutil.Expect(t, "the reviewed version's time", index.At, "2026-10-02T12:19:00Z")
+	testutil.Expect(t, "and its author", index.By, "m1e")
+	testutil.Expect(t, "the newer version's time", index.CurrentAt, "2026-10-03T07:55:00Z")
+
+	git.refs["origin/goal/g1-s64"] = commit("e")
+	still, err := Owner{Git: git}.Changes(Reviewed{Goal: "g1-s64", Tip: commit("e")})
+	testutil.Require(t, "the index of an unmoved branch", err, nil)
+	testutil.Expect(t, "says the same time twice", still.CurrentAt, still.At)
+
+	unread, err := Owner{Git: waiting()}.Changes(Reviewed{Goal: "g1-s64", Tip: commit("e")})
+	testutil.Require(t, "an index with no facts", err, nil)
+	testutil.Expect(t, "says no time", unread.At+unread.By+unread.CurrentAt, "")
 }
 
 func TestAMovedTipIsSaidAndItsChangesAreReadBetweenTheTwoTips(t *testing.T) {
@@ -371,4 +411,24 @@ func TestARefusedReadIsARefusal(t *testing.T) {
 	testutil.Expect(t, "a path outside the tree is a refusal", errors.As(err, &refusal), true)
 	_, err = Owner{Git: fakeGit{refs: map[string]string{}}}.Changes(Reviewed{Goal: "g1-s64", Tip: commit("e")})
 	testutil.Expect(t, "a ref Git cannot read is not", errors.As(err, &refusal), false)
+}
+
+// Fix round 3, F-1: a commit is a version of a goal's branch when it is the
+// tip or beneath it, and only then is a candidate run at it.
+func TestACommitIsAVersionOfTheBranchWhenTheBranchCarriesIt(t *testing.T) {
+	t.Parallel()
+	git := waiting()
+	git.refs["origin/goal/g1-s64"] = commit("f")
+	git.bases[commit("e")+" "+commit("f")] = commit("e")
+	owner := Owner{Git: git}
+	for _, probe := range []struct {
+		commit string
+		on     bool
+	}{{commit("f"), true}, {commit("e"), true}, {commit("9"), false}} {
+		on, err := owner.OnBranch("g1-s64", probe.commit)
+		testutil.Require(t, "read "+probe.commit[:4], err, nil)
+		testutil.Expect(t, "on the branch: "+probe.commit[:4], on, probe.on)
+	}
+	_, err := owner.OnBranch("g1-s99", commit("e"))
+	testutil.Expect(t, "a goal with no branch", err != nil, true)
 }

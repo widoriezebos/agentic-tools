@@ -728,3 +728,488 @@ pre.ms-send-back-brief {
   border: 1px solid var(--ms-border);
   border-radius: 4px;
 }
+
+/* ---------------------------------------------------- the guided review -- */
+
+/* A review you can decide (review-findings-read-as-decisions §3): one column,
+   four numbered steps, read top to bottom, the question line at the foot. Its
+   own page scrolls; nothing here is a desk or a pane. */
+
+.ms-guided {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--ms-bg);
+  color: var(--ms-text);
+}
+
+.ms-guided-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  font-size: 13px;
+  color: var(--ms-text-2);
+}
+
+.ms-guided-top a {
+  color: var(--ms-accent);
+}
+
+.ms-guided-top-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-guided-main {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 20px 140px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ms-guided-title {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.ms-guided-title > :last-child {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.ms-guided-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0 0 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-guided-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 50%;
+  font-size: 11px;
+  color: var(--ms-text-3);
+  cursor: help;
+}
+
+.ms-guided-state {
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.ms-guided-state--current {
+  background: var(--ms-ok-bg);
+  color: var(--ms-ok-fg);
+}
+
+.ms-guided-state--newer {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+.ms-guided-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-guided-banner--done {
+  background: var(--ms-ok-bg);
+  border-color: var(--ms-ok);
+  color: var(--ms-ok-fg);
+}
+
+.ms-guided-step {
+  margin: 18px 0;
+}
+
+.ms-guided-step > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ms-guided-step > h2 small {
+  font-weight: normal;
+  font-size: 13px;
+  color: var(--ms-text-3);
+}
+
+.ms-guided-step p {
+  margin: 6px 0;
+}
+
+.ms-guided-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ms-text);
+  color: var(--ms-bg);
+  font-size: 13px;
+}
+
+.ms-guided-notice {
+  padding: 10px 14px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 8px;
+  background: var(--ms-marker-bg);
+}
+
+.ms-guided-quiet {
+  color: var(--ms-text-2);
+}
+
+.ms-guided-summary {
+  margin: 6px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-guided-summary p {
+  margin: 0;
+}
+
+.ms-guided-summary p + p {
+  margin-top: 6px;
+}
+
+.ms-guided-summary--clean {
+  background: var(--ms-ok-bg);
+  border-color: var(--ms-ok);
+}
+
+.ms-guided-summary--older {
+  background: var(--ms-marker-bg);
+  border-color: var(--ms-marker);
+}
+
+.ms-guided-earlier > summary,
+.ms-guided-walks,
+.ms-guided-leave {
+  color: var(--ms-text-2);
+  font-size: 13px;
+}
+
+.ms-guided-earlier > summary {
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.ms-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ms-link-button:disabled {
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+.ms-guided-try {
+  padding: 10px 14px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+}
+
+.ms-guided-try > summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ms-try-words {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ms-try-presses {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ms-try-open {
+  color: var(--ms-accent);
+}
+
+.ms-guided-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-guided-way {
+  padding: 10px 14px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-guided-way b {
+  display: block;
+  font-size: 15px;
+}
+
+.ms-guided-way small {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ms-text-2);
+}
+
+.ms-guided-way--recommended {
+  border-color: var(--ms-accent);
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+.ms-guided-way--recommended small {
+  color: var(--ms-accent-fg);
+}
+
+.ms-guided-way-mark {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ms-guided-way:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.ms-guided-ask {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 10px 20px;
+  border-top: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-guided-ask > .ms-composer {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.ms-guided-talk {
+  display: block;
+  max-width: 760px;
+  margin: 4px auto 0;
+  font-size: 12px;
+}
+
+.ms-guided-list {
+  margin: 6px 0 10px;
+  padding-left: 20px;
+}
+
+/* One finding, in layers: the severity on the card's edge and its chip. */
+
+.ms-layered {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ms-border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--ms-surface);
+}
+
+.ms-layered--blocks {
+  border-left-color: var(--ms-danger);
+}
+
+.ms-layered--fix {
+  border-left-color: var(--ms-marker);
+}
+
+.ms-layered--note,
+.ms-layered--none {
+  border-left-color: var(--ms-border-strong);
+}
+
+.ms-layered--muted {
+  opacity: 0.6;
+}
+
+.ms-layered-severity {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ms-layered--blocks .ms-layered-severity {
+  color: var(--ms-danger);
+}
+
+.ms-layered--fix .ms-layered-severity {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+.ms-layered-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ms-layered-why,
+.ms-layered-recommends {
+  margin: 4px 0;
+}
+
+.ms-layered-recommends {
+  color: var(--ms-text-2);
+}
+
+.ms-layered-evidence {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ms-text-2);
+}
+
+.ms-layered-evidence > summary {
+  color: var(--ms-text-3);
+  cursor: pointer;
+}
+
+.ms-layered-evidence-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-layered-see {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ms-decide {
+  margin-top: 10px;
+}
+
+.ms-decide-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-decide-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ms-decide-choice {
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-decide-choice b {
+  display: block;
+  font-size: 14px;
+}
+
+.ms-decide-choice small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ms-text-3);
+}
+
+.ms-decide-choice--recommended {
+  border-color: var(--ms-accent);
+  box-shadow: inset 0 0 0 1px var(--ms-accent);
+}
+
+.ms-decide-choice--recommended .ms-decide-mark {
+  color: var(--ms-accent);
+}
+
+.ms-decide-choice--chosen {
+  border-color: var(--ms-ok);
+  background: var(--ms-ok-bg);
+}
+
+.ms-decide-choice--chosen .ms-decide-mark {
+  color: var(--ms-ok-fg);
+}
+
+.ms-decide-mark {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ms-deposit-pointer {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--ms-text-2);
+}
+
+.ms-deposit-pointer .ms-deposit-label {
+  margin-right: 6px;
+}

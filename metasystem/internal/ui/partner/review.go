@@ -81,18 +81,92 @@ var shapingHow = map[string]string{
 // in the human's name when a review starts (D3). It is fixed, and it is here so
 // that what the interface says in a human's name is one text a reader can find.
 func ReviewOpeningRequest(sitting Sitting) string {
-	return "Open this review of the work recorded in " + sitting.Subject.ID + ".\n\n" +
-		"The human is here as an examiner, not as the one who holds the intent. You were not in the room that " +
-		"shaped this work: read the review record's head for the goal and the commits it reviews, and read " +
-		"the records and the code with your tools.\n\n" +
-		"Bring what the record holds in five parts, each under its own heading: Asked, Built, Examined, " +
-		"Proven, Behaves. Anchor every claim — a file and its lines, a record and its section, a commit. " +
-		"Read the change with the changes tool, which reads the reviewed tree and not this checkout.\n\n" +
-		"Name what the examination did not try, what the tests assume, and what is not recorded at all. " +
-		"Offer each case at the edge as a finding with the deposit tool, with its anchor and the consequence " +
-		"of leaving it unanswered. Put on the desk what you are explaining with the present tool.\n\n" +
-		"Never say whether to accept this work. The human decides; you make sure they can see it."
+	return "Open this review of the work recorded in " + sitting.Subject.ID + ".\n\n" + openingBrief
 }
+
+// WalkAgain is the opening asked again on the version the record names now
+// (review-findings-read-as-decisions RF-03, RF-06): by Review the current
+// version, after the record moved to the branch's current commit, and by Ask
+// again, after a look that did not finish. It is asked through the walk route,
+// as the interface's question, and a review is the one sitting that has it.
+const WalkAgain = "again"
+
+// WalkResume is the opening asked once more on the same version, after a look
+// that stopped or failed (fix round 3, F-2): Ask the reviewer to look again.
+// It is not a move to another version, so nothing raised before it is earlier.
+const WalkResume = "resume"
+
+// ReviewResumeRequest is the look at this version asked once more: what was
+// already offered stands and is not offered again, and the look is finished
+// with the opening's own brief.
+func ReviewResumeRequest(sitting Sitting) string {
+	return "Open this review once more, in " + sitting.Subject.ID + ": your look at the version its Reviewed line " +
+		"names did not finish. What you already offered in this conversation stands; do not offer it again. " +
+		"Finish the look.\n\n" + openingBrief
+}
+
+// earlierHeading is the record's section that holds what was raised about an
+// earlier version, as the room moves it there when the version moves.
+const earlierHeading = "Earlier findings"
+
+// ReviewAgainRequest is the opening asked again: what was raised about the
+// earlier version and the person's decision on each, named as earlier, and the
+// opening's own brief on the version the record names now. Nothing carries
+// over by itself: the reviewer says which still apply and raises those again.
+func ReviewAgainRequest(sitting Sitting, earlier string) string {
+	named := "Nothing was raised about an earlier version."
+	if strings.TrimSpace(earlier) != "" {
+		named = "What was raised about an earlier version, with the person's decision on each, as the record's " +
+			earlierHeading + " section holds it:\n\n" + strings.TrimSpace(earlier) + "\n\n" +
+			"Nothing of it carries over by itself: say which still apply to the version under review now, and offer " +
+			"each that does again as a finding of this version, recommending the person's earlier decision where it " +
+			"still fits. Say plainly which no longer apply."
+	}
+	return "Open this review again, in " + sitting.Subject.ID + ", on the version its Reviewed line names now; the " +
+		"person asked you to examine that version afresh.\n\n" + named + "\n\n" + openingBrief
+}
+
+// earlierOf is the earlier findings a review record holds, its section's own
+// lines, or "" where it holds none or cannot be read.
+func (s *Service) earlierOf(record string) string {
+	if s.facts.Document == nil {
+		return ""
+	}
+	document, err := s.facts.Document(record)
+	if err != nil {
+		return ""
+	}
+	held := []string{}
+	inside := false
+	for _, line := range strings.Split(document.Source, "\n") {
+		if heading, found := strings.CutPrefix(line, "## "); found {
+			inside = strings.TrimSpace(heading) == earlierHeading
+			continue
+		}
+		if inside && strings.HasPrefix(line, "#") {
+			inside = false
+		}
+		if inside && strings.TrimSpace(line) != "" {
+			held = append(held, line)
+		}
+	}
+	return strings.Join(held, "\n")
+}
+
+// openingBrief is what every opening asks, the first and any asked again.
+const openingBrief = "The human is here as an examiner, not as the one who holds the intent. You were not in the room that " +
+	"shaped this work: read the review record's head for the goal and the commits it reviews, and read " +
+	"the records and the code with your tools.\n\n" +
+	"Begin with one plain paragraph, under no heading, that the person reads first: the goal in one " +
+	"sentence, what this version adds, and how many files it touches, in their words and with no commit " +
+	"id, file path or timestamp.\n\n" +
+	"Then bring what the record holds in five parts, each under its own heading: Asked, Built, Examined, " +
+	"Proven, Behaves. Anchor every claim — a file and its lines, a record and its section, a commit. " +
+	"Read the change with the changes tool, which reads the reviewed tree and not this checkout.\n\n" +
+	"Name what the examination did not try, what the tests assume, and what is not recorded at all. " +
+	"Offer each case at the edge as a finding with the deposit tool. " + findingAsk + " " +
+	"Put on the desk what you are explaining with the present tool.\n\n" +
+	"Never give the verdict on this work: whether it lands is the person's to decide."
 
 // WalkRequest is one walk's fixed request, in the words of the sitting's
 // purpose.
@@ -106,8 +180,20 @@ func WalkRequest(part string, sitting Sitting) string {
 	return "Walk me through " + walkNames[part] + " for the review in " + sitting.Subject.ID + ": " +
 		walkAbout[part] + ".\n\n" +
 		"Put each thing on the desk with the present tool as you come to it, in the order you explain it, " +
-		"and anchor every claim. Name what is not recorded. Never say whether to accept."
+		"and anchor every claim. Name what is not recorded. If the record's head names earlier versions on " +
+		"its Previously line, the version under review moved since: say first what changed. Offer a finding " +
+		"the record's Findings section already carries only if it changed. " + findingAsk + " " +
+		"Never give the verdict: whether it lands is the person's to decide."
 }
+
+// findingAsk is what a review asks of every finding it offers
+// (review-findings-read-as-decisions §4): the plain layers a person decides it
+// by, before the evidence, and one recommended decision with its reason.
+const findingAsk = "Give each finding its severity (blocks, fix or note); a title: the problem in one plain " +
+	"sentence, with no commit id, file path or timestamp; why it matters, in one or two plain sentences; and " +
+	"recommend one decision per finding — must-fix, fix-later, not-a-problem or accept, a note only fix-later " +
+	"or not-a-problem — with the reason in one sentence. The finding's own words, its anchor and its " +
+	"consequence are its evidence, written as precisely as you like."
 
 // The three verdicts the End sheet offers (D10), as the Outcome's first line
 // spells them.
@@ -228,6 +314,15 @@ func (s *Service) WalkWith(ctx context.Context, human, record, part string, page
 	sitting := conversation.Sitting()
 	if sitting == nil {
 		return "", fmt.Errorf("no sitting is open on %s, so there is nothing to walk through", record)
+	}
+	if part == WalkAgain || part == WalkResume {
+		if sitting.Purpose != PurposeReview {
+			return "", fmt.Errorf("only a review's opening is asked again; this sitting shapes %s", record)
+		}
+		if part == WalkResume {
+			return s.submit(ctx, human, record, "", ReviewResumeRequest(*sitting), page, true)
+		}
+		return s.submit(ctx, human, record, "", ReviewAgainRequest(*sitting, s.earlierOf(record)), page, true)
 	}
 	offered := Walks[sitting.Purpose]
 	if !slices.Contains(offered, part) {
