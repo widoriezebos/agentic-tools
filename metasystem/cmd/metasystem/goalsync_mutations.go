@@ -1141,15 +1141,17 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if err != nil {
 		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "name an open severe or unproven finding of that critique"})
 	}
-	// The chain's register is read and stamped where its records are; the
-	// person is proven, and the act recorded, at f.root.
-	store := f.root
-	if f.store != "" {
-		store = f.store
-	}
-	store = goalbranch.CriticStore(store, f.chain)
+	// A review chain's register is read and stamped where its records are;
+	// the person is proven, and the act recorded, at f.root. A carried
+	// finding has no chain records.
+	var store string
 	var finding dispatchcore.CritiqueDecisionFinding
 	if f.chain != goal.HumanCarriedChain {
+		store = f.root
+		if f.store != "" {
+			store = f.store
+		}
+		store = goalbranch.CriticStore(store, f.chain)
 		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(store, f.chain, f.finding, f.id)
 		if err != nil {
 			dependencies.complain(err)
