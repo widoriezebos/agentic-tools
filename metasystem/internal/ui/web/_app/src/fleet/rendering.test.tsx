@@ -1,12 +1,12 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Copy, Held, Machine, Page, ThisSeat } from "./api";
 import { Blocks } from "./FleetPane";
 import { NO_PRESENCE } from "./fleet";
-import { minuteTime } from "../backlog/format";
+import { dateAndTime, minuteTime } from "../backlog/format";
 
 /**
  * What this page renders that the server deliberately did not.
@@ -91,12 +91,23 @@ function rendered(payload: Page): string {
 }
 
 describe("when a silence began", () => {
-  it("is rendered by this browser, once, in the flag and beside the standing", () => {
+  // The page's own clock, on the fixture's day: an instant of today reads as
+  // its time of day.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T14:37:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is rendered by this browser, once, in Needs you's flag and in the Seen cell's title", () => {
     const markup = rendered(page());
     const when = minuteTime(held.since);
 
     expect(markup).toContain(`held by m1c, unreachable since ${when}`);
-    expect(markup).toContain(`since ${when}`);
+    expect(markup).toMatch(new RegExp(`class="ms-fleet-cell ms-fleet-cell--seen" title="[^"]*unreachable since ${dateAndTime(machine.since)}`));
     // And the server's own words never carried a time of day to begin with.
     expect(held.flag).not.toMatch(/\d\d:\d\d/);
   });

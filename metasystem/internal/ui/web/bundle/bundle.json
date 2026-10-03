@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:bfc19b3184ff4c84fd5f4e759c1af9984ee8e836c69671590a00f1c84e4bf2b4",
+  "sourceDigest": "sha256:c65d228d8006aa99bb3203bb16b8e00c39891a42ad972c8577bca4d463e479ff",
   "source": [
     {
       "path": ".npmrc",
@@ -412,19 +412,19 @@
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
-      "sha256": "ef94f58b2590eb8238c8d8b807bd3da5fd4fbc1e004860925d088cd467e23801"
+      "sha256": "b38aacbcf9071b827eadbb4eb68a7b07cd0c5e51de65f5aec0faaf54846b8890"
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "1314fab07511f564c32e942c163d1e99be07705e30be063ecf84835caecde98c"
+      "sha256": "476182363adf80c90b47bce12d71abcc1661f243b8eed03adc6a229f906979a8"
     },
     {
       "path": "src/fleet/LandingLane.test.tsx",
-      "sha256": "d40a0b637920e8828d89b109b4561bda3d5d304f2b7d07e56bcab1d9b3160cd6"
+      "sha256": "b37293b193ea218dc500b446fa8ef6614a28a150747eba4ffc4570aa2442e6f6"
     },
     {
       "path": "src/fleet/LandingLane.tsx",
-      "sha256": "5cee98e2561bb5cecc73ea05bd81597a503a70887bfd3d8d03e9409e94ebf72b"
+      "sha256": "81c1cbefdb481eebf0f1128f03ec362bd993c18c81d04bc1d576fa4c5cea1585"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -452,11 +452,11 @@
     },
     {
       "path": "src/fleet/breathing.test.tsx",
-      "sha256": "101bdc57de4218f4bde88da849f79ffbeb60811a7ca1c1ed072c76a24b3d9af6"
+      "sha256": "d175f57ebf140a4072b81c4bfe81e2dc040904e7d8df4023d0238a7f7a27126a"
     },
     {
       "path": "src/fleet/capture.ts",
-      "sha256": "d94317b1b7541bcc1e53b6414c43d51943d315dd9c734948b926c8923f6e3469"
+      "sha256": "80cc6fa3bc8709a0d8c0700f747dfabe94fb748f8fa628e14e2038389b85775b"
     },
     {
       "path": "src/fleet/discard.test.ts",
@@ -464,11 +464,11 @@
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "48a2034c3aa2076d71483addc137dad18c5f8ad72e8d0d2c128b4030af7d953c"
+      "sha256": "b873a524172a9b8dafcf24cf40e11f7dce50ab741dfa9c07721e5d9ffe826eec"
     },
     {
       "path": "src/fleet/fleet.ts",
-      "sha256": "4022477b23498b308a5f912bea9b11b6604fe8ab5ad67e5fb8d51f43ce0b2ea5"
+      "sha256": "101d196d08981550000573812eab625e65b7fec034b1a5fbc4c837416fcd6906"
     },
     {
       "path": "src/fleet/launching.test.ts",
@@ -480,15 +480,15 @@
     },
     {
       "path": "src/fleet/panel.test.ts",
-      "sha256": "5d3722d36484973f855a31c93d72963a83522f973f79c0c16dde7a61a6f0a867"
+      "sha256": "f45c9533263ee1626e3522b62797429add543e349160a34904b6c077fce2559c"
     },
     {
       "path": "src/fleet/panel.ts",
-      "sha256": "540837d84e4241527ccefb601e2379e5313a887f23c2397b7805e238af1c9765"
+      "sha256": "c546107c8dc426fe1b9e960be972da519daddaa080beeb7274421bad647e1fb0"
     },
     {
       "path": "src/fleet/rendering.test.tsx",
-      "sha256": "c5f84c9b54f5625dacc44d9abe3ea5d22eb756049d5587ffdd08b6e7660dd19e"
+      "sha256": "5ddb36f160131a529e39d209326474e86f6aef7f075f47727d9ff619d668373e"
     },
     {
       "path": "src/fleet/working.test.tsx",
@@ -520,7 +520,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "e25fa312abe4c0cc81f677a8166a8326a98aab71d0ae10d7c4210a0de69e9ea3"
+      "sha256": "c112239bbab73cec8b14408bd4961de0bfa89ce7ca0dd2d3dfd6907e97a3b1ce"
     },
     {
       "path": "src/index.css",
@@ -1626,11 +1626,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "122a6f69400a3a2ff1581fbf4919e93a2e516b9c52b65d4d07bbc2136c5698dc"
+      "sha256": "40a13e85aaa18be7b47eb7b881b8f49a3acfabb28b476986a1457cc548329b59"
     },
     {
       "path": "assets/index.js",
-      "sha256": "9a82c23b6aefb6fca0680c2f26b8eddeff359652bc16f4fbef5bc29e6dc34a8c"
+      "sha256": "9a13cad88fb8421a88d2057837113b3bb4919d984eb8ea5701d4d8c9e0ff6f8c"
     },
     {
       "path": "assets/info-A6RAGUB7.js",
@@ -1822,7 +1822,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "aa368ea563fc1e6aa5a0a3cabf81b7b08f70cc8521d0beb922f477c5916933b5"
+      "sha256": "98304d8439458588e9f3980cae18787deeba9672c5dbd0f1c41879f7d0cb7a63"
     },
     {
       "path": "theme.js",

@@ -97,6 +97,33 @@ describe("the landing lane block", () => {
     expect(draw(lane({ owner: owner({ state: "unready", last_exit: "x" }), agent_alive: false }))).toContain(">Needs attention<");
   });
 
+  it("says in its heading how many wait and what proves, beside the state word", () => {
+    const markup = draw(lane({ owner: owner({ state: "idle", pid: null }), agent_alive: false, queue: [entry(), entry({ goal: "goal-b" })] }));
+    const heading = markup.slice(markup.indexOf("<h2"), markup.indexOf("</h2>"));
+
+    expect(heading).toContain(">Running<");
+    expect(heading).toContain('<span class="ms-fleet-lane-counts">2 waiting · nothing proving</span>');
+  });
+
+  it("closes Came back with a count of what it holds: every return not handed in again, older ones too", () => {
+    const markup = draw(
+      lane({
+        queue: [
+          entry({ goal: "old", state: "returned", reason: "red", returned_at: "2026-09-20T09:00:00Z" }),
+          entry({ goal: "lane-check-red", state: "returned", reason: "the full test run is red", returned_at: local(11) }),
+          entry({ goal: "again", state: "returned", reason: "conflict", returned_at: local(10) }),
+          entry({ goal: "again", sha: "ff", state: "waiting", at: local(11, 30) }),
+          entry({ goal: "landed-old", state: "returned", reason: "red", returned_at: "2026-09-19T09:00:00Z" }),
+          entry({ goal: "landed-old", sha: "ee", state: "landed" }),
+        ],
+      }),
+    );
+
+    expect(markup).toMatch(/<details class="ms-fleet-details ms-fleet-lane-cameback"><summary class="ms-fleet-details-summary">Came back \(3\)<\/summary>/);
+    expect(markup).not.toContain("Came back today");
+    expect(markup).not.toMatch(/<details[^>]* open/);
+  });
+
   it("uses one word per state: never stopped, started again or not paused", () => {
     const paused = draw(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true, agent_alive: false, queue: [entry()] }));
     for (const word of ["stopped", "started again", "not paused", "agent alive"]) {
