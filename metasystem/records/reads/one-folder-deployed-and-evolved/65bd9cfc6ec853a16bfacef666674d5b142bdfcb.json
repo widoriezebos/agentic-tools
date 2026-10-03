@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "goal": "one-folder-deployed-and-evolved",
+  "unit": "fence-and-hooks",
+  "subject": {
+    "commit": "65bd9cfc6ec853a16bfacef666674d5b142bdfcb",
+    "parent": "6cf647ebdc9b2e67a2e9ceee55dc6f53ef0afbff",
+    "tree": "dd20b7971d11b819e5a03b5ae072a652d3679354",
+    "patchDigest": "7bd71f5c6bc7617cd6a8513c830f461840ff7feed2dcb16c8035fd8d054f34d1",
+    "unitDigest": "10890f65cfb8eb400700322d68d5fa1230d7f2578e9afab3d518f9791cb362a7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d23687fedb9111a169ac9f06",
+    "round": 1,
+    "closureSha256": "97f5dae1ce0d3691d9daa5014336084c9453de1e0a35cd03730df21b5c2b412e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "dd20b7971d11b819e5a03b5ae072a652d3679354",
+    "runId": "goal-read-gate-20261003t184701z-9656c3b0ad6017ff"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "dbd7a656c884fc025eb2cbf20f9d9b906839b516",
+      "digest": "f09ee46c90043b4dfa821d13048e76a289cf0172cb3031854d5820587a0bb9ad"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/context_cost_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/goalsync_request_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/helm_force_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/helm_return_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/hook_bootstrap_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/lease_hook_delegate_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/wait_verb_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/adopt/adopt_git_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/hooks/direct_command_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/hooks/runtime_hook_bootstrap_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/hooks/runtime_hook_harness_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/hooks/runtime_hook_start_cache_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/hooks/runtime_hook_stop_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ledgerfence/fence_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ledgerfence/goal_cli_ledger_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ui/act/act_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ui/act/helm_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ui/act/inflight_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ui/act/session_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/edges_test.go",
+      "readerWord": "reviewed by critic root code-critic-d23687fedb9111a169ac9f06"
+    }
+  ],
+  "sha256": "342f330246735d708004a81c86e61425cd74e4ef0287f91ca1551399f35e3c6b"
+}
