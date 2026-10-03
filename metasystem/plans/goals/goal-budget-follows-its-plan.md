@@ -3,11 +3,11 @@
 - State: queued
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Budget accounting and alerts on existing records; no change to what a budget allows"
 - Tier: 2
-- Intent: A goal's budget follows its unit plan, and its owner and the person hear before it runs out (Wido 2026-10-03, lessons from m1f: one-folder had 8 working hours for eleven units, overran to 11h08m silently, and 'no new work starts' would have stopped it after the running attempt; goal show printed 'attempts 0 of 10' while the unit was on attempt 6). When a plan of N units is recorded, the budget proposal scales with it (a person approves the raise, with its plain-English impact, R-143-m1e); the steward alerts the seat at 75% and the person-facing panel at 90% of any budget member; attempts count unit attempts.
+- Intent: Every goal and every slice (unit) carries an estimate, the machinery tracks actuals against it, and exceeding an estimate is a clear signal for the steward and for the person (Wido 2026-10-03: 'what we probably should introduce is estimates and then tracking how we fare against these estimates. We can have this at goal and at slice level. Exceeding an estimate is a clear signal for the steward (and me)'). The estimate is what we expect (time, attempts, review rounds, size); the budget is the limit, derived from the estimates with an allowance, so a goal's budget follows its plan instead of a fixed tier box (lessons from m1f: one-folder had 8 working hours for eleven units and overran to 11h08m unnoticed; goal show printed 'attempts 0 of 10' on attempt 6). Estimates are recorded when the plan is made (goal level at approval or claim, slice level before the slice starts), actuals come from records the machinery already keeps, a re-estimate is a recorded act with its reason, and how we fared (estimate against actual per goal and slice) is kept so later estimates improve. Exceeding a slice estimate alerts the seat with advice; exceeding the goal estimate shows in the person-facing panel; reaching the budget stops new work as today.
 - Origin: main
-- Next step: Short design over the existing budget box, unit run records and steward alerts; Astra critique tier 2; build. Absorbs machinery item 66. INPUT 2026-10-03: the elapsed budget keeps running while a goal only waits (fleet-panel-ux at 75% of 14h while its last unit waits in the landing lane and its seat works another goal; one-folder ran to 11h08m while waiting on machinery fixes). Decide what the elapsed member measures: working time, not time spent waiting on the lane, on a machinery fix or on a person.
+- Next step: Tier-2 design: the estimate record (which measures, who writes it, when), actuals from existing unit-run, review-round and elapsed records, the exceed signal as a steward trigger (rule contract R3/R4 in agentic-tools-evidence/steward-seat-rules-20261003/rules.md), budget = estimates plus allowance, the elapsed member measuring working time not waits (fleet-panel-ux ran to 75% while only waiting in the lane), re-estimates, the kept history of estimate against actual, and where the person sees it (goal page, fleet page). Inputs: units-are-sized-from-a-measured-inventory supplies slice sizes; fleet-page-redesign shows the signal. Astra critique; build. Absorbs machinery item 66.
 - OpenedAt: 2026-10-03T07:56:12Z
-- Revision: 4
+- Revision: 5
 - BudgetExceptions: 0
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-10-03T07:56:44Z 4X5GSKS6TGFH7R56EGJJ1S74KD-m1e-718ba0eb approve actor=human:Wido targets=goal-budget-follows-its-plan
 - 2026-10-03T09:30:56Z YH5MKEXGT2C1AQDKH4Y086RA2B-m1e-718ba0eb edit actor=human:Wido targets=goal-budget-follows-its-plan
 - 2026-10-03T09:40:28Z BPXCS50CVQJPKKFKJDAQB19891-m1e-718ba0eb unapprove actor=human:Wido targets=goal-budget-follows-its-plan reason=Wido 2026-10-03 widened the intent: estimates at goal and slice level, tracked against actuals
-Integrity: sha256=83bf1e8bbf0723dc79957706c0cc023cf712a9f3796be5445b9de0cf220544b6
+- 2026-10-03T09:40:44Z 1BTB05B3VKYFVF78VBYJ75S903-m1e-718ba0eb edit actor=human:Wido targets=goal-budget-follows-its-plan
+Integrity: sha256=221bca719776e7d6225bdb94a44acb0f6becdb87f821ea91b53670652e51a84f
