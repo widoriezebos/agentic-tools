@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M401A1E933TWF0E87J2TZ65R
-- Status: draft
+- Status: accepted
 - Goals: fleet-panel-ux
+
+Critique: Codex Astra (tier 2, run directly), closed after round 2, the failsafe (material per round 2, 0; round 1 found two in 2b, both folded, and none in 2a; round 2 confirmed all five round-1 ids closed). Slice 2b also waits on Wido's ruling (open question 1).
 
 Revision 2: Astra's round 1 folded (S2-01 and S2-02 in 2b; S2-03 to S2-05 corrected the text); the table at the foot. Open question 2 of revision 1 is answered by m1e.
 
@@ -107,3 +109,7 @@ Proof, failing first. httpd: each route refuses every hand but a signed-in one a
 | S2-03 | no | 2a | text corrected: a terminal `landing prove --wait` writes its log into the proofs folder and is found |
 | S2-04 | no | 2a | text corrected: the exit reason is set only when the command ran and failed; an inherited green keeps its reason (703ecb830), with a test |
 | S2-05 | no | 2b | text corrected: the fence records the engine process that ran the stop, never the shell |
+
+## Critique round 2 (Astra, the failsafe)
+
+S2-01 to S2-05 all closed; no new finding. VERDICT: 0 material.
