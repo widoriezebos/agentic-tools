@@ -34,6 +34,7 @@ var engineBindingStandardTests = []string{
 	"TestEngineGoArgvCarriesTrimpath",
 	"TestCauseOutcomesRenderDeclaredCommandCount",
 	"TestDecisionMismatchNamesTheField",
+	"TestDirtyEnginePathsRemedyStashesNewFilesToo",
 	"TestEngineBindingWitnessInventory",
 	"TestEngineRefusalsNameTheirCause",
 	"TestFastForwardBlockerRemediesPreserveCheckout",

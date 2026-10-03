@@ -89,7 +89,7 @@ func TestLandingRunStartsTheAgentOnceForQueuedWork(t *testing.T) {
 // The started line names each of the lane's wake reasons in words.
 func TestLandingRunSaysEachWakeReasonInWords(t *testing.T) {
 	t.Parallel()
-	if got := wakeWords([]string{"queued", "proof-finished"}); got != "queued work and a finished proof" {
+	if got := wakeWords([]string{"queued", "proof-finished"}); got != "queued work and a finished test run" {
 		t.Fatalf("wake words = %q", got)
 	}
 }
