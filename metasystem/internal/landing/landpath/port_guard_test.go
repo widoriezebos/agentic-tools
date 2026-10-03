@@ -465,7 +465,8 @@ func TestGuardWrapperFenceCoversOnlyWhatItProtects(t *testing.T) {
 			if c.setup != nil {
 				c.setup(g)
 			}
-			g.expect(g.run(), 1, "an agent commits here only through metasystem work land", c.reason, "metasystem work land")
+			g.expect(g.run(), 1, "an agent commits here only through metasystem work land", c.reason,
+				"run: metasystem work land --message FILE --staged  (--local commits without pushing)", "metasystem work review with the goal and --changes", "other work, as a patch file")
 			if g.tokenChecks != 1 {
 				t.Fatalf("token checks %d, want 1", g.tokenChecks)
 			}

@@ -510,18 +510,31 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 		t.Fatalf("reviewed design = %v", record["design"])
 	}
 	for _, tc := range []struct {
-		name, value string
-		err         error
+		name, value, draft string
+		err, draftErr      error
 	}{
-		{"missing blob", "", fmt.Errorf("missing blob")},
-		{"malformed blob", "not-an-object-id", nil},
+		{"missing blob and unreadable draft", "", "", fmt.Errorf("missing blob"), fmt.Errorf("unreadable")},
+		{"malformed blob and malformed draft", "not-an-object-id", "not-an-object-id", nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reads := declaredGitFacts(t, gitFactRead{kind: "blob", workspace: workspace, commit: testHeadID, path: design, value: tc.value, err: tc.err})
+			reads := declaredGitFacts(t, gitFactRead{kind: "blob", workspace: workspace, commit: testHeadID, path: design, value: tc.value, err: tc.err},
+				gitFactRead{kind: "draft", workspace: workspace, path: design, value: tc.draft, err: tc.draftErr})
 			if _, _, err := designBlobBinding(workspace, testHeadID, design, reads); err == nil || !strings.Contains(err.Error(), "is not a blob") {
 				t.Fatalf("invalid blob not refused: %v", err)
 			}
 		})
+	}
+	// A seat's draft the reviewed commit does not hold is bound by its bytes.
+	reads := declaredGitFacts(t, gitFactRead{kind: "blob", workspace: workspace, commit: testHeadID, path: design, err: fmt.Errorf("missing blob")},
+		gitFactRead{kind: "draft", workspace: workspace, path: design, value: testBlobID})
+	if path, source, err := designBlobBinding(workspace, testHeadID, design, reads); err != nil || path != design || source != design+"@"+testBlobID {
+		t.Fatalf("an uncommitted draft: %q %q %v", path, source, err)
+	}
+	// A path with no file in the workspace is not a draft: no draft read.
+	missing := "metasystem/internal/protocol/roles/absent.md"
+	reads = declaredGitFacts(t, gitFactRead{kind: "blob", workspace: workspace, commit: testHeadID, path: missing, err: fmt.Errorf("missing blob")})
+	if _, _, err := designBlobBinding(workspace, testHeadID, missing, reads); err == nil || !strings.Contains(err.Error(), "is not a blob") {
+		t.Fatalf("a design that is nowhere: %v", err)
 	}
 	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 5 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])

@@ -5,14 +5,12 @@ import {
   candidateHref,
   correctionBrief,
   fixFindings,
-  NO_FIX,
   outcomeShape,
   outcomeWithVerdict,
   pillOf,
   recordedLine,
   RETIPPED,
   reviewOutcome,
-  standingOutcome,
   verdictLine,
   verdictToPerform,
 } from "./room";
@@ -100,18 +98,17 @@ describe("the correction brief", () => {
   it("is nothing where no finding is answered fix, and Send back says so", () => {
     const none = withFindings(head(TIP), finding("the log is noisy", "internal/log.go:3", LEFT_OPEN, "deposit:t1#1"));
     expect(correctionBrief(entriesIn(none), RECORD, TIP)).toBe("");
-    expect(NO_FIX).toContain("none is answered fix");
   });
 
   it("travels with a send-back once its Outcome is recorded, as the human edited it, and Clear to land carries none", () => {
     const back = { kind: "outcome", verdict: "send back" };
-    expect(verdictToPerform(back, "review", RECORD, source, null)).toEqual({
-      goal: "g", fixes: 2,
-      asked: { record: RECORD, verdict: "send-back", work: "", brief: correctionBrief(entriesIn(source), RECORD, TIP) },
+    expect(verdictToPerform(back, "review", RECORD, source, null, "blob:1")).toEqual({
+      goal: "g", fixes: 2, followUps: [],
+      asked: { record: RECORD, verdict: "send-back", work: "", brief: correctionBrief(entriesIn(source), RECORD, TIP), tip: TIP, revision: "blob:1" },
     });
     expect(verdictToPerform(back, "review", RECORD, source, "# Edited\n")?.asked.brief).toBe("# Edited\n");
     expect(verdictToPerform({ kind: "outcome", verdict: "clear to land" }, "review", RECORD, source, "# Edited\n")?.asked)
-      .toEqual({ record: RECORD, verdict: "clear-to-land", work: "", brief: "" });
+      .toEqual({ record: RECORD, verdict: "clear-to-land", work: "", brief: "", tip: TIP, revision: "" });
     // No verdict performs nothing, and neither does a sitting that shapes a record.
     expect(verdictToPerform({ kind: "outcome", verdict: "no verdict" }, "review", RECORD, source, null)).toBeNull();
     expect(verdictToPerform({ kind: "outcome", verdict: "clear to land" }, "shape a design", RECORD, source, null)).toBeNull();
@@ -120,11 +117,11 @@ describe("the correction brief", () => {
 });
 
 describe("what the room and the card say once the verdict is on the goal", () => {
-  it("says the verdict at its tip and by whom, and a send-back with its findings", () => {
+  it("says the verdict in words, and a send-back with its must-fix decisions (review-findings-read-as-decisions §3)", () => {
     expect(recordedLine({ verdict: "clear-to-land", tip: TIP, by: "Wido" }, 0, "g"))
-      .toBe("Recorded. The goal now carries your verdict: clear to land at 9c1f0a2, reviewed by Wido.");
+      .toBe("Recorded on g as your verdict: looks good, land it. The seat lands it on its next turn.");
     expect(recordedLine({ verdict: "send-back", tip: TIP, by: "Wido" }, 3, "g"))
-      .toBe("Sent back with your three findings; the goal has left Review, and the seat that holds g revises from your brief on its next turn.");
+      .toBe("Recorded on g as your verdict: send it back. The builder gets your 3 must-fix decisions as a correction, and the goal leaves Review until it comes back fixed.");
   });
 
   it("reads the card's line from the goal's own history", () => {
@@ -139,18 +136,15 @@ describe("what the room and the card say once the verdict is on the goal", () =>
     expect(verdictLine(undefined, "g")).toBe("");
   });
 
-  it("asks for End again where a retip leaves an Outcome card unrecorded", () => {
-    expect(standingOutcome([{ kind: "outcome", standing: "waiting" }])).toBe(true);
-    expect(standingOutcome([{ kind: "outcome", standing: "recorded" }, { kind: "finding", standing: "waiting" }])).toBe(false);
-  });
 });
 
 describe("the candidate's pill", () => {
   const running = { goal: "g", state: "running", readiness: "answering", address: "127.0.0.1:7981", commit: TIP, said: "" };
 
-  it("runs the reviewed tip, or says the moved case with both commits", () => {
-    expect(pillOf(running, TIP)).toEqual({ state: "reviewed", words: "running the reviewed tip 9c1f0a2", address: "127.0.0.1:7981", run: false, stop: true });
-    expect(pillOf({ ...running, commit: MOVED }, TIP).words).toBe("running 4d2e7b1, not the reviewed 9c1f0a2");
+  it("runs the reviewed version, or says in words that what runs is another (review-findings-read-as-decisions RF-04)", () => {
+    expect(pillOf(running, TIP)).toEqual({ state: "reviewed", words: "Running on port 7981.", address: "127.0.0.1:7981", run: false, stop: true });
+    expect(pillOf({ ...running, commit: MOVED }, TIP).words).toBe(
+      "Running on port 7981, but not the version you are reviewing: what runs is another version of this goal.");
     expect(pillOf({ ...running, commit: MOVED }, TIP).state).toBe("moved");
   });
 
@@ -162,7 +156,8 @@ describe("the candidate's pill", () => {
 
   it("greys a goal with no launch contract, with the reason", () => {
     const pill = pillOf({ refusal: "this goal's candidate cannot run from here: this project has no launch contract", code: "no-contract" }, TIP);
-    expect(pill).toEqual({ state: "no-contract", words: "this goal's candidate cannot run from here: this project has no launch contract",
+    expect(pill).toEqual({ state: "no-contract",
+      words: "This project does not say how to start its application, so no version of it can be started here.",
       address: "", run: false, stop: false });
   });
 

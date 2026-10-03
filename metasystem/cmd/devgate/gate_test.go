@@ -372,14 +372,14 @@ func TestGateEveryGoPhaseCarriesTheInheritedAllowance(t *testing.T) {
 		if code := w.gate(); code != 0 {
 			t.Fatalf("%s: exit %d\n%s", test.name, code, w.output())
 		}
-		for _, fragment := range []string{"go vet -trimpath -p=" + test.workers + " ./...", "go run -trimpath -p=" + test.workers + " " + staticcheckModule,
+		for _, fragment := range []string{"go vet -trimpath -p=" + test.workers + " ./cmd/... ./internal/...", "go run -trimpath -p=" + test.workers + " " + staticcheckModule,
 			"go run -trimpath -p=" + test.workers + " " + govulncheckModule, "go list -p=" + test.workers + " ./internal/...",
 			"go build -p=" + test.workers + " -buildvcs=false"} {
 			if len(w.called(fragment)) == 0 {
 				t.Fatalf("%s: no %q in %v", test.name, fragment, w.calls)
 			}
 		}
-		if cross := w.called("go build -trimpath -p=" + test.workers + " ./..."); len(cross) != 2 {
+		if cross := w.called("go build -trimpath -p=" + test.workers + " ./cmd/... ./internal/..."); len(cross) != 2 {
 			t.Fatalf("%s: cross-builds = %v", test.name, cross)
 		}
 		assertGoCompilesTrimmed(t, w)

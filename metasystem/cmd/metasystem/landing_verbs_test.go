@@ -1329,7 +1329,12 @@ case "${1:-}" in
     esac
     case "${1:-}" in
       honnef.co/go/tools/cmd/staticcheck@v0.8.0|golang.org/x/vuln/cmd/govulncheck@v1.2.0)
-        [[ "$#" -eq 2 && "${2:-}" == ./... ]] || exit 97
+        # devgate names the top-level trees Git lists (./cmd/...), or ./...
+        shift
+        (($#)) || exit 97
+        for pattern; do
+          [[ "$pattern" == ./... || "$pattern" == . || "$pattern" =~ ^\./[^/]+/\.\.\.$ ]] || exit 97
+        done
         exit 0
         ;;
       ./cmd/devgate) shift; exec "$RECEIPT_CANARY_DEVGATE" "$@" ;;

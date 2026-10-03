@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -44,6 +45,8 @@ type Git interface {
 	LineCommits(rev, path string) ([]string, error)
 	// FetchBranch brings one branch at origin into origin/BRANCH.
 	FetchBranch(branch string) error
+	// CommitFacts is when a commit was made and by whom.
+	CommitFacts(rev string) (gittree.CommitFacts, error)
 }
 
 // Owner reads one checkout's candidates, and the checkout as it stands for a
@@ -288,11 +291,18 @@ type Index struct {
 	// tip the record names.
 	Current string `json:"current"`
 	Moved   bool   `json:"moved"`
+	// At and By are when the reviewed version was made and who made it, and
+	// CurrentAt when the branch's version now was made (review-findings-read-
+	// as-decisions §3), so a person is told a version by its time rather than
+	// its id. Each is "" where the commit's facts could not be read.
+	At        string `json:"at,omitempty"`
+	By        string `json:"by,omitempty"`
+	CurrentAt string `json:"currentAt,omitempty"`
 }
 
 // Changes is the change index of what the record reviews.
 func (o Owner) Changes(reviewed Reviewed) (Index, error) {
-	pairs, _, err := o.comparisons(reviewed)
+	pairs, at, err := o.comparisons(reviewed)
 	if err != nil {
 		return Index{}, err
 	}
@@ -301,13 +311,25 @@ func (o Owner) Changes(reviewed Reviewed) (Index, error) {
 		return Index{}, err
 	}
 	index.Goal = reviewed.Goal
+	index.At, index.By = o.factsOf(at)
 	if reviewed.Tip != "" && reviewed.Goal != "" {
 		if now, _, err := o.resolved(Branch(reviewed.Goal)); err == nil {
 			index.Current = now
 			index.Moved = now != reviewed.Tip
+			index.CurrentAt, _ = o.factsOf(now)
 		}
 	}
 	return index, nil
+}
+
+// factsOf is one commit's time, in UTC as RFC 3339, and its author, or two
+// empty words where they cannot be read: a version is then said without them.
+func (o Owner) factsOf(commit string) (string, string) {
+	facts, err := o.Git.CommitFacts(commit)
+	if err != nil || facts.At.IsZero() {
+		return "", ""
+	}
+	return facts.At.UTC().Format(time.RFC3339), facts.Author
 }
 
 // ChangesSince is what changed on the branch since the tip the record names:
@@ -784,6 +806,30 @@ var _ Git = gittree.Workspace{}
 func (o Owner) BranchTip(goal string) (string, error) {
 	tip, _, err := o.resolved(Branch(goal))
 	return tip, err
+}
+
+// OnBranch says whether a commit is a version of a goal's branch: its tip, or
+// a commit beneath it. A candidate is run only at such a commit (fix round 3,
+// F-1), so a page cannot start something that was never this goal's work.
+func (o Owner) OnBranch(goal, commit string) (bool, error) {
+	tip, err := o.BranchTip(goal)
+	if err != nil {
+		return false, err
+	}
+	if commit == tip {
+		return true, nil
+	}
+	// No shared history, or no such commit: either way not this goal's work.
+	bases, err := o.Git.MergeBases(commit, tip)
+	if err != nil {
+		return false, nil
+	}
+	for _, base := range bases {
+		if base == commit {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // BranchTipAtOrigin is BranchTip read after fetching the branch from origin,

@@ -655,3 +655,27 @@ func TestDispatchIntegrationRegistersTheJobWorktreeAsTheChainsWorkspace(t *testi
 		t.Fatalf("the quarantine is linked: %q %v", alternates, err)
 	}
 }
+
+// TestDispatchRepeatAfterASetupRefusalTakesTheNextAttempt: a start refused
+// at setup leaves a husk under the request's derived name; the same request
+// again is its next attempt under a fresh name, says which start it follows,
+// and leaves the husk as it was.
+func TestDispatchRepeatAfterASetupRefusalTakesTheNextAttempt(t *testing.T) {
+	t.Parallel()
+	b := newDispatchBed(t)
+	brief := b.brief("generated.md", "implement", "Generated.")
+	derived, err := dispatch.DefaultOperationID("", 0, dispatch.DispatchModeFresh, "implementer", sha256Hex(t, brief), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	husk := `{"jobId":"` + derived + `","role":"implementer","status":"failed","phase":"setup","refusalClass":"setup","error":"dispatch-refused"}`
+	b.writeFile("artifacts/agents/jobs/"+derived+".json", husk)
+	result := b.dispatchAs("dispatch", "--role", "implementer", "--brief", brief)
+	requireExit(t, result, 0, b.stderr.String())
+	if job := strings.TrimSpace(string(result.Stdout)); job != dispatch.OperationAttempt(derived, 2) || !strings.Contains(b.stderr.String(), "refused at setup before it: "+derived) {
+		t.Fatalf("the repeat after a setup refusal: job %q, stderr %q; want attempt 2 of %s", job, b.stderr.String(), derived)
+	}
+	if record := b.record(derived); record["status"] != "failed" || record["phase"] != "setup" {
+		t.Fatalf("the husk changed: %v", record)
+	}
+}

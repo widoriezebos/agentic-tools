@@ -21,6 +21,7 @@ Run
   system       MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll,
                adopt, completion
   landing      the landing lane on this computer: where every seat's work is proved and pushed
+  deploy       this project's deploy of main: status, now, rollback, pause and resume
   alert        what the steward reported and a person should see: list, acknowledge and clear
   machine      the fleet's machines
   disk         what MetaSystem keeps on this computer's disk, and reclaiming it
@@ -44,7 +45,6 @@ More
   metasystem help [OBJECT [ACTION]]   the same pages; help agent, help human, help all by audience
 
   usage   metasystem OBJECT ACTION [TARGET...] [OPTIONS]
-          options go before or after the target; --repo PATH selects the repository from any path
-          inside it
+          options go before or after the target; --repo PATH takes any path inside the repository
 
 → metasystem status  what is going on in this checkout

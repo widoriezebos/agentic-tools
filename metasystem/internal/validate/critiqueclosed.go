@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -53,7 +54,9 @@ func CritiqueClosed(findingsPath, dispositionsPath string) []string {
 }
 
 // CritiqueClosedWithRegister performs the ordinary join, then persists the
-// bounded out-of-scope dispositions in one dispatch-owned register write.
+// bounded out-of-scope dispositions in one dispatch-owned register write. An
+// accepted-risk row names the register's record of a person's accepted risk;
+// it stands only when the register holds that record, and writes nothing.
 func CritiqueClosedWithRegister(findingsPath, dispositionsPath, repoRoot, rootJob string) []string {
 	violations := CritiqueClosed(findingsPath, dispositionsPath)
 	if len(violations) != 0 {
@@ -67,13 +70,32 @@ func CritiqueClosedWithRegister(findingsPath, dispositionsPath, repoRoot, rootJo
 	if !ok || len(parseViolations) != 0 {
 		return parseViolations
 	}
-	var ids []string
+	var ids, acceptedRisks []string
 	for id, disposition := range dispositions {
-		if disposition == "out-of-scope" {
+		switch disposition {
+		case "out-of-scope":
 			ids = append(ids, id)
+		case "accepted-risk":
+			acceptedRisks = append(acceptedRisks, id)
 		}
 	}
 	sort.Strings(ids)
+	sort.Strings(acceptedRisks)
+	if len(acceptedRisks) > 0 {
+		held, err := dispatch.CritiqueAcceptedRiskFindingIDs(repoRoot, rootJob)
+		if err != nil {
+			return []string{err.Error()}
+		}
+		var refused []string
+		for _, id := range acceptedRisks {
+			if !slices.Contains(held, id) {
+				refused = append(refused, fmt.Sprintf("finding id '%s' is not an accepted risk until a person runs metasystem goal accept-risk", id))
+			}
+		}
+		if len(refused) > 0 {
+			return refused
+		}
+	}
 	if err := dispatch.CritiqueRegisterResolveOutOfScope(repoRoot, rootJob, ids); err != nil {
 		return []string{err.Error()}
 	}
@@ -243,8 +265,8 @@ func readDispositions(path string, violation func(string, ...any)) ([]string, ma
 		} else {
 			seen[findingID] = true
 		}
-		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" && disposition != "out-of-scope" {
-			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted, out-of-scope",
+		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" && disposition != "out-of-scope" && disposition != "accepted-risk" {
+			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted, out-of-scope, accepted-risk",
 				findingID, disposition)
 		}
 		// TRUE findings outside the brief's threat model close as

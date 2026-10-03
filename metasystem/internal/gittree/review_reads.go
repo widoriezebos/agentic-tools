@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
@@ -138,4 +139,28 @@ func (w Workspace) LineCommits(rev, path string) ([]string, error) {
 		commits = append(commits, fields[0])
 	}
 	return commits, nil
+}
+
+// CommitFacts is when a commit was made and who made it: the facts a person is
+// told a version by, before its id (review-findings-read-as-decisions §3).
+type CommitFacts struct {
+	At     time.Time
+	Author string
+}
+
+// CommitFacts reads one commit's committer time and author name.
+func (w Workspace) CommitFacts(rev string) (CommitFacts, error) {
+	raw, err := w.git(nil, "log", "-1", "--no-show-signature", "--format=%cI%x00%an", rev, "--")
+	if err != nil {
+		return CommitFacts{}, fmt.Errorf("gittree commit facts: %w", err)
+	}
+	when, author, found := strings.Cut(strings.TrimRight(string(raw), "\n"), "\x00")
+	if !found {
+		return CommitFacts{}, fmt.Errorf("gittree commit facts: the log line of %s is malformed", rev)
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(when))
+	if err != nil {
+		return CommitFacts{}, fmt.Errorf("gittree commit facts: %q is not a time", when)
+	}
+	return CommitFacts{At: at, Author: strings.TrimSpace(author)}, nil
 }

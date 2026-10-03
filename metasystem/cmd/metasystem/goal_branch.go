@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -226,6 +227,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
 	flags.Var(model, "model", "requested critic model (subject to roster authorization)")
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
+	join := flags.Bool("join", false, "with --brief: join a read of this build already started; the brief starts a read only")
 	retry := flags.Int64("retry", 0, "examine the critic chain's failed round N once more, in the same chain")
 	selected := flags.String("selected-installation", "", "installation whose configured code-critic roster the critic dispatch resolves (a generated goal worktree's selected installation)")
 	parseErr := flags.Parse(args)
@@ -289,7 +291,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 		}
 	}
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
-		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
+		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
@@ -486,10 +488,64 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 		}
 		file := projection.Tree.Live[goalID]
 		if file == nil || file.Claimed == nil || file.Claimed.Machine != machine || file.Claimed.Lineage != current.OwnerLineage {
-			return fmt.Errorf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", goalID, machine, current.OwnerLineage, goalID)
+			held := goalHeldElsewhere{goal: goalID, machine: machine, lineage: current.OwnerLineage}
+			if file != nil && file.Claimed != nil {
+				held.holder = file.Claimed.Machine
+			}
+			return held
 		}
 		return nil
 	}
+}
+
+// goalHeldElsewhere is the claim check's refusal when this session does not
+// hold the goal; holder is the seat whose claim it is, empty when nobody
+// claims it.
+type goalHeldElsewhere struct{ goal, holder, machine, lineage string }
+
+func (e goalHeldElsewhere) Error() string {
+	return fmt.Sprintf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", e.goal, e.machine, e.lineage, e.goal)
+}
+
+// heldElsewhere is the guidance when another seat's claim refused a write to
+// the goal's branch: that seat writes it, so it is asked, or a person takes
+// the goal over. ok is false for any other cause.
+func (inv *intentInvocation) heldElsewhere(goalID string, err error) (holder string, next []string, reason string, ok bool) {
+	var held goalHeldElsewhere
+	if !errors.As(err, &held) || held.holder == "" {
+		return "", nil, "", false
+	}
+	return held.holder, inv.publicArgv("goal", "claim", goalID, "--take-over", "--reason", "TEXT"),
+		"takes the goal over as a person; or ask seat " + held.holder + " to close it", true
+}
+
+// goalBranchSameRepository says whether installations a and b belong to one
+// repository: a checkout and its worktrees share a Git common dir; clones
+// share the URL of the goal ledger's remote.
+func goalBranchSameRepository(a, b string) bool {
+	common := func(root string) string {
+		out, err := goalBranchGit(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+		if err != nil {
+			return ""
+		}
+		return realpath.ResolveExisting(strings.TrimSpace(out))
+	}
+	if left := common(a); left != "" && left == common(b) {
+		return true
+	}
+	url := func(root string) string {
+		endpoint, err := branch.MainEndpoint(root)
+		if err != nil || endpoint.Remote == "" || endpoint.Remote == "local" {
+			return ""
+		}
+		out, err := goalBranchGit(root, "remote", "get-url", endpoint.Remote)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(out)
+	}
+	left := url(a)
+	return left != "" && left == url(b)
 }
 
 func goalBranchHolderRoot(root string) string {

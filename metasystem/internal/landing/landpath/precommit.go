@@ -129,7 +129,8 @@ func guard(owners GuardOwners, root, workTree string, stderr io.Writer, notices 
 		// that minted the wrapper token.
 		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) && !yield("wrapper-fence") {
 			fmt.Fprintf(stderr, "an agent commits here only through metasystem work land (%s), so the commit was refused\n", reason)
-			fmt.Fprintln(stderr, "run: metasystem work land --message FILE --staged")
+			fmt.Fprintln(stderr, "run: metasystem work land --message FILE --staged  (--local commits without pushing)")
+			fmt.Fprintln(stderr, "a goal's work: metasystem work review with the goal and --changes; other work, as a patch file")
 			return 1
 		}
 	}

@@ -322,15 +322,15 @@ func evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revi
 	if lens == authorityBudgetMembers {
 		stopProjection.Breaches = budgetBreachesForLens(projection.Breaches, lens)
 	}
-	if reason := stopReasonFor(binding.File, stopProjection); reason != "" {
+	if reason := liveStopReason(stopProjection); reason != "" {
 		verdict.LiveStopReason = reason
 		verdict.Refusal = &GoalAdmissionRefusal{
-			GoalID: id, GoalRevision: revision, Breaches: admissionBreachesFor(binding.File, stopProjection.Breaches),
+			GoalID: id, GoalRevision: revision, Breaches: stopProjection.Breaches,
 			Reserved: reservedMinutesEvidence(projection), LiveStopReason: reason,
 		}
 		return verdict, nil
 	}
-	breaches := budgetBreachesForLens(admissionBreachesFor(binding.File, budgetAdmissionBreaches(projection)), lens)
+	breaches := budgetBreachesForLens(budgetAdmissionBreaches(projection), lens)
 	if role == "design-critic" || role == "code-critic" {
 		if dispatchMode == "fresh" {
 			used := projection.CodeCritiques
@@ -491,43 +491,6 @@ func FormatGoalRevisionAdmission(verdict GoalRevisionAdmission) []string {
 		lines[0] += fmt.Sprintf("; extended once at %s", verdict.ExtendedAt)
 	}
 	return lines
-}
-
-// stopReasonFor is the live-stop reason for one claim. A claim waiting to
-// land (goal land-ready) has its elapsed fence suspended: the wait is
-// printed, never stopped; attempts, minutes and active jobs still bind, so
-// a corrupt-over-limit stop still fences it.
-func stopReasonFor(file *goal.GoalFile, projection BudgetProjection) string {
-	if !file.IsLandingClaim() {
-		return liveStopReason(projection)
-	}
-	return landingStopReason(projection)
-}
-
-// landingStopReason is the stop reason of a claim waiting to land: every
-// breach but the elapsed one.
-func landingStopReason(projection BudgetProjection) string {
-	for _, breach := range projection.Breaches {
-		if breach.Field != "elapsedLimit" {
-			return goal.StopReasonCorruptOverLimit
-		}
-	}
-	return ""
-}
-
-// admissionBreachesFor drops the elapsed dimension for a claim waiting to
-// land; every other breach stands.
-func admissionBreachesFor(file *goal.GoalFile, breaches []BudgetBreach) []BudgetBreach {
-	if !file.IsLandingClaim() {
-		return breaches
-	}
-	kept := make([]BudgetBreach, 0, len(breaches))
-	for _, breach := range breaches {
-		if breach.Field != "elapsedLimit" {
-			kept = append(kept, breach)
-		}
-	}
-	return kept
 }
 
 // budgetAdmissionBreaches uses admission boundaries rather than health's

@@ -1,6 +1,7 @@
 package partner
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -61,6 +62,31 @@ func TestEachKindsClauseIsReadOntoItsOwnField(t *testing.T) {
 	testutil.Expect(t, "and a deposit with no clause is still a deposit", bare.Anchor, "")
 }
 
+// A finding's plain layers are read onto fields of their own
+// (review-findings-read-as-decisions §4): how much it matters, the problem in a
+// person's words, why it matters, and the decision the reviewer recommends with
+// its reason, which rides the Reason line a decision's reason does.
+func TestAFindingsPlainLayersAreReadOntoTheirOwnFields(t *testing.T) {
+	t.Parallel()
+	read := depositedIn(deposited("finding",
+		uitools.DepositAnchor+"internal/owner.go:60\n"+
+			uitools.DepositConsequence+"the lock stays held\n"+
+			uitools.DepositSeverity+"blocks\n"+
+			uitools.DepositTitle+"A press that dies halfway leaves the ledger locked.\n"+
+			uitools.DepositWhy+"The next press waits forever.\n"+
+			uitools.DepositRecommends+"must-fix\n"+
+			uitools.DepositReason+"Release the lock on every way out.\n",
+		"nothing covers a press that dies at owner.go:60"))
+	testutil.Require(t, "one finding", read != nil, true)
+	testutil.Expect(t, "its severity", read.Severity, "blocks")
+	testutil.Expect(t, "its title", read.Title, "A press that dies halfway leaves the ledger locked.")
+	testutil.Expect(t, "why it matters", read.Why, "The next press waits forever.")
+	testutil.Expect(t, "the recommendation", read.Recommend, "must-fix")
+	testutil.Expect(t, "and its reason", read.Reason, "Release the lock on every way out.")
+	testutil.Expect(t, "the evidence is still its words", read.Text, "nothing covers a press that dies at owner.go:60")
+	testutil.Expect(t, "and its anchor", read.Anchor, "internal/owner.go:60")
+}
+
 // The text is opaque, and a line inside it that looks like framing is text.
 func TestTheDepositsFramingIsReadOnceAndTheTextIsOpaque(t *testing.T) {
 	t.Parallel()
@@ -112,4 +138,31 @@ func TestAPreparedDepositCallIsALookAndADepositBeside(t *testing.T) {
 	testutil.Expect(t, "the look is named after the call", look.What, "deposit(fact)")
 	testutil.Expect(t, "the look is shortened", strings.HasSuffix(look.Excerpt, "…"), true)
 	testutil.Expect(t, "and it read nothing, so it is stamped with nothing", look.Source, "")
+}
+
+// RF-05: one deposit tool call carrying a finding's five plain fields
+// becomes one card carrying them: the tool's own encoder writes them, the host
+// reads them back off the same result text, and the card the page renders is
+// that deposit, field for field.
+func TestOneDepositCallCarriesAFindingsLayersToItsCard(t *testing.T) {
+	t.Parallel()
+	result := uitools.Readers{}.Answer(uitools.OpDeposit, uitools.Args{
+		"kind": "finding", "text": "nothing tries a press that dies at owner.go:21-24",
+		"anchor": "internal/owner/owner.go:21-24", "consequence": "the lock stays held",
+		"severity": "blocks", "title": "A press that dies halfway leaves the ledger locked.",
+		"why": "The next press waits forever.", "recommend": "must-fix", "reason": "Release the lock on every way out.",
+	})
+	testutil.Require(t, "the tool prepared it", result.Failed(), false)
+	body := toolCall{ToolCallID: "call-1", Title: "deposit(finding)", Status: "completed", Name: "mcp__metasystem__deposit"}
+	body.Content = append(body.Content, contentBlock(result.Text()))
+	read := depositedIn(resultText(body))
+	testutil.Require(t, "the host read one finding", read != nil, true)
+	card, err := json.Marshal(read)
+	testutil.Require(t, "the card's payload", err, nil)
+	testutil.Expect(t, "carrying every layer", string(card),
+		`{"kind":"finding","text":"nothing tries a press that dies at owner.go:21-24",`+
+			`"anchor":"internal/owner/owner.go:21-24","reason":"Release the lock on every way out.",`+
+			`"consequence":"the lock stays held","severity":"blocks",`+
+			`"title":"A press that dies halfway leaves the ledger locked.","why":"The next press waits forever.",`+
+			`"recommend":"must-fix","offered":false}`)
 }

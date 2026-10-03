@@ -72,9 +72,16 @@ func TestEachKindCarriesTheOneClauseItHasAPlaceFor(t *testing.T) {
 // The requirement belongs to the card, after the human's own edit: they may know
 // the anchor the Partner could not find, and a tool that refused here would lose
 // the words instead of asking for the one thing missing (g1-s53 D4).
+//
+// A finding is the one kind that is not: a person decides it from its plain
+// layers, so the tool asks the Partner for them (review-findings-read-as-
+// decisions §4, TestAFindingWithoutItsPlainLayersIsRefusedNamingTheField).
 func TestADepositWithNoClauseIsPreparedAndLeavesTheRequirementToTheCard(t *testing.T) {
 	t.Parallel()
 	for _, kind := range DepositKinds {
+		if kind == DepositFinding {
+			continue
+		}
 		result := fixture(t).Answer(OpDeposit, Args{"kind": kind, "text": "words."})
 		testutil.Expect(t, kind+" with no clause is prepared", result.Failed(), false)
 		lines := strings.Split(strings.TrimRight(result.Text(), "\n"), "\n")

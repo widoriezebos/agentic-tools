@@ -178,6 +178,7 @@ func TestGLEBranchReadFreezesSuppliedBriefAndRejectsConflictingRetry(t *testing.
 	r.expectStart()
 	r.expectStart()
 	r.expectStart()
+	r.expectStart()
 	input := filepath.Join(t.TempDir(), "accepted-design.md")
 	original := []byte("Accepted design: exact wildcard ownership and input identity.\n")
 	if err := os.WriteFile(input, original, 0o644); err != nil {
@@ -217,6 +218,11 @@ func TestGLEBranchReadFreezesSuppliedBriefAndRejectsConflictingRetry(t *testing.
 	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {
 		t.Fatalf("changed brief retry=%v", err)
 	}
+	request.Join = true
+	if joined, err := branch.RunBranchRead(request); err != nil || joined.State != "open" || delegates != 1 {
+		t.Fatalf("a request joining the started read under another brief=%+v delegates=%d err=%v", joined, delegates, err)
+	}
+	request.Join = false
 	request.BriefPath = ""
 	request.Runtime = "claude"
 	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {

@@ -1,9 +1,11 @@
 package act
 
 import (
+	"bytes"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 )
 
 // Reviewed is a verdict as the room performs it (g1-s69 D1, D2, §6): the review
@@ -16,6 +18,16 @@ type Reviewed struct {
 	Verdict string
 	Brief   string
 	Work    string
+	// Tip and Revision are the version the person decided on and the saved
+	// revision of the record they decided on (review-findings-read-as-decisions
+	// RF-02): the act publishes the record only while it still names that
+	// version and still reads as that revision.
+	Tip      string
+	Revision string
+	// Branch is the goal's branch as the server read it at the moment of the
+	// press: the version that would land (fix round 1, F-3). A verdict on an
+	// older version is refused, as the landing gate would refuse it.
+	Branch string
 }
 
 // Recorded is the history line the act wrote, as the room says it.
@@ -47,11 +59,24 @@ func (a Authority) Review(id string, asked Reviewed) (Recorded, error) {
 	if err != nil {
 		return Recorded{}, refuse(KindRequest, "record", err.Error())
 	}
+	if refusal := Unseen(asked, content); refusal != nil {
+		return Recorded{}, refusal
+	}
 	request, done, err := a.request(id, "goal review")
 	if err != nil {
 		return Recorded{}, err
 	}
 	defer done()
+	// The record is read once more under this clone's one lock (F-2 of read
+	// 0096f159): another room may have saved it between the comparison above
+	// and the taking of the lock, and only bytes that passed both are
+	// published. The room's own save of a record takes the same lock
+	// (Holding), so from here to the publication it cannot change underneath.
+	if _, again, err := goal.ResolveReviewRecord(a.root, asked.Record); err != nil {
+		return Recorded{}, refuse(KindRequest, "record", err.Error())
+	} else if !bytes.Equal(again, content) {
+		return Recorded{}, refuse(KindRequest, "version-changed", changedAfterDeciding)
+	}
 	reviewing := goal.ReviewAct{Record: path, Content: content, Verdict: asked.Verdict, Brief: []byte(asked.Brief), Work: asked.Work}
 	if asked.Verdict == goal.VerdictSendBack && strings.TrimSpace(asked.Brief) == "" && asked.Work != "" {
 		published, readErr := goal.ReadPublished(request.Endpoint, goal.BriefPathFor(path))
@@ -69,4 +94,51 @@ func (a Authority) Review(id string, asked Reviewed) (Recorded, error) {
 		return Recorded{}, err
 	}
 	return Recorded{Verdict: line.Verdict, Tip: line.Tip, Record: line.Record, By: line.By, Brief: line.Brief, Work: line.Work, Line: line.Reason()}, nil
+}
+
+// Unseen is why a verdict is not published on the record as it now stands, or
+// nil. Where the verdict names the version or the saved record the person
+// decided on — the review room always does — the record read here must still
+// be what it names (RF-02): another room can retip or write the same record
+// between the person's press and this read, and publishing then would put
+// their word on something they did not see. A verdict that names neither, as
+// the board card's named work and an applied proposal do, is held to the
+// record as it stands, as before (fix round 2, R-142-m1e). And a clear to land
+// must be about the version that would land, the goal's branch as read at the
+// press, because the landing gate refuses a word given at another version
+// (fix round 1, F-3); a branch that could not be read is left to that gate.
+func Unseen(asked Reviewed, content []byte) *Refusal {
+	seen, revision := strings.TrimSpace(asked.Tip), strings.TrimSpace(asked.Revision)
+	head := goal.ReadReviewRecord(content).Tip
+	if seen != "" && head != seen {
+		return refuse(KindRequest, "version-changed",
+			"the review now names another version than the one you decided on; nothing was recorded")
+	}
+	if revision != "" && project.RevisionOf(content) != revision {
+		return refuse(KindRequest, "version-changed", changedAfterDeciding)
+	}
+	if branch := strings.TrimSpace(asked.Branch); asked.Verdict == goal.VerdictClearToLand && branch != "" && branch != head {
+		return refuse(KindRequest, "version-moved",
+			"a newer version of this goal exists; nothing was recorded: review the current version")
+	}
+	return nil
+}
+
+// changedAfterDeciding is what a verdict on a record another room changed
+// since the person decided is refused with, before the authority's lock and
+// under it alike: nothing was recorded, and the one act is to decide again.
+const changedAfterDeciding = "the review changed after you decided, in another room; nothing was recorded, so decide again"
+
+// Holding runs one save of a document under this clone's one lock, the lock a
+// verdict holds from its second read of the review record to its publication
+// (F-2 of read 0096f159): a save pressed in another room while a verdict is
+// being published waits until it is published, so the bytes the verdict was
+// compared with are the bytes it publishes. It takes no act and asks for no
+// proof — the save is the document editor's own, with its own revision check
+// — and it waits only while this process publishes or recovers on this clone.
+func (a Authority) Holding(save func() error) error {
+	held := ownerOf(a.root)
+	held.publications.Lock()
+	defer held.publications.Unlock()
+	return save()
 }

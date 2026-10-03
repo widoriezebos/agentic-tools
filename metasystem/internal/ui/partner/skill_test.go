@@ -64,10 +64,16 @@ func TestTheInstructionsCarryTheReviewRules(t *testing.T) {
 		"with `present`",
 		"`changes`, which reads the reviewed tree",
 		"Draw when words would be longer",
-		"Never say whether to accept",
+		"recommend one decision per finding",
+		"never give the verdict",
 	} {
 		testutil.Expect(t, "the shipped skill carries: "+rule, strings.Contains(skillMarkdown, rule), true)
 	}
+	// The reviewer recommends now (review-findings-read-as-decisions, open
+	// question 1); a shaping sitting still weighs nothing.
+	testutil.Expect(t, "and no longer forbids it", strings.Contains(skillMarkdown, "Never say whether to accept"), false)
+	testutil.Expect(t, "a shaping sitting still never recommends",
+		strings.Contains(skillMarkdown, "In a sitting that shapes a record, never recommend"), true)
 }
 
 // The trouble rule is in the Partner's instructions (g1-s68 D3), in the copy

@@ -4,10 +4,10 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { CandidateError } from "./candidate";
-import { correctionBrief, pressSignedIn, strandedVerdict, type ToPerform } from "./room";
+import { pressSignedIn, strandedVerdict } from "./room";
 import { PendingVerdict } from "./Verdict";
 import { BacklogError, type Verdict } from "../backlog/api";
-import { appended, entriesIn, FIX, LEFT_OPEN, type Entry } from "../partner/sitting";
+import { appended, FIX, LEFT_OPEN, type Entry } from "../partner/sitting";
 
 /**
  * Sol's fix round on the verdicts (g1-s69): a press refused for want of a
@@ -37,45 +37,38 @@ function recorded(verdict: string, reviewedAt: string): string {
 
 describe("a verdict the record carries and the goal does not", () => {
   const source = recorded("send back", TIP);
-  const drafted = correctionBrief(entriesIn(source), RECORD, TIP);
 
-  it("is offered again on load with the brief the human edited, else the one composed from the fix findings", () => {
-    expect(strandedVerdict(source, RECORD, undefined, "# Edited brief\n")).toEqual({
-      goal: "g", fixes: 1, asked: { record: RECORD, verdict: "send-back", work: "", brief: "# Edited brief\n" },
-    });
-    expect(strandedVerdict(source, RECORD, undefined, null)?.asked.brief).toBe(drafted);
-    expect(drafted).toContain("the owner reads the wrong tree");
+  it("is said on load, by the verdict the Outcome carries; nothing sends it again from here (RULING-R-143-m1e of read 0096f159)", () => {
+    expect(strandedVerdict(source, RECORD, undefined)).toBe("send-back");
     // A verdict on the goal from another record, or at another tip, is not this one.
     const other: Verdict = { verdict: "send-back", by: "Wido", at: "", tip: MOVED, record: "plans/reviews/review-of-g.md", answered: false };
-    expect(strandedVerdict(source, RECORD, other, null)).not.toBeNull();
-    expect(strandedVerdict(recorded("clear to land", TIP), RECORD, undefined, "# Edited brief\n")?.asked)
-      .toEqual({ record: RECORD, verdict: "clear-to-land", work: "", brief: "" });
+    expect(strandedVerdict(source, RECORD, other)).toBe("send-back");
+    expect(strandedVerdict(recorded("clear to land", TIP), RECORD, undefined)).toBe("clear-to-land");
   });
 
   it("is nothing where the goal's history carries the reviewed line for this record and tip", () => {
     const line: Verdict = { verdict: "send-back", by: "Wido", at: "", tip: TIP, record: "plans/reviews/review-of-g.md", answered: false };
-    expect(strandedVerdict(source, RECORD, line, null)).toBeNull();
-    expect(strandedVerdict(source, RECORD, { ...line, record: RECORD }, null)).toBeNull();
+    expect(strandedVerdict(source, RECORD, line)).toBeNull();
+    expect(strandedVerdict(source, RECORD, { ...line, record: RECORD })).toBeNull();
   });
 
   it("is nothing where the Outcome carries no acting verdict, or was drafted for another tip", () => {
-    expect(strandedVerdict(recorded("no verdict", TIP), RECORD, undefined, null)).toBeNull();
-    expect(strandedVerdict(recorded("send back", MOVED), RECORD, undefined, null)).toBeNull();
-    expect(strandedVerdict(`# Review of g\n\n- Goals: g\n- Reviewed: ${TIP} (the tip of goal/g)\n\n## Outcome\n`, RECORD, undefined, null)).toBeNull();
+    expect(strandedVerdict(recorded("no verdict", TIP), RECORD, undefined)).toBeNull();
+    expect(strandedVerdict(recorded("send back", MOVED), RECORD, undefined)).toBeNull();
+    expect(strandedVerdict(`# Review of g\n\n- Goals: g\n- Reviewed: ${TIP} (the tip of goal/g)\n\n## Outcome\n`, RECORD, undefined)).toBeNull();
   });
 
-  it("shows the pending verdict with its drafted brief and the press that records it on the goal", () => {
-    const pending = strandedVerdict(source, RECORD, undefined, "# Edited brief\n\n1. Read the reviewed tree.\n") as ToPerform;
+  it("says the verdict is written and not on the goal, and sends the person to give it again under Your verdict, with no press of its own", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <TooltipPrimitive.Provider>
-          <PendingVerdict pending={pending} busy={false} onPress={() => undefined} />
+          <PendingVerdict verdict="send-back" />
         </TooltipPrimitive.Provider>
       </MemoryRouter>,
     );
-    expect(markup).toContain("The Outcome is recorded, and the verdict is not yet on the goal: send back.");
-    expect(markup).toContain("1. Read the reviewed tree.");
-    expect(markup).toMatch(/<button[^>]*>Record the verdict on the goal</u);
+    expect(markup).toContain("Your verdict is written in the review, and is not yet on the goal: send it back.");
+    expect(markup).toContain("It is not sent again by itself: give it again under Your verdict, where it is decided on the review as it stands now.");
+    expect(markup).not.toMatch(/<button/u);
   });
 });
 

@@ -544,9 +544,19 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				},
 				// Editing one document in place. It is the same checkout
 				// and the same boundary the read goes through, and it is
-				// answered with the document read again from disk.
+				// answered with the document read again from disk. It runs
+				// under the clone's one lock, the one a verdict holds from
+				// its last read of a review record to its publication, so a
+				// review record is never saved between the two (F-2 of read
+				// 0096f159).
 				EditDocument: func(id, source, revision string) (project.Document, error) {
-					return project.EditDocument(projectRoots(roots), id, source, revision, time.Now().UTC())
+					var edited project.Document
+					err := authority.Holding(func() error {
+						var editErr error
+						edited, editErr = project.EditDocument(projectRoots(roots), id, source, revision, time.Now().UTC())
+						return editErr
+					})
+					return edited, err
 				},
 				PreviewDocument: func(source string) (project.Preview, error) {
 					return project.PreviewDocument(source)
@@ -718,8 +728,8 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				},
 				// The goal's candidate, from the room's pill (D3): the three
 				// app forms, run as the public verbs are run.
-				Candidate: func(goal, action string) (httpd.Candidate, error) {
-					return candidateRun(roots, goal, action)
+				Candidate: func(goal, at, action string) (httpd.Candidate, error) {
+					return candidateRun(roots, goal, at, action)
 				},
 				BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 					return tierBudgets(roots.Installation)

@@ -44,7 +44,7 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	}
 	landReadyOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB0", "mac-cli", "m1")
 	file.Revision++
-	file.Landing = &goal.LandingRecord{At: "2026-09-17T09:00:00Z", Opid: landReadyOpid}
+	file.Landing = &goal.LandingRecord{At: "2026-08-30T09:00:00Z", Opid: landReadyOpid}
 	file.History = append(file.History, goal.HistoryLine{At: file.Landing.At, Opid: landReadyOpid,
 		Verb: "land-ready", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1})
 	writeTestingFixtureFile(t, pagePath, goal.RenderFile(file), 0o644)

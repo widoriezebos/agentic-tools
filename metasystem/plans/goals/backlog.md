@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 137
+- Revision: 148
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -180,4 +180,18 @@ History:
 - 2026-10-03T14:02:29Z VS553HRBE2RFQZ7YRZCXZZ9DQH-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T13:59:35Z ack
 - 2026-10-03T15:39:48Z EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-05T22:00:00Z
 - 2026-10-03T15:55:50Z 6FWMCWAS5BRSZANWD0SH5T1CGS-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-03T09:21:35Z ack
-Integrity: sha256=e1932b7322f39631de04761713b21f714e1030ff672157e50d4a7ada084200ab
+- 2026-10-03T16:36:41Z VTADZVAQD0PH7ZDN51AFNVYYDH-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T09:56:26Z ack
+- 2026-10-03T18:01:52Z AW504GE0NGC15GPJ5BPVMJS4A8-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T14:50:04Z ack
+- 2026-10-03T18:52:24Z 5EN42JD81N73ABCA993E24Y4QR-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T16:36:47Z ack
+- 2026-10-03T18:56:52Z 1E094QCHY4Q8MM0G67ZN1WZWBH-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T14:02:37Z ack
+- 2026-10-03T19:09:39Z TDBQDC7CDDFB14913P8D19D9XQ-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T18:56:56Z ack
+- 2026-10-03T19:21:01Z SKH11229TWKJX5JK7SGM0QS893-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T19:09:49Z ack
+- 2026-10-03T20:14:52Z KS5Q3QVNEQVWT60S1HEEV1BHSZ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T16:01:55Z ack
+- 2026-10-03T20:19:32Z AFJWSW44RFS05E0GGE16QHT49B-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T18:01:59Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T12:03:33Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T13:49:21Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T17:13:40Z ack
+- 2026-10-03T21:28:06Z PRDRPE12W326X62FNV8WDHESP8-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T20:56:41Z ack
+- 2026-10-03T22:11:47Z 24DN2V7F98QZEV8X45VA2DDZYQ-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T19:50:34Z ack
+- 2026-10-03T22:11:47Z 24DN2V7F98QZEV8X45VA2DDZYQ-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T20:27:31Z ack
+Integrity: sha256=347833a941169721e393fb8d120a0a93948239f29c2c6f4541841d6d6476dc16

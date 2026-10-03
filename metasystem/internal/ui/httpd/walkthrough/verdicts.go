@@ -57,6 +57,11 @@ func (l *ledger) review(held *verdicts, id string, asked act.Reviewed) (act.Reco
 	if err != nil {
 		return act.Recorded{}, &act.Refusal{Kind: act.KindRequest, Code: "record", Message: err.Error()}
 	}
+	// The version and the saved record the person decided on, compared with
+	// what is published, as the engine's own act compares them (RF-02).
+	if refusal := act.Unseen(asked, content); refusal != nil {
+		return act.Recorded{}, refusal
+	}
 	f := l.tree.Live[id]
 	if f == nil || f.State != goal.StateClaimed || f.Landing == nil {
 		return act.Recorded{}, &act.Refusal{Kind: act.KindEngine, Code: "rejected", Message: "goal " + id + " is not waiting to land; a verdict is recorded on a goal in the Review lane"}
@@ -131,9 +136,16 @@ type candidates struct {
 	noContract bool
 }
 
-func (c *candidates) act(goalID, action string) (httpd.Candidate, error) {
+// act runs one app form for a goal's candidate, keyed as app keys a run: the
+// commit it is at where one is named (RF-04: a review runs the version it
+// reviews), else the goal's branch.
+func (c *candidates) act(goalID, at, action string) (httpd.Candidate, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	key := goalID
+	if at != "" {
+		key = goalID + "@" + at
+	}
 	if c.noContract {
 		return httpd.Candidate{}, &httpd.CandidateRefusal{Code: httpd.CodeNoContract,
 			Message: "this goal's candidate cannot run from here: this project has no launch contract: write launch.json and name it with launch.contract=launch.json in metasystem.conf"}
@@ -141,24 +153,27 @@ func (c *candidates) act(goalID, action string) (httpd.Candidate, error) {
 	stopped := httpd.Candidate{Goal: goalID, State: "stopped", Readiness: "no-probe", Said: "no application run is recorded for goal-" + goalID}
 	switch action {
 	case "status":
-		if run, running := c.runs[goalID]; running {
+		if run, running := c.runs[key]; running {
 			return run, nil
 		}
 		return stopped, nil
 	case "start":
-		if run, running := c.runs[goalID]; running {
+		if run, running := c.runs[key]; running {
 			return run, nil
 		}
 		tip, err := c.git.ResolveCommit("origin/" + review.Branch(goalID))
+		if at != "" {
+			tip, err = at, nil
+		}
 		if err != nil {
 			return httpd.Candidate{}, &httpd.CandidateRefusal{Code: "refused", Message: "goal " + goalID + " has no branch to run: " + err.Error()}
 		}
 		run := httpd.Candidate{Goal: goalID, State: "running", Readiness: "answering", Address: "127.0.0.1:7981", Commit: tip,
 			Since: time.Now().UTC().Format(time.RFC3339), Said: "the application is running and answering"}
-		c.runs[goalID] = run
+		c.runs[key] = run
 		return run, nil
 	case "stop":
-		delete(c.runs, goalID)
+		delete(c.runs, key)
 		return stopped, nil
 	}
 	return httpd.Candidate{}, &httpd.CandidateRefusal{Code: "action", Message: action + " is not read, start or stop"}

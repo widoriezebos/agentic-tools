@@ -27,6 +27,8 @@ type Evidence struct {
 	Marks             Marks `json:"marks"`
 	TicksSinceAdvance int   `json:"ticksSinceAdvance"`
 	DryRevivals       int   `json:"dryRevivals"`
+	// Degraded counts the ticks in a row whose verdict was degraded.
+	Degraded int `json:"degraded,omitempty"`
 }
 
 // Observe folds one tick's current marks into the state: an advance

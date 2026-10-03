@@ -11,6 +11,7 @@
 package evidence
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -428,7 +429,7 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 		if !terminalStatuses[status] {
 			continue
 		}
-		if goalState.keepsSpendingFact(record) {
+		if goalState.keepsSpendingFact(record) || goalState.endsStandingWait(record) {
 			continue
 		}
 		stem := strings.TrimSuffix(filepath.Base(recordPath), ".json")
@@ -571,6 +572,33 @@ func (s goalRevisionState) keepsSpendingFact(record map[string]any) bool {
 		return true
 	}
 	return revision >= file.Claimed.Revision
+}
+
+// endsStandingWait reports whether a terminal job of a claimed goal marked as
+// waiting to land started after the mark or was still running at it. The
+// budget projection ends the goal's wait at the earliest such job of its own,
+// whatever revision the job was charged to, so these stay while the mark
+// stands even after a rebind moved the claim past their revision. Once the
+// mark is gone they age out as any other record does.
+func (s goalRevisionState) endsStandingWait(record map[string]any) bool {
+	if s.tree == nil {
+		return false
+	}
+	goalID, _ := record["goalId"].(string)
+	file := s.tree.Live[goalID]
+	if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Landing == nil {
+		return false
+	}
+	mark, err := time.Parse(time.RFC3339, file.Landing.At)
+	if err != nil {
+		return false
+	}
+	startedAt, _ := record["startedAt"].(string)
+	createdAt, _ := record["createdAt"].(string)
+	endedAt, _ := record["endedAt"].(string)
+	start, _ := time.Parse(time.RFC3339, cmp.Or(startedAt, createdAt))
+	end, _ := time.Parse(time.RFC3339, endedAt)
+	return start.After(mark) || end.After(mark)
 }
 
 func (s goalRevisionState) hasClaimedGoal() bool {

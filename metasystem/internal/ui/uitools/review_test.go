@@ -14,20 +14,93 @@ import (
 // with its bounds (D8), the desk's display suggestion (D5), and the changes
 // read over the reviewed tree through the same owner the desk reads (D4).
 
-func TestAFindingCarriesItsAnchorAndItsConsequence(t *testing.T) {
-	t.Parallel()
-	result := fixture(t).Answer(OpDeposit, Args{
+// findingArgs is a whole finding as a review asks for it (review-findings-
+// read-as-decisions §4): the evidence as the reviewer wrote it, its anchor and
+// consequence, and the plain layers a person reads first.
+func findingArgs(over Args) Args {
+	args := Args{
 		"kind": "finding", "text": "nothing recorded covers a press that dies between publish and reconcile",
 		"anchor": "internal/owner.go:60-72", "consequence": "a dead press leaves the lock held until restart",
-		"reason": "a finding carries no reason",
-	})
+		"severity": "blocks", "title": "A press that dies halfway leaves the ledger locked.",
+		"why":       "The next press waits forever, and nobody is told why.",
+		"recommend": "must-fix", "reason": "Release the lock on every way out.",
+	}
+	for key, value := range over {
+		args[key] = value
+	}
+	return args
+}
+
+func TestAFindingCarriesItsAnchorItsConsequenceAndItsPlainLayers(t *testing.T) {
+	t.Parallel()
+	result := fixture(t).Answer(OpDeposit, findingArgs(nil))
 	testutil.Expect(t, "it is prepared", result.Failed(), false)
 	lines := strings.Split(strings.TrimRight(result.Text(), "\n"), "\n")
-	testutil.Require(t, "six lines", len(lines), 6)
+	testutil.Require(t, "eleven lines", len(lines), 11)
 	testutil.Expect(t, "the kind", lines[1], DepositHeader+DepositFinding)
 	testutil.Expect(t, "the anchor", lines[2], DepositAnchor+"internal/owner.go:60-72")
 	testutil.Expect(t, "the consequence", lines[3], DepositConsequence+"a dead press leaves the lock held until restart")
-	testutil.Expect(t, "the words", lines[5], "nothing recorded covers a press that dies between publish and reconcile")
+	testutil.Expect(t, "the severity", lines[4], DepositSeverity+"blocks")
+	testutil.Expect(t, "the title", lines[5], DepositTitle+"A press that dies halfway leaves the ledger locked.")
+	testutil.Expect(t, "why it matters", lines[6], DepositWhy+"The next press waits forever, and nobody is told why.")
+	testutil.Expect(t, "the recommendation", lines[7], DepositRecommends+"must-fix")
+	testutil.Expect(t, "and its reason", lines[8], DepositReason+"Release the lock on every way out.")
+	testutil.Expect(t, "the words, as the reviewer wrote them", lines[10],
+		"nothing recorded covers a press that dies between publish and reconcile")
+}
+
+// A finding a person cannot read as a decision is refused, naming what is
+// missing, so the Partner can offer it again whole.
+func TestAFindingWithoutItsPlainLayersIsRefusedNamingTheField(t *testing.T) {
+	t.Parallel()
+	readers := fixture(t)
+	for _, missing := range []struct{ field, says string }{
+		{"severity", "a finding says how much it matters as its severity: blocks, fix or note"},
+		{"title", "a finding carries a title: the problem in one plain sentence"},
+		{"why", "a finding carries why it matters: what happens if it is ignored"},
+		{"recommend", "a finding carries the one decision you recommend: must-fix, fix-later, not-a-problem or accept"},
+		{"reason", "a finding carries the reason for the decision you recommend, in one sentence"},
+	} {
+		result := readers.Answer(OpDeposit, findingArgs(Args{missing.field: " "}))
+		testutil.Expect(t, "without its "+missing.field, result.Prepared, refusedWords+missing.says+"\n")
+	}
+	odd := readers.Answer(OpDeposit, findingArgs(Args{"severity": "critical"}))
+	testutil.Expect(t, "a severity of its own", odd.Prepared,
+		refusedWords+"a finding's severity is blocks, fix or note; \"critical\" is none of them\n")
+	other := readers.Answer(OpDeposit, findingArgs(Args{"recommend": "ignore"}))
+	testutil.Expect(t, "a decision of its own", other.Prepared,
+		refusedWords+"the decision you recommend is must-fix, fix-later, not-a-problem or accept; \"ignore\" is none of them\n")
+	for _, heavy := range []string{"must-fix", "accept"} {
+		note := readers.Answer(OpDeposit, findingArgs(Args{"severity": "note", "recommend": heavy}))
+		testutil.Expect(t, "a note recommending "+heavy, note.Prepared,
+			refusedWords+"a note is fixed after landing or is not a problem; recommend fix-later or not-a-problem\n")
+	}
+}
+
+// The title is what a person reads first, so it carries no commit id, no path
+// and no timestamp; those belong in the evidence.
+func TestAFindingsTitleCarriesNoIdNoPathAndNoTimestamp(t *testing.T) {
+	t.Parallel()
+	readers := fixture(t)
+	for _, title := range []string{
+		"The review looked at e2f9c92 and not the version that lands.",
+		"The verdict strip in panel.ts:284 is not tested.",
+		"It was marked ready at 12:19:54Z, seventeen seconds after the push.",
+		"origin/goal/fleet-page-redesign was last fetched long ago.",
+		"Marked ready at 2026-10-02T12:19 without a check.",
+	} {
+		result := readers.Answer(OpDeposit, findingArgs(Args{"title": title}))
+		testutil.Expect(t, "refused: "+title, result.Prepared, refusedWords+
+			"a finding's title is the problem in a person's words, with no commit id, file path or timestamp; "+
+			"put those in the finding's own words, which the person reads as its evidence\n")
+	}
+	for _, plain := range []string{
+		"The version of 2 October, 14:19, is not the one that would land.",
+		"Nothing checks the fix-after-landing and/or follow-up path.",
+		"The facade was defaced by 1234567 people.",
+	} {
+		testutil.Expect(t, "admitted: "+plain, readers.Answer(OpDeposit, findingArgs(Args{"title": plain})).Failed(), false)
+	}
 }
 
 func TestAFindingIsBoundedLikeAnEntry(t *testing.T) {

@@ -656,6 +656,9 @@ func TestAuditOutputLayoutStatic(t *testing.T) {
 	}
 	checked := 0
 	err = filepath.WalkDir(module, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr == nil && entry.IsDir() && path != module && auditSkipsDirectory(entry.Name()) {
+			return filepath.SkipDir
+		}
 		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return walkErr
 		}

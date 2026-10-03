@@ -1,6 +1,8 @@
 package uitools
 
 import (
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -93,9 +95,105 @@ const (
 	DepositConsequence = "Consequence: "
 	// DepositClause carries what a case would become: the clause as the Partner
 	// heard it, which the Decide sheet opens with (g1-s55 D1).
-	DepositClause    = "Clause: "
-	DepositSeparator = "--- the deposit follows, whole and to the end ---"
+	DepositClause = "Clause: "
+	// A finding's plain layers (review-findings-read-as-decisions §4): how much
+	// it matters, the problem in a person's words, why it matters, and the one
+	// decision the reviewer recommends, whose one sentence why rides as the
+	// Reason line.
+	DepositSeverity   = "Severity: "
+	DepositTitle      = "Title: "
+	DepositWhy        = "Why: "
+	DepositRecommends = "Recommends: "
+	DepositSeparator  = "--- the deposit follows, whole and to the end ---"
 )
+
+// A finding's severities and the decisions a reviewer recommends, in the words
+// the tool takes them in and the card reads them back by.
+const (
+	SeverityBlocks = "blocks"
+	SeverityFix    = "fix"
+	SeverityNote   = "note"
+
+	RecommendMustFix    = "must-fix"
+	RecommendFixLater   = "fix-later"
+	RecommendNotProblem = "not-a-problem"
+	RecommendAccept     = "accept"
+)
+
+// Severities and Recommendations are what a finding may say, in order.
+var (
+	Severities      = []string{SeverityBlocks, SeverityFix, SeverityNote}
+	Recommendations = []string{RecommendMustFix, RecommendFixLater, RecommendNotProblem, RecommendAccept}
+)
+
+// Finding is a finding's plain layers, as the tool takes them and the
+// interface's admission reads them back.
+type Finding struct {
+	Severity  string
+	Title     string
+	Why       string
+	Recommend string
+	Reason    string
+}
+
+// titleRefused is what a title carrying an id, a path or a time is refused with.
+const titleRefused = "a finding's title is the problem in a person's words, with no commit id, file path or timestamp; " +
+	"put those in the finding's own words, which the person reads as its evidence"
+
+// FindingRefusal is why a finding cannot be offered to a person as a decision,
+// in the words the Partner is told, or "" for a whole one. It is one rule, asked
+// twice: by this tool, so the Partner hears it and offers the finding again,
+// and by the interface's admission, so no card reaches a person without it.
+func FindingRefusal(finding Finding) string {
+	severity, recommend := strings.ToLower(oneLine(finding.Severity)), strings.ToLower(oneLine(finding.Recommend))
+	switch {
+	case severity == "":
+		return "a finding says how much it matters as its severity: " + orList(Severities)
+	case strings.TrimSpace(finding.Title) == "":
+		return "a finding carries a title: the problem in one plain sentence"
+	case strings.TrimSpace(finding.Why) == "":
+		return "a finding carries why it matters: what happens if it is ignored"
+	case recommend == "":
+		return "a finding carries the one decision you recommend: " + orList(Recommendations)
+	case strings.TrimSpace(finding.Reason) == "":
+		return "a finding carries the reason for the decision you recommend, in one sentence"
+	case !slices.Contains(Severities, severity):
+		return "a finding's severity is " + orList(Severities) + "; " + strconv.Quote(severity) + " is none of them"
+	case !slices.Contains(Recommendations, recommend):
+		return "the decision you recommend is " + orList(Recommendations) + "; " + strconv.Quote(recommend) + " is none of them"
+	case severity == SeverityNote && (recommend == RecommendMustFix || recommend == RecommendAccept):
+		return "a note is fixed after landing or is not a problem; recommend " + RecommendFixLater + " or " + RecommendNotProblem
+	case technical(finding.Title):
+		return titleRefused
+	}
+	return ""
+}
+
+// The three things a title never carries: a commit id (seven or more hex
+// characters with a digit and a letter among them), a file path (a file with
+// its line, or a path through a directory to a file or with two directories),
+// and a timestamp to the second or in ISO form.
+var (
+	hexWord  = regexp.MustCompile(`\b[0-9a-f]{7,64}\b`)
+	filePath = regexp.MustCompile(`[\w.-]+\.[A-Za-z][A-Za-z0-9]{0,7}:\d+|[\w.-]+/[\w./-]*\.[A-Za-z][A-Za-z0-9]{0,7}\b|[\w.-]+/[\w.-]+/[\w./-]+`)
+	moment   = regexp.MustCompile(`\b\d{1,2}:\d{2}:\d{2}|\b\d{4}-\d{2}-\d{2}T\d{1,2}:\d{2}`)
+)
+
+func technical(title string) bool {
+	if filePath.MatchString(title) || moment.MatchString(title) {
+		return true
+	}
+	for _, word := range hexWord.FindAllString(title, -1) {
+		if strings.ContainsAny(word, "0123456789") && strings.ContainsAny(word, "abcdef") {
+			return true
+		}
+	}
+	return false
+}
+
+func orList(words []string) string {
+	return strings.Join(words[:len(words)-1], ", ") + " or " + words[len(words)-1]
+}
 
 // DepositedLine is what a prepared deposit answers the model with.
 //
@@ -107,7 +205,7 @@ const DepositedLine = "prepared; preparing does not record it: the human presses
 	"and it enters the record then and not before"
 
 // deposit prepares one deposit, or refuses the call in words.
-func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result {
+func deposit(kind, text, anchor, reason, consequence, clauseSaid string, finding Finding) Result {
 	kind = strings.ToLower(oneLine(kind))
 	anchor, reason, consequence = oneLine(anchor), oneLine(reason), oneLine(consequence)
 	clauseSaid = oneLine(clauseSaid)
@@ -134,6 +232,18 @@ func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result 
 		return refusedCall("the " + over + " on a deposit carries at most " + strconv.Itoa(maxClause) +
 			" characters; say the rest in your answer")
 	}
+	if kind == DepositFinding {
+		finding.Reason = reason
+		finding.Severity, finding.Recommend = strings.ToLower(oneLine(finding.Severity)), strings.ToLower(oneLine(finding.Recommend))
+		finding.Title, finding.Why = oneLine(finding.Title), oneLine(finding.Why)
+		if over := longestClause(finding.Title, "", finding.Why, ""); over != "" {
+			return refusedCall("the title and why it matters on a finding carry at most " + strconv.Itoa(maxClause) +
+				" characters each; say the rest in the finding's own words")
+		}
+		if refusal := FindingRefusal(finding); refusal != "" {
+			return refusedCall(refusal)
+		}
+	}
 	// The clause each kind takes, and only that one. A reason on a fact and an
 	// anchor on a decision are the Partner filling in a field the card has no
 	// place for, so they are dropped here rather than carried into a card that
@@ -147,9 +257,14 @@ func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result 
 	case DepositQuestion:
 		built += labelled(DepositConsequence, consequence)
 	case DepositFinding:
-		// A finding carries where it sits and what follows from leaving it
-		// unanswered, which the card's four answers each speak to.
-		built += labelled(DepositAnchor, anchor) + labelled(DepositConsequence, consequence)
+		// A finding carries where it sits and what follows from leaving it,
+		// as its evidence, and the plain layers a person reads it by: how much
+		// it matters, the problem, why, and the decision the reviewer
+		// recommends with its reason (review-findings-read-as-decisions §3).
+		built += labelled(DepositAnchor, anchor) + labelled(DepositConsequence, consequence) +
+			labelled(DepositSeverity, finding.Severity) + labelled(DepositTitle, finding.Title) +
+			labelled(DepositWhy, finding.Why) + labelled(DepositRecommends, finding.Recommend) +
+			labelled(DepositReason, reason)
 	case DepositCase:
 		// A case takes both of the clauses its two presses need: the clause it
 		// would become, which the Decide sheet opens with, and the consequence

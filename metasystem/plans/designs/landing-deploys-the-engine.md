@@ -191,6 +191,10 @@ Skills and documents still arrive by pull; that is out of scope.
 | Telling a person of a failed deploy without being asked | the record's `outcome` and `detail` |
 | A built Maven adapter | the contract; the worked example |
 | Deploying a named landed commit (`deploy now --commit`) | the runner; the forward-only rule |
+| Pause-during-run timing corners: which line a run or act writes when a pause ends one of its adapter calls in an unusual sequence (a crash with an interrupted activation pending and a stalled first `version`; an adapter whose `activate` and `version` disagree, paused before the corrective rollback changes anything; a pause between an activation's return and its verification) | the one-line-per-run-or-act rule, `pending.json` and `version`'s answer; see the note below |
+| `go run` turns the contract's exit 64 into 1, so this repository's adapter cannot answer "not supported" (accepted as a risk on 2026-10-03; it supports every operation the runner sends) | `deploy.json` calling a built `devgate` binary when an adapter that omits an operation exists |
+
+**Why the timing corners are deferred (2026-10-03).** Building step 1, the readers of units `chain` and `chain-status` kept finding new corners of a person's pause landing while a run or a rollback is in flight: material counts per read were 3, 2, 1, 3, 2, 1, 3, 1 for `chain` and 1, 1, 1, 2 for `chain-status`. Each fold settled one corner and the next read found another in the same class. Step 1's first use (landings deploying, a person's rollback, pause and resume, none of them overlapping a run) never reaches them, so under ruling R-124 they wait here, "later, when it hurts": a corner that shows step 1's own first use failing still changes the build. The last read's two open corners are the first two examples in the row above.
 
 ## Beside `one-folder-deployed-and-evolved`
 

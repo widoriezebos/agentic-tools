@@ -214,7 +214,7 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 		if budget.Status != BudgetKnown {
 			return goal.StopBatch{}, fmt.Errorf("cannot prove a live-stop boundary: %s", budget.Unknown.Reason)
 		}
-		reason := stopReasonFor(binding.File, budget)
+		reason := liveStopReason(budget)
 		if reason == "" {
 			return goal.StopBatch{}, fmt.Errorf("goal %s is within its budget, so there is no overspend to stop; to pause it instead\nrun: metasystem goal pause %s --reason TEXT", id, id)
 		}
@@ -334,7 +334,7 @@ func (policy GoalRecoveryPolicy) breachStopWithReads(endpoint goal.Endpoint, ent
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("cannot re-establish breach-stop authority: %s", projection.Unknown.Reason)
 	}
-	reason := stopReasonFor(binding.File, projection)
+	reason := liveStopReason(projection)
 	if reason == "" {
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("goal %s revision %d is not over its live budget", id, binding.Revision)
@@ -437,9 +437,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			})
 			continue
 		}
-		// A claim waiting to land is not stopped for elapsed time; its wait
-		// prints as overdue instead (goal land-ready).
-		reason := stopReasonFor(file, budget)
+		reason := liveStopReason(budget)
 		if reason == "" {
 			continue
 		}

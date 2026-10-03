@@ -131,3 +131,33 @@ func TestLineCommitsReadsWhichCommitLastTouchedEachLine(t *testing.T) {
 		}
 	}
 }
+
+// The facts a person is told a version by (review-findings-read-as-decisions
+// §3): when the commit was made and who made it, read from one log line.
+func TestCommitFactsAreItsTimeAndItsAuthor(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	w := Workspace{Dir: dir, RawSource: rawPortScript(t, dir,
+		rawPortStep{
+			args:   []string{"log", "-1", "--no-show-signature", "--format=%cI%x00%an", "tip", "--"},
+			result: RawResult{Stdout: []byte("2026-10-02T14:19:37+02:00\x00m1e builder\n")},
+		},
+		rawPortStep{result: RawResult{Stdout: []byte("not a time\x00m1e\n")}},
+		rawPortStep{result: RawResult{Stdout: []byte("2026-10-02T14:19:37+02:00 m1e\n")}},
+		rawPortStep{result: RawResult{Stderr: []byte("bad revision\n"), ExitCode: 128}},
+	)}
+
+	facts, err := w.CommitFacts("tip")
+
+	if err != nil {
+		t.Fatalf("commit facts: %v", err)
+	}
+	if got := facts.At.UTC().Format("2006-01-02T15:04:05Z"); got != "2026-10-02T12:19:37Z" || facts.Author != "m1e builder" {
+		t.Fatalf("facts = %s by %q, want 2026-10-02T12:19:37Z by \"m1e builder\"", got, facts.Author)
+	}
+	for _, want := range []string{"is not a time", "is malformed", "bad revision"} {
+		if _, err := w.CommitFacts("tip"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("commit facts error = %v, want %q", err, want)
+		}
+	}
+}

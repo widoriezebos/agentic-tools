@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -50,7 +51,7 @@ func TestAuditHostProcessScansReadAGivenTable(t *testing.T) {
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if path != root && (name == "testdata" || name == "vendor" || name == "node_modules" || strings.HasPrefix(name, ".")) {
+			if path != root && auditSkipsDirectory(name) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -418,10 +419,11 @@ func packageVariableAssignments(fileSet *token.FileSet, tests map[string]*ast.Fi
 	return found
 }
 
-// processSeamAuditSkipsDirectory names the directories the seam audit does
-// not parse: fixtures, vendored and node trees, dot-directories, and
-// artifacts/, whose agent worktree copies are stale trees of their own.
-func processSeamAuditSkipsDirectory(name string) bool {
+// auditSkipsDirectory names the directories a source audit walking the
+// module does not read: fixtures, vendored and node trees, dot-directories,
+// and artifacts/, whose builder workspaces and kept source copies are stale
+// trees of their own.
+func auditSkipsDirectory(name string) bool {
 	return name == "testdata" || name == "vendor" || name == "node_modules" || name == "artifacts" || strings.HasPrefix(name, ".")
 }
 
@@ -445,7 +447,7 @@ func TestAuditNoTestAssignsAProcessSeam(t *testing.T) {
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if path != root && processSeamAuditSkipsDirectory(name) {
+			if path != root && auditSkipsDirectory(name) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -650,8 +652,63 @@ func TestSwap(t *testing.T) {
 		t.Fatalf("configuration assignments = %+v; want directory at line 15 only", configuration)
 	}
 	for name, skipped := range map[string]bool{"artifacts": true, "testdata": true, "vendor": true, ".git": true, "internal": false, "cmd": false} {
-		if processSeamAuditSkipsDirectory(name) != skipped {
-			t.Errorf("processSeamAuditSkipsDirectory(%q) = %t; want %t", name, !skipped, skipped)
+		if auditSkipsDirectory(name) != skipped {
+			t.Errorf("auditSkipsDirectory(%q) = %t; want %t", name, !skipped, skipped)
 		}
+	}
+}
+
+// TestModuleWalkersPassOverArtifacts: every walk of the whole module in this
+// package's tests passes over artifacts/, so a builder workspace or a kept
+// source copy there is never audited as the module's source.
+func TestModuleWalkersPassOverArtifacts(t *testing.T) {
+	t.Parallel()
+	names, err := filepath.Glob("*_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleRoots := map[string]bool{`filepath.Join("..", "..")`: true, `filepath.Abs("../..")`: true, `filepath.Abs(filepath.Join("..", ".."))`: true}
+	walkers := 0
+	for _, name := range names {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fileSet := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileSet, name, data, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := func(node ast.Node) string {
+			return string(data[fileSet.Position(node.Pos()).Offset:fileSet.Position(node.End()).Offset])
+		}
+		for _, decl := range parsed.Decls {
+			function, ok := decl.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			roots := map[string]bool{}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				if assign, ok := node.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 && moduleRoots[text(assign.Rhs[0])] {
+					if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+						roots[ident.Name] = true
+					}
+				}
+				call, ok := node.(*ast.CallExpr)
+				if !ok || text(call.Fun) != "filepath.WalkDir" || len(call.Args) != 2 {
+					return true
+				}
+				if ident, ok := call.Args[0].(*ast.Ident); ok && roots[ident.Name] {
+					walkers++
+					if walk := text(call.Args[1]); !strings.Contains(walk, "auditSkipsDirectory(") && !strings.Contains(walk, `"artifacts"`) {
+						t.Errorf("%s: %s walks the whole module without passing over artifacts/; skip with auditSkipsDirectory", name, function.Name.Name)
+					}
+				}
+				return true
+			})
+		}
+	}
+	if walkers < 7 {
+		t.Fatalf("found %d walks of the whole module; the package holds at least 7, so the scan is broken", walkers)
 	}
 }

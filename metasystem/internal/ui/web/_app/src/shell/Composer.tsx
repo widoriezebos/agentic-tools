@@ -46,7 +46,13 @@ export const COMPOSER_KEYS = "Enter to send · Shift+Enter for a new line";
 export function Composer({
   onEscape,
   takeCaret = false,
+  hint = COMPOSER_HINT,
+  seeing,
 }: {
+  /** What the empty field says: a review's question line names the reviewer (§3). */
+  hint?: string;
+  /** What the Seeing line says, where the page names itself in words (§3). */
+  seeing?: string;
   /** Escape here closes the drawer. The focused view passes nothing. */
   onEscape?: () => void;
   /**
@@ -116,7 +122,7 @@ export function Composer({
 
   return (
     <div className="ms-composer" ref={card}>
-      <SeeingRow />
+      <SeeingRow seeing={seeing} />
       {/* A press on Ask what happened made while this conversation answered
           (g1-s68 D2): it waits here, beside the draft and never in it, and
           the next Send sends it first. */}
@@ -147,7 +153,7 @@ export function Composer({
         ref={field}
         rows={1}
         className="ms-composer-field"
-        placeholder={COMPOSER_HINT}
+        placeholder={hint}
         aria-describedby="composer-reason"
         value={draft}
         disabled={busy || unavailable}

@@ -306,7 +306,15 @@ export type Recorded = {
 };
 
 /** One verdict as the room performs it. */
-export type Reviewing = { record: string; verdict: string; brief: string; work: string };
+export type Reviewing = {
+  record: string;
+  verdict: string;
+  brief: string;
+  work: string;
+  /** The version and the saved record the person decided on (RF-02), compared by the server with what it publishes. */
+  tip?: string;
+  revision?: string;
+};
 
 /** One review of one goal, as its card's door line reads it. */
 export type ReviewDoor = {

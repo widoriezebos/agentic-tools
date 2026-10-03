@@ -5,6 +5,9 @@ package plain
 // internal/landing/lane's and does not change.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -80,4 +83,44 @@ func KeeperProofHold(root string) (string, error) {
 		return "", err
 	}
 	return ProofHold(string(layout.Install), ProveSeams{})
+}
+
+// KeeperFingerprint is the lane at root as its landing agent can change it:
+// its queue (hand-ins and returns), its newest result and push, and a proof
+// it started. The keeper compares it around a launch; equal means the launch
+// moved nothing.
+func KeeperFingerprint(root string) (string, error) {
+	layout, err := lane.NewLayout(root)
+	if err != nil {
+		return "", err
+	}
+	install := string(layout.Install)
+	entries, err := Entries(install)
+	if err != nil {
+		return "", err
+	}
+	last, _, err := LastResult(install)
+	if err != nil {
+		return "", err
+	}
+	pushed, _, err := LastPush(install)
+	if err != nil {
+		return "", err
+	}
+	running, recorded, _, err := ReadRunning(install, ProveSeams{})
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(struct {
+		Entries  []Entry `json:"entries"`
+		Last     Result  `json:"last"`
+		Pushed   Pushed  `json:"pushed"`
+		Running  Running `json:"running"`
+		Recorded bool    `json:"recorded"`
+	}{entries, last, pushed, running, recorded})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }

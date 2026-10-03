@@ -34,6 +34,12 @@ func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueC
 		if state.chainRoot(jobID) != jobID || asString(record["role"]) != "design-critic" {
 			continue
 		}
+		// A root refused at setup never ran (the setup-refusal-release
+		// rule): it is no critique of the design, so a later review or close
+		// passes it by.
+		if NeverLaunched(record) {
+			continue
+		}
 		recorded := asString(record["design"])
 		if recorded != "" && !filepath.IsAbs(recorded) {
 			// Dispatch records the design repository-relative, as the

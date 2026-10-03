@@ -347,6 +347,9 @@ type buildWorkspaceFacts interface {
 	Head(workspace string) (string, error)
 	Branch(workspace string) (string, error)
 	BlobAt(workspace, commit, path string) (string, error)
+	// DraftBlob is the object id of the workspace file at path as it is now:
+	// a seat's draft the reviewed commit does not hold yet.
+	DraftBlob(workspace, path string) (string, error)
 }
 
 type gitBuildWorkspaceFacts struct{}
@@ -361,6 +364,10 @@ func (gitBuildWorkspaceFacts) Branch(workspace string) (string, error) {
 
 func (gitBuildWorkspaceFacts) BlobAt(workspace, commit, path string) (string, error) {
 	return gitOutput(workspace, "rev-parse", commit+":"+path)
+}
+
+func (gitBuildWorkspaceFacts) DraftBlob(workspace, path string) (string, error) {
+	return gitOutput(workspace, "hash-object", "--", path)
 }
 
 func designBlobBinding(workspace, commit, design string, facts buildWorkspaceFacts) (path, source string, err error) {
@@ -378,6 +385,14 @@ func designBlobBinding(workspace, commit, design string, facts buildWorkspaceFac
 	}
 	blob, err := facts.BlobAt(workspace, commit, rel)
 	if err != nil || !gitObjectIDRe.MatchString(blob) {
+		// A seat's draft the reviewed commit does not hold yet is bound by
+		// the object id of its bytes; the design review hands the critic
+		// those bytes frozen.
+		if info, statErr := os.Stat(abs); statErr == nil && info.Mode().IsRegular() {
+			if draft, draftErr := facts.DraftBlob(workspace, rel); draftErr == nil && gitObjectIDRe.MatchString(draft) {
+				return rel, rel + "@" + draft, nil
+			}
+		}
 		return "", "", fmt.Errorf("design path %s is not a blob at reviewed commit %s", rel, commit)
 	}
 	return rel, rel + "@" + blob, nil

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from "react";
 
-import { verdictLine, type ToPerform } from "./room";
+import { verdictLine } from "./room";
 import { BacklogError, reviewGoal, type Backlog, type Row } from "../backlog/api";
 import { useSession } from "../shell/identity";
 import { Button } from "../shell/controls";
@@ -69,26 +69,20 @@ export function CardVerdict({ row }: { row: Row }) {
 }
 
 /**
- * A verdict the record's Outcome carries and the goal does not, offered again
- * after a reload stranded the act Record it began (Sol SOL-S69-04): the
- * verdict, a send-back's brief as it will travel, and the press that records it
- * on the goal. A refusal is said by the room's refusal line, with the engine's
- * words.
+ * A verdict the record's Outcome carries and the goal does not (Sol
+ * SOL-S69-04), said after a reload stranded the act that began it: that it is
+ * written in the review and not on the goal, and where it is given again —
+ * under Your verdict, decided on the review as it stands now. It has no press
+ * of its own: a verdict written earlier is never sent again from here, because
+ * the review may have changed since (RULING-R-143-m1e of read 0096f159).
  */
-export function PendingVerdict({ pending, busy, onPress }: { pending: ToPerform; busy: boolean; onPress: () => void }) {
-  const words = pending.asked.verdict === "send-back" ? "send back" : "clear to land";
+export function PendingVerdict({ verdict }: { verdict: "clear-to-land" | "send-back" }) {
+  const words = verdict === "send-back" ? "send it back" : "looks good, land it";
   return (
     <div className="ms-room-banner ms-send-back" role="status">
-      <p className="ms-sitting-said">The Outcome is recorded, and the verdict is not yet on the goal: {words}.</p>
-      {pending.asked.brief !== "" && (
-        <pre className="ms-send-back-brief" aria-label="The correction brief">
-          {pending.asked.brief}
-        </pre>
-      )}
-      <p>
-        <Button primary disabled={busy} onClick={onPress}>
-          Record the verdict on the goal
-        </Button>
+      <p className="ms-sitting-said">
+        Your verdict is written in the review, and is not yet on the goal: {words}. It is not sent again by itself:
+        give it again under Your verdict, where it is decided on the review as it stands now.
       </p>
     </div>
   );

@@ -18,6 +18,12 @@ import (
 
 const DefaultWaitTimeout = 240 * time.Second
 
+// KindEnv names the variable every launched session's environment carries
+// its record's kind in, so a session the launcher started for a step can be
+// told from the seat it serves; a child launch's own kind replaces one it
+// inherited.
+const KindEnv = "METASYSTEM_LAUNCH_KIND"
+
 var errLaunchCancelledBeforeChild = errors.New("launch cancelled before child start")
 
 type Command struct {
@@ -324,6 +330,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)
 	}
+	command.Environment = append(command.Environment, KindEnv+"="+record.Kind)
 	var fenceClaim *stopfence.Claim
 	var fenceGeneration int64
 	var fenceRoot string

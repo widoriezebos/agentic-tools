@@ -366,6 +366,11 @@ func Served(id string) bool {
 	return !strings.EqualFold(segments[len(segments)-1], localConfiguration)
 }
 
+// RevisionOf is the revision a document's bytes are read and saved under: the
+// one a page holds, and the one a verdict names the record it decided on by
+// (review-findings-read-as-decisions RF-02).
+func RevisionOf(data []byte) string { return revisionOf(data) }
+
 // revisionOf is the Git blob object id of the bytes read: the repository's own
 // name for this content, equal to `git hash-object <file>`, which a later
 // typed reference can pin.

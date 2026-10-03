@@ -53,6 +53,9 @@ func (f *strictGitFacts) Branch(workspace string) (string, error) {
 func (f *strictGitFacts) BlobAt(workspace, commit, path string) (string, error) {
 	return f.read("blob", workspace, commit, path)
 }
+func (f *strictGitFacts) DraftBlob(workspace, path string) (string, error) {
+	return f.read("draft", workspace, "", path)
+}
 func (f *strictGitFacts) AbsoluteGitDir(worktree string) (string, error) {
 	return f.read("git-dir", worktree, "", "")
 }

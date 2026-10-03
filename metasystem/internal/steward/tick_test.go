@@ -353,3 +353,61 @@ func TestReviveVerdictStaysSilentBeforeHealing(t *testing.T) {
 		}
 	}
 }
+
+// TestDegradedNoticeWaitsForASecondTick: one degraded read (a ledger read
+// failing inside a burst of ledger commits) is the tick's verdict but queues
+// no notice; a healthy tick between resets the count, and a second degraded
+// tick in a row queues it.
+func TestDegradedNoticeWaitsForASecondTick(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	failing := true
+	work := openWorkDependencies{
+		NewWorld: func(string) bool { return true },
+		ReadClaimableBudgetedWork: func(string, time.Time) (goal.ClaimableBudgetedWork, error) {
+			if failing {
+				return goal.ClaimableBudgetedWork{}, errors.New("the ledger moved under the read")
+			}
+			return goal.ClaimableBudgetedWork{}, nil
+		},
+	}
+	tick := func(prev Evidence) TickResult {
+		t.Helper()
+		result, err := decideTickWithDependencies(root, TickConfig{}, fakeCensus{}, prev, Marks{HeadOid: "h", OpidDigest: "d"}, work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	queued := func() int {
+		t.Helper()
+		pending, err := PendingNotifications(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, notice := range pending {
+			if notice.Nonce == "verdict-"+string(VerdictDegraded) {
+				count++
+			}
+		}
+		return count
+	}
+	first := tick(Evidence{})
+	if first.Decision.Verdict != VerdictDegraded || queued() != 0 {
+		t.Fatalf("one degraded tick: %+v, %d notices; want the verdict and no notice", first.Decision, queued())
+	}
+	failing = false
+	healthy := tick(first.Evidence)
+	if healthy.Decision.Verdict == VerdictDegraded {
+		t.Fatalf("a readable ledger: %+v", healthy.Decision)
+	}
+	failing = true
+	again := tick(healthy.Evidence)
+	if queued() != 0 {
+		t.Fatalf("a degraded tick after a healthy one queued a notice: %+v", again.Decision)
+	}
+	if second := tick(again.Evidence); second.Decision.Verdict != VerdictDegraded || queued() != 1 {
+		t.Fatalf("two degraded ticks in a row: %+v, %d notices; want one notice", second.Decision, queued())
+	}
+}

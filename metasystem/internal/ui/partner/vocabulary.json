@@ -467,7 +467,7 @@
   {
     "id": "review-room",
     "term": "The review room",
-    "text": "Where you examine one goal's work before it lands, with your Project Partner beside it. The desk on the left shows one thing at a time — a file of the candidate, the change, a section of a record — and the conversation stays on the right. The Partner was not in the room that shaped this work, and it never says whether to accept it: it brings what the records hold, points at the code, and names what nobody tried. Step out whenever you like; the room keeps the desk, the conversation and your unfinished words, and the goal's card becomes the door back."
+    "text": "The review of one goal's work before it lands, in four steps: what you are looking at, what the reviewer found, try it, and your verdict. The reviewer is your Project Partner: it was not in the room that shaped this work; it reads the goal, the change, the critics' records and the proof, and it recommends one decision per finding. The verdict is yours. Leave whenever you like: everything stays as it is, and the goal's card on the board is the way back."
   },
   {
     "id": "landing-gate",
@@ -482,27 +482,27 @@
   {
     "id": "the-finding",
     "term": "A finding",
-    "text": "Something the examination did not try, an assumption the checks share, or a case at the edge, anchored where it sits. It is a card until you press Record it; recorded, it is an entry of the review's Findings, unanswered until you answer it. Four answers, each saying what follows: Fix in this goal sends it back to the builder with the candidate; Follow-up goal opens a new goal and lets this one land; Accept records the risk with your reason; Leave open keeps the question for whoever reads the record next."
+    "text": "Something the reviewer raises about this version, in layers: how much it matters (Blocks landing, Worth fixing, or a Note), the problem in plain words, why it matters, and the decision the reviewer recommends, with the evidence folded underneath. Your decision is one of four, each saying what follows: Must fix before landing goes to the builder as a correction when you send the goal back; Fix after landing opens a follow-up goal; Not a problem records your reason; I accept this risk records your acceptance and your reason on this review, in your name. A finding you leave undecided follows the reviewer's recommendation, where there is one, when you give your verdict, and you are told so first; on landing, one without a recommendation asks for your own decision."
   },
   {
     "id": "the-walks",
     "term": "The walks",
-    "text": "Five questions the interface asks your Partner in your name, one per part of the report: what was Asked, what was Built, how it was Examined, how it was Proven, how it Behaves. During a walk the Partner puts what it is explaining on the desk as it goes; Stop presenting keeps the desk as it is."
+    "text": "Five questions the interface asks the reviewer in your name: what was asked, what was built, how it was examined, how it was proven, and how it behaves. Each answer opens in the conversation, and what it points at opens beside it."
   },
   {
     "id": "the-verdict",
     "term": "The verdict",
-    "text": "How this review ends, recorded as the first line of its Outcome, with the tip it was drafted for under it: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. Once you record the Outcome, Clear to land and Send back are recorded on the goal itself, bound to this record and the tip you reviewed, and the record is committed beside that line. Clear to land is the word the landing gate waits for: the seat that holds the goal lands it on its next turn, at the tip you reviewed, and a moved tip needs your word again. Send back takes the goal out of Review, and the seat that holds it revises from your brief on its next turn."
+    "text": "How this review ends. Looks good, land it records your verdict on the goal, and the seat that holds it lands it on its next turn; where a finding must still be fixed, you are first shown what landing means for it and asked for your reason. Send it back gives the builder your must-fix decisions as a correction, and the goal leaves Review until it comes back fixed. Either is bound to the version on screen: if the review changed before it was recorded, nothing is recorded and you decide again. End without a verdict ends the sitting and releases your hold; the goal still waits for a decision to land."
   },
   {
     "id": "the-candidate",
-    "term": "The candidate",
-    "text": "The goal's branch running from its own worktree, on its own port, beside the standing run. Run starts it and Stop stops it; Open takes you to it in a new tab. The pill compares the commit that runs with the tip this review reads: the branch can move while you review, and then the pill says what runs is not the version under review."
+    "term": "Try it",
+    "text": "This exact version of the goal's work, started on this computer on a port of its own, so you can click through it before you decide. Start runs it, Open it takes you there in a new tab, and Stop stops it. If what runs is not the version you are reviewing, the line says so."
   },
   {
     "id": "the-brief",
     "term": "The correction brief",
-    "text": "What Send back gives the seat that holds the goal: the findings you answered fix, each with its words and its anchor, in the order you recorded them. You can read and edit it before you send it back; it is published beside the review record, and the holder revises from it once."
+    "text": "What Send it back gives the builder: each finding that must be fixed before landing, with why it matters, where it sits and what the reviewer found, and your own words where you wrote what must change. It is published beside the review, and the builder revises from it once."
   },
   {
     "id": "the-board",

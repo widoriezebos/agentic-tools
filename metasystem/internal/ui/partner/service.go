@@ -14,6 +14,7 @@ import (
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // The Partner, as the server's routes see it: one runtime, one host, one
@@ -1387,6 +1388,19 @@ func (s *Service) admitDeposit(running *turn, prepared Deposit) {
 		prepared.NotOffered = noFindingHere
 		s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
 		return
+	}
+	// A review's finding reaches a person as a decision, so it is offered only
+	// with its plain layers, and a title in a person's words: the tool's own
+	// rule, asked again where the sitting is known (review-findings-read-as-
+	// decisions §4).
+	if prepared.Kind == DepositFinding {
+		if refusal := uitools.FindingRefusal(uitools.Finding{Severity: prepared.Severity, Title: prepared.Title,
+			Why: prepared.Why, Recommend: prepared.Recommend, Reason: prepared.Reason}); refusal != "" {
+			prepared.Offered = false
+			prepared.NotOffered = refusal
+			s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
+			return
+		}
 	}
 	prepared.Subject = sitting.Subject
 	// The verdict is the service's to write, never the Partner's: it is the

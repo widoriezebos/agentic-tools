@@ -376,12 +376,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 
 // laneRecheck is how often, between cycles, the runner steps the landing
 // lane's keeper again while the lane waits on something that ends by
-// itself: the agent wakes within it of a proof's end, not at the next cycle.
+// itself or on a hand-in: the agent wakes within it of a proof's end or of
+// a hand-in to an idle lane, not at the next cycle.
 const laneRecheck = 15 * time.Second
 
 // laneKeeping is the runner's side of the landing lane's keeper: its step,
 // the line last printed, and whether the lane waits on a proof, a running
-// agent or another hold.
+// agent, another hold or, idle, a hand-in. A lane not kept, paused or failed
+// does not wait; its keeper is stepped once per cycle.
 type laneKeeping struct {
 	step    func() lane.AgentRun
 	line    string
@@ -399,7 +401,7 @@ func (k *laneKeeping) run() {
 		k.line = run.Line
 	}
 	switch run.Outcome {
-	case lane.AgentStarted, lane.AgentRunning, lane.AgentHeld:
+	case lane.AgentStarted, lane.AgentRunning, lane.AgentHeld, lane.AgentIdle:
 		k.waiting = true
 	default:
 		k.waiting = false
@@ -408,7 +410,8 @@ func (k *laneKeeping) run() {
 
 // runnerWait sleeps one interval in 200 ms steps, watching the stop marker
 // and the stop signal; it reports whether either arrived. While the landing
-// lane waits, it steps the lane's keeper every laneRecheck outside the helm.
+// lane waits, idle included, it steps the lane's keeper every laneRecheck
+// outside the helm.
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping) bool {
 	deadline := deps.Now().Add(interval)
 	recheck := deps.Now().Add(laneRecheck)

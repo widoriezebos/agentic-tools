@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // withStdin runs fn with os.Stdin fed from content, so a verb that reads the
@@ -123,7 +124,7 @@ func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
 	resolve := func(string) (string, error) { resolved++; return "m1b", nil }
 	claims := func() (board.Ownership, error) { return board.Ownership{}, nil }
 	now := func() time.Time { return time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC) }
-	peer, release := toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
+	peer, release := toolGatePeer(home, "/repo", noLaunchKind, resolve, claims, 10000, io.Discard, now)
 	if text, mark := peer(); text != "" || mark != nil || resolved != 0 {
 		t.Fatalf("an empty board: %q, marker %v, %d enrollment reads", text, mark != nil, resolved)
 	}
@@ -132,7 +133,7 @@ func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	peer, release = toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
+	peer, release = toolGatePeer(home, "/repo", noLaunchKind, resolve, claims, 10000, io.Discard, now)
 	text, mark := peer()
 	if !strings.HasPrefix(text, "[peer message from m1a to m1b, id "+published.Message.ID+":") || !strings.HasSuffix(text, "\n> is it green?\n[end of peer message "+published.Message.ID+"]") || mark == nil {
 		t.Fatalf("the offer = %q", text)
@@ -147,9 +148,69 @@ func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
 	if _, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: "still pending"}, now()); err != nil {
 		t.Fatal(err)
 	}
-	peer, release = toolGatePeer(home, "/repo", resolve, claims, 0, io.Discard, now)
+	peer, release = toolGatePeer(home, "/repo", noLaunchKind, resolve, claims, 0, io.Discard, now)
 	defer release()
 	if text, _ := peer(); text != "" {
 		t.Fatalf("a runtime with no declared field was offered %q", text)
+	}
+}
+
+// noLaunchKind is the environment of a session started by hand: it names no
+// launch kind.
+func noLaunchKind(string) (string, bool) { return "", false }
+
+// TestToolGatePeerOffersALaunchedStepNothing: the gate of a session the
+// launcher started for a step resolves the seat's machine but offers none of
+// its mail and marks none; the message stays pending, and the gate of the
+// seat's session and of a session started by hand still receive it.
+func TestToolGatePeerOffersALaunchedStepNothing(t *testing.T) {
+	t.Parallel()
+	resolve := func(string) (string, error) { return "m1b", nil }
+	claims := func() (board.Ownership, error) { return board.Ownership{}, nil }
+	now := func() time.Time { return time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC) }
+	kind := func(value string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			if name == launch.KindEnv {
+				return value, true
+			}
+			return "", false
+		}
+	}
+	for _, receiver := range []struct {
+		name   string
+		lookup func(string) (string, bool)
+	}{{"the seat's", kind("seat")}, {"a hand-started", noLaunchKind}} {
+		home := filepath.Join(t.TempDir(), ".metasystem")
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		published, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: "is it green?"}, now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		marker := filepath.Join(board.Dir(home), "m1b", "mailbox", "delivered", published.Message.ID, "m1b.json")
+		peer, release := toolGatePeer(home, "/repo", kind("build"), resolve, claims, 10000, io.Discard, now)
+		text, mark := peer()
+		release()
+		if text != "" || mark != nil {
+			t.Fatalf("a build session's gate was offered %q, marker %v", text, mark != nil)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("a build session's gate marked the machine's message: %v", err)
+		}
+		peer, release = toolGatePeer(home, "/repo", receiver.lookup, resolve, claims, 10000, io.Discard, now)
+		text, mark = peer()
+		if !strings.Contains(text, "id "+published.Message.ID+":") || mark == nil {
+			release()
+			t.Fatalf("%s gate was offered %q", receiver.name, text)
+		}
+		err = mark()
+		release()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("%s gate's marker: %v", receiver.name, err)
+		}
 	}
 }
