@@ -31,6 +31,18 @@ export type Column = {
 };
 
 /**
+ * What the disclosure under the board is called. The board always carries
+ * Done, so what stands behind this press is the abandoned goals and the goals
+ * split into others, and the label names whichever of the two the number
+ * beside it counts.
+ */
+export function closedLabel(shown: boolean, closed: readonly Row[]): string {
+  const split = closed.filter(isParent).length;
+  const what = split === 0 ? "abandoned goals" : split === closed.length ? "split goals" : "abandoned and split goals";
+  return `${shown ? "Hide" : "Show"} ${what} (${String(closed.length)})`;
+}
+
+/**
  * What stands under the board: the work that is over, and the records this
  * build could not place. Both are readings of the same filtered set the
  * columns are, which is why they are here beside them.

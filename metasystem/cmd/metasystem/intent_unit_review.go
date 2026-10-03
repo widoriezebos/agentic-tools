@@ -423,9 +423,13 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 	owners := inv.delivery()
 	result, code, err := owners.branchRead(args)
 	if err == nil && result.State == "closed" {
+		// The critic's records are where it was dispatched: this
+		// installation's store, or its primary checkout's when the critic
+		// was dispatched there (branch.CriticStore, the read owner's rule).
+		store := branch.CriticStore(root, result.RootJob)
 		// The branch read calls a terminal critic closed; collection needs
 		// the chain's own recorded closure, which only the close owner writes.
-		if waiting := inv.criticClosure(targets, root, unit, goalID, result.RootJob); waiting != nil {
+		if waiting := inv.criticClosure(targets, store, unit, goalID, result.RootJob); waiting != nil {
 			if data, _ := waiting.Data.(map[string]any); data["failedRound"] != nil {
 				// A failed examination has no findings to decide; its
 				// continuation is the retry, never a decisions file.
@@ -435,17 +439,17 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				// An explicitly named commit's review closes with the author's
 				// decisions through the whole close owner, then collects below.
 				closer := *inv
-				closer.layout.InstallationRoot = root
+				closer.layout.InstallationRoot = store
 				closed := closer.closeChain(result.RootJob)
 				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 					closed.Targets = append(targets, closed.Targets...)
 					closed.Summary = "the examination finished, but its close did not complete: " + closed.Summary
-					inv.riskRemedy(&closed, root, goalID, result.RootJob,
+					inv.riskRemedy(&closed, store, goalID, result.RootJob,
 						append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", inv.input.text("dispositions")))
 					return closed
 				}
 			} else if inv.reviewWork == nil {
-				join, clean := inv.cleanExaminationJoin(root, goalID, unit, result.RootJob)
+				join, clean := inv.cleanExaminationJoin(store, goalID, unit, result.RootJob)
 				if !clean {
 					waiting.next = append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")
 					waiting.nextReason = "FILE decides every finding of " + result.RootJob
@@ -454,19 +458,19 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				// A completed examination with no findings has nothing to
 				// decide: its empty join closes through the whole close owner.
 				closer := *inv
-				closer.layout.InstallationRoot = root
+				closer.layout.InstallationRoot = store
 				closer.input = intentInput{values: map[string][]string{"dispositions": {join}}}
 				closed := closer.closeChain(result.RootJob)
 				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 					closed.Targets = append(targets, closed.Targets...)
 					closed.Summary = "the examination finished clean, but its close did not complete: " + closed.Summary
-					inv.riskRemedy(&closed, root, goalID, result.RootJob, inv.canonicalReviewArgv(targets, goalID, unit))
+					inv.riskRemedy(&closed, store, goalID, result.RootJob, inv.canonicalReviewArgv(targets, goalID, unit))
 					return closed
 				}
 			} else {
 				// A goal's work review completes the author's decision and the
 				// whole close here, then collects below.
-				if pending := inv.closeWorkReview(targets, root, unit, result.RootJob); pending != nil {
+				if pending := inv.closeWorkReview(targets, store, unit, result.RootJob); pending != nil {
 					return *pending
 				}
 			}

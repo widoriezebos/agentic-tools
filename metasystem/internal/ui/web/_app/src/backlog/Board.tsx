@@ -4,16 +4,16 @@ import { NavLink, useNavigate } from "react-router";
 
 import { actingAs } from "./acting";
 import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
-import { boardBelow, boardColumns } from "./columns";
+import { boardBelow, boardColumns, closedLabel } from "./columns";
 import { windowTitle, WINDOWS, type Filters, type Window } from "./filters";
-import { dateAndTime, minuteTime } from "./format";
-import { DONE, laneFor, waitingFor, SPLIT_HELP, type LaneId } from "./lanes";
+import { dateAndTime, day, minuteTime } from "./format";
+import { DONE, laneFor, ownGaps, waitingFor, SPLIT_HELP, type LaneId } from "./lanes";
 import { CardMenu } from "./CardMenu";
 import { EditSheet } from "./EditSheet";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { moveFor, refusalFor, targetsFrom } from "./moves";
 import { RankSheet } from "./RankSheet";
-import { landedNote, needsConfirming, placementFor, stepFor, type Placement, type Side } from "./reorder";
+import { landedNote, needsConfirming, placementFor, rankOf, stepFor, type Placement, type Side } from "./reorder";
 import { SHOWN } from "./showing";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
 import { goalSubject, laneSubject } from "./subjects";
@@ -23,12 +23,12 @@ import { ReviewDoors, ReviewItOrDoor } from "../review/Door";
 import { CardVerdict, VerdictActed } from "../review/Verdict";
 import { CardGate } from "../review/Gate";
 import { usePartner } from "../partner/store";
+import { goalTitle } from "../goalTitle";
 import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
 import type { Pane as ProjectPayload } from "../project/api";
 import { sliceCount, sliceLine, slicePlans, slicesOf, type SlicePlan } from "../project/pane";
-import { dateOf } from "../project/ProjectPane";
 import { goalPath } from "../routes";
 import { Button, Chip } from "../shell/controls";
 import { useSession } from "../shell/identity";
@@ -338,7 +338,7 @@ export function Board({
           things the board is about. */}
       <div className="ms-board-below">
         <Button aria-pressed={closedShown} onClick={onToggleClosed}>
-          {closedShown ? "Hide" : "Show"} closed items ({below.closed.length})
+          {closedLabel(closedShown, below.closed)}
         </Button>
         <Unplaceable rows={below.unplaceable} />
       </div>
@@ -775,13 +775,11 @@ function Card({
       <NavLink className="ms-card-id ms-mono" to={goalPath(row.ref.id)}>
         {row.ref.id}
       </NavLink>
-      <p className="ms-card-intent">{row.intent}</p>
+      <p className="ms-card-intent">{goalTitle(row.intent)}</p>
       <div className="ms-card-chips">
         <Chip>{row.state}</Chip>
         {row.priority > 0 && row.sequence > 0 && (
-          <Chip>
-            {row.priority}:{row.sequence}
-          </Chip>
+          <Chip>{rankOf(row)}</Chip>
         )}
         {row.tier > 0 && <Chip>tier {row.tier}</Chip>}
         {row.claim !== undefined && <Chip marker>{row.claim.machine}</Chip>}
@@ -876,7 +874,7 @@ function Slices({ plan, onGrabbable }: { plan: SlicePlan | null; onGrabbable: (m
   if (plan === null) {
     return null;
   }
-  const line = sliceLine(sliceCount(plan), plan.started === null ? "" : dateOf(plan.started.at));
+  const line = sliceLine(sliceCount(plan), plan.started === null ? "" : day(plan.started.at));
   if (line === "") {
     return null;
   }
@@ -945,7 +943,7 @@ function SplitCard({
       <NavLink className="ms-card-id ms-mono" to={goalPath(row.ref.id)}>
         {row.ref.id}
       </NavLink>
-      <p className="ms-card-intent">{row.intent}</p>
+      <p className="ms-card-intent">{goalTitle(row.intent)}</p>
       <p className="ms-card-split">Split into {count(members.length, "goal")}</p>
       {members.length > 0 && (
         <ul className="ms-card-members">
@@ -1014,5 +1012,5 @@ function blockerOf(row: Row): string {
   if (row.approved !== undefined && row.approved.expired) {
     return `approval expired: ${row.approved.expiredWhy}`;
   }
-  return row.gaps[0] ?? "";
+  return ownGaps(row)[0] ?? "";
 }

@@ -10,6 +10,7 @@ import {
   lanes,
   laneTitle,
   openLanes,
+  ownGaps,
   shownLanes,
   waitingFor,
   SPLIT_HELP,
@@ -172,5 +173,20 @@ describe("what a waiting goal says it is waiting for", () => {
     expect(andList(["a"])).toBe("a");
     expect(andList(["a", "b"])).toBe("a and b");
     expect(andList(["a", "b", "c"])).toBe("a, b and c");
+  });
+});
+
+describe("what a card and a row say of a goal's gaps", () => {
+  it("leaves out what the To Do lane says of every goal in it", () => {
+    expect(ownGaps({ lane: "to-do", gaps: ["not approved"] })).toEqual([]);
+    expect(ownGaps({ lane: "to-do", gaps: ["not approved", "no next step"] })).toEqual(["no next step"]);
+  });
+
+  it("keeps the same words in a lane that does not say them", () => {
+    expect(ownGaps({ lane: "waiting", gaps: ["not approved"] })).toEqual(["not approved"]);
+  });
+
+  it("has the To Do lane's help say it once", () => {
+    expect(HELP["lane-todo"].text).toContain("not approved");
   });
 });

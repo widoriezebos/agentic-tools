@@ -97,6 +97,10 @@ type CommitReadRequest struct {
 	Transport                                     PushTransport
 	Inputs                                        *ReadCommitInputs
 	GateRepository                                BranchReadRepository
+	// CriticStore is the installation whose artifacts/agents holds
+	// RootJob's records when that is not Repo (the read owner's
+	// CriticStore); "" is Repo.
+	CriticStore string
 }
 
 type LandedUnit struct {
@@ -258,7 +262,11 @@ func directSource(r attestationReads, req CommitReadRequest, subject Attestation
 		return AttestationSource{}, nil, fmt.Errorf("read needs exactly one of --root-job or --reader-record")
 	}
 	if req.RootJob != "" {
-		closure, files, err := dispatch.CommitCriticClosureFiles(filepath.Join(req.Repo, "artifacts", "agents"), req.RootJob, read)
+		store := req.Repo
+		if req.CriticStore != "" {
+			store = req.CriticStore
+		}
+		closure, files, err := dispatch.CommitCriticClosureFiles(filepath.Join(store, "artifacts", "agents"), req.RootJob, read)
 		if err != nil {
 			return AttestationSource{}, nil, err
 		}

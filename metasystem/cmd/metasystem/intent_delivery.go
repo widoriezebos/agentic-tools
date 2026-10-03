@@ -1173,7 +1173,13 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 			next:    inv.typedArgvWith("--goal", "GOAL"), nextReason: "names the goal"}
 	}
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
-	args := []string{"--root", inv.layout.InstallationRoot, "--goal", goalID, "--unit", unit}
+	// The review runs where goal/G is checked out, as review run and review
+	// --changes do: a goal worktree's installation, with this one selected.
+	root := inv.goalBranchInstallation(goalID)
+	args := []string{"--root", root, "--goal", goalID, "--unit", unit}
+	if root != inv.layout.InstallationRoot {
+		args = append(args, "--selected-installation", inv.layout.InstallationRoot)
+	}
 	if inv.input.has("brief") {
 		args = append(args, "--brief", inv.callerPath(inv.input.text("brief")))
 	}
@@ -1183,7 +1189,27 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	if inv.input.has("retry") {
 		args = append(args, "--retry", inv.input.text("retry"))
 	}
-	return inv.commitReview(targets, inv.layout.InstallationRoot, goalID, unit, args)
+	return inv.commitReview(targets, root, goalID, unit, args)
+}
+
+// goalBranchInstallation is the installation a goal's branch work runs in:
+// the goal worktree's, when goal/G is checked out in a registered worktree
+// other than this checkout, else this installation. Git refuses a branch
+// checked out twice, so at most one worktree holds it.
+func (inv *intentInvocation) goalBranchInstallation(goalID string) string {
+	worktrees, err := inv.registeredWorktrees()
+	if err != nil {
+		return inv.layout.InstallationRoot
+	}
+	for path, entry := range worktrees {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if entry.ref == "refs/heads/goal/"+goalID && !sameDirectory(path, inv.layout.GitRoot) {
+			return inv.goalWorktreeInstallation(path)
+		}
+	}
+	return inv.layout.InstallationRoot
 }
 
 // criticClosure reports what a terminal commit critic still needs before its

@@ -289,7 +289,7 @@ export const HELP: Record<HelpId, Term> = {
   },
   "lane-todo": {
     term: "To Do",
-    text: "Goals nobody has authorized yet. A goal here may be waiting on intake or on a human's approval. Drag it to Ready for Work to approve it.",
+    text: "Goals that are not approved: nobody has authorized them yet. A goal here may be waiting on intake or on a human's approval. Drag it to Ready for Work to approve it.",
   },
   "lane-ready": {
     term: "Ready for Work",
@@ -513,7 +513,7 @@ export const HELP: Record<HelpId, Term> = {
   "landing-gate": {
     term: "The landing gate",
     text:
-      "Whether a goal in Review lands by itself or waits for you. Below landing.review.human-from-tier it becomes eligible once landing.review.auto-after has passed since it reached Review or since the last thing a person did on it, and the seat that holds it lands it on its next turn; the card counts the time down and says when it is only waiting for that seat. At or above that tier it lands only on your word at its branch's current tip: a review sitting that ends clear to land, or Land without a sitting with your reason, which the Decide sheet asks for. While a review sitting stands, nothing lands, whatever the tier, and the card says whose sitting holds it.",
+      "Whether a goal in Review lands by itself or waits for you. Below the tier set in Settings (Waits for a person from tier) it becomes eligible once the time set there (Lands by itself after) has passed since it reached Review or since the last thing a person did on it, and the seat that holds it lands it on its next turn; the card counts the time down and says when it is only waiting for that seat. At or above that tier it lands only on your word at its branch's current tip: a review sitting that ends clear to land, or Land without a sitting with your reason, which the Decide sheet asks for. While a review sitting stands, nothing lands, whatever the tier, and the card says whose sitting holds it.",
   },
   "the-desk": {
     term: "The desk",

@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { loadFleet, type Page } from "../fleet/api";
 import { workingLines } from "../fleet/fleet";
-import { onFleetEvent, onStreamOpen } from "../notifications/stream";
+import { onFleetEvent, onStreamReopen } from "../notifications/stream";
 
 /**
  * What the rail's Fleet row says, read by the shell (g1-s74 D5).
  *
  * The shell reads the fleet on mount and again on each `fleet` beat and each
- * stream open, the three the Fleet page already reads on, through the Fleet
- * page's own call site. The answer is held above the rail; a read that has not
+ * reconnect of the stream, the three the Fleet page already reads on, through
+ * the Fleet page's own call site. The answer is held above the rail; a read that has not
  * landed, or one that failed, says nothing. The minutes in the words are the
  * page's, measured once when it lands: this keeps no clock of its own.
  */
@@ -38,7 +38,7 @@ export function useFleetWorking(): readonly string[] {
       setAttempt((previous) => previous + 1);
     };
     const stopFleet = onFleetEvent(again);
-    const stopOpen = onStreamOpen(again);
+    const stopOpen = onStreamReopen(again);
     return () => {
       stopFleet();
       stopOpen();

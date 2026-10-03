@@ -2,6 +2,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { EmptyState, Pane } from "./Pane";
+import { dateAndTime, isLongHash, shortTip } from "../backlog/format";
 import { Help } from "../help/Help";
 import { Button, Skeleton } from "../shell/controls";
 import { useWorkspaceState } from "../shell/identity";
@@ -12,7 +13,11 @@ import { ThemeControl } from "../shell/ThemeControl";
 /**
  * Settings, which is two live cards above one honest empty state: About this
  * workspace is what this build knows for certain, Appearance is the one
- * setting it can actually change, and the pages themselves are gate 7's.
+ * setting it can actually change, and the pages themselves are not built yet.
+ *
+ * A fact is said in words a person reads. What only a maintainer compares —
+ * a whole build hash, a setting's key in the configuration file — stands
+ * behind Details beside the fact it belongs to.
  */
 export function SettingsPane({
   theme,
@@ -51,7 +56,7 @@ function AboutCard() {
           <Button onClick={retry}>Retry</Button>
         </div>
       )}
-      {workspace.state === "known" && <Facts workspace={workspace.workspace} />}
+      {workspace.state === "known" && <AboutFacts workspace={workspace.workspace} />}
       <a className="ms-card-link" href="/THIRD-PARTY-NOTICES.txt">
         Open-source notices
       </a>
@@ -128,6 +133,9 @@ const GATE_NAMES: Readonly<Record<string, string>> = {
   "landing.review.auto-after": "Lands by itself after",
 };
 
+/** What the card calls a setting this build has no name for; its key is under Details. */
+const UNNAMED_SETTING = "Another landing setting";
+
 /** The two lines. Exported because the card reads the workspace from context. */
 export function LandingGateFacts({ gate }: { gate: LandingGate }) {
   if (gate.problem !== undefined && gate.problem !== "") {
@@ -140,9 +148,9 @@ export function LandingGateFacts({ gate }: { gate: LandingGate }) {
   return (
     <dl className="ms-facts">
       {(gate.facts ?? []).map((fact) => (
-        <Fact key={fact.key} name={GATE_NAMES[fact.key] ?? fact.key}>
-          <span className="ms-mono">{fact.value}</span> · {sourceWords(fact.source)} ·{" "}
-          <span className="ms-mono">{fact.key}</span>
+        <Fact key={fact.key} name={GATE_NAMES[fact.key] ?? UNNAMED_SETTING}>
+          <span className="ms-mono">{fact.value}</span> · {sourceWords(fact.source)}
+          <Details>{fact.key}</Details>
         </Fact>
       ))}
     </dl>
@@ -176,7 +184,11 @@ export function StoreFacts({ store }: { store: Store }) {
   );
 }
 
-function Facts({ workspace }: { workspace: Workspace }) {
+/**
+ * What this build knows of the workspace. Exported because the card reads the
+ * workspace from context and the lines are what a test reads.
+ */
+export function AboutFacts({ workspace }: { workspace: Workspace }) {
   return (
     <dl className="ms-facts">
       <Fact name="Subject">{workspace.subject}</Fact>
@@ -191,12 +203,10 @@ function Facts({ workspace }: { workspace: Workspace }) {
         <span className="ms-mono">{workspace.stateRoot}</span>
       </Fact>
       <Fact name="Engine build">
-        <span className="ms-mono">{workspace.engineBuild}</span>
+        <span className="ms-mono">{isLongHash(workspace.engineBuild) ? shortTip(workspace.engineBuild) : workspace.engineBuild}</span>
+        {isLongHash(workspace.engineBuild) && <Details>{workspace.engineBuild}</Details>}
       </Fact>
-      <Fact name="Started at">
-        <span className="ms-mono">{workspace.startedAt}</span>
-      </Fact>
-      <Fact name="Source at HEAD">arrives with g1-s7</Fact>
+      <Fact name="Started at">{dateAndTime(workspace.startedAt)}</Fact>
       <Fact name="Adopted from">{adoption(workspace)}</Fact>
     </dl>
   );
@@ -211,6 +221,16 @@ function adoption(workspace: Workspace): ReactNode {
     return "not recorded";
   }
   return "unreadable";
+}
+
+/** The value a maintainer compares and a reader does not, shut until it is asked for. */
+function Details({ children }: { children: string }) {
+  return (
+    <details className="ms-fact-details">
+      <summary>Details</summary>
+      <span className="ms-mono">{children}</span>
+    </details>
+  );
 }
 
 function Fact({ name, children }: { name: string; children: ReactNode }) {

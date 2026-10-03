@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { Row } from "./api";
 import { AskAboutSheet } from "../partner/AskSheet";
+import { goalTitle } from "../goalTitle";
 import type { Field } from "../partner/drafting";
 import type { Outcome } from "../partner/suggesting";
 import { useOpenSheet } from "../partner/store";
@@ -243,7 +244,7 @@ export function Panel({
         {goal !== undefined && (
           <div className="ms-act-goal">
             <p className="ms-act-goal-id ms-mono">{goal.ref.id}</p>
-            <p className="ms-act-goal-intent">{goal.intent}</p>
+            <p className="ms-act-goal-intent">{goalTitle(goal.intent)}</p>
           </div>
         )}
         {unproven !== "" && (

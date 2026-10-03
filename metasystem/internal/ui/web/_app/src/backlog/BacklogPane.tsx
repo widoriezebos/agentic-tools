@@ -424,7 +424,7 @@ function Read({
               build could not place costs the work it could no room. */}
           <div className="ms-backlog-below">
             <Button aria-pressed={closedShown} onClick={() => { setClosedShown((shown) => !shown); }}>
-              {closedShown ? "Hide" : "Show"} closed items ({closedCount})
+              {closedShown ? "Hide" : "Show"} done and abandoned goals ({closedCount})
             </Button>
             <Unplaceable rows={rowsIn(backlog.rows, UNPLACEABLE)} />
           </div>

@@ -782,10 +782,55 @@
 
 .ms-briefing-title {
   margin: 0;
+  min-width: 0;
   font-size: 17px;
   line-height: 24px;
   font-weight: 600;
   color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+/* A goal's facts under its title, and its acts under them: each a row that
+   wraps on a narrow screen rather than running past its edge. */
+.ms-goal-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-goal-next-step {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-next-label {
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-goal-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.ms-goal-stands {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
 }
 
 .ms-briefing-act {

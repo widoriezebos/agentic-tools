@@ -7,6 +7,7 @@ import {
   landedNote,
   needsConfirming,
   placementFor,
+  NO_PRIORITY,
   rankOf,
   stepFor,
 } from "./reorder";
@@ -152,9 +153,10 @@ describe("what the lane says afterwards", () => {
   // The note is read from the board the act answered with, never from what
   // was asked for: the band may have shifted since this page was read.
   it("reads the rank out of the ledger's own answer", () => {
-    expect(landedNote("two", [{ ...two, priority: 1, sequence: 4 }])).toBe("two moved to 1:4");
+    expect(landedNote("two", [{ ...two, priority: 1, sequence: 4 }])).toBe("two moved to priority 1 · #4");
     expect(landedNote("gone", [one])).toBe("gone moved");
-    expect(rankOf({ priority: 2, sequence: 5 })).toBe("2:5");
+    expect(rankOf({ priority: 2, sequence: 5 })).toBe("priority 2 · #5");
+    expect(rankOf({ priority: 0, sequence: 0 })).toBe(NO_PRIORITY);
   });
 });
 

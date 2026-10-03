@@ -37,7 +37,7 @@ export type Empty = {
   kind: EmptyKind;
   heading: string;
   body: string;
-  /** The 12px line beneath the body: which slice or gate brings the view. */
+  /** The 12px line beneath the body: what is true of the view today, or what to do next. */
   note: string;
   link: EmptyLink | null;
   action: EmptyLink | null;
@@ -49,7 +49,7 @@ export const empties: readonly Empty[] = [
     kind: "not projected",
     heading: "Settings pages are not built yet",
     body: "Pages for runtimes and models, connections and channels, identity and authority, execution defaults, and storage and retention will be read and changed here.",
-    note: "Arrives with gate 7",
+    note: "Appearance is the one setting this page can change today",
     link: null,
     action: null,
   },

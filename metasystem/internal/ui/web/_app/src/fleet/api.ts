@@ -328,8 +328,54 @@ async function request(resource: string, body?: unknown, signal?: AbortSignal): 
   return await response.json();
 }
 
-export async function loadFleet(signal?: AbortSignal): Promise<Page> {
-  return (await request(FLEET, undefined, signal)) as Page;
+/**
+ * The read of the fleet the callers of one moment share.
+ *
+ * The shell's rail and the Fleet page both read the fleet when they mount, and
+ * both again on the same `fleet` beat, so on one page load or one beat they
+ * would ask the server the same question twice. A read is shared only with the
+ * callers of the same run of the page's code and let go before anything else
+ * can happen, so a read asked for after an act is never answered by one that
+ * started before it.
+ *
+ * The shared request carries no caller's signal: one caller going away does
+ * not take the answer from another. Each caller's own signal still ends its
+ * own wait, which is what every caller checks.
+ */
+export const loadFleet = sharedInTheMoment(() => request(FLEET) as Promise<Page>);
+
+/** A read that the callers of one run of the page's code share, as above. */
+export function sharedInTheMoment<T>(read: () => Promise<T>): (signal?: AbortSignal) => Promise<T> {
+  let shared: Promise<T> | null = null;
+  return (signal?: AbortSignal) => {
+    if (shared === null) {
+      shared = read();
+      queueMicrotask(() => {
+        shared = null;
+      });
+    }
+    return waitFor(shared, signal);
+  };
+}
+
+/** A shared read as one caller waits for it: ended early by that caller's signal. */
+function waitFor<T>(read: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) {
+    return read;
+  }
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => {
+      reject(signal.reason);
+    };
+    if (signal.aborted) {
+      stop();
+      return;
+    }
+    signal.addEventListener("abort", stop, { once: true });
+    read.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", stop);
+    });
+  });
 }
 
 /**

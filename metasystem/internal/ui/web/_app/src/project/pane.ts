@@ -10,6 +10,11 @@ import type {
   SittingRow,
 } from "./api";
 import { ACTIONS, ASK, type Kind } from "./writing";
+import type { Row as LedgerRow } from "../backlog/api";
+import { editReason } from "../backlog/editing";
+import { offersFor, type Offer } from "../backlog/menu";
+import { rankOf } from "../backlog/reorder";
+import { goalSentence } from "../goalTitle";
 import type { HelpId } from "../help/terms";
 import { documentPath, goalPath, reviewPath, sittingPath } from "../routes";
 
@@ -100,7 +105,7 @@ export type SlicePlan = {
 };
 
 /** What the tab says when no governing design records a plan. */
-export const NO_SLICE_PLAN = "No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)";
+export const NO_SLICE_PLAN = "No slice plan is recorded.";
 
 /**
  * The block a goal page opens with: the goal's own id, its state and the
@@ -108,6 +113,53 @@ export const NO_SLICE_PLAN = "No slice plan is recorded; the slice-plan owner ar
  * missing rather than invented.
  */
 export type GoalBriefing = { id: string; title: string; state: string; intent: string; found: boolean; count: number };
+
+/** What the count beside a goal's title counts: the records that name the goal. */
+export function recordsAbout(count: number): string {
+  return `${String(count)} ${count === 1 ? "record" : "records"} about this goal`;
+}
+
+/**
+ * The facts a goal page says under its title, read from the goal's own row of
+ * the board. Each says what it is; one the row does not carry is left out
+ * rather than shown empty. The priority is said as the backlog's rank chip
+ * says it, and the seat holding the goal by its machine's name alone.
+ */
+export function goalFacts(row: LedgerRow): string[] {
+  const facts: string[] = [];
+  if (row.tier > 0) {
+    facts.push(`tier ${String(row.tier)}`);
+  }
+  if ((row.priority > 0 && row.sequence > 0) || row.where === "live") {
+    facts.push(rankOf(row));
+  }
+  if (row.claim !== undefined) {
+    facts.push(`held by ${row.claim.machine}`);
+  }
+  return facts;
+}
+
+/**
+ * The acts a goal page offers as buttons: what the backlog card's menu offers
+ * for the same row, less opening the goal, which is the page itself.
+ */
+export function goalOffers(row: LedgerRow, all: readonly LedgerRow[]): Offer[] {
+  return offersFor(row, all).filter((offer) => offer.id !== "open");
+}
+
+/**
+ * Why a goal page offers no edit, or nothing but a question: the edit's own
+ * reason where the state has one, and otherwise, where no act on the ledger is
+ * offered, the state that stands in the way. "" where an act is there to press
+ * and nothing needs saying.
+ */
+export function standsLine(row: LedgerRow, offers: readonly Offer[]): string {
+  const reason = editReason(row);
+  if (reason !== "" || offers.some((offer) => offer.id !== "ask")) {
+    return reason;
+  }
+  return row.state === "" ? "Nothing here changes this goal." : `This goal is ${row.state}, so nothing here changes it.`;
+}
 
 /** The aside's first block: what in this scope is waiting for a human. */
 export type NeedsYou = { questions: number; designs: number };
@@ -201,6 +253,11 @@ export const FINISHED = ["done", "superseded"];
  */
 export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
+
+/** How the Documents block counts what it lists: the files no other tab names. */
+export function otherFiles(total: number): string {
+  return `${String(total)} other ${total === 1 ? "file" : "files"}`;
+}
 export const SLICES_TITLE = "Slices";
 export const SITTINGS_TITLE = "Sittings";
 
@@ -773,7 +830,8 @@ function goalBriefing(pane: Pane, id: string): GoalBriefing {
   if (goal === null) {
     return { id, title: id, state: "", intent: "", found: false, count };
   }
-  return { id, title: nameOf(goal), state: goal.state, intent: goal.intent, found: true, count };
+  const said = goalSentence(goal.intent);
+  return { id, title: said === "" ? nameOf(goal) : said, state: goal.state, intent: goal.intent, found: true, count };
 }
 
 /**

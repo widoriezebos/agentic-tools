@@ -50,7 +50,7 @@ const GROUPS: readonly { id: GroupId; kind: string; title: string; standing: str
   { id: "proposed", kind: "proposal", title: "Proposed by the Partner", standing: "" },
   { id: "questions", kind: "question", title: "Questions", standing: "" },
   { id: "drafts", kind: "draft", title: "Drafts to accept", standing: "" },
-  { id: "landed", kind: "landed", title: "Designs landed", standing: "" },
+  { id: "landed", kind: "landed", title: "Designs to mark done", standing: "" },
   { id: "asks", kind: "ask", title: "Asks from a seat", standing: "" },
   { id: "alerts", kind: "alert", title: "Alerts", standing: "" },
   { id: "renewals", kind: "renewal", title: "Approvals to renew", standing: "" },

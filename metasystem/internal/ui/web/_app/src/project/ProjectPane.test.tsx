@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Briefing } from "./pane";
 import { GoalBlock } from "./ProjectPane";
+import type { Backlog, Row } from "../backlog/api";
+import { offersFor } from "../backlog/menu";
 import type { Proposal } from "../partner/api";
 import { cardsIn } from "../partner/proposing";
 import { PartnerAs } from "../partner/store";
@@ -68,11 +70,15 @@ describe("the goal page's two writers", () => {
     // The reload belongs to the one outcome that earns it. A second call to it
     // in this block is the reread taking the sheet down with the page.
     expect(block.match(/onEdited\(\)/g)).toHaveLength(1);
-    expect(block).toContain("onDone={() => {\n            setEditing(false);\n            onEdited();\n          }}");
+    expect(block).toContain("const done = () => {\n    setOpened(null);\n    onEdited();\n  };");
+    expect(block.match(/onDone=\{done\}/g)).toHaveLength(3);
+    expect(block.match(/onReread=/g)).toHaveLength(1);
     // And the row the sheet is given is found in whatever board this block
     // holds, so once the reread has set it the sheet shows the row as the
     // ledger now has it.
-    expect(block).toContain("const mine = ledger?.rows.find((row) => row.ref.id === goal.id);");
+    expect(block).toContain(
+      "const mine = ledger === null ? undefined : [...ledger.rows, ...ledger.closed].find((row) => row.ref.id === goal.id);",
+    );
   });
 });
 
@@ -177,5 +183,216 @@ describe("the chip on a goal's header", () => {
     expect(header([])).not.toContain("ms-chip-proposed");
     expect(header([proposal({ goal: "refunds" })])).not.toContain("ms-chip-proposed");
     expect(header([proposal({ state: "applied" })])).not.toContain("ms-chip-proposed");
+  });
+});
+
+/**
+ * The head of a goal's page: what the goal is, the facts its row carries, and
+ * the acts the backlog card offers for it, as buttons.
+ */
+describe("a goal page's head", () => {
+  const briefing: Briefing = {
+    goal: {
+      id: "g1-s44",
+      title: "The seat census answers which machines are alive.",
+      state: "queued",
+      intent: "What: The seat census answers which machines are alive. Why: nobody knows today.",
+      found: true,
+      count: 3,
+    },
+    books: [],
+    decisions: [],
+    designs: { open: [], runs: [] },
+    questions: [],
+    slices: null,
+    needsYou: { questions: 0, designs: 0 },
+    checkout: { records: 0, homes: 0, goals: 0, problems: 0 },
+    across: { decisions: [], designs: [], questions: [] },
+    scopes: {
+      decisions: { own: 0, underGoals: 0 },
+      designs: { own: 0, underGoals: 0 },
+      questions: { own: 0, underGoals: 0 },
+    },
+  };
+
+  function row(over: Partial<Row> = {}): Row {
+    return {
+      ref: { kind: "goal", id: "g1-s44", revision: 1 },
+      where: "live",
+      lane: "to-do",
+      phase: "",
+      state: "queued",
+      intent: "What: The seat census answers which machines are alive.",
+      nextStep: "Read the census once and say which machines answered, with the time each last did.",
+      concluded: "",
+      origin: "human",
+      priority: 1,
+      sequence: 9,
+      tier: 2,
+      labels: [],
+      arc: "",
+      pinned: "",
+      blockedBy: [],
+      holds: [],
+      openBlockers: [],
+      sliced: false,
+      decomposed: false,
+      openedAt: "",
+      doneAt: "",
+      lastChangeAt: "",
+      lastVerb: "open",
+      gaps: [],
+      ...over,
+    };
+  }
+
+  function board(rows: Row[], closed: Row[] = []): Backlog {
+    return {
+      schemaVersion: 1,
+      observedAt: "2026-10-03T08:00:00Z",
+      ledger: {
+        state: "read",
+        tip: "abc1234",
+        committedAt: "2026-10-03T07:00:00Z",
+        freshness: { state: "current", since: "2026-10-03T07:59:00Z", detail: "" },
+        stale: false,
+        staleAfterSeconds: 900,
+        syncMode: "",
+        stateRoot: "",
+        message: "",
+        problems: [],
+        fetch: {
+          outcome: "current",
+          startedAt: "",
+          finishedAt: "",
+          tip: "abc1234",
+          detail: "",
+          message: "",
+          failures: 0,
+          cadence: "",
+          nextAt: "",
+          succeededAt: "",
+          succeededTip: "abc1234",
+        },
+      },
+      admission: { answered: true, message: "" },
+      workingTree: { liveFiles: rows.length, archivedFiles: 0 },
+      authority: { proven: true, human: "Wido", reason: "" },
+      budgetDefaults: {},
+      counts: {},
+      draft: { statement: "" },
+      rows,
+      closed,
+    };
+  }
+
+  function head(ledger: Backlog | null, about: Briefing = briefing): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <PartnerAs held={{}}>
+            <GoalBlock briefing={about} ledger={ledger} onEdited={() => undefined} onReread={() => undefined} />
+          </PartnerAs>
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  /** The words a reader sees, with every tag and attribute taken out. */
+  function words(markup: string): string {
+    return markup.replace(/<[^>]*>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+  }
+
+  const neighbour = row({ ref: { kind: "goal", id: "g1-s45", revision: 1 }, sequence: 10 });
+
+  it("is titled by what the goal is, and names its id once, above the title", () => {
+    const markup = head(board([row(), neighbour]));
+
+    expect(markup).toContain('<h2 class="ms-briefing-title">The seat census answers which machines are alive.</h2>');
+    expect(markup).toContain('<p class="ms-facts-eyebrow ms-mono">g1-s44</p>');
+    expect(words(markup).match(/g1-s44/g)).toHaveLength(1);
+  });
+
+  it("says what its count counts", () => {
+    expect(words(head(null))).toContain("3 records about this goal");
+  });
+
+  it("says each fact the row carries under its label, and the next step whole", () => {
+    const said = words(head(board([row({ claim: { machine: "m1f", lineage: "steward-seat", at: "", landingAt: "" } })])));
+
+    expect(said).toContain("tier 2");
+    expect(said).toContain("priority 1 · #9");
+    expect(said).toContain("held by m1f");
+    expect(said).not.toContain("steward-seat");
+    expect(said).toContain("Next step Read the census once and say which machines answered, with the time each last did.");
+  });
+
+  it("leaves out a fact the row does not carry, rather than showing it empty", () => {
+    const markup = head(board([row({ tier: 0, priority: 0, sequence: 0, where: "archive", nextStep: "" })]));
+
+    expect(markup).not.toContain("ms-goal-facts");
+    expect(markup).not.toContain("Next step");
+    expect(words(head(board([row({ priority: 0, sequence: 0 })])))).toContain("no priority");
+  });
+
+  it("offers a button for each act the backlog card offers its row, except opening the goal", () => {
+    const rows = [row(), neighbour];
+    const markup = head(board(rows));
+    const buttons = [...markup.matchAll(/<button type="button" class="ms-button">([^<]*)<\/button>/g)].map((found) => found[1]);
+    const offered = offersFor(rows[0], rows).map((offer) => offer.label);
+
+    expect(offered).toContain("Open goal");
+    expect(buttons).toEqual(offered.filter((label) => label !== "Open goal"));
+    expect(buttons).toEqual(["Ask about this", "Edit…", "Approve…", "Move down", "Prioritize…"]);
+  });
+
+  it("says in plain words why a goal a seat holds is not edited here", () => {
+    const held = row({
+      lane: "in-progress",
+      state: "claimed",
+      priority: 0,
+      sequence: 0,
+      claim: { machine: "m1f", lineage: "steward-seat", at: "", landingAt: "" },
+    });
+    const markup = head(board([held]));
+    const buttons = [...markup.matchAll(/<button type="button" class="ms-button">([^<]*)<\/button>/g)].map((found) => found[1]);
+
+    expect(buttons).toEqual(["Ask about this"]);
+    expect(words(markup)).toContain("m1f is working on this goal, so it can't be edited here.");
+    expect(markup).not.toContain("terminal");
+  });
+
+  it("says a goal that is over has nothing to press but a question, rather than nothing at all", () => {
+    const over = row({ lane: "done", state: "done", where: "archive", priority: 0, sequence: 0 });
+    const markup = head(board([neighbour], [over]));
+    const buttons = [...markup.matchAll(/<button type="button" class="ms-button">([^<]*)<\/button>/g)].map((found) => found[1]);
+
+    expect(words(markup)).toContain("tier 2");
+    expect(words(markup)).toContain("Next step Read the census once");
+    expect(buttons).toEqual(["Ask about this"]);
+    expect(words(markup)).toContain("This goal is done, so nothing here changes it.");
+  });
+
+  it("leaves the page of a goal the ledger does not carry as it was, its count bare", () => {
+    const missing: Briefing = {
+      ...briefing,
+      goal: { id: "g1-s99", title: "g1-s99", state: "", intent: "", found: false, count: 0 },
+    };
+    const markup = head(board([row(), neighbour]), missing);
+
+    expect(markup).toBe(
+      '<section class="ms-briefing-block"><p class="ms-facts-eyebrow ms-mono">g1-s99</p>' +
+        '<div class="ms-briefing-head"><h2 class="ms-briefing-title">g1-s99</h2><span class="ms-project-count">0</span>' +
+        '<span class="ms-briefing-act"><a class="ms-briefing-link" href="/backlog?goal=g1-s99" data-discover="true">Show on the board →</a></span></div>' +
+        '<p class="ms-project-reason">The ledger carries no goal named g1-s99.</p></section>',
+    );
+  });
+
+  it("keeps what it says today where the board was not read", () => {
+    const markup = head(null);
+
+    expect(markup).toContain('<h2 class="ms-briefing-title">The seat census answers which machines are alive.</h2>');
+    expect(markup).not.toContain("ms-goal-acts");
+    expect(markup).not.toContain("ms-goal-facts");
   });
 });

@@ -4,12 +4,14 @@ import { NavLink } from "react-router";
 import type { Row } from "./api";
 import { CardMenu } from "./CardMenu";
 import { dateAndTime } from "./format";
-import { waitingFor } from "./lanes";
+import { ownGaps, waitingFor } from "./lanes";
+import { rankOf } from "./reorder";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { SHOWN } from "./showing";
 import { goalSubject } from "./subjects";
 import { GOAL_ATTRIBUTE } from "../partner/ringing";
 import { usePartner } from "../partner/store";
+import { goalTitle } from "../goalTitle";
 import { goalPath } from "../routes";
 import { Chip } from "../shell/controls";
 
@@ -113,7 +115,7 @@ export function GoalRow({
       </div>
       <details className="ms-goal-record">
         <summary className="ms-goal-summary">
-          <span className="ms-goal-intent">{row.intent}</span>
+          <span className="ms-goal-intent">{goalTitle(row.intent)}</span>
         </summary>
         {standing(row) !== "" && <p className="ms-goal-next">{standing(row)}</p>}
       </details>
@@ -151,14 +153,8 @@ function lastChange(row: Row): string {
 }
 
 function rankChip(row: Row) {
-  if (row.priority > 0 && row.sequence > 0) {
-    return (
-      <Chip>
-        {row.priority}:{row.sequence}
-      </Chip>
-    );
-  }
-  return row.where === "live" ? <Chip>unranked</Chip> : null;
+  const ranked = row.priority > 0 && row.sequence > 0;
+  return ranked || row.where === "live" ? <Chip>{rankOf(row)}</Chip> : null;
 }
 
 /** What the record says is next, or what it concluded. */
@@ -177,7 +173,7 @@ function standing(row: Row): string {
  * server named, then the records behind the lane.
  */
 export function reasonsOf(row: Row): string[] {
-  const lines = [...row.gaps];
+  const lines = ownGaps(row);
   if (row.claim !== undefined) {
     lines.push(`claimed by ${row.claim.machine} since ${dateAndTime(row.claim.at)}`);
     if (row.claim.landingAt !== "") {

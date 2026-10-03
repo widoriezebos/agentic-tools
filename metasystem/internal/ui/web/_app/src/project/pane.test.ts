@@ -23,6 +23,7 @@ import {
   marksDone,
   newActionFor,
   NO_SLICE_PLAN,
+  otherFiles,
   nothingLine,
   noMatchLine,
   pageSections,
@@ -454,12 +455,25 @@ describe("a goal page", () => {
   it("opens with the goal's own id, state and intent, from the ledger", () => {
     expect(briefingFor(pane, "interface-shell").goal).toEqual({
       id: "interface-shell",
-      title: "interface-shell",
+      title: "The browser is the seat a human takes",
       state: "claimed",
       intent: "The browser is the seat a human takes",
       found: true,
       count: 6,
     });
+  });
+
+  // The id stands in the eyebrow above the title, so the title is what the
+  // goal is: the first sentence of its intent, without the label it opens with.
+  it("is titled by the first sentence of its intent, not by its id again", () => {
+    const labelled: Pane = {
+      ...pane,
+      goals: [{ id: "g1-s44", title: "g1-s44", state: "queued", intent: "What: the census answers v1.2 alive. Why: nobody knows." }],
+    };
+    const unsaid: Pane = { ...pane, goals: [{ id: "g1-s45", title: "g1-s45", state: "queued", intent: "" }] };
+
+    expect(briefingFor(labelled, "g1-s44").goal?.title).toBe("the census answers v1.2 alive.");
+    expect(briefingFor(unsaid, "g1-s45").goal?.title).toBe("g1-s45");
   });
 
   it("says so when the ledger carries no such goal, rather than inventing one", () => {
@@ -764,10 +778,15 @@ describe("a goal's slice plan", () => {
     expect(sliceCount(slicePlan(pane, "old-idea"))).toBe(0);
   });
 
-  // The line the tab shows when nothing is recorded names the gap and where
-  // its owner comes from, rather than implying a plan that is merely empty.
-  it("names the missing owner in one line", () => {
-    expect(NO_SLICE_PLAN).toBe("No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)");
+  // The line the tab shows when nothing is recorded says so, rather than
+  // implying a plan that is merely empty.
+  it("says in one line that no plan is recorded", () => {
+    expect(NO_SLICE_PLAN).toBe("No slice plan is recorded.");
+  });
+
+  it("counts the Documents block's files as the other files", () => {
+    expect(otherFiles(1407)).toBe("1407 other files");
+    expect(otherFiles(1)).toBe("1 other file");
   });
 
   // The whole project has no one plan: a tab showing every design's list at

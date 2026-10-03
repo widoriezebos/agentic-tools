@@ -8,6 +8,7 @@ import {
   concludedLine,
   countLine,
   dayOf,
+  engineBuild,
   engineLine,
   firstSentence,
   isNarrowed,
@@ -28,6 +29,7 @@ import {
 import { minuteTime } from "../backlog/format";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
+import { goalTitle } from "../goalTitle";
 import { documentPath, goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
@@ -238,7 +240,7 @@ function Header({ page }: { page: ApplicationPayload }) {
       <h2 className="ms-application-subject">{subjectLine(page)}</h2>
       {words !== "" && <p className="ms-application-mode">{words}</p>}
       <p className="ms-application-engine">
-        <span>{engineLine(page)}</span>
+        <span title={engineBuild(page) === "" ? undefined : engineBuild(page)}>{engineLine(page)}</span>
         <Help id="last-engine" />
       </p>
       <p className="ms-application-counts">
@@ -354,7 +356,7 @@ function LandedRow({ row, open, onOpen }: { row: Landed; open: boolean; onOpen: 
   return (
     <li className={open ? "ms-application-row-item ms-application-row-item--open" : "ms-application-row-item"}>
       <button type="button" className="ms-application-row-open" aria-expanded={open} onClick={onOpen}>
-        <span className="ms-application-row-said">{row.intent === "" ? row.id : row.intent}</span>
+        <span className="ms-application-row-said">{goalTitle(row.intent) === "" ? row.id : goalTitle(row.intent)}</span>
         <span className="ms-application-row-note">{firstSentence(row.concluded)}</span>
         <span className="ms-application-row-facts">
           <span className="ms-application-row-when">{day === "" ? "no date" : day}</span>

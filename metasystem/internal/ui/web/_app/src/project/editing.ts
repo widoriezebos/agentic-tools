@@ -1,4 +1,5 @@
 import type { Block, Problem } from "./api";
+import { minuteTime } from "../backlog/format";
 
 /**
  * Editing one document, as state.
@@ -148,9 +149,5 @@ export function refusal(status: number, said: string): string {
  * this answers "did that land", not "at which second".
  */
 export function savedAt(at: Date): string {
-  return `Saved ${pad(at.getHours())}:${pad(at.getMinutes())}`;
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
+  return `Saved ${minuteTime(at.toISOString())}`;
 }

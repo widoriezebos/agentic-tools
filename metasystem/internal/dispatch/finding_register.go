@@ -570,6 +570,16 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 					changed = true
 				}
 			}
+			// A material finding the fold demoted (its artifact lies outside
+			// the reviewed subject) never enters the register: it blocks
+			// nothing, so out-of-scope has nothing to resolve for it. Only an
+			// identifier neither registered nor demoted is absent.
+			demotions, _ := root["demotions"].([]any)
+			for _, raw := range demotions {
+				if demotion, ok := raw.(map[string]any); ok {
+					delete(wanted, asString(demotion["findingId"]))
+				}
+			}
 			if len(wanted) > 0 {
 				ids := make([]string, 0, len(wanted))
 				for id := range wanted {
