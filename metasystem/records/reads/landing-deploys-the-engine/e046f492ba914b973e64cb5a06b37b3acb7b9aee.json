@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "goal": "landing-deploys-the-engine",
+  "unit": "lane-fix",
+  "subject": {
+    "commit": "e046f492ba914b973e64cb5a06b37b3acb7b9aee",
+    "parent": "4bc7dc63ebf40858111e909afc3686b6bdc3de09",
+    "tree": "d20c0b8d1a4e331ca10fae07e3c096da683a075c",
+    "patchDigest": "3eb407073c05cdd65c6d204458c735884dd33b4f5ed471325ad6074afb1d3ded",
+    "unitDigest": "5b0720ae32b38b1dc69a47a59adc36b14ac2e666c77596944a9ddf3f24202f39"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a82c08df8537be9cd5d2566f",
+    "round": 1,
+    "closureSha256": "6ee2cf074f77cb3f7dabfdaed3de6a23756c56f6f85c54175b5ea2c071c3a64d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d20c0b8d1a4e331ca10fae07e3c096da683a075c",
+    "runId": "goal-read-gate-20261003t184015z-ca97a4a79b41bbe5"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6100d561959755e1ad8b4388f9af216cda5849c0",
+      "digest": "b7ab4316cb0940ca9e7dbeaa7177fb9ca8bb4f5fa8b83c835d0957924ded0821"
+    },
+    {
+      "kind": "read",
+      "commit": "ebd47c3465cf572d90b2416ac8ec32e672130f37",
+      "digest": "3a0c42a717b30eae82a893d4145dd72c34c998441bd7e56159ea38683d8f7604"
+    },
+    {
+      "kind": "read",
+      "commit": "4bc7dc63ebf40858111e909afc3686b6bdc3de09",
+      "digest": "fa4dbdb2d75533f2a6212aa71b73993ff2421ebeafefcf950ab5265a9320680d"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help.txt",
+      "readerWord": "reviewed by critic root code-critic-a82c08df8537be9cd5d2566f"
+    }
+  ],
+  "sha256": "ee1a24c06ecafdef4475087511502347af1ee216b12f7102ea62ed96c6f653ee"
+}

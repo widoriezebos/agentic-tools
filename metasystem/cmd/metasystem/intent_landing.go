@@ -57,6 +57,8 @@ type laneVerbOwners struct {
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
 	plainProve plain.ProveSeams
+	// push is landing push's push of the lane checkout's HEAD to main.
+	push func(install, checkout string, now time.Time) (plain.PushOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -103,6 +105,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.keeper == nil {
 		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
+	}
+	if owners.push == nil {
+		owners.push = plain.Push
 	}
 	return owners
 }

@@ -66,6 +66,8 @@ var coreSettings = []Setting{
 		Meaning: "the committed application testing contract, relative to the installation; delivery reads only this path"},
 	{Key: "launch.contract", Default: "launch.json", ProofInput: true,
 		Meaning: "the application launch contract the app verbs start, probe and stop; a project without the file has no app verbs"},
+	{Key: "deploy.contract", Default: "deploy.json", ProofInput: true,
+		Meaning: "the deploy contract the lane runs after a push and the deploy verbs drive; a project without the file has no deploy"},
 	{Key: TemplateModeKey, Default: "false", ProofInput: true,
 		Meaning: "true only in the template repository's committed metasystem.conf (read there alone); adoption never ships it"},
 	{Key: EvidenceRootKey, Computed: "config.ResolveEvidenceRoot", ProofInput: false,
