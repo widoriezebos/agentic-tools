@@ -1,13 +1,15 @@
 # no-code-carries-the-relayed-word-path
 
 - State: approved
+- Priority: 1
+- Sequence: 41
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: this deletes authority and identity code, so a wrong cut breaks arming or rearm, and dropping a record field that landed records already carry would make the whole ledger refuse to parse; novelty 2: the path is already retired by R-82-m1b so no behaviour has to be redesigned, but the read-old-write-none split has to be got right; exposure 3: 16 production Go files, 14 test files, one fixture script and two governance constants; accumulation 2: retired code left in the tree does not grow, but every seat that reads it has to rediscover that it is dead"
 - Tier: 3
 - Intent: What: Remove the old "temporary human word" feature, where an agent passed on a person's approval by quoting it, from the code. Wido asked for it on 20 September ("I need clean code"). The feature was retired on 7 September, but its code is still in 18 production files, and one part is still live: the steward can be armed with a relayed word without the person's own terminal. Why: Retired but reachable code is a security hole as well as clutter. Pros: Removes a live bypass and a lot of code; the general power of attorney now gives a lawful way to arm remotely. Cons: Goal records that already carry the old fields must still be read, or the whole ledger is refused; the change touches many files.
 - Origin: human
 - Next step: Next: Refresh the list of places (now also seat launch, up, and the browser's propose tool), switch the steward arm and launch paths to the power-of-attorney arm, delete the rest, and keep reading the old fields in records that already have them; the notes on branch rwr1 (c9892f737) are the starting point. Done when: production code no longer mentions --temporary-human-word, arming the steward without the person's terminal or power of attorney is refused, and the full ledger still loads. RETURNED 2026-10-03: nothing blocks it; the relayed-word path is still live (cmd/metasystem/steward_verbs.go:359-379, --temporary-human-word / --review-by) and was last used for machine start on 2026-10-02; the general power of attorney now covers that use. Branch origin/rwr1 (c9892f737) holds the notes and the build brief.
 - OpenedAt: 2026-09-20T07:22:42Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T11:03:54Z revision=8 opid=MQYMA1BGA2Q6Y943Y15FPW1NMX-m1e-718ba0eb authority=proven digest=3338606809cb34aaa86f90968142f069892fbf5c36ee5ef360a705ba15258b01 episode=8
@@ -21,4 +23,5 @@ History:
 - 2026-10-03T09:59:38Z HA5AW790RRAM24XMJ7X5C9SZ8Z-m1e-718ba0eb unpark actor=human:Wido targets=no-code-carries-the-relayed-word-path
 - 2026-10-03T10:00:05Z 4XGX46JQ843HFBTAG65MPNHN4B-m1e-718ba0eb edit actor=human:Wido targets=no-code-carries-the-relayed-word-path
 - 2026-10-03T11:03:54Z MQYMA1BGA2Q6Y943Y15FPW1NMX-m1e-718ba0eb approve actor=human:Wido targets=no-code-carries-the-relayed-word-path
-Integrity: sha256=4e71339569c77fdbdf71e9955122a19a3d15d3b96f278d1e062469fb30e90c28
+- 2026-10-03T12:30:26Z QNYTQP6VF80J3KQTF2NMKD59KC-m1e-718ba0eb set-priority actor=human:Wido targets=no-code-carries-the-relayed-word-path reason=priority-order subject=no-code-carries-the-relayed-word-path from=unranked to=1:41 requested-sequence=append
+Integrity: sha256=58379247e4338d2b5d86823c866c523390d0e3e0c6cefc730dc755e7f56743dc
