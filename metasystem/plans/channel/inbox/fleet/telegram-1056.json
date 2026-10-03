@@ -1,0 +1,16 @@
+{
+  "provider": "telegram",
+  "destination": "fleet",
+  "messageId": "1056",
+  "updateId": "896422401",
+  "replyTo": "1054",
+  "userId": "1365582",
+  "sentAt": "2026-10-03T07:23:55Z",
+  "text": "not-now and explain in the new goal why this is delayed and why we should do it",
+  "step": 1791012235,
+  "outcome": "verified",
+  "question": "unmatched",
+  "opid": "MS7XMV28KF5YT6AZWV801PYA1A-m1h-71c5cb39",
+  "receivedBy": "m1h",
+  "receivedAt": "2026-10-03T07:24:59Z"
+}
