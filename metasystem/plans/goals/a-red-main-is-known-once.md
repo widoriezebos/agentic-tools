@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 34
+- Sequence: 35
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="Shared signal every seat and the lane read before testing; a false red stalls the fleet, a missed red wastes runs"
 - Tier: 2
 - Intent: When main is red, the machinery knows it once and every seat acts on it, instead of each seat finding it with its own 45-minute test run (night of 2026-10-02/03: five reds on main; seat m1i lost four runs to reds that were not its own; seats m1g, m1i, m1h and ui each reported the same reds to the supervisor by hand). Wanted: the first proof or gate that finds main red records it with the failing checks and the commit that caused it; seats and the lane see it before they start a full run (they run only what the red cannot affect, or wait); the seat or person who caused it is told at once; a fix to a red main outranks every landing (Wido 2026-09-16) and may land by the fastest safe route; the red clears itself when main is green again. Hand-pushes to main (four reds came from a supervisor's hand-landings) run the cheap gate first.
 - Origin: main
 - Next step: Tier-2 design over the existing trunk-red register (plans/goals/trunk-red.json), the lane's proofs and devgate static: who records, how seats read it, what a seat may still run, how it clears; Astra critique; build.
 - OpenedAt: 2026-10-03T08:52:13Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T08:52:31Z revision=2 opid=6NSHXFRN283MCHS7ANAK7ME3B5-m1e-718ba0eb authority=proven digest=8407f3833a7cbf61dc9fa8fb85c4db499daa0218707c65adb3d6aa73a4b9a4f5 episode=2
@@ -18,4 +18,5 @@ History:
 - 2026-10-03T08:52:13Z FCT9P7JY9B3T65DR8QNRX9FN35-m1e-718ba0eb open actor=human:Wido targets=a-red-main-is-known-once
 - 2026-10-03T08:52:31Z 6NSHXFRN283MCHS7ANAK7ME3B5-m1e-718ba0eb approve actor=human:Wido targets=a-red-main-is-known-once
 - 2026-10-03T12:29:32Z 5VHDWFX5P4NKJ9361PTVX9J4CF-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once reason=priority-order subject=a-red-main-is-known-once from=unranked to=1:34 requested-sequence=append
-Integrity: sha256=7eca975497dd6c8ccd78b3d3171f2a083e12576f0a34495a3cebacbee748ca03
+- 2026-10-03T12:45:48Z J6AV36TEMGKDQHJ4HQFA55MPJ3-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,goal-budget-follows-its-plan,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=approval-stays-and-waiting-goals-return-by-themselves from=1:34 to=1:35 requested-sequence=2
+Integrity: sha256=990ad43e638087712142d451ed5478ce9f431ad81e0d5d86ec2e0f5291b67f20

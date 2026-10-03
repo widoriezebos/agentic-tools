@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 33
+- Sequence: 34
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="New routing of blocks between seats over existing records and messages; a wrong route leaves a seat stuck or floods the machinery seat"
 - Tier: 2
 - Intent: A seat that hits a machinery wall gets help from the machinery, not from a supervising session or the person (Wido 2026-10-03: stewards 'should not need you to help'). Measured over the night of 2026-10-02/03: supervisor m1e sent 109 messages to six seats and received 83; seats sent the person about 20 channel questions, most about machinery refusals, not owner choices. Today a blocked seat can only ask the person or message a peer; nothing routes the block. Wanted: (1) a refusal with no workable next step is filed once on the machinery defect list with its evidence, and the seat that owns machinery work is told; duplicates from other seats join it. (2) The blocked seat is told who took it, carries on with work the fix cannot invalidate, and is woken when the fix is on main ('work wait' for a fix, as for a landing). (3) The person is asked only for real owner choices. (4) Measure: supervisor messages per night, target zero; it is the acceptance for switch-on.
 - Origin: main
 - Next step: Tier-2 design: the block record and its dedupe, who is the machinery owner (roster), the wake on a landed fix, what still goes to the person; evidence: the night log agentic-tools-evidence/flaky-20261002/log.md and machinery-blocks items 1-66; Astra critique; build. Coordinate with steward-acts-on-behaviour-patterns and landing-deploys-the-engine (a landed fix must also reach the seat's engine).
 - OpenedAt: 2026-10-03T08:52:04Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T08:52:23Z revision=2 opid=RJR62HR1SA6T9EZ33S9DKAVEJQ-m1e-718ba0eb authority=proven digest=20838eccb447d9b1521fcdb976d7cc4b6f56b5d28fc56f5f634eb89132661c52 episode=2
@@ -18,4 +18,5 @@ History:
 - 2026-10-03T08:52:04Z 9G2ZM4GPBT04T3XYNW40F5ENAF-m1e-718ba0eb open actor=human:Wido targets=blocked-seats-route-to-the-machinery-not-a-supervisor
 - 2026-10-03T08:52:23Z RJR62HR1SA6T9EZ33S9DKAVEJQ-m1e-718ba0eb approve actor=human:Wido targets=blocked-seats-route-to-the-machinery-not-a-supervisor
 - 2026-10-03T12:29:24Z DRVNF0D1PPYXZK4CGTPEGXX9JG-m1e-718ba0eb set-priority actor=human:Wido targets=blocked-seats-route-to-the-machinery-not-a-supervisor reason=priority-order subject=blocked-seats-route-to-the-machinery-not-a-supervisor from=unranked to=1:33 requested-sequence=append
-Integrity: sha256=1204ea4a80ea8101c6300649b5c849a09ad62b61f68254db1fb5a560dcd4b5c8
+- 2026-10-03T12:45:48Z J6AV36TEMGKDQHJ4HQFA55MPJ3-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,goal-budget-follows-its-plan,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=approval-stays-and-waiting-goals-return-by-themselves from=1:33 to=1:34 requested-sequence=2
+Integrity: sha256=7048945aa53ddf1d5483e621001b4f2cc96a92e1724e15134b3bb6cf3c949f8c
