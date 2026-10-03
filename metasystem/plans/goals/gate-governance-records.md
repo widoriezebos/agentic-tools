@@ -1,16 +1,15 @@
 # gate-governance-records
 
-- State: parked
+- State: queued
 - Priority: 2
 - Sequence: 11
 - Intent: What: Each new refusal gate comes with a short record: who owns it, when it is reviewed, an example it must refuse, how to appeal, and what happens if the check itself breaks. It also runs in warning-only mode first. Why: A gate without an owner or a review date turns into ceremony nobody owns. Pros: Gates stay honest and can be removed when they stop earning their keep. Cons: Little to govern yet: commit-goal binding has its refusal, the design gate is not built.
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 44
+- Revision: 45
 - BlockedBy: commit-goal-binding, design-gate-at-dispatch
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-10-03T10:01:13Z blocker=design-gate-at-dispatch because=blocked by commit-goal-binding, design-gate-at-dispatch; returns when they are done
 
 History:
 - 2026-09-01T13:20:51Z KXNWNMA2TJPZ62GB3H4B03YR3V-m0-c5dbf036 open actor=human:Wido targets=gate-governance-records
@@ -57,4 +56,5 @@ History:
 - 2026-10-03T10:01:13Z VMX05Q3SNJ1HTD0FRA7KG2DMRB-m1e-718ba0eb block actor=human:Wido targets=gate-governance-records reason=blocked by design-gate-at-dispatch; returns when it is done
 - 2026-10-03T10:01:19Z 8ASWEXHD2MRN86MDXWB9837X52-m1e-718ba0eb block actor=human:Wido targets=gate-governance-records reason=blockedBy adds commit-goal-binding (goal block)
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:12 to=2:11
-Integrity: sha256=cf9d6077b34303e6feea77cebdab93e3430c4f461ffbba2665c7b06419180a08
+- 2026-10-03T11:15:52Z 12JJH25GGDJVZS86VCFX4A7F7R-m1e-718ba0eb unpark actor=human:Wido targets=gate-governance-records
+Integrity: sha256=f81970839e3b14fa82de652885c535ad58cedc5930cfad101dd931f6a3b9dc59
