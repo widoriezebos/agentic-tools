@@ -9,13 +9,14 @@
 - Origin: human
 - Next step: After the lane's first real landing: one design page (core question: engine pins vs central binary), Astra at most 2 rounds, one builder, one real run Wido 2026-10-01: full control by verbs where applicable (deploy status/now/rollback/pause, which engine each seat runs) and all of it from the UI too (Fleet page: current engine, per-seat engine, deploy now, rollback, history); the design names each verb and its UI action. Wido 2026-10-01: must fit other languages, e.g. Java/Maven: the lane only calls the project's deploy adapter (build artifact from the pushed commit, place/activate it, report the version, roll back) with language-neutral input/output; the metasystem's Go engine is just one adapter; a Maven adapter (mvn package/deploy of a jar, or a container image) is the design's worked second example. Updated 2026-10-02: its precondition 'after the lane's first real landing' is MET (fleet-card-can-land-now landed through the plain lane, 91579aa80). Next: design, then build, per the intent (controllable by verbs and the UI, language-generic). Observed 2026-10-02 night (coordinator m1e): seats edit code directly in their own checkout (m1g, m1h: uncommitted files in the main checkout), and the steward's engine is built from that same tree, so a seat's own gate run (go run ./cmd/devgate build) turns work in progress into the next engine generation its steward re-arms on (m1g gen 2, m1h gen 3). Deploying must build the engine from a clean landed commit into a location apart from any seat's working tree, and every seat on the host picks it up between sessions. Today's landed fixes (fleet Running column 46a3fc613, machine start a0159fd3f, seat claim fallback 3681afe27) are waiting for exactly that.; ASKED ZFWM1XJ97HCRVHN4X6V29B0GVZ (other): The engine-deploy design has had the two critique rounds you allowed. Every finding is fixed on the page, but the engine will not close the critique until the fixes are confirmed. How shall I go on?; ASKED 788N7BCHP55Q8N5Y5MFJT6SY3E (other): Before step 1 of the engine-deploy design is built, it needs your word on four choices. Accept my four recommendations?; ANSWERED 788N7BCHP55Q8N5Y5MFJT6SY3E: yes; ASKED F3NG4CWYAQRJF4JSKVHMSE033A (budget-above-norm): The engine-deploy work needs more time: raise its budget from 4 to 8 hours and from 6 to 10 attempts?
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 39
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-02T22:18:28Z revision=32 opid=XXSA4976C2TXY30BPDAPWWQPKW-m1e-9c612d71 authority=proven digest=e230fa483eb4f2f2d749306693ebc6a1d509afe1c13c47ac1897543e06560fc2 episode=32
+- Revision: 40
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=39
+- Approved: by=human:Wido at=2026-10-03T09:43:07Z revision=40 opid=F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb authority=proven digest=d099bf693da6151d598f145280797e1e2ad317a86fe65a6f8ca5708150e88837 episode=40
 - Sliced: machine=m1h lineage=steward-seat revision=34 at=2026-10-03T06:28:20Z
-- Claimed: machine=m1h lineage=steward-seat at=2026-10-03T06:22:44Z revision=34 accountingRevision=34 episodeAt=2026-10-03T06:22:44Z episodeRevision=34
-- StopCapability: generation=34 revision=34 machine=m1h claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1h lineage=steward-seat at=2026-10-03T09:43:07Z revision=40 accountingRevision=40 episodeAt=2026-10-03T06:22:44Z episodeRevision=34
+- StopCapability: generation=40 revision=40 machine=m1h claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-01T15:20:49Z VFWZW80FZ53PQW3JTWNRYTDB40-m1e-528c72bf open actor=human:Wido targets=landing-deploys-the-engine
@@ -57,4 +58,5 @@ History:
 - 2026-10-03T06:52:45Z WYFEEHWRK229QCE5N0KEH333VE-m1h-71c5cb39 ask actor=m1h+steward-seat targets=landing-deploys-the-engine
 - 2026-10-03T07:06:57Z K1RJ1XR4B03PDV5P3FXZGQ36WD-m1h-71c5cb39 answer actor=human:wido targets=landing-deploys-the-engine authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1048/1051 channelStep=1791011210 question=788N7BCHP55Q8N5Y5MFJT6SY3E reason=yes
 - 2026-10-03T09:41:16Z CHS477V0QENABN99YMEV6D683R-m1h-71c5cb39 ask actor=m1h+steward-seat targets=landing-deploys-the-engine
-Integrity: sha256=30b0a558319959c0be6d3b3ac7ba1d36d73f72c62c02868163ece9b48ed54ab4
+- 2026-10-03T09:43:07Z F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb set-budget actor=human:Wido targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T06:22:44Z
+Integrity: sha256=d2e7774528d6f4dcd2486a3eea380a13329f41cf8e29552c4456bf26d3057a26
