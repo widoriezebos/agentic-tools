@@ -1468,7 +1468,7 @@ func intentRootHelpPage(env textui.Env) *textui.Page {
 	}
 	addHelpRows(page.Section("More", ""), helpColumn(more), more)
 	page.Facts(textui.KV{Key: "usage", Value: []textui.Span{textui.Plain("metasystem OBJECT ACTION [TARGET...] [OPTIONS]")}},
-		textui.KV{Value: []textui.Span{textui.Plain("options go before or after the target; --repo PATH selects the repository from any path inside it")}})
+		textui.KV{Value: []textui.Span{textui.Plain("options go before or after the target; --repo PATH takes any path inside the repository")}})
 	page.Hint(textui.Hint{Argv: []string{"metasystem", "status"}, Reason: "what is going on in this checkout"})
 	return page
 }

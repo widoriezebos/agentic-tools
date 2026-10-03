@@ -45,7 +45,6 @@ More
   metasystem help [OBJECT [ACTION]]   the same pages; help agent, help human, help all by audience
 
   usage   metasystem OBJECT ACTION [TARGET...] [OPTIONS]
-          options go before or after the target; --repo PATH selects the repository from any path
-          inside it
+          options go before or after the target; --repo PATH takes any path inside the repository
 
 → metasystem status  what is going on in this checkout

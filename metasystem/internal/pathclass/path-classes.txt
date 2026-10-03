@@ -12,6 +12,7 @@ install:.gitattributes behavior
 install:.gitignore behavior
 install:testing.json behavior
 install:launch.json behavior
+install:deploy.json behavior
 install:testing-parallel-ratchet.json behavior
 install:testing-coverage-floors.json behavior
 install:testing-coverage-floors-linux.json behavior
