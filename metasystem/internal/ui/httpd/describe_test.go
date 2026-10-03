@@ -23,6 +23,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 	routes := []string{
 		routeCreateRecord, routeRecordStatus, routeRecordGoals, routeAskQuestion,
 		routeQuestionStatus, routeEditDocument, routePreviewSource, routeDiscardLaunch, routeLandNow,
+		routeLanePause, routeLaneResume, routeMachineStop,
 		routeSignIn, routeSignOut,
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
 		routePark, routeUnpark, routeEditGoal, routeAbandon,

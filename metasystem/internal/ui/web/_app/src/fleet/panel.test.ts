@@ -4,12 +4,14 @@ import { dateAndTime, minuteTime } from "../backlog/format";
 import type { BoardPayload, BoardSeat, Held, Lane, LaneEntry, LaneOwner, Machine, Page, ThisSeat, Working } from "./api";
 import {
   doingOf,
+  laneActOf,
   laneCounts,
   laneLists,
   laneState,
   needsOf,
   QUESTIONS_SCOPE,
   seenOf,
+  stopOffer,
   unreadOf,
   unreadSections,
   verdictOf,
@@ -356,7 +358,7 @@ describe("what needs you", () => {
     }
   });
 
-  it("names a paused lane, who paused it and since when, with the command that resumes it", () => {
+  it("names a paused lane, who paused it and since when, with Resume, the act that resumes it", () => {
     const read = boardRead({
       lane: lane({ owner: owner({ state: "stopped", stopped_by: "m1e", since: at(-80), stopped_because: "maintenance" }), paused: true }),
     });
@@ -364,6 +366,19 @@ describe("what needs you", () => {
     const [item] = needs(fleetRead(), read);
 
     expect(item.words).toBe(`The landing lane is paused by m1e since ${minuteTime(at(-80))}: maintenance.`);
+    expect(item.act).toEqual({ kind: "resume" });
+    expect(item.command).toBe("");
+    expect(item.impact).toBe("");
+  });
+
+  it("keeps the command that resumes a paused lane where part of the lane could not be read, as Land now is withheld there", () => {
+    const read = boardRead({
+      lane: lane({ owner: owner({ state: "stopped", stopped_by: "m1e", since: at(-80) }), paused: true, problems: ["the running proof's record could not be read"] }),
+    });
+
+    const [item] = needs(fleetRead(), read);
+
+    expect(item.key).toBe("lane:paused");
     expect(item.command).toBe("metasystem landing start");
     expect(item.act).toBeNull();
   });
@@ -620,16 +635,16 @@ describe("what needs you", () => {
       return boardRead({ seats: [stuckSeat(unknown)] });
     }
 
-    it("is one thing that needs you when its card stalled on a goal the machine holds, with the stop of its machine to type", () => {
+    it("is one thing that needs you when its card stalled on a goal the machine holds, with Stop for its machine and what the stop ends", () => {
       const read = stuck("stalled");
 
       const [item] = needs(holding, read);
 
       expect(item.words).toBe(`“One folder deployed and evolved.” on m1f has not moved since ${minuteTime(at(-30))} (building).`);
-      expect(item.command).toBe("metasystem machine stop m1f");
+      expect(item.act).toEqual({ kind: "stop", machine: "m1f" });
+      expect(item.command).toBe("");
       expect(item.impact).toBe("Stopping m1f ends its seat and every job on it; its steward will not start it again.");
       expect(item.note).toBe("");
-      expect(item.act).toBeNull();
       expect(item.at).toBe(at(-30));
       expect(verdictOf(holding, read, needs(holding, read), now).words).toBe("1 thing needs you");
     });
@@ -639,7 +654,19 @@ describe("what needs you", () => {
 
       expect(item.words).toBe(`“One folder deployed and evolved.” on m1f has not moved since ${minuteTime(at(-30))} (the process writing it is gone).`);
       expect(item.words).not.toContain("4242");
-      expect(item.command).toBe("metasystem machine stop m1f");
+      expect(item.act).toEqual({ kind: "stop", machine: "m1f" });
+    });
+
+    it("keeps the command at a terminal for the seat serving this page, which gets no Stop", () => {
+      const serving = fleetRead({ machines: [machine({ machine: "ui", this: true, holds: [held()] })] });
+      const read = boardRead({ seats: [{ ...stuckSeat("stalled"), machine: "ui" }] });
+
+      const [item] = needs(serving, read);
+
+      expect(item.key).toBe("stuck:ui:one-folder");
+      expect(item.command).toBe("metasystem machine stop ui");
+      expect(item.act).toBeNull();
+      expect(item.impact).toBe("Stopping ui ends its seat and every job on it; its steward will not start it again.");
     });
 
     it("keeps its line under 110 characters, cutting a long title at a word", () => {
@@ -685,6 +712,28 @@ describe("what needs you", () => {
 
     expect(needs(fleet, read).map((one) => one.key)).toEqual(["returned:goal-a:1234567890abcdef", "question:q", "lane:paused", "health"]);
     expect(needs(fleet, unready).map((one) => one.key)).toEqual(["health", "lane:unready"]);
+  });
+});
+
+describe("what the page acts on", () => {
+  it("offers Pause on a running lane and Resume on a paused one, never both, and neither while the lane needs attention or could not be read", () => {
+    expect(laneActOf(lane({ owner: owner({ state: "running", pid: 4242 }), agent_alive: true }), [])).toBe("pause");
+    expect(laneActOf(lane(), [])).toBe("pause");
+    expect(laneActOf(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true }), [])).toBe("resume");
+    expect(laneActOf(lane({ owner: owner({ state: "unready", last_exit: "x" }) }), [])).toBeNull();
+    // The Land now rule: any line the lane could not read withholds both.
+    expect(laneActOf(lane(), ["the running proof's record could not be read"])).toBeNull();
+    expect(laneActOf(lane({ paused: true, owner: owner({ state: "stopped" }) }), ["this server does not report it"])).toBeNull();
+  });
+
+  it("offers Stop for a seat of this computer other than this seat, the command for this seat, and nothing for a machine on another computer", () => {
+    const seats = board({ seats: [{ machine: "m1f", installation: "/w/m1f/metasystem", goals: [] }, { machine: "ui", installation: "/w/ui/metasystem", goals: [] }] });
+
+    expect(stopOffer(machine({ machine: "m1f" }), seats)).toBe("button");
+    expect(stopOffer(machine({ machine: "ui", this: true }), seats)).toBe("command");
+    expect(stopOffer(machine({ machine: "m2a" }), seats)).toBeNull();
+    expect(stopOffer(machine({ machine: "ui", this: true }), board())).toBeNull();
+    expect(stopOffer(machine({ machine: "m1f" }), null)).toBeNull();
   });
 });
 

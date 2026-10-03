@@ -35,11 +35,16 @@ import (
 // Partner Run and not Stop (D3). A design's critique takes the same hand
 // (g1-s66 §6); its decisions row is the author's own press on a card, and the
 // grammar carries design review alone. Land now takes the same hand and is
-// an act on this computer's landing lane, not on a goal.
+// an act on this computer's landing lane, not on a goal; so are the fleet
+// panel's Pause and Resume, and its Stop is an act on one machine.
 func goalActs() []string {
 	named := []string{}
 	for _, act := range Acts() {
-		if (act.Requires == ledgerHand || act.Requires == sessionHand) && act.ID != routeAppStop && act.ID != routeDesignDecision && act.ID != routeLandNow {
+		switch act.ID {
+		case routeAppStop, routeDesignDecision, routeLandNow, routeLanePause, routeLaneResume, routeMachineStop:
+			continue
+		}
+		if act.Requires == ledgerHand || act.Requires == sessionHand {
 			named = append(named, act.ID)
 		}
 	}

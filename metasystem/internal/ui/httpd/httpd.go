@@ -88,6 +88,24 @@ type Info struct {
 	// verb that could not be run or read at all. A nil LandNow is an engine
 	// that cannot start the landing agent from here, which the route says.
 	LandNow func() (LandNowAnswer, error)
+	// PauseLane, ResumeLane and StopMachine are the fleet panel's Pause,
+	// Resume and Stop as the signed-in person (fleet-panel-ux-step2 slice
+	// 2b, R-142-ui): each runs its public verb once in this process (landing
+	// stop, landing start, machine stop) with human, the person act.SignedIn
+	// admitted for the session, as the person the verb asks for, and answers
+	// the verb's one-result envelope as LandNow does. An error is a verb that
+	// could not be run or read at all. A nil seam is an engine that cannot
+	// make that act from here, which the route says.
+	PauseLane  func(human string) (LandNowAnswer, error)
+	ResumeLane func(human string) (LandNowAnswer, error)
+	// AdmitStop reads a machine's name as machine stop reads it and answers
+	// nil when the stop may run, or the refusal in two lines: a name that is
+	// no machine of this computer, one on another computer, or the checkout
+	// serving this page (S2-01). A machine already stopped is admitted, so a
+	// repeat reaches the verb's unchanged success (S2-02). An error is this
+	// computer's machines not read at all.
+	AdmitStop   func(machine string) (*LandNowAnswer, error)
+	StopMachine func(human, machine string) (LandNowAnswer, error)
 	// Watch is the bridge between the open notification streams and the
 	// presence fetch owner: the streams are the owner's connection signal,
 	// and the one `fleet` event rides back to them after every attempt. A nil

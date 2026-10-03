@@ -318,6 +318,14 @@ func run(ctx context.Context, args []string) error {
 		DiscardLaunch: func(id string) (launch.Record, error) {
 			return discards.discard(id, time.Now().UTC())
 		},
+		// The fleet panel's Pause, Resume and Stop, invented: they answer
+		// the verbs' envelopes and change nothing. What a browser proves
+		// here is the page, the sign-in and the engine's own routes in front
+		// of them; the verbs are the engine's own tests' to prove.
+		PauseLane:   fixturePauseLane,
+		ResumeLane:  fixtureResumeLane,
+		AdmitStop:   fixtureAdmitStop,
+		StopMachine: fixtureStopMachine,
 		// The browsers holding the stream open, which the fleet event rides
 		// back to. It is the same registration the engine's own server uses
 		// as its connection signal; -fleet-every is what announces on it.

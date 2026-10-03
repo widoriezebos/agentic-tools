@@ -445,3 +445,32 @@ func fixtureProofLogs(checkout string) (*httpd.BoardSource, error) {
 		Dial:     func() (net.Conn, error) { return nil, errors.New("this fixture has no board bridge") },
 	}, nil
 }
+
+// The fleet panel's Pause, Resume and Stop, invented (fleet-panel-ux step 2,
+// slice 2b). The lane and the seats this fixture shows are a browser stub's,
+// so each act answers its verb's envelope in the verb's own words and changes
+// nothing. The route in front of them is the engine's own: a press reaches
+// them only through a signed-in session and act.SignedIn, and Stop only
+// through admission, which refuses this fixture's own seat as the engine
+// refuses the checkout serving the page.
+
+func fixturePauseLane(human string) (httpd.LandNowAnswer, error) {
+	return httpd.LandNowAnswer{Outcome: "confirmed", Summary: "stopped the landing lane for " + human + "; no landing agent starts until metasystem landing start",
+		Next: &httpd.LandNowNext{Argv: []string{"metasystem", "landing", "unset"}, Reason: "lets each seat land its own work instead"}}, nil
+}
+
+func fixtureResumeLane(string) (httpd.LandNowAnswer, error) {
+	return httpd.LandNowAnswer{Outcome: "confirmed", Summary: "resumed the landing lane at /walkthrough/landing"}, nil
+}
+
+func fixtureAdmitStop(machine string) (*httpd.LandNowAnswer, error) {
+	if machine != fixtureThis {
+		return nil, nil
+	}
+	return &httpd.LandNowAnswer{Outcome: "refused", Summary: machine + " serves this page, so it is stopped at a terminal and not from here; nothing was stopped",
+		Next: &httpd.LandNowNext{Argv: []string{"metasystem", "machine", "stop", machine}, Reason: "at a terminal on this computer"}}, nil
+}
+
+func fixtureStopMachine(_, machine string) (httpd.LandNowAnswer, error) {
+	return httpd.LandNowAnswer{Outcome: "confirmed", Summary: "stopped MetaSystem on " + machine + " (/walkthrough/" + machine + ")"}, nil
+}

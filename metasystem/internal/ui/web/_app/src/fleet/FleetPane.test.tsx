@@ -6,11 +6,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BoardPayload, Held, Lane, Machine, Page, ThisSeat } from "./api";
+import type { BoardPayload, Held, Lane, LandNowAnswer, Machine, Page, ThisSeat } from "./api";
 import { captureOfFleet } from "./capture";
 import { NO_PRESENCE } from "./fleet";
 import { minuteTime } from "../backlog/format";
-import { Blocks, Panel } from "./FleetPane";
+import { Blocks, Panel, StopConfirm, stopStep, type StopAnswer } from "./FleetPane";
 import { type BoardReading, type FleetReading } from "./panel";
 
 /**
@@ -370,7 +370,9 @@ describe("the fleet page", () => {
       expect({ item: text(item), offers: acts + commands }).toEqual({ item: text(item), offers: 1 });
     }
     expect(needs).toContain("The landing lane is paused by m1e since");
-    expect(needs).toContain(">metasystem landing start</code>");
+    // Resume in place of the command that resumes the lane (slice 2b).
+    expect(needs).toMatch(/<button[^>]*class="[^"]*ms-fleet-needs-act[^"]*"[^>]*>Resume<\/button>/);
+    expect(needs).not.toContain("metasystem landing start");
     expect(needs).toContain("“Plain lane landing.” came back.");
     expect(needs).toContain('<span class="ms-fleet-needs-note">the full test run is red.</span>');
     expect(needs).not.toContain("Rebase and hand in again.");
@@ -385,7 +387,7 @@ describe("the fleet page", () => {
     expect(markup).not.toContain("Pause<");
   });
 
-  it("puts a stuck seat in Needs you with the stop of its machine, says stalled in the marker colour with no live dot, and counts no seat working", () => {
+  it("puts a stuck seat in Needs you with Stop for its machine, says stalled in the marker colour with no live dot, and counts no seat working", () => {
     const holding = calm({
       machines: [
         machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true }),
@@ -411,13 +413,44 @@ describe("the fleet page", () => {
     const needs = needsOf(markup);
 
     expect(needs).toContain(`“Plain lane landing.” on m1f has not moved since ${minuteTime("2026-09-25T14:02:00Z")} (building).`);
-    expect(needs).toContain(">metasystem machine stop m1f</code>");
+    // Stop in place of the command, and the impact kept beside it.
+    expect(needs).toMatch(/<button[^>]*class="[^"]*ms-fleet-needs-act[^"]*"[^>]*>Stop m1f<\/button>/);
+    expect(needs).not.toContain("metasystem machine stop m1f");
     // What an override does is said whole, never cut to one line (R-143-m1e).
     expect(needs).toContain('<span class="ms-fleet-needs-impact">Stopping m1f ends its seat and every job on it; its steward will not start it again.</span>');
     expect(markup).toContain("1 thing needs you");
     expect(markup).toContain("0 seats working");
     expect(markup).toMatch(/ms-fleet-doing--stalled"><span>stalled · building · [^<]*min<\/span>/);
     expect(markup).not.toContain("ms-live-dot");
+  });
+
+  it("keeps the command at a terminal for this seat's own stuck item, and gives it no Stop", () => {
+    const serving = calm({
+      machines: [
+        machine({
+          machine: "m1u",
+          standing: "reachable",
+          seen: "2026-09-25T14:36:30Z",
+          this: true,
+          holds: [held({ goal: "plain-lane", title: "Plain lane landing.", machine: "m1u", standing: "reachable", flag: "", since: "" })],
+        }),
+      ],
+    });
+    const read = board({
+      seats: [
+        {
+          machine: "m1u",
+          installation: "/w/m1u/metasystem",
+          goals: [{ goal: "plain-lane", stage: "build", since: "2026-09-25T13:30:00Z", lastProgressAt: "2026-09-25T14:02:00Z", unknown: "stalled" }],
+        },
+      ],
+    });
+
+    const needs = needsOf(rendered(serving, read));
+
+    expect(needs).toContain(">metasystem machine stop m1u</code>");
+    expect(needs).toContain("Stopping m1u ends its seat and every job on it; its steward will not start it again.");
+    expect(needs).not.toMatch(/>Stop m1u</);
   });
 
   it("gives a red proof in Needs you an Open log link that opens the log in a tab of its own", () => {
@@ -545,6 +578,38 @@ describe("the fleet page", () => {
 
     expect(text(own)).toContain("Presence published 2 min ago");
     expect(own).not.toContain("rung");
+  });
+
+  it("offers Stop in the opened row of a seat of this computer other than this seat, with what the stop ends", () => {
+    const fleet = page({
+      machines: [
+        machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true }),
+        machine({ machine: "m1f", standing: "reachable", seen: "2026-09-25T14:36:00Z", holds: [] }),
+        machine(),
+      ],
+    });
+    const read = board({
+      seats: [
+        { machine: "m1u", installation: "/w/m1u/metasystem", goals: [] },
+        { machine: "m1f", installation: "/w/m1f/metasystem", goals: [] },
+      ],
+    });
+    const markup = rendered(fleet, read);
+    const opened = (name: string) => {
+      const from = markup.slice(markup.indexOf(`id="ms-fleet-work-${name}"`));
+      return from.slice(0, from.indexOf("</tr>"));
+    };
+
+    // A seat of this computer: the button, and what it ends said whole.
+    expect(opened("m1f")).toMatch(/<button[^>]*>Stop m1f<\/button>/);
+    expect(opened("m1f")).toContain("Stopping m1f ends its seat and every job on it; its steward will not start it again.");
+    // This seat serves the page: its row says a terminal stops it, and offers no button.
+    expect(opened("m1u")).not.toMatch(/>Stop m1u</);
+    expect(opened("m1u")).toContain(">metasystem machine stop m1u</code>");
+    expect(text(opened("m1u"))).toContain("This seat serves this page, so a terminal stops it");
+    // A machine on another computer has no seat on this computer's board.
+    expect(opened("m1c")).not.toContain("Stop m1c");
+    expect(opened("m1c")).not.toContain("machine stop");
   });
 
   it("shows a held goal by its title, with its id in the link", () => {
@@ -691,6 +756,116 @@ describe("what an override does", () => {
     expect(rule).toContain("white-space: normal;");
     expect(rule).not.toContain("ellipsis");
     expect(rule).not.toContain("overflow: hidden");
+  });
+});
+
+/**
+ * Stop ends a seat and every job on it, and its steward does not start it
+ * again, so a stray tap must not do it (R-142-ui): the first press asks, saying
+ * what the stop ends, and only the second stops. Pause and Resume are undone
+ * by each other and ask nothing more.
+ */
+describe("Stop asks once more", () => {
+  it("asks on the first press and stops on the second", () => {
+    expect(stopStep(false)).toBe("ask");
+    expect(stopStep(true)).toBe("send");
+  });
+
+  it("says what the stop ends, whole, with the one button that stops and a way back out", () => {
+    const impact = "Stopping m1f ends its seat and every job on it; its steward will not start it again.";
+    const markup = renderToStaticMarkup(
+      <StopConfirm machine="m1f" impact={impact} sending={false} onPress={() => undefined} onKeep={() => undefined} />,
+    );
+
+    expect(text(markup)).toBe(`Stop m1f? ${impact} Yes, stop it Keep it running`);
+    expect(markup).toMatch(/<button[^>]*>Yes, stop it<\/button>/);
+    expect(markup).toMatch(/<button[^>]*>Keep it running<\/button>/);
+  });
+
+  it("holds the button while the stop is on its way", () => {
+    const markup = renderToStaticMarkup(
+      <StopConfirm machine="m1f" impact="x." sending={true} onPress={() => undefined} onKeep={() => undefined} />,
+    );
+
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Yes, stop it<\/button>/);
+  });
+});
+
+/**
+ * The last Stop's answer belongs to the page, not to the button that asked
+ * (Sol F-2 on step 2): a stop takes its seat off this computer's board, the
+ * board is read again after every answer, and the item or the row that held
+ * Stop leaves the page. What the verb said — a stop that did not finish, with
+ * the command that tries again — must not leave with it.
+ */
+describe("the last Stop's answer", () => {
+  const partial: LandNowAnswer = {
+    outcome: "partial",
+    summary: "machine stop did not finish: 0 of 1 machines of this computer stopped or already stopped; what did not stop is listed below",
+    next: { argv: ["metasystem", "machine", "stop", "m1f"], reason: "stop again; a machine that cannot be read is stopped by its own system stop --repo PATH" },
+  };
+  // The fleet still lists m1f; the board read after the stop no longer has
+  // it among this computer's seats, so nothing on the page offers Stop m1f.
+  const fleet: FleetReading = {
+    state: "read",
+    page: calm({
+      machines: [
+        machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true }),
+        machine({ machine: "m1f", standing: "reachable", seen: "2026-09-25T14:36:00Z", holds: [] }),
+      ],
+    }),
+  };
+  const afterTheStop = board({ seats: [{ machine: "m1u", installation: "/w/m1u/metasystem", goals: [] }] });
+
+  function drawn(stopped: StopAnswer, read: BoardReading = afterTheStop): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Panel fleet={fleet} board={read} stopped={stopped} onStopped={() => undefined} />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("stays on the page after the board is read again and the stopped seat has left it, with its retry line", () => {
+    const markup = drawn({ machine: "m1f", answer: partial, problem: "" });
+
+    expect(markup).not.toMatch(/<button[^>]*>Stop m1f<\/button>/);
+    expect(markup).toContain("machine stop did not finish: 0 of 1 machines of this computer stopped or already stopped");
+    expect(markup).toContain(">metasystem machine stop m1f</code>");
+    expect(markup).toContain("stop again; a machine that cannot be read is stopped by its own system stop --repo PATH");
+    expect(markup).toMatch(/<section[^>]*aria-label="Stop m1f"/);
+    expect(markup).toMatch(/<button[^>]*>Dismiss<\/button>/);
+  });
+
+  it("keeps a confirmed answer and a press that failed the same way", () => {
+    const confirmed = drawn({ machine: "m1f", answer: { outcome: "confirmed", summary: "stopped MetaSystem on m1f (/w/m1f)", next: null }, problem: "" });
+    const failed = drawn({ machine: "m1f", answer: null, problem: "the host registry cannot be located" });
+
+    expect(confirmed).toContain("stopped MetaSystem on m1f (/w/m1f)");
+    expect(failed).toContain("the host registry cannot be located");
+  });
+
+  it("is said once, by the page, while the seat is still there to press again", () => {
+    const refused: LandNowAnswer = {
+      outcome: "refused",
+      summary: "machine stop refused at m1f: an agent started this shell, so nothing was changed; no machine was stopped",
+      next: null,
+    };
+    const stillThere = board({
+      seats: [
+        { machine: "m1u", installation: "/w/m1u/metasystem", goals: [] },
+        { machine: "m1f", installation: "/w/m1f/metasystem", goals: [] },
+      ],
+    });
+    const markup = drawn({ machine: "m1f", answer: refused, problem: "" }, stillThere);
+
+    expect(markup.split("machine stop refused at m1f").length - 1).toBe(1);
+    expect(markup).toMatch(/<button[^>]*>Stop m1f<\/button>/);
+  });
+
+  it("is not drawn before any Stop answered", () => {
+    expect(panel(fleet, afterTheStop)).not.toMatch(/aria-label="Stop m1f"/);
   });
 });
 

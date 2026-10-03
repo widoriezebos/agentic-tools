@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -443,6 +445,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				}
 				return act.SignedIn(roots.StateRoot, signed.Human, signed.Reference, signed.Proof)
 			}
+			fleetActs := uiFleetActs{checkout: roots.Checkout, owners: defaultIntentOwners}
 			return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 				Describe: func() (workspace.Workspace, error) {
 					described, describeErr := workspace.Describe(
@@ -491,6 +494,15 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				LandNow: func() (httpd.LandNowAnswer, error) {
 					return landNowRun(roots)
 				},
+				// The fleet panel's Pause, Resume and Stop (ui_landnow.go's
+				// uiFleetActs, R-142-ui): the route admits the person with
+				// act.SignedIn, and each verb runs in this process with that
+				// person answering its person seams. Stop is admitted first,
+				// by machine stop's own reading, and never for this checkout.
+				PauseLane:   fleetActs.pause,
+				ResumeLane:  fleetActs.resume,
+				AdmitStop:   fleetActs.admitStop,
+				StopMachine: fleetActs.stop,
 				Project: func() (project.Pane, error) {
 					return project.ReadPane(projectRoots(roots), time.Now().UTC())
 				},
@@ -1394,4 +1406,59 @@ func uiProofLogs(home func() (string, error)) func(string) (string, error) {
 		}
 		return plain.ProofLog(string(layout.Install), attempt)
 	}
+}
+
+// admitStop reads a machine's name for the fleet panel's Stop as machine
+// stop reads it, from the checkout this server serves: discoverHostMachines
+// (this checkout, the host registry's armed and stopped checkouts, the
+// landing lane's), then matchMachine (fleet-panel-ux-step2 slice 2b, S2-02).
+// nil admits the stop. Before any stop runs it refuses, in machine stop's own
+// two lines, a name that is no machine of this computer, one that names
+// several and one that runs on another computer; and, in its own, the
+// checkout serving the page (S2-01): a stop run inside this server either
+// ends it in the middle of the act or, since the stop leaves its own process
+// standing, reports the machine stopped while this server still runs. Either
+// way the page could not show the result, so a terminal stops that one.
+//
+// Whether the board names a seat is not the test: the board's seats are the
+// armed checkouts only, so a machine just stopped leaves them, and a second
+// tab's Stop would be refused here instead of reaching the verb's own "already
+// stopped". A stopped machine is still this computer's machine.
+func (acts uiFleetActs) admitStop(name string) (*httpd.LandNowAnswer, error) {
+	command, found := findIntentCommand(machineStopVerb)
+	if !found {
+		return nil, errors.New("this engine has no metasystem machine stop, so the interface cannot stop a machine")
+	}
+	inv := &intentInvocation{command: command, raw: []string{"--repo", acts.checkout, "--", name}, stdout: io.Discard, stderr: io.Discard,
+		cwd: acts.checkout, owners: acts.owners(), input: intentInput{values: map[string][]string{"repo": {acts.checkout}, "json": {"true"}}, args: []string{name}}}
+	// A refusal of the verb's reading is said as the verb says it: rendered
+	// with --json and read back as every act's answer is.
+	refuse := func(result intentResult) (*httpd.LandNowAnswer, error) {
+		answered, err := verbAnswer(machineStopVerb, command, nil, func(_ intentCommand, _ []string, stdout, stderr io.Writer) {
+			inv.stdout, inv.stderr = stdout, stderr
+			inv.render(result)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &answered, nil
+	}
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return refuse(*problem)
+	}
+	fleet := map[string]bool{}
+	if report, err := inv.owners.processes.fleet(inv.layout.GitRoot, false, seatFleetNow()); err == nil {
+		fleet = fleetNames(report)
+	}
+	matched, problem := inv.matchMachine(inv.discoverHostMachines(fleet), name)
+	if problem != nil {
+		return refuse(*problem)
+	}
+	if matched.This || matched.Checkout == acts.checkout || slices.Contains(matched.paths, acts.checkout) {
+		return &httpd.LandNowAnswer{Outcome: intentRefused,
+			Summary: matched.Name + " serves this page, so it is stopped at a terminal and not from here; nothing was stopped",
+			Next: &httpd.LandNowNext{Argv: []string{"metasystem", "machine", "stop", matched.Name},
+				Reason: "at a terminal on this computer: stopped from here, the stop would end the server showing this page before it could say what it did"}}, nil
+	}
+	return nil, nil
 }

@@ -95,6 +95,14 @@ func Acts() []manifest.Act {
 		// The landing lane card's one act (goal fleet-card-can-land-now).
 		{ID: routeLandNow, Title: "Land now", Requires: sessionHand,
 			Does: "Runs metasystem landing run: starts this computer's landing agent at once when the lane has queued work, is not paused and no agent runs, instead of waiting for the next tick, and answers the verb's two lines. A press while an agent runs starts nothing and says so."},
+		// The fleet panel's Pause, Resume and Stop (fleet-panel-ux-step2 slice
+		// 2b, R-142-ui): the session answers the person each verb asks for.
+		{ID: routeLanePause, Title: "Pause the landing lane", Requires: sessionHand,
+			Does: "Runs metasystem landing stop in your name: no landing agent starts until the lane is resumed, and the lane says who paused it and since when. A press on a paused lane changes nothing and says so."},
+		{ID: routeLaneResume, Title: "Resume the landing lane", Requires: sessionHand,
+			Does: "Runs metasystem landing start with you as the person it asks for: the pause ends and the landing agent starts when there is work. A press on a running lane changes nothing and says so."},
+		{ID: routeMachineStop, Title: "Stop a machine", Requires: sessionHand,
+			Does: "Runs metasystem machine stop for one machine of this computer, other than the one serving this page, with you as the person it asks for: its seat and every job on it end, and its steward does not start it again. The page asks a second press first. A machine already stopped changes nothing and says so."},
 		{ID: routeDiscardLaunch, Title: "Discard a stopped launch", Requires: checkoutHand,
 			Does: "Marks one launch that stopped, or whose machine joined, as discarded so its card leaves the fleet page. The record is kept and nothing is deleted: the clone stays on disk until you remove it."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
