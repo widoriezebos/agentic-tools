@@ -2,10 +2,12 @@
 
 - Kind: design
 - Id: 01M41RKZ0WBCZA2NF3T3E6972Y
-- Status: draft
+- Status: accepted
 - Goals: conflicts-resolve-unattended
 
 Revision 3: folds the three accepted findings of critique round 2 (Codex on Astra, 2026-10-03); the rest is revision 2's. Paths relative to `metasystem/`; nothing is built yet.
+
+Accepted 2026-10-04 00:08 CEST by m1e for Wido under his power of attorney (grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb), after Codex on Astra rounds 7/3/1/0; Wido may overturn.
 
 ## Wido's words (2026-10-03, binding)
 
