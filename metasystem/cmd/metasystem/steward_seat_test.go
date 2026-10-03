@@ -63,39 +63,46 @@ func noProgressSeats(id, opid string, n int) []steward.SeatRecord {
 }
 
 // Test 17, the reset leg over the real verbs: an identical goal approve is
-// the no-op of the approval owner and resets nothing; goal unapprove then
-// goal approve is a new approval episode and starts again.
-func TestSeatCapResetsOnlyOnUnapproveThenApprove(t *testing.T) {
+// the approval owner's no-op while no steward of the host has capped the
+// goal; once one has, the same goal approve writes a fresh approval, which
+// starts seats again and keeps the goal's claim.
+func TestSeatCapResetsOnApproveKeepingTheClaim(t *testing.T) {
 	t.Parallel()
-	bed := newIntentBed(t, false, makeQueued)
+	bed := newIntentBed(t, false, func(file *goal.GoalFile) { file.Claimed.Lineage = steward.SeatLineage })
+	bed.lineage = steward.SeatLineage
 	human := []string{"--fixture-human-authority", "--lineage", "m1"}
-	if code, result := bed.runJSON(bed.owners(), append([]string{"goal", "approve", bedGoal}, human...)...); code != 0 {
+	var records []steward.SeatRecord
+	owners := bed.owners()
+	owners.dependencies.seatCapped = func(id, opid string) bool { return steward.SeatNoProgressCount(records, id, opid) >= 3 }
+	if code, result := bed.runJSON(owners, append([]string{"goal", "approve", bedGoal}, human...)...); code != 0 {
 		t.Fatalf("approve = %d %+v", code, result)
 	}
-	first := bed.goalFile(bedGoal).Approved.Opid
-	records := noProgressSeats(bedGoal, first, 3)
-	decision, selection, _ := seatPlan(t, bed, records, false, seatBedNow)
-	if decision.Action != steward.ActNotify || selection != nil || !strings.Contains(decision.Reason, "3 seats ended without progress on "+bedGoal) {
-		t.Fatalf("three no-progress seats cap the goal: %+v %+v", decision, selection)
-	}
+	held := bed.goalFile(bedGoal)
+	first, claim := held.Approved.Opid, *held.Claimed
 
-	bed.runJSON(bed.owners(), append([]string{"goal", "approve", bedGoal}, human...)...)
+	records = noProgressSeats(bedGoal, first, 2)
+	bed.runJSON(owners, append([]string{"goal", "approve", bedGoal}, human...)...)
 	if again := bed.goalFile(bedGoal).Approved.Opid; again != first {
-		t.Fatalf("an identical approve moved the approval: %s -> %s", first, again)
-	}
-	if decision, selection, _ := seatPlan(t, bed, records, false, seatBedNow); decision.Action != steward.ActNotify || selection != nil {
-		t.Fatalf("goal approve alone does not reset the cap: %+v %+v", decision, selection)
+		t.Fatalf("an identical approve of a goal no steward capped moved the approval: %s -> %s", first, again)
 	}
 
-	if code, result := bed.runJSON(bed.owners(), append([]string{"goal", "unapprove", bedGoal, "--reason", "the seat is stuck"}, human...)...); code != 0 {
-		t.Fatalf("unapprove = %d %+v", code, result)
+	records = noProgressSeats(bedGoal, first, 3)
+	decision, selection, _ := seatPlan(t, bed, records, false, seatBedNow)
+	if decision.Action != steward.ActNotify || selection != nil || !strings.Contains(decision.Reason, "3 seats ended without progress on "+bedGoal) ||
+		!strings.Contains(decision.Reason, "`metasystem goal approve "+bedGoal+"`") {
+		t.Fatalf("three no-progress seats cap the goal and name goal approve: %+v %+v", decision, selection)
 	}
-	if code, result := bed.runJSON(bed.owners(), append([]string{"goal", "approve", bedGoal}, human...)...); code != 0 {
-		t.Fatalf("approve after unapprove = %d %+v", code, result)
+	if code, result := bed.runJSON(owners, append([]string{"goal", "approve", bedGoal}, human...)...); code != 0 {
+		t.Fatalf("approve of a capped goal = %d %+v", code, result)
+	}
+	rearmed := bed.goalFile(bedGoal)
+	if rearmed.Approved.Opid == first || rearmed.State != goal.StateClaimed || rearmed.Claimed == nil ||
+		rearmed.Claimed.Machine != claim.Machine || rearmed.Claimed.Lineage != claim.Lineage {
+		t.Fatalf("the capped goal is approved afresh and keeps its claim: %+v %+v", rearmed.Approved, rearmed.Claimed)
 	}
 	decision, selection, _ = seatPlan(t, bed, records, false, seatBedNow)
-	if decision.Action != steward.ActRevive || selection == nil || selection.Goal != bedGoal || selection.ApprovalOpid == first {
-		t.Fatalf("goal unapprove then goal approve starts again: %+v %+v", decision, selection)
+	if decision.Action != steward.ActRevive || selection == nil || selection.Goal != bedGoal || !selection.Held || selection.ApprovalOpid != rearmed.Approved.Opid {
+		t.Fatalf("the fresh approval starts the claim's successor: %+v %+v", decision, selection)
 	}
 }
 

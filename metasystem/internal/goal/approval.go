@@ -627,7 +627,9 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				humanHand := func(a string) bool { return a == ApprovalAuthorityProven || a == ApprovalAuthoritySession }
 				if f.Approved != nil && humanHand(authority) && humanHand(f.Approved.Authority) &&
 					f.Budget != nil && *f.Budget == *nextBudget {
-					if expired, _ := f.ApprovalExpired(approvalHorizon(t, r.Now)); !expired {
+					expired, _ := f.ApprovalExpired(approvalHorizon(t, r.Now))
+					capped := r.RearmCapped != nil && r.RearmCapped(id, f.Approved.Opid)
+					if !expired && !capped {
 						continue
 					}
 				}
