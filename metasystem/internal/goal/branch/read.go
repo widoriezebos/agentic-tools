@@ -23,10 +23,18 @@ import (
 
 const ReadDispatchPendingCode = "GOAL_READ_DISPATCH_PENDING"
 
+// ReadDispatchFailed heads the error of a read whose critic dispatch failed;
+// the dispatch's own account follows on the next lines.
+const ReadDispatchFailed = "goal branch read could not dispatch its critic"
+
 type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	Collect                                                  bool
+	// Selected is the installation that asked for the read (the seat's
+	// checkout) when it is not Repo. A file the brief cites that the
+	// critic's tree lacks is frozen from it, or from Repo, into Repo.
+	Selected string
 	// Retry names a failed examination round of the recorded critic chain
 	// to examine once more; FollowUp starts that round in the same chain.
 	Retry      int64
@@ -283,6 +291,58 @@ func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoi
 	return brief, nil
 }
 
+// freezeBranchReadDrafts freezes the files the brief cites that the
+// critic's tree lacks and the seat's checkout holds (an untracked trace, a
+// draft brief): each copy is content-addressed under Repo's artifacts, which
+// lie inside the critic's checkout, and named on a frozen-input line the
+// brief-authority admission reads (dispatch.FrozenInputLine). A cited path
+// no checkout holds is not frozen, so the admission still refuses it. When
+// the cited paths can't be read, nothing is frozen.
+func freezeBranchReadDrafts(request BranchReadRequest, brief string) (string, error) {
+	if request.Repository != nil {
+		// An injected read repository answers no Git of its own, so
+		// drafts are frozen on the Git repository path only.
+		return brief, nil
+	}
+	drafts, err := dispatch.BriefDraftsHeld([]byte(brief), request.Repo, request.Selected, request.Repo, primaryInstallation(request.Repo))
+	if err != nil || len(drafts) == 0 {
+		return brief, nil
+	}
+	var lines []string
+	for _, draft := range drafts {
+		sum := sha256.Sum256(draft.Content)
+		digest := hex.EncodeToString(sum[:])
+		copyPath := filepath.Join(request.Repo, "artifacts", "agents", "goal-reads", request.GoalID, "frozen", digest[:16], filepath.Base(filepath.FromSlash(draft.Path)))
+		if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
+			return "", err
+		}
+		durable, err := atomicfile.WriteText(copyPath, string(draft.Content), request.Repo)
+		if err != nil {
+			return "", err
+		}
+		if !durable {
+			return "", operationRefusal(ReadDispatchPendingCode, "a file the review brief cites may not be saved to disk, so no reviewer was started\nrun: metasystem work review %s", request.GoalID)
+		}
+		lines = append(lines, dispatch.FrozenInputLine(draft.Path, digest, copyPath))
+	}
+	return brief + "\n# Frozen files\n\nThese files are frozen as the seat's checkout held them when the review was asked. Read each from its copy,\nnever from the checkout, which may have moved since:\n\n" + strings.Join(lines, "\n") + "\n", nil
+}
+
+// primaryInstallation is the installation folder of repo's primary
+// checkout, where the seat keeps its files when the review is asked from a
+// goal worktree; "" when it can't be told.
+func primaryInstallation(repo string) string {
+	common, err := gitCommonDir(repo)
+	if err != nil || filepath.Base(common) != ".git" {
+		return ""
+	}
+	prefix, err := gitOutput(repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(common), filepath.FromSlash(strings.TrimSpace(string(prefix))))
+}
+
 func branchReadInput(path string) ([]byte, string, error) {
 	if path == "" {
 		return nil, "", nil
@@ -478,16 +538,24 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err != nil {
 		return result, err
 	}
-	if (record.RootJob != "" || record.DispatchPending || record.DispatchRetryable) && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
-		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
-		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
-	}
 	if record.DispatchPending && record.RootJob == "" {
 		// An earlier dispatch never reported back. The job records say
 		// whether it reserved a critic.
 		if record, err = settleBranchReadDispatch(request, common, recordPath, record); err != nil {
 			return result, err
 		}
+	}
+	// A request binds only what was dispatched: a critic root. A start the
+	// dispatch refused (retryable, no root) started nothing, so a request
+	// naming a brief, runtime or model starts over with them; a request
+	// naming none repeats the saved start.
+	restart := record.RootJob == "" && record.DispatchRetryable && (inputSHA256 != "" || request.Runtime != "" || request.Model != "")
+	if !restart && record.RootJob != "" && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
+		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
+		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
+	}
+	if restart {
+		record.DispatchRetryable = false
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
@@ -582,6 +650,9 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		if err != nil {
 			return result, err
 		}
+		if brief, err = freezeBranchReadDrafts(request, brief); err != nil {
+			return result, err
+		}
 		durable, writeErr := atomicfile.WriteText(briefPath, brief, common)
 		if writeErr != nil {
 			return result, writeErr
@@ -600,7 +671,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	job, err := request.Delegate(briefPath, request.GoalID, request.UnitCommit, effectiveRuntime, effectiveModel)
 	if err != nil || job == "" {
-		failure := errors.Join(fmt.Errorf("goal branch read could not dispatch its critic"), err)
+		failure := errors.Join(errors.New(ReadDispatchFailed), err)
 		var neverLaunched *ReadNeverLaunchedError
 		if job == "" && errors.As(err, &neverLaunched) {
 			record.DispatchPending, record.DispatchRetryable = false, true

@@ -140,6 +140,20 @@ func ReadBriefAdmissionAtRoot(briefPath, installRoot, baseTree, diskRoot string,
 	return readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot, requireMode, gitBriefTreeFacts{})
 }
 
+// ReadReviewBriefAdmission admits a critic's brief against the trees the
+// critic reads: the reviewed commit when reviews names one
+// ("commit:<sha>", the unit under review, which may hold files main does
+// not), and the dispatcher's HEAD, whose checkout is the critic's
+// workspace. A cited path either tree holds is admitted; a reviewed commit
+// the repository does not hold refuses.
+func ReadReviewBriefAdmission(briefPath, installRoot, baseTree, diskRoot, reviews string) (BriefAdmission, error) {
+	reviewed, named := strings.CutPrefix(reviews, "commit:")
+	if !named {
+		reviewed = ""
+	}
+	return readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, reviewed, false, gitBriefTreeFacts{})
+}
+
 // briefTreeFacts supplies the repository facts used by one admission. The
 // same instance must answer every query so prefix and path authority refer
 // to the same repository view.
@@ -167,6 +181,10 @@ func (gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
 }
 
 func readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot string, requireMode bool, facts briefTreeFacts) (BriefAdmission, error) {
+	return readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, "", requireMode, facts)
+}
+
+func readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, reviewed string, requireMode bool, facts briefTreeFacts) (BriefAdmission, error) {
 	data, err := os.ReadFile(briefPath)
 	if err != nil {
 		if baseTree == "" {
@@ -174,18 +192,18 @@ func readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoo
 		}
 		return BriefAdmission{}, fmt.Errorf("brief authority admission cannot read brief: %w", err)
 	}
-	authority := func(admitted []byte, bounds BriefBounds) error {
-		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot, facts)
-	}
-	if baseTree == "" {
-		authority = nil
-	}
 	resolveInstallPrefix := func() (string, error) {
 		installPrefix, err := facts.InstallPrefix(installRoot)
 		if err != nil {
 			return "", fmt.Errorf("brief admission cannot resolve installation prefix: %w", err)
 		}
 		return installPrefix, nil
+	}
+	authority := func(admitted []byte, bounds BriefBounds) error {
+		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot, facts, resolveInstallPrefix, reviewed)
+	}
+	if baseTree == "" {
+		authority = nil
 	}
 	return admitBriefBytes(data, resolveInstallPrefix, requireMode, authority)
 }
@@ -317,21 +335,49 @@ func ValidateBriefAuthority(briefPath, baseTree, diskRoot string) error {
 	return err
 }
 
-func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string, facts briefTreeFacts) error {
+func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string, facts briefTreeFacts, installPrefix briefInstallPrefix, reviewed string) error {
 	baseCommit, err := facts.BaseCommit(baseTree)
 	if err != nil {
 		return fmt.Errorf("brief authority admission cannot resolve delegate base tree: %w", err)
 	}
-	topDirectories, err := facts.Directories(baseTree, baseCommit)
-	if err != nil {
-		return fmt.Errorf("brief authority admission cannot inspect delegate base tree: %w", err)
-	}
-	nestedDirectories := map[string]bool{}
-	if topDirectories["metasystem"] {
-		nestedDirectories, err = facts.Directories(baseTree, baseCommit+":metasystem")
-		if err != nil {
-			return fmt.Errorf("brief authority admission cannot inspect metasystem base tree: %w", err)
+	// The trees the delegate reads: a reviewed commit first, then the
+	// dispatcher's HEAD.
+	commits := []string{baseCommit}
+	if reviewed != "" {
+		resolver, ok := facts.(briefCommitFacts)
+		if !ok {
+			return fmt.Errorf("brief authority admission cannot resolve the reviewed commit %s", reviewed)
 		}
+		commit, err := resolver.ResolveCommit(baseTree, reviewed)
+		if err != nil {
+			return fmt.Errorf("brief authority admission cannot resolve the reviewed commit %s: %w", reviewed, err)
+		}
+		commits = []string{commit, baseCommit}
+	}
+	topDirectories, nestedDirectories := map[string]bool{}, map[string]bool{}
+	for _, commit := range commits {
+		top, err := facts.Directories(baseTree, commit)
+		if err != nil {
+			return fmt.Errorf("brief authority admission cannot inspect delegate base tree: %w", err)
+		}
+		for name := range top {
+			topDirectories[name] = true
+		}
+		if top["metasystem"] {
+			nested, err := facts.Directories(baseTree, commit+":metasystem")
+			if err != nil {
+				return fmt.Errorf("brief authority admission cannot inspect metasystem base tree: %w", err)
+			}
+			for name := range nested {
+				nestedDirectories[name] = true
+			}
+		}
+	}
+	// A path cited from the installation (plans/designs/X.md) names
+	// metasystem/plans/designs/X.md in the tree.
+	prefix := ""
+	if installPrefix != nil {
+		prefix, _ = installPrefix()
 	}
 
 	candidates := extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories)
@@ -339,20 +385,35 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 	missing := make([]string, 0)
 	for _, candidate := range candidates {
 		if artifactAuthorityPath(candidate) {
-			if _, statErr := os.Stat(filepath.Join(diskRoot, filepath.FromSlash(candidate))); statErr != nil {
-				if os.IsNotExist(statErr) {
-					missing = append(missing, candidate)
-					continue
-				}
-				return fmt.Errorf("brief authority admission cannot inspect runtime path %s: %w", candidate, statErr)
+			present, statErr := runtimePathPresent(diskRoot, candidate, installPrefix, nil)
+			if statErr != nil {
+				return statErr
+			}
+			if !present {
+				missing = append(missing, candidate)
 			}
 			continue
 		}
-		present, pathErr := facts.HasPath(baseTree, baseCommit, candidate)
+		present, pathErr := treeHolds(facts, baseTree, commits, candidate, prefix)
 		if pathErr != nil {
-			return fmt.Errorf("brief authority admission cannot inspect committed path %s: %w", candidate, pathErr)
+			return pathErr
 		}
-		if !present && !frozenInputHolds(frozen[candidate], diskRoot) {
+		if present || frozenInputHolds(frozen[candidate], diskRoot) {
+			continue
+		}
+		// A path Git ignores can never be in a tree: it is runtime state,
+		// read where artifacts are, on the critic's disk.
+		ignored := func(location string) bool {
+			if facts, ok := facts.(briefIgnoreFacts); ok {
+				return facts.Ignored(baseTree, location)
+			}
+			return false
+		}
+		runtime, statErr := runtimePathPresent(diskRoot, candidate, installPrefix, ignored)
+		if statErr != nil {
+			return statErr
+		}
+		if !runtime {
 			missing = append(missing, candidate)
 		}
 	}
@@ -534,6 +595,74 @@ func briefAuthorityPathEligible(candidate string, topDirectories, nestedDirector
 
 func inertBriefBoundsLine(line string) bool {
 	return len(line) != len(strings.TrimLeft(line, " \t")) && (strings.HasPrefix(strings.TrimLeft(line, " \t"), "Boundary:") || strings.HasPrefix(strings.TrimLeft(line, " \t"), "Ceiling:"))
+}
+
+// treeHolds reports whether one of the commits holds candidate, at the
+// cited path or under the installation folder prefix.
+func treeHolds(facts briefTreeFacts, baseTree string, commits []string, candidate, prefix string) (bool, error) {
+	names := []string{candidate}
+	if prefix != "" && !strings.HasPrefix(candidate, prefix+"/") {
+		names = append(names, prefix+"/"+candidate)
+	}
+	for _, commit := range commits {
+		for _, name := range names {
+			present, err := facts.HasPath(baseTree, commit, name)
+			if err != nil {
+				return false, fmt.Errorf("brief authority admission cannot inspect committed path %s: %w", name, err)
+			}
+			if present {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// briefCommitFacts resolves a commit the delegate reviews. Facts that cannot
+// resolve one refuse a review brief that names it.
+type briefCommitFacts interface {
+	ResolveCommit(root, revision string) (string, error)
+}
+
+func (gitBriefTreeFacts) ResolveCommit(root, revision string) (string, error) {
+	return gitOutput(root, "rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
+}
+
+// briefIgnoreFacts says whether Git ignores a path in a checkout. Facts
+// that cannot say treat no path as ignored, so it must be in the tree.
+type briefIgnoreFacts interface {
+	Ignored(root, name string) bool
+}
+
+func (gitBriefTreeFacts) Ignored(root, name string) bool {
+	_, err := gitOutput(root, "check-ignore", "-q", "--", name)
+	return err == nil
+}
+
+// runtimePathPresent reports whether the disk the critic gets holds a cited
+// runtime path: at the path from the repository top, or under the
+// installation folder, as a brief written from the installation names it
+// (artifacts/agents/context for metasystem/artifacts/agents/context). When
+// ignored is set, a location counts only when Git ignores it there.
+func runtimePathPresent(diskRoot, candidate string, installPrefix briefInstallPrefix, ignored func(string) bool) (bool, error) {
+	locations := []string{candidate}
+	if installPrefix != nil {
+		if prefix, err := installPrefix(); err == nil && prefix != "" && !strings.HasPrefix(candidate, prefix+"/") {
+			locations = append(locations, prefix+"/"+candidate)
+		}
+	}
+	for _, location := range locations {
+		if _, err := os.Stat(filepath.Join(diskRoot, filepath.FromSlash(location))); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return false, fmt.Errorf("brief authority admission cannot inspect runtime path %s: %w", location, err)
+		}
+		if ignored == nil || ignored(location) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func artifactAuthorityPath(path string) bool {

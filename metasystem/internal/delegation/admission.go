@@ -606,9 +606,10 @@ func isReviewRole(role string) bool {
 	return role == "code-critic" || role == "design-critic" || role == "warden"
 }
 
-// briefAuthority is brief_authority.
-func (s *session) briefAuthority(brief, baseTree string) error {
-	_, err := dispatch.ReadBriefAdmissionAtRoot(brief, s.root, baseTree, s.repoScope, false)
+// briefAuthority is brief_authority. A brief that reviews a commit is also
+// read against that commit's tree, which the critic reads.
+func (s *session) briefAuthority(brief, baseTree, reviews string) error {
+	_, err := dispatch.ReadReviewBriefAdmission(brief, s.root, baseTree, s.repoScope, reviews)
 	if err != nil {
 		s.noteRefusal(err)
 	}
