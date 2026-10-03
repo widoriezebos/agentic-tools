@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.; ASKED 1N0QNKE8BHGK6Z6KZA81DN5P2Q (other): Fleet page redesign: may I build it as drawn? Mocks: ~/metasystem-evidence/agentic-tools-ui/fleet-page-redesign-20261003/mocks/ (one-thing-1440.png shows it best).; ANSWERED 1N0QNKE8BHGK6Z6KZA81DN5P2Q: yes INPUT (Wido 2026-10-03): the page shows, per seat and goal, estimate against actual, and marks a goal or slice that exceeded its estimate (signal owned by goal-budget-follows-its-plan). ESTIMATES (seat ui, 2026-10-03 12:50; tracked per goal-budget-follows-its-plan): slice 1, the page as drawn: design and two Astra rounds actual 1h05m, build actual 35 min (f058064ee); remaining estimate 1.5 h and 3 attempts from fleet-panel-ux 2a's landing (rebase, 1-2 Sol reads, lane). Slice 2, Pause/Resume/Stop as the signed-in person: estimate 2.5-3 h and 4 attempts. Not estimated, later list: a lane-written first sentence per return, per-check health remedies, Talk and Forget (own goals), fleet-wide questions.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 33
+- Revision: 34
 - Pinned: ui
 - Budget: elapsedLimit=1d2h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -17,6 +17,7 @@
 - Approved: by=human:Wido at=2026-10-03T14:26:59Z revision=31 opid=WE04A48EKK1CCVQ90K8HPQ5B7Y-m1e-718ba0eb authority=proven digest=72584ad1cecfcc4653f41c2e737e13cf7d605667c768119f67433ff889472dad episode=31
 - Sliced: machine=ui lineage=steward-seat revision=20 at=2026-10-03T11:43:38Z
 - Claimed: machine=ui lineage=steward-seat at=2026-10-03T14:31:48Z revision=33 accountingRevision=31 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=11
+- Landing: at=2026-10-03T14:49:23Z opid=SD2S91KMQPGVGYQWSV230V1AQ4-ui-71c5cb39
 - StopCapability: generation=33 revision=33 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
@@ -53,4 +54,5 @@ History:
 - 2026-10-03T14:26:59Z WE04A48EKK1CCVQ90K8HPQ5B7Y-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T10:41:32Z
 - 2026-10-03T14:31:43Z 4ZBZZMQZRFGD82RJTS93QEEF5M-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-page-redesign reason=re-claim under the total m1e set in Wido's word (budget act re-binds the claim)
 - 2026-10-03T14:31:48Z E7X91R2AA2SM98KJDXH3J67PYT-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
-Integrity: sha256=16ad4b9f7504eb517bfc9540e20aa5812be88f33df137f59a6e63c093b3593ac
+- 2026-10-03T14:49:23Z SD2S91KMQPGVGYQWSV230V1AQ4-ui-71c5cb39 land-ready actor=ui+steward-seat targets=fleet-page-redesign
+Integrity: sha256=a8c1bbe0354c02cde451aced72a5e2bd9b34ef2f463df4c3a4c3ea8bddec8fc4
