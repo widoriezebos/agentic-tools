@@ -1,6 +1,6 @@
 # human-carried-landing
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 10
 - Tier: 3
@@ -8,11 +8,11 @@
 - Origin: human
 - Next step: Next: Add the missing register row for the tier-1 refusal (internal/landing/tierone.go) in internal/refusal/register.go; ask you to rule on the eleven landing codes in light of "humans are never denied a verb"; drop the old land.sh item (the script is gone). Then conclude, citing ce59b313 and ef296c39. Done when: the refusal-register audit has no open notes.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 70
+- Revision: 71
 - Labels: governance
 - BudgetExceptions: 0
 - Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-04T14:47:24Z
-- Parked: by=human:Wido at=2026-09-19T15:47:15Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's ruling on the 11 refusal codes. Existing work: on main ef296c399, the refusal register (metasystem/internal/refusal/register.go), live. Left: about 100 lines: a register row for metasystem/internal/landing/tierone.go:85 and the tier-1 ShellRows in metasystem/scripts/agents/land.sh. No origin goal/human-carried-landing branch exists: nothing unlanded exists; the work below is all on main.
+- Abandoned: by=human:Wido at=2026-10-03T09:57:46Z revision=71 opid=K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb carried=landing-exception-gets-a-successor because=Folded into landing-exception-gets-a-successor (2026-10-03 parked-list cleanup, in Wido's word): the ruling it waited for is R-142-m1e, and its remaining ask (a person's landing is never refused) is that goal's first step.
 
 History:
 - 2026-09-04T10:56:02Z 295K6XSWMRHBC0V1H94Y9C6XQ9-m3-a5da21ff open actor=human:Wido targets=human-carried-landing
@@ -85,4 +85,5 @@ History:
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:11 to=3:10
-Integrity: sha256=62e705d223d92fb45995ee9d4c4dd93a722e82384f331e442df3d2a9746b3df5
+- 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=landing-exception-gets-a-successor reason=Folded into landing-exception-gets-a-successor (2026-10-03 parked-list cleanup, in Wido's word): the ruling it waited for is R-142-m1e, and its remaining ask (a person's landing is never refused) is that goal's first step.
+Integrity: sha256=0346366845da84ff1e172302e09b4c6f99479febd54e69d03519ec4cf1e3ef1b
