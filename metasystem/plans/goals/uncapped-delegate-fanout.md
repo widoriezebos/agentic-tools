@@ -1,6 +1,6 @@
 # uncapped-delegate-fanout
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="A refusal or a catch for nested paid sessions; too strict blocks builders that may start helpers, too loose leaves spend outside the budget; the owner is not chosen and proving it without cost is hard"
@@ -9,8 +9,9 @@
 - Origin: main
 - Next step: Next: When it comes back, pick the owner (a deny rule in the agent's permissions, the process census catching escaped children, or a refusal in the runtime adapter), prove the behaviour without spending money if possible, and wire the refusal. Done when: a delegate's attempt to open a nested agent session is refused or caught, shown by a test.
 - OpenedAt: 2026-09-01T17:34:51Z
-- Revision: 50
+- Revision: 51
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T11:18:10Z because=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
 
 History:
 - 2026-09-01T17:34:51Z R3VGTAHK92HYJ34RJJZCFT5VEP-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=uncapped-delegate-fanout
@@ -63,4 +64,5 @@ History:
 - 2026-10-03T10:02:14Z VM6W0V7N1NTQ8KAH9VWV930WJ0-m1e-718ba0eb park actor=human:Wido targets=uncapped-delegate-fanout reason=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
 - 2026-10-03T11:17:52Z PXS1J31CD2HA49TYGKJJSFT2CB-m1e-718ba0eb unpark actor=human:Wido targets=uncapped-delegate-fanout
 - 2026-10-03T11:18:01Z 5RRA58VRPKP0QCMCRMKGFMK2HW-m1e-718ba0eb edit actor=human:Wido targets=uncapped-delegate-fanout
-Integrity: sha256=43b4f723883ac15518cad93035d9964791859e6baef1b9242d26dffd941e8d0f
+- 2026-10-03T11:18:10Z F31N9GE0205J129WTMSVJKQ99V-m1e-718ba0eb park actor=human:Wido targets=uncapped-delegate-fanout reason=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
+Integrity: sha256=7ce92f5aa29f6b390b66edbc6817343df567cf8c22a6c0cdcee7c2a896c2b846
