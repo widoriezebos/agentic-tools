@@ -147,6 +147,16 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 		err = fmt.Errorf("the goal ledger identity is not 26 Crockford base32 characters")
 	}
 	if err == nil {
+		for _, part := range []struct{ name, value string }{
+			{"goal ledger identity", identity}, {"goal id", f.Goal}, {"work name", unit},
+		} {
+			if part.value == "" || part.value == "." || part.value == ".." || strings.ContainsAny(part.value, `/\`) {
+				err = fmt.Errorf("the %s is not one plain path segment", part.name)
+				break
+			}
+		}
+	}
+	if err == nil {
 		r.LedgerIdentity = identity
 		var data []byte
 		data, err = json.MarshalIndent(r, "", "  ")

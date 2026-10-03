@@ -263,3 +263,66 @@ func TestDesignGateRecordsStayApartByProject(t *testing.T) {
 		}
 	}
 }
+
+func TestDesignGateRecordRejectsUnsafePathSegments(t *testing.T) {
+	t.Parallel()
+	for _, part := range []string{"goal ledger identity", "goal id", "work name"} {
+		for _, value := range []string{"", ".", "..", "other/main", `other\main`} {
+			t.Run(part+"/"+value, func(t *testing.T) {
+				t.Parallel()
+				bed := newDesignGateBed(t, 2)
+				facts, unit := designgate.Facts{Goal: bed.id}, "u"
+				switch part {
+				case "goal ledger identity":
+					bed.designGate.identity = func(string) (string, error) { return value, nil }
+				case "goal id":
+					facts.Goal = value
+				case "work name":
+					unit = value
+				}
+				bed.designGate.record = func(string, string, string) (bool, error) {
+					t.Error("an unsafe path segment reached the record writer")
+					return true, nil
+				}
+				bed.designGate.digest = func(string, narratordigest.Entry, time.Time) error { return nil }
+				var output strings.Builder
+				inv := intentInvocation{owners: bed.workOwners(), stateRoot: bed.stateRoot(), stderr: &output}
+				inv.recordDesignGate(bed.unitRoot, bed.worktree, unit, facts, designgate.Result{}, false)
+				if !strings.HasPrefix(output.String(), "warning: the design check's record could not be written (the "+part+" ") || !strings.HasSuffix(output.String(), "); the build goes on\nnothing to do: the landing check runs without it\n") {
+					t.Fatalf("unsafe %s warning pair: %q", part, output.String())
+				}
+			})
+		}
+	}
+}
+
+func TestDesignGateRecordWorkNameCannotEscape(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"warn", "refuse"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			bed := newDesignGateBed(t, 2)
+			bed.lineage = "builder"
+			setDesignGateMode(t, bed, mode)
+			designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)")
+			writes, write := 0, (&intentInvocation{}).designGate().record
+			bed.designGate.record = func(path, text, anchor string) (bool, error) {
+				writes++
+				return write(path, text, anchor)
+			}
+			var lowlight string
+			bed.designGate.digest = func(_ string, entry narratordigest.Entry, _ time.Time) error {
+				lowlight = entry.Text
+				return nil
+			}
+			_, output := designGateBuild(t, bed, "../other-goal/main")
+			want := "warning: the design check's record could not be written (the work name is not one plain path segment); the build goes on\nnothing to do: the landing check runs without it\n"
+			if output != want || lowlight != strings.Split(want, "\n")[0] || writes != 0 {
+				t.Fatalf("unsafe work name: writes=%d output=%q lowlight=%q", writes, output, lowlight)
+			}
+			if _, err := os.Stat(filepath.Join(bed.unitRoot, ".design-gate")); !os.IsNotExist(err) {
+				t.Fatalf("unsafe work name left gate records: %v", err)
+			}
+		})
+	}
+}
