@@ -81,12 +81,22 @@ func rowSiteProblem(t *testing.T, row Row, source []byte, identifiers []string) 
 	return ""
 }
 
+// registerWalkSkips names the directories the walk of the module does not
+// read: fixtures, vendored and node trees, dot-directories, and artifacts/,
+// whose builder workspaces and kept source copies are not the module's source.
+func registerWalkSkips(name string) bool {
+	return name == "testdata" || name == "vendor" || name == "node_modules" || name == "artifacts" || strings.HasPrefix(name, ".")
+}
+
 func refusalCodeIdentifiers(t *testing.T, root string) map[string][]string {
 	t.Helper()
 	identifiers := map[string][]string{}
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if info.IsDir() && path != root && registerWalkSkips(info.Name()) {
+			return filepath.SkipDir
 		}
 		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil

@@ -225,6 +225,7 @@ func (g *gateRun) collectStatic() int {
 	if err != nil {
 		reds = append(reds, fmt.Sprintf("gofmt file list failed: %v", err))
 	}
+	g.patterns = goPatterns(files)
 	var gofmtOut bytes.Buffer
 	gofmtErr := d.tool(g.ctx, toolCall{dir: g.root, env: env, name: "gofmt", args: append([]string{"-l", "--"}, files...),
 		stdout: &gofmtOut, stderr: &gofmtOut})
@@ -242,11 +243,11 @@ func (g *gateRun) collectStatic() int {
 	reds = append(reds, g.shellParse(env)...)
 
 	var vetOut bytes.Buffer
-	if d.goTool(g.ctx, g.root, env, []string{"vet", "-trimpath", "-p=" + g.workers, "./..."}, &vetOut, &vetOut) != nil {
+	if d.goTool(g.ctx, g.root, env, append([]string{"vet", "-trimpath", "-p=" + g.workers}, g.judged()...), &vetOut, &vetOut) != nil {
 		reds = append(reds, "go vet failed:\n"+strings.TrimRight(vetOut.String(), "\n"))
 	}
 	var staticcheckOut bytes.Buffer
-	if d.goTool(g.ctx, g.root, env, []string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule, "./..."}, &staticcheckOut, &staticcheckOut) != nil {
+	if d.goTool(g.ctx, g.root, env, append([]string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule}, g.judged()...), &staticcheckOut, &staticcheckOut) != nil {
 		reds = append(reds, "staticcheck 2026.2 (module v0.8.0) refused (or could not run):\n"+strings.TrimRight(staticcheckOut.String(), "\n"))
 	}
 	reds = append(reds, g.deadCode()...)
@@ -410,6 +411,35 @@ func (g *gateRun) shellParse(env []string) []string {
 		return nil
 	}
 	return []string{"shell parse failed (bash -n):\n" + strings.TrimRight(broken.String(), "\n")}
+}
+
+// goPatterns are the package patterns the gate judges: ./<top>/... for each
+// top-level directory holding a file goFiles lists, and . for the module
+// root's own files, so a tree Git ignores (artifacts/, with its builder
+// workspaces and kept source copies) is never vetted, checked or built.
+// None listed judges ./... .
+func goPatterns(files []string) []string {
+	var patterns []string
+	for _, name := range files {
+		pattern := "."
+		if top, _, nested := strings.Cut(filepath.ToSlash(name), "/"); nested {
+			pattern = "./" + top + "/..."
+		}
+		if !slices.Contains(patterns, pattern) {
+			patterns = append(patterns, pattern)
+		}
+	}
+	slices.Sort(patterns)
+	return patterns
+}
+
+// judged is the package patterns of this run: goPatterns, or ./... before
+// the file list was read or when it listed nothing.
+func (g *gateRun) judged() []string {
+	if len(g.patterns) == 0 {
+		return []string{"./..."}
+	}
+	return g.patterns
 }
 
 // shellFiles is every *.sh file Git sees, tracked or new, or, outside a

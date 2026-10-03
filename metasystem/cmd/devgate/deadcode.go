@@ -67,7 +67,7 @@ func (g *gateRun) deadCode() []string {
 	for _, goos := range deadCodePlatforms {
 		var out bytes.Buffer
 		call := toolCall{dir: g.root, env: g.env.with("GOOS=" + goos).list(), name: filepath.Join(bin, "deadcode"),
-			args: []string{"-test", "./..."}, stdout: &out, stderr: &out}
+			args: append([]string{"-test"}, g.judged()...), stdout: &out, stderr: &out}
 		if g.d.tool(g.ctx, call) != nil {
 			reds = append(reds, fmt.Sprintf("dead code check could not run on %s (deadcode golang.org/x/tools v0.50.0):\n%s", goos, strings.TrimRight(out.String(), "\n")))
 			continue
