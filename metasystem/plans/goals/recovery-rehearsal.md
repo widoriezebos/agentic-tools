@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 15
+- Sequence: 14
 - Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 48
+- Revision: 49
 - BlockedBy: recovery-to-good-state
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
@@ -62,4 +62,5 @@ History:
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:16 to=2:15
 - 2026-10-03T10:00:40Z Q46PMH3BT4R0P27HED3NPG6EEG-m1e-718ba0eb unpark actor=human:Wido targets=recovery-rehearsal
 - 2026-10-03T10:00:48Z 57P7CA7WH85WRW52NGS3BDS1W0-m1e-718ba0eb block actor=human:Wido targets=recovery-rehearsal reason=blocked by recovery-to-good-state; returns when it is done
-Integrity: sha256=908c3fdf6fd5f5b1de8905aad9d03bdd1e09b1593b8be0492cfea137cc1cf910
+- 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:15 to=2:14
+Integrity: sha256=aa8fa192bbae58f1ef9b4e39e166f2055c47367081bd8d5b244e423439e86bbb

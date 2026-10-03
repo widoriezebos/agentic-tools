@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 33
+- Sequence: 32
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="Goal publication affects every program and preserves human-act history; defects create ledger churn or lose provenance without changing product code directly."
 - Tier: 2
 - Intent: What: When several goal actions are taken together (for example open, approve and pin), they go to main as one commit that lists every action, instead of one commit per action. Why: About three of every four commits on main are goal-ledger actions, roughly twelve per code commit. That buries the code history and makes main churn. Pros: A readable history, less push traffic and fewer collisions between seats. Cons: Publishing several actions at once must be all-or-nothing, and the history view must still show each action inside the combined commit.
 - Origin: human
 - Next step: Next: Write a short design: how several goal actions are published as one commit, what the commit message lists, and how goal history still shows each action separately; one critique round; build. Done when: a batch of goal actions lands as one commit whose message names each action, and a goal's history still lists them one by one.
 - OpenedAt: 2026-09-16T21:03:14Z
-- Revision: 47
+- Revision: 48
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -61,4 +61,5 @@ History:
 - 2026-10-03T09:55:56Z S6GXEPX4FVVD45XCJ2SS0B9W6K-m1e-718ba0eb abandon actor=human:Wido targets=actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:36 to=2:35
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
 - 2026-10-03T09:59:10Z RYD9V9YN18QS5P964FN8SYT8PW-m1e-718ba0eb set-priority actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=machine-concurrency-governor from=2:34 to=2:33 requested-sequence=append
-Integrity: sha256=8c4fba76307f03e2ffd08fd08c76b6fa6ea28e13d437a8f810351ad953e5347b
+- 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:33 to=2:32
+Integrity: sha256=fd0437bc1e723c55e6a7a3fb1ceb45a6f3ea533965a745916b71cf9c50d8c6c5

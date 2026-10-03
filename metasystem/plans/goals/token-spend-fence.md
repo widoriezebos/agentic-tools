@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 27
+- Sequence: 26
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong fence stops or fails to stop spending, no data loss; novelty 2: enforcement on token spend is new; exposure 3: every seat's sessions; accumulation 1: one fence and its records"
 - Tier: 2
 - Intent: What: Spending is limited by tokens and money, not by minutes. A person sets daily and per-goal spending ceilings, and agent work that would cross one is refused with a message saying how much was spent and who can raise the limit. Why: The only limit today counts reserved minutes, which says nothing about real cost. In September the account hit its usage limit while every budget looked fine. Step 1 (measure spending and alert) has landed; step 2 (enforce) has not. Pros: Protects the account and the money; spending becomes visible and controllable per goal. Cons: About 500 lines. Step 2 was designed for the old dispatch lane, so where it checks must be redone. A ceiling set too low stops good work.
 - Origin: main
 - Next step: Next: On Wido's word, redesign step 2 so the ceiling is checked where agent work starts today (the launch of a builder or delegate, and batch-lane admission) instead of the retired dispatcher; build; then allow spend.mode=enforce. Done when: work that would cross a ceiling is refused with the spend so far and who can raise it, and replaying a heavy day's usage against a ceiling shows the expected refusals. REWRITTEN 2026-10-03 (parked-list cleanup; step 1, measure and alert, landed with 0acb09738). What remains, now including spend-fence-reports-tokens-per-model-and-cause: (1) step 2: enforce a spend ceiling at today's real launch points (seat, builder and delegate launches, lane admission), then allow spend.mode=enforce (internal/config/spend.go:123 refuses it today); (2) show the per-model and per-cause attribution that internal/spend/attribution.go already computes in health and in the fence's daily report, with a per-model alert line; (3) fill the price ledger, including gpt-5.6-sol, so delegates stop landing in delegate:other. The limits themselves (per launch, per seat per day) and who sets them are decided in goal-budget-follows-its-plan; this goal waits for it.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 248
+- Revision: 249
 - BlockedBy: goal-budget-follows-its-plan
 - Labels: robustness, spend
 - BudgetExceptions: 0
@@ -265,4 +265,5 @@ History:
 - 2026-10-03T09:59:10Z RYD9V9YN18QS5P964FN8SYT8PW-m1e-718ba0eb set-priority actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=machine-concurrency-governor from=2:28 to=2:27 requested-sequence=append
 - 2026-10-03T10:01:24Z JB8FEA0H8JBMEPTXZ9CEDZESDM-m1e-718ba0eb unpark actor=human:Wido targets=token-spend-fence
 - 2026-10-03T10:01:29Z 4JZTA2Y85AN9MN7WGPJHX5STB0-m1e-718ba0eb block actor=human:Wido targets=token-spend-fence reason=blocked by goal-budget-follows-its-plan; returns when it is done
-Integrity: sha256=6d74794276e2b0903890c1d33fdfc4ee321fb281f756c2d60cfc2ee7aa46ddcf
+- 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:27 to=2:26
+Integrity: sha256=8ecff9d91036ef8695a616ddfd3b755cbafca678575c7a7801da0d5f597e5660
