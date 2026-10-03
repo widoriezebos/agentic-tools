@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Build step 1 of the accepted design (critique closed r6). The first work, root-types, is built and green; the review commit refusal is fixed on main at 93c7f34c8: merge main into the goal worktree, rebuild the engine there, repeat work review for root-types, then continue with the next works (briefs drafted in plans/one-folder-u*.md in the m1f checkout). Question 8M79VPPHCCVGFQQA8DCG5BMYDC was withdrawn by m1e. RULING 2026-10-03 02:15 CEST (m1e in Wido's word, revisable by Wido): question ENMDV77K answered 'follow the design': run state stays in metasystem/artifacts/; every consumer that writes run state takes the installation root beside the state root; the extra 1,500-2,500 lines are accepted, measured per work.; ASKED 45A5KVHDGSHW5ZHAWJH6KXHM2J (other): The review of root-types (the first of ten works) can't start its critic. May I start MetaSystem for the goal worktree, or will you or a machinery seat fix it?
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1f
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T14:27:24Z revision=2 opid=J4DDF6HKHD2PQVRBVK0E4BZR2X-m1e-9c612d71 authority=proven digest=427db9e3d13e3794fe6adfc0bb4315aa91e8df721ed56128aeb42752da9b759f episode=2
+- Sliced: machine=m1f lineage=steward-seat revision=10 at=2026-10-03T00:30:02Z
 - Claimed: machine=m1f lineage=steward-seat at=2026-10-02T20:46:14Z revision=10 accountingRevision=10 episodeAt=2026-10-02T20:46:14Z episodeRevision=10
 - StopCapability: generation=10 revision=10 machine=m1f claimEpoch=1 fenceEpoch=0
 
@@ -36,4 +37,5 @@ History:
 - 2026-10-02T22:48:39Z 0MHJ16EMYYDSRWTCNCSV3H5XT8-m1e-9c612d71 edit actor=human:Wido targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z
 - 2026-10-03T00:08:47Z KF3AYQPB19XBGTRZ4W8N6TGP7T-m1e-718ba0eb edit actor=human:Wido targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z
 - 2026-10-03T00:28:11Z 3G85EA2VPHQKXSD9705P6VH4J6-m1f-71c5cb39 ask actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
-Integrity: sha256=42d8904044855f4d4f3ef7bbb6e331e05bb352cb26d2759d25264b649c52dd4e
+- 2026-10-03T00:30:02Z J9H53EKD5513PVBY6H9NF81M0S-m1f-71c5cb39 slice-start actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
+Integrity: sha256=b92a735ce1ae9ab24e8cf6841387ccebdf42541e4f0980fbd643f3fd2cb4e8cd
