@@ -306,7 +306,11 @@ func (e *Exclusions) receipts(installation string) *receiptLedger {
 // root. A state root that cannot be resolved is an error: the clause is
 // Unknown, never judged against a guessed ledger (Round B2, F-11).
 func ReceiptLedgerPath(installation string) (string, error) {
-	root, err := stateroot.RootForInstallation(installation)
+	installationRoot, err := stateroot.ParseInstallation(installation)
+	if err != nil {
+		return "", fmt.Errorf("the state root of %s cannot be resolved: %w", installation, err)
+	}
+	root, err := stateroot.RootForInstallation(installationRoot)
 	if err != nil {
 		return "", fmt.Errorf("the state root of %s cannot be resolved: %w", installation, err)
 	}

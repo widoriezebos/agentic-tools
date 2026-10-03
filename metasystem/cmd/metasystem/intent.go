@@ -680,14 +680,6 @@ func (inv *intentInvocation) leaveStores() {
 	inv.entrants = nil
 }
 
-// stateRootPath resolves the state root of the installation at a plain path and
-// answers it as a plain path, for the invocation's state-root field and the
-// lifecycle resolver, which both take one.
-func (inv *intentInvocation) stateRootPath(installation string) (string, error) {
-	root, err := inv.owners.resolver.RootForInstallation(installation)
-	return root.Path(), err
-}
-
 // selectRoot resolves the repository once: any path inside the repository,
 // its installation, a symbolic link to either, or the current directory.
 // Goal owners receive the installation's state root; a missing or unreadable
@@ -703,7 +695,9 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err == nil {
 		inv.layout = layout
-		inv.stateRoot, err = inv.stateRootPath(layout.InstallationRoot.Path())
+		var root stateroot.State
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.stateRoot = root.Path()
 	}
 	if err != nil {
 		return inv.notARepository(path, err)

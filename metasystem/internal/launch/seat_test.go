@@ -292,15 +292,15 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: closedCheckout, FenceRoot: closedCheckout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != want || started {
 		t.Fatalf("a seat start under a closed fence = %v started=%t, want %q", err, started, want)
 	}
-	// The fence lives at the installation's state root, which need not be
-	// the session's working directory (a vendored metasystem/ below the
+	// The stop fence lives under the installation, which need not be the
+	// session's working directory (a vendored metasystem/ below the
 	// checkout): the start names it and the fence there binds.
 	vendored := t.TempDir()
-	stateRoot := filepath.Join(vendored, "metasystem")
-	vendoredFence := writeFence(t, stateRoot, stopfence.StateClosed, stopfence.PhaseStopped, 3)
-	wantVendored, _ := stopfence.ClosedDescription(vendoredFence, stateRoot)
-	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: vendored, FenceRoot: stateRoot, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != wantVendored || started {
-		t.Fatalf("a seat start under a closed state-root fence = %v started=%t, want %q", err, started, wantVendored)
+	installation := filepath.Join(vendored, "metasystem")
+	vendoredFence := writeFence(t, installation, stopfence.StateClosed, stopfence.PhaseStopped, 3)
+	wantVendored, _ := stopfence.ClosedDescription(vendoredFence, installation)
+	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: vendored, FenceRoot: installation, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != wantVendored || started {
+		t.Fatalf("a seat start under a closed installation fence = %v started=%t, want %q", err, started, wantVendored)
 	}
 	seeded := seed(t, m2, "seat-closed", Starting)
 	if _, err := m2.Store.Update(seeded.ID, func(r *Record) error {

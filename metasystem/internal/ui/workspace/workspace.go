@@ -14,7 +14,11 @@ import (
 // internal/ui/lifecycle's own tests import internal/ui/httpd, which imports
 // this package to type the resource: taking lifecycle's types closes that loop
 // and Go refuses it. The interface's wiring carries the two conversions.
-type Roots struct{ Checkout, Installation, StateRoot string }
+type Roots struct {
+	Checkout     string
+	Installation stateroot.Installation
+	StateRoot    stateroot.State
+}
 
 type Record struct{ EngineBuild, StartedAt, ExecutableDigest string }
 
@@ -76,7 +80,7 @@ type LandingGate struct {
 // It is called per request, so an adoption line filled in while the server runs
 // is read without a restart.
 func Describe(roots Roots, rec Record, configuredSubject string) (Workspace, error) {
-	layout, err := stateroot.ResolveLayout(roots.Installation)
+	layout, err := stateroot.ResolveLayout(roots.Installation.Path())
 	if err != nil {
 		return Workspace{}, fmt.Errorf("cannot resolve the layout of the installation at %s: %w", roots.Installation, err)
 	}
@@ -84,7 +88,7 @@ func Describe(roots Roots, rec Record, configuredSubject string) (Workspace, err
 	if layout.Template {
 		mode = ModeSelfHosted
 	}
-	adoption := ReadAdoption(roots.Installation)
+	adoption := ReadAdoption(roots.Installation.Path())
 	return Workspace{
 		SchemaVersion: SchemaVersion,
 		Subject:       subjectOf(configuredSubject, mode, roots.Checkout),
@@ -93,8 +97,8 @@ func Describe(roots Roots, rec Record, configuredSubject string) (Workspace, err
 		// template SHA is two claims at once, and the interface says so.
 		Conflict:         mode == ModeSelfHosted && adoption.Record == Recorded,
 		Checkout:         roots.Checkout,
-		Installation:     roots.Installation,
-		StateRoot:        roots.StateRoot,
+		Installation:     roots.Installation.Path(),
+		StateRoot:        roots.StateRoot.Path(),
 		EngineBuild:      rec.EngineBuild,
 		StartedAt:        rec.StartedAt,
 		ExecutableDigest: rec.ExecutableDigest,

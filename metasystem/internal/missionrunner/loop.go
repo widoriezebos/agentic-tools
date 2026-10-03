@@ -62,7 +62,7 @@ func (e *Engine) RunLoopAtGeneration(mode, tag, startSignal string, generation i
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		return exitFor(err)
 	}
-	claim, err := stopfence.Creating(e.Root, "mission-run-loop", generation, ref)
+	claim, err := stopfence.Creating(e.fenceRoot(), "mission-run-loop", generation, ref)
 	if err != nil {
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		return exitFor(err)

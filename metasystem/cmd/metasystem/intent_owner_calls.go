@@ -60,7 +60,7 @@ type intentOwnerCalls struct {
 	// missionLaunch starts or resumes a mission's detached run loop, or with
 	// wait runs the whole mission in this process; a closed fence's human
 	// reopening classifies caller.
-	missionLaunch func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int
+	missionLaunch func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, repositoryTop func(string) (string, error)) int
 	// missionSeal checks one authored mission contract and seals it,
 	// returning the digest its approval line signs and the sizing warnings;
 	// a sealed contract answers contract.ErrAlreadySealed.
@@ -159,13 +159,16 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 // fence check (a closed fence reopens only for a person, classified from
 // caller), then the runner's launch at the fence's generation, detached or,
 // with wait, in this process until the mission ends.
-func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, repositoryTop func(string) (string, error)) int {
 	root = cleanOwnerRoot(root)
-	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, personClassifyAt)
+	if repositoryTop == nil {
+		repositoryTop = stateroot.RepositoryTop
+	}
+	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, repositoryTop, personClassifyAt)
 	if code != 0 {
 		return code
 	}
-	engine, err := missionRunnerCommandEngine(root, mission)
+	engine, err := missionRunnerCommandEngineWith(root, mission, repositoryTop)
 	if err != nil {
 		fmt.Fprintln(stderr, "mission "+mode+":", err)
 		return 1

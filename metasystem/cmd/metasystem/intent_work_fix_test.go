@@ -303,7 +303,7 @@ func (b *workBed) stateRoot() string {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	root, err := resolver.RootForInstallation(layout.InstallationRoot.Path())
+	root, err := resolver.RootForInstallation(layout.InstallationRoot)
 	if err != nil {
 		b.t.Fatal(err)
 	}

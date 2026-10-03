@@ -82,7 +82,7 @@ func fleetReader(
 			Presence: presence, PresenceProblem: problem, Copy: copied,
 			Observation: observed, Board: board,
 			Previous:    fleet.ReadStandings(roots.Checkout),
-			Window:      seatPresenceWindow(roots.Installation),
+			Window:      seatPresenceWindow(roots.Installation.Path()),
 			Publication: publication, PublicationProblem: publicationProblem,
 			Health:  fleet.ReadHealth(roots.Checkout),
 			Running: running, RunningProblem: runningProblem,

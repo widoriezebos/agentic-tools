@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -32,10 +33,10 @@ func TestTheRegisterIsReadFromTheInstallationAndNamedFromTheCheckout(t *testing.
 	checkout := t.TempDir()
 	installation := filepath.Join(checkout, "metasystem")
 	plantRegister(t, installation)
-	roots := lifecycle.Roots{Checkout: checkout, Installation: installation, StateRoot: checkout}
+	roots := lifecycle.Roots{Checkout: checkout, Installation: stateroottest.Installation(t, installation), StateRoot: stateroottest.State(t, checkout)}
 
 	// Read from the installation, which is the root the wiring hands over.
-	fromInstallation, err := rulings.Read(roots.Installation)
+	fromInstallation, err := rulings.Read(roots.Installation.Path())
 	if err != nil {
 		t.Fatalf("reading the register from the installation: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestTheSelfHostedLayoutNamesTheRegisterWhereItAlwaysWas(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	plantRegister(t, root)
-	roots := lifecycle.Roots{Checkout: root, Installation: root, StateRoot: root}
+	roots := lifecycle.Roots{Checkout: root, Installation: stateroottest.Installation(t, root), StateRoot: stateroottest.State(t, root)}
 
 	named := registerFromCheckout(roots)
 
@@ -80,7 +81,7 @@ func TestTheSelfHostedLayoutNamesTheRegisterWhereItAlwaysWas(t *testing.T) {
 func TestAnInstallationOutsideTheCheckoutNamesNoRegisterPath(t *testing.T) {
 	t.Parallel()
 	roots := lifecycle.Roots{
-		Checkout: filepath.Join(t.TempDir(), "app"), Installation: filepath.Join(t.TempDir(), "kit"),
+		Checkout: filepath.Join(t.TempDir(), "app"), Installation: stateroottest.Installation(t, filepath.Join(t.TempDir(), "kit")),
 	}
 
 	testutil.Expect(t, "nothing is named", registerFromCheckout(roots), "")

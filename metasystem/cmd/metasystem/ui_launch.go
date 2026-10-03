@@ -59,7 +59,7 @@ const launchProofAction = "seat launch"
 // enrolled from.
 func launchStarterWith(roots lifecycle.Roots, seams launchSeams) func(*session.Session, launch.Request) (launch.Record, error) {
 	return func(signed *session.Session, asked launch.Request) (launch.Record, error) {
-		if signed == nil || !signed.Proof.SessionValidFor(roots.StateRoot) {
+		if signed == nil || !signed.Proof.SessionValidFor(roots.StateRoot.Path()) {
 			return launch.Record{}, errors.New("this launch comes from a browser that is not signed in for this checkout; sign in again here")
 		}
 		asked.From = roots.Checkout
@@ -88,7 +88,7 @@ func launchStarterWith(roots lifecycle.Roots, seams launchSeams) func(*session.S
 		// written before the record and the spawn: a proof that cannot be
 		// recorded is a launch that does not start, with nothing on disk to
 		// say otherwise.
-		if err := humanauthority.RecordSessionProof(roots.StateRoot, launchProofOperation(record.Launch, now), launchProofAction, signed.Proof); err != nil {
+		if err := humanauthority.RecordSessionProof(roots.StateRoot.Path(), launchProofOperation(record.Launch, now), launchProofAction, signed.Proof); err != nil {
 			return launch.Record{}, fmt.Errorf("your sign-in for this launch could not be recorded, so nothing was started: %w", err)
 		}
 		// The record is written before anything runs, so a page opened a
@@ -209,7 +209,7 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request, signed *sessi
 // METASYSTEM_EVIDENCE_ROOT would outrank the configuration the verb copies
 // into the new machine.
 func spawnLaunch(roots lifecycle.Roots, asked launch.Request, record launch.Record, path string) error {
-	engine := filepath.Join(roots.Installation, "bin", "metasystem")
+	engine := roots.Installation.Path("bin", "metasystem")
 	args := launchArgs(roots, asked, record, path)
 	log, err := os.OpenFile(launchLogPath(roots.Checkout, record.Launch), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {

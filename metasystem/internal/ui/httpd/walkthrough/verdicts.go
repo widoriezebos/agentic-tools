@@ -53,7 +53,7 @@ type verdicts struct {
 func (l *ledger) review(held *verdicts, id string, asked act.Reviewed) (act.Recorded, error) {
 	held.mu.Lock()
 	defer held.mu.Unlock()
-	path, content, err := goal.ResolveReviewRecord(l.roots.StateRoot, filepath.Join(l.roots.Checkout, filepath.FromSlash(asked.Record)))
+	path, content, err := goal.ResolveReviewRecord(l.roots.StateRoot.Path(), filepath.Join(l.roots.Checkout, filepath.FromSlash(asked.Record)))
 	if err != nil {
 		return act.Recorded{}, &act.Refusal{Kind: act.KindRequest, Code: "record", Message: err.Error()}
 	}

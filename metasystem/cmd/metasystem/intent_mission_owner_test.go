@@ -32,9 +32,9 @@ func TestMissionOwnersRunInThisProcess(t *testing.T) {
 	var suppliedLaunch, suppliedResolve []ownercall.Process
 	calls := defaultIntentOwnerCalls()
 	realLaunch, realResolve := calls.missionLaunch, calls.missionResolveTaint
-	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, top func(string) (string, error)) int {
 		suppliedLaunch = append(suppliedLaunch, caller)
-		return realLaunch(caller, stdout, stderr, root, mission, mode, wait)
+		return realLaunch(caller, stdout, stderr, root, mission, mode, wait, top)
 	}
 	calls.missionResolveTaint = func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 		suppliedResolve = append(suppliedResolve, caller)
@@ -158,7 +158,7 @@ func TestMissionStartWaitRunsTheMissionToItsEnd(t *testing.T) {
 	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil }}
 	var waits []bool
 	calls := defaultIntentOwnerCalls()
-	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+	calls.missionLaunch = func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, _ func(string) (string, error)) int {
 		waits = append(waits, wait)
 		return 0
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -24,14 +25,15 @@ const (
 )
 
 // ToolGateOptions supplies every process, clock, filesystem, and stream input
-// needed to decide one Claude tool call.
+// needed to decide one Claude tool call. Installation is the installation root:
+// its metasystem.conf sets the thresholds, and the context samples the gate
+// reads and the decision rows it writes are run state under its artifacts/.
 type ToolGateOptions struct {
 	ShellStartedAt time.Time
 	Clock          func() time.Time
 	MemoryDir      string
 	Mode           string
-	StateRoot      string
-	Installation   string
+	Installation   roots.Installation
 	Stdin          io.Reader
 	Stdout         io.Writer
 	Stderr         io.Writer
@@ -97,13 +99,13 @@ func RunToolGate(opts ToolGateOptions) error {
 		return emitToolGate(opts, Decision{}, false)
 	}
 	// Under the helm the gate is silent: one decision row, no transcript read.
-	if helm.Active(opts.Installation).Active {
+	if helm.Active(opts.Installation.Path()).Active {
 		writeToolGateRow(opts, toolGateDecisionRow{Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 			Decision: "allow", Cause: "helm", Birth: birth}, base, opts.Clock())
 		return nil
 	}
 
-	budget, err := config.ContextBudget(opts.Installation)
+	budget, err := config.ContextBudget(opts.Installation.Path())
 	if err != nil {
 		return err
 	}
@@ -113,7 +115,7 @@ func RunToolGate(opts ToolGateOptions) error {
 
 	readOptions := toolGateReadOptions(payload.TranscriptPath, deadline, opts.Clock)
 	readOptions.Capability = usage.PerCall
-	reading, readErr := usage.LatestCall(opts.StateRoot, "claude", payload.SessionID, readOptions)
+	reading, readErr := usage.LatestCall(opts.Installation.Path(), "claude", payload.SessionID, readOptions)
 	if readErr != nil {
 		cause := "read-error"
 		if toolGateBusy(readErr) {
@@ -141,7 +143,7 @@ func RunToolGate(opts ToolGateOptions) error {
 	}
 
 	tokens := reading.Latest.PromptTokens
-	decision := Decide(class, tokens, budget, opts.Installation)
+	decision := Decide(class, tokens, budget, opts.Installation.Path())
 	decidedAt := opts.Clock()
 	if !decidedAt.Before(deadline) {
 		writeToolGateRow(opts, toolGateDecisionRow{
@@ -225,7 +227,7 @@ func writeToolGateRow(opts ToolGateOptions, row toolGateDecisionRow, base, at ti
 	row.ElapsedMs = at.Sub(base).Milliseconds()
 	encoded, err := json.Marshal(row)
 	if err == nil {
-		path := filepath.Join(opts.StateRoot, "artifacts", "agents", "context", "tool-gate.jsonl")
+		path := opts.Installation.Path("artifacts", "agents", "context", "tool-gate.jsonl")
 		if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
 			var file *os.File
 			file, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)

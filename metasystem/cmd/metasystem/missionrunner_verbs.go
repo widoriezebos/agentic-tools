@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The mission-turn and mission-jobs families are the mission runner's
@@ -49,11 +50,23 @@ func parseRunnerArgs(args []string, valued map[string]*string, switches map[stri
 }
 
 func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, error) {
+	return missionRunnerCommandEngineWith(root, mission, stateroot.RepositoryTop)
+}
+
+func missionRunnerCommandEngineWith(root, mission string, repositoryTop func(string) (string, error)) (*missionrunner.Engine, error) {
 	commandClock, _, err := goalCommandClock(root)
 	if err != nil {
 		return nil, err
 	}
+	// The engine's launches are gated by the installation's stop fence. A
+	// checkout whose installation cannot be found is refused rather than
+	// read at root, where no fence is kept and an absent one reads as open.
+	_, installation, err := processInstallationWith(root, "", repositoryTop)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", noEngineRefusal, err)
+	}
 	engine := missionrunner.NewEngine(root, mission)
+	engine.FenceRoot = installation.Path()
 	engine.Now = commandClock
 	engine.Delegate = delegateInProcess(root)
 	return engine, nil

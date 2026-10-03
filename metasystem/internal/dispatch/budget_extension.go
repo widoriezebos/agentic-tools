@@ -245,7 +245,11 @@ func budgetExtensionReceiptPathWithReads(repoRoot string, reads receiptAdmission
 	if err != nil {
 		return "", err
 	}
-	appRoot, err := stateroot.RootForInstallation(repoRoot)
+	installation, err := stateroot.ParseInstallation(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	appRoot, err := stateroot.RootForInstallation(installation)
 	if err != nil {
 		return "", err
 	}

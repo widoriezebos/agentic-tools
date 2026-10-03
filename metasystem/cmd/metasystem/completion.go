@@ -497,7 +497,7 @@ func completionGoalDir(owners completeOwners, repo string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	root, err := owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+	root, err := owners.resolver.RootForInstallation(layout.InstallationRoot)
 	if err != nil {
 		return "", false
 	}

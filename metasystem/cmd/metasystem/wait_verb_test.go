@@ -165,8 +165,19 @@ func TestWaitPathSelectorIsValidated(t *testing.T) {
 	}
 }
 
-func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
+// selfHostedWaitRoot is a checkout that serves itself: the installation its
+// waiting caller is classified against is the root, marked by metasystem.conf.
+func selfHostedWaitRoot(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -321,7 +332,7 @@ func TestWaitActionableCheckUsesNoGitAndHonorsItsContext(t *testing.T) {
 }
 
 func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
-	root := t.TempDir()
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -360,7 +371,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 }
 
 func TestWaitInstalledRunCommand(t *testing.T) {
-	root := t.TempDir()
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {

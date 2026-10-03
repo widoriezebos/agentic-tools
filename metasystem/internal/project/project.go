@@ -37,7 +37,11 @@ import (
 // Roots names the three directories this package reads from. They are declared
 // here rather than taken from the interface's own package: this package is
 // read by that one, and importing its types back would close an import loop.
-type Roots struct{ Checkout, Installation, StateRoot string }
+type Roots struct {
+	Checkout     string
+	Installation stateroot.Installation
+	StateRoot    stateroot.State
+}
 
 // The four kinds a head declares itself to be, and the fifth no head declares:
 // a question is a row of the register rather than a document with a head.
@@ -171,14 +175,22 @@ func ResolveRoots(installation string) (Roots, error) {
 	if err != nil {
 		return Roots{}, err
 	}
-	stateRoot, err := stateroot.RootForInstallation(layout.InstallationRoot.Path())
+	stateRoot, err := stateroot.RootForInstallation(layout.InstallationRoot)
+	if err != nil {
+		return Roots{}, err
+	}
+	installationRoot, err := stateroot.ParseInstallation(canonical(layout.InstallationRoot.Path()))
+	if err != nil {
+		return Roots{}, err
+	}
+	canonicalState, err := stateroot.ParseState(canonical(stateRoot.Path()))
 	if err != nil {
 		return Roots{}, err
 	}
 	return Roots{
 		Checkout:     canonical(layout.GitRoot),
-		Installation: canonical(layout.InstallationRoot.Path()),
-		StateRoot:    canonical(stateRoot.Path()),
+		Installation: installationRoot,
+		StateRoot:    canonicalState,
 	}, nil
 }
 
@@ -201,26 +213,26 @@ const HistoricalDesignsGlob = "*-design.md"
 // adopted application has neither and never acquires the kit's past.
 func Homes(roots Roots) []Home {
 	homes := []Home{
-		{Kind: KindIntent, Path: filepath.Join(roots.StateRoot, "docs", "intent"), Book: true},
-		{Kind: KindDoctrine, Path: filepath.Join(roots.StateRoot, "docs", "doctrine"), Book: true},
-		{Kind: KindDecision, Path: filepath.Join(roots.StateRoot, "docs", "decisions")},
-		{Kind: KindDesign, Path: filepath.Join(roots.StateRoot, "plans", "designs")},
+		{Kind: KindIntent, Path: roots.StateRoot.Path("docs", "intent"), Book: true},
+		{Kind: KindDoctrine, Path: roots.StateRoot.Path("docs", "doctrine"), Book: true},
+		{Kind: KindDecision, Path: roots.StateRoot.Path("docs", "decisions")},
+		{Kind: KindDesign, Path: roots.StateRoot.Path("plans", "designs")},
 		// The reviews live beside the designs, in the state root alone: a
 		// review is of this application's work, and the kit's own history has
 		// none.
-		{Kind: KindReview, Path: filepath.Join(roots.StateRoot, "plans", "reviews")},
+		{Kind: KindReview, Path: roots.StateRoot.Path("plans", "reviews")},
 	}
 	if SelfHosted(roots) {
 		homes = append(homes,
 			Home{Kind: KindDesign, Path: filepath.Join(roots.Checkout, "plans", "designs")},
 			Home{
 				Kind: KindDesign,
-				Path: filepath.Join(roots.Installation, "plans"),
+				Path: roots.Installation.Path("plans"),
 				Name: HistoricalDesignsName,
 				Glob: HistoricalDesignsGlob,
 			})
 	}
-	homes = append(homes, Home{Path: filepath.Join(roots.StateRoot, "memory", "questions.md"), Register: true})
+	homes = append(homes, Home{Path: roots.StateRoot.Path("memory", "questions.md"), Register: true})
 	for index := range homes {
 		homes[index].Rel = relative(roots.Checkout, homes[index].Path)
 	}
@@ -265,7 +277,7 @@ func HomeFor(roots Roots, rel string) (Home, bool) {
 // SelfHosted is the template layout and nothing else: there, and only there,
 // the state root stateroot resolves is the installation rather than the Git
 // checkout that carries it.
-func SelfHosted(roots Roots) bool { return roots.StateRoot != roots.Checkout }
+func SelfHosted(roots Roots) bool { return roots.StateRoot.Path() != roots.Checkout }
 
 // ulidAlphabet is Crockford's base32: ten digits and twenty-two letters, with
 // I, L, O and U left out so that no two characters can be misread for each

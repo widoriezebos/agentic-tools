@@ -16,8 +16,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// Dir is the lifecycle state directory beneath the state root, beside the
-// steward's and the supervision's.
+// Dir is the lifecycle state directory beneath the installation root, beside
+// the steward's and the supervision's: run state, never project state.
 func Dir(stateRoot string) string { return filepath.Join(stateRoot, "artifacts", "agents", "ui") }
 
 func recordPath(stateRoot string) string { return filepath.Join(Dir(stateRoot), "server.json") }
@@ -56,7 +56,7 @@ type Record struct {
 }
 
 // updating serializes this process's rewrites of its own record. One process
-// owns one state root for its whole life — Serve holds the lock until it
+// owns one installation for its whole life — Serve holds the lock until it
 // returns — so a mutex is the whole of the exclusion needed here.
 var updating sync.Mutex
 

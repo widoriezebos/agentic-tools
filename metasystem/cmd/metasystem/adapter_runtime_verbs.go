@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -41,31 +43,53 @@ func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: metasystem internal adapter claude-tool-gate --root ROOT")
 		return 2
 	}
-	stateRoot, err := goal.ResolveStateRoot(root)
+	// The installation supplies the gate's configuration and keeps its run
+	// state; the state root holds the goal ledger the peer offer reads.
+	installation, err := installationFromRootFlag(root)
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0
 	}
-	mode, err := config.ToolGateMode(stateRoot)
+	state, err := stateroot.RootForInstallation(installation)
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0
 	}
-	memoryDir, _ := usagepkg.MemoryDirectory(usagepkg.ReadOptions{Installation: stateRoot})
+	mode, err := config.ToolGateMode(installation.Path())
+	if err != nil {
+		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
+		return 0
+	}
+	memoryDir, _ := usagepkg.MemoryDirectory(usagepkg.ReadOptions{Installation: installation.Path()})
 	startedAt, _ := toolGateProcessBirth(int64(os.Getpid()))
 	home, _ := board.Home()
 	claude, _ := runtimes.Lookup("claude")
-	peer, release := toolGatePeer(home, stateRoot, goal.ResolveMachine, func() (board.Ownership, error) { return goal.PeerOwnership(stateRoot) }, claude.ToolContextBytes, stderr, toolGateClock)
+	peer, release := toolGatePeer(home, state.Path(), goal.ResolveMachine, func() (board.Ownership, error) { return goal.PeerOwnership(state.Path()) }, claude.ToolContextBytes, stderr, toolGateClock)
 	defer release()
 	err = adapter.RunToolGate(adapter.ToolGateOptions{
-		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode,
-		StateRoot: stateRoot, Installation: stateRoot,
+		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode, Installation: installation,
 		Stdin: os.Stdin, Stdout: stdout, Stderr: stderr, Peer: peer,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
 	}
 	return 0
+}
+
+// installationFromRootFlag admits a --root flag as an installation root: the
+// directory itself when it holds metasystem.conf, else the installation of the
+// template checkout it names, <root>/metasystem. A directory that is neither is
+// refused rather than read as an installation, so the gate never takes its
+// configuration or keeps its run state in a directory that is not one.
+func installationFromRootFlag(root string) (stateroot.Installation, error) {
+	installation, err := stateroot.ParseInstallation(root)
+	if err == nil {
+		return installation, nil
+	}
+	if nested, nestedErr := stateroot.ParseInstallation(filepath.Join(root, "metasystem")); nestedErr == nil {
+		return nested, nil
+	}
+	return "", err
 }
 
 // toolGatePeer binds the gate's Peer to the shared offer (batch-lane design

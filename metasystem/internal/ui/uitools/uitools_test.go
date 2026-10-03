@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -236,7 +237,7 @@ func fixture(t *testing.T) Readers {
 	}
 	long = append(long, "The last line.", "")
 	write(t, filepath.Join(home, "long.md"), strings.Join(long, "\n"))
-	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	roots := project.Roots{Checkout: checkout, Installation: stateroottest.Installation(t, checkout), StateRoot: stateroottest.State(t, checkout)}
 	return Readers{
 		Now:      func() time.Time { return readAt },
 		Observe:  func() snapshot.Observation { return readObservation() },

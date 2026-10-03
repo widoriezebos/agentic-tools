@@ -442,7 +442,7 @@ func defaultProcessIntentOwners() processIntentOwners {
 		process: defaultProcessOwners(),
 		up:      up.Run,
 		health: func(repo, installation string, now time.Time) steward.HealthVerdict {
-			return steward.PreviewHealthAt(repo, installation, now, nil)
+			return steward.PreviewInstalledHealth(repo, installation, now, nil)
 		},
 		healthNow: func(root string) (time.Time, error) {
 			now, ok, err := stewardFixtureNow(root)
@@ -548,24 +548,31 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 	binary := filepath.Join(installation, "bin", "metasystem")
 	if !regularFile(binary) {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1,
-			Summary: "this installation has no built engine yet, so nothing was done",
+			Summary: noEngineRefusal,
 			next:    strings.Fields(hookswitch.BuildCommand), nextReason: "in " + installation + ", builds the engine; then repeat this command",
 			Details: []string{"no engine in " + filepath.Join(installation, "bin")}}
 	}
-	if inv.stateRoot, err = inv.stateRootPath(installation); err != nil {
+	installationRoot, err := stateroot.ParseInstallation(installation)
+	var stateRoot stateroot.State
+	if err == nil {
+		stateRoot, err = inv.owners.resolver.RootForInstallation(installationRoot)
+	}
+	if err != nil {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}}
 	}
+	inv.stateRoot = stateRoot.Path()
 	scale := upWaitScale()
 	if scale < 1 {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 2, Summary: "a test setting in the environment scales waits by a number that is not positive, so nothing was done",
 			next: append([]string{"env", "-u", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"}, inv.typedArgv()...), nextReason: "without the test setting",
 			Details: []string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer"}}
 	}
-	// Process records (the stop fence, the steward's runner and health) live
-	// under the state root: the installation of a template checkout, the
-	// application repository of an adopted one.
-	scope := processScope{Checkout: layout.GitRoot, Installation: installation, InstallationExplicit: explicit, Root: inv.stateRoot, Binary: binary}
+	// The stop fence, the steward's runner, the supervision and the families a
+	// stop finds are run state under the installation. The state root holds
+	// the project's state: the installation itself in a template checkout,
+	// the application repository in an adopted one.
+	scope := processScope{Checkout: layout.GitRoot, Installation: installationRoot, InstallationExplicit: explicit, Root: stateRoot, Binary: binary}
 	return scope, scale, nil
 }
 
@@ -633,7 +640,7 @@ func runIntentSystemStart(inv *intentInvocation) int {
 		if problem != nil {
 			return inv.render(*problem)
 		}
-		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop, inv.stdout, inv.stderr)
+		return runUpWith([]string{"--metasystem-root", scope.Installation.Path(), "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop, inv.stdout, inv.stderr)
 	}
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
@@ -670,7 +677,7 @@ func runIntentSessionStart(inv *intentInvocation) int {
 			retry: "try again", Details: []string{"engine path: " + err.Error()}})
 	}
 	result := owners.up(up.Options{
-		Root: scope.Installation, MetasystemRoot: scope.Installation, Scope: scope.Checkout, Binary: binary,
+		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
 		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
 		RestampStopCapability: restampStopCapabilityForUp,
 	})
@@ -884,7 +891,9 @@ func (inv *intentInvocation) selectLayoutRoot() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err == nil {
 		inv.layout = layout
-		inv.stateRoot, err = inv.stateRootPath(layout.InstallationRoot.Path())
+		var root stateroot.State
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.stateRoot = root.Path()
 	}
 	if err != nil {
 		return inv.notARepository(path, err)
@@ -1628,13 +1637,13 @@ func runIntentDoctor(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	owners := inv.owners.processes
-	now, err := owners.healthNow(scope.Installation)
+	now, err := owners.healthNow(scope.Installation.Path())
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 2, Summary: "the test clock of this installation cannot be read, so nothing was checked",
 			retry: "once the test clock file is fixed or removed", Details: []string{"fixture clock: " + err.Error()}})
 	}
-	verdict := owners.health(scope.Root, scope.Installation, now)
-	stopped, _, _ := stopfence.Closed(scope.Root)
+	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now)
+	stopped, _, _ := stopfence.Closed(scope.Installation.Path())
 	lines, remedies := []string{}, []map[string]any{}
 	var first []string
 	var problems []doctorProblem
@@ -1686,8 +1695,8 @@ func runIntentDoctor(inv *intentInvocation) int {
 			code = max(code, 1)
 		}
 	}
-	lines = append(lines, diskCheckLine(scope.Root))
-	adapters, refused := adapterReport(scope.Installation)
+	lines = append(lines, diskCheckLine(scope.Installation.Path()))
+	adapters, refused := adapterReport(scope.Installation.Path())
 	lines = append(lines, adapters...)
 	if refused > 0 {
 		code = max(code, 1)
@@ -1696,7 +1705,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 	// naming rules are part of this checkout's health.
 	skillsData := map[string]any{"valid": true}
 	var skillLines strings.Builder
-	if err := validate.SkillInventory(scope.Installation, &skillLines); err != nil {
+	if err := validate.SkillInventory(scope.Installation.Path(), &skillLines); err != nil {
 		skillsData = map[string]any{"valid": false, "reason": err.Error()}
 		lines = append(lines, "skills invalid: "+err.Error()+"; fix that skill's SKILL.md (its name and description frontmatter)")
 		code = max(code, 1)
@@ -1805,7 +1814,7 @@ func runIntentWorkHistory(inv *intentInvocation) int {
 // one, at its installation or its repository root: the path read, and the
 // reason it does not parse. Shape is all it proves, never adequacy.
 func checkCovenantShape(scope processScope) (string, error) {
-	for _, dir := range []string{scope.Installation, scope.Checkout} {
+	for _, dir := range []string{scope.Installation.Path(), scope.Checkout} {
 		if dir == "" {
 			continue
 		}
@@ -1991,7 +2000,7 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, layout.GitRoot, installation)
+	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
@@ -2101,7 +2110,7 @@ func sameCanonicalPath(left, right string) bool {
 
 // processFence reads the checkout's stop fence as "state/phase".
 func processFence(scope processScope) (stopfence.Record, string) {
-	record, err := stopfence.Read(scope.Root)
+	record, err := stopfence.Read(scope.Installation.Path())
 	if err != nil {
 		return record, "unreadable: " + err.Error()
 	}
@@ -2326,7 +2335,7 @@ func (inv *intentInvocation) missionStatusWithoutState(mission string) intentRes
 func (inv *intentInvocation) missionOwnerLaunch(mission, mode string) intentProcessResult {
 	caller, root, wait := ownercall.CurrentProcess(), inv.stateRoot, inv.input.switched("wait")
 	return ownerCall(func(stdout, stderr io.Writer) int {
-		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
+		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode, wait, inv.owners.processes.process.repositoryTop)
 	})
 }
 
@@ -2482,7 +2491,7 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, layout.GitRoot, installation)
+	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",

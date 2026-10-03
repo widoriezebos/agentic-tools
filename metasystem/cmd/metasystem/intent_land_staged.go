@@ -100,7 +100,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 		// The gate's facts are lines on the synced ledger; an installation
 		// with none lands through the landing path's own held check as it
 		// did before.
-		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 		inv.layout, inv.stateRoot = layout, stateRoot.Path()
 		if rootErr == nil && converted(stateRoot.Path()) {
 			if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {

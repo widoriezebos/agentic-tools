@@ -13,11 +13,11 @@ import (
 // The resolver's constructors answer with the root type they own, so a caller
 // cannot hand a state root to code that expects the installation.
 var (
-	_ func(string) (roots.State, error)        = RootForInstallation
-	_ func(Kind) (roots.State, error)          = StateRoot
-	_ func() (roots.Installation, error)       = ExecutableInstallation
-	_ func(string) (roots.Installation, error) = RootForCandidate
-	_ roots.Installation                       = Layout{}.InstallationRoot
+	_ func(roots.Installation) (roots.State, error) = RootForInstallation
+	_ func(Kind) (roots.State, error)               = StateRoot
+	_ func() (roots.Installation, error)            = ExecutableInstallation
+	_ func(string) (roots.Installation, error)      = RootForCandidate
+	_ roots.Installation                            = Layout{}.InstallationRoot
 )
 
 func TestParseInstallationAcceptsOnlyADirectoryHoldingTheConfiguration(t *testing.T) {

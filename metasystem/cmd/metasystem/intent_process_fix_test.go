@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
@@ -17,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -84,7 +87,7 @@ func installationShapeAt(t *testing.T, dir string) {
 func TestIntentProcessCorrections(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an adopted nested installation keeps process records at its repository", func(t *testing.T) {
+	t.Run("an adopted nested installation keeps process records under its installation", func(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
 		app := t.TempDir()
@@ -117,17 +120,17 @@ func TestIntentProcessCorrections(t *testing.T) {
 		if code, result := run("system", "stop", "--installation", installation); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("adopted stop = %d %+v", code, result)
 		}
-		if record, _ := stopfence.Read(app); record.State != stopfence.StateClosed {
-			t.Fatalf("the repository's fence was not closed: %+v", record)
+		if record, _ := stopfence.Read(installation); record.State != stopfence.StateClosed {
+			t.Fatalf("the installation's fence was not closed: %+v", record)
 		}
-		if record, _ := stopfence.Read(installation); record.Generation != 0 {
-			t.Fatalf("stop wrote a second fence inside the installation: %+v", record)
+		if record, _ := stopfence.Read(app); record.Generation != 0 {
+			t.Fatalf("stop wrote a second fence in the repository: %+v", record)
 		}
 		code, doctor := run("system", "check")
 		encoded, _ := json.Marshal(doctor.Data)
 		var preview steward.HookHealthPreview
 		if err := json.Unmarshal(encoded, &preview); err != nil || !preview.Verdict.Stopped || code != preview.ExitCode {
-			t.Fatalf("doctor did not read the repository's fence: %d %+v %v", code, preview, err)
+			t.Fatalf("doctor did not read the installation's fence: %d %+v %v", code, preview, err)
 		}
 		if _, status := run("status"); status.Outcome != intentConfirmed || !samePath(status.Targets[0].ID, app) {
 			t.Fatalf("status = %+v", status)
@@ -351,10 +354,46 @@ func (b *adoptedBed) run(cwd string, args ...string) (int, intentResult) {
 	return code, result
 }
 
+// On separated roots the steward is armed under the installation, so its
+// runner, identity and tick evidence are there: system check reads them there
+// and reports the steward running, though the state root holds none of them.
+func TestDoctorSeparatedRootsReportsTheStewardRunningUnderTheInstallation(t *testing.T) {
+	t.Parallel()
+	b := newAdoptedBed(t)
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("this process cannot stand in for the runner: %v %v", state, err)
+	}
+	process, repository := self.Ref(), realpath.Resolve(b.installation)
+	if err := steward.MintIdentity(steward.RepoIdentityPath(b.installation), steward.InstallIdentity{RepoIdentity: repository, Generation: 1, MintedAt: now.Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := steward.BeginComponentAttempt(b.installation, "steward-tick", 1, process, now); err != nil {
+		t.Fatal(err)
+	}
+	runner, _ := json.Marshal(steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID})
+	if err := os.WriteFile(filepath.Join(b.installation, "artifacts", "agents", "steward", "runner.json"), runner, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, doctor := b.run(b.app, "system", "check", "--installation", b.installation)
+	encoded, _ := json.Marshal(doctor.Data)
+	var preview steward.HookHealthPreview
+	if err := json.Unmarshal(encoded, &preview); err != nil {
+		t.Fatal(err)
+	}
+	running := slices.ContainsFunc(preview.Verdict.Roles, func(role steward.RoleVerdict) bool {
+		return role.Role == steward.RoleStewardRunner && role.Status == steward.HealthAlive && strings.Contains(role.Reason, fmt.Sprintf("runner pid %d", process.Pid))
+	})
+	if !running {
+		t.Fatalf("the doctor did not find the installation's running steward: %+v", preview.Verdict.Roles)
+	}
+}
+
 func TestIntentProcessAdoptedRoots(t *testing.T) {
 	t.Parallel()
 
-	t.Run("start, status and stop share the repository's records from its top", func(t *testing.T) {
+	t.Run("start, status and stop share the installation's records from the repository top", func(t *testing.T) {
 		t.Parallel()
 		b := newAdoptedBed(t)
 		var seeded, armed []string
@@ -373,8 +412,9 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		}.steps
 		transition := b.owners.processes.process.transition
 		b.owners.processes.process.transition = func(scope processScope, scale int) *stoptransition.Transition {
-			transitions = append(transitions, scope.Root)
-			return transition(scope, scale)
+			built := transition(scope, scale)
+			transitions = append(transitions, built.Root)
+			return built
 		}
 		for index, args := range [][]string{{"system", "stop"}, {"system", "start"}, {"status"}, {"system", "stop"}} {
 			args = append(args, "--installation", b.installation)
@@ -382,30 +422,30 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 			if code != 0 || result.Outcome != intentConfirmed || !samePath(result.Targets[0].ID, b.app) {
 				t.Fatalf("%v = %d %+v", args, code, result)
 			}
-			// stop, start, status, stop: the repository's one fence moves
+			// stop, start, status, stop: the installation's one fence moves
 			// 1 closed, 2 open, 2 open, 3 closed.
 			want := []int64{1, 2, 2, 3}[index]
-			if record, _ := stopfence.Read(b.app); record.Generation != want {
-				t.Fatalf("after %v the repository fence is %+v", args, record)
+			if record, _ := stopfence.Read(b.installation); record.Generation != want {
+				t.Fatalf("after %v the installation fence is %+v", args, record)
 			}
 		}
 		for _, root := range transitions {
-			if !samePath(root, b.app) {
+			if !samePath(root, b.installation) {
 				t.Fatalf("a transition used %s", root)
 			}
 		}
 		binary := filepath.Join(b.installation, "bin", "metasystem")
-		if len(seeded) != 1 || !samePath(seeded[0], b.app) || len(armed) != 2 || !samePath(armed[0], b.app) || !samePath(armed[1], binary) {
+		if len(seeded) != 1 || !samePath(seeded[0], b.app) || len(armed) != 2 || !samePath(armed[0], b.installation) || !samePath(armed[1], binary) {
 			t.Fatalf("the steward was armed at %v, seeded at %v", armed, seeded)
 		}
-		if len(ups) != 1 || !samePath(ups[0].Root, b.app) || !samePath(ups[0].MetasystemRoot, b.installation) || !samePath(ups[0].Scope, b.app) || !ups[0].RecoverOnly {
+		if len(ups) != 1 || !samePath(ups[0].Root, b.installation) || !samePath(ups[0].MetasystemRoot, b.installation) || !samePath(ups[0].Scope, b.app) || !ups[0].RecoverOnly {
 			t.Fatalf("supervision started with %+v", ups)
 		}
-		if record, _ := stopfence.Read(b.installation); record.Generation != 0 {
-			t.Fatalf("a second fence appeared inside the installation: %+v", record)
+		if record, _ := stopfence.Read(b.app); record.Generation != 0 {
+			t.Fatalf("a second fence appeared in the application repository: %+v", record)
 		}
-		if record, _ := stopfence.Read(b.app); record.State != stopfence.StateClosed || record.Generation != 3 {
-			t.Fatalf("the repository fence after stop, start, stop = %+v", record)
+		if record, _ := stopfence.Read(b.installation); record.State != stopfence.StateClosed || record.Generation != 3 {
+			t.Fatalf("the installation fence after stop, start, stop = %+v", record)
 		}
 	})
 
@@ -441,7 +481,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		var seen []lifecycle.Roots
 		b.owners.processes.ui = func(verb string, roots lifecycle.Roots, _ uiIntentOptions) (uiLifecycleResult, error) {
 			seen = append(seen, roots)
-			result, state := lifecycle.StatusReport(roots.StateRoot, identity.KernelProber{}, nil)
+			result, state := lifecycle.StatusReport(roots.StateRoot.Path(), identity.KernelProber{}, nil)
 			return uiLifecycleResult{Result: result, State: state}, nil
 		}
 		for _, call := range []struct {
@@ -454,7 +494,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 			}
 		}
 		for _, roots := range seen {
-			if !samePath(roots.Checkout, b.app) || !samePath(roots.Installation, b.installation) || !samePath(roots.StateRoot, b.app) {
+			if !samePath(roots.Checkout, b.app) || !samePath(roots.Installation.Path(), b.installation) || !samePath(roots.StateRoot.Path(), b.app) {
 				t.Fatalf("interface roots = %+v", roots)
 			}
 		}

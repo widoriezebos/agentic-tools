@@ -809,7 +809,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	if err != nil {
 		return err
 	}
-	claim, err := stopfence.Creating(e.Root, "mission-"+mode, generation, creator)
+	claim, err := stopfence.Creating(e.fenceRoot(), "mission-"+mode, generation, creator)
 	if err != nil {
 		return err
 	}

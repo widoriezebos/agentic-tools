@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -21,7 +22,7 @@ func TestTheCandidateOfAProjectWithNoLaunchContractIsRefusedInWords(t *testing.T
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	roots := lifecycle.Roots{Checkout: installation, Installation: installation, StateRoot: installation}
+	roots := lifecycle.Roots{Checkout: installation, Installation: stateroottest.Installation(t, installation), StateRoot: stateroottest.State(t, installation)}
 	for _, action := range []string{"status", "start", "stop"} {
 		_, err := candidateRunWith(roots, "g", action, intentOwners{})
 		refusal, ok := err.(*httpd.CandidateRefusal)

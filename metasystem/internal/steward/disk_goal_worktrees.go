@@ -212,7 +212,11 @@ func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) 
 // stores of an installation's goals and seats: its state root, else the
 // installation itself (Round D3 N9: every route reads the same registry).
 func StoreControl(installation string) string {
-	if root, err := stateroot.RootForInstallation(installation); err == nil && filepath.IsAbs(root.Path()) {
+	parsed, err := stateroot.ParseInstallation(installation)
+	if err != nil {
+		return installation
+	}
+	if root, err := stateroot.RootForInstallation(parsed); err == nil && filepath.IsAbs(root.Path()) {
 		return root.Path()
 	}
 	return installation

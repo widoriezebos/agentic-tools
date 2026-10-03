@@ -80,9 +80,9 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words("mission", "status", "--root", root, "--mission", mission))
 			return real.missionStatus(stdout, stderr, root, mission)
 		},
-		missionLaunch: func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+		missionLaunch: func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, top func(string) (string, error)) int {
 			record(words("mission", mode, "--root", root, "--mission", mission))
-			return real.missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
+			return real.missionLaunch(caller, stdout, stderr, root, mission, mode, wait, top)
 		},
 		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 			record(words(request.words()...))
@@ -158,7 +158,7 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
 			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)
 		},
-		missionLaunch: func(_ ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, _ bool) int {
+		missionLaunch: func(_ ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, _ bool, _ func(string) (string, error)) int {
 			return run(root, stdout, stderr, "mission", mode, "--root", root, "--mission", mission)
 		},
 		missionResolveTaint: func(_ ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {

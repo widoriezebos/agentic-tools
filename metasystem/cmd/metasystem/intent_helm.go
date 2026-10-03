@@ -183,7 +183,7 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	var root stateroot.State
 	if err == nil {
-		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this checkout has no MetaSystem installation; nothing was done",
@@ -341,7 +341,7 @@ func (inv *intentInvocation) helmEnrollment(path string, record helm.Record) hel
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	var root stateroot.State
 	if err == nil {
-		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	var enrollment humanauthority.Enrollment
 	if err == nil {

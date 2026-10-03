@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // Design authoring asks the design-author lane for a draft of one project
@@ -87,7 +88,21 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 		return path
 	}
 	checkout := canonical(inv.layout.GitRoot)
-	roots := project.Roots{Checkout: checkout, Installation: canonical(inv.layout.InstallationRoot.Path()), StateRoot: canonical(inv.stateRoot)}
+	// The homes are compared with canonical document paths, so both roots are
+	// admitted again in their canonical spelling.
+	installation, err := stateroot.ParseInstallation(canonical(inv.layout.InstallationRoot.Path()))
+	var stateRoot stateroot.State
+	if err == nil {
+		stateRoot, err = inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	}
+	if err == nil {
+		stateRoot, err = stateroot.ParseState(canonical(stateRoot.Path()))
+	}
+	if err != nil {
+		return "", "", withCauseRef(err, intentResult{Outcome: intentFailed, code: 1, Summary: "the project's design records can't be read, so nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
+	}
+	roots := project.Roots{Checkout: checkout, Installation: installation, StateRoot: stateRoot}
 	var home string
 	for _, candidate := range project.Homes(roots) {
 		if candidate.Kind == project.KindDesign && candidate.Glob == "" && designWithin(candidate.Path, checkout) {
@@ -492,7 +507,8 @@ func (inv *intentInvocation) goalDesignAttempts(id string) []designAttemptView {
 	if manager == nil {
 		return nil
 	}
-	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot.Path(), StateRoot: inv.stateRoot}
+	stateRoot, _ := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot}
 	candidates := []string{}
 	if read, err := project.Read(roots); err == nil {
 		for _, record := range read.List(project.KindDesign, project.ListOptions{Goal: id}) {

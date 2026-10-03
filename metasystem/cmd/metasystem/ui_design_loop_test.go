@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -31,7 +32,7 @@ func (b *designLoopBed) page() (lifecycle.Roots, string, intentOwners) {
 	owners := b.intentBed.owners()
 	owners.delivery = b.owners
 	owners.connection = b.connection
-	return lifecycle.Roots{Checkout: checkout, Installation: b.install, StateRoot: b.install}, filepath.ToSlash(rel), owners
+	return lifecycle.Roots{Checkout: checkout, Installation: stateroottest.Installation(b.t, b.install), StateRoot: stateroottest.State(b.t, b.install)}, filepath.ToSlash(rel), owners
 }
 
 func TestSendToCritiqueRunsTheVerbWithTheGoalAndTheBudget(t *testing.T) {

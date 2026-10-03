@@ -166,7 +166,7 @@ func (r Resolver) StateRoot(kind Kind) (State, error) {
 	if err != nil {
 		return "", err
 	}
-	appRoot, err := r.RootForInstallation(installationRoot.Path())
+	appRoot, err := r.RootForInstallation(installationRoot)
 	if err != nil {
 		return "", err
 	}
@@ -176,12 +176,12 @@ func (r Resolver) StateRoot(kind Kind) (State, error) {
 // RootForInstallation returns the directory beneath which repository-local
 // state lives. Template checkouts keep it in the metasystem installation;
 // adopted installations use the containing application repository.
-func RootForInstallation(installationRoot string) (State, error) {
+func RootForInstallation(installationRoot Installation) (State, error) {
 	return defaultResolver().RootForInstallation(installationRoot)
 }
 
-func (r Resolver) RootForInstallation(installationRoot string) (State, error) {
-	root, err := filepath.Abs(installationRoot)
+func (r Resolver) RootForInstallation(installationRoot Installation) (State, error) {
+	root, err := filepath.Abs(installationRoot.Path())
 	if err != nil {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
 	}

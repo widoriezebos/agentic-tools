@@ -457,7 +457,7 @@ type carriedLedger struct {
 // deliveryReceiptLedger resolves the tracked receipt ledger the receipt-line
 // owner judges, as an absolute file and a repository path.
 func deliveryReceiptLedger(root string) (carriedLedger, error) {
-	location, err := locateReceiptLedger(gittree.Workspace{Dir: root}, root, stateRootPath(stateroot.RootForInstallation))
+	location, err := locateReceiptLedger(gittree.Workspace{Dir: root}, root, stateRootPath(admitInstallation(stateroot.RootForInstallation)))
 	if err != nil {
 		return carriedLedger{}, err
 	}

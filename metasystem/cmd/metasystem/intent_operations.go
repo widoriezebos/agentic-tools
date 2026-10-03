@@ -290,7 +290,8 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		if problem := inv.resolveLayout(); problem != nil {
 			return inv.render(*problem)
 		}
-		inv.stateRoot, _ = inv.stateRootPath(inv.layout.InstallationRoot.Path())
+		root, _ := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		inv.stateRoot = root.Path()
 	} else if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -419,7 +420,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
+	root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
@@ -626,12 +627,12 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
+	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "this installation's records cannot be found, so nothing was read",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
-	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot.Path(), StateRoot: stateRoot.Path()})
+	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the project's records cannot be read: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record homes"})
 	}

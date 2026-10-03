@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func installFixture(t *testing.T, template bool) (installation, app string) {
@@ -96,7 +98,7 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 			if !template {
 				top.expect(installation, app, nil)
 			}
-			gotBase, err := resolver.RootForInstallation(installation)
+			gotBase, err := resolver.RootForInstallation(stateroottest.Installation(t, installation))
 			if err != nil || gotBase.Path() != base {
 				t.Fatalf("RootForInstallation() = %q, %v; want %q", gotBase, err, base)
 			}
@@ -141,7 +143,7 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver, top := resolverFixture(t, template)
-	got, err := resolver.RootForInstallation(template)
+	got, err := resolver.RootForInstallation(stateroottest.Installation(t, template))
 	if err != nil || got.Path() != template {
 		t.Fatalf("exact template marker resolved to %q, %v; want %q", got, err, template)
 	}
@@ -152,7 +154,7 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 	}
 	want := filepath.Join(root, "application")
 	top.expect(adopted, want, nil)
-	got, err = resolver.RootForInstallation(adopted)
+	got, err = resolver.RootForInstallation(stateroottest.Installation(t, adopted))
 	if err != nil || got.Path() != want {
 		t.Fatalf("adopted installation resolved to %q, %v; want %q", got, err, want)
 	}
@@ -166,7 +168,7 @@ func TestRootForInstallationPropagatesAdoptedRepositoryFailure(t *testing.T) {
 	}
 	resolver, top := resolverFixture(t, installation)
 	top.expect(installation, "", errors.New("not in a repository"))
-	if _, err := resolver.RootForInstallation(installation); err == nil || !strings.Contains(err.Error(), "not in a repository") {
+	if _, err := resolver.RootForInstallation(stateroottest.Installation(t, installation)); err == nil || !strings.Contains(err.Error(), "not in a repository") {
 		t.Fatalf("adopted repository failure was hidden: %v", err)
 	}
 }
@@ -460,7 +462,7 @@ func TestTemplateModeIsTheCommittedKeyNotADocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver, _ := resolverFixture(t, template)
-	if got, err := resolver.RootForInstallation(template); err != nil || got.Path() != template {
+	if got, err := resolver.RootForInstallation(stateroottest.Installation(t, template)); err != nil || got.Path() != template {
 		t.Fatalf("the declared template resolved to %q, %v; want %q", got, err, template)
 	}
 
@@ -480,7 +482,7 @@ func TestTemplateModeIsTheCommittedKeyNotADocument(t *testing.T) {
 	}
 	resolver, top := resolverFixture(t, adopted)
 	top.expect(adopted, other, nil)
-	if got, err := resolver.RootForInstallation(adopted); err != nil || got.Path() != other {
+	if got, err := resolver.RootForInstallation(stateroottest.Installation(t, adopted)); err != nil || got.Path() != other {
 		t.Fatalf("a design document made %q a template: %q, %v", adopted, got, err)
 	}
 }

@@ -14,7 +14,7 @@ func TestCreateReviewWritesTheHeadAndTheSections(t *testing.T) {
 	t.Parallel()
 	roots := selfHostedFixture(t)
 	seed(t, roots)
-	plant(t, roots.StateRoot, "plans/designs/evidenced.md",
+	plant(t, roots.StateRoot.Path(), "plans/designs/evidenced.md",
 		"# Evidenced\n\n- Kind: design\n- Id: design-evidenced\n- Status: draft\n- Goals: ledger-sync\n"+
 			"- Evidence: ~/evidence/ledger-sync/\n\n## Outcome\n")
 

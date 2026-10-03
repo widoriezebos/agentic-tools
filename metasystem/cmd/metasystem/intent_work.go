@@ -2250,7 +2250,7 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		return result
 	}
 	if inv.stateRoot == "" {
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
+		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 		if err != nil {
 			return refused("this installation's state can't be found", err)
 		}

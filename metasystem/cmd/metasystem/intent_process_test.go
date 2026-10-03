@@ -85,7 +85,7 @@ func (b *processBed) owners() intentOwners {
 			transition: func(scope processScope, scale int) *stoptransition.Transition {
 				// No process family is running in the bed: the transition's
 				// own fence, lock and report are what is exercised.
-				return &stoptransition.Transition{Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
+				return &stoptransition.Transition{Root: scope.Installation.Path(), Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
 					Self: func() (identity.Ref, error) { return self, nil }}
 			},
 			evidenceRoot: func(conf string) (config.EvidenceRoot, error) {
@@ -109,9 +109,7 @@ func (b *processBed) owners() intentOwners {
 			b.t.Errorf("a human start called the agent session start with %+v", options)
 			return up.Result{}
 		},
-		health: func(repo, installation string, now time.Time) steward.HealthVerdict {
-			return steward.PreviewHealthAt(repo, installation, now, nil)
-		},
+		health:    defaultProcessIntentOwners().health,
 		healthNow: func(string) (time.Time, error) { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC), nil },
 		launches:  func() *launch.Manager { return &launch.Manager{Store: launch.Store{Root: b.launchDir}} },
 		cancelDispatch: func(string, string) (map[string]any, int, error) {

@@ -106,7 +106,7 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 		extra = append(extra, "--root", layout.InstallationRoot.Path())
 	}
 	if receipts {
-		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot.Path())
+		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot)
 		relative, relErr := stateroot.RelativeRoot(stateroot.Receipts)
 		if err == nil && relErr == nil {
 			extra = append(extra, "--file", stateRoot.Path(relative, "receipts.log"))

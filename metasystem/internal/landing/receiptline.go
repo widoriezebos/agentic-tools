@@ -66,6 +66,18 @@ func stateRootPath(resolve func(string) (stateroot.State, error)) func(string) (
 	}
 }
 
+// admitInstallation hands resolve only a path that holds metasystem.conf, so
+// the receipt-line check never resolves a state directory as an installation.
+func admitInstallation(resolve func(stateroot.Installation) (stateroot.State, error)) func(string) (stateroot.State, error) {
+	return func(installation string) (stateroot.State, error) {
+		root, err := stateroot.ParseInstallation(installation)
+		if err != nil {
+			return "", err
+		}
+		return resolve(root)
+	}
+}
+
 // ObserveReceiptLine decides whether a landing that changes code appends,
 // in the same commit, the RECEIPT line that describes it to the receipt
 // ledger (development/project-rules-local.md: bookkeeping-only commits
@@ -86,7 +98,7 @@ func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
 		return observeReceiptLineWithDependencies(params, workspace,
 			func(root string) (string, error) {
 				return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).HeadTree()
-			}, stateRootPath(resolver.RootForInstallation), resolver.OwnerForInstallation)
+			}, stateRootPath(admitInstallation(resolver.RootForInstallation)), resolver.OwnerForInstallation)
 	}
 	headTree := func(root string) (string, error) {
 		baseTreeBytes, err := landingGit(root, "rev-parse", "HEAD^{tree}")
@@ -96,7 +108,7 @@ func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
 		return strings.TrimSpace(string(baseTreeBytes)), nil
 	}
 	return observeReceiptLineWithDependencies(params, workspace, headTree,
-		stateRootPath(stateroot.RootForInstallation), stateroot.OwnerForInstallation)
+		stateRootPath(admitInstallation(stateroot.RootForInstallation)), stateroot.OwnerForInstallation)
 }
 
 func observeReceiptLineWithDependencies(

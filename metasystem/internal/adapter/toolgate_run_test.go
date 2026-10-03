@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"golang.org/x/sys/unix"
 )
@@ -31,7 +32,7 @@ func TestToolGateDeadlineCountsFromTheShellBirth(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root, transcript := toolGateFixture(t, 120000)
 			stdout := &bytes.Buffer{}
-			opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return test.now }, stdout)
+			opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return test.now }, stdout)
 			if err := RunToolGate(opts); err != nil {
 				t.Fatal(err)
 			}
@@ -68,7 +69,7 @@ func TestToolGateFallsBackToEntryWhenBirthUnreadable(t *testing.T) {
 				return entry.Add(test.after)
 			}
 			stdout := &bytes.Buffer{}
-			opts := toolGateOptions(root, transcript, "deny", time.Time{}, clock, stdout)
+			opts := toolGateOptions(t, root, transcript, "deny", time.Time{}, clock, stdout)
 			if err := RunToolGate(opts); err != nil {
 				t.Fatal(err)
 			}
@@ -91,8 +92,8 @@ func TestToolGateClassifiesBeforeReading(t *testing.T) {
 		root := t.TempDir()
 		birth := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 		stdout := &bytes.Buffer{}
-		opts := toolGateOptions(root, filepath.Join(root, "missing.jsonl"), "deny", birth, func() time.Time { return birth }, stdout)
-		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("allowlisted", opts.StateRoot+"/missing.jsonl", call, ""))
+		opts := toolGateOptions(t, root, filepath.Join(root, "missing.jsonl"), "deny", birth, func() time.Time { return birth }, stdout)
+		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("allowlisted", opts.Installation.Path("missing.jsonl"), call, ""))
 		if err := RunToolGate(opts); err != nil || stdout.Len() != 0 {
 			t.Fatalf("call %s: err=%v stdout=%q", call.Tool, err, stdout.String())
 		}
@@ -125,7 +126,7 @@ func TestToolGateAllowsNativeSubagentCalls(t *testing.T) {
 	call := bashToolGateCall("rm x")
 
 	stdout := &bytes.Buffer{}
-	opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
+	opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
 	opts.Stdin = bytes.NewReader(toolGatePayloadBytes("subagent", transcript, call, "agent-1"))
 	if err := RunToolGate(opts); err != nil || stdout.Len() != 0 {
 		t.Fatalf("subagent call: err=%v stdout=%q", err, stdout.String())
@@ -145,7 +146,7 @@ func TestToolGateAllowsNativeSubagentCalls(t *testing.T) {
 func TestToolGateSubagentCallsWriteNoRow(t *testing.T) {
 	root, transcript := toolGateFixture(t, 120000)
 	birth := time.Date(2026, 9, 17, 13, 1, 0, 0, time.UTC)
-	opts := toolGateOptions(root, transcript, "observe", birth, func() time.Time { return birth.Add(time.Millisecond) }, &bytes.Buffer{})
+	opts := toolGateOptions(t, root, transcript, "observe", birth, func() time.Time { return birth.Add(time.Millisecond) }, &bytes.Buffer{})
 	opts.Stdin = bytes.NewReader(toolGatePayloadBytes("subagent", transcript, bashToolGateCall("rm x"), "agent-1"))
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
@@ -170,7 +171,7 @@ func TestToolGateAllowsPastItsDeadline(t *testing.T) {
 		return birth.Add(101 * time.Millisecond)
 	}
 	stdout := &bytes.Buffer{}
-	opts := toolGateOptions(root, transcript, "deny", birth, clock, stdout)
+	opts := toolGateOptions(t, root, transcript, "deny", birth, clock, stdout)
 	if err := RunToolGate(opts); err != nil || stdout.Len() != 0 {
 		t.Fatalf("past-deadline call: err=%v stdout=%q", err, stdout.String())
 	}
@@ -211,7 +212,7 @@ func TestToolGateNoDecisionWhenTheCallStoreIsBusy(t *testing.T) {
 
 			birth := time.Date(2026, 9, 17, 15, 0, 0, 0, time.UTC)
 			stdout := &bytes.Buffer{}
-			opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
+			opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
 			opts.Stdin = bytes.NewReader(toolGatePayloadBytes(session, transcript, bashToolGateCall("rm x"), ""))
 			if err := RunToolGate(opts); err != nil || stdout.Len() != 0 {
 				t.Fatalf("busy call: err=%v stdout=%q", err, stdout.String())
@@ -237,7 +238,7 @@ func TestToolGateLeavesTheCursor(t *testing.T) {
 	samplesBefore := readToolGateFile(t, samplesPath)
 
 	birth := time.Date(2026, 9, 17, 16, 0, 0, 0, time.UTC)
-	opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, &bytes.Buffer{})
+	opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, &bytes.Buffer{})
 	opts.Stdin = bytes.NewReader(toolGatePayloadBytes(session, transcript, bashToolGateCall("rm x"), ""))
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
@@ -274,7 +275,7 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 	for _, test := range tests {
 		transcript := filepath.Join(root, test.session+".jsonl")
 		writeToolGateTranscript(t, transcript, "sample", test.tokens)
-		opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return at }, &bytes.Buffer{})
+		opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return at }, &bytes.Buffer{})
 		opts.MemoryDir = test.memoryDir
 		opts.Stdin = bytes.NewReader(toolGatePayloadBytes(test.session, transcript, test.call, ""))
 		if err := RunToolGate(opts); err != nil {
@@ -284,7 +285,7 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 
 	under := filepath.Join(root, "under.jsonl")
 	writeToolGateTranscript(t, under, "under", 100)
-	opts := toolGateOptions(root, under, "deny", birth, func() time.Time { return at }, &bytes.Buffer{})
+	opts := toolGateOptions(t, root, under, "deny", birth, func() time.Time { return at }, &bytes.Buffer{})
 	opts.Stdin = bytes.NewReader(toolGatePayloadBytes("under", under, bashToolGateCall("rm x"), ""))
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
@@ -328,7 +329,7 @@ func TestToolGateObserveModeAllowsAndRecordsTheDenyDecision(t *testing.T) {
 	root, transcript := toolGateFixture(t, 120000)
 	birth := time.Date(2026, 9, 17, 18, 0, 0, 0, time.UTC)
 	stdout := &bytes.Buffer{}
-	opts := toolGateOptions(root, transcript, "observe", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
+	opts := toolGateOptions(t, root, transcript, "observe", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
 	if err := RunToolGate(opts); err != nil || stdout.Len() != 0 {
 		t.Fatalf("observe call: err=%v stdout=%q", err, stdout.String())
 	}
@@ -350,7 +351,7 @@ func TestToolGateDenyModeDenies(t *testing.T) {
 	root, transcript := toolGateFixture(t, 120000)
 	birth := time.Date(2026, 9, 17, 19, 0, 0, 0, time.UTC)
 	stdout := &bytes.Buffer{}
-	opts := toolGateOptions(root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
+	opts := toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
 	}
@@ -372,9 +373,9 @@ func toolGateFixture(t *testing.T, tokens int64) (string, string) {
 	return root, transcript
 }
 
-func toolGateOptions(root, transcript, mode string, birth time.Time, clock func() time.Time, stdout *bytes.Buffer) ToolGateOptions {
+func toolGateOptions(tb testing.TB, root, transcript, mode string, birth time.Time, clock func() time.Time, stdout *bytes.Buffer) ToolGateOptions {
 	return ToolGateOptions{
-		ShellStartedAt: birth, Clock: clock, Mode: mode, StateRoot: root, Installation: root,
+		ShellStartedAt: birth, Clock: clock, Mode: mode, Installation: stateroottest.Installation(tb, root),
 		Stdin:  bytes.NewReader(toolGatePayloadBytes("session", transcript, bashToolGateCall("rm x"), "")),
 		Stdout: stdout, Stderr: &bytes.Buffer{},
 	}
@@ -493,7 +494,7 @@ func TestToolGateComposesOneResponse(t *testing.T) {
 		t.Helper()
 		stdout := &bytes.Buffer{}
 		probe := &peerProbe{text: pending, out: stdout}
-		opts := toolGateOptions(root, transcript, mode, birth, at, stdout)
+		opts := toolGateOptions(t, root, transcript, mode, birth, at, stdout)
 		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("session", transcript, call, ""))
 		opts.Peer = probe.offer
 		if amend != nil {
@@ -553,7 +554,7 @@ func TestToolGateComposesOneResponse(t *testing.T) {
 		}
 		stdout := &bytes.Buffer{}
 		noSample := &peerProbe{text: text, out: stdout}
-		opts := toolGateOptions(root, empty, "deny", birth, at, stdout)
+		opts := toolGateOptions(t, root, empty, "deny", birth, at, stdout)
 		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("no-sample", empty, bashToolGateCall("rm x"), ""))
 		opts.Peer = noSample.offer
 		if err := RunToolGate(opts); err != nil || stdout.String() != contextObject || noSample.marked != 1 {
@@ -578,7 +579,7 @@ func TestToolGateComposesOneResponse(t *testing.T) {
 		defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 		stdout := &bytes.Buffer{}
 		probe := &peerProbe{text: text, out: stdout}
-		opts := toolGateOptions(root, transcript, "deny", birth, at, stdout)
+		opts := toolGateOptions(t, root, transcript, "deny", birth, at, stdout)
 		opts.Stdin = bytes.NewReader(toolGatePayloadBytes("busy", transcript, bashToolGateCall("rm x"), ""))
 		opts.Peer = probe.offer
 		if err := RunToolGate(opts); err != nil || stdout.String() != contextObject || probe.marked != 1 {
@@ -612,17 +613,17 @@ func TestToolGateComposesOneResponse(t *testing.T) {
 	t.Run("a subagent call and the helm never call Peer", func(t *testing.T) {
 		t.Parallel()
 		probe, out, _, err := run(t, 120000, "observe", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) {
-			transcript := filepath.Join(opts.StateRoot, "transcript.jsonl")
+			transcript := opts.Installation.Path("transcript.jsonl")
 			opts.Stdin = bytes.NewReader(toolGatePayloadBytes("subagent", transcript, bashToolGateCall("rm x"), "agent-1"))
 		})
 		if err != nil || out != "" || probe.calls != 0 {
 			t.Fatalf("subagent: err=%v stdout=%q calls=%d", err, out, probe.calls)
 		}
 		probe, out, _, err = run(t, 120000, "observe", bashToolGateCall("rm x"), text, func(opts *ToolGateOptions) {
-			if err := os.Mkdir(filepath.Join(opts.StateRoot, ".git"), 0o755); err != nil {
+			if err := os.Mkdir(opts.Installation.Path(".git"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := helm.Write(opts.StateRoot, helm.Record{By: "Wido", At: birth.Format(time.RFC3339), Reason: "by hand"}); err != nil {
+			if _, err := helm.Write(opts.Installation.Path(), helm.Record{By: "Wido", At: birth.Format(time.RFC3339), Reason: "by hand"}); err != nil {
 				t.Fatal(err)
 			}
 		})

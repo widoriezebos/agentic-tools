@@ -79,7 +79,7 @@ func runUITools(args []string, stdout, stderr io.Writer) int {
 // the ledger and the checkout the same way wherever it runs.
 func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Readers {
 	now := func() time.Time { return time.Now().UTC() }
-	ledger := snapshot.New(roots.StateRoot, time.Now)
+	ledger := snapshot.New(roots.StateRoot.Path(), time.Now)
 	journal := steward.NotificationJournalPath(roots.Checkout)
 	pane := func() (project.Pane, error) { return project.ReadPane(projectRoots(roots), now()) }
 	notices := func(limit int, before string) ([]notifications.Notice, error) {
@@ -114,7 +114,7 @@ func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Rea
 		Review: func() (uitools.Reviewing, error) {
 			return review.Owner{Git: gittree.Workspace{Dir: roots.Checkout}}, nil
 		},
-		Kit: uitools.Kit{Root: roots.Installation, Commands: commandCatalogue},
+		Kit: uitools.Kit{Root: roots.Installation.Path(), Commands: commandCatalogue},
 		Document: func(id string) (project.Document, error) {
 			return project.Read(projectRoots(roots), id, now())
 		},

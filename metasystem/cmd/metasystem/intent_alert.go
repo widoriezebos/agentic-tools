@@ -127,7 +127,8 @@ func (inv *intentInvocation) alertRoot(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return inv.stateRootPath(layout.InstallationRoot.Path())
+	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+	return root.Path(), err
 }
 
 type listedAlert struct {
@@ -357,7 +358,7 @@ func openPatternAlerts(installation string, home func() (string, error)) int {
 	if host, err := home(); err == nil {
 		if record, registered, err := lane.Read(host); err == nil && registered {
 			if layout, err := stateroot.ResolveLayout(record.Root); err == nil {
-				if root, err := stateroot.RootForInstallation(layout.InstallationRoot.Path()); err == nil &&
+				if root, err := stateroot.RootForInstallation(layout.InstallationRoot); err == nil &&
 					realpath.Resolve(root.Path()) != realpath.Resolve(installation) {
 					roots = append(roots, root.Path())
 				}

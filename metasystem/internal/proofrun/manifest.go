@@ -261,7 +261,15 @@ func resolveCompleteManifestRoot(root string) (completeManifestRoot, error) {
 	} else {
 		prefix = filepath.ToSlash(prefix)
 	}
-	stateRoot, err := stateroot.RootForInstallation(canonical)
+	// A frozen root that holds metasystem.conf is an installation and resolves
+	// its own state root. A frozen checkout top holds none (its installation is
+	// beneath it), and its state root is the frozen project root itself.
+	var stateRoot stateroot.State
+	if installation, parseErr := stateroot.ParseInstallation(canonical); parseErr == nil {
+		stateRoot, err = stateroot.RootForInstallation(installation)
+	} else {
+		stateRoot, err = stateroot.ParseState(projectRoot)
+	}
 	if err != nil {
 		return completeManifestRoot{}, fmt.Errorf("resolve frozen state root: %w", err)
 	}

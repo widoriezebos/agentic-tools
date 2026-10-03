@@ -15,7 +15,11 @@ import (
 // defaults, and a refusal returns the verb's diagnostic. Advisory lines (a
 // retro-due note) come back in the result's Err for the caller to relay.
 func AddToInstallation(root string, opts Options) (Result, error) {
-	appRoot, err := stateroot.RootForInstallation(root)
+	installation, err := stateroot.ParseInstallation(root)
+	if err != nil {
+		return Result{}, fmt.Errorf("receipt: %w", err)
+	}
+	appRoot, err := stateroot.RootForInstallation(installation)
 	if err != nil {
 		return Result{}, fmt.Errorf("receipt: %w", err)
 	}

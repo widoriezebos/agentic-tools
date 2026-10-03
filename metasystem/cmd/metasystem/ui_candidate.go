@@ -18,7 +18,7 @@ func candidateRun(roots lifecycle.Roots, goal, action string) (httpd.Candidate, 
 }
 
 func candidateRunWith(roots lifecycle.Roots, goal, action string, owners intentOwners) (httpd.Candidate, error) {
-	if _, _, _, err := loadPhysicalLaunchContract(roots.Installation); err != nil {
+	if _, _, _, err := loadPhysicalLaunchContract(roots.Installation.Path()); err != nil {
 		return httpd.Candidate{}, &httpd.CandidateRefusal{Code: httpd.CodeNoContract,
 			Message: "this goal's candidate cannot run from here: " + err.Error()}
 	}

@@ -65,6 +65,11 @@ type Engine struct {
 	wallReadFacts        wallReads
 	continuityFacts      missionContinuity
 	birthEffects         birthRepositoryEffects
+	// FenceRoot is the installation whose stop fence gates this engine's
+	// launches and holds their creation claims: a stop closes the fence
+	// under the installation, while the mission's contract stays under
+	// Root. Empty reads the fence at Root, where the two are one directory.
+	FenceRoot string
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
@@ -172,11 +177,18 @@ func (e *Engine) classifierInstallation() string {
 	return e.Root
 }
 
+func (e *Engine) fenceRoot() string {
+	if e.FenceRoot != "" {
+		return e.FenceRoot
+	}
+	return e.Root
+}
+
 func (e *Engine) readFence() (stopfence.Record, error) {
 	if e.fenceRead != nil {
-		return e.fenceRead(e.Root)
+		return e.fenceRead(e.fenceRoot())
 	}
-	return stopfence.Read(e.Root)
+	return stopfence.Read(e.fenceRoot())
 }
 
 // fixtures is the engine's root-checked fixture authority, constructed on

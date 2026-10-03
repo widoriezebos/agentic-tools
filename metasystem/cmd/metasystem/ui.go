@@ -89,7 +89,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	prober := identity.KernelProber{}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	subject, err := config.UISubject(filepath.Join(roots.Installation, "metasystem.conf"))
+	subject, err := config.UISubject(roots.Installation.Path("metasystem.conf"))
 	if err != nil {
 		return refuse(err.Error())
 	}
@@ -108,11 +108,11 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	// Afterwards the launcher exits and nothing can be proven again; the
 	// object is kept in memory for this server's life, and no later
 	// request re-reads or re-parses it.
-	authorityNow, nowErr := act.Now(roots.StateRoot)
+	authorityNow, nowErr := act.Now(roots.Installation.Path())
 	if nowErr != nil {
 		return refuse(nowErr.Error())
 	}
-	authority := act.Prove(roots.StateRoot, roots.Installation, act.ParentPID(), authorityNow)
+	authority := act.Prove(roots.StateRoot.Path(), roots.Installation.Path(), act.ParentPID(), authorityNow)
 	fmt.Fprintln(stderr, "interface authority: "+authority.Line())
 
 	// The second way a human's acts reach the ledger: the seat's one-time
@@ -121,7 +121,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	// way in for the human who walked up to a server they did not start.
 	// How long a session lasts and who it acts as are configuration, read
 	// here, once, like every other ui. key.
-	confPath := filepath.Join(roots.Installation, "metasystem.conf")
+	confPath := roots.Installation.Path("metasystem.conf")
 	sessionLifetime, lifetimeErr := config.UISessionHours(confPath)
 	if lifetimeErr != nil {
 		return refuse(lifetimeErr.Error())
@@ -172,7 +172,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	// own context is cancelled on every path out of this case, including a
 	// listener that fails, and the process waits for a tick in flight to
 	// finish its compare-and-swap before it exits.
-	ledger := snapshot.New(roots.StateRoot, time.Now)
+	ledger := snapshot.New(roots.StateRoot.Path(), time.Now)
 	owned := snapshot.NewGate()
 	loopContext, stopLoop := context.WithCancel(ctx)
 	defer stopLoop()
@@ -250,7 +250,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	// look through here too, bounded by the same budget.
 	advance := func() {
 		ledger.Advance(func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
-			return uiAdvance(roots.StateRoot, endpoint)
+			return uiAdvance(roots.StateRoot.Path(), endpoint)
 		})
 	}
 
@@ -293,7 +293,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 			conversations = partner.Directory(conversations, roots.Checkout)
 			if admitErr == nil {
 				_, carryErr = partner.Carry(conversations,
-					filepath.Join(roots.StateRoot, filepath.FromSlash(partner.LegacyRelative)))
+					roots.Installation.Path(filepath.FromSlash(partner.LegacyRelative)))
 			}
 		}
 		switch {
@@ -315,7 +315,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 			// conversation: it is what lets the tool server tell one answer
 			// from the next, so the fifty-first proposal of an answer is
 			// refused at the call (R-130-ui, Astra F-06).
-			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun,
+			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation.Path(), presenceRun,
 				filepath.Join(conversations, "answer")); toolsErr != nil {
 				fmt.Fprintln(stderr, "interface Partner: "+toolsErr.Error())
 			} else {
@@ -358,7 +358,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				say: func(line string) { fmt.Fprintln(stderr, "interface store: "+line) },
 			}
 			partnerService.Announce(func(busy bool) {
-				_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) {
+				_ = lifecycle.Update(roots.Installation.Path(), func(r *lifecycle.Record) {
 					r.Partner = partnerLine(admitted, busy)
 				})
 			})
@@ -401,9 +401,9 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 			// asks for a name. The floor the same file carries is read
 			// again on every sign-in, where the same failure refuses the
 			// sign-in rather than being guessed at.
-			seeded, _ := lifecycle.ReadSessions(roots.StateRoot)
+			seeded, _ := lifecycle.ReadSessions(roots.Installation.Path())
 			sessions := session.New(session.Options{
-				Root:     roots.StateRoot,
+				Root:     roots.StateRoot.Path(),
 				Human:    firstNamed(authority.Human(), configuredHuman, seeded.Human),
 				Lifetime: sessionLifetime,
 				Secret:   func() (string, error) { return session.Secret(confPath) },
@@ -413,14 +413,14 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// of admitting a code and writing it is part of accepting
 				// one: a seat that cannot do either signs nobody in.
 				Floor: func() (int64, string, error) {
-					read, err := lifecycle.ReadSessions(roots.StateRoot)
+					read, err := lifecycle.ReadSessions(roots.Installation.Path())
 					if err != nil {
 						return 0, "", err
 					}
 					return read.LastStep, read.Human, nil
 				},
 				Record: func(lastStep int64, human string) error {
-					return lifecycle.WriteSessions(roots.StateRoot,
+					return lifecycle.WriteSessions(roots.Installation.Path(),
 						lifecycle.SessionFloor{LastStep: lastStep, Human: human})
 				},
 				// The live sessions go to this run's own record, which is
@@ -428,7 +428,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// record that cannot be written loses a line rather than
 				// a sign-in.
 				Lines: func(lines []string) {
-					_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) { r.Sessions = lines })
+					_ = lifecycle.Update(roots.Installation.Path(), func(r *lifecycle.Record) { r.Sessions = lines })
 				},
 			})
 			// acting is the hand one act publishes under: the browser
@@ -439,7 +439,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				if signed == nil {
 					return authority, nil
 				}
-				return act.SignedIn(roots.StateRoot, signed.Human, signed.Reference, signed.Proof)
+				return act.SignedIn(roots.StateRoot.Path(), signed.Human, signed.Reference, signed.Proof)
 			}
 			return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 				Describe: func() (workspace.Workspace, error) {
@@ -474,7 +474,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				Watch: presenceWatch,
 				// The board panel: every seat of this host and how far its
 				// work is, read and classified on request (D14-r2).
-				Board: batchowner.HostBoardSource(roots.Installation),
+				Board: batchowner.HostBoardSource(roots.Installation.Path()),
 				// One machine of this fleet joining on this host. It is
 				// the signed-in human's act and nothing weaker, which the
 				// route checks for itself: a launch spends disk, a build
@@ -708,13 +708,13 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 					return candidateRun(roots, goal, action)
 				},
 				BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
-					return tierBudgets(roots.Installation)
+					return tierBudgets(roots.Installation.Path())
 				},
 				// The landing gate (g1-s70 §6): the two settings through the
 				// layered resolution the engine reads, the room's hold and
 				// release, and the Decide sheet's decision, under the sign-in.
 				LandingGate: func() (config.LandingGate, error) {
-					return config.ResolveLandingGate(filepath.Join(roots.Installation, "metasystem.conf"))
+					return config.ResolveLandingGate(roots.Installation.Path("metasystem.conf"))
 				},
 				Sitting: func(signed *session.Session, id, record string, open bool) error {
 					hand, err := acting(signed)
@@ -771,7 +771,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// The channel and the journal stay at the checkout, where
 				// the steward writes them.
 				Rulings: func() (rulings.Register, error) {
-					return rulings.Read(roots.Installation)
+					return rulings.Read(roots.Installation.Path())
 				},
 				// And where that register is from the checkout, so that
 				// every destination naming it opens in the reader, which
@@ -784,7 +784,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// "Open the register" opens in the reader, which resolves
 				// against the checkout.
 				KnownIssues: func() (knownissues.Register, error) {
-					return knownissues.Read(roots.Installation)
+					return knownissues.Read(roots.Installation.Path())
 				},
 				KnownIssuesPath: knownIssuesFromCheckout(roots),
 				// The landing page's last-visit marker, beside this
@@ -794,7 +794,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// looked, which no verb reads and losing which changes a
 				// comparison window and nothing else.
 				Visit: func(human string, now time.Time) (time.Time, bool, error) {
-					return overview.Visit(roots.StateRoot, human, now)
+					return overview.Visit(roots.Installation.Path(), human, now)
 				},
 				// The Decisions page's own marker, in the same file,
 				// through the same owner, under an entry of its own. A
@@ -803,7 +803,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// marker for both would hide from a human what they never
 				// saw on the other.
 				VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
-					return overview.VisitPage(roots.StateRoot, overview.PageDecisions, human, now)
+					return overview.VisitPage(roots.Installation.Path(), overview.PageDecisions, human, now)
 				},
 				// The Application page's own marker, under an entry of
 				// its own, for the reason Decisions keeps one: a human
@@ -811,7 +811,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// for all of them would hide from them what they never
 				// saw on the others.
 				VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
-					return overview.VisitPage(roots.StateRoot, application.PageName, human, now)
+					return overview.VisitPage(roots.Installation.Path(), application.PageName, human, now)
 				},
 				// The notepad, resolved once above. It is the one piece of
 				// state this interface keeps OUTSIDE the checkout, which
@@ -871,7 +871,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	// ends that wait.
 	stopHousekeeping()
 	if err != nil {
-		return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
+		return refuse(lifecycle.ServeFailure(roots.Installation.Path(), err))
 	}
 	return 0
 }
@@ -1086,7 +1086,7 @@ func uiListen(verb string, roots lifecycle.Roots, listen string, listenSet bool)
 	if verb != "start" && verb != "serve" && verb != "restart" {
 		return listen, nil
 	}
-	listen, err := config.UIListen(filepath.Join(roots.Installation, "metasystem.conf"), listen, listenSet)
+	listen, err := config.UIListen(roots.Installation.Path("metasystem.conf"), listen, listenSet)
 	if err != nil {
 		return "", err
 	}
@@ -1173,7 +1173,7 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 		// before anything is spawned, but only when the target runs no
 		// interface: one running elsewhere keeps today's path whole.
 		if effects.seats != nil {
-			if own, err := lifecycle.Read(target.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
+			if own, err := lifecycle.Read(target.Installation.Path(), prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
 				if refusal, other := uiStartCollision(uiSeatsExcept(seats(), target), prober, listen); other != nil {
 					collision = other
 					return refusal
@@ -1184,9 +1184,9 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 		// it writes may already be gone when the verb reports.
 		address, pid, err := lifecycle.Launch(lifecycle.LaunchSpec{
 			Executable: engine,
-			Args:       lifecycle.ServeArgs(target.Checkout, target.Installation, listen),
+			Args:       lifecycle.ServeArgs(target.Checkout, target.Installation.Path(), listen),
 			Dir:        target.Checkout,
-			LogPath:    filepath.Join(lifecycle.Dir(target.StateRoot), "server.log"),
+			LogPath:    filepath.Join(lifecycle.Dir(target.Installation.Path()), "server.log"),
 		}, effects.spawn, 0)
 		if err != nil {
 			return lifecycle.Result{Lines: []string{err.Error()}, Code: 1}
@@ -1206,33 +1206,33 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 		if refusal != nil {
 			return *refusal
 		}
-		result, unchanged := lifecycle.StartOnce(roots.StateRoot, prober, listen, func() lifecycle.Result { return start(roots, listen, engine) })
+		result, unchanged := lifecycle.StartOnce(roots.Installation.Path(), prober, listen, func() lifecycle.Result { return start(roots, listen, engine) })
 		return collided(uiLifecycleResult{Result: result, Unchanged: unchanged})
 	case "status":
 		// The running server is compared with the engine a restart would
 		// launch: the installation's, not the binary typed.
 		digest := func() (string, error) {
-			engine, err := effects.engine(roots.Installation)
+			engine, err := effects.engine(roots.Installation.Path())
 			if err != nil {
 				return "", err
 			}
 			return uiFileDigest(engine)
 		}
-		result, state := lifecycle.StatusReport(roots.StateRoot, prober, digest)
+		result, state := lifecycle.StatusReport(roots.Installation.Path(), prober, digest)
 		status := uiLifecycleResult{Result: result, State: state}
 		if effects.seats != nil && (state == lifecycle.Stopped || state == lifecycle.Stale) {
 			return uiStatusAcrossSeats(status, seats(), prober)
 		}
 		return status
 	case "stop":
-		result, unchanged := lifecycle.StopReport(roots.StateRoot, stop)
+		result, unchanged := lifecycle.StopReport(roots.Installation.Path(), stop)
 		if unchanged && effects.seats != nil {
 			return uiStopAcrossSeats(result, seats(), stop)
 		}
 		return uiLifecycleResult{Result: result, Unchanged: unchanged}
 	}
 	if effects.seats != nil {
-		if own, err := lifecycle.Read(roots.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
+		if own, err := lifecycle.Read(roots.Installation.Path(), prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
 			if across, ok := uiRestartAcrossSeats(seats(), prober, func(other uiSeat, prefix string) uiLifecycleResult {
 				listen, err := effects.listenFor(other.Roots)
 				if err != nil {
@@ -1243,7 +1243,7 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 					return *refusal
 				}
 				launched = nil
-				report := lifecycle.RestartReportFor(other.Roots.StateRoot, stop, func() lifecycle.Result { return start(other.Roots, listen, engine) })
+				report := lifecycle.RestartReportFor(other.Roots.Installation.Path(), stop, func() lifecycle.Result { return start(other.Roots, listen, engine) })
 				return collided(uiLifecycleResult{Result: report.Result, Restart: &report})
 			}, func() *uiLaunched { return launched }); ok {
 				return across
@@ -1257,7 +1257,7 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 	if refusal != nil {
 		return *refusal
 	}
-	report := lifecycle.RestartReportFor(roots.StateRoot, stop, func() lifecycle.Result { return start(roots, listen, engine) })
+	report := lifecycle.RestartReportFor(roots.Installation.Path(), stop, func() lifecycle.Result { return start(roots, listen, engine) })
 	return collided(uiLifecycleResult{Result: report.Result, Restart: &report})
 }
 
@@ -1302,7 +1302,7 @@ func projectRoots(roots lifecycle.Roots) project.Roots {
 // composer keeps its own default: a destination that cannot open is not
 // improved by a path that walks out of the repository.
 func registerFromCheckout(roots lifecycle.Roots) string {
-	relative, err := filepath.Rel(roots.Checkout, rulings.Path(roots.Installation))
+	relative, err := filepath.Rel(roots.Checkout, rulings.Path(roots.Installation.Path()))
 	if err != nil {
 		return ""
 	}
@@ -1316,7 +1316,7 @@ func registerFromCheckout(roots lifecycle.Roots) string {
 // knownIssuesFromCheckout is the same for the known-issues register, which is
 // read from the same memory home and opened through the same reader.
 func knownIssuesFromCheckout(roots lifecycle.Roots) string {
-	relative, err := filepath.Rel(roots.Checkout, knownissues.Path(roots.Installation))
+	relative, err := filepath.Rel(roots.Checkout, knownissues.Path(roots.Installation.Path()))
 	if err != nil {
 		return ""
 	}

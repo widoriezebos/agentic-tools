@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -152,6 +153,30 @@ func TestRunLoopRefusesClosedFenceBeforeLease(t *testing.T) {
 	}
 	if pathExists(filepath.Join(root, "artifacts", "agents", "missions", "closed", "lease.d")) {
 		t.Fatal("closed fence allowed a mission lease")
+	}
+}
+
+// A stop closes the fence under the installation; the mission's root is the
+// state root, which holds no fence. Both the launcher and the run loop refuse.
+func TestLaunchSeparatedRootsRefusesTheInstallationsClosedFence(t *testing.T) {
+	t.Parallel()
+	root, installation := t.TempDir(), t.TempDir()
+	if err := stopfence.Write(installation, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
+		Generation: 4, ChangedAt: "2026-10-03T00:00:00Z", Checkout: root, NotStopped: []stopfence.Survivor{},
+		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 76}}}); err != nil {
+		t.Fatal(err)
+	}
+	var refusal strings.Builder
+	engine := NewEngine(root, "closed")
+	engine.FenceRoot, engine.Errors = installation, &refusal
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code, loopCode := engine.Launch("start", false), engine.RunLoopAtGeneration("start", "tag", signal, 4, false)
+	started, _ := os.ReadFile(signal)
+	if code != 3 || loopCode != 3 || !strings.Contains(refusal.String(), "agent-free terminal") || !strings.Contains(string(started), "agent-free terminal") {
+		t.Fatalf("launch %d %q and run loop %d %s, want both refused by the installation's closed fence", code, refusal.String(), loopCode, started)
+	}
+	if pathExists(filepath.Join(root, "artifacts")) {
+		t.Fatal("a refused launch wrote under the state root")
 	}
 }
 

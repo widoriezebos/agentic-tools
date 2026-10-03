@@ -181,7 +181,7 @@ func (inv *intentInvocation) helmRoot() string {
 	if err != nil {
 		return ""
 	}
-	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	if err != nil {
 		return ""
 	}
@@ -444,7 +444,7 @@ func helmAsk(stdin io.Reader, stdout io.Writer) func(string) (string, bool) {
 // report is kept to one line.
 func helmRecover(scope processScope) string {
 	var report bytes.Buffer
-	if runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, stateroot.RepositoryTop, &report, &report) == 0 {
+	if runUpWith([]string{"--metasystem-root", scope.Installation.Path(), "--repo", scope.Checkout, "--recover-only", "--if-down"}, stateroot.RepositoryTop, &report, &report) == 0 {
 		return "supervision: recovered"
 	}
 	line := "supervision re-arms at the next turn end (the Stop hook arms it)"

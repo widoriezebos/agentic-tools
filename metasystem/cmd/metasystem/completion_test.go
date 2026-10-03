@@ -386,7 +386,7 @@ func completionGoalDirOf(t *testing.T, resolver stateroot.Resolver, path string)
 	if err != nil {
 		t.Fatalf("ResolveLayout(%s): %v", path, err)
 	}
-	root, err := resolver.RootForInstallation(layout.InstallationRoot.Path())
+	root, err := resolver.RootForInstallation(layout.InstallationRoot)
 	if err != nil {
 		t.Fatalf("RootForInstallation(%s): %v", layout.InstallationRoot, err)
 	}
