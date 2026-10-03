@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The Fleet page (http://127.0.0.1:7878/fleet) is elegant, intuitive and powerful (Wido 2026-10-03: 'a mess from a UX perspective. Long page with a lot of text, and it states .. needs you but it is unclear what I can do and where from this'). A UX designer steps back first: who looks, what they must decide, what they can do; then a redesign where every 'needs you' item says in one plain line what is wrong and carries the one button (or one command) that deals with it, the page fits on one screen at a glance with detail behind disclosures, and nothing internal (pids, generations, threshold names, file paths) shows by default. Must also fix a wrong fact seen 09:25: 'This computer's steward has not recorded its health since 2026-09-22' while the steward runs, because the health read looks for metasystem.conf at the repository root, not under metasystem/.
 - Origin: main
-- Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.; ASKED 1N0QNKE8BHGK6Z6KZA81DN5P2Q (other): Fleet page redesign: may I build it as drawn? Mocks: ~/metasystem-evidence/agentic-tools-ui/fleet-page-redesign-20261003/mocks/ (one-thing-1440.png shows it best).
+- Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.; ASKED 1N0QNKE8BHGK6Z6KZA81DN5P2Q (other): Fleet page redesign: may I build it as drawn? Mocks: ~/metasystem-evidence/agentic-tools-ui/fleet-page-redesign-20261003/mocks/ (one-thing-1440.png shows it best).; ANSWERED 1N0QNKE8BHGK6Z6KZA81DN5P2Q: yes
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 11
+- Revision: 12
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -29,4 +29,5 @@ History:
 - 2026-10-03T07:14:38Z D4PA40PMH72WZN5A0WGE7TTZYG-m1e-718ba0eb set-priority actor=human:Wido targets=channel-questions-stand-alone,critique-stops-on-convergence,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,seat-path-lands-without-help reason=priority-order subject=critique-stops-on-convergence from=1:2 to=1:3 requested-sequence=1
 - 2026-10-03T07:22:05Z EYHXT8BEDF8N9JVN4YNEP1RAEF-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
 - 2026-10-03T07:37:16Z Z0Q1GJ932SM2J31SC888T54H0P-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-page-redesign
-Integrity: sha256=2b28f447cf46a2a697c5db361f55d79302bd473ecc9e14188dc3d44f9e6da298
+- 2026-10-03T07:42:09Z S36AT27EVBZ9NEGTP0S3M5AMCH-ui-71c5cb39 answer actor=human:wido targets=fleet-page-redesign authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1057/1060 channelStep=1791013178 question=1N0QNKE8BHGK6Z6KZA81DN5P2Q reason=yes
+Integrity: sha256=9d863f34a9b69cc446cdaa6c42495576a9256daf401b3efbb2139d1c4f5fffab
