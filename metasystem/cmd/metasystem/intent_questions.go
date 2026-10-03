@@ -268,8 +268,11 @@ func questionIDMissing(inv *intentInvocation, action string) intentResult {
 }
 
 // runIntentAskRetry and runIntentAskWithdraw act on one existing channel
-// question under the channel's poll lock; neither asks a new question.
+// question under the channel's poll lock; neither asks a new question. Both
+// take the question's id, or the channel:ID name question list and question
+// show print.
 func runIntentAskRetry(inv *intentInvocation, id string) int {
+	id = strings.TrimPrefix(id, "channel:")
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -306,6 +309,7 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 }
 
 func runIntentAskWithdraw(inv *intentInvocation, id string) int {
+	id = strings.TrimPrefix(id, "channel:")
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was done: withdrawing a question needs the reason",

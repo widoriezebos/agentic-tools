@@ -7,6 +7,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // typedArgv is this command as the person typed it: the retry a refusal
@@ -72,8 +73,13 @@ func refusalCause(err error) string {
 func (inv *intentInvocation) eitherRefusal(target string, err error, stopping bool) *intentResult {
 	result := inv.personRefusal(target, err, "")
 	retry := inv.typedArgv()
-	if humanauthority.RemedyFor(inv.stateRoot, err, "", nil).Kind == humanauthority.RemedyAgent {
-		result.Summary = strings.TrimSuffix(result.Summary, ", so nothing was done") + " and named no session, so nothing was done"
+	walkedToAgent := humanauthority.RemedyFor(inv.stateRoot, err, "", nil).Kind == humanauthority.RemedyAgent
+	if walkedToAgent || inv.agentSessionCaller() {
+		if walkedToAgent {
+			result.Summary = strings.TrimSuffix(result.Summary, ", so nothing was done") + " and named no session, so nothing was done"
+		} else {
+			result.Summary = "an agent session ran this without naming its session, so nothing was done"
+		}
 		result.next, result.nextReason = append(retry, "--lineage", "LINEAGE"), "as the session that holds the work"
 		result.Details = append(result.Details, "a person runs it in a terminal they opened: "+shellCommand(retry))
 	} else {
@@ -82,7 +88,7 @@ func (inv *intentInvocation) eitherRefusal(target string, err error, stopping bo
 	if stopping {
 		named := append(slices.Clone(retry), "--by", "NAME")
 		result.Details = append(result.Details, "a person at a terminal that is not enrolled may name themself instead: "+shellCommand(named))
-		if humanauthority.RemedyFor(inv.stateRoot, err, "", nil).Kind != humanauthority.RemedyAgent {
+		if !walkedToAgent && !inv.agentSessionCaller() {
 			// A stopping act needs no enrolled terminal (H1): the person names
 			// themself, which resolves it where enrolling would move the
 			// enrollment.
@@ -90,4 +96,21 @@ func (inv *intentInvocation) eitherRefusal(target string, err error, stopping bo
 		}
 	}
 	return result
+}
+
+// agentSessionCaller reports whether the checkout's lease classifies this
+// command's caller as an agent session: a seat's main session or a delegate.
+// The walk to the enrolled terminal stops at the first shell whose terminal
+// is not the one it looks for, so it does not always reach the agent that
+// started that shell; a headless session has no terminal at all.
+func (inv *intentInvocation) agentSessionCaller() bool {
+	checkout := inv.layout.GitRoot
+	if checkout == "" {
+		checkout = inv.stateRoot
+	}
+	if checkout == "" {
+		return false
+	}
+	class := inv.owners.agent.withDefaults().caller(inv, checkout)
+	return class == lease.ClassMain || class == lease.ClassDelegate
 }

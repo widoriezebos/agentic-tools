@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -85,8 +86,13 @@ func (p OSProcesses) StartChild(spec Command) (Child, identity.Ref, error) {
 	return &osChild{command: command, files: files}, exact.Ref(), nil
 }
 
+// childEnvironment is parent with overrides applied, without the parent's
+// cache context. A launched agent outlives the request that started it, so
+// that context's issuer cannot stay its live ancestor and every Go command
+// under it would be refused; without one, the child resolves its cache as an
+// outermost process does.
 func childEnvironment(parent, overrides []string) []string {
-	keys := map[string]bool{}
+	keys := map[string]bool{gocache.ContextEnv: true}
 	for _, entry := range overrides {
 		if index := strings.IndexByte(entry, '='); index >= 0 {
 			keys[entry[:index]] = true

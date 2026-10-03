@@ -337,6 +337,9 @@ func (w *gateWorld) deps() deps {
 					return w.respond(envValue(env, "GOOS")+"/"+envValue(env, "GOARCH"), stdout)
 				}
 				if status := w.statuses["build"]; status != 0 {
+					if stderr != nil {
+						_, _ = io.WriteString(stderr, w.outputs["build"])
+					}
 					return exitCode(status)
 				}
 				w.mu.Lock()

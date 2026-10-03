@@ -1,2 +1,2 @@
-No jobs running in m1e
+No jobs running among this host's launches and m1e's jobs
 → metasystem work status --all  also lists ended jobs

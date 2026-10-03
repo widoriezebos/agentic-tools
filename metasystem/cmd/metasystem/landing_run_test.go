@@ -66,8 +66,8 @@ func TestLandingRunStartsTheAgentOnceForQueuedWork(t *testing.T) {
 	if code != 0 || len(launches) != 1 || launches[0].Kind != launch.LandingKind {
 		t.Fatalf("landing run = %d %q %q, launches %+v; want one landing launch", code, stdout, stderr, launches)
 	}
-	if !strings.Contains(oneSpaced(stdout), "started the landing agent "+launches[0].ID) {
-		t.Fatalf("landing run said %q; want the started session %s named", stdout, launches[0].ID)
+	if !strings.Contains(oneSpaced(stdout), "started the landing agent "+launches[0].ID+" for queued work") {
+		t.Fatalf("landing run said %q; want the started session %s named, for queued work", stdout, launches[0].ID)
 	}
 	code, stdout, stderr = bed.run(t, "landing", "run", "--json")
 	var result struct {
@@ -83,6 +83,14 @@ func TestLandingRunStartsTheAgentOnceForQueuedWork(t *testing.T) {
 	code, stdout, _ = bed.run(t, "landing", "run")
 	if code != 0 || !strings.Contains(stdout, "nothing to do; it is at work") {
 		t.Fatalf("landing run while alive = %d %q; want nothing to do", code, stdout)
+	}
+}
+
+// The started line names each of the lane's wake reasons in words.
+func TestLandingRunSaysEachWakeReasonInWords(t *testing.T) {
+	t.Parallel()
+	if got := wakeWords([]string{"queued", "proof-finished"}); got != "queued work and a finished test run" {
+		t.Fatalf("wake words = %q", got)
 	}
 }
 

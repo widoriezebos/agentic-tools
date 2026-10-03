@@ -655,9 +655,11 @@ func (s *Store) takeHolderSteps(files []*GoalFile) []string {
 	return lines
 }
 
-// ReadsWaived says the goal's units land without a read: its approved budget
-// allows zero review rounds, which is what tier 1 stores in its box (R-54-m1).
-// A goal without a budget needs its reads.
+// ReadsWaived says the goal's units land without a read: it is a tier-1 goal,
+// which no critic may read, or its approved budget allows zero review rounds,
+// which is what tier 1 stores in its box (R-54-m1). A tier-1 goal keeps a box
+// with review rounds when it was approved at a higher tier and lowered later.
+// Any other goal without a budget needs its reads.
 func ReadsWaived(f *GoalFile) bool {
-	return f != nil && f.Budget != nil && f.Budget.ReviewRoundLimit == 0
+	return f != nil && (f.Tier == 1 || f.Budget != nil && f.Budget.ReviewRoundLimit == 0)
 }

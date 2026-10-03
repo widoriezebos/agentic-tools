@@ -58,3 +58,32 @@ func TestPeerOwnershipIsProjectedOncePerTip(t *testing.T) {
 		t.Fatal("a broken accepted ref read as an empty ledger")
 	}
 }
+
+// An ownership with no goal at all is what a root that does not hold the
+// ledger reads at any tip. It is never shared: one such reader must not make
+// every seat of the host answer that no goal exists, and an empty entry
+// already in the cache is read again.
+func TestPeerOwnershipNeverSharesALedgerWithNoGoals(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(t.TempDir(), ".metasystem")
+	tipOf := func(string) (string, bool, error) { return "aaaa", true, nil }
+	project := func(root, _ string) (board.Ownership, error) {
+		ownership := board.Ownership{Live: map[string]string{}, Concluded: map[string]string{}}
+		if root == "/checkout/metasystem" {
+			ownership.Live["goal-x"] = "m1b"
+		}
+		return ownership, nil
+	}
+	if ownership, err := peerOwnership("/checkout", home, tipOf, project); err != nil || len(ownership.Live) != 0 {
+		t.Fatalf("a root without the ledger: %+v %v", ownership, err)
+	}
+	if ownership, err := peerOwnership("/checkout/metasystem", home, tipOf, project); err != nil || ownership.Live["goal-x"] != "m1b" {
+		t.Fatalf("after a root without the ledger read the same tip: %+v %v; want goal-x held by m1b", ownership, err)
+	}
+	if err := board.WriteOwnershipCache(home, "aaaa", board.Ownership{Live: map[string]string{}, Concluded: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if ownership, err := peerOwnership("/checkout/metasystem", home, tipOf, project); err != nil || ownership.Live["goal-x"] != "m1b" {
+		t.Fatalf("over an empty cache entry: %+v %v; want goal-x held by m1b", ownership, err)
+	}
+}
