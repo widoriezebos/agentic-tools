@@ -5,9 +5,9 @@
 - Tier: 1
 - Intent: What: A small, low-risk change on a higher-risk goal can be reviewed and landed the normal way. The right reviewer is chosen by rule, and the landing path accepts the change once its review has closed. Why: Today such a change lands only through a temporary exception in the landing check (marked "until U5b"), and choosing the right reviewer is easy to get wrong. It works, but through a side door. Pros: One clear rule for reviewers and landing; the temporary exception can be removed. Cons: It touches review and landing code that the landing-lane redesign is changing right now. Nobody has been blocked recently, so the gain today is small.
 - Origin: human
-- Next step: Next: When it comes back, check whether the redesigned landing lane still carries the "not design-bearing" exception (internal/landing/observe.go). If it does, give each risk tier a fixed reviewer rule and remove the exception, with a test that a small change on a tier-3 goal is reviewed and lands. Done when: a small change on a tier-2 or tier-3 goal is reviewed and lands without any exception in the landing check.
+- Next step: Next: When it comes back, check whether the redesigned landing lane still carries the "not design-bearing" exception (internal/landing/observe.go). If it does, give each risk tier a fixed reviewer rule and remove the exception, with a test that a small change on a tier-3 goal is reviewed and lands. Done when: a small change on a tier-2 or tier-3 goal is reviewed and lands without any exception in the landing check. RETURNED 2026-10-03: its trigger fired: small-change-lane's conclusion names the temporary exception as due for removal and it is still present (internal/landing/observe.go:39-44, chain-not-design-bearing). Give each risk tier its fixed reviewer rule and delete that exception; read critique-stops-on-convergence first, which owns review outcomes.
 - OpenedAt: 2026-09-12T22:50:52Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 
@@ -17,4 +17,5 @@ History:
 - 2026-09-30T18:43:32Z 9QAJR0CX7V4XRYYAE5Q679HP3K-m1e-b6a4eb0a park actor=human:wido targets=mechanical-chains-at-tier-two-and-three-close-and-land reason=Parked: such changes land today through a temporary exception and nobody is blocked. Bring it back when a reviewer on such a change is refused for effort, or when the exception is due to be removed.
 - 2026-09-30T18:44:23Z T51MK5XC4VC40ZVH0M4KMA6CT5-m1e-b6a4eb0a edit actor=human:wido targets=mechanical-chains-at-tier-two-and-three-close-and-land
 - 2026-10-03T09:59:28Z 0X8YGJ9KZN4F5BSNXEHX0AR4ZT-m1e-718ba0eb unpark actor=human:Wido targets=mechanical-chains-at-tier-two-and-three-close-and-land
-Integrity: sha256=4ac39a4a037d5bb7a83f4b1387c09468c125a04e788de235918e6a93307ce1ec
+- 2026-10-03T09:59:50Z PCQBQ2H9ZA15V79YX8RP3AV1BN-m1e-718ba0eb edit actor=human:Wido targets=mechanical-chains-at-tier-two-and-three-close-and-land
+Integrity: sha256=a756997a5197ec15025dbd425765257298e15561a4254b6a265262a70813becc
