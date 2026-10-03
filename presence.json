@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1h",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1h/metasystem",
+  "generation": 17,
+  "engine": "63939e24e6d370dc1cdd3eea2408e4dc85d19947",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "seat-ebfb089a56730eec",
+    "job": "seat-ebfb089a56730eec",
+    "role": "working",
+    "round": 0,
+    "goal": "ui-shows-true-facts",
+    "startedAt": "2026-10-03T02:54:06Z"
+  },
+  "working": {
+    "goal": "ui-shows-true-facts",
+    "phase": {
+      "role": "working",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "seat-ebfb089a56730eec",
+      "role": "working",
+      "status": "running",
+      "startedAt": "2026-10-03T02:54:06Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": null,
+      "attemptLimit": null,
+      "reservedMinutes": null,
+      "reservedMinutesLimit": null,
+      "problem": "this goal is not live at the accepted ledger this machine read"
+    },
+    "chain": [
+      {
+        "job": "seat-ebfb089a56730eec",
+        "role": "working",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-10-03T02:54:06Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T19:53:24Z",
+  "diskFreeBytes": 186295668736
+}
