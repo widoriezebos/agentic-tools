@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1j",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1j/metasystem",
+  "generation": 4,
+  "engine": "73913163b4c93159b6212d893d681ee3ddd1a961",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "20261003t191648-0f4d107952-r2-s1",
+    "job": "20261003t191648-0f4d107952-r2-s1",
+    "role": "revise",
+    "round": 2,
+    "goal": "machinery-blocks-of-2026-10-02",
+    "startedAt": "2026-10-03T19:29:50Z"
+  },
+  "working": {
+    "goal": "machinery-blocks-of-2026-10-02",
+    "phase": {
+      "role": "revise",
+      "round": 2,
+      "roundLimit": 3
+    },
+    "job": {
+      "id": "20261003t191648-0f4d107952-r2-s1",
+      "role": "revise",
+      "status": "running",
+      "startedAt": "2026-10-03T19:29:50Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 0,
+      "attemptLimit": 30,
+      "reservedMinutes": 0,
+      "reservedMinutesLimit": 2400,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "20261003t191648-0f4d107952-r2-s1",
+        "role": "revise",
+        "round": 2,
+        "status": "running",
+        "startedAt": "2026-10-03T19:29:50Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T19:56:42Z",
+  "diskFreeBytes": 182465499136
+}
