@@ -1,6 +1,6 @@
 # seat-path-lands-without-help
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Seat landing gates; each fix small, together they decide whether seats run unattended"
@@ -9,14 +9,13 @@
 - Origin: human
 - Next step: Reproduce each friction item from 2026-10-01 (list in the m1e work-state note) on current main, fix one at a time by subtraction, then one unattended hand-in from each seat Wido 2026-10-01: apply the threat model to every seat-path layer (receipt worktrees, test-policy engine checks, budget-episode gates, custody): what does it defend against; outside 'nobody attacks' -> remove, don't fix. TARGET (Wido 2026-10-01): one landing mechanism. A seat without a lane lands exactly as the lane agent does for a batch of one: merge its branch onto latest main, landing prove (same landing.prove.command, detached), landing push (same rail) - on its own landing tree. The lane adds only batching across seats and sharing the expensive suite run. Then delete the old seat self-land plumbing (landpath receipts, test-policy planning in landing, budget-episode gates for landing). Narrowed 2026-10-02 (coordinator m1e): the 10-01 hand-in frictions are largely resolved; on 2026-10-02 the ui seat's hand-in went through the lane end to end (fleet-card-can-land-now, 91579aa80) after only a budget fix. Do NOT re-reproduce them. Remaining work: (1) a seat on a host WITHOUT a lane lands exactly like the lane's batch of one (merge onto main, landing prove with landing.prove.command, landing push); (2) delete the old self-land plumbing (landpath receipts, test-policy planning in landing, landing budget gates), keeping only what the lane and (1) use. Smallest thing that works; ask the human if blocked. Unit 1b (coordinator m1e, 2026-10-02): a hand-in to the lane suspends the goal's elapsed clock exactly as goal land-ready does, and a return resumes it; a goal waiting in the lane is never budget-stopped for the wait (observed: review-briefs-name-a-threat-model breach-stopped while queued 10-02 01:42Z; fleet-card-can-land-now needed a set-budget). Test: handed in and waiting past the elapsed limit is not breach-stopped; a returned goal's clock runs again. Independent of (1) and (2): build it as its own small unit.; ASKED 07509A5KEHQTBDZM7JRHB5NR73 (budget-above-norm): Raise seat-path-lands-without-help's budget to 1 day, 30 attempts and 2880 job minutes so its six units can land?
 - OpenedAt: 2026-10-01T15:55:49Z
-- Revision: 33
+- Revision: 34
 - Pinned: m1g
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=2880 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=RJGDN10ZXC32T8NRMH7YN0D0NX-m1e-718ba0eb minutes=2880 reviewRounds=20 goalRevision=32
 - Approved: by=human:Wido at=2026-10-03T01:57:51Z revision=33 opid=RJGDN10ZXC32T8NRMH7YN0D0NX-m1e-718ba0eb authority=proven digest=47166849f642e9b581e137720e79f1c0255795da0a9a284d9b455173ccfcd0e0 episode=33
-- Claimed: machine=m1g lineage=steward-seat at=2026-10-03T01:57:51Z revision=33 accountingRevision=33 episodeAt=2026-10-02T22:38:46Z episodeRevision=31
-- StopCapability: generation=33 revision=33 machine=m1g claimEpoch=9 fenceEpoch=0
+- Episode: machine=m1g lineage=steward-seat accountingRevision=33 episodeAt=2026-10-02T22:38:46Z episodeRevision=31 idleSeconds=0 released=2026-10-03T02:48:01Z
 
 History:
 - 2026-10-01T15:55:49Z JEJN0GE0Z67Y33FQ5KNVKATV1T-m1e-9c612d71 open actor=human:Wido targets=seat-path-lands-without-help
@@ -52,4 +51,5 @@ History:
 - 2026-10-02T22:38:46Z CXQZAKYAKPXJXH5BXSC51Z85VH-m1g-71c5cb39 claim actor=m1g+steward-seat targets=seat-path-lands-without-help
 - 2026-10-03T01:56:04Z DF9J17AQYF5PRDP7PYKWCSFBXH-m1g-71c5cb39 ask actor=m1g+steward-seat targets=seat-path-lands-without-help
 - 2026-10-03T01:57:51Z RJGDN10ZXC32T8NRMH7YN0D0NX-m1e-718ba0eb set-budget actor=human:Wido targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-02T22:38:46Z
-Integrity: sha256=3a2fb40405d82d04266f625bab72442a59e596f39148e249ef0feb9dbf156c96
+- 2026-10-03T02:48:01Z NCKBTQVZ3P6QY3NQ4KHZ7Y00GF-m1g-71c5cb39 release actor=m1g+steward-seat targets=seat-path-lands-without-help reason=restamp: Wido's set-budget from m1e's checkout rebound this claim to m1e's claim epoch 9, so this seat's test runs are refused as out of date and session start will not restamp downward; claiming again at once
+Integrity: sha256=03464b136ee3c77e3afd529f0a4d0d134ec4564b8c65d8e3c4ce883bee610729
