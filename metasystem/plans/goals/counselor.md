@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 13
+- Sequence: 12
 - Intent: What: The counselor is an advisory role that watches the gap between what the app is becoming and what its checks actually cover, and tells the person in short briefs and review sittings; it never blocks anything and never edits anything itself. Built so far: the drift brief from existing records, its delivery on a schedule, and a register of accepted risks grouped by kind. Left: the review sitting itself, and noticing problems while work is in progress. Why: Risks we knowingly accept, and drift between effort and result, pile up unseen unless something collects them and puts them in front of a person. Pros: Recurring risk patterns get a regular, structured look instead of being noticed by accident. Cons: More reports for the person to read, and advice nobody acts on is wasted effort.
 - Origin: human
 - Next step: Next: Build the review sitting on top of the accepted-risk register: for each risk class, ask why it happened (five whys), whether the pattern applies elsewhere, and whether it applies to the counselor itself; then build in-progress noticings as a separate step. Done when: Running a sitting produces a written sitting record that covers every class in the register with those three questions answered.
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 112
+- Revision: 113
 - Arc: app-guardrail-program
 - Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -125,4 +125,5 @@ History:
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:16 to=3:15
 - 2026-10-03T09:55:50Z X3WG8XZEQCVZZNASC82020Z397-m1e-718ba0eb abandon actor=human:Wido targets=incident-proposal-drafting,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:15 to=3:14
 - 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
-Integrity: sha256=c27ecb5521bf7954c8d710cfb67c829da5a83ba41f6d1f186ff404db61d60a3d
+- 2026-10-03T09:58:28Z 3ESM3MAR17ZJ2PDRQF0X8J986F-m1e-718ba0eb abandon actor=human:Wido targets=registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
+Integrity: sha256=7e9c6ad5ef6e685dc77a7d2b552a1235e05818ec3fa3d4780c6403ca6b35354b

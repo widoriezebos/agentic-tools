@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 14
+- Sequence: 13
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no data or process is at risk, but a design delegate refuses its own brief and the goal stalls until a human notices; novelty 1: the rule is one table row and one role prohibition list; exposure 3: every design round on every machine, on the lane Wido chose for design authoring; accumulation 2: every design brief has to carry an override paragraph, and each one is a place the override can be forgotten or misquoted"
 - Tier: 3
 - Intent: What: The rule "helpers may not write the design" applies to builders only; a helper started to write a design may do so. Why: The working-modes rule forbids design writing to every helper. A design helper once refused its job because of it, and design briefs now need an override paragraph to get past it. Pros: A small text change that removes a trap and keeps builders out of design. Cons: None worth noting.
 - Origin: main
 - Next step: Next: Edit the Design row of the Working Modes table in docs/orchestration.md (and working-modes.md if it mirrors it) so a design helper may write the design and a builder may not; check that brief composition picks up the new row. Done when: a design helper's composed prompt allows writing the design and a builder's still forbids it.
 - OpenedAt: 2026-09-08T06:22:17Z
-- Revision: 107
+- Revision: 108
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -121,4 +121,5 @@ History:
 - 2026-10-03T09:55:26Z N9QXCHAK9HP8A7WY1BF630R7NH-m1e-718ba0eb abandon actor=human:Wido targets=metasystem-way-patterns,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:17 to=3:16
 - 2026-10-03T09:55:50Z X3WG8XZEQCVZZNASC82020Z397-m1e-718ba0eb abandon actor=human:Wido targets=incident-proposal-drafting,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:16 to=3:15
 - 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:15 to=3:14
-Integrity: sha256=1c753bf69a3474a156b75a4e5e41011c5490a85872605cd44ae94b8789cc308d
+- 2026-10-03T09:58:28Z 3ESM3MAR17ZJ2PDRQF0X8J986F-m1e-718ba0eb abandon actor=human:Wido targets=registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
+Integrity: sha256=d857be76a7017e527d3bd6a7a247548bc941e87d25da04150abb4f81f8eec6a9
