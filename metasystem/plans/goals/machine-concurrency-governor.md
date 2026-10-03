@@ -1,6 +1,6 @@
 # machine-concurrency-governor
 
-- State: parked
+- State: queued
 - Priority: 2
 - Sequence: 27
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: overload makes proofs flaky and slow, no data loss; novelty 2: a machine-wide admission governor is new; exposure 3: every seat on the machine; accumulation 1: one governor and its config"
@@ -9,9 +9,8 @@
 - Origin: human
 - Next step: Next: when a dispatch or suite failure is traced to machine load again, write a small design for load-aware admission using that incident as its test case. Done when: a fixture that dispatches beside a saturating load passes without timeouts.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 240
+- Revision: 241
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-30T18:51:24Z because=Parked until a dispatch or test suite failure on the host is traced to machine load. Since landings run in one batch per machine, overload has not recurred, so building a governor now would solve a problem we do not currently have.
 
 History:
 - 2026-08-29T07:38:20Z XAR0VVP0CKT8476P0AZ8K4KG68-m1-bf243850 open actor=human:wido targets=machine-concurrency-governor
@@ -254,4 +253,5 @@ History:
 - 2026-10-02T21:00:35Z VNGSNCZW70RGG931E6Y9XRKWYT-m1e-9c612d71 abandon actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:30 to=2:29
 - 2026-10-03T09:55:56Z S6GXEPX4FVVD45XCJ2SS0B9W6K-m1e-718ba0eb abandon actor=human:Wido targets=actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:29 to=2:28
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:28 to=2:27
-Integrity: sha256=d3f09a875ee1f4e4c507976298d7bd1e51a914928a2ee50b05ca7ec87e8dbdff
+- 2026-10-03T09:58:53Z K0MC4XMPAWGSCNADB6KEWAAPVP-m1e-718ba0eb unpark actor=human:Wido targets=machine-concurrency-governor
+Integrity: sha256=a1c139ea93e6ff9f86367a8a5f62bf1c48ab5dfc7da1a07b50e111058f3526d7
