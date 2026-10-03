@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -55,7 +56,7 @@ func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
 	startedAt, _ := toolGateProcessBirth(int64(os.Getpid()))
 	home, _ := board.Home()
 	claude, _ := runtimes.Lookup("claude")
-	peer, release := toolGatePeer(home, stateRoot, goal.ResolveMachine, func() (board.Ownership, error) { return goal.PeerOwnership(stateRoot) }, claude.ToolContextBytes, stderr, toolGateClock)
+	peer, release := toolGatePeer(home, stateRoot, os.LookupEnv, goal.ResolveMachine, func() (board.Ownership, error) { return goal.PeerOwnership(stateRoot) }, claude.ToolContextBytes, stderr, toolGateClock)
 	defer release()
 	err = adapter.RunToolGate(adapter.ToolGateOptions{
 		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode,
@@ -73,10 +74,15 @@ func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
 // the runtime's declared tool context bytes as the room. The gate calls it
 // at its single exit only; release gives back the claim locks the offer
 // holds, after the gate returned. An empty board reads no enrollment and a
-// runtime without a declared field is offered nothing.
-func toolGatePeer(home, root string, resolve func(string) (string, error), claims func() (board.Ownership, error), room int, stderr io.Writer, now func() time.Time) (func() (string, func() error), func()) {
+// runtime without a declared field is offered nothing; neither is a session
+// the launcher started for a step (lookup names a launch kind other than a
+// seat), since mail to the machine is for the seat's own session.
+func toolGatePeer(home, root string, lookup func(string) (string, bool), resolve func(string) (string, error), claims func() (board.Ownership, error), room int, stderr io.Writer, now func() time.Time) (func() (string, func() error), func()) {
 	var offer *hooks.PeerOffer
 	peer := func() (string, func() error) {
+		if kind, _ := lookup(launch.KindEnv); kind != "" && kind != "seat" {
+			return "", nil
+		}
 		if home == "" || room <= 0 || !board.HasMessages(home) {
 			return "", nil
 		}

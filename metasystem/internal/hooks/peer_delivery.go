@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // peerSeparator joins a peer message to what the field already carries.
@@ -130,8 +131,13 @@ func peerClaims(ops Ops, repo string) func() (board.Ownership, error) {
 // when the packet goes to the model's declared field (a screen or no-context
 // outcome gets none), and only when the packet, the separator and the whole
 // rendered message fit the field's byte bound. The packet is never cut; a
-// message that does not fit waits for the next tool call.
+// message that does not fit waits for the next tool call. A session the
+// launcher started for a step (a launch kind other than a seat) is offered
+// nothing: mail to the machine is for the seat's own session.
 func (s *startRun) preparePeer() {
+	if kind := s.inv.env(launch.KindEnv); kind != "" && kind != "seat" {
+		return
+	}
 	if s.contextKind != "channel" || s.contextPayload == "" || s.contextField == "" {
 		return
 	}
