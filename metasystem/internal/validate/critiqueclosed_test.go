@@ -181,3 +181,47 @@ func TestCritiqueClosedWithRegisterPersistsOutOfScope(t *testing.T) {
 		t.Fatalf("ordinary join violation was not preserved: %v", violations)
 	}
 }
+
+func TestCritiqueClosedWithRegisterHonoursAcceptedRisk(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	digest := strings.Repeat("a", 64)
+	entry := func(id, status, resolution, opid string) map[string]any {
+		return map[string]any{
+			"findingId": id, "critic": "critic", "rigorClass": "severe",
+			"factsDigest": digest, "facts": map[string]any{"local": true},
+			"artifact": "metasystem/test.go", "title": "severe finding",
+			"status": status, "resolution": resolution, "decisionOpid": opid,
+			"evidence": "evidence", "evidenceDigest": digest, "multiplicity": 1,
+		}
+	}
+	data, err := json.Marshal(map[string]any{"jobId": "critic", "role": "code-critic", "findingRegister": []any{
+		entry("f-1", "accepted-risk", "accepted-risk", "op-1"), entry("f-2", "open", "", ""),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, rootPath, string(data))
+	table := func(id, disposition, reasoning string) string {
+		return "# Dispositions\n\n| Finding id | Disposition | Reasoning and evidence | Amendment |\n| --- | --- | --- | --- |\n| " +
+			id + " | " + disposition + " | " + reasoning + " | none |\n"
+	}
+
+	findings, dispositions := critiqueFixture(t, `{"findings":[{"id":"f-1","material":true}]}`, table("f-1", "accepted-risk", "a person accepted the risk"))
+	if violations := CritiqueClosedWithRegister(findings, dispositions, repo, "critic"); len(violations) != 0 {
+		t.Fatalf("an accepted-risk row for a person's accepted risk = %v", violations)
+	}
+	findings, dispositions = critiqueFixture(t, `{"findings":[{"id":"f-1","material":true}]}`, table("f-1", "out-of-scope", "the brief's scope excludes it"))
+	if violations := CritiqueClosedWithRegister(findings, dispositions, repo, "critic"); len(violations) != 0 {
+		t.Fatalf("an out-of-scope row for a severe accepted risk = %v", violations)
+	}
+	findings, dispositions = critiqueFixture(t, `{"findings":[{"id":"f-2","material":true}]}`, table("f-2", "accepted-risk", "the seat accepts it"))
+	violations := CritiqueClosedWithRegister(findings, dispositions, repo, "critic")
+	if len(violations) != 1 || !strings.Contains(violations[0], "finding id 'f-2'") || !strings.Contains(violations[0], "metasystem goal accept-risk") {
+		t.Fatalf("an accepted-risk row without a person's record = %v", violations)
+	}
+	if readFile(t, rootPath) != string(data) {
+		t.Fatal("an accepted-risk or out-of-scope row changed the register")
+	}
+}
