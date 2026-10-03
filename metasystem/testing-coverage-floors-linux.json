@@ -49,6 +49,7 @@
   "internal/dispatchproc": 95.7,
   "internal/enginebuild": 100.0,
   "internal/enginecause": 93.5,
+  "internal/enginedeploy": 87.0,
   "internal/events": 80.2,
   "internal/evidence": 80.5,
   "internal/evidencetable": 85.0,

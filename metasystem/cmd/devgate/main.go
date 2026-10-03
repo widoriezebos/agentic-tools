@@ -18,6 +18,10 @@
 //   - gate: the full Go gate (cross-builds, govulncheck, the native race and
 //     coverage selection, the coverage ratchet, the boundary-scoped witness).
 //     It replaced `go-gate.sh` and, with --arm, the sourced witness-gate.sh.
+//   - deploy: this repository's deploy adapter (deploy.json): it builds a
+//     commit's engine into ~/.metasystem/engines/<commit>/, moves the pointer
+//     ~/.metasystem/bin/metasystem, reports what is active and rolls back
+//     (internal/enginedeploy).
 //
 // Every action is a leaf: none of them schedules `metasystem test run`
 // (VOA-09), so a testing group that runs one cannot recurse.
@@ -75,15 +79,17 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 		return runStatic(ctx, args[1:], root, deps)
 	case "gate":
 		return runGateAction(ctx, args[1:], root, deps)
+	case "deploy":
+		return runDeploy(ctx, args[1:], root, deps)
 	default:
 		fmt.Fprintf(deps.stderr, "devgate has no action %q; %s\n", args[0], usage)
 		return 2
 	}
 }
 
-// usage is what devgate says when no action it knows is named: its three
+// usage is what devgate says when no action it knows is named: its four
 // actions, and the one a developer runs first.
-const usage = "devgate takes one action: build, static or gate; nothing was run\nrun: go run ./cmd/devgate static"
+const usage = "devgate takes one action: build, static, gate or deploy; nothing was run\nrun: go run ./cmd/devgate static"
 
 // deps is every effect the build has on the world, so a test drives the
 // whole action against stubbed Git, a stubbed Go toolchain and a chosen fence.
@@ -101,6 +107,7 @@ type deps struct {
 	selfPid int64
 	getenv  func(string) string
 	environ func() []string
+	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
 
@@ -150,6 +157,7 @@ func nativeDeps() deps {
 		selfPid: int64(os.Getpid()),
 		getenv:  os.Getenv,
 		environ: os.Environ,
+		stdin:   os.Stdin,
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
 		tool: func(ctx context.Context, call toolCall) error {
