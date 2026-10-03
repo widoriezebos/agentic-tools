@@ -178,6 +178,10 @@ This repository keeps its current shape until step 2, when it takes exactly this
 
 Step 1 is fresh adoption in the one-folder layout, plus the engine rules it needs. It covers the adopted state-root and layout rules; the two root types, with the signatures converted first and every site the compiler lists fixed; landing classification keyed on the state root; the contract defaults, and the dropped contract overrides; the ownership classifier; adoption into `metasystem/`, with its exclusions, seeding, instruction-file merge and CI workflow; pointer files for every installation; the citation rewrite; and B1, B3 and the B2 test. This repository keeps its layout.
 
+### Landing condition for step 1 (added 2026-10-03, after the build found the run-state class)
+
+Step 1 lands only when `run-state-audit.json` lists no site: each work deletes the entries it owns, and the static gate refuses a new crossing or a fixed one still listed. The audit (work `root-audit`) counted 420 sites at its baseline, each assigned to a named work; that list, not the files a work touches, is a reader's scope authority. Recorded by m1e at seat m1f's request: a build may not change a plan file, and no verb amends an accepted design record.
+
 ## Deferred
 
 **Step 2: this repository's own move.** It is a separate decision, taken after step 1 works.
