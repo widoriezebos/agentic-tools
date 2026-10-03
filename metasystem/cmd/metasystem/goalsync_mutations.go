@@ -1177,7 +1177,34 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	}
 	if res.Unchanged {
 		// The same person's acceptance of the same finding already holds
-		// (R-129-ui, U-idem): success with no record, at the owner too.
+		// (R-129-ui, U-idem): success with no record, at the owner too. Its
+		// register stamp may not hold: a later fold that re-reported the
+		// finding at higher rigor reopened it, or the stamp after the goal
+		// act never landed. The person's repeated decision still takes
+		// effect (R-142-m1e): the remaining steps run again under the act
+		// that holds, and each is idempotent.
+		if f.chain != goal.HumanCarriedChain {
+			heldOpid, err := goal.AcceptedRiskDecisionOpIDWithResolver(f.root, f.id, f.finding, f.chain, req.Now, dependencies.endpoint)
+			if err != nil {
+				return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the acceptance holds on the goal, but its accepted-risk record needs a hand repair"))
+			}
+			if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: heldOpid, RecordedAt: req.Now}); err != nil {
+				return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the acceptance holds on the goal, but its accepted-risk record needs a hand repair"))
+			}
+			// The repeated decision covers only the finding as this run
+			// showed it; one that changed since stays open (F4).
+			stamped, err := dispatchcore.CritiqueRegisterStampAcceptedRisk(f.root, f.chain, f.finding, heldOpid, finding.Digest)
+			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
+				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
+			}
+			if err != nil {
+				return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the acceptance holds on the goal, but the critique register needs a hand repair"))
+			}
+			if stamped {
+				// R-143-m1e: what the repeat does, in plain words.
+				res.Detail = fmt.Sprintf("finding %s was reported again after %s accepted its risk; the acceptance now covers it as it stands, so review %s can close with this risk recorded. A later review that reports it at a higher severity reopens it for a new decision.", f.finding, f.by, f.chain)
+			}
+		}
 		dependencies.outcomeBeforeRefusal(res)
 		return 0
 	}
@@ -1200,7 +1227,12 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 		if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
 			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; its accepted-risk record needs a hand repair"))
 		}
-		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
+		// The acceptance covers only the finding as shown above: a finding
+		// that changed since stays open in the register (F4).
+		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid, finding.Digest); err != nil {
+			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
+				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
+			}
 			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; the critique register needs a hand repair"))
 		}
 	}

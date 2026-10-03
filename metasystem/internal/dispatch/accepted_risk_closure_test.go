@@ -26,13 +26,14 @@ func TestAcceptedRiskClosesToALandableRead(t *testing.T) {
 		if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 			t.Fatal(err)
 		}
+		bindCriticGoal(t, repo, "critic", "goal-a")
 		return repo, subject
 	}
 	landed := func(t *testing.T, repo string, subject ReadSubject) {
 		t.Helper()
 		root := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json"))
 		closure, present, err := ReadClosure(root)
-		want := []readsubject.AcceptedRisk{{FindingID: "F-1", DecisionOpID: "decision-op"}}
+		want := []readsubject.AcceptedRisk{{FindingID: "F-1", DecisionOpID: "decision-op", AcceptedDigest: acceptedSnapshot(t, repo, "F-1").Digest}}
 		if err != nil || !present || closure.Round != 1 || !closure.Subject.Equal(subject) || !readsubject.SameAcceptedRisks(closure.AcceptedRisks, want) {
 			t.Fatalf("accepted-risk closure = %+v present=%v err=%v", closure, present, err)
 		}
@@ -52,7 +53,7 @@ func TestAcceptedRiskClosesToALandableRead(t *testing.T) {
 
 	t.Run("closes", func(t *testing.T) {
 		repo, subject := setup(t, "severe")
-		if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-1", "decision-op"); err != nil {
+		if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-1", "decision-op", acceptedSnapshot(t, repo, "F-1").Digest); err != nil {
 			t.Fatal(err)
 		}
 		if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -69,7 +70,7 @@ func TestAcceptedRiskClosesToALandableRead(t *testing.T) {
 
 	t.Run("closed-earlier-without-closure", func(t *testing.T) {
 		repo, subject := setup(t, "unproven")
-		if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-1", "decision-op"); err != nil {
+		if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-1", "decision-op", acceptedSnapshot(t, repo, "F-1").Digest); err != nil {
 			t.Fatal(err)
 		}
 		closeReadyCriticChain(t, repo, "critic", "critic")

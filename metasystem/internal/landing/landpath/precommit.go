@@ -302,6 +302,65 @@ func SystemInstallation(git func(args ...string) GitResult, root string) (instal
 	return installation, checkout
 }
 
+// ServedInstallations names the installations in root's linked worktrees
+// whose system is root's by SystemInstallation: the unarmed goal worktrees
+// the system running at root serves. An armed worktree, root's own, and
+// any worktree git cannot map are left out. git runs in each call's Dir.
+func ServedInstallations(git Git, root string) []string {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil || !recordsLinkedWorktrees(resolved) {
+		return nil
+	}
+	top := git(GitCall{Dir: resolved, Args: []string{"rev-parse", "--show-toplevel"}})
+	list := git(GitCall{Dir: resolved, Args: []string{"worktree", "list", "--porcelain"}})
+	if top.Code != 0 || list.Code != 0 {
+		return nil
+	}
+	prefix, err := filepath.Rel(strings.TrimRight(string(top.Stdout), "\n"), resolved)
+	if err != nil || !filepath.IsLocal(prefix) && prefix != "." {
+		return nil
+	}
+	var served []string
+	for _, line := range strings.Split(string(list.Stdout), "\n") {
+		tree, ok := strings.CutPrefix(line, "worktree ")
+		if !ok {
+			continue
+		}
+		installation, err := filepath.EvalSymlinks(filepath.Join(tree, prefix))
+		if err != nil || installation == resolved {
+			continue
+		}
+		system, checkout := SystemInstallation(func(args ...string) GitResult {
+			return git(GitCall{Dir: installation, Args: args})
+		}, installation)
+		if checkout != "" && system == resolved {
+			served = append(served, installation)
+		}
+	}
+	return served
+}
+
+// recordsLinkedWorktrees reports whether the repository whose work tree
+// holds dir records any linked worktree: its .git directory has an entry
+// under worktrees. Without one there is no goal worktree to serve, and the
+// reaper, which ticks in every armed checkout, starts no Git process to find
+// that out. A linked worktree's own .git is a file: it serves none.
+func recordsLinkedWorktrees(dir string) bool {
+	for current := dir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(filepath.Join(current, ".git"))
+		if err == nil {
+			if !info.IsDir() {
+				return false
+			}
+			entries, err := os.ReadDir(filepath.Join(current, ".git", "worktrees"))
+			return err == nil && len(entries) > 0
+		}
+		if filepath.Dir(current) == current {
+			return false
+		}
+	}
+}
+
 // helmSubject names what a helm yield admitted: the branch HEAD names, the
 // index tree and the caller's class.
 func helmSubject(git func(args ...string) GitResult, class string, classErr error) string {
