@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The fleet panel answers, at a glance and on a phone, what the person wants there (Wido 2026-10-02: 'the UX of the bottom half of the fleet panel is a mess... first think what I want to be able to do in that screen, use cases, and then design an elegant, intuitive UX and build it'): one verdict, what needs him with its one action, what each seat is doing and how far (the fleet table he likes, its Running column made a true Doing column), the landing lane as waiting/proving/landed today/came back in plain words with Pause/Resume/Land now buttons, technical details behind a disclosure. Spec: plans/designs/fleet-panel-ux.md.
 - Origin: main
-- Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.
+- Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.; ASKED X3B4QE1J1WF37WSZQWFK0EXT1X (other): Fleet panel step 2: may the signed-in browser resume the landing lane and stop a machine (on this computer), as you can at the terminal?
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 20
+- Revision: 21
 - Pinned: ui
 - Budget: elapsedLimit=1d6h attemptLimit=18 reservedJobMinutesLimit=2160 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -41,4 +41,5 @@ History:
 - 2026-10-03T04:33:46Z K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:31:59Z
 - 2026-10-03T04:34:49Z VFV6Y8SQPGHMHV5JH1CCK2A5V4-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim under the raised budget for step 2 (m1e's raise rebinds the claim)
 - 2026-10-03T04:34:54Z GZPR6F83QSY4PW2FGF6S3TT4EV-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
-Integrity: sha256=2d3218eaf93766409e08f6a2c49133508dfd5499cf6d1008a9da5cba73ae21b1
+- 2026-10-03T05:02:46Z WWVZNQS7S6VWB8Q3D6MG58AWEM-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=1fe15a7159d7e9f0be19bcc4de52e19767e54d8b10579cd888b4de56f18a323f
