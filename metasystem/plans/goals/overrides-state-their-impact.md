@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 29
+- Sequence: 28
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Human-facing wording and records on existing person acts; no change to what the acts are allowed to do"
 - Tier: 2
 - Intent: Every act by which a person overrides the machinery (goal accept-risk, --force, --take-over, helm take, landing exceptions, budget raises past a tier box, a ruling against a finding) tells the person in plain English, before it takes effect, what it lets through, what risk stays, what it changes for later work and how to undo it, and records that impact statement with the decision (Wido 2026-10-03, rulings R-142-m1e NO HAL9000 and R-143-m1e). The UI shows the same statement before its act buttons fire.
 - Origin: main
 - Next step: Inventory every override verb and UI act (grep the person-act and exception paths), then a short tier-2 design: one impact-statement shape, where each verb gets its facts, how the record stores it; Astra critique; build. INPUT: in goal accept-risk's repeat path (close-path matrix 54a620329, goalsync_mutations.go) the plain-English statement appears after the register stamp; R-143-m1e wants the impact shown before the override takes effect.
 - OpenedAt: 2026-10-03T06:18:44Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T06:18:51Z revision=2 opid=YEM5BFHN9NVQF95BHEZPA62KP8-m1e-718ba0eb authority=proven digest=f8ef21d0d5ee4d1fb9701483b57d496c7f0adc66645b1130d23c524d41a8eb59 episode=2
@@ -30,4 +30,5 @@ History:
 - 2026-10-03T08:09:41Z 5SAJ6M4G7DT9PFY7Y2FPM1S6F4-m1e-718ba0eb edit actor=human:Wido targets=overrides-state-their-impact
 - 2026-10-03T08:55:13Z X4ERA2S34QV3PDK0J0T2TQ4H9K-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=lane-reproves-only-what-a-change-can-affect from=1:29 to=1:30 requested-sequence=2
 - 2026-10-03T09:57:04Z NXTKZBR53HHFHGWSJK713YY510-m1e-718ba0eb abandon actor=human:Wido targets=stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=priority-order from=1:30 to=1:29
-Integrity: sha256=a26b7818f2b75b7b3f82747e822738166552d3abf2b893a62055de2c26fc523e
+- 2026-10-03T09:58:12Z G98S7FNTM1FQC8E90E86D17A32-m1e-718ba0eb abandon actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,fleet-doctor-repairs-what-stops-other-seats,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=priority-order from=1:29 to=1:28
+Integrity: sha256=7299d13f4ea5894ff63bc326e306aab341af82268cba7675b153fc9204a97d14
