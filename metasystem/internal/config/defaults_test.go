@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+func TestRosterRuntimeNames(t *testing.T) {
+	t.Parallel()
+	for value, want := range map[string][]string{
+		"claude,\tcodex, devin":       {"claude", "codex", "devin"},
+		" ,claude,, \t, codex\u2003,": {"claude", "codex"},
+		"":                            nil,
+	} {
+		if got := RuntimeNames(value); !slices.Equal(got, want) {
+			t.Errorf("RuntimeNames(%q) = %q; want %q", value, got, want)
+		}
+	}
+}
+
 // An overrides-only metasystem.conf: every reader answers a key it does not
 // name with the compiled-in default, from source "default", and lists it.
 func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {

@@ -41,6 +41,7 @@ var publicPairs = []string{
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",
 	"settings show", "settings keys", "settings set", "settings check", "settings coordinator",
+	"roster list", "roster show", "roster set",
 	"receipt add", "receipt status", "receipt retro",
 	"experiment record", "experiment challenge", "experiment status", "experiment check",
 }
@@ -49,7 +50,7 @@ var publicPairs = []string{
 // with helm (human-control design, section 3.1) and deploy
 // (landing-deploys-the-engine, Decision 4) in the Run group.
 var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "agent", "incident",
-	"helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "receipt", "experiment"}
+	"helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
 var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "app serve", "ui serve", "ui tools", "landing observe", "landing workspace"}
@@ -192,6 +193,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 
 	t.Run("ordinary grammar", func(t *testing.T) {
 		forms := map[string][]string{
+			"roster set":      {"metasystem roster set ROSTER ROW RUNTIME:MODEL:EFFORT"},
 			"status":          {"metasystem status", "metasystem status G [--work NAME]"},
 			"work review":     {"work review G", "work review j2:J", "work review --commit SHA --goal G", "work review run:RUN", "work review G --finding F --test NAME", "work review --changes", "work review --patch PATCH"},
 			"work revise":     {"work revise G", "--after N", "--brief FILE", "work revise j2:R --dispositions FILE --brief FILE", "work revise run:RUN --brief FILE"},

@@ -121,7 +121,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -590,6 +590,8 @@ type intentOwners struct {
 	alerts alertOwners
 	// machines are the machine verbs' seams; the zero value is production.
 	machines machineOwners
+	// rosters are the roster verbs' seams; the zero value is production.
+	rosters rosterOwners
 	// textEnv is the text layout of one output stream; nil detects it
 	// (inv.textEnv).
 	textEnv func(stream io.Writer) textui.Env
@@ -1315,7 +1317,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -1344,12 +1346,13 @@ var intentObjectSummaries = map[string]string{
 	"app":        "the application this project builds, under its launch contract",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",
+	"roster":     "this computer's rosters: which agent, model and effort does each kind of work",
 	"receipt":    "task receipts and the retro cadence",
 	"experiment": "measured-improvement experiments and their stop-loss",
 }
 
 // intentAdministrationObjects configure or repair MetaSystem itself.
-var intentAdministrationObjects = []string{"system", "machine", "disk", "evidence", "ui", "settings"}
+var intentAdministrationObjects = []string{"system", "machine", "disk", "evidence", "ui", "settings", "roster"}
 
 func intentObjectGroup(object string) string {
 	for _, group := range intentGroups {

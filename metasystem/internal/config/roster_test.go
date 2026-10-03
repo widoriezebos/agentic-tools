@@ -246,3 +246,30 @@ func TestRosterRowChecksTheRuntimeAndAnswersMainAndThePartner(t *testing.T) {
 		}
 	}
 }
+
+// TestRostersAnswersEveryRowOfEveryRoster: in the table's order, an unset row
+// as not set and naming no agent; an unusable file answers no roster at all.
+func TestRostersAnswersEveryRowOfEveryRoster(t *testing.T) {
+	t.Parallel()
+	views, err := config.Rosters(rosterHome(t, rostersJSON(tierOneDesign+`, "verify": {"runtime": "main"}}}, "partner": {"type": "partner", "rows": {"partner": {"runtime": "claude", "model": "claude-opus-5-5"}}}`)))
+	unset := func(row string) config.RosterLine { return config.RosterLine{Row: row} }
+	want := map[string][]config.RosterLine{
+		"tier-1": {{Row: "design", Set: true, RosterAgent: config.RosterAgent{Runtime: "claude", Model: "claude-opus-5-5", Effort: "xhigh"}}, unset("design-critique"), unset("build"), unset("code-critique"),
+			{Row: "verify", Set: true, RosterAgent: config.RosterAgent{Runtime: "main"}}, unset("investigate"), unset("warden"), unset("behavior-judge")},
+		"partner": {{Row: "partner", Set: true, RosterAgent: config.RosterAgent{Runtime: "claude", Model: "claude-opus-5-5"}}},
+	}
+	var ids []string
+	for _, view := range views {
+		if ids = append(ids, view.ID+" "+view.Type); want[view.ID] != nil && !slices.Equal(view.Rows, want[view.ID]) {
+			t.Errorf("roster %s rows = %+v, want %+v", view.ID, view.Rows, want[view.ID])
+		}
+	}
+	if order := []string{"tier-1 tier", "tier-2 tier", "tier-3 tier", "seat seat", "landing landing", "partner partner"}; err != nil || !slices.Equal(ids, order) {
+		t.Errorf("Rosters = %v, %v; want %v", ids, err, order)
+	}
+	views, err = config.Rosters(rosterHome(t, `{"version": 2}`))
+	var refused *config.RosterRefusal
+	if views != nil || !errors.As(err, &refused) || refused.Code != config.RosterUnreadable || refused.Problem != "its version is 2, and this engine reads version 1" {
+		t.Errorf("Rosters of version 2 = %+v, %#v; want no roster and %s naming the version", views, err, config.RosterUnreadable)
+	}
+}
