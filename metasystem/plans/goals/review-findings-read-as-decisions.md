@@ -1,6 +1,6 @@
 # review-findings-read-as-decisions
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="The surface where a person decides what lands; a wrong consequence text makes him record what he did not mean, so severity 2; new fields in the critic's return and new decision acts, novelty 2; every review sitting, exposure 2; nothing accumulates beyond the review records"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: UX design first, by a UX designer, from m1e's input at agentic-tools-evidence/review-sitting-ux-20261003/design-input.md (the screenshot, the three questions a person asks, the summary line, the finding card in plain layers, the four decisions with their consequences, the verdict step, phone width, and where the plain text comes from: the critic writes title, why-it-matters and recommendation as return fields under the message audit, the Partner only as fallback). Agree the finding fields with critique-stops-on-convergence. Tier-2 critique, then build in slices: the summary and cards with the four decisions (desktop and phone), the critic's plain fields and their audit, the verdict step. Done when: a person can read a sitting without any id or path, every button says what follows, and a recorded decision is shown back as 'recorded on goal X as ...'; tests cover each decision act. ADDED 16:35 (Wido: 'it is totally unclear what these do ... UX needs a hard look at this to help me understand what this is and what it is for'): the review header is in scope too, screen 2 of the design input: the goal and version under review told by step and time (the commit id behind a hint), whether a newer version exists, the reviewer's state in words, 'Try this version: Start' for the reviewed application with what it does and where, and one place for 'See the change / See the evidence' per finding. No 'tip', 'candidate', 'anchor' or 'desk' on screen; every control a verb with its consequence. ADDED 16:40 (Wido: the whole flow): screen 3 of the design input: a guided review in four steps (what you are looking at; what the reviewer found, untouched findings follow the recommendation; try it; your verdict with the nod first and one press), End and Step out as one leave; a nod with open findings asks once instead of refusing; a sitting of an old version says so and offers the one act. The UX designer designs the flow before the cards.
 - OpenedAt: 2026-10-03T14:24:15Z
-- Revision: 7
+- Revision: 8
 - Pinned: ui
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T14:30:11Z revision=8 opid=T4AVVHSJ51F3GCQPKK31NWC7WP-m1e-718ba0eb authority=proven digest=71e7b84bca5cb5d59f92dc0dc22d25d6a78d10953b8e84c899a13e07a3a659cc episode=8
 
 History:
 - 2026-10-03T14:24:15Z 5NY52EMF7696VJY0TBPGZ5W14X-m1e-718ba0eb open actor=human:Wido targets=review-findings-read-as-decisions
@@ -21,4 +23,5 @@ History:
 - 2026-10-03T14:25:59Z RY9EHM5JD865K6E9Q04SBC6YJ9-m1e-718ba0eb edit actor=human:Wido targets=review-findings-read-as-decisions
 - 2026-10-03T14:29:59Z XFGV466PEBXPFD01K4NDEX3FZJ-m1e-718ba0eb unapprove actor=human:Wido targets=review-findings-read-as-decisions reason=Wido 2026-10-03 16:40: widened from the findings and the header to the whole review flow; approved again in the same minute
 - 2026-10-03T14:30:05Z 2KZ90XAXN74FYVSJ3P8V05H578-m1e-718ba0eb edit actor=human:Wido targets=review-findings-read-as-decisions
-Integrity: sha256=72dde284c9f45d508eb863fa50dff52439df0aa3731edc312988fe7b82651648
+- 2026-10-03T14:30:11Z T4AVVHSJ51F3GCQPKK31NWC7WP-m1e-718ba0eb approve actor=human:Wido targets=review-findings-read-as-decisions
+Integrity: sha256=7f29242161d94eff8c3a8166380805098254f022e4f6f33cb20480627697f711
