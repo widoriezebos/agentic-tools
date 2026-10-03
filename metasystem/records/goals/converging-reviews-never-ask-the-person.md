@@ -1,6 +1,6 @@
 # converging-reviews-never-ask-the-person
 
-- State: approved
+- State: abandoned
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="Instruction text in two review skills; no engine code; the engine-level criterion stays with critique-stops-on-convergence"
@@ -9,13 +9,15 @@
 - Origin: main
 - Next step: Edit the two skills (and docs/orchestration.md or internal/protocol/templates/review-brief.md if they carry the same rules); keep every phrase internal/mission/design_round_rule_test.go requires; run internal/mission, internal/audit, internal/adopt and go test ./cmd/metasystem -run 'TestAuditMessages|Skill' before handing in; tell every seat once it lands.
 - OpenedAt: 2026-10-03T07:13:17Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T07:13:36Z revision=2 opid=YMAFKQ2K2GTTKTAQNWM5CJ6JAH-m1e-718ba0eb authority=proven digest=a9cda3ceaa92c1809a595003084af7b36beb89db50519fe6ba0dfb209abe5bdb episode=2
+- Abandoned: by=human:Wido at=2026-10-03T07:14:09Z revision=4 opid=272J1QRJBXZQ652XC9300MWNTP-m1e-718ba0eb because=Folded into critique-stops-on-convergence (Wido 2026-10-03: 'this is important machinery (the stop criterium) so that needs proper design and reviewing'); the two skill rules it named are recorded there.
 
 History:
 - 2026-10-03T07:13:17Z 2E2H3QSECV8SHB2F1TM2JET50A-m1e-718ba0eb open actor=human:Wido targets=converging-reviews-never-ask-the-person
 - 2026-10-03T07:13:36Z YMAFKQ2K2GTTKTAQNWM5CJ6JAH-m1e-718ba0eb approve actor=human:Wido targets=converging-reviews-never-ask-the-person
 - 2026-10-03T07:13:47Z STHVD54NNXR779Q0CAHZCP782W-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,converging-reviews-never-ask-the-person,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=converging-reviews-never-ask-the-person from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=d7165c901b245cf598bc96e76bada5143ebdd62c9a89c026edabe5097b47e4a2
+- 2026-10-03T07:14:09Z 272J1QRJBXZQ652XC9300MWNTP-m1e-718ba0eb abandon actor=human:Wido targets=converging-reviews-never-ask-the-person,partner-runtime-defaults-to-an-available-one,fleet-page-redesign,channel-questions-stand-alone,questions-carry-what-they-ask-about,fleet-panel-ux,one-folder-deployed-and-evolved,machinery-blocks-of-2026-10-02,seat-path-lands-without-help,critique-stops-on-convergence,ui-connects-to-a-running-agent,rosters-are-configuration-items,fleet-forgets-an-unreachable-seat,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=Folded into critique-stops-on-convergence (Wido 2026-10-03: 'this is important machinery (the stop criterium) so that needs proper design and reviewing'); the two skill rules it named are recorded there.
+Integrity: sha256=165a697c69b5950fd688a45ee1390efc21f6d27b37e1bd684ba5a38a0e360951
