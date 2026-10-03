@@ -1,6 +1,6 @@
 # fleet-panel-ux
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=2 exposure=2 accumulation=2 basis="Presentation of existing facts plus three thin endpoints for existing verbs (severity 1); a new layout (novelty 2); the person's main view (exposure 2); read many times a day (accumulation 2)"
@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 15
+- Revision: 16
 - Pinned: ui
 - Budget: elapsedLimit=6h attemptLimit=9 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -17,8 +17,7 @@
 - Approved: by=human:Wido at=2026-10-03T03:12:42Z revision=9 opid=HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb authority=proven digest=9bee65a93add12b95e7652e77deb806bb66f5e96716bcd7a8b8b442adc4e787d episode=9
 - Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
 - AcceptedRisk: finding=F-2 chain=code-critic-1eb6d6383985e27d682ddcc4 by=Wido opid=86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T03:30:45Z revision=11 accountingRevision=9 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=5
-- StopCapability: generation=11 revision=11 machine=ui claimEpoch=3 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=9 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=5 released=2026-10-03T04:31:54Z
 
 History:
 - 2026-10-02T21:18:23Z EM5JJFDXWZ6592RRGHJA018JB8-m1e-9c612d71 open actor=human:Wido targets=fleet-panel-ux
@@ -36,4 +35,5 @@ History:
 - 2026-10-03T03:43:11Z 86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-panel-ux reason=Accepted by m1e in Wido word: the accepted design puts stuck seats in Needs you with Stop in step 2; step 1 is read-only plus Land now. Fix in step 2.
 - 2026-10-03T03:43:27Z XDJ5NR037DY9MQ3NMD61TDZ952-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
 - 2026-10-03T04:22:05Z ZJ5MWTM6G5J5M45TG2AQQTWSVX-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
-Integrity: sha256=081e465b101b98465c28eab13f8c335f746c487a1ea935c7805e782ad3c74175
+- 2026-10-03T04:31:54Z YM5ZEZFBBG48YHE1424W0RGRH2-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim: the critic dispatch was refused as not the authenticated lease holder after a goal edit from another checkout
+Integrity: sha256=95c2e370b90307174123a308f78a52bda5c76236481f254c09a1605ec5403e1c
