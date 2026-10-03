@@ -401,6 +401,75 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	})
 }
 
+func TestCleanupKeepsTheRecordThatEndedAStandingWait(t *testing.T) {
+	t.Parallel()
+	root, evidenceRoot, _, jobs := checkout(t)
+	renderedRoot := goal.RenderRoot(&goal.RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
+	})
+	// Claimed at 09:00 with a two-hour box and marked as waiting to land at
+	// 10:00. Its own job ran from 10:30 to 10:45, which ended the wait, and a
+	// person's set-budget at 11:00 rebound the claim to revision 4, keeping
+	// the mark and the episode.
+	marked := &goal.GoalFile{
+		Id: "marked", State: goal.StateClaimed, Intent: "Wait to land", Origin: goal.OriginMain,
+		OpenedAt: "2026-08-10T08:00:00Z", Revision: 4,
+		Budget: &goal.Budget{
+			ElapsedLimit: "2h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1,
+		},
+		Claimed: &goal.ClaimRecord{
+			Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-10T11:00:00Z", Revision: 4, AccountingRevision: 4,
+			EpisodeAt: "2026-08-10T09:00:00Z", EpisodeRevision: 2,
+		},
+		Landing: &goal.LandingRecord{At: "2026-08-10T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002"},
+		History: []goal.HistoryLine{
+			{At: "2026-08-10T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-m1-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"marked"}, Keep: -1},
+			{At: "2026-08-10T09:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001", Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"marked"}, Keep: -1},
+			{At: "2026-08-10T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002", Verb: "land-ready", Actor: "bed-m1+coordinator", Targets: []string{"marked"}, Keep: -1},
+			{At: "2026-08-10T11:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000003", Verb: "set-budget", Actor: "bed-m1+coordinator", Targets: []string{"marked"}, Keep: -1},
+		},
+	}
+	unmarked := *marked
+	unmarked.Landing = nil
+	endpointFor := func(file *goal.GoalFile) *goal.Endpoint {
+		return &goal.Endpoint{Root: root, Remote: "local", Repository: &gcGoalRepository{t: t, files: map[string][]byte{
+			"plans/goals/backlog.md": renderedRoot,
+			"plans/goals/marked.md":  goal.RenderFile(file),
+		}}}
+	}
+	recordPath := filepath.Join(jobs, "after-mark.json")
+	writeFile(t, recordPath, `{"jobId":"after-mark","operationId":"after-mark","goalId":"marked","goalRevision":2,"capMin":30,`+
+		`"status":"completed","startedAt":"2026-08-10T10:30:00Z","endedAt":"2026-08-10T10:45:00Z"}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "after-mark", "manifest.json"),
+		fmt.Sprintf(`{"updatedAt":"2026-08-10T08:00:00Z","files":{"jobs/after-mark.json":%s}}`, recordEntry(t, jobs, "after-mark.json")))
+
+	// Three hours since the episode began, less the half hour from the mark
+	// to the job: past the two-hour box. Without the job the whole two hours
+	// since the mark would come off, and the goal would read as inside it.
+	before := dispatch.ProjectBudget(root, marked, testNow)
+	if before.Status != dispatch.BudgetKnown || before.Wait != 30*time.Minute || before.Elapsed != 150*time.Minute {
+		t.Fatalf("the projection before cleanup is not the fixture's: %+v", before)
+	}
+	var out strings.Builder
+	if err := gcWithGoalEndpoint(root, evidenceRoot, 5400, &out, endpointFor(marked), testNow); err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	if _, err := os.Stat(recordPath); err != nil {
+		t.Fatalf("cleanup removed the job that ended the standing wait: %v", err)
+	}
+	after := dispatch.ProjectBudget(root, marked, testNow)
+	if after.Elapsed != before.Elapsed || after.Wait != before.Wait || !reflect.DeepEqual(before, after) {
+		t.Fatalf("budget projection changed across cleanup: before=%+v after=%+v", before, after)
+	}
+
+	if err := gcWithGoalEndpoint(root, evidenceRoot, 5400, &out, endpointFor(&unmarked), testNow); err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("cleanup kept the job of a superseded revision once the mark was gone: %v", err)
+	}
+}
+
 func TestSweepsResidueOfTerminalJobs(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, agents, jobs := checkout(t)

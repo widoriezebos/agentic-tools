@@ -79,6 +79,11 @@ type Store struct {
 	// The channel owner keeps them, and it imports this package, so the
 	// command layer supplies the read; nil reads none.
 	OpenQuestions func() []OpenQuestion
+	// LandingOverdue reads whether a claim waiting to land is past its
+	// elapsed box. Dispatch's budget projection answers it, and dispatch
+	// imports this package, so the command layer supplies the read; nil
+	// makes no overdue claim.
+	LandingOverdue func(*GoalFile, time.Time) (past, known bool)
 }
 
 func (s *Store) prober() identity.Prober {

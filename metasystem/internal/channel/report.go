@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -128,7 +129,7 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 			for _, id := range frontier.Landing {
 				landing = append(landing, p.Tree.Live[id])
 			}
-			next = append(next, goal.LandingClaimLines(landing, c.Now)...)
+			next = append(next, goal.LandingClaimLines(landing, c.Now, dispatch.LandingOverdue(c.RepoRoot))...)
 			claimed := 0
 			for _, id := range frontier.Claimed {
 				next = append(next, "Next up: "+featureName(id))
