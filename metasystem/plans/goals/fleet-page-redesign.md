@@ -1,6 +1,6 @@
 # fleet-page-redesign
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Human-facing UI redesign over existing read paths and existing verbs; acts stay behind the signed-in session; one wrong-fact bug in a health read"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 9
+- Revision: 10
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T06:25:26Z revision=2 opid=0DS710R47TV1D9T0E451S6CZXN-m1e-718ba0eb authority=proven digest=ae70358e64dde97bdd8c3e538fe37fc545889d295120052b64091b216882e651 episode=2
+- Claimed: machine=ui lineage=steward-seat at=2026-10-03T07:22:05Z revision=10 accountingRevision=10 episodeAt=2026-10-03T07:22:05Z episodeRevision=10
+- StopCapability: generation=10 revision=10 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -25,4 +27,5 @@ History:
 - 2026-10-03T07:13:47Z STHVD54NNXR779Q0CAHZCP782W-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,converging-reviews-never-ask-the-person,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=converging-reviews-never-ask-the-person from=1:2 to=1:3 requested-sequence=1
 - 2026-10-03T07:14:09Z 272J1QRJBXZQ652XC9300MWNTP-m1e-718ba0eb abandon actor=human:Wido targets=converging-reviews-never-ask-the-person,partner-runtime-defaults-to-an-available-one,fleet-page-redesign,channel-questions-stand-alone,questions-carry-what-they-ask-about,fleet-panel-ux,one-folder-deployed-and-evolved,machinery-blocks-of-2026-10-02,seat-path-lands-without-help,critique-stops-on-convergence,ui-connects-to-a-running-agent,rosters-are-configuration-items,fleet-forgets-an-unreachable-seat,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=priority-order from=1:3 to=1:2
 - 2026-10-03T07:14:38Z D4PA40PMH72WZN5A0WGE7TTZYG-m1e-718ba0eb set-priority actor=human:Wido targets=channel-questions-stand-alone,critique-stops-on-convergence,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,seat-path-lands-without-help reason=priority-order subject=critique-stops-on-convergence from=1:2 to=1:3 requested-sequence=1
-Integrity: sha256=931f87237b761341f6294a954a78496b4fc0bc5947934b915b20d33db4fda39d
+- 2026-10-03T07:22:05Z EYHXT8BEDF8N9JVN4YNEP1RAEF-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
+Integrity: sha256=e851f0ffcc3e7304252fe4ce6fd96ce3caba9d394af962a1ffa7365f594c104a
