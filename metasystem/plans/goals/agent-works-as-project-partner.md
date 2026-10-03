@@ -1,16 +1,18 @@
 # agent-works-as-project-partner
 
-- State: queued
+- State: approved
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="An agent mode that acts with a person's authority across the whole project; a wrong boundary lets an agent decide what only the person may, a too narrow one keeps the tricks"
 - Tier: 3
 - Intent: A person can open an agent and work with it in project-partner mode: the agent is the person's partner on the project, not a worker (Wido 2026-10-03: 'I really like the way you and I are interacting, you are almost like the project partner with the exception that you do not need the UI-bridge (approval/verb trick). I think we currently do not have a mode for an agent to be project partner ... Right now an agent in the machinery would claim open goals (which is not what I would want of the project partner), nor would I have to take the helm for this ... I want a design for this and a goal so I can open an agent and work in project-partner mode with it'; 'It would also enforce the role of the project partner in the UI; that is basically the project partner mode (with the UI integration on top)'). In this mode the agent never claims or builds goals itself and is not nagged to; it explains, plans, keeps the backlog, answers and routes for the seats, supervises the machinery and records decisions; it acts in the person's name through the ordinary verbs, without the helm and without terminal tricks, every act recorded as the person's through the partner with its plain-English impact shown first (R-142-m1e, R-143-m1e); the machinery keeps running beside it. The UI's Project Partner is the same role on a second surface: one mode, the terminal session and the UI panel both use it.
 - Origin: main
 - Next step: Proper design first, at this goal's tier. Part 1: intent and use cases from the real session (agentic-tools-evidence/partner-mode-20261003/session-evidence.md: nine use cases, ten walls that needed a trick), threat model (an agent acting with a person's authority; our own agents make mistakes), rabbit-hole risks with mitigations. Part 2 decides: how the mode is declared and entered (one verb or command; runtime and model from the roster's Partner row, rosters-are-configuration-items unit 12); what a partner never does (claim, build) and whether it may repair in an emergency; its authority (a standing grant, its scope, duration and revocation; which acts stay the person's own); how person-gated verbs admit the partner without the helm or an enrolled-terminal trick; how its acts and their impact statements are recorded and shown; how stewards, the turn-end rule and the lane treat a partner session; answering channel questions in the person's word with a real answer record; continuity between sessions (handoff, decisions page, rulings); and the UI integration: the Partner panel as the same mode (browser-interface, ui-connects-to-a-running-agent, partner-runtime-defaults-to-an-available-one). Estimates per slice. Astra critique; build in slices.
 - OpenedAt: 2026-10-03T10:03:15Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T10:03:23Z revision=2 opid=RSQM7S8XQSSKAJ0T0KBDT0K16Q-m1e-718ba0eb authority=proven digest=b3e44d81b5bc3c9111e6ec5d937abd64d6ef72f200fb7218d813064b2ec8f8e6 episode=2
 
 History:
 - 2026-10-03T10:03:15Z MPVK1FAH5SGPAVB3J4T7YA775Y-m1e-718ba0eb open actor=human:Wido targets=agent-works-as-project-partner
-Integrity: sha256=6d6f97a3a055e1692c82a664f4b7138970e36cdcb7bc6f22d236a333fd9c3ceb
+- 2026-10-03T10:03:23Z RSQM7S8XQSSKAJ0T0KBDT0K16Q-m1e-718ba0eb approve actor=human:Wido targets=agent-works-as-project-partner
+Integrity: sha256=b77b129752a558b4adab81a4e0f48facc3682e79a2f37791f544526c40a9e04d
