@@ -353,6 +353,17 @@ func (s *session) dispatchJob(args []string) error {
 			return s.die(1, "could not derive the delegate operation identity")
 		}
 		job = derived
+		// A start refused at setup left a husk holding this name: a repeat
+		// of the request is its next attempt under a fresh name, and the
+		// husk stays as the record of the refused start.
+		var refused []string
+		for attempt := 2; attempt <= maxOperationAttempts && s.huskAt(job); attempt++ {
+			refused = append(refused, job)
+			job = dispatch.OperationAttempt(derived, attempt)
+		}
+		if len(refused) > 0 {
+			s.eprintln(fmt.Sprintf("attempt %d of this request; refused at setup before it: %s", len(refused)+1, strings.Join(refused, ", ")))
+		}
 	}
 	s.dieJob = job
 	if !validID(job) {
@@ -1024,3 +1035,13 @@ func readLine(reader interface{ Read([]byte) (int, error) }) string {
 }
 
 func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
+
+// maxOperationAttempts bounds the fresh names one request may take after
+// starts refused at setup.
+const maxOperationAttempts = 20
+
+// huskAt says whether job's record is a start refused at setup.
+func (s *session) huskAt(job string) bool {
+	record, err := dispatch.ReadRecordObject(s.recordPath(job))
+	return err == nil && dispatch.NeverLaunched(record)
+}
