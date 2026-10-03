@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Astra critique of the design (tier 2), then build in the ui seat, land
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 6
+- Revision: 7
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:18:30Z revision=2 opid=X6N0HG00E1RJPSE293PPD72655-m1e-9c612d71 authority=proven digest=efeca785be277caabb837d86b1534c4c6ce1f49d67d04148385988bf987db8b4 episode=2
+- Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
 - Claimed: machine=ui lineage=steward-seat at=2026-10-02T22:59:40Z revision=6 accountingRevision=6 episodeAt=2026-10-02T22:59:40Z episodeRevision=6
 - StopCapability: generation=6 revision=6 machine=ui claimEpoch=3 fenceEpoch=0
 
@@ -24,4 +25,5 @@ History:
 - 2026-10-02T21:18:43Z MGWN9QEKSDG62Q0ZBFCY6EKEHZ-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-panel-ux,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order subject=fleet-panel-ux from=unranked to=1:2 requested-sequence=2
 - 2026-10-02T21:23:24Z 87SK1HNSS72691NDAZ1HW4NHXK-m1e-9c612d71 done actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-panel-ux,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-claim-takes-the-next-ready-goal,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order from=1:2 to=1:1
 - 2026-10-02T22:59:40Z ZYVWY8ZE320CWWJD8QTFAXSSV0-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
-Integrity: sha256=a14c7c56062bbe81c9fab6b726e155caf567c2b41facf612029135fa9be87c46
+- 2026-10-03T00:05:30Z 10FY1H08D1ST48GE3ZRDEM1X77-ui-71c5cb39 slice-start actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=37a1027982da9d9514d563c67d9c58edccf6808911fc3616770f9af1a4ced361
