@@ -1,6 +1,6 @@
 # fleet-panel-ux
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=2 exposure=2 accumulation=2 basis="Presentation of existing facts plus three thin endpoints for existing verbs (severity 1); a new layout (novelty 2); the person's main view (exposure 2); read many times a day (accumulation 2)"
@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 18
+- Revision: 19
 - Pinned: ui
 - Budget: elapsedLimit=1d6h attemptLimit=18 reservedJobMinutesLimit=2160 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -17,8 +17,7 @@
 - Approved: by=human:Wido at=2026-10-03T04:33:46Z revision=18 opid=K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb authority=proven digest=2cceefe7c4ce25f034a8684b2ed6873ccdc0d3aaabcae6f40266b9f90f662f86 episode=18
 - Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
 - AcceptedRisk: finding=F-2 chain=code-critic-1eb6d6383985e27d682ddcc4 by=Wido opid=86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T04:33:46Z revision=18 accountingRevision=18 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=10
-- StopCapability: generation=18 revision=18 machine=ui claimEpoch=9 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=18 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=10 released=2026-10-03T04:34:49Z
 
 History:
 - 2026-10-02T21:18:23Z EM5JJFDXWZ6592RRGHJA018JB8-m1e-9c612d71 open actor=human:Wido targets=fleet-panel-ux
@@ -39,4 +38,5 @@ History:
 - 2026-10-03T04:31:54Z YM5ZEZFBBG48YHE1424W0RGRH2-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim: the critic dispatch was refused as not the authenticated lease holder after a goal edit from another checkout
 - 2026-10-03T04:31:59Z Y8BZCSB1TNBQ6ZJA7Q6PJK6SJP-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
 - 2026-10-03T04:33:46Z K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:31:59Z
-Integrity: sha256=92f1cac0e7f5fa09cd07924c26d948cac37ec4843b0a1f5ed1034c917896ceec
+- 2026-10-03T04:34:49Z VFV6Y8SQPGHMHV5JH1CCK2A5V4-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim under the raised budget for step 2 (m1e's raise rebinds the claim)
+Integrity: sha256=bb26089b05c9f10a1fe9bbd553c9d70c49dce2c156e9a49adf8955978b4f3ff9
