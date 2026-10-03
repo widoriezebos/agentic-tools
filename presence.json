@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1k",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1k/metasystem",
+  "generation": 5,
+  "engine": "d6d5f89dad6e183a0fca3d95aa89873e967d48e1",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "20261003t194816-3514f3030c-r1-s1",
+    "job": "20261003t194816-3514f3030c-r1-s1",
+    "role": "building",
+    "round": 1,
+    "goal": "design-gate-at-dispatch",
+    "startedAt": "2026-10-03T19:48:17Z"
+  },
+  "working": {
+    "goal": "design-gate-at-dispatch",
+    "phase": {
+      "role": "building",
+      "round": 1,
+      "roundLimit": 20
+    },
+    "job": {
+      "id": "20261003t194816-3514f3030c-r1-s1",
+      "role": "building",
+      "status": "running",
+      "startedAt": "2026-10-03T19:48:17Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 3,
+      "attemptLimit": 10,
+      "reservedMinutes": 21,
+      "reservedMinutesLimit": 1200,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "20261003t194816-3514f3030c-r1-s1",
+        "role": "building",
+        "round": 1,
+        "status": "running",
+        "startedAt": "2026-10-03T19:48:17Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T19:54:09Z",
+  "diskFreeBytes": 185259327488
+}
