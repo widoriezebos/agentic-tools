@@ -486,10 +486,35 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 		}
 		file := projection.Tree.Live[goalID]
 		if file == nil || file.Claimed == nil || file.Claimed.Machine != machine || file.Claimed.Lineage != current.OwnerLineage {
-			return fmt.Errorf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", goalID, machine, current.OwnerLineage, goalID)
+			held := goalHeldElsewhere{goal: goalID, machine: machine, lineage: current.OwnerLineage}
+			if file != nil && file.Claimed != nil {
+				held.holder = file.Claimed.Machine
+			}
+			return held
 		}
 		return nil
 	}
+}
+
+// goalHeldElsewhere is the claim check's refusal when this session does not
+// hold the goal; holder is the seat whose claim it is, empty when nobody
+// claims it.
+type goalHeldElsewhere struct{ goal, holder, machine, lineage string }
+
+func (e goalHeldElsewhere) Error() string {
+	return fmt.Sprintf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", e.goal, e.machine, e.lineage, e.goal)
+}
+
+// heldElsewhere is the guidance when another seat's claim refused a write to
+// the goal's branch: that seat writes it, so it is asked, or a person takes
+// the goal over. ok is false for any other cause.
+func (inv *intentInvocation) heldElsewhere(goalID string, err error) (holder string, next []string, reason string, ok bool) {
+	var held goalHeldElsewhere
+	if !errors.As(err, &held) || held.holder == "" {
+		return "", nil, "", false
+	}
+	return held.holder, inv.publicArgv("goal", "claim", goalID, "--take-over", "--reason", "TEXT"),
+		"takes the goal over as a person; or ask seat " + held.holder + " to close it", true
 }
 
 func goalBranchHolderRoot(root string) string {

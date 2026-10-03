@@ -1449,6 +1449,13 @@ func joinRefusal(targets []intentTarget, review string, violations []string, ret
 // ---- close
 
 func (inv *intentInvocation) closeChain(job string) intentResult {
+	// The chain's records are where its critic was dispatched: a goal
+	// worktree or the primary checkout that serves it (branch.CriticStore).
+	if store := branch.CriticStore(inv.layout.InstallationRoot, job); store != inv.layout.InstallationRoot {
+		closer := *inv
+		closer.layout.InstallationRoot = store
+		return closer.closeChain(job)
+	}
 	targets := []intentTarget{jobTarget(job)}
 	root, err := inv.jobRecord(job)
 	if err != nil {

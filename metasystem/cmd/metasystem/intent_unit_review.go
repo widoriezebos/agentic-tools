@@ -134,6 +134,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	check := conn.claimCheck(original, goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
+		if holder, next, reason, held := inv.heldElsewhere(goalID, err); held {
+			return refuse(next, reason, fmt.Sprintf("seat %s holds goal %s and writes its branch, so nothing was committed", holder, goalID), "%v", err)
+		}
 		return refuse(inv.publicArgv("goal", "show", goalID), "shows who holds the goal", fmt.Sprintf("this session can't commit to goal %s's branch, so nothing was committed", goalID), "%v", err)
 	}
 	endpointTip := ""

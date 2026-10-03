@@ -12,6 +12,7 @@ import (
 
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -330,7 +331,7 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	if examined == nil {
 		return refuse("the decisions file names examination %s round %d of attempt %d, which is not a recorded examination of this work", bound.Examination, bound.Round, bound.Attempt)
 	}
-	install := inv.goalWorktreeInstallation(work.Record.Worktree)
+	install := branch.CriticStore(inv.goalWorktreeInstallation(work.Record.Worktree), bound.Examination)
 	returnPath := inv.returnPathAt(install, bound.Examination, bound.Round)
 	digest, findings, err := reviewReturnDigest(returnPath)
 	if err != nil || digest != bound.Return {

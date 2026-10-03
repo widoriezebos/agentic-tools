@@ -20,6 +20,9 @@ const (
 type OpError struct {
 	Code    string
 	Message string
+	// Cause is the error the refusal reports when it carries facts a caller
+	// reads with errors.As; nil for a refusal of its own.
+	Cause error
 }
 
 // Error is the refusal's words; its code is data ("Messages a Person
@@ -28,6 +31,9 @@ func (e *OpError) Error() string { return e.Message }
 
 // RefusalCode is the refusal's code.
 func (e *OpError) RefusalCode() string { return e.Code }
+
+// Unwrap is the reported cause, if any.
+func (e *OpError) Unwrap() error { return e.Cause }
 
 func operationRefusal(code, format string, args ...any) error {
 	return &OpError{Code: code, Message: fmt.Sprintf(format, args...)}
@@ -73,7 +79,7 @@ func checkClaim(check func() error) error {
 		return operationRefusal(NotHolderCode, "this session's claim on the goal can't be checked\nrun: metasystem goal list")
 	}
 	if err := check(); err != nil {
-		return operationRefusal(NotHolderCode, "%v", err)
+		return &OpError{Code: NotHolderCode, Message: err.Error(), Cause: err}
 	}
 	return nil
 }

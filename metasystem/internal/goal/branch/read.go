@@ -366,33 +366,49 @@ func branchReadInput(path string) ([]byte, string, error) {
 }
 
 // CriticStore names the installation whose artifacts/agents holds the
-// records of critic root job, for a review run at installation repo. A
-// critic's records stay in the installation that dispatched it. A review
-// run in a goal worktree may have dispatched its critic there; one run in
-// the primary checkout recorded it in the primary's. So repo keeps its own
-// store when it holds the critic's record (or no critic is named), and
-// otherwise reads the store of the system that serves it
-// (landpath.SystemInstallation): its primary checkout's installation when
-// repo is an unarmed linked worktree, else its own.
+// records of critic root job, for a verb run at installation repo. A
+// critic's records stay in the installation that dispatched it: a goal
+// worktree, or the primary checkout that serves it. So repo keeps its own
+// store when it holds the critic's record (or no critic is named); else the
+// store of the system that serves repo (landpath.SystemInstallation: its
+// primary checkout's installation when repo is an unarmed linked worktree)
+// when that holds it; else the goal worktree that system serves
+// (landpath.ServedInstallations) which holds it, so a verb run at the
+// primary finds a critic dispatched in a goal worktree. When none holds the
+// record, the serving system's store when repo is a worktree, else repo.
 func CriticStore(repo, job string) string {
 	if job == "" {
 		return repo
 	}
-	if _, err := os.Lstat(filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")); !os.IsNotExist(err) {
+	holds := func(installation string) bool {
+		_, err := os.Lstat(filepath.Join(installation, "artifacts", "agents", "jobs", job+".json"))
+		return !os.IsNotExist(err)
+	}
+	if holds(repo) {
 		return repo
 	}
 	root := repo
 	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
 		root = resolved
 	}
-	git := func(args ...string) landpath.GitResult {
-		out, err := gitOutput(root, args...)
+	git := func(call landpath.GitCall) landpath.GitResult {
+		out, err := gitOutput(call.Dir, call.Args...)
 		if err != nil {
 			return landpath.GitResult{Code: 1}
 		}
 		return landpath.GitResult{Stdout: out}
 	}
-	installation, checkout := landpath.SystemInstallation(git, root)
+	installation, checkout := landpath.SystemInstallation(func(args ...string) landpath.GitResult {
+		return git(landpath.GitCall{Dir: root, Args: args})
+	}, root)
+	if checkout != "" && holds(installation) {
+		return installation
+	}
+	for _, served := range landpath.ServedInstallations(git, installation) {
+		if served != root && holds(served) {
+			return served
+		}
+	}
 	if checkout == "" {
 		return repo
 	}

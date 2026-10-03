@@ -174,7 +174,7 @@ var Rows = []Row{
 	{Code: "GOAL_BRANCH_RANGE", Owner: "internal/goal/branch", Site: "range.go#rangeRefusal", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_BRANCH_ENDPOINT_UNSUPPORTED", Owner: "internal/goal/branch", Site: "park.go#mainEndpoint", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_BRANCH_UNAVAILABLE", Owner: "internal/goal/branch", Site: "commit.go#CheckCommitAccess", Shape: Question, H1: StandingInput},
-	{Code: "GOAL_BRANCH_NOT_HOLDER", Owner: "internal/goal/branch", Site: "commit.go#checkClaim", Shape: Question, H1: StandingGuide, Forward: "goal claim", ForwardSite: "cmd/metasystem/goal_branch.go#goalBranchClaimCheckWith"},
+	{Code: "GOAL_BRANCH_NOT_HOLDER", Owner: "internal/goal/branch", Site: "commit.go#checkClaim", Shape: Question, H1: StandingGuide, Forward: "goal claim", ForwardSite: "cmd/metasystem/goal_branch.go#goalHeldElsewhere.Error"},
 	{Code: "GOAL_BRANCH_LEASE_MOVED", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_BRANCH_CLAIM_LOST", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingAgent},
 	{Code: "GOAL_BRANCH_PUSH_UNKNOWN", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingInput},

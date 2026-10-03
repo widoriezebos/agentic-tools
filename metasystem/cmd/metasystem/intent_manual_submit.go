@@ -141,8 +141,13 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	}
 	check := conn.claimCheck(original, id, endpoint)
 	if err := branch.CheckCommitAccess(id, check); err != nil {
+		if holder, next, reason, held := inv.heldElsewhere(id, err); held {
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: fmt.Sprintf("seat %s holds goal %s and writes its branch, so this work wasn't submitted", holder, id),
+				next:    next, nextReason: reason, Details: []string{err.Error()}}
+		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("another session holds goal %s, so this work wasn't submitted", id),
+			Summary: fmt.Sprintf("this session's hold on goal %s can't be confirmed, so this work wasn't submitted", id),
 			next:    inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes it over; or submit from the session that holds it",
 			Details: []string{err.Error()}}
 	}

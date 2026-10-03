@@ -1139,7 +1139,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	}
 	var finding dispatchcore.CritiqueDecisionFinding
 	if f.chain != goal.HumanCarriedChain {
-		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(f.root, f.chain, f.finding, f.id)
+		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(goalbranch.CriticStore(f.root, f.chain), f.chain, f.finding, f.id)
 		if err != nil {
 			dependencies.complain(err)
 			return 1

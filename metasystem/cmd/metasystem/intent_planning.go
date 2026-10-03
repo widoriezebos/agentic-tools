@@ -12,6 +12,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -1379,7 +1380,7 @@ func (inv *intentInvocation) reviewRoot(id, review string) (string, *intentResul
 	if review == goal.HumanCarriedChain {
 		return review, nil
 	}
-	root, err := dispatchcore.ChainRootOf(inv.stateRoot, review)
+	root, err := dispatchcore.ChainRootOf(branch.CriticStore(inv.stateRoot, review), review)
 	if err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("no review %s of this goal can be read; nothing was done", shellCommand([]string{review})),
