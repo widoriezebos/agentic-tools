@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"context"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -43,6 +44,7 @@ type workBed struct {
 	// under the temporary root, found through each result's plan.
 	readDirsMu sync.Mutex
 	readDirs   map[string]bool
+	designGate designGateOwners
 }
 
 type workClock struct {
@@ -166,6 +168,10 @@ func newWorkBed(t *testing.T) *workBed {
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
 	bed := &workBed{intentBed: newIntentBed(t, false, amend), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
+	bed.designGate = designGateOwners{
+		chains:   func(string, string, string) ([]designgate.Chain, error) { return nil, nil },
+		identity: func(string) (string, error) { return "01M4189Q0RH1NSPD3PNAS6G177", nil },
+	}
 	// A public build creates the read's findings directory under the shared
 	// temporary root with a unique name; the bed removes only its own.
 	t.Cleanup(bed.removeReadDirs)
@@ -223,6 +229,7 @@ func (b *workBed) workOwners() intentOwners {
 		claimCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
 	}
 	owners.work = intentWorkOwners{
+		designGate: b.designGate,
 		units: func(stateroot.Layout) *launch.UnitRunner {
 			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot}
 		},
