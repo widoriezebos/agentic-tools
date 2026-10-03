@@ -10,7 +10,6 @@ import (
 	"time"
 
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -139,37 +138,12 @@ func proposalAt(path string) (string, string, bool) {
 // against. So the window is a day, which is what a first visit reads over, and
 // only the parts that do not depend on it are told.
 func (h *handler) partnerOverview() (overview.Page, error) {
-	if h.info.Project == nil || h.info.Observe == nil {
-		return overview.Page{}, errors.New("this engine was built without the landing page's readers")
-	}
-	pane, err := h.info.Project()
+	now := h.now()
+	read, err := h.gather(h.seatHuman(), h.info.Authority.Proven, now)
 	if err != nil {
 		return overview.Page{}, err
 	}
-	journal := []notifications.Notice{}
-	if h.info.NotificationJournal != "" {
-		read, journalErr := notifications.Page(h.info.NotificationJournal, notifications.DefaultLimit, "")
-		if journalErr != nil {
-			return overview.Page{}, journalErr
-		}
-		journal = read
-	}
-	now := h.now()
-	observed := h.info.Observe()
-	board := backlogOf(observed)
-	rows := plainRows(board.Rows)
-	return overview.Compose(overview.Inputs{
-		Project: pane,
-		Rows:    rows,
-		Closed:  plainRows(board.Closed),
-		Counts:  board.Counts,
-		Ledger:  ledgerFor(board),
-		Journal: journal,
-		Holders: h.holders(observed, rows, now),
-		Human:   overview.Standing{Proven: h.info.Authority.Proven},
-		Since:   now.Add(-24 * time.Hour),
-		First:   true,
-	}, now), nil
+	return h.overviewOf(read, now.Add(-24*time.Hour), true, now), nil
 }
 
 // partnerHuman is whose conversation a request is about: the human signed in
@@ -182,6 +156,13 @@ func (h *handler) partnerHuman(r *http.Request) string {
 			return named
 		}
 	}
+	return h.seatHuman()
+}
+
+// seatHuman is whose conversation it is where nobody is signed in at a
+// browser: the one this server's boot proof names, else the one the seat
+// configured, else the seat itself.
+func (h *handler) seatHuman() string {
 	if named := strings.TrimSpace(h.knownHuman()); named != "" {
 		return named
 	}

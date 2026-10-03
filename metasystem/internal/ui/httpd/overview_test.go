@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -46,7 +50,7 @@ func overviewObservation() snapshot.Observation {
 		Tip: "c5d517f", CommittedAt: overviewNow.Add(-time.Minute), SyncMode: goal.SyncLocal,
 		Tree: &goal.TreeGoals{
 			Root:      &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "2", SyncMode: goal.SyncLocal, Revision: 1},
-			Live:      map[string]*goal.GoalFile{"g1-s22": {Id: "g1-s22", State: goal.StateQueued, Intent: "The pane briefs", Priority: 2, Sequence: 1, Revision: 3}},
+			Live:      map[string]*goal.GoalFile{"g1-s22": {Id: "g1-s22", State: goal.StateQueued, Intent: "The pane briefs", Priority: 1, Sequence: 1, Revision: 3}},
 			Done:      map[string]*goal.GoalFile{},
 			Abandoned: map[string]*goal.GoalFile{},
 		},
@@ -90,6 +94,89 @@ func TestOverviewPayload(t *testing.T) {
 		{ID: "review"}, {ID: "waiting"}, {ID: overview.LaneDoneToday},
 	})
 	testutil.Expect(t, "health", page.Health.OK, true)
+}
+
+// The landing page's "Needs you" and the Decisions page's inbox are one count
+// over one workspace: a goal ranked first and one ranked second, a seat's
+// channel question, an open row of the questions register, a draft and a
+// ruling past its review. The groups add up to the total.
+func TestOverviewAndDecisionsGiveOneTotal(t *testing.T) {
+	t.Parallel()
+
+	observation := overviewObservation()
+	observation.Tree.Live = map[string]*goal.GoalFile{
+		"g-first": {Id: "g-first", State: goal.StateQueued, Intent: "Ranked first", Priority: 1, Sequence: 1, Revision: 1},
+		"g-lower": {Id: "g-lower", State: goal.StateQueued, Intent: "Ranked second", Priority: 2, Sequence: 1, Revision: 1},
+	}
+	pane := describedPane()
+	pane.Records = append(pane.Records,
+		project.Record{Kind: "decision", ID: "d-draft", Status: "draft", Title: "A draft", Path: "docs/d-draft.md"})
+	pane.Questions = []project.Question{
+		{ID: "Q-1", Opened: "2026-09-20", Question: "A register question", Status: "open", Goals: []string{}},
+	}
+	served := New(Info{
+		Project: func() (project.Pane, error) { return pane, nil },
+		Observe: func() snapshot.Observation { return observation },
+		Now:     func() time.Time { return overviewNow },
+		Asks: func() ([]channel.Question, error) {
+			return []channel.Question{{ID: "q-1", Goal: "g-first", State: "open", OpenedAt: overviewNow.Add(-time.Hour)}}, nil
+		},
+		Rulings: func() (rulings.Register, error) {
+			return rulings.Register{
+				Rows:    []rulings.Row{{ID: "R-2", Words: "A temporary ruling."}},
+				Reviews: []rulings.Review{{ID: "R-2", Owner: "Wido", Class: "temporary", Due: "2026-09-20"}},
+			}, nil
+		},
+	}, loopback(), testBundle())
+
+	var page overview.Page
+	testutil.Require(t, "decode the overview", json.Unmarshal(
+		request(t, served, http.MethodGet, "/api/overview", "127.0.0.1:7878", nil).Body.Bytes(), &page), nil)
+	var decided decisions.Page
+	testutil.Require(t, "decode the decisions", json.Unmarshal(
+		request(t, served, http.MethodGet, "/api/decisions", "127.0.0.1:7878", nil).Body.Bytes(), &decided), nil)
+
+	needs := page.NeedsYou
+	testutil.Expect(t, "one total for both pages", needs.Total, decided.Counts.NeedsYou)
+	testutil.Expect(t, "the groups add up to it", needs.Approvals.Count+needs.Questions.Count+
+		needs.Drafts.Count+needs.Designs.Count+needs.Alerts.Count+needs.Other.Count, needs.Total)
+	testutil.Expect(t, "only the goal ranked first awaits approval", needs.Approvals.Count, 1)
+	testutil.Expect(t, "the channel question and not the register's", needs.Questions.Count, 1)
+	testutil.Expect(t, "the draft", needs.Drafts.Count, 1)
+	testutil.Expect(t, "the ruling past its review", needs.Other.Count, 1)
+}
+
+// An In Progress card says the stage the board resource serves for its goal,
+// in the words the host board gives it, and "not recorded" where the server
+// reads no board.
+func TestAnInProgressCardShowsTheStageTheBoardServes(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	m1c := board.Seat{Machine: "m1c", Installation: "/c/c/metasystem"}
+	rounds := 3
+	testutil.Require(t, "write the card", board.WriteAt(home, board.Card{
+		Goal: "tests-parallel-and-deterministic", Stage: board.StageReview, Round: &board.Round{N: 2, Max: &rounds}, Seat: m1c,
+		Owner: &board.Owner{Pid: 41, PidStartedAt: 1000}, Writer: board.Writer{At: fleetNow.Add(-2 * time.Minute)},
+	}), nil)
+	info := Info{
+		Project: func() (project.Pane, error) { return describedPane(), nil },
+		Observe: silentHolder, Now: func() time.Time { return fleetNow },
+		Board: &BoardSource{Home: home, Seats: func() ([]board.Seat, error) { return []board.Seat{m1c}, nil },
+			Prober: boardProber{}, Stall: 20 * time.Minute},
+	}
+	phase := func(name string, info Info) string {
+		t.Helper()
+		var page overview.Page
+		testutil.Require(t, "decode the overview "+name, json.Unmarshal(
+			request(t, New(info, loopback(), testBundle()), http.MethodGet, "/api/overview", "127.0.0.1:7878", nil).Body.Bytes(), &page), nil)
+		testutil.Require(t, "the claimed goal "+name, len(page.Work.InProgress), 1)
+		return page.Work.InProgress[0].Phase
+	}
+
+	testutil.Expect(t, "the card's stage", phase("with the board", info), "review round 2 of 3")
+	info.Board = nil
+	testutil.Expect(t, "no board, no stage", phase("without it", info), backlog.PhaseNotRecorded)
 }
 
 // The page's health is judged on the same freshness the board's chip is: one

@@ -23,6 +23,7 @@ import {
   goalFacts,
   goalGroups,
   goalOffers,
+  goalWithID,
   kindTitle,
   listedIn,
   newActionFor,
@@ -85,6 +86,7 @@ import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
+import { NotFoundPane } from "../panes/sections";
 import { useOffersRefresh } from "../shell/refresh";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath, sittingPath } from "../routes";
@@ -182,6 +184,10 @@ function Briefed({ goal }: { goal: string | null }) {
    * not read and the rest of the page stands.
    */
   const [ledger, setLedger] = useState<Backlog | null>(null);
+  // The goal the board was last read for. A board held from another goal's
+  // page is still the board, but its read for this goal has not finished, so
+  // it cannot yet say that this goal is nowhere.
+  const [readFor, setReadFor] = useState<string | null>(null);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -217,6 +223,7 @@ function Briefed({ goal }: { goal: string | null }) {
     loadBacklog(aborter.signal)
       .then((answered) => {
         setLedger(answered);
+        setReadFor(goal);
       })
       .catch(() => {
         if (!aborter.signal.aborted) {
@@ -257,6 +264,11 @@ function Briefed({ goal }: { goal: string | null }) {
   // says the header needs no second icon for it.
   useOffersRefresh(again, refreshHint(read), true);
 
+  const { tab } = useParams<{ tab?: string }>();
+  if (read.state === "read" && noPageAt(read.pane, goal, readFor === goal ? ledger : null, tab)) {
+    return <NotFoundPane />;
+  }
+
   return (
     <Pane title={goal === null ? "Project" : "Backlog"}>
       {read.state === "loading" && <LoadingCards />}
@@ -272,12 +284,37 @@ function Briefed({ goal }: { goal: string | null }) {
           pane={read.pane}
           goal={goal}
           ledger={ledger}
+          ledgerRead={readFor === goal && ledger !== null}
           onLedger={setLedger}
           onReload={reload}
         />
       )}
     </Pane>
   );
+}
+
+/**
+ * True where the address names something this page does not have: a tab that
+ * is not one of the page's own, or a goal that neither the project's reading
+ * nor the board carries among its open rows and its closed ones.
+ *
+ * A goal is judged only against a board that has been read. While the board
+ * is still being read, and where it could not be, nothing has said the goal
+ * is nowhere, and the page stands as it reads.
+ */
+export function noPageAt(
+  pane: PanePayload,
+  goal: string | null,
+  ledger: Backlog | null,
+  tab: string | undefined,
+): boolean {
+  if (tabShown(pageSections(briefingFor(pane, goal)), tab, null) === null) {
+    return true;
+  }
+  if (goal === null || ledger === null || goalWithID(pane, goal) !== null) {
+    return false;
+  }
+  return ![...ledger.rows, ...ledger.closed].some((row) => row.ref.id === goal);
 }
 
 /**
@@ -293,6 +330,7 @@ function Columns({
   pane,
   goal,
   ledger,
+  ledgerRead,
   onLedger,
   onReload,
 }: {
@@ -300,6 +338,8 @@ function Columns({
   goal: string | null;
   /** The board as it stands, on a goal's page; null where it was not read. */
   ledger: Backlog | null;
+  /** True where `ledger` is the board's answer to this goal's own read. */
+  ledgerRead: boolean;
   /** The board after an edge act, which answers with the ledger it left. */
   onLedger: (backlog: Backlog) => void;
   onReload: () => void;
@@ -327,7 +367,9 @@ function Columns({
   const [remembered] = useState(() => (goal === null ? readProjectTab() : readGoalTab()));
 
   const page = goal === null ? "Project" : `Backlog · ${goal}`;
-  const open = tabShown(sections, parameters.tab, remembered);
+  // An address naming a tab this page does not have never reaches these
+  // columns: the pane answers it as an address that matches nothing.
+  const open = tabShown(sections, parameters.tab, remembered) ?? "";
 
   // What the drawer says this page is about: the page, and the tab of it that
   // is open, which is the only section on the screen.
@@ -545,7 +587,13 @@ function Columns({
         <div className="ms-briefing-preamble">
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
           {briefing.goal !== null && (
-            <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} onReread={onLedger} />
+            <GoalBlock
+              briefing={briefing}
+              ledger={ledger}
+              ledgerRead={ledgerRead}
+              onEdited={onReload}
+              onReread={onLedger}
+            />
           )}
           {/* A goal waiting to land, or one that is done, can be examined in the
               review room (g1-s65 D2); a review that stands is its door. */}
@@ -867,12 +915,15 @@ function Block({
 export function GoalBlock({
   briefing,
   ledger,
+  ledgerRead,
   onEdited,
   onReread,
 }: {
   briefing: Briefing;
   /** The board as it stands, which is where the row the sheet fills from is. */
   ledger: Backlog | null;
+  /** True where `ledger` answers this goal's own read: not while it is out, nor where it failed. */
+  ledgerRead: boolean;
   /** Said after a save landed: the page reads itself again, records and all. */
   onEdited: () => void;
   /**
@@ -912,6 +963,12 @@ export function GoalBlock({
   const mine = ledger === null ? undefined : [...ledger.rows, ...ledger.closed].find((row) => row.ref.id === goal.id);
   const offers = mine === undefined || ledger === null ? [] : goalOffers(mine, ledger.rows);
   const stands = mine === undefined ? "" : standsLine(mine, offers);
+  // Where the goal stands is the board's to say: the goal file this page read
+  // can lag the ledger the Backlog reads, and the two pages must not name two
+  // states for one goal. The goal file's own word stands only where a board
+  // read for this goal carries no row for it, and no state is named before
+  // that read answers or where it failed.
+  const state = !ledgerRead ? "" : mine === undefined ? goal.state : mine.state;
   // Each button opens what the backlog card's menu opens for the same act. A
   // step up or down opens the rank sheet at the rank the step would give, so a
   // press here is always looked at before it is published.
@@ -947,7 +1004,7 @@ export function GoalBlock({
       <p className="ms-facts-eyebrow ms-mono">{goal.id}</p>
       <div className="ms-briefing-head">
         <h2 className="ms-briefing-title">{goal.title}</h2>
-        {goal.state !== "" && <Chip>{goal.state}</Chip>}
+        {state !== "" && <Chip>{state}</Chip>}
         {/* After the goal's own chip: what the Partner proposed about it and
             nobody has answered, which opens the conversation at the line
             (g1-s61 D2). A goal page is where a human comes to read the thing

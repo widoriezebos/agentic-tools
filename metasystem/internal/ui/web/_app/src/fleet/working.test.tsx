@@ -424,6 +424,21 @@ describe("what the row opens to", () => {
     expect(markup).toContain("Say what a seat is doing.");
   });
 
+  // The opened row and the Doing column are one fact said twice: a machine
+  // that publishes its chain alone is working, and only one that carries
+  // neither a phase nor a chain is running nothing.
+  it("never says a machine that publishes its chain alone is running nothing", () => {
+    const older = machine({
+      working: [],
+      running: { job: "j-9", role: "critic", round: 1, goal: "g1-s19", startedAt: at(-30) },
+    });
+    const markup = rendered(page([older]));
+
+    expect(markup).not.toContain("running nothing");
+    expect(markup).toContain("This machine publishes only its newest chain, so its jobs cannot be opened here.");
+    expect(rendered(page([machine({ working: [] })]))).toContain("This machine is running nothing.");
+  });
+
   it("says where it came from: this seat's records, or when it was published", () => {
     expect(workingSource(machine({ this: true }), now)).toContain("this host's own job records");
     expect(workingSource(machine(), now)).toBe("as published 2 min ago");

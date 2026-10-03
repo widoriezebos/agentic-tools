@@ -190,6 +190,41 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	return started, already, err
 }
 
+// Settled is HEAD's tree already proven green: the green recorded for that
+// exact tree, or the green it inherits from a tree that differs from it only
+// in goal ledger files, recorded here as Run would record it. Neither needs a
+// proof in the background, whose instant result would end inside the
+// caller's own turn and leave nobody to push it. A tree whose own last
+// result is red, or a running proof, settles nothing: Start reports or
+// starts the proof.
+func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
+	commit, tree, err := Head(checkout)
+	if err != nil {
+		return Result{}, false, err
+	}
+	var settled Result
+	found := false
+	err = withLock(install, func() error {
+		_, recorded, alive, err := ReadRunning(install, seams)
+		if err != nil || recorded && alive {
+			return err
+		}
+		if result, ok, err := ResultFor(install, tree); err != nil || ok {
+			settled, found = result, ok && result.Result == Green
+			return err
+		}
+		from, ok := ledgerOnlySinceGreen(install, checkout, tree)
+		if !ok {
+			return nil
+		}
+		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
+			Reason: "inherits green from tree " + Short(from) + ": only goal ledger files changed since"}
+		found = true
+		return appendLine(resultsPath(install), settled)
+	})
+	return settled, found, err
+}
+
 func writeRunning(install string, running Running) error {
 	data, err := json.Marshal(running)
 	if err != nil {

@@ -147,6 +147,25 @@ func TestReadCountsAndNamesTheRowsItCouldNotRead(t *testing.T) {
 	})
 }
 
+// Two rows under one id are two versions of one entry: the first is the row,
+// and the second is named rather than listed as a second problem.
+func TestReadNamesARowWhoseIDAnEarlierRowCarries(t *testing.T) {
+	t.Parallel()
+	register := read(t, kitHeader, []string{
+		"| KI-39 | 2026-08-21 | The first wording | It costs time | Fix it | OPEN |",
+		"| KI-39 | 2026-08-21 | The second wording | It costs time | Fix it | OPEN |",
+		"| KI-40 | 2026-08-22 | Another issue | It costs more | Fix that | OPEN |",
+	})
+	ids := []string{}
+	for _, row := range register.Open {
+		ids = append(ids, row.ID+": "+row.What)
+	}
+	testutil.Expect(t, "the rows", ids, []string{"KI-39: The first wording", "KI-40: Another issue"})
+	testutil.Expect(t, "how many could not be read", register.Unread, 1)
+	testutil.Expect(t, "what it said", register.Defects,
+		[]string{"row=2: id KI-39 is already carried by an earlier row"})
+}
+
 func TestReadAnswersAnEmptyRegisterForACheckoutWithNone(t *testing.T) {
 	t.Parallel()
 	register, err := Read(t.TempDir())

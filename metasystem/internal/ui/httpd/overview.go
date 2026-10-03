@@ -19,7 +19,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -41,52 +42,59 @@ const overviewPath = "/api/overview"
 // read or written is a window and not a refusal.
 func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if h.info.Project == nil {
-		writeFailure(w, "this engine was built without a project reader")
-		return
-	}
-	if h.info.Observe == nil {
-		writeFailure(w, "this engine was built without a ledger reader")
-		return
-	}
-	pane, err := h.info.Project()
+	now := h.now()
+	standing := h.state(r)
+	read, err := h.gather(h.partnerHuman(r), standing.SignedIn, now)
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
 	}
-	journal := []notifications.Notice{}
-	if h.info.NotificationJournal != "" {
-		read, journalErr := notifications.Page(h.info.NotificationJournal, notifications.DefaultLimit, "")
-		if journalErr != nil {
-			writeFailure(w, journalErr.Error())
-			return
-		}
-		journal = read
-	}
-
-	now := h.now()
-	standing := h.state(r)
 	// The visit is recorded as part of answering, because reading the page IS
 	// the visit. It is recorded before the page is composed so that the
 	// window the page is composed over is the window this read established.
 	since, first := h.visit(standing.Human, now)
+	_ = json.NewEncoder(w).Encode(h.overviewOf(read, since, first, now))
+}
 
-	observed := h.info.Observe()
-	board := backlogOf(observed)
-	rows := plainRows(board.Rows)
-	page := overview.Compose(overview.Inputs{
-		Project: pane,
-		Rows:    rows,
-		Closed:  plainRows(board.Closed),
-		Counts:  board.Counts,
-		Ledger:  ledgerFor(board),
-		Journal: journal,
-		Holders: h.holders(observed, rows, now),
-		Human:   overview.Standing{Proven: standing.SignedIn},
+// overviewOf composes the landing page over one gathered reading. "Needs you"
+// is the Decisions inbox composed from that same reading at the same instant,
+// so the page's total is the count the Decisions page gives.
+func (h *handler) overviewOf(read gathered, since time.Time, first bool, now time.Time) overview.Page {
+	return overview.Compose(overview.Inputs{
+		Project: read.in.Project,
+		Rows:    read.in.Rows,
+		Closed:  read.in.Closed,
+		Counts:  read.board.Counts,
+		Ledger:  ledgerFor(read.board),
+		Journal: read.in.Journal,
+		Inbox:   decisions.ForOverview(decisions.Inbox(read.in, now)),
+		Stages:  h.stages(),
+		Holders: h.holders(read.observed, read.in.Rows, now),
+		Human:   overview.Standing{Proven: read.in.Human.Proven},
 		Since:   since,
 		First:   first,
 	}, now)
-	_ = json.NewEncoder(w).Encode(page)
+}
+
+// stages is the stage of every goal the host board believes a card for, read
+// through the view the board resource serves and worded as the board words it.
+// A card the classifier calls Unknown names no stage, and a build with no board
+// reader names none at all, which leaves each In Progress row with the
+// ledger's own phase.
+func (h *handler) stages() map[string]string {
+	source := h.info.Board
+	if source == nil || source.Seats == nil {
+		return nil
+	}
+	held := map[string]string{}
+	for _, seat := range h.boardView(source).Seats {
+		for _, card := range seat.Goals {
+			if card.Unknown == "" && card.Stage != "" {
+				held[card.Goal] = board.StageText(card.Stage, card.Round, card.Proof)
+			}
+		}
+	}
+	return held
 }
 
 // holders is the presence standing of every machine the board's rows name,

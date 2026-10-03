@@ -869,11 +869,13 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	if foldedRound < 1 {
 		return Closure{}, false, nil
 	}
-	clean, err := readsubject.CleanRegister(encodeFindingRegister(register))
+	// A person's accepted risk and an out-of-scope ruling close to a read
+	// the landing takes; the closure records the accepted risks.
+	landable, risks, err := readsubject.LandableRegister(encodeFindingRegister(register))
 	if err != nil {
 		return Closure{}, false, err
 	}
-	if !clean {
+	if !landable {
 		return Closure{}, false, nil
 	}
 	for jobID, record := range state.records {
@@ -889,13 +891,13 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	if !present {
 		return Closure{}, false, nil
 	}
-	want := Closure{CriticRoot: rootJob, Round: foldedRound, Subject: subject, Mechanism: "clean"}
+	want := Closure{CriticRoot: rootJob, Round: foldedRound, Subject: subject, Mechanism: "clean", AcceptedRisks: risks}
 	existing, present, err := readsubject.ReadClosure(root)
 	if err != nil {
 		return Closure{}, false, err
 	}
 	if present {
-		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) {
+		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) && readsubject.SameAcceptedRisks(existing.AcceptedRisks, want.AcceptedRisks) {
 			return want, false, nil
 		}
 		return Closure{}, false, fmt.Errorf("critique %s was already closed at round %d, so it is not closed again at round %d (subjects %s, %s)", rootJob, existing.Round, want.Round, existing.Subject.Digest(), want.Subject.Digest())

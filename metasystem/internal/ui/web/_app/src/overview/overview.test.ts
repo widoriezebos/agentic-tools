@@ -15,6 +15,7 @@ import {
   laneStrip,
   moreLine,
   needsKinds,
+  otherLine,
   plural,
   seatName,
   seeAll,
@@ -81,6 +82,7 @@ function page(over: Partial<Page> = {}): Page {
       drafts: { count: 0, items: [] },
       designs: { count: 0, items: [] },
       alerts: { count: 0, items: [] },
+      other: { count: 0, items: [] },
       signIn: false,
       total: 0,
     },
@@ -221,7 +223,7 @@ describe("what needs a human", () => {
     };
     expect(needsKinds(needs).map((kind) => kind.to)).toEqual([
       "/backlog",
-      "/project/questions",
+      "/decisions",
       "/project/designs",
       "/project/designs",
       null,
@@ -230,6 +232,12 @@ describe("what needs a human", () => {
 
   it("is nothing at all when nothing is waiting", () => {
     expect(needsKinds(page().needsYou)).toEqual([]);
+    expect(otherLine(page().needsYou)).toBeNull();
+  });
+
+  it("sends the rows no kind lists to Decisions in one line", () => {
+    const needs = { ...page().needsYou, approvals: group(1, 1), other: group(15, 0), total: 16 };
+    expect(otherLine(needs)).toBe("15 more on Decisions");
   });
 });
 
@@ -509,9 +517,9 @@ describe("where a row opens", () => {
   });
 
   it("sends a question to the register and a lane to the board", () => {
-    expect(destinationFor({ kind: "question", id: "q-1" })).toEqual({
+    expect(destinationFor({ kind: "decisions", id: "q-1" })).toEqual({
       kind: "link",
-      to: "/project/questions",
+      to: "/decisions",
     });
     expect(destinationFor({ kind: "backlog", id: "" })).toEqual({ kind: "link", to: "/backlog" });
   });

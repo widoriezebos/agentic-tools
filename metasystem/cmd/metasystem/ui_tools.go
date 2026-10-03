@@ -9,7 +9,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
@@ -80,7 +81,7 @@ func runUITools(args []string, stdout, stderr io.Writer) int {
 func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Readers {
 	now := func() time.Time { return time.Now().UTC() }
 	ledger := snapshot.New(roots.StateRoot, time.Now)
-	journal := steward.NotificationJournalPath(roots.Checkout)
+	journal := notificationJournal(roots)
 	pane := func() (project.Pane, error) { return project.ReadPane(projectRoots(roots), now()) }
 	notices := func(limit int, before string) ([]notifications.Notice, error) {
 		return notifications.Page(journal, limit, before)
@@ -176,11 +177,24 @@ func toolReaders(roots lifecycle.Roots, presenceRun, answers string) uitools.Rea
 				board = backlog.Project(observed.Tree, observed.Horizon, observed.Admission)
 			}
 			at := now()
+			// "Needs you" is the Decisions inbox, composed here from what this
+			// process reads: the records, the rows, the journal's newest page,
+			// this seat's open questions and the rulings register. It holds no
+			// landing gate and no Partner conversation, so the rows those two
+			// supply on the page are not counted here.
+			waiting := decisions.Inputs{
+				Project: read, Rows: board.Rows, Closed: board.Closed, Journal: held,
+				Asks: openAsks(roots), RegisterPath: registerFromCheckout(roots),
+			}
+			if register, registerErr := rulings.Read(roots.Installation); registerErr == nil {
+				waiting.Register = register
+			}
 			return overview.Compose(overview.Inputs{
 				Project: read,
 				Rows:    board.Rows,
 				Closed:  board.Closed,
 				Counts:  board.Counts,
+				Inbox:   decisions.ForOverview(decisions.Inbox(waiting, at)),
 				Ledger: overview.Ledger{
 					Freshness: snapshot.Freshness(observed.Fetch.Outcome),
 					AtTip:     observed.State == snapshot.StateRead,

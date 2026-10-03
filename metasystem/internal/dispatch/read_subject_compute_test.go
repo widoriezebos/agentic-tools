@@ -758,14 +758,8 @@ func TestCleanClosureRequiresWithdrawnRegister(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "accepted-risk", class: "severe",
-			close: func(t *testing.T, repo string) {
-				if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-1", "decision-op"); err != nil {
-					t.Fatal(err)
-				}
-			},
-		},
+		// A person's accepted risk closes to a landable read:
+		// TestAcceptedRiskClosesToALandableRead.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()

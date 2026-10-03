@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -1440,7 +1441,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
 			Summary: fmt.Sprintf("job %s is a round of chain %s", job, parent), next: inv.publicArgv("work", "finish", qualifiedJob(parent)), nextReason: "work finish names the chain's root"}
 	}
-	if closed, _ := root["chainClosed"].(bool); closed {
+	if closed, _ := root["chainClosed"].(bool); closed && !closedWithoutEarnedClosure(root) {
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Summary: fmt.Sprintf("chain %s is already closed", job), Data: map[string]any{"chainClosed": true}}
 	}
 	if evidence := inv.input.text("evidence"); evidence != "" && !validIntentJobID(evidence) {
@@ -1546,6 +1547,23 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	return intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1), Data: data, Summary: summary,
 		text: nonEmptyLines(string(ran.stderr)),
 		next: inv.sameCommand(), nextReason: "after resolving what is named above"}
+}
+
+// closedWithoutEarnedClosure says whether a closed critic root lacks the
+// closure its register earns: one whose only remaining entries are a
+// person's accepted risks or out-of-scope rulings, closed by an engine that
+// wrote no closure for them. Closing it again records the closure; any other
+// closed chain is unchanged.
+func closedWithoutEarnedClosure(root map[string]any) bool {
+	if _, hasClosure := root["closure"]; hasClosure || !criticRole(recordText(root, "role")) {
+		return false
+	}
+	landable, _, err := readsubject.LandableRegister(root["findingRegister"])
+	if err != nil || !landable {
+		return false
+	}
+	clean, err := readsubject.CleanRegister(root["findingRegister"])
+	return err == nil && !clean
 }
 
 func nonEmptyLines(text string) []string {

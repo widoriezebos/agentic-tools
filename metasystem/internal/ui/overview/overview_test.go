@@ -118,117 +118,63 @@ func busy() Inputs {
 
 /* ------------------------------------------------------------- needs you -- */
 
-// The approvals row is the goals nobody has said yes to, in the order a seat
-// would take them: the band first, then the position in it.
-func TestGoalsAwaitingApprovalAreRankedAndCappedAtThree(t *testing.T) {
+// The block is the Decisions inbox counted by group: every row is in exactly
+// one group, a listed group shows its first three in the inbox's own order,
+// every other kind is counted in Other, and the total is the inbox's length.
+func TestNeedsYouIsTheInboxCountedByGroupAndCappedAtThree(t *testing.T) {
 	t.Parallel()
 
-	page := composed(t, func(in *Inputs) {
-		in.Rows = []backlog.Row{
-			ranked(goalRow("second", backlog.LaneToDo, "b"), 2, 1),
-			ranked(goalRow("fourth", backlog.LaneToDo, "d"), 2, 3),
-			ranked(goalRow("first", backlog.LaneToDo, "a"), 1, 1),
-			ranked(goalRow("third", backlog.LaneToDo, "c"), 2, 2),
-			// Ranked in no band at all, which is after every band and not
-			// before band 1.
-			ranked(goalRow("last", backlog.LaneToDo, "e"), 0, 0),
-			// Carries an approval, so it is not waiting on one.
-			approved(ranked(goalRow("admitted", backlog.LaneToDo, "f"), 1, 2)),
-			// Another lane entirely.
-			ranked(goalRow("elsewhere", backlog.LaneReady, "g"), 1, 3),
+	first := ranked(goalRow("first", backlog.LaneToDo, "a"), 1, 1)
+	needs := composed(t, func(in *Inputs) {
+		in.Inbox = []Need{
+			{Group: NeedApproval, ID: "first", Row: &first},
+			{Group: NeedApproval, ID: "rowless", Title: "No row", Since: ago(time.Hour)},
+			{Group: NeedQuestion, ID: "q-1", Title: "g1-s15 · decision", Since: ago(2 * time.Hour)},
+			{Group: NeedDraft, ID: "design-board", Title: "The board", By: "design", Path: "plans/designs/design-board.md"},
+			{Group: NeedDesign, ID: "design-shell", Title: "The shell", By: "every goal landed", Path: "plans/designs/design-shell.md"},
+			{Group: NeedAlert, ID: "n1", Title: "your turn", By: "handoff", Since: ago(10 * time.Minute)},
+			{Group: NeedAlert, ID: "n2"}, {Group: NeedAlert, ID: "n3"}, {Group: NeedAlert, ID: "n4"},
+			{ID: "R-2"}, {ID: "g1-s50"},
 		}
-	})
+	}).NeedsYou
 
-	testutil.Expect(t, "how many are waiting on an approval", page.NeedsYou.Approvals.Count, 5)
-	testutil.Require(t, "how many are shown", len(page.NeedsYou.Approvals.Items), 3)
-	testutil.Expect(t, "the first three, by band then position",
-		[]string{
-			page.NeedsYou.Approvals.Items[0].ID,
-			page.NeedsYou.Approvals.Items[1].ID,
-			page.NeedsYou.Approvals.Items[2].ID,
-		},
-		[]string{"first", "second", "third"})
-	testutil.Expect(t, "where the first one opens",
-		page.NeedsYou.Approvals.Items[0].Where, Where{Kind: WhereGoal, ID: "first"})
+	testutil.Expect(t, "the approvals", needs.Approvals.Count, 2)
+	testutil.Expect(t, "an approval is the board's row",
+		needs.Approvals.Items[0], Item{ID: "first", Title: "a", At: first.OpenedAt, Where: Where{Kind: WhereGoal, ID: "first"}})
+	testutil.Expect(t, "an approval with no row keeps its title", needs.Approvals.Items[1].Title, "No row")
+	testutil.Expect(t, "a seat's question opens on Decisions", needs.Questions.Items[0],
+		Item{ID: "q-1", Title: "g1-s15 · decision", Note: "open", At: ago(2 * time.Hour), Where: Where{Kind: WhereDecisions, ID: "q-1"}})
+	testutil.Expect(t, "a draft opens its record", needs.Drafts.Items[0],
+		Item{ID: "design-board", Title: "The board", Note: "design", Where: Where{Kind: WhereDocument, ID: "plans/designs/design-board.md"}})
+	testutil.Expect(t, "why a design is here", needs.Designs.Items[0].Note, "every goal landed")
+	testutil.Expect(t, "how many alerts", needs.Alerts.Count, 4)
+	testutil.Require(t, "how many are shown", len(needs.Alerts.Items), 3)
+	testutil.Expect(t, "an alert opens the panel at its own row", needs.Alerts.Items[0],
+		Item{ID: "n1", Title: "your turn", Note: "handoff", At: ago(10 * time.Minute), Where: Where{Kind: WhereNotification, ID: "n1"}})
+	testutil.Expect(t, "the kinds no group lists", needs.Other, Group{Count: 2, Items: []Item{}})
+	testutil.Expect(t, "the total is the inbox", needs.Total, 11)
+	testutil.Expect(t, "the groups add up to it", needs.Approvals.Count+needs.Questions.Count+
+		needs.Drafts.Count+needs.Designs.Count+needs.Alerts.Count+needs.Other.Count, needs.Total)
 }
 
-func TestOpenQuestionsAreNewestFirst(t *testing.T) {
+// An In Progress card says the stage the host board believes for the goal,
+// and "not recorded" only where the board has no card and the ledger no phase.
+func TestAnInProgressCardShowsTheBoardsStage(t *testing.T) {
 	t.Parallel()
 
-	page := composed(t, nil)
+	claimed := func(id string) backlog.Row {
+		row := goalRow(id, backlog.LaneInProgress, id)
+		row.Phase = backlog.PhaseNotRecorded
+		return row
+	}
+	work := composed(t, func(in *Inputs) {
+		in.Rows = []backlog.Row{claimed("carded"), claimed("uncarded")}
+		in.Stages = map[string]string{"carded": "review"}
+	}).Work
 
-	testutil.Expect(t, "how many are open", page.NeedsYou.Questions.Count, 2)
-	testutil.Require(t, "how many are shown", len(page.NeedsYou.Questions.Items), 2)
-	testutil.Expect(t, "the newest first", page.NeedsYou.Questions.Items[0].ID, "q-new")
-	testutil.Expect(t, "then the older", page.NeedsYou.Questions.Items[1].ID, "q-old")
-	testutil.Expect(t, "where one opens",
-		page.NeedsYou.Questions.Items[0].Where, Where{Kind: WhereQuestion, ID: "q-new"})
-}
-
-func TestDraftsAreEveryRecordDeclaringDraft(t *testing.T) {
-	t.Parallel()
-
-	page := composed(t, nil)
-
-	testutil.Expect(t, "how many drafts", page.NeedsYou.Drafts.Count, 2)
-	testutil.Require(t, "how many are shown", len(page.NeedsYou.Drafts.Items), 2)
-	testutil.Expect(t, "a draft of any kind is one",
-		[]string{page.NeedsYou.Drafts.Items[0].ID, page.NeedsYou.Drafts.Items[1].ID},
-		[]string{"design-board", "decision-answering"})
-	testutil.Expect(t, "the kind is the note beside it", page.NeedsYou.Drafts.Items[1].Note, "decision")
-	testutil.Expect(t, "where a draft opens",
-		page.NeedsYou.Drafts.Items[0].Where,
-		Where{Kind: WhereDocument, ID: "plans/designs/design-board.md"})
-}
-
-// A design is waiting on a human when every goal it names has landed and
-// nobody has closed it. The three near misses are each a design that is not.
-func TestDesignsWhoseWorkHasAllLanded(t *testing.T) {
-	t.Parallel()
-
-	page := composed(t, nil)
-
-	testutil.Expect(t, "how many designs are waiting to be closed", page.NeedsYou.Designs.Count, 1)
-	testutil.Require(t, "how many are shown", len(page.NeedsYou.Designs.Items), 1)
-	testutil.Expect(t, "the one whose goals all landed", page.NeedsYou.Designs.Items[0].ID, "design-shell")
-	testutil.Expect(t, "why it is here", page.NeedsYou.Designs.Items[0].Note, "every goal landed")
-}
-
-func TestADesignNamingAGoalTheCheckoutCannotSeeHasNotLanded(t *testing.T) {
-	t.Parallel()
-
-	page := composed(t, func(in *Inputs) {
-		in.Project.Records = []project.Record{record("design", "design-stranger", "accepted", "g1-s9", "nobody-knows")}
-	})
-
-	testutil.Expect(t, "a design naming an unknown goal", page.NeedsYou.Designs.Count, 0)
-}
-
-func TestAlertsAndHandoffsInsideSevenDays(t *testing.T) {
-	t.Parallel()
-
-	page := composed(t, func(in *Inputs) {
-		in.Journal = []notifications.Notice{
-			{ID: "n1", At: ago(10 * time.Minute), Source: "handoff", Message: "your turn", Delivered: true},
-			{ID: "n2", At: ago(2 * time.Hour), Source: "alert", Message: "unhealthy", Delivered: true},
-			{ID: "n3", At: ago(3 * time.Hour), Source: "steward", Message: "reaped 3 workers", Delivered: true},
-			{ID: "n4", At: ago(6 * 24 * time.Hour), Source: "alert", Message: "older alert", Delivered: true},
-			{ID: "n5", At: ago(8 * 24 * time.Hour), Source: "alert", Message: "outside the window", Delivered: true},
-			{ID: "n6", At: "not a stamp", Source: "alert", Message: "undated", Delivered: true},
-		}
-	})
-
-	testutil.Expect(t, "how many are addressed to a human and recent", page.NeedsYou.Alerts.Count, 3)
-	testutil.Require(t, "how many are shown", len(page.NeedsYou.Alerts.Items), 3)
-	testutil.Expect(t, "the journal's own order is kept",
-		[]string{
-			page.NeedsYou.Alerts.Items[0].ID,
-			page.NeedsYou.Alerts.Items[1].ID,
-			page.NeedsYou.Alerts.Items[2].ID,
-		},
-		[]string{"n1", "n2", "n4"})
-	testutil.Expect(t, "an alert opens the panel at its own row",
-		page.NeedsYou.Alerts.Items[0].Where, Where{Kind: WhereNotification, ID: "n1"})
+	testutil.Require(t, "the claimed goals", len(work.InProgress), 2)
+	testutil.Expect(t, "a goal with a card shows its stage", work.InProgress[0].Phase, "review")
+	testutil.Expect(t, "a goal with none is not recorded", work.InProgress[1].Phase, backlog.PhaseNotRecorded)
 }
 
 func TestSignInIsTrueWhenNothingProvesAHuman(t *testing.T) {
@@ -639,12 +585,13 @@ func TestFirstSentence(t *testing.T) {
 		{"a summary with no stop", "A line with no full stop", "A line with no full stop"},
 		{"a stop inside a number", "Version 1.2 shipped. Then more.", "Version 1.2 shipped."},
 		{"a question", "Is it ready? It is.", "Is it ready?"},
+		{"a stop before a tab", "First.\tSecond.", "First."},
 		{"one sentence only", "Just the one.", "Just the one."},
 		{"nothing at all", "", ""},
 	} {
 		t.Run(one.name, func(t *testing.T) {
 			t.Parallel()
-			testutil.Expect(t, "the first sentence", firstSentence(one.summary), one.sentence)
+			testutil.Expect(t, "the first sentence", FirstSentence(one.summary), one.sentence)
 		})
 	}
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
 // decisionsPath is the decisions resource, matched exactly: what lies beneath
@@ -29,9 +30,43 @@ const decisionsPath = "/api/decisions"
 
 // decisions answers the page a human rules from.
 //
+// The visit is recorded as part of answering, because reading the page IS the
+// visit — and it is recorded after every reader that can fail, because a read
+// that ends in a 500 is a page nobody saw. A marker advanced by a failed read
+// would spend this human's "new since your last visit" on a page that never
+// rendered, and the window cannot be given back. It still stands before the
+// page is composed, so the window the page is composed over is the window
+// this read established. It is this page's own entry: the landing page keeps
+// its own, and a read here must not move it.
+func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	now := h.now()
+	standing := h.state(r)
+	read, err := h.gather(h.partnerHuman(r), standing.SignedIn, now)
+	if err != nil {
+		writeFailure(w, err.Error())
+		return
+	}
+	read.in.Since, read.in.First = h.visitDecisions(standing.Human, now)
+	_ = json.NewEncoder(w).Encode(decisions.Compose(read.in, now))
+}
+
+// gathered is one reading of everything the Decisions inbox is composed from,
+// with the observation and the board the rows were projected from.
+type gathered struct {
+	in       decisions.Inputs
+	observed snapshot.Observation
+	board    backlogPayload
+}
+
+// gather reads what the inbox is composed from, once, for every page that
+// says what needs this human. Decisions and the landing page both compose
+// from it, so the two cannot count different inputs. human is whose Partner
+// conversation the unanswered proposals are read from.
+//
 // The records and the ledger are required: a page missing either would be a
 // page that says nothing needs you because it could not look, so a reader that
-// fails is a 500 carrying the reason.
+// fails is an error carrying the reason.
 //
 // The other three are not. A seat with no channel questions on disk, a
 // checkout with no rulings register, and a build with no journal are all
@@ -40,33 +75,24 @@ const decisionsPath = "/api/decisions"
 // silently: a register this seat could not read is a defect line on the page,
 // in the reader's own words, rather than an empty Rulings tab that looks like
 // a project that has decided nothing.
-func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *handler) gather(human string, signedIn bool, now time.Time) (gathered, error) {
 	if h.info.Project == nil {
-		writeFailure(w, "this engine was built without a project reader")
-		return
+		return gathered{}, errors.New("this engine was built without a project reader")
 	}
 	if h.info.Observe == nil {
-		writeFailure(w, "this engine was built without a ledger reader")
-		return
+		return gathered{}, errors.New("this engine was built without a ledger reader")
 	}
 	pane, err := h.info.Project()
 	if err != nil {
-		writeFailure(w, err.Error())
-		return
+		return gathered{}, err
 	}
-	now := h.now()
 	journal := []notifications.Notice{}
 	if h.info.NotificationJournal != "" {
-		read, journalErr := journalBackTo(h.info.NotificationJournal, now.Add(-decisions.AlertWindow))
-		if journalErr != nil {
-			writeFailure(w, journalErr.Error())
-			return
+		journal, err = journalBackTo(h.info.NotificationJournal, now.Add(-decisions.AlertWindow))
+		if err != nil {
+			return gathered{}, err
 		}
-		journal = read
 	}
-
-	standing := h.state(r)
 	observed := h.info.Observe()
 	board := backlogOf(observed)
 	h.joinGates(observed, &board)
@@ -78,7 +104,7 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		// Where the register is from the checkout, which is the one root a
 		// destination in this payload can be opened against.
 		RegisterPath: h.info.RegisterPath,
-		Human:        decisions.Standing{Proven: standing.SignedIn},
+		Human:        decisions.Standing{Proven: signedIn},
 	}
 	if h.info.Asks != nil {
 		// A walk that could not read every record still answers the ones it
@@ -86,18 +112,14 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		asked, asksErr := h.info.Asks()
 		var unread *UnreadQuestions
 		if asksErr != nil && !errors.As(asksErr, &unread) {
-			writeFailure(w, asksErr.Error())
-			return
+			return gathered{}, asksErr
 		}
 		in.Asks = asked
 	}
 	if h.info.Rulings != nil {
-		read, registerErr := h.info.Rulings()
-		if registerErr != nil {
-			writeFailure(w, registerErr.Error())
-			return
+		if in.Register, err = h.info.Rulings(); err != nil {
+			return gathered{}, err
 		}
-		in.Register = read
 	}
 	// The actions the Partner proposed to this human and nobody has answered.
 	//
@@ -110,28 +132,15 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 	// this page would otherwise read a transcript nobody writes to.
 	//
 	// A seat with no Partner supplies none, which costs the page one group and
-	// nothing else. A transcript this seat cannot read is a 500 carrying its
+	// nothing else. A transcript this seat cannot read is an error carrying its
 	// reason, like every other reader here: a page that swallowed it would say
 	// nothing is proposed because it could not look.
 	if h.info.Partner != nil {
-		unsettled, proposalsErr := h.info.Partner.Unsettled(h.partnerHuman(r))
-		if proposalsErr != nil {
-			writeFailure(w, proposalsErr.Error())
-			return
+		if in.Proposals, err = h.info.Partner.Unsettled(human); err != nil {
+			return gathered{}, err
 		}
-		in.Proposals = unsettled
 	}
-
-	// The visit is recorded as part of answering, because reading the page IS
-	// the visit — and it is recorded after every reader that can fail, because
-	// a read that ends in a 500 is a page nobody saw. A marker advanced by a
-	// failed read would spend this human's "new since your last visit" on a
-	// page that never rendered, and the window cannot be given back. It still
-	// stands before the page is composed, so the window the page is composed
-	// over is the window this read established. It is this page's own entry:
-	// the landing page keeps its own, and a read here must not move it.
-	in.Since, in.First = h.visitDecisions(standing.Human, now)
-	_ = json.NewEncoder(w).Encode(decisions.Compose(in, now))
+	return gathered{in: in, observed: observed, board: board}, nil
 }
 
 // journalBackTo is the journal's history back to one instant, newest first,

@@ -96,6 +96,7 @@ func landingProveCommand() intentCommand {
 		usage: []string{"metasystem landing prove [--wait]"},
 		details: []string{"Runs the shell command set as landing.prove.command in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
+			"A tree already proven green, or one that differs from a green tree only in goal ledger files, is reported at once and nothing starts, so landing push can follow in the same turn.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--wait proves in this command and says the result. Refused while the lane is stopped."},
 		flags: []intentFlag{{name: "wait", usage: "prove here and wait for the result"},
@@ -123,6 +124,18 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	seams := admitted.owners.proveSeams()
 	checkout := string(admitted.layout.Checkout)
 	if !inv.input.switched("wait") {
+		settled, ok, err := plain.Settled(admitted.installation, checkout, seams)
+		if err != nil {
+			return inv.render(landingProveRefusal(inv, targets, err))
+		}
+		if ok {
+			summary := provedWords(settled.Commit, settled.Tree) + " is already proven green"
+			if settled.Reason != "" {
+				summary += " (" + settled.Reason + ")"
+			}
+			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: settled, Summary: summary,
+				next: inv.publicArgv("landing", "push"), nextReason: "puts it on main now, in this turn"})
+		}
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))

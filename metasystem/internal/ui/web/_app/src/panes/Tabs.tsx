@@ -67,24 +67,25 @@ export function tabAfter(key: string, at: number, count: number): number | null 
  *
  * The address wins, because a link to a tab is a link to that tab and a
  * preference from last week must not outrank what a human just opened. A name
- * the page has no tab for is answered with the first tab rather than with the
- * remembered one: the address asked for something this page does not have, and
- * falling through to a remembered tab would answer a wrong address with a
- * surprise. An address naming no tab at all has asked for nothing, and that is
- * where the remembered tab is the right answer.
+ * the page has no tab for is answered with null, which a page shows as an
+ * address that matches nothing: the address asked for something this page
+ * does not have, and opening the first tab or a remembered one would answer a
+ * wrong address as though it were a right one. An address naming no tab at
+ * all has asked for nothing, and that is where the remembered tab is the
+ * right answer.
  */
 export function tabShown(
   tabs: readonly { id: string }[],
   named: string | undefined,
   remembered: string | null,
-): string {
+): string | null {
   if (tabs.length === 0) {
     return "";
   }
   const first = tabs[0].id;
   const carried = (candidate: string) => tabs.some((tab) => tab.id === candidate);
   if (named !== undefined && named !== "") {
-    return carried(named) ? named : first;
+    return carried(named) ? named : null;
   }
   return remembered !== null && carried(remembered) ? remembered : first;
 }

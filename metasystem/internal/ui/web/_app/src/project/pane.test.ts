@@ -967,6 +967,23 @@ describe("the scope a page is showing", () => {
     expect(countLine("Designs", 12, "")).toBe("Designs 12");
   });
 
+  // The tab is the open questions, so what it leaves out is counted in open
+  // ones: an answered question under a goal is not one more waiting there.
+  it("counts only the open questions on either side of the line", () => {
+    const answered: Pane = {
+      ...scoped,
+      questions: [
+        ...scoped.questions,
+        { id: "Q-4", opened: "2026-09-22", question: "Is it one page?", goals: ["goal-ledger"], status: "answered" },
+        { id: "Q-5", opened: "2026-09-22", question: "Is it one binary?", goals: [], status: "answered" },
+      ],
+    };
+    const counted = briefingFor(answered, null, "project").scopes.questions;
+
+    expect(counted).toEqual({ own: 1, underGoals: 2 });
+    expect(scopeNote("project", counted)).toBe("2 under goals");
+  });
+
   // Narrowing the view does not answer a question: what is waiting is what is
   // waiting in this project, and the control is about what is being read.
   it("counts what needs a human over everything, not over the scope shown", () => {

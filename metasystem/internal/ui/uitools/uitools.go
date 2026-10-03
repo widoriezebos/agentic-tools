@@ -509,7 +509,10 @@ func (r Readers) overview() Result {
 	}
 	var built strings.Builder
 	needs := page.NeedsYou
-	built.WriteString("- Needs you (" + strconv.Itoa(needs.Total) + " in all):\n")
+	// This composition reads no Partner proposals, no landing gate and only the
+	// journal's newest page, so its total is a floor of the Decisions page's.
+	built.WriteString("- Needs you (" + strconv.Itoa(needs.Total) +
+		" from what this tool reads; the Decisions page also counts Partner proposals, landing-gate rows and older alerts):\n")
 	for _, group := range []struct {
 		name  string
 		count int
@@ -519,6 +522,7 @@ func (r Readers) overview() Result {
 		{"drafts", needs.Drafts.Count},
 		{"designs whose work has landed", needs.Designs.Count},
 		{"alerts and handoffs", needs.Alerts.Count},
+		{"other decisions, read on the Decisions page", needs.Other.Count},
 	} {
 		built.WriteString("  - " + group.name + ": " + strconv.Itoa(group.count) + "\n")
 	}

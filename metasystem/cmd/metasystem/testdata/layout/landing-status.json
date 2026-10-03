@@ -35,7 +35,8 @@ exit 0
     "queue": [],
     "running_proof": null,
     "last_proof": null,
-    "last_push": null
+    "last_push": null,
+    "problems": []
   }
 }
 

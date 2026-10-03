@@ -14,6 +14,30 @@ type Closure struct {
 	Round      int64       `json:"round"`
 	Subject    ReadSubject `json:"subject"`
 	Mechanism  string      `json:"mechanism"`
+	// AcceptedRisks names each finding of the closed register that a
+	// person's goal accept-risk decided, so the read records what it lands
+	// over. Absent on a register with no accepted risk.
+	AcceptedRisks []AcceptedRisk `json:"acceptedRisks,omitempty"`
+}
+
+// AcceptedRisk is one register finding a person accepted as a risk, with the
+// decision operation that recorded the act.
+type AcceptedRisk struct {
+	FindingID    string `json:"findingId"`
+	DecisionOpID string `json:"decisionOpid"`
+}
+
+// SameAcceptedRisks says whether two closures name the same accepted risks.
+func SameAcceptedRisks(a, b []AcceptedRisk) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func ReadClosure(root map[string]any) (Closure, bool, error) {
@@ -46,19 +70,54 @@ func ReadClosure(root map[string]any) (Closure, bool, error) {
 		return Closure{}, true, fmt.Errorf("closure mechanism %q is unknown", mechanism)
 	}
 
-	return Closure{CriticRoot: criticRoot, Round: round, Subject: subject, Mechanism: mechanism}, true, nil
+	var risks []AcceptedRisk
+	if value, present := object["acceptedRisks"]; present {
+		items, ok := value.([]any)
+		if !ok || len(items) == 0 {
+			return Closure{}, true, fmt.Errorf("closure acceptedRisks must be a non-empty array when present")
+		}
+		for index, item := range items {
+			entry, ok := item.(map[string]any)
+			finding, findingOK := entry["findingId"].(string)
+			opid, opidOK := entry["decisionOpid"].(string)
+			if !ok || len(entry) != 2 || !findingOK || finding == "" || !opidOK || opid == "" {
+				return Closure{}, true, fmt.Errorf("closure accepted risk %d must name a finding and its decision operation", index)
+			}
+			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid})
+		}
+	}
+
+	return Closure{CriticRoot: criticRoot, Round: round, Subject: subject, Mechanism: mechanism, AcceptedRisks: risks}, true, nil
 }
 
+// CleanRegister says whether a finding register is clean: empty, or every
+// entry resolved as withdrawn by its critic. It is the clean read of D3/D7.
 func CleanRegister(value any) (bool, error) {
+	clean, _, _, err := classifyRegister(value)
+	return clean, err
+}
+
+// LandableRegister says whether a closed register yields the read a landing
+// takes: every entry is withdrawn, ruled out-of-scope (never a severe or
+// unproven finding), or accepted as a risk by a person's recorded act. It
+// returns the accepted risks the read must record. Open, disputed, deferred,
+// refuted or accepted (a fix required) entries are not landable.
+func LandableRegister(value any) (bool, []AcceptedRisk, error) {
+	_, landable, risks, err := classifyRegister(value)
+	return landable, risks, err
+}
+
+func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 	items, ok := value.([]any)
 	if !ok {
-		return false, fmt.Errorf("finding register must be an array")
+		return false, false, nil, fmt.Errorf("finding register must be an array")
 	}
-	clean := true
+	clean, landable := true, true
+	var risks []AcceptedRisk
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
 		if !ok {
-			return false, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
+			return false, false, nil, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
 		}
 		legacy := hasExactFields(entry,
 			"findingId", "critic", "rigorClass", "factsDigest", "status", "evidenceDigest", "multiplicity")
@@ -72,11 +131,11 @@ func CleanRegister(value any) (bool, error) {
 			"findingId", "critic", "rigorClass", "grain", "fixture", "factsDigest", "facts", "artifact", "title",
 			"status", "resolution", "decisionOpid", "evidence", "evidenceDigest", "multiplicity")
 		if !legacy && !modern && !withGrain && !withFixture {
-			return false, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
+			return false, false, nil, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
 		}
 		status, ok := entry["status"].(string)
 		if !ok {
-			return false, fmt.Errorf("finding register entry %d has no string status", index)
+			return false, false, nil, fmt.Errorf("finding register entry %d has no string status", index)
 		}
 		resolution := ""
 		if legacy {
@@ -87,7 +146,7 @@ func CleanRegister(value any) (bool, error) {
 			var resolutionOK bool
 			resolution, resolutionOK = entry["resolution"].(string)
 			if !resolutionOK {
-				return false, fmt.Errorf("finding register entry %d has no string resolution", index)
+				return false, false, nil, fmt.Errorf("finding register entry %d has no string resolution", index)
 			}
 		}
 
@@ -97,11 +156,27 @@ func CleanRegister(value any) (bool, error) {
 			status == "deferred" && resolution == "deferred" ||
 			status == "accepted-risk" && resolution == "accepted-risk"
 		if !pairIsClean && !pairIsNonClean {
-			return false, fmt.Errorf("finding register entry %d has status/resolution mismatch %q/%q", index, status, resolution)
+			return false, false, nil, fmt.Errorf("finding register entry %d has status/resolution mismatch %q/%q", index, status, resolution)
 		}
 		clean = clean && pairIsClean
+		class, _ := entry["rigorClass"].(string)
+		opid, _ := entry["decisionOpid"].(string)
+		finding, _ := entry["findingId"].(string)
+		switch {
+		case pairIsClean:
+		case status == "resolved" && resolution == "out-of-scope" && class != "severe" && class != "unproven":
+		case status == "accepted-risk" && opid != "":
+			// Only a person's goal accept-risk records this pair, with
+			// the decision operation that carried the act.
+			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid})
+		default:
+			landable = false
+		}
 	}
-	return clean, nil
+	if !landable {
+		risks = nil
+	}
+	return clean, landable, risks, nil
 }
 
 func ReturnBindsSubject(subject ReadSubject, result map[string]any) bool {
@@ -209,12 +284,15 @@ func ReadClosedClosure(agents string, root map[string]any, members []map[string]
 	if !registerPresent {
 		return closure, true, fmt.Errorf("closure root %s has no finding register", rootID)
 	}
-	clean, err := CleanRegister(registerValue)
+	landable, risks, err := LandableRegister(registerValue)
 	if err != nil {
 		return closure, true, fmt.Errorf("closure root %s has malformed finding register: %w", rootID, err)
 	}
-	if !clean {
+	if !landable {
 		return closure, true, fmt.Errorf("closure root %s does not have a clean finding register", rootID)
+	}
+	if !SameAcceptedRisks(closure.AcceptedRisks, risks) {
+		return closure, true, fmt.Errorf("closure root %s records accepted risks %v, but its register holds %v", rootID, closure.AcceptedRisks, risks)
 	}
 	foldedRound, ok := strictInteger(root["findingRegisterRound"])
 	if !ok || foldedRound < 1 {

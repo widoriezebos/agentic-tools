@@ -247,8 +247,15 @@ func TestClosureGateMissingCleanClosure(t *testing.T) {
 	lost.requireRefused()
 
 	nonCleanClosure := newClosureFixture(t)
-	nonCleanClosure.root["findingRegister"] = []any{modernRegisterEntry("resolved", "out-of-scope")}
+	// A refuted entry is not landable. (A bounded out-of-scope ruling or a
+	// person's accepted risk is: TestLandableRegister.)
+	nonCleanClosure.root["findingRegister"] = []any{modernRegisterEntry("resolved", "refuted")}
 	nonCleanClosure.requireRefused()
+
+	// A closure must name exactly the accepted risks its register holds.
+	unnamedRisk := newClosureFixture(t)
+	unnamedRisk.root["findingRegister"] = []any{modernRegisterEntry("accepted-risk", "accepted-risk")}
+	unnamedRisk.requireRefused()
 }
 
 func TestClosureGateClassifiesAbsentEvidence(t *testing.T) {
