@@ -1,6 +1,6 @@
 # rosters-are-configuration-items
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="configuration change touching every dispatch and launch; new interface surface; every seat"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Next: Fable writes the design (the roster item and its types, where rosters live, how the engine picks the roster for a piece of work, the verbs, the Settings page, and the path from today's keys), one Astra critique, then Wido decides the build. Done when: rosters of each type can be listed, created and changed from the Settings page and from the verbs, and work of each kind runs on the roster its type selects. Added 2026-10-02 (Wido: 'the running agent; is that defined in the roster which agent and which model? That should be the case'): today runtime/model/effort are scattered over two overlapping key families (launch.<kind>.* and role.<role>.*) and copied per checkout (five seat checkouts on this host). The roster must: cover EVERY agent kind incl. the seat agent and the landing lane agent; be ONE key family; be shared by every checkout on the host (one place to change a model); refuse an unknown key instead of silently falling back; have a 'roster show' verb plus the Settings view; include effort (Wido 2026-10-01).
 - OpenedAt: 2026-10-01T08:27:46Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-02T21:13:11Z revision=3 opid=TT96HT9FAHK2KTV99T0ZY77KS6-m1e-9c612d71 authority=proven digest=0971b629f8bf0145a53609941a9ddaf48895bae9215c10b46461dcbb37a7d9b9 episode=3
-- Episode: machine=m1g lineage=steward-seat accountingRevision=10 episodeAt=2026-10-02T22:31:05Z episodeRevision=10 idleSeconds=0 released=2026-10-02T22:38:38Z
+- Claimed: machine=m1i lineage=steward-seat at=2026-10-03T04:14:53Z revision=14 accountingRevision=14 episodeAt=2026-10-03T04:14:53Z episodeRevision=14
+- StopCapability: generation=14 revision=14 machine=m1i claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T08:27:46Z NR62KBQS8JYD6Z4EZ90EX155JH-m1e-528c72bf open actor=human:Wido targets=rosters-are-configuration-items
@@ -29,4 +30,5 @@ History:
 - 2026-10-02T22:38:38Z 9BQ71P54Q85M4NDJNP34SJP1KH-m1g-71c5cb39 release actor=m1g+steward-seat targets=rosters-are-configuration-items reason=Seat m1g returns to seat-path-lands-without-help: Wido unparked it at 00:36 after this seat had claimed rosters, it is pinned to m1g, and its design is staged in this checkout. Nothing of rosters was designed or built. The preparation for its design brief (a code map of every reader of today's roster keys, and two draft brief sections) is kept in agentic-tools-evidence/rosters-prep-20261003/.
 - 2026-10-02T22:49:12Z 36N88KVE8XHQEPB4C82C7T5M3M-m1e-718ba0eb done actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,work-review-starts-its-critic reason=priority-order from=1:10 to=1:9
 - 2026-10-03T04:14:05Z ZHK6AZW263TE2JMKZE0SBPYZYV-m1e-718ba0eb done actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,ui-reads-well-on-a-phone-in-plain-words reason=priority-order from=1:9 to=1:8
-Integrity: sha256=50dd2e8615c4e54ce25e2b04e945bed4f63eb44deb416f55a663761f1a3a509c
+- 2026-10-03T04:14:53Z K432J4ASKK6NNK23GE7YBDE0KF-m1i-71c5cb39 claim actor=m1i+steward-seat targets=rosters-are-configuration-items
+Integrity: sha256=c3018a2d8aa466602b23eb5c80da378f2d17d3f30df4a13429918041ec75e099
