@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -124,6 +127,30 @@ describe("the landing lane block", () => {
     expect(details).toContain("/l/proof.log");
     expect(details).toContain("0123456 → fedcba9");
     expect(markup.indexOf("c0ffee1")).toBeGreaterThan(markup.indexOf("<details"));
+  });
+
+  it("makes the proof log rows links to the proof's log, by the attempt each record names", () => {
+    const markup = draw(
+      lane({
+        last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/a-9.log", at: "2026-09-29T10:00:00Z", attempt: "a-9" },
+        running_proof: { tree: "abcdef1234567", since: local(11, 54), attempt: "a-10", state: "running", log: "/l/a-10.log" },
+      }),
+    );
+
+    expect(markup).toMatch(/<dt>Proof log<\/dt><dd[^>]*><a [^>]*href="\/api\/fleet\/proof-logs\/a-9"[^>]*target="_blank"[^>]*>\/l\/a-9\.log<\/a>/);
+    expect(markup).toMatch(/<dt>Log<\/dt><dd[^>]*><a [^>]*href="\/api\/fleet\/proof-logs\/a-10"[^>]*target="_blank"[^>]*>\/l\/a-10\.log<\/a>/);
+
+    // A record that names no attempt keeps its path as words.
+    const older = draw(lane({ last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/p.log", at: "2026-09-29T10:00:00Z" } }));
+    expect(older).toContain("<dt>Proof log</dt><dd class=\"ms-mono\">/l/p.log</dd>");
+  });
+
+  it("draws a log in the Details as the panel draws its other links", () => {
+    const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fleet.css"), "utf8");
+    const links = css.slice(0, css.indexOf("{", css.indexOf(".ms-fleet-hold-title,")));
+
+    expect(links).toContain(".ms-fleet-details-row dd a");
+    expect(css).toContain(".ms-fleet-details-row dd a:hover");
   });
 
   it("lists what waits by title, seat and age, each with its own Details", () => {

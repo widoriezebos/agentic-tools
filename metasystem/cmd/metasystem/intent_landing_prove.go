@@ -216,7 +216,8 @@ func withRunningProof(view func(*textui.Page), running *plain.RunningProof) func
 	}
 }
 
-// landingRedReason is a red result's reason besides the command's exit.
+// landingRedReason is a red result's recorded reason, in brackets: how the
+// proof command ended, or why it could not run.
 func landingRedReason(reason string) string {
 	if reason == "" {
 		return ""

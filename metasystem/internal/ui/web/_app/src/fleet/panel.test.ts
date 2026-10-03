@@ -494,6 +494,66 @@ describe("what needs you", () => {
     expect(item.todo).toContain("goal steal");
   });
 
+  it("gives a red proof the link to its log, by the attempt the record names", () => {
+    const red = { tree: "t1", commit: "c1", result: "red", log: "/l/a-9.log", at: at(-20), attempt: "a-9", reason: "the proof command exited 1" };
+
+    const [item] = needs(fleetRead(), boardRead({ lane: lane({ last_proof: red }) }));
+    expect(item.words).toBe("The landing lane's last proof is red: the proof command exited 1.");
+    expect(item.log).toBe("/api/fleet/proof-logs/a-9");
+
+    // An older record names no attempt, so there is no log to link.
+    expect(needs(fleetRead(), boardRead({ lane: lane({ last_proof: { ...red, attempt: undefined } }) }))[0].log).toBe("");
+  });
+
+  describe("a stuck seat", () => {
+    const holding = fleetRead({ machines: [machine({ machine: "ui", this: true, holds: [] }), machine({ holds: [held()] })] });
+
+    function stuckSeat(unknown: string): BoardSeat {
+      return { machine: "m1f", installation: "/w/m1f/metasystem", goals: [{ goal: "one-folder", stage: "build", since: at(-60), lastProgressAt: at(-30), unknown }] };
+    }
+
+    function stuck(unknown: string): BoardReading {
+      return boardRead({ seats: [stuckSeat(unknown)] });
+    }
+
+    it("is one thing that needs you when its card stalled on a goal the machine holds, dated by its last progress", () => {
+      const read = stuck("stalled");
+
+      const [item] = needs(holding, read);
+
+      expect(item.words).toBe(`“One folder deployed and evolved.” on m1f has made no progress since ${minuteTime(at(-30))} (building).`);
+      expect(item.todo).toBe("If it is stuck, stop that machine with machine stop m1f at a terminal; its steward will not start it again.");
+      expect(item.at).toBe(at(-30));
+      expect(item.goal).toBe("one-folder");
+      expect(verdictOf(holding, read, needs(holding, read), now).words).toBe("1 thing needs you");
+    });
+
+    it("is one too when the process writing its card is gone, with its pid", () => {
+      const [item] = needs(holding, stuck("writer dead (pid 4242)"));
+
+      expect(item.words).toBe(`“One folder deployed and evolved.” on m1f: the process writing its progress is gone (pid 4242); last progress ${minuteTime(at(-30))}.`);
+      expect(item.todo).toBe("If it is stuck, stop that machine with machine stop m1f at a terminal; its steward will not start it again.");
+    });
+
+    it("is dropped as before for a goal the machine no longer holds, and for every other reason a card is not believed", () => {
+      const released = fleetRead({ machines: [machine({ holds: [] })] });
+
+      expect(needs(released, stuck("stalled"))).toEqual([]);
+      for (const reason of ["owner pid 9 unprobeable", "owner pid 9 reused", "no owner", "claim moved to m1g", "not claimed"]) {
+        expect({ reason, needs: needs(holding, stuck(reason)) }).toEqual({ reason, needs: [] });
+      }
+    });
+
+    it("sorts with the rest by its last progress", () => {
+      const read = boardRead({
+        seats: [stuckSeat("stalled")],
+        lane: lane({ owner: owner({ state: "stopped", stopped_by: "m1e", since: at(-10) }), paused: true }),
+      });
+
+      expect(needs(holding, read).map((one) => one.key)).toEqual(["lane:paused", "stuck:m1f:one-folder"]);
+    });
+  });
+
   it("lists every source in one list, newest first, the undated last", () => {
     const fleet = fleetRead({ this: seat({ armed: "stale", health: { ...seat().health!, observedAt: at(-90) } }) });
     const read = boardRead({
@@ -574,6 +634,31 @@ describe("the Doing column", () => {
   it("says idle for a reachable machine with nothing in hand, and a dash for one nobody hears", () => {
     expect(doingOf(machine(), undefined, [], now)).toEqual({ words: "idle", active: false, source: "none" });
     expect(doingOf(machine({ standing: "unreachable", working: [working()] }), undefined, [], now)).toEqual({ words: "—", active: false, source: "none" });
+  });
+
+  it("says stalled, the stage and the minutes since its last progress, and does not count it as working", () => {
+    const stalled = seatOf([{ goal: "one-folder", stage: "build", since: at(-60), lastProgressAt: at(-30), unknown: "stalled" }]);
+    const dead = seatOf([{ goal: "one-folder", stage: "review", since: at(-60), lastProgressAt: at(-12), unknown: "writer dead (pid 4242)" }]);
+
+    // The jobs may still say building: a stuck seat's job runs and makes no progress.
+    expect(doingOf(machine({ holds: [held1], working: [working()] }), stalled, [], now)).toEqual({
+      words: "stalled · building · 30 min",
+      active: false,
+      source: "board",
+    });
+    expect(doingOf(machine({ holds: [held1] }), dead, [], now).words).toBe("stalled · reviewing · 12 min");
+    const fleet = fleetRead({ machines: [machine({ holds: [held1], working: [working()] })] });
+    expect(verdictOf(fleet, boardRead({ seats: [stalled] }), [], now).facts[0]).toBe("0 seats working");
+  });
+
+  it("keeps a believed card in hand ahead of a stalled one, and a stalled card of a goal it does not hold says nothing", () => {
+    const both = seatOf([
+      { goal: "two", stage: "build", since: at(-60), lastProgressAt: at(-30), unknown: "stalled" },
+      { goal: "one-folder", stage: "review", round: { n: 2, max: 3 }, since: at(-5) },
+    ]);
+
+    expect(doingOf(machine({ holds: [held1, held({ goal: "two" })] }), both, [], now).words).toBe("reviewing · round 2 of 3 · 5 min");
+    expect(doingOf(machine({ holds: [] }), both, [], now).words).toBe("idle");
   });
 
   it("carries the jobs reader's own problem rather than idle", () => {

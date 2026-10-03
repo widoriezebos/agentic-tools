@@ -20,6 +20,7 @@ const LAUNCH = "/api/fleet/launch";
 const LAUNCHES = "/api/fleet/launches/";
 const BOARD = "/api/board";
 const LAND_NOW = "/api/fleet/land-now";
+const PROOF_LOGS = "/api/fleet/proof-logs/";
 
 /** What this seat concludes about one machine, from its presence record. */
 export type Standing = "reachable" | "unreachable" | "unknown";
@@ -595,6 +596,16 @@ export async function discardLaunch(id: string, signal?: AbortSignal): Promise<L
 /** Where one launch's discard is posted: its own address beneath the fleet. */
 export function discardAddress(id: string): string {
   return `${LAUNCHES}${encodeURIComponent(id)}/discard`;
+}
+
+/**
+ * Where one landing proof's log is read, whole, as text: its attempt beneath
+ * the lane's proof logs. The server finds the log the lane's records name for
+ * that attempt; the page never names a path. It is a link the person opens in
+ * a tab of its own, not a request this file makes.
+ */
+export function proofLogAddress(attempt: string): string {
+  return `${PROOF_LOGS}${encodeURIComponent(attempt)}`;
 }
 
 /** A body that is not the refusal shape says nothing, which is not an error. */

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,5 +41,27 @@ func TestTheFixturesLaunchHookStampsTheSignedSessionsEnrollment(t *testing.T) {
 	}
 	if record.Machine != "m1k" || record.ReviewBy != "" {
 		t.Fatalf("record = %+v", record)
+	}
+}
+
+// The fixture's lane holds one red proof whose log the page's Open log reads
+// through the engine's own lookup (fleet-panel-ux step 2, 2a.3), and no
+// board bridge to dial.
+func TestTheFixtureServesItsRedProofsLog(t *testing.T) {
+	t.Parallel()
+	source, err := fixtureProofLogs(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := source.ProofLog(fixtureProofAttempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(log), "landing prove: the proving command exited 1") {
+		t.Fatalf("the red proof's log = %q, %v", log, err)
+	}
+	if _, err := source.Dial(); err == nil {
+		t.Fatal("the fixture dialled a board bridge")
 	}
 }

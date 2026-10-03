@@ -1,4 +1,4 @@
-import type { BoardPayload, BoardSeat, Lane, LaneEntry, Machine, Page, Working } from "./api";
+import { proofLogAddress, type BoardPayload, type BoardSeat, type Lane, type LaneEntry, type Machine, type Page, type Working } from "./api";
 import { dateAndTime, minuteTime } from "../backlog/format";
 import { flagWords, minutesWords, NEEDS_YOU_REMEDY } from "./fleet";
 
@@ -224,9 +224,9 @@ export function queueOf(board: BoardPayload | null): LaneEntry[] {
 
 /**
  * One thing that needs the person: the sentence, what to do about it in
- * plain words, and the goal to open or the question to answer, where it has
- * one — or the goals, by title, where it is about several. `at` orders the
- * list, newest first.
+ * plain words, and the goal to open, the question to answer or the log to
+ * read, where it has one — or the goals, by title, where it is about
+ * several. `at` orders the list, newest first.
  */
 export type Need = {
   key: string;
@@ -236,23 +236,29 @@ export type Need = {
   goal: string;
   goals: { id: string; title: string }[];
   answer: boolean;
+  /** The address of a proof's log, opened in a tab of its own; "" for none. */
+  log: string;
 };
 
 function need(over: Partial<Need> & Pick<Need, "key" | "words">): Need {
-  return { at: "", todo: "", goal: "", goals: [], answer: false, ...over };
+  return { at: "", todo: "", goal: "", goals: [], answer: false, log: "", ...over };
 }
 
 /**
  * Every source in one list, newest first, the undated last: the goals a
- * silent machine holds, the lane paused or unable to run, a branch that came
- * back and was not handed in again, a red proof nothing has answered yet,
- * this checkout's open questions, and this computer's own health record.
- * Empty, the section is not drawn at all.
+ * silent machine holds, a seat of this computer that is stuck, the lane
+ * paused or unable to run, a branch that came back and was not handed in
+ * again, a red proof nothing has answered yet, this checkout's open
+ * questions, and this computer's own health record. Empty, the section is
+ * not drawn at all.
  */
 export function needsOf(fleet: FleetReading, board: BoardReading, now: Date): Need[] {
   const items: Need[] = [];
   if (fleet.state === "read") {
     items.push(...silentHolds(fleet.page, now), ...healthNeeds(fleet.page, now));
+  }
+  if (fleet.state === "read" && board.state === "read") {
+    items.push(...stuckSeats(fleet.page, board.board, now));
   }
   if (board.state === "read") {
     const read = board.board;
@@ -318,6 +324,58 @@ function flagWithWhen(held: { flag: string; since: string }, now: Date): string 
     return flagWords(held);
   }
   return `${held.flag} since ${when(held.since, now)}`;
+}
+
+/** The board's reason for a card whose stage made no progress past the stall bound. */
+const STALLED = "stalled";
+
+/** The start of the board's reason for a card whose writing process is gone. */
+const WRITER_DEAD = "writer dead";
+
+/**
+ * Whether the board does not believe a card because it stopped moving: its
+ * stage made no progress past the stall bound, or the process writing it is
+ * gone. Every other reason (unprobeable, reused, no owner, a claim that
+ * moved) says nothing about the seat being stuck.
+ */
+function stuck(unknown: string | undefined): boolean {
+  return unknown === STALLED || (unknown ?? "").startsWith(WRITER_DEAD);
+}
+
+/** A card's stage, as the Doing column says it. */
+function stageWords(stage: string | undefined): string {
+  return STAGES[stage ?? ""]?.words ?? stage ?? "";
+}
+
+/**
+ * A seat of this computer that is stuck: one item per card the board does
+ * not believe because it stopped moving, for a goal its machine holds (the
+ * rule Doing applies), dated by its last progress. What to do is the
+ * terminal's stop of that machine, which its steward does not undo.
+ */
+function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
+  return page.machines.flatMap((machine) => {
+    const held = new Map(machine.holds.map((one) => [one.goal, one.title]));
+    return (seatOf(board, machine.machine)?.goals ?? [])
+      .filter((goal) => held.has(goal.goal) && stuck(goal.unknown))
+      .map((goal) => {
+        const holdTitle = held.get(goal.goal) ?? "";
+        const title = holdTitle === "" ? titleOf(goal.goal, board.titles) : holdTitle;
+        const last = goal.lastProgressAt ?? "";
+        const pid = /pid (\d+)/u.exec(goal.unknown ?? "")?.[1];
+        const words =
+          goal.unknown === STALLED
+            ? `“${title}” on ${machine.machine} has made no progress${last === "" ? "" : ` since ${when(last, now)}`} (${stageWords(goal.stage)}).`
+            : `“${title}” on ${machine.machine}: the process writing its progress is gone${pid === undefined ? "" : ` (pid ${pid})`}${last === "" ? "" : `; last progress ${when(last, now)}`}.`;
+        return need({
+          key: `stuck:${machine.machine}:${goal.goal}`,
+          at: last,
+          words,
+          todo: `If it is stuck, stop that machine with machine stop ${machine.machine} at a terminal; its steward will not start it again.`,
+          goal: goal.goal,
+        });
+      });
+  });
 }
 
 /** The steward's role whose death means the steward itself is not running. */
@@ -426,6 +484,7 @@ function laneNeeds(
         key: `proof:${proof.attempt ?? proof.at}`,
         at: proof.at,
         words: `The landing lane's last proof is red: ${proof.reason === undefined || proof.reason === "" ? "the proof command failed" : proof.reason}.`,
+        log: proof.attempt === undefined || proof.attempt === "" ? "" : proofLogAddress(proof.attempt),
       }),
     );
   }
@@ -541,11 +600,13 @@ function sentence(parts: readonly string[]): string {
  * it records progress no job does (a proof's sections, a review's round of
  * its limit), so a card that is work in hand comes first. A card counts only
  * for a goal the machine holds and only where the board believes it: a card
- * whose claim moved, or whose writer is dead, says nothing about this
- * machine. Then the job records — this seat's own, or what another machine
- * published — then a card that only waits, then the lane's queue, and idle.
- * A machine this seat has not heard from is a dash: what it is doing is not
- * known here.
+ * whose claim moved says nothing about this machine. A held card the board
+ * does not believe because it stopped moving — stalled, or its writer gone —
+ * says the seat is stalled, with no live dot, ahead of the job records, which
+ * a stuck seat's still-running job would otherwise read as work. Then the job
+ * records — this seat's own, or what another machine published — then a
+ * card that only waits, then the lane's queue, and idle. A machine this seat
+ * has not heard from is a dash: what it is doing is not known here.
  */
 export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: readonly LaneEntry[], now: Date): Doing {
   if (machine.workingProblem !== "") {
@@ -555,9 +616,15 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   const cards = (seat?.goals ?? []).filter(
     (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined,
   );
+  // Work that moves wins over a stalled goal beside it (step-2 design 2a.1):
+  // the stalled goal is its own Needs you item.
   const busy = cards.find((goal) => STAGES[goal.stage ?? ""].working);
   if (busy !== undefined) {
     return { words: cardWords(busy, now), active: true, source: "board" };
+  }
+  const stalled = (seat?.goals ?? []).find((goal) => held.has(goal.goal) && stuck(goal.unknown));
+  if (stalled !== undefined) {
+    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now)]), active: false, source: "board" };
   }
   const heard = machine.this || machine.standing === "reachable";
   if (heard) {
