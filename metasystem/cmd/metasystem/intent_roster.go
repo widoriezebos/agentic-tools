@@ -44,7 +44,80 @@ func rosterIntentCommands() []intentCommand {
 					next: inv.publicArgv("roster", "list"), nextReason: "lists every roster and its rows"})
 			},
 		},
+		{
+			object: "roster", action: "set", audience: "human", summary: "set the agent, model and effort of one roster row on this computer",
+			usage:    []string{"metasystem roster set ROSTER ROW RUNTIME:MODEL:EFFORT"},
+			maxArgs:  3,
+			examples: []string{"metasystem roster set tier-1 build codex:gpt-6-sol:xhigh"},
+			run:      runIntentRosterSet,
+		},
 	}
+}
+
+func runIntentRosterSet(inv *intentInvocation) int {
+	if len(inv.input.args) != 3 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "roster set needs a roster, a row and its value; nothing was changed",
+			next: inv.publicArgv("roster", "set", "ROSTER", "ROW", "RUNTIME:MODEL:EFFORT")})
+	}
+	if problem := inv.resolveLayout(); problem != nil {
+		return inv.render(*problem)
+	}
+	if problem := inv.directPersonProof("roster set"); problem != nil {
+		return inv.render(*problem)
+	}
+	owners := inv.owners.rosters
+	if owners.home == nil {
+		owners.home = board.Home
+	}
+	confPath := filepath.Join(inv.layout.InstallationRoot, "metasystem.conf")
+	listed, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: confPath, LookupEnv: owners.lookupEnv})
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error() + "; nothing was changed"})
+	}
+	home, err := owners.home()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error() + "; nothing was changed"})
+	}
+	roster, row, value := inv.input.args[0], inv.input.args[1], inv.input.args[2]
+	runtimes := strings.FieldsFunc(listed, func(r rune) bool { return r == ',' || r == ' ' })
+	changed, err := config.SetRosterRow(home, roster, row, value, runtimes, func(runtime, model string) (string, error) {
+		canonical, _, err := config.ResolveModelAlias(confPath, runtime, model)
+		return canonical, err
+	})
+	if err != nil {
+		code := 1
+		// The store's input refusals end this way; file and resolver failures
+		// need repair rather than another roster, row or value.
+		if strings.HasSuffix(err.Error(), "; nothing was changed") && errors.Unwrap(err) == nil &&
+			!strings.HasPrefix(err.Error(), "the rosters file ") && !strings.HasPrefix(err.Error(), "the rosters need an absolute home") {
+			code = 2
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: code, Summary: err.Error()})
+	}
+	fields := append(strings.Split(value, ":"), "", "")
+	data := map[string]any{"roster": roster, "row": row, "changed": changed, "runtime": fields[0], "model": fields[1], "effort": fields[2]}
+	shown := strings.ReplaceAll(value, ":", " ")
+	if !changed {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: roster + " " + row + " already is " + shown + "; nothing was changed.", Data: data})
+	}
+	use := "the next " + row + " of a " + roster + " goal uses it"
+	switch roster {
+	case "tier-3":
+		use = "the next " + row + " of a tier-3 goal, or of work with no goal, uses it"
+	case "seat":
+		use = "the next seat agent uses it"
+		if row == "steward" {
+			use = "the next steward continuation uses it"
+		}
+	case "landing":
+		use = "the next landing agent uses it"
+	case "partner":
+		use = "the Project Partner uses it from its next turn"
+	}
+	if value == "main" {
+		use = "the calling session does that work itself"
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: roster + " " + row + " is now " + shown + " on this computer; " + use + ".", Data: data})
 }
 
 // runIntentRosters prints every roster, or only id, row by row; an unset row reads "not set", never a value.
@@ -70,7 +143,7 @@ func runIntentRosters(inv *intentInvocation, id string) int {
 	var refused *config.RosterRefusal
 	if errors.As(err, &refused) {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "The rosters file " + config.RostersPath(home) + " can't be used: " + refused.Problem + ". Nothing was read.",
-			Decision: "a person repairs or removes the file; setting a row refuses to write over it", Details: []string{refused.Code}})
+			Decision: "a person repairs or removes the file; metasystem roster set refuses to write over it", Details: []string{refused.Code}})
 	} else if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()})
 	}
