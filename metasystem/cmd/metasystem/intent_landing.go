@@ -231,7 +231,7 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		summary += "; " + landingQueueWords(data.Queue)
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
-		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil), data.RunningProof), data)}
+		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof), data.RunningProof), data)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -304,9 +304,10 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 }
 
 // landingStatusView is landing status's page (output-style §6.5): the
-// headline says whether the lane runs. --verbose adds the lane's checkout,
-// who registered it and its landing agent.
-func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) func(*textui.Page) {
+// headline says whether the lane runs, and what it proves while its agent
+// is idle. --verbose adds the lane's checkout, who registered it and its
+// landing agent.
+func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, running *plain.RunningProof) func(*textui.Page) {
 	return func(page *textui.Page) {
 		env := page.Env()
 		if view.Root == nil {
@@ -333,6 +334,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) 
 			}
 			page.Mark(textui.Stopped, "The landing lane is stopped by "+by+"; it lands nothing")
 			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+		case owner.State == lane.OwnerIdle && running != nil && running.State == "running":
+			// The proof the agent started runs on after the agent's turn.
+			page.Headline("The landing lane is proving tree " + shortLandingID(running.Tree) + "; its agent is not running")
 		case owner.State == lane.OwnerIdle:
 			// An idle lane runs no model: the keeper wakes the agent when
 			// there is work (design r10 §3).
