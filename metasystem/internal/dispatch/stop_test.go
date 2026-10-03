@@ -1,6 +1,8 @@
 package dispatch
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
@@ -329,11 +332,14 @@ func TestBreachStopRecoveryReprojectsBudgetAndIgnoresJournalAuthorityStrings(t *
 	})
 }
 
-func TestLandingClaimSuspendsOnlyItsElapsedFence(t *testing.T) {
+// markedAdmissionBed is the bounded goal, claimed at 09:00 with a box of one
+// working day (eight hours) and a breach limit of twelve hours, marked as
+// waiting to land at mark.
+func markedAdmissionBed(t *testing.T, mark string) (*goalAdmissionBed, *goal.GoalFile) {
+	t.Helper()
 	bed := newGoalAdmissionBed(t, 2)
 	templateAdmissionBed(t, bed)
-	root := bed.root
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	path := filepath.Join(bed.root, "plans", "goals", "bounded.md")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -342,54 +348,343 @@ func TestLandingClaimSuspendsOnlyItsElapsedFence(t *testing.T) {
 	if len(problems) != 0 {
 		t.Fatalf("parse accepted goal: %v", problems)
 	}
-	file.Landing = &goal.LandingRecord{At: "2026-08-28T12:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ-bed-m1-00000004"}
+	file.Landing = &goal.LandingRecord{At: mark, Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ-bed-m1-00000004"}
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bed.accept(t)
-	receipt := newStrictBudgetReceipt(t, root, root, "memory/receipts.log")
+	return bed, file
+}
+
+func TestAWaitDoesNotGrowElapsed(t *testing.T) {
+	t.Parallel()
+	bed, file := markedAdmissionBed(t, "2026-08-28T12:00:00Z")
+	// Marked for forty-two hours, far past the breach limit, with no job or
+	// proof of its own since the mark: the clock still reads the three hours
+	// it had at the mark.
+	now := time.Date(2026, 8, 30, 6, 0, 0, 0, time.UTC)
+	projection := ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetKnown || projection.Elapsed != 3*time.Hour || projection.Wait != 42*time.Hour || projection.ElapsedState != "" {
+		t.Fatalf("the wait grew elapsed: %+v", projection)
+	}
+	admission, err := bed.revisionAdmission("bounded", 2, 5, now)
+	if err != nil || admission.Refused() || admission.LiveStopReason != "" {
+		t.Fatalf("a goal that only waited was refused or stopped: %+v %v", admission, err)
+	}
+	routes, err := bed.stops(now)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("a goal that only waited was named for a breach stop: %+v %v", routes, err)
+	}
+}
+
+func TestAJobThatNeverRanDoesNotEndTheWait(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00, the goal holds a reservation from 08:50 still in setup
+	// and one from 10:00 cancelled in setup. Neither ran, so a day after the
+	// mark, past the twelve-hour breach limit, the whole day is wait.
+	bed, file := markedAdmissionBed(t, "2026-08-28T09:00:00Z")
+	writeBudgetJob(t, bed.root, "in-setup", "reserve-in-setup", 2, 10, "pending-setup", budgetJobLife{createdAt: "2026-08-28T08:50:00Z"})
+	writeBudgetJob(t, bed.root, "cancelled", "reserve-cancelled", 2, 10, "cancelled", budgetJobLife{
+		createdAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:05:00Z",
+	})
+	now := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	projection := ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetKnown || projection.Wait != 24*time.Hour || projection.Elapsed != 0 || projection.ElapsedState != "" {
+		t.Fatalf("a job that never ran ended the wait: %+v", projection)
+	}
+	if routes, err := bed.stops(now); err != nil || len(routes) != 0 {
+		t.Fatalf("a goal whose jobs never ran was named for a breach stop: %+v %v", routes, err)
+	}
+	// A job created at 10:50 that reached running at 11:00 ends the wait at
+	// its start.
+	writeBudgetJob(t, bed.root, "ran", "reserve-ran", 2, 10, "running", budgetJobLife{
+		createdAt: "2026-08-28T10:50:00Z", startedAt: "2026-08-28T11:00:00Z",
+	})
+	projection = ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetKnown || projection.Wait != 2*time.Hour || projection.Elapsed != 22*time.Hour || projection.ElapsedState != ElapsedBreach {
+		t.Fatalf("the job that ran did not end the wait at its start: %+v", projection)
+	}
+	if routes, err := bed.stops(now); err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Reason != goal.StopReasonElapsedLimit {
+		t.Fatalf("a goal that worked past its breach limit was not named for a breach stop: %+v %v", routes, err)
+	}
+}
+
+func TestAProofThatNeverLaunchedDoesNotEndTheWait(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00, the goal holds a proof reserved at 10:00 that has not
+	// launched and one reserved at 10:30 that was cancelled before it
+	// launched. Neither ran, so a day after the mark, past the twelve-hour
+	// breach limit, the whole day is wait.
+	bed, file := markedAdmissionBed(t, "2026-08-28T09:00:00Z")
+	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, proof := range []struct {
+		id string
+		at time.Time
+	}{
+		{"waiting-proof", time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)},
+		{"cancelled-proof", time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)},
+	} {
+		_, identity := dispatchProofFixture(t, proof.id)
+		_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+			ControlRoot: bed.root, ExecutionRoot: bed.root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
+			ReservedMinutes: 10, Identity: identity, Launcher: launcher, Now: proof.at, AttemptID: proof.id,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireProofReservationNotAdmissionRefused(t, decision)
+	}
+	if _, err := proofrun.FinalizeAttempt(bed.root, "cancelled-proof", proofrun.TerminalCancelled, 1, "cancelled before its launch", nil,
+		time.Date(2026, 8, 28, 10, 35, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	projection := ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetKnown || projection.Wait != 24*time.Hour || projection.Elapsed != 0 || projection.ElapsedState != "" {
+		t.Fatalf("a proof that never launched ended the wait: %+v", projection)
+	}
+	if routes, err := bed.stops(now); err != nil || len(routes) != 0 {
+		t.Fatalf("a goal whose proofs never launched was named for a breach stop: %+v %v", routes, err)
+	}
+	// The proof reserved at 10:00 launched its suite at 11:00: the wait ends
+	// at its launch, not at its reservation.
+	launchBudgetProof(t, bed.root, "waiting-proof", time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	projection = ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetKnown || projection.Wait != 2*time.Hour || projection.Elapsed != 22*time.Hour || projection.ElapsedState != ElapsedBreach {
+		t.Fatalf("the proof that launched did not end the wait at its launch: %+v", projection)
+	}
+	if routes, err := bed.stops(now); err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Reason != goal.StopReasonElapsedLimit {
+		t.Fatalf("a goal that worked past its breach limit was not named for a breach stop: %+v %v", routes, err)
+	}
+}
+
+func TestAnUndatableProofLaunchMakesTheBudgetUnknown(t *testing.T) {
+	t.Parallel()
+	// The goal's proof launched, but its process record cannot be parsed.
+	bed, file, path := launchedMarkedProofBed(t)
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	requireUndatableLaunch(t, bed, file)
+}
+
+func TestAProcessRecordWithoutALaunchTimeMakesTheBudgetUnknown(t *testing.T) {
+	t.Parallel()
+	// The goal's proof launched, and its process record names the suite
+	// process by its start in microseconds but leaves out pidStartedAt, the
+	// launch time. The record is well-formed, yet nothing in it dates the
+	// launch: a missing launch time is not a launch at the start of 1970.
+	bed, file, path := launchedMarkedProofBed(t)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	suite := record["suiteProcess"].(map[string]any)
+	delete(suite, "pidStartedAt")
+	suite["pidStartedAtMicro"] = time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC).UnixMicro()
+	writeJSON(t, path, record)
+	if _, err := proofrun.ReadProcessRecord(bed.root, "undatable-proof-launch-1"); err != nil {
+		t.Fatalf("the process record without a launch time is not well-formed: %v", err)
+	}
+	requireUndatableLaunch(t, bed, file)
+}
+
+// launchedMarkedProofBed is a goal marked at 09:00 with a proof of its own
+// reserved at 10:00 that launched its suite at 13:00. It returns the path of
+// that launch's process record.
+func launchedMarkedProofBed(t *testing.T) (*goalAdmissionBed, *goal.GoalFile, string) {
+	t.Helper()
+	bed, file := markedAdmissionBed(t, "2026-08-28T09:00:00Z")
+	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, identity := dispatchProofFixture(t, "undatable-proof")
+	_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: bed.root, ExecutionRoot: bed.root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
+		ReservedMinutes: 10, Identity: identity, Launcher: launcher,
+		Now: time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC), AttemptID: "undatable-proof",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireProofReservationNotAdmissionRefused(t, decision)
+	launchBudgetProof(t, bed.root, "undatable-proof", time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	path, err := proofrun.ProcessRecordPath(bed.root, "undatable-proof", "launch-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bed, file, path
+}
+
+// requireUndatableLaunch checks the bed's goal once its proof's launch
+// cannot be dated. Nothing then dates the end of the wait, so the budget is
+// unknown and names the launch's process record. A day after the mark, past
+// the breach limit on any guess that the goal worked, the goal is neither
+// stopped nor admitted.
+func requireUndatableLaunch(t *testing.T, bed *goalAdmissionBed, file *goal.GoalFile) {
+	t.Helper()
+	const record = "artifacts/agents/proof-runs/processes/undatable-proof-launch-1.json"
+	now := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	projection := ProjectBudget(bed.root, file, now)
+	if projection.Status != BudgetUnknown || projection.Unknown == nil || projection.Unknown.Record != record ||
+		!strings.Contains(projection.Unknown.Reason, "cannot be dated") {
+		t.Fatalf("an undatable launch did not make the budget unknown, naming its record: %+v", projection)
+	}
+	routes, err := bed.stops(now)
+	if err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Condition != StopRouteIndeterminate ||
+		routes[0].StopID != "" || !strings.Contains(routes[0].Failure, "BUDGET_UNKNOWN record="+record) {
+		t.Fatalf("an undatable launch did not produce one indeterminate route naming its record: %+v %v", routes, err)
+	}
+	refused, err := bed.revisionAdmission("bounded", 2, 5, now)
+	if err != nil || !refused.Refused() || refused.LiveStopReason != "" || refused.Refusal == nil ||
+		refused.Refusal.Unknown == nil || refused.Refusal.Unknown.Record != record {
+		t.Fatalf("an undatable launch admitted new work or stopped the goal: %+v %v", refused, err)
+	}
+	binding, err := bed.binding("bounded", now)
+	if err != nil || binding.Fence != nil {
+		t.Fatalf("an undatable launch fenced the goal: %+v %v", binding, err)
+	}
+}
+
+func TestAMarkedGoalStillObeysItsAttemptLimit(t *testing.T) {
+	t.Parallel()
+	// Marked at 12:00 and observed the next evening, the goal only waited
+	// since the mark, so its elapsed is the three hours it had then, inside
+	// the box. Two attempts before the mark fill its attempt limit of two:
+	// the next reservation is refused for attempts alone.
+	bed, _ := markedAdmissionBed(t, "2026-08-28T12:00:00Z")
+	receipt := newStrictBudgetReceipt(t, bed.root, bed.root, "memory/receipts.log")
 	receipt.want = 1
 	bed.reads.Receipt = receipt.reads()
-	countGoalAdmissionFacts(t, bed, 2, 5, 1)
-	// The claim began at 09:00 with a one-day box: at 09:00 the next day the
-	// elapsed dimension is at its limit, and the grace band is behind it.
-	atLimit := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
-	pastGrace := time.Date(2026, 8, 29, 22, 0, 0, 0, time.UTC)
-	// The seat walk skips the landing claim: nothing about its box closes
-	// the machine's working dispatch.
-	seat, err := bed.admission("coordinator", pastGrace)
-	if err != nil || seat.Refused() {
-		t.Fatalf("a landing claim's elapsed box closed the seat's admission: %+v %v", seat, err)
-	}
-	// Its own receipts keep admitting past the elapsed box.
-	for _, now := range []time.Time{atLimit, pastGrace} {
-		admission, err := bed.revisionAdmission("bounded", 2, 5, now)
-		if err != nil || admission.Refused() || admission.LiveStopReason != "" {
-			t.Fatalf("a landing claim was refused or stopped for elapsed time at %s: %+v %v", now.Format(time.RFC3339), admission, err)
-		}
-	}
-	// No breach stop routes for it.
-	routes, err := bed.stops(pastGrace)
-	if err != nil || len(routes) != 0 {
-		t.Fatalf("a landing claim was routed to a breach stop for elapsed time: %+v %v", routes, err)
-	}
-	// The other three dimensions still bind: two admitted attempts fill the
-	// attempt limit of two, and the next reservation is refused.
 	for _, name := range []string{"first", "second"} {
-		writeBudgetJob(t, root, name, "reserve-"+name, 2, 10, "completed", budgetJobLife{
+		writeBudgetJob(t, bed.root, name, "reserve-"+name, 2, 10, "completed", budgetJobLife{
 			createdAt: "2026-08-28T10:00:00Z", startedAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:10:00Z",
 		})
 	}
-	refused, err := bed.revisionAdmission("bounded", 2, 5, pastGrace)
-	if err != nil || !refused.Refused() || refused.Refusal == nil || refused.Refusal.Unknown != nil {
-		t.Fatalf("an attempt breach on a landing claim still admitted: %+v %v", refused, err)
+	now := time.Date(2026, 8, 29, 22, 0, 0, 0, time.UTC)
+	refused, err := bed.revisionAdmission("bounded", 2, 5, now)
+	if err != nil || !refused.Refused() || refused.LiveStopReason != "" || refused.Refusal == nil ||
+		len(refused.Refusal.Breaches) != 1 || refused.Refusal.Breaches[0].Field != "attemptLimit" {
+		t.Fatalf("a marked goal at its attempt limit was not refused for attempts: %+v %v", refused, err)
 	}
-	for _, breach := range refused.Refusal.Breaches {
-		if breach.Field == "elapsedLimit" {
-			t.Fatalf("the elapsed dimension was counted against a landing claim: %+v", refused.Refusal)
-		}
+	if routes, err := bed.stops(now); err != nil || len(routes) != 0 {
+		t.Fatalf("a marked goal at its attempt limit was named for a stop: %+v %v", routes, err)
 	}
-	if len(refused.Refusal.Breaches) == 0 || refused.Refusal.Breaches[0].Field != "attemptLimit" {
-		t.Fatalf("the attempt breach was not the refusal: %+v", refused.Refusal)
+	// A third attempt puts it over its limit: it is stopped as corrupt over
+	// its limit.
+	writeBudgetJob(t, bed.root, "third", "reserve-third", 2, 10, "completed", budgetJobLife{
+		createdAt: "2026-08-28T10:20:00Z", startedAt: "2026-08-28T10:20:00Z", endedAt: "2026-08-28T10:30:00Z",
+	})
+	routes, err := bed.stops(now)
+	if err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Reason != goal.StopReasonCorruptOverLimit ||
+		routes[0].Condition != StopRouteBreach {
+		t.Fatalf("a marked goal over its attempt limit was not named for a breach stop: %+v %v", routes, err)
+	}
+	stopped, err := bed.revisionAdmission("bounded", 2, 5, now)
+	if err != nil || !stopped.Refused() || stopped.LiveStopReason != goal.StopReasonCorruptOverLimit {
+		t.Fatalf("a marked goal over its attempt limit was not stopped as corrupt over its limit: %+v %v", stopped, err)
+	}
+}
+
+func TestAMarkedGoalThatWorksPastItsLimitIsRefusedAndStopped(t *testing.T) {
+	t.Parallel()
+	bed, _ := markedAdmissionBed(t, "2026-08-28T12:00:00Z")
+	// Its own job started at 13:00, after the mark: the clock runs again from
+	// then, three hours at the mark plus the time since the job started, and
+	// reaches the eight-hour box at 18:00 and the breach limit at 22:00.
+	writeBudgetJob(t, bed.root, "after-mark", "reserve-after-mark", 2, 10, "completed", budgetJobLife{
+		startedAt: "2026-08-28T13:00:00Z", endedAt: "2026-08-28T13:10:00Z", pid: 4242,
+	})
+	atLimit := time.Date(2026, 8, 28, 18, 0, 0, 0, time.UTC)
+	refused, err := bed.revisionAdmission("bounded", 2, 5, atLimit)
+	if err != nil || !refused.Refused() || refused.LiveStopReason != "" || refused.Refusal == nil ||
+		len(refused.Refusal.Breaches) != 1 || refused.Refusal.Breaches[0].Field != "elapsedLimit" ||
+		refused.Refusal.Breaches[0].State != AdmissionClosedElapsed {
+		t.Fatalf("a marked goal that worked to its elapsed limit was not refused with the elapsed breach: %+v %v", refused, err)
+	}
+	routes, err := bed.stops(atLimit)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("the grace band produced a stop route: %+v %v", routes, err)
+	}
+	pastBreach := time.Date(2026, 8, 28, 22, 0, 0, 0, time.UTC)
+	stopped, err := bed.revisionAdmission("bounded", 2, 5, pastBreach)
+	if err != nil || !stopped.Refused() || stopped.LiveStopReason != goal.StopReasonElapsedLimit {
+		t.Fatalf("a marked goal past its breach limit was not stopped: %+v %v", stopped, err)
+	}
+	routes, err = bed.stops(pastBreach)
+	if err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Reason != goal.StopReasonElapsedLimit ||
+		routes[0].Condition != StopRouteBreach {
+		t.Fatalf("a marked goal past its breach limit was not named for a breach stop: %+v %v", routes, err)
+	}
+}
+
+func TestAProofThatDischargesAfterTheMarkEndsTheWait(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00, the goal ran a proof of its own from 10:00 that
+	// discharged at 11:00 and opened a new spending epoch. Neither the proof's
+	// reservation, bound to the old epoch, nor its retained governed record,
+	// which starts at 10:30, counts toward the new one, yet either ends the
+	// wait: at 23:00 the clock reads the twelve hours since 11:00, the breach
+	// limit.
+	for _, reserved := range []bool{true, false} {
+		t.Run(fmt.Sprint("reserved=", reserved), func(t *testing.T) {
+			bed, _ := markedAdmissionBed(t, "2026-08-28T09:00:00Z")
+			obligationRevision := installAcceptedEnforcedObligation(t, bed, 5)
+			writeConsumedBudgetProof(t, bed.root, "discharging-run", 2, obligationRevision, time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+			if reserved {
+				conf := []byte("metasystem.governance.correlation-policy=C\nmetasystem.runtimes=fake\n")
+				if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), conf, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				_, identity := dispatchProofFixture(t, "gate")
+				launcher, err := proofrun.CurrentProcessIdentity(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				oldEpoch := uint64(0)
+				_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+					ControlRoot: bed.root, ExecutionRoot: bed.root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
+					BudgetEpoch: &oldEpoch, ReservedMinutes: 60, Identity: identity, Launcher: launcher,
+					Now: time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC), AttemptID: "discharging-proof",
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireProofReservationNotAdmissionRefused(t, decision)
+				launchBudgetProof(t, bed.root, "discharging-proof", time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+			}
+			now := time.Date(2026, 8, 28, 23, 0, 0, 0, time.UTC)
+			binding, err := bed.binding("bounded", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection := ProjectBudget(bed.root, binding.File, now)
+			if projection.Status != BudgetKnown || projection.Elapsed != 12*time.Hour || projection.ElapsedState != ElapsedBreach {
+				t.Fatalf("the proof after the mark did not end the wait: %+v", projection)
+			}
+			stopped, err := bed.revisionAdmission("bounded", 2, 5, now)
+			if err != nil || !stopped.Refused() || stopped.LiveStopReason != goal.StopReasonElapsedLimit || stopped.Refusal == nil ||
+				len(stopped.Refusal.Breaches) != 1 || stopped.Refusal.Breaches[0].Field != "elapsedLimit" {
+				t.Fatalf("new work was not refused with the elapsed breach: %+v %v", stopped, err)
+			}
+			routes, err := bed.stops(now)
+			if err != nil || len(routes) != 1 || routes[0].GoalID != "bounded" || routes[0].Reason != goal.StopReasonElapsedLimit {
+				t.Fatalf("the goal was not named for a breach stop: %+v %v", routes, err)
+			}
+		})
 	}
 }

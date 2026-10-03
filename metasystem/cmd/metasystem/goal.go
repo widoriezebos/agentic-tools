@@ -339,7 +339,7 @@ func nextSyncedWithInputs(stdout, stderr io.Writer, root, machine string, fetchF
 	for _, id := range frontier.Landing {
 		landing = append(landing, p.Tree.Live[id])
 	}
-	for _, line := range goal.LandingClaimLines(landing, now) {
+	for _, line := range goal.LandingClaimLines(landing, now, dispatchpkg.LandingOverdue(root)) {
 		fmt.Fprintln(stdout, line)
 	}
 	selection := goal.SelectNext(frontier)
@@ -596,6 +596,7 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
 		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
 		store.OpenQuestions = func() []goal.OpenQuestion { return channel.GoalOpenQuestions(stateRoot) }
+		store.LandingOverdue = dispatchpkg.LandingOverdue(stateRoot)
 		// The holder takes its due landing or revision on this Stop through
 		// the public command, from the session's checkout (g1-s70 D3).
 		if checkout, absErr := filepath.Abs(*root); absErr == nil {

@@ -1734,15 +1734,21 @@ func FencedClaimLines(files []*GoalFile) []string {
 
 // LandingClaimLines renders claims waiting to land (goal land-ready) as live
 // work for the landing, never as idleness and never as a claim the machine
-// must continue before the next item. Past its elapsed box the wait is
-// printed as overdue; the box's elapsed fence does not close on it.
-func LandingClaimLines(files []*GoalFile, now time.Time) []string {
+// must continue before the next item. overdue says whether a claim is past
+// its elapsed box by the budget projection, whose elapsed clock leaves out the
+// open wait; only that answer prints a claim as overdue, so when overdue is
+// nil or does not know, the line says the claim waits to land.
+func LandingClaimLines(files []*GoalFile, now time.Time, overdue func(*GoalFile, time.Time) (past, known bool)) []string {
 	lines := make([]string, 0, len(files))
 	for _, file := range files {
 		if !file.IsLandingClaim() {
 			continue
 		}
-		if LandingOverdue(file, now) {
+		past, known := false, false
+		if overdue != nil {
+			past, known = overdue(file, now)
+		}
+		if past && known {
 			lines = append(lines, fmt.Sprintf(
 				"LANDING OVERDUE %s: land-ready since %s and past its elapsed box; land it; the queue is open",
 				file.Id, file.Landing.At,
@@ -1752,26 +1758,6 @@ func LandingClaimLines(files []*GoalFile, now time.Time) []string {
 		lines = append(lines, fmt.Sprintf("LANDING %s: land-ready since %s; the queue is open", file.Id, file.Landing.At))
 	}
 	return lines
-}
-
-// LandingOverdue reports a landing claim whose episode clock, less its idle
-// seconds, has passed the budget's elapsed limit. It reads the claim's own
-// episode start; a consumed discharge that advanced dispatch's start only
-// makes this earlier, never later, so it is a floor on the wait.
-func LandingOverdue(file *GoalFile, now time.Time) bool {
-	if !file.IsLandingClaim() || file.Budget == nil {
-		return false
-	}
-	startText := file.Claimed.EpisodeAt
-	if file.Claimed.EpisodeRevision == 0 {
-		startText = file.Claimed.At
-	}
-	start, err := time.Parse(time.RFC3339, startText)
-	if err != nil {
-		return false
-	}
-	elapsed := now.Sub(start) - time.Duration(file.Claimed.IdleSeconds)*time.Second
-	return elapsed >= file.Budget.ElapsedDuration()
 }
 
 // OnlyFencedClaim reports the one held claim that cannot be live work until
@@ -1830,7 +1816,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 	}
 	// landingClaims says what this machine holds waiting to land.
 	landingClaims := func() {
-		display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+		display = append(display, LandingClaimLines(work.landingClaims, s.now(), s.LandingOverdue)...)
 	}
 
 	switch {

@@ -101,14 +101,25 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	if current := currentClaimOf(projection.Tree, "mac-a"); current == nil || current.Id != "next-b" {
 		t.Fatalf("the current goal is the working claim: %+v", current)
 	}
-	lines := LandingClaimLines([]*GoalFile{projection.Tree.Live["built-a"]}, landAt.Add(5*time.Minute))
+	lines := LandingClaimLines([]*GoalFile{projection.Tree.Live["built-a"]}, landAt.Add(5*time.Minute), nil)
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "LANDING built-a: land-ready since "+landAt.Format(time.RFC3339)) {
 		t.Fatalf("the landing line: %v", lines)
 	}
-	// Past its elapsed box the wait prints as overdue and nothing more.
-	overdue := LandingClaimLines([]*GoalFile{projection.Tree.Live["built-a"]}, t0.Add(5*time.Hour))
+	answer := func(past, known bool) func(*GoalFile, time.Time) (bool, bool) {
+		return func(*GoalFile, time.Time) (bool, bool) { return past, known }
+	}
+	// Past its elapsed box by the budget projection the claim prints as overdue.
+	overdue := LandingClaimLines([]*GoalFile{projection.Tree.Live["built-a"]}, t0.Add(5*time.Hour), answer(true, true))
 	if len(overdue) != 1 || !strings.HasPrefix(overdue[0], "LANDING OVERDUE built-a:") {
 		t.Fatalf("the overdue landing line: %v", overdue)
+	}
+	// Inside its box by the projection, or with no reader or one that does not
+	// know, it waits to land however long since its episode began.
+	for _, read := range []func(*GoalFile, time.Time) (bool, bool){answer(false, true), nil, answer(true, false)} {
+		waiting := LandingClaimLines([]*GoalFile{projection.Tree.Live["built-a"]}, t0.Add(5*time.Hour), read)
+		if len(waiting) != 1 || !strings.HasPrefix(waiting[0], "LANDING built-a: land-ready since "+landAt.Format(time.RFC3339)) {
+			t.Fatalf("a claim not past its box by the projection printed as overdue: %v", waiting)
+		}
 	}
 	// Release the working claim: the landing goal alone resolves as current
 	// and the frontier offers the ready goal.

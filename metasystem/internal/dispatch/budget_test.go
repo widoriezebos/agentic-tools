@@ -1215,3 +1215,205 @@ func TestIdleSecondsDoNotApplyToAStartInsideTheCurrentHold(t *testing.T) {
 		t.Fatalf("idle seconds were subtracted from a window that held no gap: %+v", projection)
 	}
 }
+
+// markedBudgetGoal is the bounded goal, claimed at 08:00 with a four-hour
+// box, marked as waiting to land at 09:00.
+func markedBudgetGoal() *goal.GoalFile {
+	file := budgetGoal()
+	file.Landing = &goal.LandingRecord{At: "2026-08-28T09:00:00Z"}
+	return file
+}
+
+// launchBudgetProof records that a reserved proof attempt launched its suite
+// at the given time, as the suite launcher does: the run's process record,
+// and its key on the attempt.
+func launchBudgetProof(t *testing.T, root, attemptID string, at time.Time) {
+	t.Helper()
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := proofrun.Record{Suite: "testing", Root: root, ControlRoot: root, AttemptID: attemptID, LaunchID: "launch-1",
+		Launcher: launcher, SuiteProcess: proofrun.ProcessIdentity{Pid: 1002, Pgid: 1002, PidStartedAt: at.Unix()},
+		Watchdog: proofrun.ProcessIdentity{Pid: 1003, PidStartedAt: at.Unix()}, Status: proofrun.StatusRunning}
+	path, err := proofrun.ProcessRecordPath(root, attemptID, record.LaunchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, path, record)
+	if err := proofrun.UpdateAttemptProcesses(root, attemptID, launcher.Ref(), []string{record.Key()}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reserveBudgetProof reserves a proof attempt of the bounded goal at the
+// given time, in a fresh root it returns.
+func reserveBudgetProof(t *testing.T, attemptID string, at time.Time) string {
+	t.Helper()
+	root, proofIdentity := dispatchProofFixture(t, attemptID)
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
+		ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: at, AttemptID: attemptID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireProofReservationNotAdmissionRefused(t, decision)
+	return root
+}
+
+func TestTheGoalsOwnJobEndsTheWait(t *testing.T) {
+	t.Parallel()
+	// A job of its own starting at 10:00, after the mark, ends the wait at
+	// its start: the hour at the mark plus the time since 10:00.
+	root := budgetProjectionRoot(t)
+	writeBudgetJob(t, root, "after-mark", "reserve-after-mark", 3, 30, "completed", budgetJobLife{
+		startedAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:10:00Z", pid: 4242,
+	})
+	for _, observed := range []struct {
+		now     time.Time
+		elapsed time.Duration
+	}{
+		{time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC), 2 * time.Hour},
+		{time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC), 3 * time.Hour},
+	} {
+		projection := ProjectBudget(root, markedBudgetGoal(), observed.now)
+		if projection.Status != BudgetKnown || projection.Wait != time.Hour || projection.Elapsed != observed.elapsed {
+			t.Fatalf("at %s the job after the mark did not end the wait at its start: %+v", observed.now.Format(time.RFC3339), projection)
+		}
+	}
+	// A job still running at the mark leaves no wait at all; so does one
+	// that started before the mark and ended after it.
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	for _, job := range []struct {
+		status string
+		life   budgetJobLife
+	}{
+		{"running", budgetJobLife{startedAt: "2026-08-28T08:30:00Z"}},
+		{"completed", budgetJobLife{startedAt: "2026-08-28T08:30:00Z", endedAt: "2026-08-28T09:30:00Z", pid: 4242}},
+	} {
+		root := budgetProjectionRoot(t)
+		writeBudgetJob(t, root, "across-mark", "reserve-across-mark", 3, 30, job.status, job.life)
+		projection := ProjectBudget(root, markedBudgetGoal(), now)
+		if projection.Status != BudgetKnown || projection.Wait != 0 || projection.Elapsed != 4*time.Hour {
+			t.Fatalf("a %s job across the mark left a wait: %+v", job.status, projection)
+		}
+	}
+	// A proof attempt of its own reserved at 10:30 does not end the wait until
+	// it launches; launched at 10:45, it ends the wait at its launch.
+	root = reserveBudgetProof(t, "wait-ending-proof", time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	projection := ProjectBudget(root, markedBudgetGoal(), now)
+	if projection.Status != BudgetKnown || projection.Wait != 3*time.Hour || projection.Elapsed != time.Hour {
+		t.Fatalf("the proof's reservation alone ended the wait: %+v", projection)
+	}
+	launchBudgetProof(t, root, "wait-ending-proof", time.Date(2026, 8, 28, 10, 45, 0, 0, time.UTC))
+	projection = ProjectBudget(root, markedBudgetGoal(), now)
+	if projection.Status != BudgetKnown || projection.Wait != 105*time.Minute || projection.Elapsed != 135*time.Minute {
+		t.Fatalf("the proof after the mark did not end the wait at its launch: %+v", projection)
+	}
+}
+
+func TestIdleCountsForAClaimNeverReleased(t *testing.T) {
+	t.Parallel()
+	// The budget starts exactly at the claim; the idle half hour recorded on
+	// it still comes off the clock.
+	file := budgetGoal()
+	file.Claimed.IdleSeconds = 1800
+	projection := ProjectBudget(budgetProjectionRoot(t), file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)) ||
+		projection.Elapsed != 90*time.Minute {
+		t.Fatalf("the idle of a claim never released was dropped: %+v", projection)
+	}
+}
+
+func TestLandingOverdueAgreesWithTheProjection(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name    string
+		afterAt string
+		now     time.Time
+		overdue bool
+	}{
+		{"only waited, past the box since the mark", "", time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC), false},
+		{"worked after the mark, inside the box", "2026-08-28T10:00:00Z", time.Date(2026, 8, 28, 12, 30, 0, 0, time.UTC), false},
+		{"worked after the mark, past the box", "2026-08-28T10:00:00Z", time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC), true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			root := budgetProjectionRoot(t)
+			if row.afterAt != "" {
+				writeBudgetJob(t, root, "after-mark", "reserve-after-mark", 3, 30, "completed", budgetJobLife{
+					startedAt: row.afterAt, endedAt: "2026-08-28T10:10:00Z", pid: 4242,
+				})
+			}
+			file := markedBudgetGoal()
+			projection := ProjectBudget(root, file, row.now)
+			if projection.Status != BudgetKnown || (projection.ElapsedState != "") != row.overdue {
+				t.Fatalf("projection = %+v, want past the box %v", projection, row.overdue)
+			}
+			lines := goal.LandingClaimLines([]*goal.GoalFile{file}, row.now, LandingOverdue(root))
+			if len(lines) != 1 || strings.HasPrefix(lines[0], "LANDING OVERDUE ") != row.overdue {
+				t.Fatalf("the landing line %v disagrees with the projection (overdue %v)", lines, row.overdue)
+			}
+		})
+	}
+}
+
+func TestTheLandingLineAgreesWithTheProjectionAfterADischarge(t *testing.T) {
+	t.Parallel()
+	// The episode began at 08:00 and the goal was marked at 09:29:30, after
+	// its discharging proof ended; the discharge at 09:30 moved the budget's
+	// start, and its own job at 10:00 ended the wait. Five hours after the
+	// episode began, the projection still holds it inside its four-hour box.
+	root := budgetProjectionRoot(t)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC))
+	writeBudgetJob(t, root, "after-mark", "reserve-after-mark", 3, 30, "completed", budgetJobLife{
+		startedAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:10:00Z", pid: 4242,
+	})
+	file := dischargedEpisodeGoal()
+	file.Landing = &goal.LandingRecord{At: "2026-08-28T09:29:30Z"}
+	for _, row := range []struct {
+		now     time.Time
+		elapsed time.Duration
+		overdue bool
+	}{
+		{time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC), 3 * time.Hour, false},
+		{time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC), 4 * time.Hour, true},
+	} {
+		projection := ProjectBudget(root, file, row.now)
+		if projection.Status != BudgetKnown || projection.Elapsed != row.elapsed || WaitSpan(root, file, row.now) != 30*time.Minute {
+			t.Fatalf("at %s the projection is not the reproduction's: %+v", row.now.Format(time.RFC3339), projection)
+		}
+		lines := goal.LandingClaimLines([]*goal.GoalFile{file}, row.now, LandingOverdue(root))
+		if len(lines) != 1 || strings.HasPrefix(lines[0], "LANDING OVERDUE ") != row.overdue {
+			t.Fatalf("at %s the landing line %v disagrees with the projected elapsed %s", row.now.Format(time.RFC3339), lines, projection.Elapsed)
+		}
+	}
+}
+
+func TestAnUnreadableProjectionMakesNoOverdueClaim(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00 with no job or proof of its own since, the goal is six
+	// hours into its episode at 14:00, past its four-hour box. Only a known
+	// projection, which takes off the wait, prints it as overdue: a goal whose
+	// own job from 10:00 ended a one-hour wait is five hours in.
+	now, file := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC), markedBudgetGoal()
+	unreadable, known := budgetProjectionRoot(t), budgetProjectionRoot(t)
+	writeBudgetJob(t, unreadable, "bad-time", "reserve-bad-time", 3, 120, "completed", budgetJobLife{startedAt: "2026-08-28T08:10:00Z", endedAt: "yesterday", pid: 4242})
+	writeBudgetJob(t, known, "after-mark", "reserve-after-mark", 3, 30, "completed", budgetJobLife{startedAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:10:00Z", pid: 4242})
+	if ProjectBudget(unreadable, file, now).Status != BudgetUnknown || ProjectBudget(known, file, now).Elapsed != 5*time.Hour {
+		t.Fatal("the fixtures are not an unreadable projection and a known one past the box")
+	}
+	waiting := "LANDING bounded: land-ready since 2026-08-28T09:00:00Z; the queue is open"
+	for name, row := range map[string]struct {
+		read func(*goal.GoalFile, time.Time) (bool, bool)
+		want string
+	}{"no reader": {nil, waiting}, "unreadable": {LandingOverdue(unreadable), waiting}, "known": {LandingOverdue(known), "LANDING OVERDUE bounded: land-ready since 2026-08-28T09:00:00Z and past its elapsed box; land it; the queue is open"}} {
+		if lines := goal.LandingClaimLines([]*goal.GoalFile{file}, now, row.read); len(lines) != 1 || lines[0] != row.want {
+			t.Fatalf("%s: the landing line %v, want %q", name, lines, row.want)
+		}
+	}
+}

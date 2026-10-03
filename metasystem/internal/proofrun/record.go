@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -179,6 +180,44 @@ func ReadProcessRecord(root, key string) (Record, error) {
 		return record, nil
 	}
 	return Record{}, os.ErrNotExist
+}
+
+// LaunchedAt is when a test run launched its suite: the start of the suite
+// process its first process key names, read from that process record, whose
+// path is record. A run that holds no process key, that is, one only reserved,
+// has no launch and no record. An error means the run launched but nothing
+// dates the launch: the record cannot be read, does not hold the launch, or
+// holds no launch time above zero, or, with record empty, the key names no
+// record of the run. Neither the reservation nor the record file's time
+// stands in: the run may wait hours for the host after its reservation, and
+// the launcher rewrites the record when the run ends.
+func LaunchedAt(root string, attempt Attempt) (at time.Time, record string, err error) {
+	if len(attempt.ProcessKeys) == 0 {
+		return time.Time{}, "", nil
+	}
+	key := attempt.ProcessKeys[0]
+	launchID, _ := strings.CutPrefix(key, attempt.AttemptID+"-")
+	record, err = ProcessRecordPath(root, attempt.AttemptID, launchID)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("process key %s names no record of the test run: %w", key, err)
+	}
+	data, err := os.ReadFile(record)
+	if err != nil {
+		return time.Time{}, record, err
+	}
+	var process Record
+	if err := json.Unmarshal(data, &process); err != nil {
+		return time.Time{}, record, fmt.Errorf("suite run record %s cannot be parsed: %w", record, err)
+	}
+	if process.Key() != key || validateRecord(process) != nil {
+		return time.Time{}, record, fmt.Errorf("suite run record %s does not hold the launch %s", record, key)
+	}
+	// A record can identify its suite process by another clock and still
+	// leave the launch time out, which would read as the start of 1970.
+	if process.SuiteProcess.PidStartedAt <= 0 {
+		return time.Time{}, record, fmt.Errorf("suite run record %s holds no launch time for %s", record, key)
+	}
+	return time.Unix(process.SuiteProcess.PidStartedAt, 0).UTC(), record, nil
 }
 
 // AuthenticateWorker proves that a suite process is inside either an admitted

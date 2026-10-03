@@ -58,7 +58,8 @@ type BudgetBreach struct {
 // for one claimed goal revision. Limits come from the goal; usage comes from
 // job records, retained proof-attempt reservations, live governed runs, and
 // durable terminal obligation state. Elapsed time begins at the claim or the
-// latest exact consumed discharge proof.
+// latest exact consumed discharge proof. While the goal is marked as waiting
+// to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
 	Status                  BudgetProjectionStatus
 	GoalID                  string
@@ -75,6 +76,7 @@ type BudgetProjection struct {
 	DesignCritiques         uint64
 	CodeCritiques           uint64
 	Elapsed                 time.Duration
+	Wait                    time.Duration `json:"-"`
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
 	ElapsedState            ElapsedBudgetState
@@ -353,10 +355,11 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, recordPath, err.Error())
 		}
 		// The elapsed clock excludes the time nobody held the goal (an own-pair
-		// release or park, then the same pair's claim). A discharge inside the
-		// current hold starts a window with no idle gap to subtract.
+		// release or park, then the same pair's claim). A discharge after the
+		// claim starts a window with no idle gap to subtract; a budget that
+		// starts at the claim keeps its idle.
 		idle := time.Duration(file.Claimed.IdleSeconds) * time.Second
-		if claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At); parseErr == nil && !budgetStartedAt.Before(claimedAt) {
+		if claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At); parseErr == nil && budgetStartedAt.After(claimedAt) {
 			idle = 0
 		}
 		projection.Elapsed = now.Sub(budgetStartedAt) - idle
@@ -365,6 +368,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		projection.ElapsedGracePercent = gracePercent
 		projection.ElapsedBreachLimit = breachLimit
+	}
+	var wait *waitClock
+	if authorityLens && file.Landing != nil {
+		if mark, markErr := time.Parse(time.RFC3339, file.Landing.At); markErr == nil {
+			wait = &waitClock{mark: mark}
+		}
 	}
 	jobsDir := filepath.Join(repoRoot, "artifacts", "agents", "jobs")
 	entries, err := os.ReadDir(jobsDir)
@@ -445,6 +454,11 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		status := lens.Status()
 		if status != "pending-setup" && status != "pending" && status != "running" && !TerminalStatus(status) {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("status %q is outside the reservation lifecycle", status))
+		}
+		// Only a job that ran ends the wait: one in setup or still pending has
+		// not, and neither has one that ended with no start.
+		if startedAt := asString(record["startedAt"]); status == "running" || (TerminalStatus(status) && startedAt != "") {
+			wait.observe(startedAt, asString(record["endedAt"]), status == "running")
 		}
 		consumes := consumptionMember(recordGoal, recordRevision, file.Id, consumptionKey)
 		authorizes := authorityLens && recordRevision >= accountingRevision
@@ -559,6 +573,22 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	}
 	for _, attempt := range proofAttempts {
 		logicalPath := filepath.ToSlash(strings.TrimPrefix(mustProofAttemptPath(repoRoot, attempt.AttemptID), repoRoot+string(filepath.Separator)))
+		// Only a proof that launched ends the wait, from its launch; one only
+		// reserved has not. When a launch that could end the wait cannot be
+		// dated, neither can the wait, and the budget is unknown.
+		if wait != nil && (attempt.GoalID == file.Id || attempt.AccountedGoal() == file.Id) {
+			launchedAt, record, launchErr := proofrun.LaunchedAt(repoRoot, attempt)
+			if launchErr != nil && wait.bears(attempt.StartedAt, attempt.EndedAt, attempt.Terminal == nil) {
+				named := logicalPath
+				if record != "" {
+					named = filepath.ToSlash(strings.TrimPrefix(record, repoRoot+string(filepath.Separator)))
+				}
+				return unknownBudget(file.Id, revision, named, "the proof's launch cannot be dated: "+launchErr.Error())
+			}
+			if record != "" && launchErr == nil {
+				wait.observe(launchedAt.Format(time.RFC3339), attempt.EndedAt, attempt.Terminal == nil)
+			}
+		}
 		consumes := consumptionMember(attempt.AccountedGoal(), attempt.AccountedRevision(), file.Id, consumptionKey)
 		authorizes := authorityLens && attempt.GoalID == file.Id && attempt.AccountingRevision >= accountingRevision
 		if !consumes && !authorizes {
@@ -654,6 +684,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		statePath := obligationstate.RelativePath(repoRoot, state)
 		if state.GoalRevision > revision {
 			return unknownBudget(file.Id, revision, statePath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", state.GoalRevision, revision))
+		}
+		for _, attempt := range state.Attempts {
+			wait.observe(attempt.StartedAt, attempt.EndedAt, false)
 		}
 		if !consumptionMember(file.Id, state.GoalRevision, file.Id, consumptionKey) {
 			continue
@@ -766,10 +799,93 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
 		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
+	if wait != nil {
+		projection.Wait = wait.span(budgetStartedAt, now)
+		projection.Elapsed = max(projection.Elapsed-projection.Wait, 0)
+	}
 	if authorityLens {
 		return finishBudgetProjection(projection)
 	}
 	return finishConsumptionProjection(projection)
+}
+
+// waitClock finds where the goal's own work ends the wait that began at its
+// mark: at the start of its first job or proof that starts after the mark, or
+// at the mark itself when one was still running then. Every job of the goal's
+// own that ran, and every proof that launched, counts, whichever spending
+// epoch it is charged to; a record of another goal never does. A record whose start
+// cannot be read counts as started before the mark. A nil clock, for an
+// unmarked goal, observes nothing.
+type waitClock struct {
+	mark, end time.Time
+}
+
+func (w *waitClock) observe(startText, endText string, running bool) {
+	if w == nil {
+		return
+	}
+	start, _ := time.Parse(time.RFC3339, startText)
+	end, _ := time.Parse(time.RFC3339, endText)
+	switch {
+	case start.After(w.mark):
+		if w.end.IsZero() || start.Before(w.end) {
+			w.end = start
+		}
+	case running || end.After(w.mark):
+		w.end = w.mark
+	}
+}
+
+// bears reports whether a record of the goal's own can end the wait: it
+// started after the mark or was still running at it.
+func (w *waitClock) bears(startText, endText string, running bool) bool {
+	start, _ := time.Parse(time.RFC3339, startText)
+	end, _ := time.Parse(time.RFC3339, endText)
+	return start.After(w.mark) || running || end.After(w.mark)
+}
+
+// span is the wait from the mark, or from the budget's start when that is
+// later, to where the goal's own work ended it, or to now while none has.
+func (w *waitClock) span(budgetStart, now time.Time) time.Duration {
+	from, to := w.mark, now
+	if budgetStart.After(from) {
+		from = budgetStart
+	}
+	if !w.end.IsZero() && w.end.Before(to) {
+		to = w.end
+	}
+	if !to.After(from) {
+		return 0
+	}
+	return to.Sub(from)
+}
+
+// WaitSpan is the open wait of a goal marked as waiting to land: the time
+// from its mark until its own next job or proof started, or until now while
+// none has. The wait does not count against the goal's elapsed limit. It is
+// zero for an unmarked goal and for one whose budget cannot be projected.
+func WaitSpan(repoRoot string, file *goal.GoalFile, now time.Time) time.Duration {
+	return ProjectBudget(repoRoot, file, now).Wait
+}
+
+// LandingOverdue hands the landing lines the budget projection's answer to
+// whether a marked goal is past its elapsed box, read from the installation
+// that holds root: its elapsed, with the open wait taken off, against the
+// box's elapsed limit, as the projection's elapsed state compares them. It
+// does not know while the projection does not, and it is nil when that
+// installation cannot be found.
+func LandingOverdue(root string) func(*goal.GoalFile, time.Time) (past, known bool) {
+	stateRoot, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		return nil
+	}
+	return func(file *goal.GoalFile, now time.Time) (bool, bool) {
+		projection := ProjectBudget(stateRoot, file, now)
+		if projection.Status != BudgetKnown {
+			return false, false
+		}
+		return projection.Elapsed >= projection.Limits.ElapsedDuration(), true
+	}
 }
 
 func consumptionMember(recordGoal string, recordRevision uint64, goalID string, consumptionKey uint64) bool {
