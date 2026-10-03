@@ -127,7 +127,7 @@ func ReadClosure(root map[string]any) (Closure, bool, error) {
 			// content names no digest (RecordedAcceptedRisksHold).
 			digest, digestOK := entry["acceptedDigest"].(string)
 			if len(entry) == 3 && (!digestOK || digest == "") {
-				return Closure{}, true, fmt.Errorf("closure accepted risk %d must name the digest of the content accepted", index)
+				return Closure{}, true, fmt.Errorf("closure accepted risk %d must record which content was accepted", index)
 			}
 			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid, AcceptedDigest: digest})
 		}
@@ -191,7 +191,7 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 		}
 		acceptedDigest, digestOK := entry["acceptedDigest"].(string)
 		if withAcceptance && (status != "accepted-risk" || !digestOK || acceptedDigest == "") {
-			return false, false, nil, fmt.Errorf("finding register entry %d names an accepted digest outside an accepted risk", index)
+			return false, false, nil, fmt.Errorf("finding register entry %d records accepted content outside an accepted risk", index)
 		}
 		resolution := ""
 		if legacy {

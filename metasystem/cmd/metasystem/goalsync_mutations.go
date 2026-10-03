@@ -1195,7 +1195,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 			// showed it; one that changed since stays open (F4).
 			stamped, err := dispatchcore.CritiqueRegisterStampAcceptedRisk(f.root, f.chain, f.finding, heldOpid, finding.Digest)
 			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
-				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown, so this acceptance does not cover it and it stays open; read the critique again before deciding"})
+				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
 			}
 			if err != nil {
 				return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the acceptance holds on the goal, but the critique register needs a hand repair"))
@@ -1231,7 +1231,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 		// that changed since stays open in the register (F4).
 		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid, finding.Digest); err != nil {
 			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
-				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown, so this acceptance does not cover it and it stays open; read the critique again before deciding"})
+				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
 			}
 			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; the critique register needs a hand repair"))
 		}

@@ -1244,7 +1244,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 		}
 		if acceptedDigestPresent {
 			if digest, isString := acceptedDigest.(string); !isString || !hexDigest64.MatchString(digest) || asString(entry["status"]) != "accepted-risk" {
-				return nil, fmt.Errorf("entry %d names an accepted digest outside an accepted risk", index)
+				return nil, fmt.Errorf("entry %d records accepted content outside an accepted risk", index)
 			}
 		}
 		finding := registerFinding{
