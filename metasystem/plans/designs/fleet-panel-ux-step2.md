@@ -25,6 +25,8 @@ Rule, in `panel.ts` (`needsOf`, `doingOf`): one Needs you item per card whose go
 What to do, in 2a: "If it is stuck, stop that machine with machine stop m1f at a terminal; its steward will not start it again." In 2b this sentence becomes [Stop].
 Doing for that machine says "stalled", then the stage and the minutes since its last progress, with no live dot; it does not count as working. The opened row keeps the machine's jobs as today. Every other unknown reason (unprobeable, reused, no owner, claim moved, not claimed) stays as step 1 left it. No server change.
 
+A machine can hold a stalled goal beside one it is working on (a goal waiting to land beside the next one, or a card left behind). Then Doing says the work that moves, with its live dot, and the machine counts as working: saying "stalled" there would call a working machine stuck. The stalled goal is still its own Needs you item, so the verdict is not green over it. (Clarified 2026-10-03 after Sol's read of 2a asked which wins; the build had chosen this and named it for the reviewer.)
+
 Proof, failing first (`panel.test.ts`, `FleetPane.test.tsx`): a stalled card for a held goal is a Needs you item dated by its last progress, and the verdict says "1 thing needs you"; a dead writer is one too, with its pid; a stalled card for a goal the machine no longer holds is dropped as before; Doing says stalled and the seats-working count leaves it out.
 
 ### 2a.2 The prover records why a proof is red
