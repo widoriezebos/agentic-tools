@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 3
+- Sequence: 4
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Moves where every adopted project's state lives and what an upgrade replaces; a wrong boundary loses project state on upgrade (severity 3); a new layout rule and a new upgrade boundary (novelty 2); every adopter and this repository (exposure 3); every agent turn reads these paths (accumulation 2)"
 - Tier: 3
 - Intent: An adopted repository has one MetaSystem folder, metasystem/, that separates what MetaSystem deploys (replaced only by an upgrade) from what the application evolves as it is built with MetaSystem (plans, designs, decisions, records, testing contract, committed config), so adoption works and newcomers see one folder (Wido 2026-10-02). Spec: plans/designs/one-folder-deployed-and-evolved.md; tier 3; Astra critique under the stop rule before any build.
 - Origin: main
 - Next step: Build step 1 of the accepted design as eleven works stacked on the goal branch and landed together (briefs plans/one-folder-u1*.md to u5 in the m1f checkout). root-types is reviewed and published (dbd7a656c). root-structs is on attempt 5 (plans/one-folder-u1c-root-structs-fix-a5-brief.md): it completes moving the process family's run state to the installation; when it returns green, run work review G --work root-structs, then build root-readers (u1d). Handoff: plans/handoff-one-folder-deployed-and-evolved.md.
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1f
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -40,4 +40,5 @@ History:
 - 2026-10-03T00:30:02Z J9H53EKD5513PVBY6H9NF81M0S-m1f-71c5cb39 slice-start actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
 - 2026-10-03T04:59:05Z TWT3002RGN00M3RQM776GQ76DA-m1f-71c5cb39 edit actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
 - 2026-10-03T06:25:53Z 3VZ905KVHTKEB6V2THE5QKB2D5-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=fleet-page-redesign from=1:2 to=1:3 requested-sequence=1
-Integrity: sha256=92812f23aa2684d281bbe00da189643b7394464e85160a77eda9ed177d0029f2
+- 2026-10-03T06:26:04Z XZ3KQV246WYNAN1CGYHAA73CNT-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=partner-runtime-defaults-to-an-available-one from=1:3 to=1:4 requested-sequence=1
+Integrity: sha256=b20d9ccd62dfb22e4611a5101216a83a6753ce4a85ffb198541ef752961be353

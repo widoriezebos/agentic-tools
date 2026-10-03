@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 2
+- Sequence: 3
 - Risk: severity=1 novelty=2 exposure=2 accumulation=2 basis="Presentation of existing facts plus three thin endpoints for existing verbs (severity 1); a new layout (novelty 2); the person's main view (exposure 2); read many times a day (accumulation 2)"
 - Tier: 2
 - Intent: The fleet panel answers, at a glance and on a phone, what the person wants there (Wido 2026-10-02: 'the UX of the bottom half of the fleet panel is a mess... first think what I want to be able to do in that screen, use cases, and then design an elegant, intuitive UX and build it'): one verdict, what needs him with its one action, what each seat is doing and how far (the fleet table he likes, its Running column made a true Doing column), the landing lane as waiting/proving/landed today/came back in plain words with Pause/Resume/Land now buttons, technical details behind a disclosure. Spec: plans/designs/fleet-panel-ux.md.
 - Origin: main
 - Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.; ASKED X3B4QE1J1WF37WSZQWFK0EXT1X (other): Fleet panel step 2: may the signed-in browser resume the landing lane and stop a machine (on this computer), as you can at the terminal?; ANSWERED X3B4QE1J1WF37WSZQWFK0EXT1X: Yes
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 23
+- Revision: 24
 - Pinned: ui
 - Budget: elapsedLimit=1d6h attemptLimit=18 reservedJobMinutesLimit=2160 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -44,4 +44,5 @@ History:
 - 2026-10-03T05:02:46Z WWVZNQS7S6VWB8Q3D6MG58AWEM-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
 - 2026-10-03T05:56:20Z 5DNR07FH9WA6XQKSGG7DH259C4-ui-71c5cb39 answer actor=human:wido targets=fleet-panel-ux authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1042/1043 channelStep=1791006958 question=X3B4QE1J1WF37WSZQWFK0EXT1X reason=Yes
 - 2026-10-03T06:25:53Z 3VZ905KVHTKEB6V2THE5QKB2D5-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=fleet-page-redesign from=1:1 to=1:2 requested-sequence=1
-Integrity: sha256=7074235b1db22831ffc41cf2aa92392b3fc28e97ffd7f2469d7e13c1665cafcd
+- 2026-10-03T06:26:04Z XZ3KQV246WYNAN1CGYHAA73CNT-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=partner-runtime-defaults-to-an-available-one from=1:2 to=1:3 requested-sequence=1
+Integrity: sha256=837ba05f1f87d086e4573233fa0eb2ccc5e3595e46a1e477d88044abd6e6cd90
