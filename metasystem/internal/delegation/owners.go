@@ -83,7 +83,7 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	// (landpath.SystemInstallation); any other root keeps its own.
 	leaseRoot, _ := systemInstallation(context.Background(), ownerGit{}, root)
 	return Ports{
-		Lease:   ownerLease{root: leaseRoot},
+		Lease:   ownerLease{root: leaseRoot, custody: root},
 		Steward: ownerSteward{root: root},
 		Adapter: ownerAdapter{root: root, engine: engine, env: config.ConfigEnv},
 		Goal:    ownerGoal{root: root, now: now},
@@ -97,10 +97,38 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	}, nil
 }
 
-type ownerLease struct{ root string }
+// ownerLease is the seat's lease at root (an unarmed goal worktree's primary
+// checkout), with custody the installation that keeps the job records.
+type ownerLease struct {
+	root, custody string
+	// classify is lease.ClassifyVerb unless a test supplies its own.
+	classify func(root string, pid int64) (lease.ClassifyResult, error)
+}
 
 func (o ownerLease) Classify(inv Invocation) (lease.ClassifyResult, error) {
-	return lease.ClassifyVerb(o.root, inv.CallerPid)
+	return o.classifyCaller(inv.CallerPid)
+}
+
+// classifyCaller classifies pid by the lease at root. The lease is the
+// primary's, but a job's adapter supervisor is known by its custody record,
+// kept with the job's records in the goal worktree: once its dispatcher is
+// gone, the primary cannot recognize it. Only that recognition is read at
+// custody, never a holder.
+func (o ownerLease) classifyCaller(pid int64) (lease.ClassifyResult, error) {
+	classify := o.classify
+	if classify == nil {
+		classify = lease.ClassifyVerb
+	}
+	classification, err := classify(o.root, pid)
+	if err != nil {
+		return classification, err
+	}
+	if classification.Class == lease.ClassUntrusted && o.custody != "" && o.custody != o.root {
+		if local, localErr := classify(o.custody, pid); localErr == nil && local.Class == lease.ClassAdapterSupervisor {
+			return local, nil
+		}
+	}
+	return classification, nil
 }
 
 func (o ownerLease) RequireHolder(inv Invocation, expectedEpoch *int64) (lease.HolderView, error) {
@@ -129,7 +157,7 @@ func (o ownerLease) Authorize(inv Invocation, mode AuthorityMode, job string) er
 	if !authority.ValidMode(string(mode)) {
 		return fmt.Errorf("unknown control-plane mode %q", mode)
 	}
-	classification, err := lease.ClassifyVerb(o.root, inv.CallerPid)
+	classification, err := o.classifyCaller(inv.CallerPid)
 	if err != nil {
 		return fmt.Errorf("nothing was written: %w: %w", ErrCallerUnidentified, err)
 	}
