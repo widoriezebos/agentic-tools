@@ -292,3 +292,45 @@ func TestFollowDeliversWhatArrivesAndEndsWithItsContext(t *testing.T) {
 		t.Fatal("a cancelled follow must end with its context's reason")
 	}
 }
+
+// A raw health verdict is answered by no reader, but its id still works as a
+// cursor: a page given that id before this rule held can still ask for what
+// lies before it, and a stream that last saw it resumes after it.
+func TestARawHealthVerdictIsAnsweredByNoReaderAndStaysACursor(t *testing.T) {
+	t.Parallel()
+	path := journal(t,
+		line(t, "V1", "steward", "the runner armed", true),
+		line(t, "V2", "alert", "HEALTH unhealthy — steward-runner=alive (pid 1)", true),
+		line(t, "V3", "alert", "seat m1e is idle with approved work", true),
+	)
+	page, err := Page(path, DefaultLimit, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the history", ids(page), []string{"V3", "V1"})
+
+	older, err := Page(path, DefaultLimit, "V2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the page before the verdict", ids(older), []string{"V1"})
+
+	follower, behind, err := Open(path, "V1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the backlog after V1", ids(behind), []string{"V3"})
+	_, behind, err = Open(path, "V2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the backlog after the verdict", ids(behind), []string{"V3"})
+
+	appendLine(t, path, line(t, "V4", "alert", "HEALTH STOP INCOMPLETE unhealthy — x=dead", true)+"\n")
+	appendLine(t, path, line(t, "V5", "alert", "SPEND CROSSED day.tokensx1", true)+"\n")
+	arrived, err := follower.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "what arrives", ids(arrived), []string{"V5"})
+}

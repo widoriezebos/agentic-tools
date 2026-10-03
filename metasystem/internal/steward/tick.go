@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -60,9 +61,10 @@ type TickConfig struct {
 	BreachStopReady func() bool
 	// KeepLandingLane is one step of the host landing lane's keeper: it
 	// wakes the lane's landing agent when the lane has work (lane design
-	// r10 §3) and returns its line. The command layer supplies it; nil
-	// keeps nothing. RunLoop calls it once per cycle outside the helm.
-	KeepLandingLane func() string
+	// r10 §3) and returns its outcome and line. The command layer supplies
+	// it; nil keeps nothing. RunLoop calls it once per cycle outside the
+	// helm, and between cycles every laneRecheck while the lane waits.
+	KeepLandingLane func() lane.AgentRun
 	// Stopping reports that the resident runner received a stop signal:
 	// the tick finishes the stop in progress and starts no further one.
 	// Only RunLoop sets it; nil is never stopping.

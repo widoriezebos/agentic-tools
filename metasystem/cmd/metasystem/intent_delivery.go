@@ -2192,8 +2192,25 @@ func (inv *intentInvocation) closeJobReview(job string, reviewed intentResult) i
 // and asks the record-writer authority owner, as the close owner's own
 // guards will; it proves permission to start, not that the close completes.
 func recordWriterPreflight(root, job string) (string, error) {
+	root = recordWriterLeaseRoot(root)
 	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
 	return recordWriterAdmits(caller, err, job)
+}
+
+// recordWriterLeaseRoot is where the lease that answers for a record write at
+// root lives: a seat working in its unarmed goal worktree is announced, and
+// holds the lease, at its primary checkout (landpath.SystemInstallation), as
+// dispatch and the unit read map it; any other root keeps its own.
+func recordWriterLeaseRoot(root string) string {
+	// Git names the worktree's top with links resolved, so root is resolved
+	// too before the two are compared.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	installation, _ := landpath.SystemInstallation(func(args ...string) landpath.GitResult {
+		return landingPathGit(landpath.GitCall{Dir: root, Args: args})
+	}, root)
+	return installation
 }
 
 // recordWriterAdmits is the record-writer owner's answer for a classified

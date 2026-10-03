@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -263,7 +264,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		bridge = deps.Bridge(top)
 		defer bridge.Close()
 	}
-	bridgeLine, laneLine := "", ""
+	bridgeLine := ""
+	keeping := &laneKeeping{step: cfg.KeepLandingLane}
 
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
@@ -297,19 +299,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if helm.Active(top).Active {
-			if stopped := runnerWait(top, interval, deps, drain); stopped {
+			if stopped := runnerWait(top, interval, deps, drain, nil); stopped {
 				return nil
 			}
 			continue
 		}
 		// The landing lane's keeper wakes the lane's landing agent when the
 		// lane has work; at the helm, above, it does not run.
-		if cfg.KeepLandingLane != nil {
-			if line := cfg.KeepLandingLane(); line != laneLine {
-				fmt.Fprintln(os.Stderr, line)
-				laneLine = line
-			}
-		}
+		keeping.run()
 		// A revive decision that selected a seat starts the seat main in this
 		// same pass (g1-s77), instead of a delegate revival.
 		if err == nil && result.Decision.Action == ActRevive && result.Seat != nil {
@@ -371,19 +368,59 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
 			}
 		}
-		if stopped := runnerWait(top, interval, deps, drain); stopped {
+		if stopped := runnerWait(top, interval, deps, drain, keeping); stopped {
 			return nil
 		}
 	}
 }
 
+// laneRecheck is how often, between cycles, the runner steps the landing
+// lane's keeper again while the lane waits on something that ends by
+// itself: the agent wakes within it of a proof's end, not at the next cycle.
+const laneRecheck = 15 * time.Second
+
+// laneKeeping is the runner's side of the landing lane's keeper: its step,
+// the line last printed, and whether the lane waits on a proof, a running
+// agent or another hold.
+type laneKeeping struct {
+	step    func() lane.AgentRun
+	line    string
+	waiting bool
+}
+
+// run steps the keeper once and prints its line when it changed.
+func (k *laneKeeping) run() {
+	if k == nil || k.step == nil {
+		return
+	}
+	run := k.step()
+	if run.Line != k.line {
+		fmt.Fprintln(os.Stderr, run.Line)
+		k.line = run.Line
+	}
+	switch run.Outcome {
+	case lane.AgentStarted, lane.AgentRunning, lane.AgentHeld:
+		k.waiting = true
+	default:
+		k.waiting = false
+	}
+}
+
 // runnerWait sleeps one interval in 200 ms steps, watching the stop marker
-// and the stop signal; it reports whether either arrived.
-func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain) bool {
+// and the stop signal; it reports whether either arrived. While the landing
+// lane waits, it steps the lane's keeper every laneRecheck outside the helm.
+func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping) bool {
 	deadline := deps.Now().Add(interval)
+	recheck := deps.Now().Add(laneRecheck)
 	for deps.Now().Before(deadline) {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return true
+		}
+		if keeping != nil && keeping.waiting && !deps.Now().Before(recheck) {
+			if !helm.Active(top).Active {
+				keeping.run()
+			}
+			recheck = deps.Now().Add(laneRecheck)
 		}
 		deps.Sleep(200 * time.Millisecond)
 	}

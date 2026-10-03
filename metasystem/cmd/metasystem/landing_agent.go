@@ -252,10 +252,10 @@ func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
 
 // landingAgentStep is the landing agent's keeper step for the steward of
 // repo: nil without a lane home.
-func landingAgentStep(repo string) func() string {
+func landingAgentStep(repo string) func() lane.AgentRun {
 	home, err := batchowner.LandingLaneHome()
 	if err != nil {
 		return nil
 	}
-	return newLandingAgentKeeper(repo, home, newLandingAgent()).Step
+	return newLandingAgentKeeper(repo, home, newLandingAgent()).Run
 }
