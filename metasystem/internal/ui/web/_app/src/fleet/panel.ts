@@ -257,7 +257,7 @@ export function needsOf(fleet: FleetReading, board: BoardReading, now: Date): Ne
   if (board.state === "read") {
     const read = board.board;
     if (read.lane !== undefined && read.lane !== null && !laneNotRead(read.lane)) {
-      items.push(...laneNeeds(read.lane, read.titles, now));
+      items.push(...laneNeeds(read.lane, read.titles, read.ended, now));
     }
     items.push(...questionNeeds(read));
   }
@@ -373,7 +373,12 @@ function paused(lane: Lane): boolean {
 }
 
 /** The lane paused or unable to run, the returns and an unanswered red proof. */
-function laneNeeds(lane: Lane, titles: Readonly<Record<string, string>> | undefined, now: Date): Need[] {
+function laneNeeds(
+  lane: Lane,
+  titles: Readonly<Record<string, string>> | undefined,
+  ended: Readonly<Record<string, string>> | undefined,
+  now: Date,
+): Need[] {
   const items: Need[] = [];
   if (paused(lane)) {
     const by = lane.owner.stopped_by ?? "";
@@ -400,7 +405,9 @@ function laneNeeds(lane: Lane, titles: Readonly<Record<string, string>> | undefi
   }
   const queue = lane.queue ?? [];
   for (const [index, entry] of queue.entries()) {
-    if (entry.state !== "returned" || handedInAgain(queue, index)) {
+    // A return is history once its goal was handed in again, or once the
+    // goal is done or abandoned; Came back still lists it.
+    if (entry.state !== "returned" || handedInAgain(queue, index) || (ended?.[entry.goal] ?? "") !== "") {
       continue;
     }
     items.push(

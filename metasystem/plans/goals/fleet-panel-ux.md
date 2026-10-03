@@ -7,18 +7,18 @@
 - Tier: 2
 - Intent: The fleet panel answers, at a glance and on a phone, what the person wants there (Wido 2026-10-02: 'the UX of the bottom half of the fleet panel is a mess... first think what I want to be able to do in that screen, use cases, and then design an elegant, intuitive UX and build it'): one verdict, what needs him with its one action, what each seat is doing and how far (the fleet table he likes, its Running column made a true Doing column), the landing lane as waiting/proving/landed today/came back in plain words with Pause/Resume/Land now buttons, technical details behind a disclosure. Spec: plans/designs/fleet-panel-ux.md.
 - Origin: main
-- Next step: Astra critique of the design (tier 2), then build in the ui seat, land; ASKED 9C7D6XANGZ51BV22WVN793E6YH (other): The new fleet panel is built and Sol has read it five times. Its 4-hour time box ran out with two small findings open. Land it as it is, or give it one more round?; ASKED 3X03ZNP80A1QQQ530204B4HPXN (other): Fleet panel: your extra round is done. Sol's sixth read found one thing only you can accept. Accept it and land, or fix it first? Step 2 must include: a seat whose progress card stalls while its machine is reachable goes into Needs you (Sol F-2 on 3b57cf840, accepted as risk for step 1 by m1e in Wido's word 2026-10-03 05:45).
+- Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 14
+- Revision: 20
 - Pinned: ui
-- Budget: elapsedLimit=6h attemptLimit=9 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 1
-- NormApproval: approvedRef=HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb minutes=1080 reviewRounds=20 goalRevision=8
-- Approved: by=human:Wido at=2026-10-03T03:12:42Z revision=9 opid=HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb authority=proven digest=9bee65a93add12b95e7652e77deb806bb66f5e96716bcd7a8b8b442adc4e787d episode=9
+- Budget: elapsedLimit=1d6h attemptLimit=18 reservedJobMinutesLimit=2160 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 2
+- NormApproval: approvedRef=K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb minutes=2160 reviewRounds=20 goalRevision=17
+- Approved: by=human:Wido at=2026-10-03T04:33:46Z revision=18 opid=K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb authority=proven digest=2cceefe7c4ce25f034a8684b2ed6873ccdc0d3aaabcae6f40266b9f90f662f86 episode=18
 - Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
 - AcceptedRisk: finding=F-2 chain=code-critic-1eb6d6383985e27d682ddcc4 by=Wido opid=86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T03:30:45Z revision=11 accountingRevision=9 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=5
-- StopCapability: generation=11 revision=11 machine=ui claimEpoch=3 fenceEpoch=0
+- Claimed: machine=ui lineage=steward-seat at=2026-10-03T04:34:54Z revision=20 accountingRevision=18 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=15
+- StopCapability: generation=20 revision=20 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-02T21:18:23Z EM5JJFDXWZ6592RRGHJA018JB8-m1e-9c612d71 open actor=human:Wido targets=fleet-panel-ux
@@ -35,4 +35,10 @@ History:
 - 2026-10-03T03:42:47Z PDE259AWBC9VKPX1SYQB52N1NP-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
 - 2026-10-03T03:43:11Z 86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-panel-ux reason=Accepted by m1e in Wido word: the accepted design puts stuck seats in Needs you with Stop in step 2; step 1 is read-only plus Land now. Fix in step 2.
 - 2026-10-03T03:43:27Z XDJ5NR037DY9MQ3NMD61TDZ952-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
-Integrity: sha256=a42e41dea12dc8fd8f9fdc22f38de21fea322ca1de756236d6d6308d0bea5b27
+- 2026-10-03T04:22:05Z ZJ5MWTM6G5J5M45TG2AQQTWSVX-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
+- 2026-10-03T04:31:54Z YM5ZEZFBBG48YHE1424W0RGRH2-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim: the critic dispatch was refused as not the authenticated lease holder after a goal edit from another checkout
+- 2026-10-03T04:31:59Z Y8BZCSB1TNBQ6ZJA7Q6PJK6SJP-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
+- 2026-10-03T04:33:46Z K7XRDFBW4S53F52K392Q0MFHDK-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:31:59Z
+- 2026-10-03T04:34:49Z VFV6Y8SQPGHMHV5JH1CCK2A5V4-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim under the raised budget for step 2 (m1e's raise rebinds the claim)
+- 2026-10-03T04:34:54Z GZPR6F83QSY4PW2FGF6S3TT4EV-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=2d3218eaf93766409e08f6a2c49133508dfd5499cf6d1008a9da5cba73ae21b1

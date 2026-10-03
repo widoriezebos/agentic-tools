@@ -292,3 +292,36 @@ func TestBoardSaysALedgerItCouldNotRead(t *testing.T) {
 	testutil.Expect(t, "a build with no ledger reader", read("none", nil), []string{"the goal ledger can't be read: this server reads no goal ledger"})
 	testutil.Expect(t, "a ledger that was read", read("read", silentHolder), []string{})
 }
+
+// TestBoardSaysWhichQueuedGoalsHaveEnded: a goal in the lane's queue that
+// the ledger holds as done or abandoned is named in ended, so the page can
+// count its old return as history; a live goal, and one the ledger does not
+// carry, are not.
+func TestBoardSaysWhichQueuedGoalsHaveEnded(t *testing.T) {
+	t.Parallel()
+	root := "/lanes/landing"
+	observe := func() snapshot.Observation {
+		observed := silentHolder()
+		observed.Tree.Done["landed-goal"] = &goal.GoalFile{Id: "landed-goal", Intent: "Landed and concluded."}
+		observed.Tree.Abandoned["lane-check-red"] = &goal.GoalFile{Id: "lane-check-red", Intent: "A lane check nobody needs."}
+		observed.Tree.Live["live-goal"] = &goal.GoalFile{Id: "live-goal", Intent: "Still being worked."}
+		return observed
+	}
+	served := New(Info{Observe: observe, Now: func() time.Time { return fleetNow },
+		Board: &BoardSource{Home: t.TempDir(), Seats: func() ([]board.Seat, error) { return nil, nil }, Prober: boardProber{}, Stall: 20 * time.Minute,
+			Lane: func(time.Time) plain.Status {
+				return plain.Status{View: lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerIdle}},
+					Queue: []plain.Entry{
+						{Goal: "landed-goal", SHA: "a1", State: plain.StateLanded},
+						{Goal: "lane-check-red", SHA: "b2", State: plain.StateReturned},
+						{Goal: "live-goal", SHA: "c3", State: plain.StateReturned},
+						{Goal: "not-in-the-ledger", SHA: "d4", State: plain.StateReturned},
+					}}
+			}}}, loopback(), testBundle())
+
+	var payload struct {
+		Ended map[string]string `json:"ended"`
+	}
+	testutil.Require(t, "decode", json.Unmarshal(request(t, served, http.MethodGet, boardPath, "127.0.0.1:7878", nil).Body.Bytes(), &payload), nil)
+	testutil.Expect(t, "ended", payload.Ended, map[string]string{"landed-goal": "done", "lane-check-red": "abandoned"})
+}

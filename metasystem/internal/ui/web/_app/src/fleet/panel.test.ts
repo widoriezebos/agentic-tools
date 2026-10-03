@@ -356,6 +356,21 @@ describe("what needs you", () => {
     expect(needs(fleetRead(), read).filter((one) => one.words.includes("came back"))).toEqual([]);
   });
 
+  it("counts a return as history once its goal is done or abandoned", () => {
+    const read = boardRead({
+      ended: { "lane-check-red": "abandoned", "landed-goal": "done" },
+      lane: lane({
+        queue: [
+          entry({ goal: "lane-check-red", state: "returned", reason: "red", returned_at: at(-30) }),
+          entry({ goal: "landed-goal", sha: "fedcba", state: "returned", reason: "conflict", returned_at: at(-20) }),
+          entry({ goal: "plain-lane", sha: "abc123", state: "returned", reason: "red", returned_at: at(-10) }),
+        ],
+      }),
+    });
+
+    expect(needs(fleetRead(), read).filter((one) => one.words.includes("came back")).map((one) => one.goal)).toEqual(["plain-lane"]);
+  });
+
   it("names a red proof with its recorded reason, until a return answers it", () => {
     const red = { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/p.log", at: at(-20), reason: "app-standard failed" };
     const read = boardRead({ lane: lane({ last_proof: red }) });

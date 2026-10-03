@@ -64,6 +64,10 @@ type boardPayload struct {
 	// questions name, by goal id, from the same ledger observation the cards
 	// are checked against. A goal the ledger does not carry has none.
 	Titles map[string]string `json:"titles"`
+	// Ended says, for each goal in the lane's queue that the ledger holds as
+	// concluded, how it ended: "done" or "abandoned". A return of an ended
+	// goal is history, not something that needs the person.
+	Ended map[string]string `json:"ended"`
 	// Questions are this checkout's open channel questions: what a seat has
 	// asked the person and nobody has answered. QuestionsProblem says why
 	// they, or some of their records, could not be read; "" when every
@@ -144,6 +148,7 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 		view.Reason = "registry: " + err.Error()
 		payload.View = view
 		payload.Titles = titlesOf(observed, payload)
+		payload.Ended = endedOf(observed, payload)
 		return payload
 	}
 	picture, unreadable := board.Read(source.Home, seats, source.Prober, now, source.Stall)
@@ -159,6 +164,7 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	}
 	payload.View = view
 	payload.Titles = titlesOf(observed, payload)
+	payload.Ended = endedOf(observed, payload)
 	return payload
 }
 
@@ -217,6 +223,23 @@ func claimsOf(observed snapshot.Observation) map[string]string {
 		}
 	}
 	return claims
+}
+
+// endedOf says how each goal in the lane's queue ended, for the ones the
+// ledger holds as done or abandoned.
+func endedOf(observed snapshot.Observation, payload boardPayload) map[string]string {
+	ended := map[string]string{}
+	if observed.State != snapshot.StateRead || observed.Tree == nil || payload.Lane == nil {
+		return ended
+	}
+	for _, entry := range payload.Lane.Queue {
+		if _, done := observed.Tree.Done[entry.Goal]; done {
+			ended[entry.Goal] = "done"
+		} else if _, abandoned := observed.Tree.Abandoned[entry.Goal]; abandoned {
+			ended[entry.Goal] = "abandoned"
+		}
+	}
+	return ended
 }
 
 // titlesOf titles every goal the payload names, live, done or abandoned:
