@@ -15,6 +15,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -341,21 +342,35 @@ func runPassWithStore(stderr io.Writer, repo string, self identity.Ref, store *r
 // against the live kernel. Verdicts land through the locked job-record
 // compare-and-swap owner: a completion that arrives after the sweep's read
 // wins, and the stale verdict is void.
+//
+// The system at an installation also serves its unarmed goal worktrees
+// (landpath.ServedInstallations): no reaper runs there, so this one sweeps
+// their job records too, under the same proven-death discipline and each
+// through its own record owner.
 func setupReaper(stderr io.Writer, repo, metasystemRoot string) func() {
-	cfg := supervise.ReaperConfig{
-		Repo:      repo,
-		JobsDir:   supervise.JobsDir(repo),
-		Now:       func() time.Time { return time.Now().UTC() },
-		Custodian: kernelCustodian(metasystemRoot),
-		ReturnComplete: func(role, file string) bool {
-			return len(returnschema.ReturnCompleteRole(repo, role, file)) == 0
-		},
-		Apply: recordCASApplier(repo),
-		Emit:  func(line string) { fmt.Fprintln(stderr, line) },
+	custodian := kernelCustodian(metasystemRoot)
+	reaperFor := func(root string) supervise.ReaperConfig {
+		return supervise.ReaperConfig{
+			Repo:      root,
+			JobsDir:   supervise.JobsDir(root),
+			Now:       func() time.Time { return time.Now().UTC() },
+			Custodian: custodian,
+			ReturnComplete: func(role, file string) bool {
+				return len(returnschema.ReturnCompleteRole(root, role, file)) == 0
+			},
+			Apply: recordCASApplier(root),
+			Emit:  func(line string) { fmt.Fprintln(stderr, line) },
+		}
 	}
+	cfg := reaperFor(repo)
 	return func() {
 		if err := cfg.ReaperPass(); err != nil {
 			fmt.Fprintln(stderr, "supervise component reaper:", err)
+		}
+		for _, served := range landpath.ServedInstallations(landingPathGit, repo) {
+			if err := reaperFor(served).ReaperPass(); err != nil {
+				fmt.Fprintln(stderr, "supervise component reaper:", served+":", err)
+			}
 		}
 		// Proof attempts are reconciled on the same tick: a dead launcher
 		// commits no terminal, and nothing else on the checkout read the
