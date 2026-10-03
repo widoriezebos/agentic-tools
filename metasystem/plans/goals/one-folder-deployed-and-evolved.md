@@ -9,14 +9,15 @@
 - Origin: main
 - Next step: Build step 1 of the accepted design as eleven works stacked on the goal branch and landed together (briefs plans/one-folder-u1*.md to u5 in the m1f checkout). root-types is reviewed and published (dbd7a656c). root-structs is on attempt 5 (plans/one-folder-u1c-root-structs-fix-a5-brief.md): it completes moving the process family's run state to the installation; when it returns green, run work review G --work root-structs, then build root-readers (u1d). Handoff: plans/handoff-one-folder-deployed-and-evolved.md.
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 28
+- Revision: 29
 - Pinned: m1f
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-02T14:27:24Z revision=2 opid=J4DDF6HKHD2PQVRBVK0E4BZR2X-m1e-9c612d71 authority=proven digest=427db9e3d13e3794fe6adfc0bb4315aa91e8df721ed56128aeb42752da9b759f episode=2
+- Budget: elapsedLimit=3d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb minutes=2400 reviewRounds=20 goalRevision=28
+- Approved: by=human:Wido at=2026-10-03T07:54:32Z revision=29 opid=N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb authority=proven digest=5c7788eb0c79a195de9f08861c09e91ebefc5e0693bb11b267c69dab7052a115 episode=29
 - Sliced: machine=m1f lineage=steward-seat revision=10 at=2026-10-03T00:30:02Z
-- Claimed: machine=m1f lineage=steward-seat at=2026-10-02T20:46:14Z revision=10 accountingRevision=10 episodeAt=2026-10-02T20:46:14Z episodeRevision=10
-- StopCapability: generation=10 revision=10 machine=m1f claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1f lineage=steward-seat at=2026-10-03T07:54:32Z revision=29 accountingRevision=29 episodeAt=2026-10-02T20:46:14Z episodeRevision=10
+- StopCapability: generation=29 revision=29 machine=m1f claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-02T14:27:17Z 835YY2SYJ5EB97ZYCSK1FZJDB5-m1e-9c612d71 open actor=human:Wido targets=one-folder-deployed-and-evolved
@@ -47,4 +48,5 @@ History:
 - 2026-10-03T07:14:09Z 272J1QRJBXZQ652XC9300MWNTP-m1e-718ba0eb abandon actor=human:Wido targets=converging-reviews-never-ask-the-person,partner-runtime-defaults-to-an-available-one,fleet-page-redesign,channel-questions-stand-alone,questions-carry-what-they-ask-about,fleet-panel-ux,one-folder-deployed-and-evolved,machinery-blocks-of-2026-10-02,seat-path-lands-without-help,critique-stops-on-convergence,ui-connects-to-a-running-agent,rosters-are-configuration-items,fleet-forgets-an-unreachable-seat,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=priority-order from=1:7 to=1:6
 - 2026-10-03T07:14:38Z D4PA40PMH72WZN5A0WGE7TTZYG-m1e-718ba0eb set-priority actor=human:Wido targets=channel-questions-stand-alone,critique-stops-on-convergence,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,seat-path-lands-without-help reason=priority-order subject=critique-stops-on-convergence from=1:6 to=1:7 requested-sequence=1
 - 2026-10-03T07:50:33Z BA0K3SNN7D5FTRQN4GKCXDMT73-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=conflicts-resolve-unattended from=1:7 to=1:8 requested-sequence=2
-Integrity: sha256=bbd17693d4e621c95c7d13c87ed83ffd1d157d17152c8610b94561e17f1c33a2
+- 2026-10-03T07:54:32Z N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb set-budget actor=human:Wido targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z
+Integrity: sha256=02f72d5bc19f2df7954ac6da2e6cd5b7850465da766ffc876598aa1296e8f29e
