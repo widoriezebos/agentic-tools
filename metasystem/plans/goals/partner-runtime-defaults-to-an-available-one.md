@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 24
+- Sequence: 25
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="Reuses the existing auto-runtime resolver for one more setting; the Partner's read-only contract and sign-in rule are unchanged"
 - Tier: 1
 - Intent: The Project Partner never refuses for want of a configured runtime (Wido 2026-10-03: the UI said 'no Partner runtime is configured on this seat; set ui.partner.runtime to claude, codex or devin'; 'this must never happen'). With ui.partner.runtime unset, the Partner uses the existing auto runtime resolution (internal/config/autoruntime.go, runtime registry TailoringPriority: claude, then codex, then devin, the first whose executable is on PATH); an explicit setting still wins. Only when none of the three is installed does the UI say so, in plain words naming what to install.
 - Origin: main
 - Next step: Make an unset ui.partner.runtime resolve through config.AutoRuntime (internal/ui/partner/runtime.go Admit, internal/ui/httpd/partner.go:218, internal/config/ui.go and defaults.go docs); test unset->claude, claude missing->codex, none installed->plain message; check the walkthrough and the UI's Partner panel.
 - OpenedAt: 2026-10-03T06:23:34Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T06:23:43Z revision=2 opid=KWRF480M23PPCFAA5VYFHRKWTK-m1e-718ba0eb authority=proven digest=0e3e9d507d2bf83f85d94f495d4bbd9df24763e79a16a6b0b1f19420563ad4cc episode=2
@@ -18,4 +18,5 @@ History:
 - 2026-10-03T06:23:34Z 1YVD5BX033JAJRM6FXJMW14SC9-m1e-718ba0eb open actor=human:Wido targets=partner-runtime-defaults-to-an-available-one
 - 2026-10-03T06:23:43Z KWRF480M23PPCFAA5VYFHRKWTK-m1e-718ba0eb approve actor=human:Wido targets=partner-runtime-defaults-to-an-available-one
 - 2026-10-03T06:23:52Z TNRD1T5KKYBWF9QBF9C5467JHR-m1e-718ba0eb set-priority actor=human:Wido targets=partner-runtime-defaults-to-an-available-one reason=priority-order subject=partner-runtime-defaults-to-an-available-one from=unranked to=1:24 requested-sequence=append
-Integrity: sha256=cec6e18685ebc2fbe0671b232687f5b9663b60a6cb395b7553daa796de7f562c
+- 2026-10-03T06:25:53Z 3VZ905KVHTKEB6V2THE5QKB2D5-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=fleet-page-redesign from=1:24 to=1:25 requested-sequence=1
+Integrity: sha256=8d78259dc151af02dfd008bcb33dac04f6e5c313f519ac391091cd331a3a11cb
