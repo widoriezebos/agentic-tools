@@ -118,6 +118,7 @@ func Read(root string) (Register, error) {
 	// is the rulings reader's, for the same file shape and the same reason.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	position := 0
+	seen := map[string]bool{}
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "|") {
@@ -147,6 +148,16 @@ func Read(root string) (Register, error) {
 			ID: cells[0], Date: cells[1], What: cells[2],
 			Consequence: cells[3], Lever: cells[4], Status: cells[5],
 		}
+		// An id names one issue. A second row under an id an earlier row
+		// carries is two versions of one entry, and listing both would show
+		// one problem twice; the first is kept and the second is named.
+		if seen[row.ID] {
+			register.Unread++
+			register.Defects = append(register.Defects,
+				fmt.Sprintf("row=%d: id %s is already carried by an earlier row", position, row.ID))
+			continue
+		}
+		seen[row.ID] = true
 		row.Open = !Concluded(row.Status)
 		if row.Open {
 			register.Open = append(register.Open, row)

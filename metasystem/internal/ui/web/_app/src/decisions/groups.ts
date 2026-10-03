@@ -1,6 +1,7 @@
 import type { GoalState, Need } from "./api";
 import { ageLine } from "./decisions";
 import { proposalLine } from "./proposals";
+import { firstSentence } from "../backlog/sentence";
 
 /**
  * The inbox as groups, which is what turns a wall into an inbox.
@@ -213,13 +214,6 @@ function substanceOf(need: Need): string {
       // record's own title, or a goal's intent cut at its first sentence.
       return need.title;
   }
-}
-
-/** A record's first statement, without the rest of it. */
-export function firstSentence(text: string): string {
-  const trimmed = text.trim();
-  const cut = trimmed.search(/[.\n]/);
-  return cut > 0 ? trimmed.slice(0, cut).trim() : trimmed;
 }
 
 /** How many labels a row's muted end carries before it stops. */

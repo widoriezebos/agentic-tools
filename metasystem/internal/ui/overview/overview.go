@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
@@ -45,9 +47,6 @@ const (
 	longList  = 5
 )
 
-// The window an alert or a handoff is recent enough to still need a human.
-const alertWindow = 7 * 24 * time.Hour
-
 // The kinds a Where can name. Each one is a surface this build serves, and the
 // browser decides what address, tab or panel that is.
 const (
@@ -55,8 +54,9 @@ const (
 	WhereGoal = "goal"
 	// WhereDocument is one document of the checkout, named by its path.
 	WhereDocument = "document"
-	// WhereQuestion is one row of the register, named by its id.
-	WhereQuestion = "question"
+	// WhereDecisions is the Decisions page, where a seat's open question is
+	// read and answered; the id names the question.
+	WhereDecisions = "decisions"
 	// WhereNotification is one line of the steward's journal, named by its
 	// id: the notifications panel, opened at that row.
 	WhereNotification = "notification"
@@ -83,11 +83,6 @@ const (
 
 // The goal state a concluded goal carries.
 const stateDone = "done"
-
-// The journal sources that are addressed to a human rather than recorded at
-// one: an alert is something wrong, and a handoff is a seat saying it is your
-// turn. Everything else the steward writes is a log of its own work.
-var forTheHuman = []string{"alert", "handoff"}
 
 // Where names one destination without spelling it: what kind of thing it is
 // and which one. The browser owns addresses, panels and sheets, so a page that
@@ -139,10 +134,12 @@ type Page struct {
 }
 
 // NeedsYou is the primary block: what is waiting on this human, in the order
-// the design leads with.
+// the design leads with. It is the Decisions inbox counted by kind, so every
+// row of that inbox is in exactly one group here.
 type NeedsYou struct {
-	// Approvals are goals in To Do that carry no approval at all.
+	// Approvals are the first-priority goals in To Do nobody has approved.
 	Approvals Group `json:"approvals"`
+	// Questions are the open questions seats are waiting on an answer to.
 	Questions Group `json:"questions"`
 	// Drafts are records declaring draft status, whatever their kind.
 	Drafts Group `json:"drafts"`
@@ -151,14 +148,17 @@ type NeedsYou struct {
 	Designs Group `json:"designs"`
 	// Alerts are the steward's alerts and handoffs from the last seven days.
 	Alerts Group `json:"alerts"`
+	// Other counts every inbox row of a kind the five groups above do not
+	// list. It carries no items: the Decisions page is where they are read.
+	Other Group `json:"other"`
 	// SignIn is true when nothing proves a human on this seat, which is a
 	// row of its own: everything else here is something to read, and this is
 	// the one thing that stops the page from being able to act.
 	SignIn bool `json:"signIn"`
-	// Total is the five groups' counts added up, and does not count SignIn:
-	// a seat nobody is signed into still has nothing waiting on them, and
-	// the two statements are different. The page is empty when Total is zero
-	// and SignIn is false.
+	// Total is the length of the Decisions inbox, which is the six groups'
+	// counts added up, and does not count SignIn: a seat nobody is signed
+	// into still has nothing waiting on them, and the two statements are
+	// different. The page is empty when Total is zero and SignIn is false.
 	Total int `json:"total"`
 }
 
@@ -357,9 +357,17 @@ type Inputs struct {
 	// Counts is the projection's count per lane.
 	Counts map[backlog.Lane]int
 	Ledger Ledger
-	// Journal is the newest page of the steward's notification journal,
-	// newest first, as the notifications package serves it.
+	// Journal is the steward's notification journal, newest first, as the
+	// notifications package serves it.
 	Journal []notifications.Notice
+	// Inbox is the Decisions inbox composed from the same answers at the same
+	// instant, one row for each of its rows. It is the one owner of what
+	// needs this human.
+	Inbox []Need
+	// Stages is the stage of each goal the host board believes a card for, by
+	// goal id. A goal with no card, or one whose card cannot be believed, is
+	// not in it.
+	Stages map[string]string
 	// Holders is the presence standing of each machine the rows name, by
 	// machine nickname. It is handed in rather than read here for the reason
 	// every other input is: this package composes and opens nothing.
@@ -379,7 +387,7 @@ func Compose(in Inputs, now time.Time) Page {
 		ReadAt:        stamp(now),
 		Since:         stamp(in.Since),
 		First:         in.First,
-		NeedsYou:      needsYou(in, now),
+		NeedsYou:      needsYou(in),
 		Changed:       changed(in),
 		Work:          workNow(in, now),
 		Memory:        memory(in),
@@ -389,137 +397,91 @@ func Compose(in Inputs, now time.Time) Page {
 
 /* ------------------------------------------------------------- needs you -- */
 
-func needsYou(in Inputs, now time.Time) NeedsYou {
-	block := NeedsYou{
-		Approvals: awaitingApproval(in.Rows),
-		Questions: openQuestions(in.Project.Questions),
-		Drafts:    draftRecords(in.Project.Records),
-		Designs:   landedDesigns(in.Project),
-		Alerts:    recentAlerts(in.Journal, now),
-		SignIn:    !in.Human.Proven,
-	}
-	block.Total = block.Approvals.Count + block.Questions.Count +
-		block.Drafts.Count + block.Designs.Count + block.Alerts.Count
-	return block
+// The groups of the block a row of the inbox can be listed in. A row of any
+// other kind names no group and is counted, not listed.
+const (
+	NeedApproval = "approval"
+	NeedQuestion = "question"
+	NeedDraft    = "draft"
+	NeedDesign   = "design"
+	NeedAlert    = "alert"
+)
+
+// Need is one row of the Decisions inbox as this page counts it: the group it
+// is listed in, and the few facts a listed row shows. The inbox's owner fills
+// it, because this package may not read the inbox's own shape: that package
+// reads the Partner's proposals, and the Partner reads this page.
+type Need struct {
+	Group string
+	ID    string
+	Title string
+	// By is who or what asks, and Since when the asking began.
+	By    string
+	Since string
+	// Path is the record a draft or a landed design is about.
+	Path string
+	// Row is the backlog row of a goal awaiting approval.
+	Row *backlog.Row
 }
 
-// awaitingApproval is the goals in To Do that carry no approval at all, in
-// backlog order: the band first, then the position in it.
+// needsYou is the Decisions inbox, counted by kind.
 //
-// A goal whose approval expired is in To Do too, and is not here: it carries
-// an approval, the projection says so in its gap, and asking a human to admit
-// work they already admitted is a different request from asking them to admit
-// work nobody has. What this row means is "nobody has said yes to this yet".
-func awaitingApproval(rows []backlog.Row) Group {
-	waiting := []backlog.Row{}
-	for _, row := range rows {
-		if row.Lane == backlog.LaneToDo && row.Approved == nil {
-			waiting = append(waiting, row)
-		}
+// The inbox decides what waits on this human and this block decides nothing
+// again: Total is the inbox's length, each of the five groups the page leads
+// with is the rows of one kind with the first three listed, and every other
+// kind is counted in Other. So the groups always add up to the total, and the
+// total is the figure the Decisions page shows for the same inputs.
+func needsYou(in Inputs) NeedsYou {
+	groups := map[string][]Need{}
+	for _, need := range in.Inbox {
+		groups[need.Group] = append(groups[need.Group], need)
 	}
-	sortByRank(waiting)
-	return group(len(waiting), take(waiting, shortList), goalItem(""))
+	return NeedsYou{
+		Approvals: listed(groups[NeedApproval], approvalItem),
+		Questions: listed(groups[NeedQuestion], func(need Need) Item {
+			return Item{
+				ID: need.ID, Title: need.Title, Note: "open", At: need.Since,
+				Where: Where{Kind: WhereDecisions, ID: need.ID},
+			}
+		}),
+		Drafts:  listed(groups[NeedDraft], recordNeed),
+		Designs: listed(groups[NeedDesign], recordNeed),
+		Alerts: listed(groups[NeedAlert], func(need Need) Item {
+			return Item{
+				ID: need.ID, Title: need.Title, Note: need.By, At: need.Since,
+				Where: Where{Kind: WhereNotification, ID: need.ID},
+			}
+		}),
+		Other:  Group{Count: len(groups[""]), Items: []Item{}},
+		SignIn: !in.Human.Proven,
+		Total:  len(in.Inbox),
+	}
 }
 
-// openQuestions is the register's open rows, newest first.
-func openQuestions(questions []project.Question) Group {
-	open := []project.Question{}
-	for _, question := range questions {
-		if question.Status == "open" {
-			open = append(open, question)
-		}
-	}
-	// Newest first, and by id where two were opened at the same instant, so
-	// the order is the same on every read of the same register.
-	sort.SliceStable(open, func(i, j int) bool {
-		if open[i].Opened != open[j].Opened {
-			return open[i].Opened > open[j].Opened
-		}
-		return open[i].ID < open[j].ID
-	})
+// listed is one kind of inbox row as a group: all of them counted, and the
+// first three shown, in the inbox's own order.
+func listed(needs []Need, shape func(Need) Item) Group {
 	items := []Item{}
-	for _, question := range take(open, shortList) {
-		items = append(items, Item{
-			ID: question.ID, Title: question.Question, Note: "open", At: question.Opened,
-			Where: Where{Kind: WhereQuestion, ID: question.ID},
-		})
+	for _, need := range take(needs, shortList) {
+		items = append(items, shape(need))
 	}
-	return Group{Count: len(open), Items: items}
+	return Group{Count: len(needs), Items: items}
 }
 
-// draftRecords is every record declaring draft status, whatever its kind: a
-// draft is a record somebody wrote and nobody has accepted, and the kind is
-// the note beside it rather than a filter on it.
-func draftRecords(records []project.Record) Group {
-	drafts := []project.Record{}
-	for _, record := range records {
-		if record.Status == statusDraft {
-			drafts = append(drafts, record)
-		}
+// approvalItem is a goal awaiting approval as the board's own row words it.
+// An approval row carries its backlog row; one that somehow does not is still
+// listed, under the inbox's title for it.
+func approvalItem(need Need) Item {
+	if need.Row != nil {
+		return goalItem("")(*need.Row)
 	}
-	items := []Item{}
-	for _, record := range take(drafts, shortList) {
-		items = append(items, recordItem(record, record.Kind))
-	}
-	return Group{Count: len(drafts), Items: items}
+	return Item{ID: need.ID, Title: need.Title, At: need.Since, Where: Where{Kind: WhereGoal, ID: need.ID}}
 }
 
-// landedDesigns is the designs whose work is all in and which nobody has
-// marked done.
-//
-// A design naming no goal is not one of them. "Every goal has landed" over an
-// empty list is true and means nothing: the design governs no work, so there
-// is no work to have landed, and offering it as something to close would be
-// asking a human to conclude a design that never started.
-func landedDesigns(pane project.Pane) Group {
-	states := goalStates(pane.Goals)
-	landed := []project.Record{}
-	for _, record := range pane.Records {
-		if record.Kind != kindDesign || record.Status == statusDone || len(record.Goals) == 0 {
-			continue
-		}
-		if allDone(record.Goals, states) {
-			landed = append(landed, record)
-		}
-	}
-	items := []Item{}
-	for _, record := range take(landed, shortList) {
-		items = append(items, recordItem(record, "every goal landed"))
-	}
-	return Group{Count: len(landed), Items: items}
-}
-
-// recentAlerts is the steward's alerts and handoffs from the last seven days,
-// newest first. The journal is served newest first, so the order is the
-// journal's own and nothing is sorted again.
-func recentAlerts(journal []notifications.Notice, now time.Time) Group {
-	from := now.Add(-alertWindow)
-	recent := []notifications.Notice{}
-	for _, notice := range journal {
-		if !addressesTheHuman(notice) {
-			continue
-		}
-		if at, dated := instant(notice.At); dated && at.After(from) {
-			recent = append(recent, notice)
-		}
-	}
-	items := []Item{}
-	for _, notice := range take(recent, shortList) {
-		items = append(items, Item{
-			ID: notice.ID, Title: notice.Message, Note: notice.Source, At: notice.At,
-			Where: Where{Kind: WhereNotification, ID: notice.ID},
-		})
-	}
-	return Group{Count: len(recent), Items: items}
-}
-
-func addressesTheHuman(notice notifications.Notice) bool {
-	for _, source := range forTheHuman {
-		if notice.Source == source {
-			return true
-		}
-	}
-	return false
+// recordNeed is a draft or a landed design: the record's title, the one fact
+// the inbox says about it, and the document it opens.
+func recordNeed(need Need) Item {
+	return Item{ID: need.ID, Title: need.Title, Note: need.By, Where: Where{Kind: WhereDocument, ID: need.Path}}
 }
 
 /* ---------------------------------------------------- since the last visit -- */
@@ -618,7 +580,7 @@ func messagesSince(journal []notifications.Notice, since time.Time) int {
 
 func workNow(in Inputs, now time.Time) Work {
 	return Work{
-		InProgress: inProgress(in.Rows, in.Holders),
+		InProgress: inProgress(in.Rows, in.Holders, in.Stages),
 		Next:       nextUp(in.Rows),
 		Waiting:    waiting(in.Rows),
 		Lanes:      lanes(in.Counts, in.Rows, in.Closed, now),
@@ -630,13 +592,21 @@ func workNow(in Inputs, now time.Time) Work {
 // — but a row whose claim the record somehow lacks is still shown, with the
 // seat empty, rather than dropped from the one block that says what is being
 // worked on.
-func inProgress(rows []backlog.Row, holders map[string]Holder) []Claimed {
+//
+// The phase is the host board's stage where the board believes a card for the
+// goal: the board is where a seat records how far claimed work has got, and
+// the ledger names a phase only once a landing begins. "not recorded" is left
+// for a goal neither of them knows a phase for.
+func inProgress(rows []backlog.Row, holders map[string]Holder, stages map[string]string) []Claimed {
 	claimed := []Claimed{}
 	for _, row := range rows {
 		if row.Lane != backlog.LaneInProgress {
 			continue
 		}
 		one := Claimed{ID: row.ID, Title: lede(row.Intent), Phase: row.Phase}
+		if stage, carded := stages[row.ID]; carded {
+			one.Phase = stage
+		}
 		if row.Claim != nil {
 			one.Seat = Seat{Machine: row.Claim.Machine, Lineage: row.Claim.Lineage}
 			one.At = row.Claim.At
@@ -766,16 +736,17 @@ func sameDay(at, now time.Time) bool {
 
 func memory(in Inputs) Memory {
 	pane := in.Project
+	open := questionScope(pane.Questions)
 	return Memory{
 		Intent:    book(pane.Intent),
 		Doctrine:  book(pane.Doctrine),
 		Decisions: tally(pane.Records, kindDecision),
 		Designs:   designs(pane),
-		Questions: openQuestions(pane.Questions).Count,
+		Questions: open.Own + open.UnderGoals,
 		Scoped: Scoped{
 			Decisions: scopeOf(pane.Records, kindDecision),
 			Designs:   scopeOf(pane.Records, kindDesign),
-			Questions: questionScope(pane.Questions),
+			Questions: open,
 		},
 	}
 }
@@ -820,7 +791,7 @@ func questionScope(questions []project.Question) Scope {
 func book(read project.Book) Book {
 	one := Book{Chapters: len(read.Chapters)}
 	if read.Index != nil {
-		one.Summary = firstSentence(read.Index.Summary)
+		one.Summary = FirstSentence(read.Index.Summary)
 	}
 	return one
 }
@@ -977,19 +948,6 @@ func goalStates(goals []project.Goal) map[string]string {
 	return states
 }
 
-// allDone is true when every named goal is one the pane carries and concluded.
-// A goal the pane does not carry is not a goal that landed: the design names
-// something this checkout cannot see, and calling that "done" would close a
-// design on a goal nobody has read.
-func allDone(goals []string, states map[string]string) bool {
-	for _, id := range goals {
-		if states[id] != stateDone {
-			return false
-		}
-	}
-	return true
-}
-
 func countDone(goals []string, states map[string]string) int {
 	count := 0
 	for _, id := range goals {
@@ -1033,12 +991,13 @@ func take[T any](values []T, most int) []T {
 	return append([]T{}, values[:most]...)
 }
 
-// firstSentence is the opening sentence of a summary: everything up to the
-// first full stop that ends one, or the whole of a summary that ends without
-// one. A full stop inside a number or an abbreviation is not the end of a
-// sentence, so the stop has to be followed by a space or by nothing.
-func firstSentence(summary string) string {
-	trimmed := strings.TrimSpace(summary)
+// FirstSentence is the opening sentence of a text: everything up to the first
+// full stop, question mark or exclamation mark that ends one, or the whole of
+// a text that ends without one. A stop inside a number, a path, a word or an
+// abbreviation is not the end of a sentence, so the stop has to be followed by
+// white space or by nothing.
+func FirstSentence(text string) string {
+	trimmed := strings.TrimSpace(text)
 	for at, character := range trimmed {
 		if character != '.' && character != '!' && character != '?' {
 			continue
@@ -1047,7 +1006,7 @@ func firstSentence(summary string) string {
 		if rest == "" {
 			return trimmed
 		}
-		if strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "\n") {
+		if next, _ := utf8.DecodeRuneInString(rest); unicode.IsSpace(next) {
 			return trimmed[:at+1]
 		}
 	}

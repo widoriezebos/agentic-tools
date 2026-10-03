@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "goal": "ui-shows-true-facts",
+  "unit": "facts",
+  "subject": {
+    "commit": "e5617a85088ae0d24afa65aa403b63019dfc3176",
+    "parent": "ab9137e00515815133fe6198f0247fb0d780ae8e",
+    "tree": "e9a4735991b42a4d39406224988b26d1882b498f",
+    "patchDigest": "8159bfd30540841b149bc1a4aaab9bcb72194303022510e83a09814e0bd1ca08",
+    "unitDigest": "37597465ea4b46bebcb2f9ae205d4210ef4ed3fbb5bd490e359ff81ef6bfd77b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-414df2db1464f7832e02e847",
+    "round": 1,
+    "closureSha256": "875b65f7beb9b486c4e0ae1df48460194c763d97c8f841f83cb8f49e40e7b76e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e9a4735991b42a4d39406224988b26d1882b498f",
+    "runId": "goal-read-gate-20261003t050353z-bbfa3c8032f80159"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/ui_asks_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_register_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/knownissues/knownissues_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/ui/decisions/decisions_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/ui/decisions/new_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/overview_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/ui/overview/overview_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    },
+    {
+      "path": "metasystem/internal/ui/uitools/uitools_test.go",
+      "readerWord": "reviewed by critic root code-critic-414df2db1464f7832e02e847"
+    }
+  ],
+  "sha256": "f0471d27072d332186a9f5524be6156da0dec3222fca2075f7bba6237fc3ee9d"
+}

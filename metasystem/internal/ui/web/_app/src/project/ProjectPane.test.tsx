@@ -6,8 +6,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
+import type { Pane } from "./api";
 import type { Briefing } from "./pane";
-import { GoalBlock } from "./ProjectPane";
+import { GoalBlock, noPageAt } from "./ProjectPane";
 import type { Backlog, Row } from "../backlog/api";
 import { offersFor } from "../backlog/menu";
 import type { Proposal } from "../partner/api";
@@ -61,7 +62,7 @@ describe("the goal page's two writers", () => {
    * the ledger is read once — by the sheet — rather than twice.
    */
   it("hands the sheet's reread the board setter, not the page reload", () => {
-    expect(SOURCE).toContain("<GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} onReread={onLedger} />");
+    expect(SOURCE).toMatch(/<GoalBlock[^>]*onEdited=\{onReload\}\s+onReread=\{onLedger\}\s+\/>/);
 
     const block = bodyOf("GoalBlock");
 
@@ -154,14 +155,15 @@ describe("the chip on a goal's header", () => {
     };
   }
 
-  function header(proposals: readonly Proposal[]): string {
+  function header(proposals: readonly Proposal[], ledger: Backlog | null = board({}), read = ledger !== null): string {
     return renderToStaticMarkup(
       <MemoryRouter>
         <TooltipPrimitive.Provider>
           <PartnerAs held={{ proposals: cardsIn([{ turn: "t1", proposals }], {}, {}, []) }}>
             <GoalBlock
               briefing={briefing}
-              ledger={null}
+              ledger={ledger}
+              ledgerRead={read}
               onEdited={() => undefined}
               onReread={() => undefined}
             />
@@ -183,6 +185,82 @@ describe("the chip on a goal's header", () => {
     expect(header([])).not.toContain("ms-chip-proposed");
     expect(header([proposal({ goal: "refunds" })])).not.toContain("ms-chip-proposed");
     expect(header([proposal({ state: "applied" })])).not.toContain("ms-chip-proposed");
+  });
+
+  // The goal file in the server's working tree can lag the ledger the Backlog
+  // reads, so the board's row is what says where the goal stands, whether it
+  // is still open or already closed, and a board not read names no state.
+  it("says where the board has the goal, and the goal file's word only where the board has no row", () => {
+    const claimed = header([], board({ rows: [boardRow("g1-s44", "claimed")] }));
+    expect(claimed).toContain(">claimed<");
+    expect(claimed).not.toContain(">queued<");
+
+    expect(header([], board({ closed: [boardRow("g1-s44", "done")] }))).toContain(">done<");
+    expect(header([], board({ rows: [boardRow("g1-s45", "claimed")] }))).toContain(">queued<");
+    expect(header([])).toContain(">queued<");
+    // Not read: the read for this goal is still out, or it failed.
+    for (const unread of [header([], board({ rows: [boardRow("g1-s44", "claimed")] }), false), header([], null)]) {
+      expect(unread).not.toMatch(/>(claimed|queued)</);
+      expect(unread).toContain("ms-briefing-title");
+    }
+  });
+});
+
+/** One row of the board, as far as a goal page reads it. */
+function boardRow(id: string, state: string): Backlog["rows"][number] {
+  return { ref: { kind: "goal", id, revision: 1 }, state, lane: "to-do" } as Backlog["rows"][number];
+}
+
+/** The board, as far as a goal page reads it: its open rows and its closed ones. */
+function board(over: Partial<Pick<Backlog, "rows" | "closed">>): Backlog {
+  return { rows: [], closed: [], ...over } as Backlog;
+}
+
+describe("an address this page does not have", () => {
+  const book = { index: null, chapters: [] };
+  const read: Pane = {
+    schemaVersion: 6,
+    readAt: "2026-09-22T10:11:12Z",
+    goals: [{ id: "g1-s44", title: "g1-s44", state: "queued", intent: "One read of the census." }],
+    records: [],
+    intent: book,
+    doctrine: book,
+    questions: [],
+    problems: [],
+    documents: [],
+    sittings: [],
+  };
+
+  it("is a tab that is not one of the page's own, and never an address naming none", () => {
+    expect(noPageAt(read, null, null, "no-such-tab")).toBe(true);
+    expect(noPageAt(read, "g1-s44", board({}), "documents")).toBe(true);
+
+    expect(noPageAt(read, null, null, undefined)).toBe(false);
+    // A tab of the page with nothing in it today is still a tab of the page.
+    expect(noPageAt(read, null, null, "decisions")).toBe(false);
+    expect(noPageAt(read, "g1-s44", board({}), "slices")).toBe(false);
+  });
+
+  it("is a goal neither the project's reading nor the board carries, open or closed", () => {
+    expect(noPageAt(read, "no-such-goal", board({ rows: [boardRow("g1-s44", "queued")] }), undefined)).toBe(true);
+
+    expect(noPageAt(read, "g1-s44", board({}), undefined)).toBe(false);
+    expect(noPageAt(read, "g1-s50", board({ rows: [boardRow("g1-s50", "queued")] }), undefined)).toBe(false);
+    expect(noPageAt(read, "g1-s51", board({ closed: [boardRow("g1-s51", "done")] }), undefined)).toBe(false);
+  });
+
+  // A board still being read, or one that could not be, has not said the goal
+  // is nowhere: the page keeps what it shows while that is so.
+  it("is never said of a goal before the board has been read", () => {
+    expect(noPageAt(read, "no-such-goal", null, undefined)).toBe(false);
+  });
+
+  it("is answered with the not-found pane in place of the page, its tabs and its actions", () => {
+    const briefed = bodyOf("Briefed");
+
+    expect(briefed).toContain(
+      'if (read.state === "read" && noPageAt(read.pane, goal, readFor === goal ? ledger : null, tab)) {\n    return <NotFoundPane />;\n  }',
+    );
   });
 });
 
@@ -291,7 +369,13 @@ describe("a goal page's head", () => {
       <MemoryRouter>
         <TooltipPrimitive.Provider>
           <PartnerAs held={{}}>
-            <GoalBlock briefing={about} ledger={ledger} onEdited={() => undefined} onReread={() => undefined} />
+            <GoalBlock
+              briefing={about}
+              ledger={ledger}
+              ledgerRead={ledger !== null}
+              onEdited={() => undefined}
+              onReread={() => undefined}
+            />
           </PartnerAs>
         </TooltipPrimitive.Provider>
       </MemoryRouter>,

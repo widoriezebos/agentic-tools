@@ -617,11 +617,12 @@ export function briefingFor(pane: Pane, id: string | null, scope: ScopeFilter = 
     across: { decisions: everyDecision, designs: everyDesign, questions: everyQuestion },
     // The counts are the project's, on either page: a goal page's tail line
     // asks how many records are about the project as a whole, which is not a
-    // question about this goal.
+    // question about this goal. The questions counted are the open ones, as
+    // the tab is named: an answered question is not one more left out.
     scopes: {
       decisions: countScope(recordRows(pane, "decision", null)),
       designs: countScope(recordRows(pane, "design", null)),
-      questions: countScope(questionRows(pane, null)),
+      questions: countScope(questionRows(pane, null).filter((row) => row.status === "open")),
     },
     // What is waiting is what is waiting in this scope of the project, and
     // narrowing the view does not answer a question. So it is counted over

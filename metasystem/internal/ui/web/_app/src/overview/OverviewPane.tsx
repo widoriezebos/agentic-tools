@@ -26,12 +26,14 @@ import {
   blockAnchor,
   changedCounts,
   columns,
+  DECISIONS_PATH,
   destinationFor,
   glance,
   healthPills,
   laneStrip,
   moreLine,
   needsKinds,
+  otherLine,
   plural,
   seatName,
   seeAll,
@@ -262,10 +264,11 @@ function Block({
 function NeedsYou({ page }: { page: OverviewPayload }) {
   const needs = page.needsYou;
   const kinds = needsKinds(needs);
+  const other = otherLine(needs);
   const { askToSignIn } = useSession();
   return (
     <Block id="needs-you" title="Needs you" help="overview-needs-you">
-      {kinds.length === 0 && !needs.signIn ? (
+      {kinds.length === 0 && other === null && !needs.signIn ? (
         <p className="ms-overview-calm">
           <CircleCheck className="ms-overview-calm-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
           Nothing needs you.
@@ -275,6 +278,13 @@ function NeedsYou({ page }: { page: OverviewPayload }) {
           {kinds.map((kind) => (
             <KindRow key={kind.id} kind={kind} />
           ))}
+          {other !== null && (
+            <li className="ms-overview-kind">
+              <NavLink className="ms-overview-more" to={DECISIONS_PATH}>
+                {other} →
+              </NavLink>
+            </li>
+          )}
           {needs.signIn && (
             <li className="ms-overview-kind">
               <button

@@ -70,11 +70,12 @@ describe("which tab a page opens on", () => {
   });
 
   // A name this page has no tab for was asked for by the address, and the
-  // answer to a wrong address is the front of the page, not a tab the human
-  // opened a week ago on another page.
-  it("is the first where the address names a tab this page does not have", () => {
-    expect(tabShown(PROJECT, "nonsense", "questions")).toBe("intent");
-    expect(tabShown(PROJECT, "goal", "designs")).toBe("intent");
+  // answer to a wrong address is that nothing is there: not the front of the
+  // page, and not a tab the human opened a week ago on another page.
+  it("is none where the address names a tab this page does not have", () => {
+    expect(tabShown(PROJECT, "nonsense", "questions")).toBeNull();
+    expect(tabShown(PROJECT, "goal", "designs")).toBeNull();
+    expect(tabShown(PROJECT, "no-such-tab", null)).toBeNull();
   });
 
   it("ignores a remembered tab this page does not have", () => {

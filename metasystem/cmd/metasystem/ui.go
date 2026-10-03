@@ -740,11 +740,11 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 					advance()
 					return nil
 				},
-				// The steward's notification journal, in this checkout.
+				// The steward's notification journal for this seat.
 				// The steward writes it as a side effect of reaching the
 				// operator; the interface reads it and nothing else of
 				// the steward's, and never writes to it.
-				NotificationJournal: steward.NotificationJournalPath(roots.Checkout),
+				NotificationJournal: notificationJournal(roots),
 				// What this seat has been asked and has not answered,
 				// and what this human has ruled. Both are read per
 				// request for the reason every other reader is: a
@@ -757,7 +757,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				// unreadable question file never hides the others, and
 				// its path comes back on a second channel, which the
 				// Fleet page names (uiAsks).
-				Asks: uiAsks(roots.Checkout),
+				Asks: uiAsks(roots),
 				// The register is read from the INSTALLATION, because
 				// that is where the kit's memory home is on every layout
 				// this interface serves: a checkout that is not the
@@ -1308,6 +1308,27 @@ func registerFromCheckout(roots lifecycle.Roots) string {
 	return slashed
 }
 
+// The steward and the question channel keep this seat's records beneath the
+// STATE ROOT, which in the self-hosted layout is a directory inside the Git
+// checkout and not the checkout itself. Every reader of those records is
+// handed the state root: one handed the checkout finds no file where one was
+// written, and an absent file reads as "nothing yet" rather than as an error.
+
+// notificationJournal is the journal the steward appends its notices to.
+func notificationJournal(roots lifecycle.Roots) string {
+	return steward.NotificationJournalPath(roots.StateRoot)
+}
+
+// seatHealth is the steward's last recorded health verdict for this seat.
+func seatHealth(roots lifecycle.Roots) *fleet.Health { return fleet.ReadHealth(roots.StateRoot) }
+
+// openAsks is what `metasystem question list` reads: the channel's open
+// questions, with an unreadable file left out rather than hiding the others.
+func openAsks(roots lifecycle.Roots) []channel.Question {
+	open, _ := uiAsks(roots)()
+	return open
+}
+
 // knownIssuesFromCheckout is the same for the known-issues register, which is
 // read from the same memory home and opened through the same reader.
 func knownIssuesFromCheckout(roots lifecycle.Roots) string {
@@ -1322,13 +1343,14 @@ func knownIssuesFromCheckout(roots lifecycle.Roots) string {
 	return slashed
 }
 
-// uiAsks is this checkout's open questions as the interface reads them: every
-// open question the tolerant walk could read, and the records it could not
-// beside them as an *httpd.UnreadQuestions, so a page shows what was asked
-// and says what it could not read rather than reading it as nothing asked.
-func uiAsks(checkout string) func() ([]channel.Question, error) {
+// uiAsks is the channel's open questions as the interface reads them, from
+// the root `metasystem question list` reads: every open question the tolerant
+// walk could read, and the records it could not beside them as an
+// *httpd.UnreadQuestions, so a page shows what was asked and says what it could
+// not read rather than reading it as nothing asked.
+func uiAsks(roots lifecycle.Roots) func() ([]channel.Question, error) {
 	return func() ([]channel.Question, error) {
-		open, unreadable := channel.WalkOpenQuestions(checkout)
+		open, unreadable := channel.WalkOpenQuestions(roots.StateRoot)
 		if len(unreadable) > 0 {
 			return open, &httpd.UnreadQuestions{Records: unreadable}
 		}

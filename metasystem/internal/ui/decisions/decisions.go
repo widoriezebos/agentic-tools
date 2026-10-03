@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -74,7 +75,6 @@ const (
 	KindApproval     = "approval"
 	KindRenewal      = "renewal"
 	KindAsk          = "ask"
-	KindQuestion     = "question"
 	KindParked       = "parked"
 	KindStopped      = "stopped"
 	KindDraft        = "draft"
@@ -165,7 +165,6 @@ const (
 	kindDesign   = "design"
 	statusDraft  = "draft"
 	statusDone   = "done"
-	statusOpen   = "open"
 	// answeredPrefix is how the questions register names what answered a
 	// row: the status column carries "answered: <ref>".
 	answeredPrefix = "answered:"
@@ -505,7 +504,7 @@ type Inputs struct {
 // Compose is the whole page, from the six answers above, as they stood at
 // now. It reads no file, opens no connection and keeps nothing.
 func Compose(in Inputs, now time.Time) Page {
-	inbox := needsYou(in, now)
+	inbox := Inbox(in, now)
 	waiting := 0
 	for index := range inbox {
 		inbox[index].New = newSince(inbox[index].Since, inbox[index].sinceIsDay, in.Since)
@@ -584,16 +583,23 @@ func registerOf(in Inputs) string {
 
 /* ------------------------------------------------------ needs your choice -- */
 
-// needsYou is the whole inbox, in the order the design reads it. It is a
-// complete list and never a capped group: a human deciding what to do next
-// needs all of it, and "and 4 more" is what a summary says.
-func needsYou(in Inputs, now time.Time) []Need {
+// Inbox is the whole of what needs this human, in the order the design reads
+// it. It is a complete list and never a capped group: a human deciding what
+// to do next needs all of it, and "and 4 more" is what a summary says.
+//
+// It is the one owner of that list. The landing page counts its "Needs you"
+// from these rows rather than from rules of its own, so the two pages give
+// one total for the same inputs.
+//
+// An open row of the questions register is not here. The register is the
+// project's own list of what it has not settled, shown with the project's
+// memory; what a seat is waiting on a person for is a channel question.
+func Inbox(in Inputs, now time.Time) []Need {
 	needs := []Need{}
 	needs = append(needs, proposals(in)...)
 	needs = append(needs, approvals(in.Rows)...)
 	needs = append(needs, renewals(in.Rows, now)...)
 	needs = append(needs, asks(in.Asks)...)
-	needs = append(needs, questions(in.Project.Questions)...)
 	needs = append(needs, parked(in.Rows)...)
 	needs = append(needs, stopped(in.Rows)...)
 	needs = append(needs, landings(in.Rows)...)
@@ -603,6 +609,26 @@ func needsYou(in Inputs, now time.Time) []Need {
 	needs = append(needs, alerts(in.Journal, now)...)
 	order(needs)
 	return needs
+}
+
+// overviewGroup is the group of the landing page's "Needs you" block each
+// kind is listed in. A kind that is not here is counted there and read here.
+var overviewGroup = map[string]string{
+	KindApproval: overview.NeedApproval, KindAsk: overview.NeedQuestion,
+	KindDraft: overview.NeedDraft, KindLanded: overview.NeedDesign, KindAlert: overview.NeedAlert,
+}
+
+// ForOverview is the inbox as the landing page counts it: one row for every
+// row, so that page's total is this page's count.
+func ForOverview(inbox []Need) []overview.Need {
+	rows := make([]overview.Need, 0, len(inbox))
+	for _, need := range inbox {
+		rows = append(rows, overview.Need{
+			Group: overviewGroup[need.Kind], ID: need.ID, Title: need.Title,
+			By: need.By, Since: need.Since, Path: need.Path, Row: need.Row,
+		})
+	}
+	return rows
 }
 
 // proposals is every act the Project Partner proposed that is still waiting on
@@ -725,8 +751,18 @@ func goalRows(in Inputs) map[string]backlog.Row {
 	return held
 }
 
-// approvals is the goals in To Do that carry no approval at all, in backlog
-// order: the band first, then the position in it.
+// AwaitsApproval is whether a goal is waiting on this human to admit it: it
+// is in To Do, carries no approval at all, and is ranked priority 1.
+//
+// The rank is what makes it a request. An unapproved goal of a lower priority,
+// or of none, is an idea on the Backlog that nobody has put first, and a list
+// of every one of them is not a list of what needs a person now.
+func AwaitsApproval(row backlog.Row) bool {
+	return row.Lane == backlog.LaneToDo && row.Approved == nil && row.Priority == 1
+}
+
+// approvals is the goals awaiting this human's approval, in backlog order:
+// the band first, then the position in it.
 //
 // A goal whose approval expired is in To Do too and is not here: it carries
 // an approval, and asking a human to admit work they already admitted is a
@@ -741,7 +777,7 @@ func goalRows(in Inputs) map[string]backlog.Row {
 func approvals(rows []backlog.Row) []Need {
 	waiting := []backlog.Row{}
 	for _, row := range rows {
-		if row.Lane == backlog.LaneToDo && row.Approved == nil {
+		if AwaitsApproval(row) {
 			waiting = append(waiting, row)
 		}
 	}
@@ -924,36 +960,6 @@ func askedOf(question channel.Question) string {
 			"/"+strconv.FormatInt(budget.ReviewRoundLimit, 10))
 	}
 	return strings.Join(parts, " · ")
-}
-
-// questions is the register's open rows, newest first.
-//
-// Silence: nothing in the engine answers a register question. The status
-// column is written by a human, through the reader's own act or by hand, so a
-// row nobody answers stays open.
-func questions(register []project.Question) []Need {
-	open := []project.Question{}
-	for _, question := range register {
-		if question.Status == statusOpen {
-			open = append(open, question)
-		}
-	}
-	sort.SliceStable(open, func(i, j int) bool {
-		if open[i].Opened != open[j].Opened {
-			return open[i].Opened > open[j].Opened
-		}
-		return open[i].ID < open[j].ID
-	})
-	needs := []Need{}
-	for _, question := range open {
-		needs = append(needs, Need{
-			Kind: KindQuestion, ID: question.ID, Title: question.Question,
-			Asked: question.Question, By: "the register", Since: question.Opened,
-			Silence: "it stays open",
-			Where:   Where{Kind: WhereQuestion, ID: question.ID},
-		})
-	}
-	return needs
 }
 
 // parked is the goals a SEAT parked: the state is parked, the park names no
@@ -1179,7 +1185,7 @@ func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
 		row := worded[review.ID]
 		due := dayStamp(review.Due)
 		needs = append(needs, Need{
-			Kind: KindRulingReview, ID: review.ID, Title: review.ID,
+			Kind: KindRulingReview, ID: review.ID, Title: rulingTitle(review.ID, row.Words),
 			Asked: "Review " + review.ID + ", due " + review.Due + ": adopt, revise or withdraw",
 			By:    review.Owner, Since: due, sinceIsDay: due != "",
 			Silence: "it stays in force as written",
@@ -1192,6 +1198,16 @@ func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
 		})
 	}
 	return needs
+}
+
+// rulingTitle is what a ruling's review row is called: the first sentence of
+// what was ruled, or the ruling's id where the register row carries no words.
+// An id alone names a row a human has to open to learn what it is about.
+func rulingTitle(id, words string) string {
+	if sentence := firstSentence(words); sentence != "" {
+		return sentence
+	}
+	return id
 }
 
 // alerts is the steward's alerts and handoffs from the last seven days,
@@ -1555,13 +1571,14 @@ func titleOf(row backlog.Row) string {
 	return row.ID
 }
 
-// firstSentence is a record's first statement, without the rest of it.
+// firstSentence is a record's first statement as a title: the opening
+// sentence of its first line, as plain text, without the full stop that ends
+// it. A title is not rendered as markup, so the backticks of inline code are
+// dropped rather than shown.
 func firstSentence(text string) string {
-	trimmed := strings.TrimSpace(text)
-	if cut := strings.IndexAny(trimmed, ".\n"); cut > 0 {
-		return strings.TrimSpace(trimmed[:cut])
-	}
-	return trimmed
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	plain := strings.ReplaceAll(overview.FirstSentence(line), "`", "")
+	return strings.TrimSpace(strings.TrimSuffix(plain, "."))
 }
 
 // recordID is what a record calls itself, or its path where it declares no

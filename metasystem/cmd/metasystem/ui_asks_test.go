@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
 
 // TestUIAsksNamesTheQuestionRecordsItCouldNotRead: the interface's question
@@ -17,8 +18,8 @@ import (
 // could not beside them, rather than dropping them as though nobody asked.
 func TestUIAsksNamesTheQuestionRecordsItCouldNotRead(t *testing.T) {
 	t.Parallel()
-	checkout := t.TempDir()
-	dir := filepath.Join(checkout, "artifacts", "agents", "channel", "questions")
+	state := t.TempDir()
+	dir := filepath.Join(state, "artifacts", "agents", "channel", "questions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestUIAsksNamesTheQuestionRecordsItCouldNotRead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "q-1.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	asks := uiAsks(checkout)
+	asks := uiAsks(lifecycle.Roots{Checkout: t.TempDir(), StateRoot: state})
 	if read, err := asks(); err != nil || len(read) != 1 {
 		t.Fatalf("a whole channel = %v, %v; want the one question and no error", read, err)
 	}
