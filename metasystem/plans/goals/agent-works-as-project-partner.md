@@ -1,6 +1,6 @@
 # agent-works-as-project-partner
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="An agent mode that acts with a person's authority across the whole project; a wrong boundary lets an agent decide what only the person may, a too narrow one keeps the tricks"
@@ -9,14 +9,17 @@
 - Origin: main
 - Next step: Proper design first, at this goal's tier. Part 1: intent and use cases from the real session (agentic-tools-evidence/partner-mode-20261003/session-evidence.md: nine use cases, ten walls that needed a trick), threat model (an agent acting with a person's authority; our own agents make mistakes), rabbit-hole risks with mitigations. Part 2 decides: how the mode is declared and entered (one verb or command; runtime and model from the roster's Partner row, rosters-are-configuration-items unit 12); what a partner never does (claim, build) and whether it may repair in an emergency; its authority (a standing grant, its scope, duration and revocation; which acts stay the person's own); how person-gated verbs admit the partner without the helm or an enrolled-terminal trick; how its acts and their impact statements are recorded and shown; how stewards, the turn-end rule and the lane treat a partner session; answering channel questions in the person's word with a real answer record; continuity between sessions (handoff, decisions page, rulings); and the UI integration: the Partner panel as the same mode (browser-interface, ui-connects-to-a-running-agent, partner-runtime-defaults-to-an-available-one). Estimates per slice. Astra critique; build in slices. RETRO 2026-10-03: the partner is the first addressee of what a steward classifies as a call within the person's recorded word (7 such questions reached the person's phone today); its answers are recorded as the person's standing word with the impact statement; what is the person's own choice goes to him with the material and a recommended answer (goal questions-reach-the-person-only-when-his).
 - OpenedAt: 2026-10-03T10:03:15Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T10:03:23Z revision=2 opid=RSQM7S8XQSSKAJ0T0KBDT0K16Q-m1e-718ba0eb authority=proven digest=b3e44d81b5bc3c9111e6ec5d937abd64d6ef72f200fb7218d813064b2ec8f8e6 episode=2
+- Claimed: machine=m1l lineage=steward-seat at=2026-10-03T15:51:37Z revision=5 accountingRevision=5 episodeAt=2026-10-03T15:51:37Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T10:03:15Z MPVK1FAH5SGPAVB3J4T7YA775Y-m1e-718ba0eb open actor=human:Wido targets=agent-works-as-project-partner
 - 2026-10-03T10:03:23Z RSQM7S8XQSSKAJ0T0KBDT0K16Q-m1e-718ba0eb approve actor=human:Wido targets=agent-works-as-project-partner
 - 2026-10-03T10:03:30Z 0N8P30YRNHMMRZG9MD1HP7M1CH-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=agent-works-as-project-partner from=unranked to=1:1 requested-sequence=1
 - 2026-10-03T15:42:09Z 7FFF83X39MVKWSM763D9GH3Q1R-m1e-718ba0eb edit actor=human:Wido targets=agent-works-as-project-partner
-Integrity: sha256=1ccd7db432fe101e28a4c718e5d7b8ccb548a3c202ce300b2a84269745f432ae
+- 2026-10-03T15:51:37Z 1FGSMZT21535BFW7P84Y0C9SEQ-m1l-71c5cb39 claim actor=m1l+steward-seat targets=agent-works-as-project-partner
+Integrity: sha256=afd371c0037f2528c67332ffa246a67bc3f6a49523a7f1ccf23934e94d2fcf69
