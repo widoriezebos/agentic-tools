@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -239,7 +241,13 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	}
 	followUp := filepath.Join(filepath.Dir(inv.designReviewEntryPath(plan.recordID)), operation+"-brief.md")
 	if _, statErr := os.Stat(followUp); statErr != nil {
-		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", bound.Round, bound.Round) + string(content)
+		// Drafts the decisions cite are frozen as the page's were.
+		drafts := freezeDesignDrafts(inv.layout.GitRoot, filepath.Dir(plan.brief), "", nil, content)
+		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", bound.Round, bound.Round) + string(content) + drafts.section()
+		if err := writeIntentInputs(filepath.Dir(plan.brief), drafts.files); err != nil {
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		}
 		if err := os.MkdirAll(filepath.Dir(followUp), 0o755); err != nil {
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the follow-up review's brief can't be written, so nothing was requested",
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
@@ -495,4 +503,66 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	result.Data = data
 	result.next, result.nextReason = append(inv.sameCommand(), "--dispositions", template), "after deciding every finding in "+template
 	return &result
+}
+
+// designDrafts is what a design review freezes from the seat's checkout: the
+// design page as it is now, and every file the texts cite that HEAD does not
+// hold yet (a draft brief, say). Each copy is content-addressed under the
+// review's frozen folder and written with the review's other inputs; the
+// brief names it on a line the brief-authority admission reads (item 59).
+type designDrafts struct {
+	pageCopy string
+	lines    []string
+	files    map[string]string // copy path -> bytes
+}
+
+// freezeDesignDrafts freezes the page (git-relative pageRel, bytes page),
+// when page is not nil, and the drafts the texts cite. A draft is frozen only
+// when HEAD lacks it and the checkout holds it as a regular file; anything
+// else is left to the admission, which refuses a path it cannot find. When
+// HEAD can't be read, no cited draft is frozen and the admission refuses as
+// before.
+func freezeDesignDrafts(git, dir, pageRel string, page []byte, texts ...[]byte) designDrafts {
+	drafts := designDrafts{files: map[string]string{}}
+	frozen := map[string]bool{}
+	freeze := func(rel string, content []byte) string {
+		digest := sha256.Sum256(content)
+		sum := hex.EncodeToString(digest[:])
+		copyPath := filepath.Join(dir, "frozen", sum[:16], filepath.Base(filepath.FromSlash(rel)))
+		drafts.files[copyPath] = string(content)
+		drafts.lines = append(drafts.lines, dispatchcore.FrozenInputLine(rel, sum, copyPath))
+		frozen[rel] = true
+		return copyPath
+	}
+	if page != nil {
+		drafts.pageCopy = freeze(pageRel, page)
+	}
+	for _, text := range texts {
+		cited, err := dispatchcore.BriefDraftPaths(text, git)
+		if err != nil {
+			continue
+		}
+		for _, rel := range cited {
+			if frozen[rel] {
+				continue
+			}
+			path := filepath.Join(git, filepath.FromSlash(rel))
+			if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if content, err := os.ReadFile(path); err == nil {
+				freeze(rel, content)
+			}
+		}
+	}
+	return drafts
+}
+
+// section is the brief section naming the frozen copies.
+func (drafts designDrafts) section() string {
+	if len(drafts.lines) == 0 {
+		return ""
+	}
+	return "\n## Frozen drafts\n\nThese files are frozen as the seat's checkout held them when the review was asked. Read each from its copy,\nnever from the checkout, which may have moved since:\n\n" +
+		strings.Join(drafts.lines, "\n") + "\n"
 }

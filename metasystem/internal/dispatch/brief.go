@@ -309,7 +309,9 @@ func boundsRefusal(header, detail string) error {
 // ValidateBriefAuthority checks explicit repository paths against the exact
 // committed tree a delegate will receive. Runtime artifacts are deliberately
 // checked in the dispatcher's live checkout instead because they are not tree
-// content. A brief with no mechanically extractable paths is admitted.
+// content. A committed path the tree lacks is admitted only as a frozen input
+// (brief_frozen.go): a copy of the draft's exact bytes inside the dispatcher's
+// checkout. A brief with no mechanically extractable paths is admitted.
 func ValidateBriefAuthority(briefPath, baseTree, diskRoot string) error {
 	_, err := ReadBriefAdmissionAtRoot(briefPath, baseTree, baseTree, diskRoot, false)
 	return err
@@ -333,6 +335,7 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 	}
 
 	candidates := extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories)
+	frozen := briefFrozenInputs(data)
 	missing := make([]string, 0)
 	for _, candidate := range candidates {
 		if artifactAuthorityPath(candidate) {
@@ -349,7 +352,7 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 		if pathErr != nil {
 			return fmt.Errorf("brief authority admission cannot inspect committed path %s: %w", candidate, pathErr)
 		}
-		if !present {
+		if !present && !frozenInputHolds(frozen[candidate], diskRoot) {
 			missing = append(missing, candidate)
 		}
 	}

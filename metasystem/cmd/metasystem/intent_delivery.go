@@ -920,16 +920,25 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if lineCount == 0 {
 		lineCount = 1
 	}
+	// The critic reviews the design as the seat has it now: the page and the
+	// uncommitted drafts it cites are frozen into the review's inputs, and
+	// the admission checks the brief against HEAD plus those copies.
+	drafts := freezeDesignDrafts(git, dir, gitRel, data, data)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself (where it states none: our own agents and operators make mistakes, nobody attacks), and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),
-		filepath.Join(git, filepath.FromSlash(gitRel)),
+		drafts.pageCopy,
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
-		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)})
+		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
+		drafts.section()
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
+	inputs := map[string]string{brief: briefText, outputs: gitRel + "\n"}
+	for path, content := range drafts.files {
+		inputs[path] = content
+	}
 	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
-		inputs: map[string]string{brief: briefText, outputs: gitRel + "\n"}}
+		inputs: inputs}
 	// An existing chain is decided before anything is written: a Send that
 	// rejoins a running examination writes nothing, so the brief it admitted,
 	// which states its reader budget, keeps its bytes.
@@ -966,6 +975,9 @@ func writeIntentInputs(dir string, files map[string]string) error {
 	for path, content := range files {
 		if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
 		}
 		temporary, err := os.CreateTemp(dir, ".input-*")
 		if err != nil {
