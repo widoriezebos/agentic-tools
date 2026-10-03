@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "goal": "one-folder-deployed-and-evolved",
+  "unit": "root-types",
+  "subject": {
+    "commit": "380f84c5fd6ad98913de52de37a9d0d3a8b55618",
+    "parent": "785e68bf5b85d6e168ca2a6bc34507438de72ff2",
+    "tree": "7588377c3a0f7f0b968f3530df46d42543f8f34a",
+    "patchDigest": "1576bae907ae54eebaa04d358c0e0e70c26ca5d995d053127487e4286fcc9b45",
+    "unitDigest": "09cb71a84cb14143a08606e03855203d4b57d4defec77a5e13e2b85098098165"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d8e97ce0174320d87fd6c046",
+    "round": 1,
+    "closureSha256": "b58b125dcc1ed65c3f838446cf4ca5145b2484af2fc227e57783e080d2990c6f"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7588377c3a0f7f0b968f3530df46d42543f8f34a",
+    "runId": "goal-read-gate-20261003t002626z-84ab75e6e4fdf30d"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/brain_bed_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/brain_boot_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/completion_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/hooks_setup_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_landing_gate_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_worktree_store_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/hostsetup/setup_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/landing/receiptline_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/stateroot/stateroot_refusal_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/stateroot/stateroot_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/steward/ledgerattention_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    },
+    {
+      "path": "metasystem/internal/steward/tick_continuation_fixture_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8e97ce0174320d87fd6c046"
+    }
+  ],
+  "sha256": "5fdbec6880683000eabb7b66b78b46db21e3efdb391c75abf759bcd96a423347"
+}
