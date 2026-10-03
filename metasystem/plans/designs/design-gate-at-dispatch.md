@@ -5,28 +5,23 @@
 - Status: draft
 - Goals: design-gate-at-dispatch
 
-Revision 1 (first draft). Author: Fable (claude-fable-5-1), design delegate of seat m1k, 2026-10-03. Cites were read at main `19a4f3335`; paths are under `metasystem/`.
+Revision 2. Author: Fable (claude-fable-5-1), design delegate of seat m1k, 2026-10-03. New and changed cites were read at main `1f6edaf24`, cites kept from revision 1 at `19a4f3335`; paths are under `metasystem/`. Folded: the five accepted findings of Astra's critique round 1 (RULING-design-gate-at-dispatch, RULING-R-143-m1e, DESIGN-GATE-LANDING-CRITIQUE, DESIGN-GATE-FAILURE-FIXTURE, MOVED-EFFECTS-NO-ROWS; section 10) and Wido's answers of 2026-10-03 (section 11). Changed passages are marked "(revision 2)".
 
-The goal, as Wido approved it: "Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it." Folded in on 2026-10-03 at his word ("drain the waiting lane"): the landing half (`landing-design-provenance`), and a governance record for this gate and for `commit-goal-binding`'s refusal, warning-only first (`gate-governance-records`).
+The goal, as Wido approved it: "Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it." Folded in at his word: the landing half (`landing-design-provenance`), and a governance record for this gate and for `commit-goal-binding`'s refusal, warning-only first (`gate-governance-records`).
 
 ## 1. What is true today
 
-- **The live door.** `metasystem work build G` (`cmd/metasystem/intent_work.go:197-235`) runs `runIntentBuildUnit` (`:494`): goal live (`:562`), approved budget (`:567`), claim (`:572-580`), this session holds it (`:587`), then the accepted designs (`:592`), the request (`:598`) and the unit runner (`:623`). In the engine, a unit with no run yet calls the caller's `prepare`, which writes the plan and briefs, and keeps `request.json` (`internal/launch/unit_named.go:165-174`); the first round is admitted and the run id reserved at `:228-241`.
-- **A live example of the gap.** Goal `landing-deploys-the-engine` is tier 2. On 2026-10-03 at 14:41 its work `engine-adapter` went through this door with `"designs": []` in its kept request, while its design was still a draft in critique. Wido accepted that design at 15:20 (`ef96e62fd`); the next work, `chain-status` at 15:34, carried it with its digest. Nothing was printed for the first build.
-- **Where the request is kept (corrects the brief).** Not in the checkout: the unit store is `~/.metasystem/unit` (`internal/launch/unit_run.go:837-843`, `record.go:128-134`), one per computer, each unit's folder keyed by worktree, goal and unit (`unit_named.go:144,449-455`).
-- **A second, hidden door.** `work build --plan FILE` (a hidden flag, `intent_work.go:224`) goes through `runIntentBuildPlan` (`:464-487`) and never reaches `:592`.
-- **Design handling at build.** `acceptedDesignPaths` (`:877-905`) keeps the records with `Status: accepted`; with none the brief stands in (`:994-996`). A project whose records cannot be read already fails the build there (`:879-883`). The request identity stores each design's `{path, sha256}` (`:701-721`); a repeat with other request bytes is refused as `UNIT_NAMED_INPUT_CHANGED` (`unit_named.go:160-164`).
-- **Tier.** `goal.GateTier` (`internal/goal/landgate.go:95-100`; no tier reads as 3) is read today only by the landing gate. Design critique exists at tiers 2 and 3, not at tier 1 (`docs/orchestration.md:69`).
-- **The design record.** Head `Kind`, `Id`, `Status`, `Goals` (`docs/design/design-obligation-gate.md:19-44`). `Goals` takes several ids (`internal/project/record.go:199`); a head key the reader does not know is kept and read by nothing (`record.go:47-48,75`); status is set by hand (`project.go:56-61`). `linkedDesigns` returns id, path, status and title (`cmd/metasystem/intent_goals.go:281-301`).
-- **Critique closure is prose today.** Of the 11 accepted records, four open their body with a sentence such as "Critique: Codex Astra, chain design-critic-09e9…, closed at round 4 on 0 material findings" (`plans/designs/flaky-leftovers.md:8`); the others use a revision line or name a ruling. The machine's own state, `chainClosed` (`internal/dispatch/design_chain.go:26-67`), sits in the checkout's ignored `artifacts/` and does not follow a claim.
-- **Landing.** `landGoalRoute` (`cmd/metasystem/intent_delivery.go:1837`) asks `admitLanding` (`:1903`; `goal.Gate`: holds, tier, a person's word, `landgate.go:240-270`), then hands in to the lane (`:1907`) or lands by hand (`:1909`). The precedent for a computed check that does not refuse is `chain-not-design-bearing` (`internal/landing/observe.go:41-44,1724-1735`).
-- **A person's exception per goal.** `goal.Permissions` (`internal/goal/permissions.go:29-38`): "a new permission is one row here and one field in the record", parsed at `file.go:1190-1195`, written at `:1735-1736`. An engine that does not know a field reports `unknown field` (`file.go:1536-1537`).
-- **Warnings and refusals.** The refusal register has a `Warning` shape, "prints and records the warning, then complies" (`internal/refusal/register.go:24`); no row uses it yet. `commit-goal-binding`'s refusal is `GOAL_BRANCH_NOT_HOLDER` (`internal/goal/branch/commit.go:17,70-91`); when the claim cannot be checked it refuses as well (`:73`).
-- **The sweep already does the governance half.** Each steward tick (`internal/steward/tick.go:261`) runs `sweepRulingReviews` (`ruling_sweep.go:210-241`). A row of `memory/rulings.md` whose review column is `class=… due=YYYY-MM-DD` (`internal/rulings/rulings.go:109-141`) and whose date is today or past (`ruling_sweep.go:113`) gets a lowlight in the narrator's digest: "Ruling review sweep: ID owner=… class=… due=… choice=adopt|revise|withdraw" (`:164-167`).
+- **The live door.** `metasystem work build G` runs `runIntentBuildUnit` (`cmd/metasystem/intent_work.go:494`): after the goal, budget and claim checks (`:562-590`) come the accepted designs (`:592`), the request (`:598`) and the unit runner (`:623`). With no record of `Status: accepted` the brief stands in (`:877-905`) and nothing is printed. A unit with no run yet creates its input folder, calls the caller's `prepare`, which writes the plan and briefs, and keeps `request.json` (`internal/launch/unit_named.go:165-174`). The hidden `work build --plan FILE` (`intent_work.go:224,464-487`) never reaches `:592`.
+- **The unit store (revision 2).** `~/.metasystem/unit` (`internal/launch/unit_run.go:837-843`), one per computer. A unit's input folder is named by a hash of worktree, goal and unit (`unit_named.go:311-318`), so a reader that knows only the goal cannot find it.
+- **Landing (revision 2).** With a landing lane registered, the seat's `work land G` passes `admitLanding` (`cmd/metasystem/intent_delivery.go:1910`) and only queues the branch (`landing_plain.go:69`). The lane's landing agent later merges the queued commits, proves the result and runs `landing push` (`skills/landing-agent/SKILL.md:17-18,29-32`), whose one check is a green proof of HEAD's tree (`intent_landing_push.go:47-53`, `internal/landing/plain/push.go:50,72`). Without a lane the seat lands by hand: prepare (`intent_delivery.go:1997`), `admitLanding` again (`:2012`), push (`:2020`).
+- **The landing evaluator (revision 2).** `landing.Observe` (`internal/landing/observe.go:160-175`) judges one prospective tree. Only the hand route calls it (`landing_path.go:142-172,228-230`; its result is read at `internal/landing/landpath/commit.go:484-508,616-620`); the lane's push never does. Its caller hands it what it cannot read itself as functions (`observe.go:76-77`). A person's exception landing, `work land G --exception CODE --reason TEXT --by NAME`, branches off before the lane's hand-in (`intent_delivery.go:1687-1689`) and is judged apart (`observe.go:165-166`). The precedent for a computed check that does not refuse is `chain-not-design-bearing` (`:41-44,476,1724-1735`).
+- **A person's exception per goal (revision 2).** `goal.Permissions` (`internal/goal/permissions.go:29-38`): "a new permission is one row here and one field in the record". `goal allow` refuses an agent session (`cmd/metasystem/intent_goal_permission.go:54-65`), asks for the person's proof (`:66`) and records `Allowed: NAME why=REASON` in the goal's history (`permissions.go:98-108`, `verbs.go:3849-3859`). Neither the verb nor the record has a place for a statement of impact; nothing in `cmd/metasystem` or `internal/goal` prints one.
+- **Messages and the digest.** A message a person reads is two lines: what happened and why, then the one command that resolves it (`internal/refusal/register.go:3-9`). The narrator's digest is a tracked file in the installation's records (`internal/narratordigest/digest.go:78-84`); a line it already holds is never added again (`:181-183`).
+- **The sweep does the governance half.** Each steward tick runs `sweepRulingReviews` (`internal/steward/ruling_sweep.go:210-241`): a row of `memory/rulings.md` with a review column `class=… due=YYYY-MM-DD` gets, once due, a digest lowlight asking to adopt, revise or withdraw it.
 
-## 2. Step 1: one check, a warning, a record, and the same at landing
+## 2. The design
 
-Everything new is in `cmd/metasystem/intent_design_gate.go` plus the call sites named below. As shipped it stops nothing.
+As shipped it stops nothing.
 
 **The evidence that travels.** Whoever sets `Status: accepted` adds one head line in the same edit:
 
@@ -35,148 +30,163 @@ Everything new is in `cmd/metasystem/intent_design_gate.go` plus the call sites 
 - Critique: ruled by Wido 2026-10-03, R-144-m1h
 ```
 
-The first word is `closed` (the critique loop ended) or `ruled` (a person accepted the design; a person's decision is never blocked, R-142-m1e). The head grammar admits the line today, it is committed with the record, and it is as trustworthy as the hand-set status beside it. `linkedDesigns` gains the line's value. Local chain state may contradict the line; it never replaces it.
+The first word is `closed` (the critique loop ended) or `ruled` (a person accepted the design). The head grammar admits the line today (an unknown head key is kept, `internal/project/record.go:47-48,75`); it is committed with the record and is as trustworthy as the hand-set status beside it. Local critique state (in the checkout's ignored `artifacts/`, not following a claim) may contradict the line, never replace it.
 
-**The check.** It runs at `intent_work.go:592`, in the command and not in the engine, because the engine knows neither the tier nor the records. Its inputs: the goal's tier (`goal.GateTier`), its permissions, its design records, and this checkout's critique chains for each accepted page (`dispatch.DesignCritiqueChains`). The first matching row is the verdict:
+**The check (revision 2).** One function in a new package, `internal/designgate`, with no file, setting or git access, so the build door and the landing evaluator run the same code. `designGateFacts(root, goal)` in `cmd/metasystem/intent_design_gate.go` gathers its inputs: the goal's tier (`goal.GateTier`; no tier reads as 3), its permissions, its design records, this checkout's critique chains for each accepted page (`dispatch.DesignCritiqueChains`) and the mode. The build door calls it at `intent_work.go:592`. The first match is the verdict:
 
-| Verdict | When | Would refuse |
-| --- | --- | --- |
-| `not-design-bearing` | tier 1 | no |
-| `allowed` | the goal holds `build-without-design` | no |
-| `no-accepted-design` | no record with `Status: accepted` names the goal | yes |
-| `critique-not-recorded` | an accepted record has no `Critique` line starting `closed` or `ruled` | yes |
-| `critique-open` | the line says `closed`, and a chain for the page on this checkout is not closed | yes |
-| `ok` | every accepted record carries the line, uncontradicted | no |
-| `unchecked` | the check itself failed (section 3) | no |
+1. `not-design-bearing`: tier 1.
+2. `allowed`: the goal holds `build-without-design`.
+3. `no-accepted-design` (would refuse): no record with `Status: accepted` names the goal.
+4. `critique-not-recorded` (would refuse): an accepted record has no `Critique` line starting `closed` or `ruled`.
+5. `critique-open` (would refuse): the line says `closed`, and a chain for the page on this checkout is not closed.
+6. `ok`: every accepted record carries the line, uncontradicted.
 
-**The warning.** A would-refuse verdict prints one warning line, with its fix on the line under it, on the build's own output, and the build goes on. `--json` carries `designGate: {verdict, wouldRefuse, mode}` in `Data`. The exact lines:
+`unchecked` (section 3) never refuses.
 
-- `warning: goal G is tier 2 and has no accepted design; this build runs on its brief alone`
-  fix: `accept a critiqued design whose Goals line names G; or a person runs: metasystem goal allow G build-without-design --reason TEXT`
-- `warning: the accepted design NAME does not say its critique closed`
-  fix: `add the head line "- Critique: closed ..." under its Goals line ("ruled ..." when a person accepted it)`
-- `warning: the accepted design NAME says its critique closed, but its review here is open at round N`
-  fix: `finish the review, or correct the line`
-- `warning: the design check could not run (CAUSE); this build was not checked`
+**The warnings (revision 2).** Every message is two plain lines: the reason, then the one command. A would-refuse verdict prints its pair and the build goes on; `--json` carries `designGate: {verdict, wouldRefuse, mode}`.
 
-**The dispatch record.** `prepare` (`intent_work.go:728-775`) writes `design-gate.json` beside `plan.json`, so it is written under the unit's lock and only while the unit has no run:
+```text
+warning: goal G has no accepted design; this build runs on its brief alone
+metasystem design write G --brief FILE
 
-```json
-{"schema": 1, "goal": "G", "unit": "u", "tier": 2, "mode": "warn",
- "verdict": "ok", "wouldRefuse": false, "governedBy": "R-…",
- "designs": [{"id": "01M3Y1P7…", "path": "/…/plans/designs/x.md", "sha256": "…", "critique": "closed at round 4 …"}],
- "at": "2026-10-03T12:41:00Z"}
+warning: the accepted design NAME does not say its critique closed; the build goes on
+edit PATH: add "- Critique: closed at round N on 0 material findings (WHO)" under its Goals line
+
+warning: the accepted design NAME says its critique closed, but its review here is open at round N
+metasystem design review PATH --dispositions FILE --after N
+
+warning: the design check could not run (CAUSE); this build was not checked
+metasystem design list --goal G
+
+warning: the design check's record could not be written (CAUSE); the build goes on
+nothing to do: the landing check runs without it
 ```
 
-It is not a field of `request.json`: those bytes identify the request, so a permission granted mid-run would turn the next repeat into `UNIT_NAMED_INPUT_CHANGED`.
+For a goal with a draft design the first command is `metasystem design review PATH`. The second pair ends in an edit: no command writes that line today (question 1).
 
-**Where a would-refuse is counted.** The same `prepare` appends one lowlight to the narrator's digest (`narratordigest.Append`, `internal/narratordigest/digest.go:153`), source `design-gate G/u`, text the warning line; an exact repeat is dropped (`:181-184`). The digest is the committed log a person already hears; the review counts its `(source: design-gate ` lines.
+**The dispatch record (revision 2).** The gate keeps its own record, through its own writer, at `~/.metasystem/unit/.design-gate/<goal>/<unit>.json`: found by goal alone, and outside the unit's input folder, which holds the launch's mandatory inputs. Its fields: schema, goal, unit, worktree, tier, mode, verdict, wouldRefuse, governedBy, the time, and for each accepted design its id, path, sha256 and critique line. `prepare` (`intent_work.go:728-775`) calls the writer, so it runs under the unit's lock and only while the unit has no run. The same call appends one digest lowlight (`digest.go:153`), source `design-gate G/u`, text the warning's first line; the review counts those lines. The record is not a field of `request.json`, whose bytes identify the request (`unit_named.go:160-164`): a permission granted mid-run would change them.
 
-**The switch.** One setting, `design.gate.mode`: `warn` (the default) or `refuse`, declared as `landing.review.human-from-tier` is (`internal/config/landinggate.go:16`, `defaults.go:242`, `validate.go:624`). Under `refuse` a would-refuse verdict returns, before anything is written, a refusal with the warning's sentence ending "; nothing was built", the next step `metasystem goal allow G build-without-design --reason TEXT`, and the detail `BUILD_DESIGN_NOT_ACCEPTED goal=G verdict=V governed-by=R-…`. `unchecked` never refuses. The branch is built and tested now, and left off (question 5). The code gets a register row of shape `Warning`, the first.
+**The switch.** One setting, `design.gate.mode`: `warn` (the default) or `refuse`, declared as `landing.review.human-from-tier` is (`internal/config/landinggate.go:16`, `defaults.go:242`, `validate.go:624`). Under `refuse` a would-refuse verdict at `work build` returns, before anything is written, the reason ending "; nothing was built", then `metasystem goal allow G build-without-design --reason TEXT`; `--verbose` adds `BUILD_DESIGN_NOT_ACCEPTED goal=G verdict=V governed-by=R-…`. The code gets the first register row of shape `Warning` (`register.go:24`).
 
-**The person's way past.** `metasystem goal allow G build-without-design --reason TEXT`: one row in `goal.Permissions` (words: "building and landing without an accepted design"), one record field written as `- DesignGate: off`, one help line. It covers the goal's landing too.
+**The person's way past (revision 2; R-143-m1e, `memory/rulings.md:202`).** `metasystem goal allow G build-without-design --reason TEXT`: one row in `goal.Permissions` (words: "building and landing without an accepted design"), one record field written `- DesignGate: off`, one help line. It covers the goal's landing too. The row gains a field `Impact`. `runIntentAllow` prints it before the edit, and also when the command is run without a reason (the existing refusal, `intent_goal_permission.go:49-53`), so a person can read it before deciding:
 
-**The landing half.** In `landGoalRoute`, straight after `admitLanding` (`:1903-1905`) and before the hand-in or the hand landing. That is the seat's own admission, on the computer that holds the dispatch records. It reads the goal's work (`goalWork`, `intent_selection.go:26`), each one's `design-gate.json`, and the design records as they are now:
+```text
+This lets goal G be built and landed without an accepted, reviewed design.
+The risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands.
+It holds for every later build and landing of G until withdrawn.
+To undo: metasystem goal disallow G build-without-design
+```
 
-| Verdict | When | Would refuse |
-| --- | --- | --- |
-| `design-missing` | a recorded design id is no longer an accepted record of the goal | yes |
-| `design-changed` | the file's sha256 differs from the recorded one | yes |
-| a dispatch verdict | the check above run afresh, when no design was recorded or no record exists | as above |
-| `ok` | every recorded design is present, accepted and unchanged | no |
+`permissionReason` records the printed text in the goal's history, `Allowed: build-without-design why=REASON impact=STATEMENT`, which `goal show G --history` prints. A permission without an `Impact` (today's `stop-test-changes`) behaves as now.
 
-- `warning: goal G was built against NAME, which changed after the build started`
-- `warning: goal G was built against NAME, which is no longer an accepted design of G`
-- fix for both: `have the page reviewed again; or a person runs: metasystem goal allow G build-without-design --reason TEXT`
+**The landing half (revision 2).** It moves into the landing evaluator; `landGoalRoute` is not touched.
 
-The landing goes on, with one digest lowlight, source `design-gate-landing G@TIP`. Under `refuse` it is refused as `LANDING_DESIGN_NOT_STANDING`, "; nothing was landed", with the same next step. A missing dispatch record alone is never a would-refuse.
+- *One function*, `landing.ObserveDesign(facts, person)` in `internal/landing/observe.go`. It always runs the full check on the design as it stands now. Only when that says `ok` does it compare with the goal's dispatch records: `design-missing` when a recorded design id is no longer an accepted record of the goal, `design-changed` when a recorded sha256 differs from the file's. Both would refuse. So an unchanged design with a missing or contradicted critique line warns at landing too.
+- *Where it reads from.* The caller hands in the facts as a function, as it does `BindAttested`: the same `designGateFacts`. Tier, permission and design records come from the checkout the evaluator runs in: the seat's on the hand route, the lane's (whose HEAD the push publishes) in the lane. Dispatch records come from this computer's unit store, by goal; the lane runs on the computer its seats build on.
+- *No dispatch record* (built elsewhere or before the gate, or the write failed): the fresh check still decides, the comparison is skipped, and the verdict says `compared: false`. A missing record alone is never a would-refuse.
+- *The hand route.* `ObserveParams` gains `DesignFacts`; both builders set it (`landing_path.go:151`, `landing_verbs.go:58`). `observeWithFacts` (`observe.go:164`) attaches the verdict to the observation as `Design`; `observationView` (`landpath/commit.go:499-508`) carries it and the landing path prints the pair; `landingPathObserve` appends the digest lowlight, source `design-gate-landing G@TIP`.
+- *The lane.* `runIntentLandingPush` calls `ObserveDesign` before `plain.Push` (`intent_landing_push.go:53`) for each waiting hand-in that HEAD contains and origin's main does not (as `landedMessage` selects, `:20-32`), and prints the pair. The lane checkout is reset every round and the digest is a tracked file, so the push writes no digest line: it appends one line (goal, commit, verdict, reason, time) to `design-gate.jsonl` in the lane's record folder (`internal/landing/plain/queue.go:38-40`). The steward's tick, which already reads that folder (`internal/steward/lane_silent.go:62-86`), offers each line to its digest, which keeps only new ones.
 
-**The governance records.** Two rows in `memory/rulings.md`, the register the sweep already reads, so the sweep's code does not change. The ids are minted at build under the register's own rule; the rows are Wido's to rule (question 1). Proposed:
+```text
+warning: goal G was built against NAME, which changed after the build started; the landing goes on
+metasystem design review PATH
+
+warning: goal G was built against NAME, which is no longer an accepted design of G; the landing goes on
+metasystem design list --goal G
+```
+
+The fresh check's pairs are the build's, ending "; the landing goes on". Under `refuse` the hand route returns a refusal coded `LANDING_DESIGN_NOT_STANDING` (added to `knownRefusalCode`, `observe.go:1744`, and to the register beside `register.go:288`, shape `Agent`): the reason ending "; nothing was landed", then the `goal allow` command. The lane's push is refused before publication: "; nothing was pushed", then `metasystem landing return G --reason TEXT`.
+
+**Whose act it is (revision 2; R-142-m1e, `memory/rulings.md:201`).** Under `warn` nobody is stopped. Under `refuse`:
+
+- *An agent's act, which the gate may stop:* `work build` from an agent session; the seat's `work land` on the hand route; the landing agent's `landing push`.
+- *A person's act, never stopped:* recording the allowance; accepting a design by ruling (`Critique: ruled …`); setting the mode; a build started from a terminal with no agent lineage (the first test `goal allow` applies, `intent_goal_permission.go:54-56`; question 2); the exception landing `work land G --exception LANDING_DESIGN_NOT_STANDING --reason TEXT --by NAME`, for which `person` is true. When a person's build or landing meets a would-refuse verdict, the pair is printed ending "; it goes on at your word", the verdict is recorded with `person: true`, and the act goes on.
+
+**The governance records (revision 2).** Wido ruled both rows as worded below, owned by him, first review 2026-11-03. A seat cannot land a change to `memory/rulings.md` in a build commit today (goal `records-land-through-the-lane` is open), so the build does not edit the register: the seat mints the two ids under the register's rule, writes the rows into its hand-in note, and seat m1e lands them with the unit.
 
 - *Design gate.* "GATE RECORD: the design gate (`BUILD_DESIGN_NOT_ACCEPTED` at work build, `LANDING_DESIGN_NOT_STANDING` at work land), warning-only under `design.gate.mode=warn`. MUST REFUSE, once refusing: a tier-2 build of a goal that no accepted, critiqued design names. APPEAL: `metasystem goal allow G build-without-design --reason TEXT`. IF THE CHECK BREAKS: the work goes on and its output says the check did not run." Owner Wido. Review `class=experimental due=2026-11-03`.
 - *Goal-holder refusal.* "GATE RECORD: `GOAL_BRANCH_NOT_HOLDER` (goal commit-goal-binding), refusing. MUST REFUSE: a session building or committing on goal G while another session holds it. APPEAL: a person runs `metasystem goal claim G --take-over --reason TEXT`. IF THE CHECK BREAKS: it refuses, says the claim cannot be checked and names `metasystem goal list`." Owner Wido. Review `class=delegated-authority due=2026-11-03`.
 
-From the due date on, the digest carries "Ruling review sweep: R-… owner=Wido class=experimental due=2026-11-03 choice=adopt|revise|withdraw". A three-entry map `refusal.GovernedBy` (code to ruling id) gives each gate its `governed-by` detail and gives the test its ids.
+A three-entry map `refusal.GovernedBy` (code to ruling id) gives each gate its `governed-by` detail. The two rows are also kept as a fixture, `internal/steward/testdata/gate-records.md`.
 
-**The tests, each red without its part.** Build and landing tests are in `cmd/metasystem/intent_design_gate_test.go`. Git is never run: the build half uses the work bed (`newWorkBedWith`, `intent_work_test.go:166`: stubbed branch and head, `workStarter` for launches, a temporary store), the landing half the delivery bed (`intent_delivery_test.go:56`: stubbed `landingGate` and branch state). Design records are files under the bed's `plans/designs/`; the mode is a line in its `metasystem.conf.local`; the chain reader is a function field beside `landingGate` (`landing_gate.go:107-110`).
+**The tests, each red without its part.** Git is never run. Build tests use the work bed (`newWorkBedWith`, `intent_work_test.go:166`); the chain reader, record writer and digest writer are function fields of it.
 
-1. `TestDesignGateWarnsAndStillBuilds`: a tier-2 goal with no design. The build is confirmed and launched, the output has the warning and its fix, `design-gate.json` says `no-accepted-design`, the digest has one line, and a repeat adds none.
-2. `TestDesignGateVerdicts`: a table (tier 1; the permission; accepted without the line; `closed`; `ruled`; `closed` with an open chain), asserting verdict, warning, and the recorded id and sha256.
-3. `TestDesignGateRefusesOnlyWhenSwitchedOn`: under `refuse`, the build without a design is refused, launches nothing and names `goal allow`; the same goal with a matching accepted design builds. This is the goal's done-when.
-4. `TestDesignGateNeverStallsWhenItBreaks`: a failing chain reader, an invalid mode, an unwritable input folder, each under `refuse`: the build still starts.
-5. `TestLandingDesignCheck`: an unchanged design lands silently; an edited page warns `design-changed`; a record set to `superseded` warns `design-missing`; under `refuse` both are refused and the matching one lands; a goal with no dispatch record lands.
-6. `internal/goal`, `TestBuildWithoutDesignPermissionRoundTrips`: allow, the `- DesignGate: off` line, parse, the words `goal show` prints. `internal/config`: the default is `warn`, `refuse` is valid, anything else is a settings problem.
-7. `internal/steward/ruling_sweep_test.go`, `TestRulingSweepFlagsAnOverdueGateRecord`: for each id in `refusal.GovernedBy`, this repository's register (read as `internal/rulings/rulings_test.go:262` reads it) has the row with an owner, a due date and the three labels; then the sweep, run on a copy with the clock one day past due, writes a digest line naming each id.
+1. `TestDesignGateWarnsAndStillBuilds`: a tier-2 goal with no design builds; the output has the pair, the record says `no-accepted-design`, the digest has one line, a repeat adds none.
+2. `TestDesignGateVerdicts` (`internal/designgate`): one case per verdict, asserting verdict, pair, recorded id and sha256.
+3. `TestDesignGateNeverStallsWhenItBreaks` (revision 2): a failing chain reader, record writer and digest writer in turn; the build starts and the matching pair is printed. The unit's input folder is left alone: no build starts without it (`unit_named.go:165-174`, `intent_work.go:763-769`). Unit 2 repeats the three under `refuse` and adds an invalid mode.
+4. `TestDesignGateRefusesOnlyWhenSwitchedOn`: under `refuse` an agent session's build without a design launches nothing and names `goal allow`; with a matching accepted design it builds; from a session with no lineage it is warned, recorded with `person: true`, and builds. This is the goal's done-when.
+5. `TestAllowBuildWithoutDesignShowsAndRecordsItsImpact` (revision 2): without a reason the statement is printed and nothing changes; with one it is printed before the confirmation, the record holds `- DesignGate: off` and the history reason the statement after `impact=`. `internal/config`: default `warn`; `refuse` valid; anything else a settings problem.
+6. `TestLandingDesignCheck` (revision 2; `internal/landing`, facts handed in): unchanged and critiqued is silent; unchanged without the critique line warns `critique-not-recorded`; unchanged with an open chain, `critique-open`; an edited page, `design-changed`; a `superseded` record, `design-missing`; no dispatch record with a standing design is `ok`, `compared: false`; failing facts, `unchecked`. Under `refuse` each would-refuse refuses an agent's landing and only warns a person's.
+7. `TestLandingPushChecksDesign` (revision 2; the lane bed, `landing_lane_test.go:26`): a waiting hand-in whose design changed is pushed, with the pair in the output and one line in `design-gate.jsonl`; under `refuse` nothing is pushed and `landing return G` is named. `internal/steward`: two ticks put the line in the digest once.
+8. `TestGateRecordsAreGoverned` (revision 2; `internal/steward`). *Sweep half*, the same before and after the rows land: the fixture becomes the register of a temporary root (as the helper at `ruling_sweep_test.go:15` writes one), the sweep runs one day past due, and the digest line names every id in `refusal.GovernedBy`. *Live half*: each id is looked up in this repository's register (as `internal/rulings/rulings_test.go:262-265` reads it); an absent id is logged "not in the register yet" and passes; a present one must have an owner, a typed class, a due date and the three labels. Wording is not compared: Wido can reword a row.
 
 ## 3. When the check itself fails
 
-A broken check is the verdict `unchecked`: it prints the fourth warning above, is recorded in `design-gate.json` when that can be written, and never refuses, in either mode.
+A broken check is the verdict `unchecked`: it prints the fourth pair, is recorded when that can be written, and never refuses, in either mode.
 
-- **The design home cannot be read.** Not the gate's: `acceptedDesignPaths` already fails the build (`:879-883`); left as it is.
-- **A record the project reader does not list for the goal** (a head it cannot read, no `Goals` line): to the gate there is no such design, so `no-accepted-design`. `metasystem design list --goal G` shows what the reader sees.
-- **No critique evidence**: the verdict `critique-not-recorded`, not a failure. **No chain state here**: the head line stands.
+- **A record the project reader does not list for the goal** (an unreadable head, no `Goals` line): to the gate no such design exists, so `no-accepted-design`.
 - **The setting is unreadable or neither value**: `warn`; `metasystem settings check` names it.
-- **The record or the digest cannot be written**: the build goes on; the landing half finds no record and runs the check afresh.
-- **At landing, an unreadable work list or record**: `unchecked`; the landing goes on.
+- **The gate's record or digest line cannot be written (revision 2)**: the fifth pair; the build goes on; the landing check skips the comparison.
+- **At landing, the facts cannot be read (revision 2)**: `unchecked`; the landing or push goes on. A lane record line that cannot be written stops nothing.
 
 ## 4. Who can be stopped wrongly
 
 Under `warn` these are wrong warnings; each would be a wrong stop under `refuse`.
 
-- **A claim that moved.** The evidence is in the committed head, so every checkout computes the same verdict. The dispatch record is per computer and keyed by worktree, so a claim that moved finds none: the landing half runs the fresh check and never refuses for the missing record.
-- **A tier-2 goal whose design is a plain plan page outside `plans/designs/`.** The reader does not see it: `no-accepted-design`. The fix is the head and a move under `plans/designs/` (`design-obligation-gate.md:32-34`), or the person's allowance.
-- **An arc of goals sharing one design.** Every goal the `Goals` line names passes. A goal of the arc it does not name gets `no-accepted-design`; the fix is adding its id to that line.
-- **Designs accepted before this gate.** None of the 11 has the head line; each warns `critique-not-recorded` until its seat adds it, a one-line edit.
-- **A tier-2 goal that builds from its brief alone**, lawful today: warned on every build until a person allows it (question 2).
-- **A design edited after dispatch for a good reason** (a "Built" note, a person's amendment): `design-changed` at landing. Step 1 only warns; the count decides what refusal does with it.
-- **Follow-up work on a goal whose design is `done`**: `acceptedDesignPaths` ignores `done`, so `no-accepted-design`.
+- **A claim that moved to another computer.** Every checkout computes the same fresh verdict from the committed head; the dispatch record stays behind, so nothing is compared and nothing refused for that.
+- **A design the reader does not find for the goal**: a plan page outside `plans/designs/`, an arc's shared design whose `Goals` line omits the goal, a design already `done`. Each is `no-accepted-design`.
+- **Designs accepted before this gate.** None of the 11 has the head line; each warns `critique-not-recorded`, at build and at landing, until its seat adds it.
+- **Adding that line after a build started (revision 2).** The file's sha256 changes, so the landing warns `design-changed` once; so does a "Built" note or a person's amendment.
 
 ## 5. Moved effects
 
-None: no write, notice, count or state changes owner, so the page carries no inventory section and `design review --check-only` should report `inventory=absent rows=0 problems=0` (`cmd/metasystem/validate_verbs.go:230`). New, not moved: the command writes to the narrator's digest beside the steward (sources `design-gate`, `design-gate-landing`); `design-gate.json` appears beside each `plan.json`; the JSON listing a goal's designs gains `critique`, the build and landing results gain `designGate`; a goal record may carry `- DesignGate: off`.
+No owner moves.
 
-## 6. Units and size
+## 6. New effects (revision 2)
 
-| Unit | Lines |
-| --- | ---: |
-| gate | 270 |
-| switch | 150 |
-| landing | 180 |
-| governance | 60 |
+New, not moved, so outside the inventory above: digest lines from the build command and the hand landing (sources `design-gate`, `design-gate-landing`); `.design-gate/` in the unit store; `design-gate.jsonl` in the lane's record folder, read by the steward's tick; `critique` in the designs listing, `designGate` in the build result, `design` in the landing observation; `- DesignGate: off` in a goal record and `impact=` in its history.
 
-About 290 production lines and 370 test lines. `gate`: check, warning, record, digest line (tests 1, 2, 4). `switch`: setting, permission, refusing branch (tests 3, 6). `landing`: test 5. `governance`: the rows, the map, test 7.
+## 7. Units, in landing order (revision 2)
 
-## 7. Guardrails the build must pass
+The smallest first use comes first and lands alone (R-121); each later unit leaves main working without the ones after it.
 
-- `go test ./cmd/metasystem -run 'TestDesignGate|TestLandingDesignCheck|TestIntentBuild'`: the new tests, and the existing build tests unedited. A work-bed goal without a tier reads as tier 3, so those tests may now see a warning; none may be weakened.
-- `go test ./internal/refusal ./internal/goal ./internal/config ./internal/steward ./internal/rulings`: the new codes have register rows; the register keeps owners and typed reviews (`rulings_test.go:262`).
-- `go run ./cmd/devgate static`: the records check reads heads carrying the `Critique` key.
-- No grant of `build-without-design` before every seat runs an engine that knows the field; an older engine reports `unknown field` on that goal's record. Step 1 needs no grant: nothing is refused.
-- `docs/design/design-obligation-gate.md` gains one paragraph on the `Critique` head line.
+1. `gate` (300 lines): the check, warnings, dispatch record and digest line at `work build`; tests 1-3. Needs nothing: the mode is fixed at `warn`, the `allowed` verdict absent.
+2. `switch` (200): the setting, the refusing branch, the allowance and its impact statement; tests 4-5. Needs unit 1.
+3. `landing` (190): `ObserveDesign`, the comparison, the hand route; test 6. Needs unit 1's record, unit 2's mode and allowance.
+4. `lane` (150): the check at `landing push`, the lane's record line, the steward's carry; test 7. Needs unit 3.
+5. `governance` (80): `refusal.GovernedBy`, the fixture, test 8, the two rows in the hand-in note. Needs the codes of units 2 and 3.
 
-## 8. Later, when it hurts
+About 400 production lines and 520 test lines.
 
-- **Switching to refusal**: a person sets `design.gate.mode=refuse` at the review the register row schedules. First: the hidden `--plan` door calls the same check; a repeat of a running unit is judged by its `design-gate.json`, not afresh; and the trial's count says whether tier 2 stays in, and whether `design-changed` refuses or is cleared by a re-closed critique.
-- **Design digests in the read attestation subject** (`internal/goal/branch/attest.go:29-35` carries the unit digest only): from the record's `designs[].sha256`.
-- **The verdict travelling with the work**, as a commit trailer or in the landed line's words (`landgate.go:235-239`), so the lane and another computer can read it: the record's `verdict` and `designs`.
-- **The machine writing the `Critique` line** when a chain closes, with the subject digest (`cmd/metasystem/intent_design_review.go:41-46`): the head key.
-- **One daily count line from the steward** instead of a lowlight per unit: the digest source `design-gate`.
-- **A reviewed row leaving the sweep** (a due row keeps rotating): the row's review column.
+## 8. Guardrails the build must pass
 
-## 9. Open questions for Wido
+- `go test ./internal/... ./cmd/metasystem`: the new tests pass; the existing build and landing tests stay unedited (a work-bed goal without a tier reads as tier 3, so they may now see a warning); the new codes have register rows.
+- Unit 5 does not edit `memory/rulings.md`. Once m1e has landed the rows, `go test ./internal/steward -run TestGateRecordsAreGoverned -v` shows no "not in the register yet" line; that output closes the goal.
+- No grant of `build-without-design` before every seat runs an engine that knows the field; an older one reports `unknown field` (`internal/goal/file.go:1536-1537`).
+- `docs/design/design-obligation-gate.md` gains a paragraph on the `Critique` line.
 
-1. The two gate records are rows of the rulings register, which holds only your rulings. Do you rule them as worded in section 2, with you as owner and 2026-11-03 as the first review? Recommendation: yes.
-2. Design-bearing means tier 2 and 3, so a tier-2 goal that builds from its brief alone is warned on every build until you allow it. Recommendation: yes for the trial; its count shows whether tier 2 stays in once the gate refuses.
-3. Each would-refuse puts one lowlight in your digest, once per goal and work. Recommendation: yes during the trial; a daily count line is on the later list.
-4. The critique evidence is a hand-written head line, as trustworthy as the hand-set `Status: accepted`. Recommendation: accept it for step 1.
-5. The refusing branch is built and tested now, and left off. Recommendation: yes; the goal's done-when asks for a test that refuses.
+## 9. Later, when it hurts
 
-## 10. Not checked
+Before Wido sets `design.gate.mode=refuse`: the hidden `--plan` door calls the same check; a repeat of a running unit is judged by its dispatch record; the landing agent's skill gains a case for a refused push; the trial's count says whether tier 2 stays in and whether `design-changed` compares only the page below its head.
+## 10. Dispositions of Astra's round 1
 
-About 60 of the 70 tool calls were used. Left unchecked, to keep to the pack:
+- **RULING-design-gate-at-dispatch.** The landing half is `landing.ObserveDesign` in the landing evaluator, run by the hand route inside `Observe` and by the lane at `landing push`; the check after `admitLanding` is gone.
+- **RULING-R-143-m1e.** `goal allow` prints the impact statement before applying and records it in the goal's history; test 5.
+- **DESIGN-GATE-LANDING-CRITIQUE.** The landing always reruns the full check, then compares; test 6.
+- **DESIGN-GATE-FAILURE-FIXTURE.** The gate's record left the input folder; test 3 fails the gate's own writers by injection.
+- **MOVED-EFFECTS-NO-ROWS.** Section 5 says `No owner moves.`; this draft checks as `inventory=none-declared rows=0 problems=0`.
 
-- How the project reader treats a head it cannot read (skipped, or an error for the whole read).
-- How a laid-out verb such as `work build` (`intent_work.go:197`) prints an extra line: `text` is the legacy renderer's (`cmd/metasystem/intent.go:904`), so the builder may need the attention banner (`intent.go:818-820`); test 1 asserts the output either way.
-- Whether the work bed's goal has a tier, and whether a unit here exceeds the slice cap.
-- Whether the lane's evaluator can see the dispatch records; the design assumes not.
-- The delegate-path gates of brief facts 7 and 11, which this design leaves alone.
+## 11. Open questions for Wido
+
+Answered on 2026-10-03 (relayed by m1e; he can overrule): both governance rows, his to own, first review 2026-11-03; warning-only until he sets `refuse`; the appeals and the broken-check behaviour as drafted; two-line messages; unit 1 first.
+
+Still open:
+
+1. No command writes the `Critique` head line, so that warning's second line is an edit. Recommendation: accept it until the machine writes the line; the alternative is a small verb now.
+2. Under `refuse`, a build started from a terminal with no agent lineage counts as yours: warned, recorded, built. Your proof is not asked, so an agent hiding its lineage passes too. Recommendation: accept; decide before switching.
+3. `goal allow` prints the impact statement and applies in the same run. Recommendation: enough; undoing is one command anyone may run.
+4. Revision 1's questions 2 to 4 stand, each recommended yes for the trial: a tier-2 goal building from its brief alone is warned until you allow it; each would-refuse puts one lowlight in your digest (now also per landed commit); the critique evidence is a hand-written line.
+
+## 12. Not checked
+
+About 35 of the 60 tool calls were used. Not checked: whether the lane's check should read design records through git at HEAD rather than the lane checkout's files; whether the exception landing states an override's impact; how the landing path and `work build` print an extra line (`cmd/metasystem/intent.go:818-820,904`); how the project reader treats an unreadable head; whether the work bed's goal has a tier; whether a unit here exceeds the slice cap.
