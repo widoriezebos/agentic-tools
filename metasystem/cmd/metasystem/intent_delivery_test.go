@@ -668,7 +668,9 @@ func TestIntentLandRecovery(t *testing.T) {
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
-	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "reviews": "commit:" + strings.Repeat("3", 40), "findingRegister": []any{}})
+	// The bed has no repository, so the critic root names no commit subject
+	// the close's fold would have to read; the branch read is the bed's.
+	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "findingRegister": []any{}})
 	b.writeReturn("crit9", 1, "crit9", map[string]any{"id": "F1", "material": true})
 	var reads [][]string
 	b.owners.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
