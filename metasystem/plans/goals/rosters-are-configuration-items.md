@@ -1,6 +1,6 @@
 # rosters-are-configuration-items
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 12
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="configuration change touching every dispatch and launch; new interface surface; every seat"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Next: Fable writes the design (the roster item and its types, where rosters live, how the engine picks the roster for a piece of work, the verbs, the Settings page, and the path from today's keys), one Astra critique, then Wido decides the build. Done when: rosters of each type can be listed, created and changed from the Settings page and from the verbs, and work of each kind runs on the roster its type selects. Added 2026-10-02 (Wido: 'the running agent; is that defined in the roster which agent and which model? That should be the case'): today runtime/model/effort are scattered over two overlapping key families (launch.<kind>.* and role.<role>.*) and copied per checkout (five seat checkouts on this host). The roster must: cover EVERY agent kind incl. the seat agent and the landing lane agent; be ONE key family; be shared by every checkout on the host (one place to change a model); refuse an unknown key instead of silently falling back; have a 'roster show' verb plus the Settings view; include effort (Wido 2026-10-01).; ASKED 201G4SZ4JZTR470W4ZA13ZFWBY (other): The new rosters design is written, but I can't commit it, and Astra's critique reads only committed files. How should it get committed? Details: Fable's revision 5 of the rosters design (3,990 words) is staged in the m1i checkout. A seat's commit here needs a fully green test run (about 45 minutes per run). Four runs since 06:50 were red, each for a reason outside this change: two problems on main that other seats have since fixed (stale layout goldens, a count of serial tests), deep test mode that can't pass on this Mac, and a test that fails when the computer is busy (load about 30 on 18 cores) because it reads the live process list. The goal's 4-hour claim ends at 10:14; after that no new work starts.
 - OpenedAt: 2026-10-01T08:27:46Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=7h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-10-03T07:48:25Z revision=23 opid=HW075ZCNTTDS4K5867GPENQTQS-m1e-718ba0eb authority=proven digest=ad1dbdde11664f4a3045ae6c779c7a8c1ce951ed51160af1f2f0d89aa07f0eac episode=23
-- Episode: machine=m1i lineage=steward-seat accountingRevision=23 episodeAt=2026-10-03T04:14:53Z episodeRevision=14 idleSeconds=0 released=2026-10-03T07:51:12Z
+- Claimed: machine=m1i lineage=steward-seat at=2026-10-03T07:51:18Z revision=26 accountingRevision=23 episodeAt=2026-10-03T04:14:53Z episodeRevision=14 idleSeconds=6
+- StopCapability: generation=26 revision=26 machine=m1i claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T08:27:46Z NR62KBQS8JYD6Z4EZ90EX155JH-m1e-528c72bf open actor=human:Wido targets=rosters-are-configuration-items
@@ -41,4 +42,5 @@ History:
 - 2026-10-03T07:48:25Z HW075ZCNTTDS4K5867GPENQTQS-m1e-718ba0eb set-budget actor=human:Wido targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T04:14:53Z
 - 2026-10-03T07:50:33Z BA0K3SNN7D5FTRQN4GKCXDMT73-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=conflicts-resolve-unattended from=1:11 to=1:12 requested-sequence=2
 - 2026-10-03T07:51:12Z 4GYAQTS292434CMP21X2WRK6Y7-m1i-71c5cb39 release actor=m1i+steward-seat targets=rosters-are-configuration-items reason=Rebinding the claim after Wido's budget change at 09:48 (dispatch refused: bound under claim 9, current claim 1); reclaiming at once to start Astra's critique.
-Integrity: sha256=747874d4b8e0ed3170de7f23501130b6fef23602fcc8ccc30d52fa4a5fb8f255
+- 2026-10-03T07:51:18Z SV090G5HPX6NM1M1DHZT7SZ22X-m1i-71c5cb39 claim actor=m1i+steward-seat targets=rosters-are-configuration-items
+Integrity: sha256=190594416d4ea9e01ae56e2d17b2f597da5957bdaad222222d096905d7c1b529
