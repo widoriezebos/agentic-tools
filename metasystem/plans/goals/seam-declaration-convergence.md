@@ -1,6 +1,6 @@
 # seam-declaration-convergence
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Changes the result of the read call every runtime driver uses; a caller that misreads the new result hangs or cuts a session; a known tidy-up, tested on both implementations"
@@ -9,8 +9,9 @@
 - Origin: main
 - Next step: Next: When it comes back, first make the reading function (internal/acp/driver.go, Next) return different results for "stream ended" and "time ran out", tested on both implementations; then add the missing capability field to the runtime registry and check the declaration against the driver. Done when: the capability check and the driver agree for every runtime, and the two end cases can be told apart.
 - OpenedAt: 2026-08-25T06:07:07Z
-- Revision: 55
+- Revision: 56
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T11:17:44Z because=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 
 History:
 - 2026-08-25T06:07:07Z CSDC87CRRNSXSWQRBWXFFHXDSR-m2-bc1be9cb open actor=m2+mac-coordinator targets=seam-declaration-convergence
@@ -68,4 +69,5 @@ History:
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:10 to=3:9
 - 2026-10-03T11:17:29Z D170YFK2T4WAFC1746392ZK5JK-m1e-718ba0eb unpark actor=human:Wido targets=seam-declaration-convergence
 - 2026-10-03T11:17:37Z A1E47QXNMZ89MWCZCJ6XBN08HD-m1e-718ba0eb edit actor=human:Wido targets=seam-declaration-convergence
-Integrity: sha256=f66f4381e68632817366e205ac6aeca5dddf79220b24762fee2a08a98ad0447f
+- 2026-10-03T11:17:44Z HSCD21B86T7E9E5KBT0592F9MT-m1e-718ba0eb park actor=human:Wido targets=seam-declaration-convergence reason=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
+Integrity: sha256=dd6ce89724a3b41f56fdc93510bc18ae526d774a88a4cf3110bb5bc869cef9ec
