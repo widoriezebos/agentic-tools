@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-02",
+  "unit": "close-honours-accepted-risk",
+  "subject": {
+    "commit": "598dca55012b8dced2b97708a034cee41c32c9c0",
+    "parent": "5fd3feb5342f35dcfeb32ad5eb3bc20bf357dc52",
+    "tree": "bc75477c8fcb757d6e240ed9d2a829f4f01936f6",
+    "patchDigest": "2d7f9f2567608421b233d44e1cee8ab379a04ed79c986c4c7624a9f2d7df829d",
+    "unitDigest": "d1e6930b6165eabf567acd80dbca428acf74232e615467de58f9544b18bdf97b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-17024e87a04fc09ca70beac6",
+    "round": 1,
+    "closureSha256": "bbcdca5a03daa1588d1b07fc3ea71c22d2e36c2f8fc46a29458d68b26a92a1f2"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "bc75477c8fcb757d6e240ed9d2a829f4f01936f6",
+    "runId": "goal-read-gate-20261003t220831z-610aa83777204fed"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "5fd3feb5342f35dcfeb32ad5eb3bc20bf357dc52",
+      "digest": "6a0b7eabe2a973715bd02614e334afd1fe52d0a0dfdb93e2a5fd19ff3a57b5b1"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/dispatch/out_of_scope_demoted_test.go",
+      "readerWord": "reviewed by critic root code-critic-17024e87a04fc09ca70beac6"
+    },
+    {
+      "path": "metasystem/internal/validate/critiqueclosed_test.go",
+      "readerWord": "reviewed by critic root code-critic-17024e87a04fc09ca70beac6"
+    }
+  ],
+  "sha256": "be4efade57d737c4ef9c25118097aa35ecd9cc92fe693b68454126b2101adf0e"
+}
