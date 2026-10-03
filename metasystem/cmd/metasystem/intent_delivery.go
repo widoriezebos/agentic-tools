@@ -2088,14 +2088,14 @@ func (inv *intentInvocation) closeJobReview(job string, reviewed intentResult) i
 // and asks the record-writer authority owner, as the close owner's own
 // guards will; it proves permission to start, not that the close completes.
 func recordWriterPreflight(root, job string) (string, error) {
-	return recordWriterPreflightAs(root, job, classifyVerbCaller)
+	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+	return recordWriterAdmits(caller, err, job)
 }
 
-// recordWriterPreflightAs is recordWriterPreflight with the caller's
-// classification supplied: a test names the caller it means, never the
-// person or agent whose shell runs it.
-func recordWriterPreflightAs(root, job string, classify func(string, int64) (lease.ClassifyResult, error)) (string, error) {
-	caller, err := classify(root, int64(os.Getpid()))
+// recordWriterAdmits is the record-writer owner's answer for a classified
+// caller: a test names the caller it means, never the person or agent whose
+// shell runs it.
+func recordWriterAdmits(caller lease.ClassifyResult, err error, job string) (string, error) {
 	if err != nil {
 		return "authority-unestablished", err
 	}

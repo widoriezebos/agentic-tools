@@ -25,10 +25,8 @@ func humanRecordWriter(_, job string) (string, error) {
 func TestIntentCloseRecordWriterPreflight(t *testing.T) {
 	t.Parallel()
 	refused := newDeliveryBed(t)
-	notHolding := func(root, job string) (string, error) {
-		return recordWriterPreflightAs(root, job, func(string, int64) (lease.ClassifyResult, error) {
-			return lease.ClassifyResult{Class: lease.ClassMain}, nil
-		})
+	notHolding := func(_, job string) (string, error) {
+		return recordWriterAdmits(lease.ClassifyResult{Class: lease.ClassMain}, nil, job)
 	}
 	if cause, err := notHolding(refused.install, "crit1"); err == nil || cause != "record-writer-refused" {
 		t.Fatalf("a caller without authority: %q %v", cause, err)
