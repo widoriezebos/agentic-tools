@@ -3,11 +3,13 @@
 - State: queued
 - Priority: 3
 - Sequence: 11
+- Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new proposal loop that puts items in front of the person and opens goals from them; a wrong threshold floods the person or the backlog; nothing in the delivery path changes; every later proposal passes through it"
+- Tier: 2
 - Intent: What: The system turns what it observes about its own work into written improvement proposals, discusses them with the person, and ends each one as either a new backlog goal or a recorded drop with its reason. Why: Improvement ideas today depend on someone remembering them in a chat; they get lost, or the same idea is raised again and again. Pros: Ideas become visible, get a clear yes or no, and a dropped idea is not raised again. Cons: A proposal queue can grow faster than the person can review it, so the threshold between small items (straight to the backlog) and big ones (proposal first) must be sharp.
 - Origin: human
 - Next step: Next: Write a short design for the loop only: what feeds the proposal queue, what a proposal contains, where the person sees and answers it, and the two endings (scheduled as a goal, or dropped with a reason); reuse the existing drafts folder and leave metric computation to actionable-metrics. Done when: The design page is in plans/designs and a person has accepted it.
 - OpenedAt: 2026-08-24T13:27:11Z
-- Revision: 100
+- Revision: 101
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -112,4 +114,5 @@ History:
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
 - 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
 - 2026-10-03T09:58:28Z 3ESM3MAR17ZJ2PDRQF0X8J986F-m1e-718ba0eb abandon actor=human:Wido targets=registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
-Integrity: sha256=5419348c1538c84892e9add47241eabb4a557a4aee9fd45e3fc535d043444a26
+- 2026-10-03T11:14:07Z 5AHP6QRXTWFMDXF9P698N20C34-m1e-718ba0eb edit actor=human:Wido targets=continuous-self-improvement
+Integrity: sha256=2cd330ebe5d9f9159aeafb85de4256ac0988a89e0a5da71a4623de2a30b4b92c
