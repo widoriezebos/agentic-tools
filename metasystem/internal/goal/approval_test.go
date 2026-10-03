@@ -379,6 +379,41 @@ func TestProofBearingSetBudgetRatifiesMatchingLegacyClaim(t *testing.T) {
 	}
 }
 
+// TestSetBudgetKeepsAnotherSeatsClaimEpoch: a budget act from a session that
+// holds its own checkout (lease epoch 9) on a goal another seat claimed at
+// epoch 1 changes the box, never that seat's claim epoch, so the seat's next
+// dispatch is not refused as bound under another claim.
+func TestSetBudgetKeepsAnotherSeatsClaimEpoch(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000KE00", "mac-b"), "kept-epoch", "Keep the epoch.", OriginMain, "Work."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	seat := verbReqFor(endpoint, "01J5X00000000000000000KE10", "mac-b")
+	approveGoalForTest(t, seat, "kept-epoch", testBudget())
+	if result, err := Claim(seat, "kept-epoch"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", result, err)
+	}
+	other := verbReqFor(endpoint, "01J5X00000000000000000KE20", "mac-a")
+	other.Actor.Human = "Wido"
+	other.CallerClass = "MAIN"
+	other.EpochAuthority = EpochAuthorityHolder
+	other.ClaimEpoch = 9
+	bigger := testBudget()
+	bigger.AttemptLimit++
+	result, err := SetBudgetApproved(other, "kept-epoch", bigger, testHumanAuthority(t, endpoint.Root, other.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("set-budget by another session: %+v %v", result, err)
+	}
+	tree, err := loadTreeFor(endpoint, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file := tree.Live["kept-epoch"]; file == nil || file.StopCapability == nil || file.StopCapability.ClaimEpoch != 1 || file.Budget == nil || *file.Budget != bigger {
+		t.Fatalf("after another session's budget act: %+v; want the new box and claim epoch 1 kept", file)
+	}
+}
+
 func TestApproveBatchRefusesClaimedMember(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
