@@ -1,6 +1,6 @@
 # recovery-rehearsal
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="A first crash rehearsal that kills workers, the runner and the steward in an isolated setup; a kill aimed wrong would hit live seats on the same host; a test, not a product change"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 52
+- Revision: 53
+- BlockedBy: recovery-to-good-state
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T11:17:21Z blocker=recovery-to-good-state because=blocked by recovery-to-good-state; returns when it is done
 
 History:
 - 2026-08-30T15:16:00Z 6KKF5W270WZ3FHW761YFDD6C6B-m1-bf243850 open actor=m1+coordinator targets=recovery-rehearsal
@@ -66,4 +68,5 @@ History:
 - 2026-10-03T11:16:57Z NQHY2C14WSEJR4TT3XPVQBV2KZ-m1e-718ba0eb unpark actor=human:Wido targets=recovery-rehearsal
 - 2026-10-03T11:17:05Z H8HAJ4QNHDAASBS3N4RETB0K3W-m1e-718ba0eb edit actor=human:Wido targets=recovery-rehearsal
 - 2026-10-03T11:17:14Z 5MJHRZVFYYJQHT0ZQ5KE46EXW4-m1e-718ba0eb unblock actor=human:Wido targets=recovery-rehearsal,recovery-to-good-state reason=blockedBy drops recovery-to-good-state
-Integrity: sha256=323ad5370ed556837578dea9f617c063935040fef53db26e35d1a08dab1c5e38
+- 2026-10-03T11:17:21Z N0X7H0ZRAEGGD9WQ1VCV6B8WM4-m1e-718ba0eb block actor=human:Wido targets=recovery-rehearsal reason=blocked by recovery-to-good-state; returns when it is done
+Integrity: sha256=0fff2830d444404cf66e3602d8eaab36e54ec974838d5debdee542e788651f7f
