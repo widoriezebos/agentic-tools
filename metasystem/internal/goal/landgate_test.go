@@ -405,10 +405,22 @@ func TestReadsWaivedReadsTheReviewRoundLimit(t *testing.T) {
 	t.Parallel()
 	tierOne := &GoalFile{Tier: 1, Budget: &Budget{ReviewRoundLimit: 0}}
 	tierTwo := &GoalFile{Tier: 2, Budget: &Budget{ReviewRoundLimit: 2}}
-	if !ReadsWaived(tierOne) {
+	if !ReadsWaived(tierOne) || !ReadsWaived(&GoalFile{Tier: 2, Budget: &Budget{ReviewRoundLimit: 0}}) {
 		t.Fatal("a zero review-round budget must waive the reads")
 	}
-	if ReadsWaived(tierTwo) || ReadsWaived(&GoalFile{Tier: 1}) || ReadsWaived(nil) {
+	if ReadsWaived(tierTwo) || ReadsWaived(&GoalFile{Tier: 2}) || ReadsWaived(nil) {
 		t.Fatal("a budget with review rounds, or none recorded, needs its reads")
+	}
+}
+
+// No critic may read a tier-1 goal, so its units land unread whatever its box
+// says: a goal approved at tier 2 and lowered to tier 1 keeps a box with
+// review rounds, and needing a read there would leave it no way to land.
+func TestReadsWaivedForEveryTierOneGoal(t *testing.T) {
+	t.Parallel()
+	for _, file := range []*GoalFile{{Tier: 1, Budget: &Budget{ReviewRoundLimit: 20}}, {Tier: 1}} {
+		if !ReadsWaived(file) {
+			t.Fatalf("tier-1 goal with budget %+v needs a read no critic may give", file.Budget)
+		}
 	}
 }
