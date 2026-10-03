@@ -40,6 +40,9 @@ type intentConnectionOwners struct {
 	// session-isolation owner; configuration outside that manifest (such as
 	// metasystem.conf.local) is never copied.
 	isolate func(source, destination string) error
+	// sameRepository says whether two installations belong to one
+	// repository: one Git common dir, or one URL for the goal ledger's remote.
+	sameRepository func(a, b string) bool
 }
 
 // goalWorktreeLockReason marks a goal worktree this composition registered
@@ -54,6 +57,9 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
 	if owners.endpoint == nil {
 		owners.endpoint = branch.MainEndpoint
+	}
+	if owners.sameRepository == nil {
+		owners.sameRepository = goalBranchSameRepository
 	}
 	if owners.endpointTip == nil {
 		owners.endpointTip = goalBranchEndpointTip

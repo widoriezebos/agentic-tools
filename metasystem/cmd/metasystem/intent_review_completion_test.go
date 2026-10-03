@@ -244,3 +244,32 @@ func TestIntentReviewAcceptedRiskException(t *testing.T) {
 		t.Fatalf("the recorded accepted risk is the lawful exception: %+v calls=%v", pending, b.calls)
 	}
 }
+
+// TestRefutedCloseSaysTheReviewIsClosed: a review closed with a finding its
+// author refuted gives no read a landing takes, so instead of a collect that
+// fails it says the review is closed and names the ways on: a person's
+// accepted risk, or a revise whose examination reads the author's evidence.
+// An open chain, a landable close, or one with nothing refuted is left to the
+// collect.
+func TestRefutedCloseSaysTheReviewIsClosed(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	inv := &intentInvocation{cwd: b.root(), stateRoot: b.root(), input: intentInput{values: map[string][]string{}}}
+	refutedEntry := map[string]any{"findingId": "F-1", "status": "resolved", "resolution": "refuted"}
+	b.writeJob(map[string]any{"jobId": "crit5", "role": "code-critic", "status": "completed", "round": 1, "chainClosed": true, "findingRegister": []any{refutedEntry}})
+	closed := inv.refutedClose(nil, b.install, bedGoal, "crit5")
+	if closed == nil || closed.Outcome != intentRefused || !strings.Contains(closed.Summary, "review crit5 is closed") || !strings.Contains(closed.Summary, "refuted F-1") ||
+		!strings.Contains(strings.Join(closed.next, " "), "goal accept-risk "+bedGoal+" --finding F-1 --review crit5") || !strings.Contains(closed.nextReason, "revise") {
+		t.Fatalf("a refuted close: %+v", closed)
+	}
+	for name, record := range map[string]map[string]any{
+		"open":      {"jobId": "crit5", "role": "code-critic", "status": "completed", "round": 1, "findingRegister": []any{refutedEntry}},
+		"landable":  {"jobId": "crit5", "role": "code-critic", "status": "completed", "round": 1, "chainClosed": true, "closure": map[string]any{}, "findingRegister": []any{}},
+		"no refute": {"jobId": "crit5", "role": "code-critic", "status": "completed", "round": 1, "chainClosed": true, "findingRegister": []any{map[string]any{"findingId": "F-2", "resolution": "accepted"}}},
+	} {
+		b.writeJob(record)
+		if other := inv.refutedClose(nil, b.install, bedGoal, "crit5"); other != nil {
+			t.Fatalf("%s: %+v", name, other)
+		}
+	}
+}

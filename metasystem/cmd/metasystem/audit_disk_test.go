@@ -37,7 +37,7 @@ func TestAuditDiskNoTestMainAllocatesBeforeTestenv(t *testing.T) {
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if path != root && (name == "testdata" || name == "vendor" || name == "node_modules" || strings.HasPrefix(name, ".")) {
+			if path != root && auditSkipsDirectory(name) {
 				return filepath.SkipDir
 			}
 			return nil

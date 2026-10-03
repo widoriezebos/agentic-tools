@@ -46,7 +46,7 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	}
 	// Every Go phase inherits the worker allowance, and the refusal register
 	// names this gate as its run owner.
-	for _, fragment := range []string{"go vet -trimpath -p=3 ./...", "go run -trimpath -p=3 " + staticcheckModule + " ./...", "go test -trimpath -p=3 -count=1 ./internal/refusal", "go build -p=3 -buildvcs=false"} {
+	for _, fragment := range []string{"go vet -trimpath -p=3 ./cmd/... ./internal/...", "go run -trimpath -p=3 " + staticcheckModule + " ./cmd/... ./internal/...", "go test -trimpath -p=3 -count=1 ./internal/refusal", "go build -p=3 -buildvcs=false"} {
 		if len(w.called(fragment)) != 1 {
 			t.Fatalf("missing %q in %v", fragment, w.calls)
 		}
@@ -60,7 +60,7 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	}
 	defaulted := newGateWorld(t)
 	defaulted.env = slices.DeleteFunc(defaulted.env, func(entry string) bool { return strings.HasPrefix(entry, "METASYSTEM_TEST_WORKERS=") })
-	if code := defaulted.static(); code != 0 || len(defaulted.called("go vet -trimpath -p=1 ./...")) != 1 || len(defaulted.called("go test -trimpath -p=1 -count=1 ./internal/refusal")) != 1 {
+	if code := defaulted.static(); code != 0 || len(defaulted.called("go vet -trimpath -p=1 ./cmd/... ./internal/...")) != 1 || len(defaulted.called("go test -trimpath -p=1 -count=1 ./internal/refusal")) != 1 {
 		t.Fatalf("a direct caller without an allowance did not get one worker: exit %d %v", code, defaulted.calls)
 	}
 	refusal := w.called("go test")[0]
@@ -423,7 +423,7 @@ func TestStaticRefusesAFunctionNothingReaches(t *testing.T) {
 	}
 	var platforms []string
 	for _, call := range w.calls {
-		if filepath.Base(call.name) == "deadcode" && strings.Join(call.args, " ") == "-test ./..." {
+		if filepath.Base(call.name) == "deadcode" && strings.Join(call.args, " ") == "-test ./cmd/... ./internal/..." {
 			platforms = append(platforms, envValue(call.env, "GOOS"))
 		}
 	}
@@ -467,5 +467,36 @@ func TestDeadCodeAllowlistEntriesCarryAReasonAndAreStillDead(t *testing.T) {
 	findings := parseDeadCode("a/b.go:1:6: unreachable func: Kept\nnoise line\nc/d.go:2:6: unreachable func: T.Method\n")
 	if len(findings) != 2 || findings[0].key != "a/b.go#Kept" || findings[1].key != "c/d.go#T.Method" {
 		t.Fatalf("findings = %+v", findings)
+	}
+}
+
+// TestStaticJudgesOnlyTheListedTrees: vet, staticcheck and deadcode judge the
+// top-level trees of the files Git lists, never ./..., so a source copy under
+// the ignored artifacts/ is neither vetted nor checked.
+func TestStaticJudgesOnlyTheListedTrees(t *testing.T) {
+	t.Parallel()
+	if got := goPatterns([]string{"internal/a/b.go", "cmd/x/main.go", "doc.go", "internal/c.go"}); strings.Join(got, " ") != ". ./cmd/... ./internal/..." {
+		t.Fatalf("goPatterns = %q; want the root and one pattern per top-level tree", got)
+	}
+	w := newGateWorld(t)
+	w.gitInside = true
+	w.write("artifacts/agents/suite-failures/x/copy.go", "package copy\n\nfunc broken( {\n")
+	w.gitFiles = []string{"internal/fixture/fixture.go", "cmd/metasystem/main.go"}
+	if code := w.static(); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, w.output())
+	}
+	judged := 0
+	for _, call := range w.calls {
+		args := strings.Join(call.args, " ")
+		if !strings.HasPrefix(args, "vet ") && !strings.Contains(args, staticcheckModule) && filepath.Base(call.name) != "deadcode" {
+			continue
+		}
+		judged++
+		if strings.Contains(args, "./...") || strings.Contains(args, "artifacts") || !strings.HasSuffix(args, " ./cmd/... ./internal/...") {
+			t.Errorf("%s judges %q; want ./cmd/... ./internal/... only", call.name, args)
+		}
+	}
+	if judged != 4 {
+		t.Fatalf("judging calls = %d; want vet, staticcheck and deadcode on two platforms", judged)
 	}
 }

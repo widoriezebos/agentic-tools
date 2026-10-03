@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -300,6 +302,73 @@ func TestIntentPlanningDecidePartial(t *testing.T) {
 	}
 	if risks := bed.goalFile(bedGoal).AcceptedRisks; len(risks) != 1 || risks[0].Finding != "S-1" || risks[0].By != "Wido" {
 		t.Fatalf("the goal's accepted risk = %+v", risks)
+	}
+}
+
+// TestIntentAcceptRiskReadsTheReviewAtRepo: a person accepts a risk from the
+// checkout they stand in, for a review whose records are in another checkout
+// of the repository that --repo names: the person is proven and the act
+// recorded where they stand, the finding is read at --repo, and the reason
+// records both places. --repo naming another repository is refused.
+func TestIntentAcceptRiskReadsTheReviewAtRepo(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	elsewhere, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCriticChain(t, elsewhere)
+	conf, err := os.ReadFile(filepath.Join(bed.root(), "metasystem.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(elsewhere, "metasystem.conf"), conf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(elsewhere, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(elsewhere, "plans", "goals", "backlog.md"), []byte("# Backlog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	same := false
+	owners := bed.owners()
+	owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
+		if withinPath(path, elsewhere) {
+			return elsewhere, nil
+		}
+		return fakeTop(bed.root())(path)
+	}, noExecutable)
+	owners.connection.sameRepository = func(string, string) bool { return same }
+	accept := func() (int, intentResult) {
+		return bed.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure", "--repo", elsewhere)
+	}
+	before := bed.publications()
+	if code, result := accept(); code == 0 || !strings.Contains(result.Summary, "is not a checkout of this repository") || bed.publications() != before {
+		t.Fatalf("--repo in another repository = %d %+v", code, result)
+	}
+	same = true
+	code, result := accept()
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("accept-risk with the review at --repo = %d %+v", code, result)
+	}
+	file := bed.goalFile(bedGoal)
+	if len(file.AcceptedRisks) != 1 || file.AcceptedRisks[0].Finding != "S-1" || file.AcceptedRisks[0].Chain != "critic" {
+		t.Fatalf("the goal's accepted risk = %+v", file.AcceptedRisks)
+	}
+	var chain struct {
+		FindingRegister []map[string]any `json:"findingRegister"`
+	}
+	data, err := os.ReadFile(filepath.Join(elsewhere, "artifacts", "agents", "jobs", "critic.json"))
+	if err == nil {
+		err = json.Unmarshal(data, &chain)
+	}
+	if err != nil || len(chain.FindingRegister) != 1 || chain.FindingRegister[0]["decisionOpid"] == "" {
+		t.Fatalf("the critique register at --repo was not stamped: %v %+v", err, chain.FindingRegister)
+	}
+	places := "(proven at " + bed.root() + ", read at " + elsewhere + ")"
+	if last := file.History[len(file.History)-1]; last.Verb != "accept-risk" || !strings.Contains(last.Reason, places) {
+		t.Fatalf("the history line = %+v; want its reason to record %s", last, places)
 	}
 }
 

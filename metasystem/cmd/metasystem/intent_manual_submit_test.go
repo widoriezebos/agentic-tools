@@ -838,13 +838,15 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	// by this agent, accepts nothing and leaves the register unchanged.
 	acceptArgs := printed(refused.Decision, "metasystem goal accept-risk")
 	acceptArgs[len(acceptArgs)-1] = "the failed round examined nothing"
-	// Goal worktrees share the goal ledger, but this request's authority
-	// facts must describe the selected checkout where the review is kept.
+	// Goal worktrees share the goal ledger: the person is proven, and the
+	// act recorded, at the checkout they stand in, and --repo only locates
+	// the review kept in the goal worktree.
 	acceptAtReview := func(args ...string) (int, intentResult) {
-		previous := c.facts.root
-		c.facts.root = c.worktree
-		defer func() { c.facts.root = previous }()
 		return manualDo(t, j, root, args...)
+	}
+	// Nobody is enrolled where the agent runs it, so the guard refuses.
+	if err := os.Remove(filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json")); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 	code, agent := acceptAtReview(acceptArgs...)
 	t.Logf("printed risk decision result: code=%d %+v", code, agent)
@@ -857,7 +859,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	// The bed's declared human proof authorizes the same public command.
 	// The goal decision, risk record, register and proof writers stay real;
 	// the accepted goal ledger uses the bed's existing repository adapter.
-	writeFixtureEnrollment(t, c.worktree, "Wido")
+	writeFixtureEnrollment(t, root, "Wido")
 	code, accepted := acceptAtReview(append(slices.Clone(acceptArgs), "--by", "Wido", "--fixture-human-authority")...)
 	if code != 0 || accepted.Outcome != intentConfirmed {
 		t.Fatalf("the authorized public risk decision: code=%d %+v", code, accepted)

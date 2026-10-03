@@ -224,7 +224,8 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			},
 			agent.questionHold,
 		},
-		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
+		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
+		Fingerprint: plain.KeeperFingerprint}
 }
 
 // probe reads whether a landing agent runs on this computer, its process

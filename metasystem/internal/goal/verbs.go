@@ -1820,8 +1820,13 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			}
 			bindApproval(f, r, authority, reviewBy)
 			if f.State == StateClaimed && f.Claimed != nil {
-				claimEpoch, err := ClaimEpochForRebind(f, r)
-				if err != nil {
+				// A budget act by another than the claim's holder changes the
+				// box, never the holder's claim epoch: the actor's own lease
+				// epoch names its checkout, not the goal's claim.
+				var claimEpoch int64
+				if displaced != "" && f.StopCapability != nil && f.StopCapability.ClaimEpoch >= 1 {
+					claimEpoch = f.StopCapability.ClaimEpoch
+				} else if claimEpoch, err = ClaimEpochForRebind(f, r); err != nil {
 					return nil, err
 				}
 				if err := rebindClaimKeepEpisode(f, r.stamp(), f.Revision, claimEpoch); err != nil {

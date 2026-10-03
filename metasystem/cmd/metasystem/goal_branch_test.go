@@ -914,3 +914,25 @@ func TestGoalBranchLandPrepRoutesLocalRedCandidate(t *testing.T) {
 		t.Fatalf("red command moved landing ref: before=%q after=%q", landingBefore, landingAfter)
 	}
 }
+
+// TestHeldGoalRefusalNamesTheSeat: a write to a goal's branch that another
+// seat's claim refuses names that seat and the two ways on, asking it or a
+// person taking the goal over; an unclaimed goal or any other cause gives no
+// such guidance, and the refusal keeps its code.
+func TestHeldGoalRefusalNamesTheSeat(t *testing.T) {
+	t.Parallel()
+	inv := &intentInvocation{input: intentInput{values: map[string][]string{}}}
+	refused := branch.CheckCommitAccess("g", func() error { return goalHeldElsewhere{goal: "g", holder: "m1h", machine: "m1j", lineage: "L"} })
+	holder, next, reason, held := inv.heldElsewhere("g", refused)
+	if !held || holder != "m1h" || !strings.Contains(strings.Join(next, " "), "--take-over") || !strings.Contains(reason, "ask seat m1h to close it") {
+		t.Fatalf("held by m1h: %q %v %q %v", holder, next, reason, held)
+	}
+	if goal.RefusalCode(refused) != branch.NotHolderCode || !strings.Contains(refused.Error(), "is held by another session") {
+		t.Fatalf("the refusal lost its code or words: %v", refused)
+	}
+	for _, other := range []error{goalHeldElsewhere{goal: "g", machine: "m1j"}, errors.New("the checkout's lease can't be read")} {
+		if _, _, _, held := inv.heldElsewhere("g", branch.CheckCommitAccess("g", func() error { return other })); held {
+			t.Fatalf("%v named a holding seat", other)
+		}
+	}
+}

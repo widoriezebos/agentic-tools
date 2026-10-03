@@ -12,6 +12,7 @@ import (
 
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -330,7 +331,7 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	if examined == nil {
 		return refuse("the decisions file names examination %s round %d of attempt %d, which is not a recorded examination of this work", bound.Examination, bound.Round, bound.Attempt)
 	}
-	install := inv.goalWorktreeInstallation(work.Record.Worktree)
+	install := branch.CriticStore(inv.goalWorktreeInstallation(work.Record.Worktree), bound.Examination)
 	returnPath := inv.returnPathAt(install, bound.Examination, bound.Round)
 	digest, findings, err := reviewReturnDigest(returnPath)
 	if err != nil || digest != bound.Return {
@@ -351,6 +352,40 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 // person's accept-risk, then the continuation completes the review. It
 // grants nothing and claims no closure; any other refusal is left as the
 // owner reported it.
+// refutedClose is the outcome of a closed review whose read a landing cannot
+// take because its author refuted a finding the critic has not withdrawn: an
+// author's word against its critic's is not a clean read by itself
+// (readsubject.LandableRegister). The review is closed, so a repeat of the
+// close changes nothing; a person may accept the risk, or a revise has the
+// critic examine the work again with the author's evidence. nil when the
+// chain is open, closed landable, or held back by anything else.
+func (inv *intentInvocation) refutedClose(targets []intentTarget, store, goalID, rootJob string) *intentResult {
+	root, err := inv.jobRecordAt(store, rootJob)
+	if err != nil {
+		return nil
+	}
+	if closed, _ := root["chainClosed"].(bool); !closed {
+		return nil
+	}
+	if _, landable := root["closure"]; landable {
+		return nil
+	}
+	register, _ := root["findingRegister"].([]any)
+	var refuted []string
+	for _, raw := range register {
+		if entry, _ := raw.(map[string]any); recordText(entry, "resolution") == "refuted" {
+			refuted = append(refuted, recordText(entry, "findingId"))
+		}
+	}
+	if len(refuted) == 0 {
+		return nil
+	}
+	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"rootJob": rootJob, "refuted": refuted},
+		Summary:    fmt.Sprintf("review %s is closed, but its read can't land: its author refuted %s and the critic kept it", rootJob, strings.Join(refuted, ", ")),
+		next:       inv.publicArgv("goal", "accept-risk", goalID, "--finding", refuted[0], "--review", rootJob, "--repo", store, "--reason", "TEXT"),
+		nextReason: "a person accepts the risk; or revise the work with your decisions, so the critic examines your evidence again"}
+}
+
 func (inv *intentInvocation) riskRemedy(closed *intentResult, root, goalID, rootJob string, continuation []string) bool {
 	ids, err := dispatchcore.CritiqueOpenFindingIDs(root, rootJob)
 	if err != nil {

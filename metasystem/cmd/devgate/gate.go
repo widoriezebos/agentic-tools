@@ -46,6 +46,9 @@ type gateRun struct {
 	installation bool
 	scratch      string
 	markers      []string
+	// patterns are the package patterns the static checks and the cross
+	// builds judge (goPatterns); nil judges ./... .
+	patterns []string
 
 	// consumerLive is the live root a frozen consumer copies its proven
 	// binary back to, and whose snapshot it releases.
@@ -295,7 +298,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// Linux architectures cross-compile in every gate run.
 	for _, arch := range []string{"amd64", "arm64"} {
 		env := g.env.with("CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch).list()
-		if d.goTool(g.ctx, g.root, env, []string{"build", "-trimpath", "-p=" + g.workers, "./..."}, d.stdout, d.stderr) != nil {
+		if d.goTool(g.ctx, g.root, env, append([]string{"build", "-trimpath", "-p=" + g.workers}, g.judged()...), d.stdout, d.stderr) != nil {
 			fmt.Fprintf(d.stderr, "go gate: linux/%s cross-build failed\n", arch)
 			return 1
 		}
@@ -303,7 +306,7 @@ func (g *gateRun) full(options gateOptions) int {
 	// govulncheck is last of the static stages: its cost belongs to the
 	// vulnerability-database fetch, which the network owns, so every
 	// deterministic check gets to fail first.
-	if d.goTool(g.ctx, g.root, g.env.list(), []string{"run", "-trimpath", "-p=" + g.workers, govulncheckModule, "./..."}, d.stdout, d.stderr) != nil {
+	if d.goTool(g.ctx, g.root, g.env.list(), append([]string{"run", "-trimpath", "-p=" + g.workers, govulncheckModule}, g.judged()...), d.stdout, d.stderr) != nil {
 		fmt.Fprintln(d.stderr, "go gate: govulncheck v1.2.0 refused (or could not run)")
 		return 1
 	}
