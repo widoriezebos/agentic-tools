@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 3
+- Sequence: 4
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
 - Tier: 2
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
@@ -18,7 +18,7 @@ Open read items (fix unit gate2-preliminary-r5): 1
 Open read items (fix unit switch-preliminary-r3): 1
 - ReadItem: id=switch-preliminary-r3-1 read=switch-preliminary-r3 state=open addedAt=2026-10-03T21:57:50Z changedAt=- closingReference="" text="Under design.gate.mode=refuse the build refusal prints an empty governed-by= (cmd/metasystem/intent_work.go:602-608) and the dispatch record's GovernedBy is empty (intent_design_gate.go:138-139), because the ruling ids come with unit governance (refusal.GovernedBy, design section 7 unit 5). Unit governance must fill both from the map, omit the detail when no id is known, and assert a non-empty id in intent_design_gate_switch_test.go:78."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 61
+- Revision: 62
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -90,4 +90,5 @@ History:
 - 2026-10-03T21:01:07Z D9GE44B9E7W6TET1F848DGF51J-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T21:57:50Z HG4G2V0ADE1Q8MJZNSP68BRXX6-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T22:10:47Z CTTAW7B0ZY968C3MDT8ZVYD1QW-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T17:56:51Z
-Integrity: sha256=c2874dbf01d4f9c3b56b8436a544ccb2b840e5874e82ffd94004ff0b0878362a
+- 2026-10-03T22:34:44Z DZ5FVHZ81W6K49A7VYY044B7CA-m1e-718ba0eb set-priority actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,first-headless-run,goal-worktree-dispatch-uses-the-primary,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,seat-works-without-a-person reason=priority-order subject=goal-worktree-dispatch-uses-the-primary from=1:3 to=1:4 requested-sequence=2
+Integrity: sha256=267a3c4d6ec64ca7226f02d3b408689c0d0612c65ccd20aec95c25a2c30d7c79
