@@ -38,7 +38,7 @@ func landingGateSettings(root string) (goal.GateSettings, error) {
 // productionIntentLandingGate evaluates the gate for one goal at tip against a
 // freshly fetched ledger.
 func productionIntentLandingGate(inv *intentInvocation, goalID, tip string) (string, error) {
-	return freshLandingGate(inv.stateRoot, inv.layout.InstallationRoot, goalID, tip, inv.owners.dependencies, inv.owners.commandNow)
+	return freshLandingGate(inv.stateRoot, inv.layout.InstallationRoot.Path(), goalID, tip, inv.owners.dependencies, inv.owners.commandNow)
 }
 
 // freshLandingGate is goal.Gate for one goal at tip against a freshly fetched
@@ -163,7 +163,7 @@ func (inv *intentInvocation) intentBranchTip(goalID string) string {
 	if read == nil {
 		read = productionIntentBranchTip
 	}
-	tip, err := read(inv.layout.InstallationRoot, goalID)
+	tip, err := read(inv.layout.InstallationRoot.Path(), goalID)
 	if err != nil {
 		return ""
 	}
@@ -197,7 +197,7 @@ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) inte
 		if text == "" {
 			text = landing.Delivered
 		}
-		if err := postLanded(inv.layout.InstallationRoot, text, landing.Landing, inv.delivery().now()); err != nil {
+		if err := postLanded(inv.layout.InstallationRoot.Path(), text, landing.Landing, inv.delivery().now()); err != nil {
 			result.Data.(map[string]any)["landedNotice"] = err.Error()
 		}
 	}
@@ -222,7 +222,7 @@ func productionRecordLanded(inv *intentInvocation, goalID string) error {
 	if file == nil {
 		return fmt.Errorf("goal %s is not live", goalID)
 	}
-	settings, err := landingGateSettings(inv.layout.InstallationRoot)
+	settings, err := landingGateSettings(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return err
 	}

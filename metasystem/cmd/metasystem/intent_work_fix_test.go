@@ -303,11 +303,11 @@ func (b *workBed) stateRoot() string {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	root, err := resolver.RootForInstallation(layout.InstallationRoot)
+	root, err := resolver.RootForInstallation(layout.InstallationRoot.Path())
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	return root
+	return root.Path()
 }
 
 // TestIntentBriefCarriesAcceptedDesign: the scaffold carries the accepted

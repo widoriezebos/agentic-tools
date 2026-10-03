@@ -181,11 +181,11 @@ func (inv *intentInvocation) helmRoot() string {
 	if err != nil {
 		return ""
 	}
-	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
 	if err != nil {
 		return ""
 	}
-	return root
+	return root.Path()
 }
 
 // helmYieldsSince are the yields recorded since the take, as helmYieldCount

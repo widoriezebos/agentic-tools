@@ -98,7 +98,7 @@ func sessionMainLiveness(prober identity.Prober) func(path string) (diskstore.Ma
 	return func(path string) (diskstore.MainLiveness, string) {
 		root := path
 		if layout, err := stateroot.ResolveLayout(path); err == nil {
-			root = layout.InstallationRoot
+			root = layout.InstallationRoot.Path()
 		}
 		// No announcement with a session is no main, whatever else the
 		// directory holds (Round D3 N10): a starting session is kept by its
@@ -179,7 +179,7 @@ func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) 
 	if err != nil {
 		return err
 	}
-	registry := diskstore.CheckoutRegistry(StoreControl(layout.InstallationRoot))
+	registry := diskstore.CheckoutRegistry(StoreControl(layout.InstallationRoot.Path()))
 	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: goalID})
 	if err != nil {
 		return err
@@ -212,8 +212,8 @@ func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) 
 // stores of an installation's goals and seats: its state root, else the
 // installation itself (Round D3 N9: every route reads the same registry).
 func StoreControl(installation string) string {
-	if root, err := stateroot.RootForInstallation(installation); err == nil && filepath.IsAbs(root) {
-		return root
+	if root, err := stateroot.RootForInstallation(installation); err == nil && filepath.IsAbs(root.Path()) {
+		return root.Path()
 	}
 	return installation
 }

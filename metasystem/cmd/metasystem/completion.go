@@ -497,7 +497,7 @@ func completionGoalDir(owners completeOwners, repo string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	root, err := owners.resolver.RootForInstallation(layout.InstallationRoot)
+	root, err := owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
 	if err != nil {
 		return "", false
 	}
@@ -505,7 +505,7 @@ func completionGoalDir(owners completeOwners, repo string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return filepath.Join(root, filepath.FromSlash(relative)), true
+	return root.Path(filepath.FromSlash(relative)), true
 }
 
 // completionGoalHead is how much of a goal file is read for its State line.

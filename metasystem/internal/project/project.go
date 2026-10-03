@@ -171,14 +171,14 @@ func ResolveRoots(installation string) (Roots, error) {
 	if err != nil {
 		return Roots{}, err
 	}
-	stateRoot, err := stateroot.RootForInstallation(layout.InstallationRoot)
+	stateRoot, err := stateroot.RootForInstallation(layout.InstallationRoot.Path())
 	if err != nil {
 		return Roots{}, err
 	}
 	return Roots{
 		Checkout:     canonical(layout.GitRoot),
-		Installation: canonical(layout.InstallationRoot),
-		StateRoot:    canonical(stateRoot),
+		Installation: canonical(layout.InstallationRoot.Path()),
+		StateRoot:    canonical(stateRoot.Path()),
 	}, nil
 }
 

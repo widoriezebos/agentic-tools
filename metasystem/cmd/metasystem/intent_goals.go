@@ -288,7 +288,7 @@ type intentDesignRef struct {
 // linkedDesigns are the design records naming the goal on their Goals line,
 // read through the project reader the interface uses.
 func (inv *intentInvocation) linkedDesigns(id string) ([]intentDesignRef, string) {
-	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: inv.stateRoot}
+	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot.Path(), StateRoot: inv.stateRoot}
 	read, err := project.Read(roots)
 	if err != nil {
 		return nil, err.Error()

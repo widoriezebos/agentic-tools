@@ -142,7 +142,7 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 	var skills []string
 	if !hooksOnly {
 		var err error
-		if skills, err = skillNames(layout.InstallationRoot); err != nil {
+		if skills, err = skillNames(layout.InstallationRoot.Path()); err != nil {
 			return nil, err
 		}
 	}
@@ -193,7 +193,7 @@ func plan(layout stateroot.Layout, selected []string, copySkills, hooksOnly bool
 				} else if !os.IsNotExist(statErr) {
 					return nil, statErr
 				}
-				registrationAtInstallation := layout.RepositoryRoot == layout.InstallationRoot
+				registrationAtInstallation := layout.RepositoryRoot == layout.InstallationRoot.Path()
 				if hooks.CheckSettings(existing, shipped, runtime, layout.InstallationRel, registrationAtInstallation) == nil {
 					continue
 				}
@@ -326,7 +326,7 @@ func planSkillTree(layout stateroot.Layout, row runtimes.RegistrationRow, skills
 	var actions []action
 	destinationRoot := filepath.Join(layout.RepositoryRoot, filepath.FromSlash(row.Destination))
 	for _, name := range skills {
-		source := filepath.Join(layout.InstallationRoot, "skills", name)
+		source := layout.InstallationRoot.Path("skills", name)
 		destination := filepath.Join(destinationRoot, name)
 		if copySkills {
 			items, err := planCopiedDirectory(source, destination)
@@ -443,7 +443,7 @@ func planCopiedDirectory(source, destination string) ([]action, error) {
 func planProfiles(layout stateroot.Layout, row runtimes.RegistrationRow, skills []string) ([]action, error) {
 	if row.Mode == "in-place" {
 		for _, name := range skills {
-			if _, err := os.Stat(filepath.Join(layout.InstallationRoot, strings.ReplaceAll(row.Source, "{skill}", name))); err != nil && !os.IsNotExist(err) {
+			if _, err := os.Stat(layout.InstallationRoot.Path(strings.ReplaceAll(row.Source, "{skill}", name))); err != nil && !os.IsNotExist(err) {
 				return nil, err
 			}
 		}
@@ -451,7 +451,7 @@ func planProfiles(layout stateroot.Layout, row runtimes.RegistrationRow, skills 
 	}
 	var actions []action
 	for _, name := range skills {
-		source := filepath.Join(layout.InstallationRoot, filepath.FromSlash(strings.ReplaceAll(row.Source, "{skill}", name)))
+		source := layout.InstallationRoot.Path(filepath.FromSlash(strings.ReplaceAll(row.Source, "{skill}", name)))
 		info, err := os.Stat(source)
 		if os.IsNotExist(err) {
 			continue

@@ -72,7 +72,7 @@ func digestRootWithLayoutReader(repoRoot string, resolveLayout func(string) (sta
 	if err != nil || !layout.Template || layout.InstallationRoot == "" {
 		return repoRoot
 	}
-	return layout.InstallationRoot
+	return layout.InstallationRoot.Path()
 }
 
 func Path(repoRoot string) string {

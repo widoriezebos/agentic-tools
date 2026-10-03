@@ -93,7 +93,7 @@ func agentCaller(inv *intentInvocation, checkout string) string {
 	}
 	installation := checkout
 	if layout, err := inv.owners.resolver.ResolveLayout(checkout); err == nil {
-		installation = layout.InstallationRoot
+		installation = layout.InstallationRoot.Path()
 	}
 	result, err := lease.ClassifyVerbAt(checkout, installation, int64(os.Getpid()))
 	if err != nil {

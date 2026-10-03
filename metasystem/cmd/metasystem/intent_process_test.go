@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -680,7 +681,7 @@ func TestStatusBoardChecksClaimsAtTheStateRoot(t *testing.T) {
 	installation := filepath.Join(top, "metasystem")
 	var read []string
 	inv := &intentInvocation{
-		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: installation, InstallationRel: "metasystem", Template: true},
+		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: stateroottest.Installation(t, installation), InstallationRel: "metasystem", Template: true},
 		stateRoot: installation,
 		owners: intentOwners{delivery: &intentDeliveryOwners{boardView: func(ledgerRoot string, _ time.Time) board.View {
 			read = append(read, ledgerRoot)

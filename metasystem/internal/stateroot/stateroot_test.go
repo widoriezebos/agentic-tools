@@ -97,7 +97,7 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 				top.expect(installation, app, nil)
 			}
 			gotBase, err := resolver.RootForInstallation(installation)
-			if err != nil || gotBase != base {
+			if err != nil || gotBase.Path() != base {
 				t.Fatalf("RootForInstallation() = %q, %v; want %q", gotBase, err, base)
 			}
 			for _, test := range tests {
@@ -105,7 +105,7 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 					top.expect(installation, app, nil)
 				}
 				got, err := resolver.StateRoot(test.kind)
-				if err != nil || got != filepath.Join(base, filepath.FromSlash(test.rel)) {
+				if err != nil || got.Path() != filepath.Join(base, filepath.FromSlash(test.rel)) {
 					t.Errorf("StateRoot(%q) = %q, %v; want %q", test.kind, got, err, filepath.Join(base, filepath.FromSlash(test.rel)))
 				}
 			}
@@ -142,7 +142,7 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 	}
 	resolver, top := resolverFixture(t, template)
 	got, err := resolver.RootForInstallation(template)
-	if err != nil || got != template {
+	if err != nil || got.Path() != template {
 		t.Fatalf("exact template marker resolved to %q, %v; want %q", got, err, template)
 	}
 
@@ -153,7 +153,7 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 	want := filepath.Join(root, "application")
 	top.expect(adopted, want, nil)
 	got, err = resolver.RootForInstallation(adopted)
-	if err != nil || got != want {
+	if err != nil || got.Path() != want {
 		t.Fatalf("adopted installation resolved to %q, %v; want %q", got, err, want)
 	}
 }
@@ -191,7 +191,7 @@ func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) 
 	if wantErr != nil {
 		t.Fatal(wantErr)
 	}
-	if err != nil || got != want {
+	if err != nil || got.Path() != want {
 		t.Fatalf("RootForCandidate() = %q, %v; want %q", got, err, want)
 	}
 }
@@ -211,7 +211,7 @@ func TestRootForCandidateKeepsNestedAdoptedStateAtTheInstallation(t *testing.T) 
 	if wantErr != nil {
 		t.Fatal(wantErr)
 	}
-	if err != nil || got != want {
+	if err != nil || got.Path() != want {
 		t.Fatalf("RootForCandidate() = %q, %v; want installation %q", got, err, want)
 	}
 }
@@ -321,7 +321,7 @@ func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *
 			}
 			wantRepo, _ := filepath.EvalSymlinks(repo)
 			wantInstallation, _ := filepath.EvalSymlinks(installation)
-			if layout.RepositoryRoot != wantRepo || layout.InstallationRoot != wantInstallation || layout.Template != nested {
+			if layout.RepositoryRoot != wantRepo || layout.InstallationRoot.Path() != wantInstallation || layout.Template != nested {
 				t.Fatalf("layout = %+v; want repository %s installation %s nested %v", layout, wantRepo, wantInstallation, nested)
 			}
 		})
@@ -349,7 +349,7 @@ func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
 		t.Fatal(err)
 	}
 	want, _ := filepath.EvalSymlinks(root)
-	if layout.RepositoryRoot != want || layout.InstallationRoot != want || layout.Template {
+	if layout.RepositoryRoot != want || layout.InstallationRoot.Path() != want || layout.Template {
 		t.Fatalf("fresh adopted layout = %+v; want root %s", layout, want)
 	}
 }
@@ -389,7 +389,7 @@ func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
 	}
 	wantApp, _ := filepath.EvalSymlinks(app)
 	wantInstallation, _ := filepath.EvalSymlinks(installation)
-	if nested.GitRoot != wantApp || nested.RepositoryRoot != wantInstallation || nested.InstallationRoot != wantInstallation || nested.InstallationRel != "vendor/nested runtime" || nested.Template {
+	if nested.GitRoot != wantApp || nested.RepositoryRoot != wantInstallation || nested.InstallationRoot.Path() != wantInstallation || nested.InstallationRel != "vendor/nested runtime" || nested.Template {
 		t.Fatalf("nested adopted layout = %+v", nested)
 	}
 
@@ -398,7 +398,7 @@ func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parent.GitRoot != wantApp || parent.RepositoryRoot != wantApp || parent.InstallationRoot != wantApp || parent.InstallationRel != "." || parent.Template {
+	if parent.GitRoot != wantApp || parent.RepositoryRoot != wantApp || parent.InstallationRoot.Path() != wantApp || parent.InstallationRel != "." || parent.Template {
 		t.Fatalf("parent adopted layout = %+v", parent)
 	}
 }
@@ -460,7 +460,7 @@ func TestTemplateModeIsTheCommittedKeyNotADocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver, _ := resolverFixture(t, template)
-	if got, err := resolver.RootForInstallation(template); err != nil || got != template {
+	if got, err := resolver.RootForInstallation(template); err != nil || got.Path() != template {
 		t.Fatalf("the declared template resolved to %q, %v; want %q", got, err, template)
 	}
 
@@ -480,7 +480,7 @@ func TestTemplateModeIsTheCommittedKeyNotADocument(t *testing.T) {
 	}
 	resolver, top := resolverFixture(t, adopted)
 	top.expect(adopted, other, nil)
-	if got, err := resolver.RootForInstallation(adopted); err != nil || got != other {
+	if got, err := resolver.RootForInstallation(adopted); err != nil || got.Path() != other {
 		t.Fatalf("a design document made %q a template: %q, %v", adopted, got, err)
 	}
 }

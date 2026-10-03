@@ -191,7 +191,7 @@ func (inv *intentInvocation) goalOwnerCall(owner func(syncRequestDependencies, i
 	dependencies, dir := inv.owners.dependencies, inv.layout.InstallationRoot
 	dependencies.report = nil
 	dependencies.authorityFacts.caller = ownercall.CurrentProcess()
-	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir, args) })
+	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir.Path(), args) })
 }
 
 // ownerCall runs one owner function in this process on fresh buffers and

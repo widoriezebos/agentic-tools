@@ -103,13 +103,13 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 	}
 	var extra []string
 	if !rootGiven {
-		extra = append(extra, "--root", layout.InstallationRoot)
+		extra = append(extra, "--root", layout.InstallationRoot.Path())
 	}
 	if receipts {
-		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot)
+		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot.Path())
 		relative, relErr := stateroot.RelativeRoot(stateroot.Receipts)
 		if err == nil && relErr == nil {
-			extra = append(extra, "--file", filepath.Join(stateRoot, relative, "receipts.log"))
+			extra = append(extra, "--file", stateRoot.Path(relative, "receipts.log"))
 		}
 	}
 	// The options go after the leading words the usage shows before them
@@ -593,7 +593,7 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
 		return inv.owners.delivery.boardView(ledgerRoot, now)
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(ledgerRoot)).View(now)
+	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 }
 
 func (inv *intentInvocation) boardNow() time.Time {

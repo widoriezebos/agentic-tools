@@ -57,6 +57,15 @@ type receiptLineWorkspace interface {
 	ChangedPaths(fromTree, toTree string) ([]string, error)
 }
 
+// stateRootPath adapts a state-root resolver to the plain-path reader the
+// receipt-line check takes.
+func stateRootPath(resolve func(string) (stateroot.State, error)) func(string) (string, error) {
+	return func(installation string) (string, error) {
+		root, err := resolve(installation)
+		return root.Path(), err
+	}
+}
+
 // ObserveReceiptLine decides whether a landing that changes code appends,
 // in the same commit, the RECEIPT line that describes it to the receipt
 // ledger (development/project-rules-local.md: bookkeeping-only commits
@@ -77,7 +86,7 @@ func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
 		return observeReceiptLineWithDependencies(params, workspace,
 			func(root string) (string, error) {
 				return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).HeadTree()
-			}, resolver.RootForInstallation, resolver.OwnerForInstallation)
+			}, stateRootPath(resolver.RootForInstallation), resolver.OwnerForInstallation)
 	}
 	headTree := func(root string) (string, error) {
 		baseTreeBytes, err := landingGit(root, "rev-parse", "HEAD^{tree}")
@@ -87,7 +96,7 @@ func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
 		return strings.TrimSpace(string(baseTreeBytes)), nil
 	}
 	return observeReceiptLineWithDependencies(params, workspace, headTree,
-		stateroot.RootForInstallation, stateroot.OwnerForInstallation)
+		stateRootPath(stateroot.RootForInstallation), stateroot.OwnerForInstallation)
 }
 
 func observeReceiptLineWithDependencies(

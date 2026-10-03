@@ -72,7 +72,7 @@ func TestResolveLayoutFromAFileUsesItsDirectory(t *testing.T) {
 	top.expectCanonical(filepath.Dir(file), root, nil)
 	layout, err := resolver.ResolveLayout(file)
 	want, _ := filepath.EvalSymlinks(root)
-	if err != nil || layout.InstallationRoot != want || layout.InstallationRel != "." || layout.Template {
+	if err != nil || layout.InstallationRoot.Path() != want || layout.InstallationRel != "." || layout.Template {
 		t.Fatalf("layout from file = %+v, %v; want adopted root %s", layout, err, want)
 	}
 }

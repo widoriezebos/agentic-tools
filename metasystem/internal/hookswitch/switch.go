@@ -112,10 +112,10 @@ func ConfiguredRuntimes(installation string) []string {
 // repository root, as .gitattributes names it.
 func TestingContract(layout stateroot.Layout) string {
 	name := "testing.json"
-	if value, present, err := config.ConfLookup(filepath.Join(layout.InstallationRoot, "metasystem.conf"), "testing.contract"); err == nil && present && strings.TrimSpace(value) != "" {
+	if value, present, err := config.ConfLookup(layout.InstallationRoot.Path("metasystem.conf"), "testing.contract"); err == nil && present && strings.TrimSpace(value) != "" {
 		name = strings.TrimSpace(value)
 	}
-	relative, err := filepath.Rel(layout.RepositoryRoot, filepath.Join(layout.InstallationRoot, filepath.FromSlash(name)))
+	relative, err := filepath.Rel(layout.RepositoryRoot, layout.InstallationRoot.Path(filepath.FromSlash(name)))
 	if err != nil {
 		return name
 	}
@@ -151,8 +151,8 @@ func run(path string, options *Options, deps Deps) (Report, error) {
 		return Report{}, &RefusalError{Reason: fmt.Sprintf("%s is not inside one metasystem installation: %v", path, err),
 			Remedy: "run this inside the checkout, or name its installation with --installation DIR"}
 	}
-	report := Report{Installation: layout.InstallationRoot}
-	engine, err := hooks.DirectEngine(layout.InstallationRoot, deps.Git)
+	report := Report{Installation: layout.InstallationRoot.Path()}
+	engine, err := hooks.DirectEngine(layout.InstallationRoot.Path(), deps.Git)
 	if err != nil {
 		return report, &RefusalError{Reason: "the engine this checkout's hooks would run cannot be found: " + err.Error(),
 			Remedy: "check the checkout with: metasystem system check"}
@@ -169,7 +169,7 @@ func run(path string, options *Options, deps Deps) (Report, error) {
 	if options != nil {
 		selected := options.Runtimes
 		if len(selected) == 0 {
-			selected = ConfiguredRuntimes(layout.InstallationRoot)
+			selected = ConfiguredRuntimes(layout.InstallationRoot.Path())
 		}
 		result, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: path, Runtimes: selected, CopySkills: options.CopySkills}, deps.Resolve)
 		if err != nil {
@@ -185,7 +185,7 @@ func run(path string, options *Options, deps Deps) (Report, error) {
 		}
 		report.Changed = append(report.Changed, result.Changed...)
 	}
-	report.Fence, report.FenceHook, err = ensureFence(layout.InstallationRoot, deps)
+	report.Fence, report.FenceHook, err = ensureFence(layout.InstallationRoot.Path(), deps)
 	if err != nil || options == nil {
 		return report, err
 	}

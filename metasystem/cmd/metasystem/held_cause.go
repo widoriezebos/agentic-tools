@@ -107,7 +107,7 @@ func (inv *intentInvocation) trailerAmend(err error, goalID string, state intent
 	if !errors.As(err, &shape) || shape.Trailer == "" || shape.Commit == "" || shape.Commit != state.BranchTip || owners.trailerWorktree == nil {
 		return nil
 	}
-	worktree := owners.trailerWorktree(inv.layout.InstallationRoot, goalID, shape.Commit, state.EndpointTip)
+	worktree := owners.trailerWorktree(inv.layout.InstallationRoot.Path(), goalID, shape.Commit, state.EndpointTip)
 	if worktree == "" {
 		return nil
 	}

@@ -29,7 +29,10 @@ func (e *RootsMismatchError) Error() string {
 // Git top, so every verb works from any directory. It is the one place the three
 // roots are derived, so a launcher and its child cannot disagree.
 func ResolveRoots(repo, installation string) (Roots, error) {
-	return ResolveRootsWith(stateroot.RepositoryTop, stateroot.RootForInstallation, repo, installation)
+	return ResolveRootsWith(stateroot.RepositoryTop, func(installation string) (string, error) {
+		root, err := stateroot.RootForInstallation(installation)
+		return root.Path(), err
+	}, repo, installation)
 }
 
 // ResolveRootsWith is ResolveRoots with the Git top and state-root readers a

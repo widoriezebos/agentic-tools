@@ -501,7 +501,7 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 		if err != nil {
 			return stateroot.Layout{}, "", false, inv.notARepository(path, err)
 		}
-		return layout, layout.InstallationRoot, false, nil
+		return layout, layout.InstallationRoot.Path(), false, nil
 	}
 	named := inv.input.text("installation")
 	if !filepath.IsAbs(named) {
@@ -515,7 +515,7 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 			Details: []string{"--installation: " + err.Error()}}
 	}
 	owned, ownedErr := inv.owners.resolver.ResolveLayout(installation)
-	if ownedErr != nil || !sameCanonicalPath(owned.InstallationRoot, installation) {
+	if ownedErr != nil || !sameCanonicalPath(owned.InstallationRoot.Path(), installation) {
 		return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
 			Summary: fmt.Sprintf("%s is not a metasystem installation; nothing was done", shellCommand([]string{installation})),
 			next:    inv.retryWith([]string{"installation"}), nextReason: "the repository's own installation is found without --installation",
@@ -552,7 +552,7 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 			next:    strings.Fields(hookswitch.BuildCommand), nextReason: "in " + installation + ", builds the engine; then repeat this command",
 			Details: []string{"no engine in " + filepath.Join(installation, "bin")}}
 	}
-	if inv.stateRoot, err = inv.owners.resolver.RootForInstallation(installation); err != nil {
+	if inv.stateRoot, err = inv.stateRootPath(installation); err != nil {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}}
 	}
@@ -884,7 +884,7 @@ func (inv *intentInvocation) selectLayoutRoot() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err == nil {
 		inv.layout = layout
-		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.stateRoot, err = inv.stateRootPath(layout.InstallationRoot.Path())
 	}
 	if err != nil {
 		return inv.notARepository(path, err)
@@ -1826,7 +1826,7 @@ func checkCovenantShape(scope processScope) (string, error) {
 func setupDrift(layout stateroot.Layout) []string {
 	repair := "; metasystem system setup repairs it"
 	var drift []string
-	selected := hookswitch.ConfiguredRuntimes(layout.InstallationRoot)
+	selected := hookswitch.ConfiguredRuntimes(layout.InstallationRoot.Path())
 	check := func(options hostsetup.Options) error {
 		_, err := hostsetup.SetupWithResolver(options, func(string) (stateroot.Layout, error) { return layout, nil })
 		return err
@@ -1843,7 +1843,7 @@ func setupDrift(layout stateroot.Layout) []string {
 			drift = append(drift, "hooks do not run the engine: "+err.Error()+repair)
 		}
 	}
-	engine, err := hooks.DirectEngine(layout.InstallationRoot, hookswitch.Git)
+	engine, err := hooks.DirectEngine(layout.InstallationRoot.Path(), hookswitch.Git)
 	if err != nil {
 		return append(drift, "the engine the hooks would run cannot be found: "+err.Error())
 	}
@@ -1991,7 +1991,7 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
+	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
@@ -2482,7 +2482,7 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
+	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",

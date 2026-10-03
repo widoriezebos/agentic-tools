@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,15 +18,52 @@ import (
 // when the metasystem is installed beneath an application repository.
 type Kind string
 
+// Installation and State are the two root types of internal/roots, named here
+// beside the resolver that produces them. The installation root holds what
+// MetaSystem deploys and the state root holds what the application evolves; a
+// path joined onto the wrong one reaches the other owner's files, so the two do
+// not convert into each other. Only this package's constructors and parsers
+// make a root value from a string.
+type (
+	Installation = roots.Installation
+	State        = roots.State
+)
+
+// ParseInstallation admits a path that arrives as a plain string, such as a
+// flag or a recorded field, as an installation root. The path must be a
+// directory holding metasystem.conf, the shape the executable's own
+// installation is held to; anything else is refused, so a state directory
+// cannot be mistaken for the installation.
+func ParseInstallation(path string) (Installation, error) {
+	root, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("state root: locate installation: %w", err)
+	}
+	if err := validateInstallationShape(root); err != nil {
+		return "", err
+	}
+	return Installation(root), nil
+}
+
+// ParseState admits a path that arrives as a plain string, such as a flag or a
+// recorded field, as a state root. The result is absolute and clean.
+func ParseState(path string) (State, error) {
+	root, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("state root: locate state root: %w", err)
+	}
+	return State(root), nil
+}
+
 // Layout names an explicitly resolved installation and the repository that
 // hosts its runtime entry points. Setup callers pass a path in the target
 // repository; resolution never depends on the binary performing the setup.
 type Layout struct {
-	GitRoot          string // actual containing Git root, or the fresh installation before Git exists
-	RepositoryRoot   string // root that owns host registration files
-	InstallationRoot string // canonical installation that supplies enforcement and skills
-	InstallationRel  string // installation path relative to GitRoot for generated launchers
-	Template         bool   // template-only pointers belong at RepositoryRoot
+	GitRoot          string       // actual containing Git root, or the fresh installation before Git exists
+	RepositoryRoot   string       // root that owns host registration files
+	InstallationRoot Installation // canonical installation that supplies enforcement and skills
+	InstallationRel  string       // installation path relative to GitRoot for generated launchers
+	Template         bool         // template-only pointers belong at RepositoryRoot
 }
 
 const (
@@ -117,40 +155,41 @@ func scrubGitSteering(environment []string) []string {
 // StateRoot returns the absolute directory owned by kind. Template checkouts
 // keep their self-hosted state beneath the installation; adopted installations
 // resolve state against the containing application repository.
-func StateRoot(kind Kind) (string, error) { return defaultResolver().StateRoot(kind) }
+func StateRoot(kind Kind) (State, error) { return defaultResolver().StateRoot(kind) }
 
-func (r Resolver) StateRoot(kind Kind) (string, error) {
+func (r Resolver) StateRoot(kind Kind) (State, error) {
 	relative, err := relativeRoot(kind)
 	if err != nil {
 		return "", err
 	}
-	installationRoot, err := r.installationRoot()
+	installationRoot, err := r.ExecutableInstallation()
 	if err != nil {
 		return "", err
 	}
-	appRoot, err := r.RootForInstallation(installationRoot)
+	appRoot, err := r.RootForInstallation(installationRoot.Path())
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(appRoot, filepath.FromSlash(relative)), nil
+	return State(appRoot.Path(filepath.FromSlash(relative))), nil
 }
 
 // RootForInstallation returns the directory beneath which repository-local
 // state lives. Template checkouts keep it in the metasystem installation;
 // adopted installations use the containing application repository.
-func RootForInstallation(installationRoot string) (string, error) {
+func RootForInstallation(installationRoot string) (State, error) {
 	return defaultResolver().RootForInstallation(installationRoot)
 }
 
-func (r Resolver) RootForInstallation(installationRoot string) (string, error) {
+func (r Resolver) RootForInstallation(installationRoot string) (State, error) {
 	root, err := filepath.Abs(installationRoot)
 	if err != nil {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
 	}
 	if templateMode(root) {
-		return root, nil
+		return State(root), nil
 	}
-	return r.repositoryTop(root)
+	top, err := r.repositoryTop(root)
+	return State(top), err
 }
 
 // ResolveLayout locates a checked-in metasystem installation from a repository
@@ -186,7 +225,7 @@ func (r Resolver) ResolveLayout(repositoryPath string) (Layout, error) {
 		// coincide, so an ancestor carrying the complete installed shape is an
 		// explicit root without consulting the executing binary.
 		if adopted := adoptedAncestor(absolute); adopted != "" {
-			return Layout{GitRoot: adopted, RepositoryRoot: adopted, InstallationRoot: adopted, InstallationRel: "."}, nil
+			return Layout{GitRoot: adopted, RepositoryRoot: adopted, InstallationRoot: Installation(adopted), InstallationRel: "."}, nil
 		}
 		return Layout{}, err
 	}
@@ -195,17 +234,17 @@ func (r Resolver) ResolveLayout(repositoryPath string) (Layout, error) {
 	}
 	if installation := installationAncestor(absolute, repository); installation != "" {
 		if installation == filepath.Join(repository, "metasystem") && templateMode(installation) {
-			return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: installation, InstallationRel: filepath.ToSlash(filepath.Base(installation)), Template: true}, nil
+			return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: Installation(installation), InstallationRel: filepath.ToSlash(filepath.Base(installation)), Template: true}, nil
 		}
 		relative, relErr := filepath.Rel(repository, installation)
 		if relErr != nil {
 			return Layout{}, fmt.Errorf("state root: locate installation beneath repository: %w", relErr)
 		}
-		return Layout{GitRoot: repository, RepositoryRoot: installation, InstallationRoot: installation, InstallationRel: filepath.ToSlash(relative)}, nil
+		return Layout{GitRoot: repository, RepositoryRoot: installation, InstallationRoot: Installation(installation), InstallationRel: filepath.ToSlash(relative)}, nil
 	}
 	nested := filepath.Join(repository, "metasystem")
 	if templateMode(nested) && installationShape(nested) {
-		return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: nested, InstallationRel: "metasystem", Template: true}, nil
+		return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: Installation(nested), InstallationRel: "metasystem", Template: true}, nil
 	}
 	return Layout{}, fmt.Errorf("state root: path %q selects neither a nested template nor an adopted installation", absolute)
 }
@@ -255,7 +294,7 @@ func installationShape(root string) bool {
 // RootForCandidate validates and canonicalizes an installation named by a caller.
 // The installation must carry the same shape required of the executable's
 // installation before callers use it as a state owner.
-func RootForCandidate(candidate string) (string, error) {
+func RootForCandidate(candidate string) (Installation, error) {
 	root, err := filepath.Abs(candidate)
 	if err != nil {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
@@ -268,7 +307,7 @@ func RootForCandidate(candidate string) (string, error) {
 	if err := validateInstallationShape(root); err != nil {
 		return "", err
 	}
-	return root, nil
+	return Installation(root), nil
 }
 
 // RepositoryTop returns the Git toplevel containing path after removing Git
@@ -301,7 +340,14 @@ func relativeRoot(kind Kind) (string, error) {
 	}
 }
 
-func (r Resolver) installationRoot() (string, error) {
+// ExecutableInstallation returns the installation the running engine belongs
+// to: the directory above the bin/ that holds the executable, which must hold
+// metasystem.conf.
+func ExecutableInstallation() (Installation, error) {
+	return defaultResolver().ExecutableInstallation()
+}
+
+func (r Resolver) ExecutableInstallation() (Installation, error) {
 	executable, err := r.executablePath()
 	if err != nil {
 		return "", fmt.Errorf("state root: locate executable: %w", err)
@@ -316,7 +362,7 @@ func (r Resolver) installationRoot() (string, error) {
 	if err := validateInstallationShape(root); err != nil {
 		return "", fmt.Errorf("state root: executable %q is not installed at <installation>/bin/metasystem", executable)
 	}
-	return root, nil
+	return Installation(root), nil
 }
 
 func validateInstallationShape(root string) error {

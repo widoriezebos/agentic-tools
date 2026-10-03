@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -311,7 +310,7 @@ func ReceiptLedgerPath(installation string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("the state root of %s cannot be resolved: %w", installation, err)
 	}
-	return filepath.Join(root, "memory", "receipts.log"), nil
+	return root.Path("memory", "receipts.log"), nil
 }
 
 func ledgerDigest(data []byte) string {

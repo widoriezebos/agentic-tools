@@ -250,10 +250,10 @@ func budgetExtensionReceiptPathWithReads(repoRoot string, reads receiptAdmission
 		return "", err
 	}
 	top = resolvedBudgetExtensionPath(top)
-	appRoot = resolvedBudgetExtensionPath(appRoot)
-	relativeApp, err := filepath.Rel(top, appRoot)
+	appPath := resolvedBudgetExtensionPath(appRoot.Path())
+	relativeApp, err := filepath.Rel(top, appPath)
 	if err != nil || relativeApp == ".." || strings.HasPrefix(relativeApp, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("budget extension receipt root %s is outside repository %s", appRoot, top)
+		return "", fmt.Errorf("budget extension receipt root %s is outside repository %s", appPath, top)
 	}
 	receiptRoot, err := stateroot.RelativeRoot(stateroot.Receipts)
 	if err != nil {

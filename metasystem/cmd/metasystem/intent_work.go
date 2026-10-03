@@ -86,7 +86,7 @@ type intentWorkOwners struct {
 const unitReadFindingsClass = diskstore.UnitReadFindingsClass
 
 func intentConfPath(layout stateroot.Layout) string {
-	return filepath.Join(layout.InstallationRoot, "metasystem.conf")
+	return layout.InstallationRoot.Path("metasystem.conf")
 }
 
 func (inv *intentInvocation) work() intentWorkOwners {
@@ -416,11 +416,11 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 // installation's own configuration.
 func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ launch.StartSpec) error {
 	conn := inv.connection()
-	endpoint, err := conn.endpoint(inv.layout.InstallationRoot)
+	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return err
 	}
-	return branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, record.Goal, endpoint))
+	return branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint))
 }
 
 // build
@@ -581,10 +581,10 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	// The goal must be this session's before anything is reserved: a goal
 	// another session holds is refused with the claim owner's own reason.
 	conn := inv.connection()
-	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot); err != nil {
+	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path()); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch can't be reached, so nothing was built",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
-	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
+	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
 			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds",
 			Details: refusalCodeDetails(goal.RefusalCode(err))})
@@ -1351,7 +1351,7 @@ func runIntentWaitTarget(inv *intentInvocation, kind, id string, job *intentJob)
 		}
 		targets = []intentTarget{{Kind: "job", ID: jobReference(*job)}}
 	}
-	args := []string{"--root", inv.layout.InstallationRoot, "--" + kind, id}
+	args := []string{"--root", inv.layout.InstallationRoot.Path(), "--" + kind, id}
 	if kind == "goal" {
 		selector := metarun.WaitSelector{Kind: "goal", TargetID: id, GoalID: id, Event: inv.input.text("for"), After: inv.input.text("since"),
 			Verb: inv.input.text("verb"), Question: inv.input.text("question"), Chain: inv.input.text("chain")}
@@ -1436,7 +1436,7 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	args = append([]string{"--root", inv.layout.InstallationRoot}, args...)
+	args = append([]string{"--root", inv.layout.InstallationRoot.Path()}, args...)
 	if timeout > 0 {
 		args = append(args, "--timeout", timeout.String())
 	}
@@ -1478,7 +1478,7 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 	if row, _, err := metarun.FindWaiterByID(inv.stateRoot, id); err == nil && row.Selector.Poll == "channel" {
 		return inv.render(inv.resumeChannelWait(id, row, timeout, targets))
 	}
-	args := []string{"--root", inv.layout.InstallationRoot, "--resume", id}
+	args := []string{"--root", inv.layout.InstallationRoot.Path(), "--resume", id}
 	if timeout > 0 {
 		args = append(args, "--timeout", timeout.String())
 	}
@@ -1546,7 +1546,7 @@ func runIntentTest(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	argv := []string{"internal", "test", "run", "--json", "--root", inv.layout.InstallationRoot}
+	argv := []string{"internal", "test", "run", "--json", "--root", inv.layout.InstallationRoot.Path()}
 	targets := []intentTarget{}
 	for _, name := range []string{"goal", "authority", "mode"} {
 		if inv.input.has(name) {
@@ -1618,9 +1618,9 @@ func runIntentSettingsKeys(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	conf, matching := filepath.Join(inv.layout.InstallationRoot, "metasystem.conf"), inv.input.text("matching")
+	conf, matching := inv.layout.InstallationRoot.Path("metasystem.conf"), inv.input.text("matching")
 	ran := ownerCall(func(stdout, _ io.Writer) int { return inv.ownerCalls().configKeys(stdout, conf, matching) })
-	keys := ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot})
+	keys := ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot.Path(), map[string]any{"installation": inv.layout.InstallationRoot.Path()})
 	if keys.Outcome == intentConfirmed {
 		shown := "the configured keys of " + inv.statusSeatName(inv.layout.GitRoot)
 		keys.headline = &shown
@@ -1635,42 +1635,42 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	}
 	root := inv.layout.InstallationRoot
 	ran := ownerCall(func(stdout, stderr io.Writer) int {
-		return inv.ownerCalls().configValidate(stdout, stderr, filepath.Join(root, "metasystem.conf"), root)
+		return inv.ownerCalls().configValidate(stdout, stderr, root.Path("metasystem.conf"), root.Path())
 	})
-	settings := ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root})
+	settings := ownerVerbResult(ran, nil, "the settings of "+root.Path()+" are valid", map[string]any{"installation": root.Path()})
 	if settings.Outcome != intentConfirmed {
 		return inv.render(settings)
 	}
 	// The text names the checkout as a person does; --json keeps the path.
 	seat := inv.statusSeatName(inv.layout.GitRoot)
 	render := func(result intentResult) int {
-		shown := strings.ReplaceAll(result.Summary, root, seat)
+		shown := strings.ReplaceAll(result.Summary, root.Path(), seat)
 		result.headline = &shown
 		return inv.render(result)
 	}
 	// The testing contract the settings name is validated with its declared
 	// tools; no test runs and no native discovery takes the host's lease.
-	path, groups, err := testrun.ContractReady(root, false)
+	path, groups, err := testrun.ContractReady(root.Path(), false)
 	if err != nil {
-		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
-			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error(),
+		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root.Path()},
+			Summary: "the settings of " + root.Path() + " are valid, but the testing contract is not: " + err.Error(),
 			next:    inv.sameCommand(), nextReason: "after correcting the testing contract"})
 	}
-	settings.Summary = "the settings of " + root + " and their testing contract are valid"
+	settings.Summary = "the settings of " + root.Path() + " and their testing contract are valid"
 	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %s", inv.shownPath(path), textui.Count(groups, "group", "groups")))
 	// The launch contract is validated here too, with the same kind of line:
 	// a project that has one gets its faults named before a start, and a
 	// project that has none is not a project with a problem.
-	launchPath, launchContract, launchTools, launchErr := launchContractReady(root)
+	launchPath, launchContract, launchTools, launchErr := launchContractReady(root.Path())
 	switch {
 	case errors.Is(launchErr, errNoLaunchContract):
 		settings.text = append(settings.text, "launch contract: none declared")
 	case launchErr != nil:
-		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
+		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root.Path()},
 			Summary: "the settings and testing contract are valid, but the launch contract is not: " + launchErr.Error(),
 			next:    inv.sameCommand(), nextReason: "after correcting the launch contract"})
 	default:
-		settings.Summary = "the settings of " + root + ", their testing contract and their launch contract are valid"
+		settings.Summary = "the settings of " + root.Path() + ", their testing contract and their launch contract are valid"
 		settings.text = append(settings.text, fmt.Sprintf("launch contract %s: %s, readiness %s, %s",
 			inv.shownPath(launchPath), launchContractName(launchContract), launchContract.ReadyKind(), launchContract.DataWord()))
 		for _, tool := range launchTools {
@@ -1718,7 +1718,7 @@ func runIntentSettings(inv *intentInvocation) int {
 	if len(inv.input.args) == 0 {
 		// Every external adapter and override, and every refused one
 		// (design verbs-object-action 3.5).
-		adapters, _ := adapterReport(inv.layout.InstallationRoot)
+		adapters, _ := adapterReport(inv.layout.InstallationRoot.Path())
 		text = append(text, adapters...)
 		data["adapters"] = adapters
 	}
@@ -2166,15 +2166,15 @@ func runIntentDeclareStopMoves(inv *intentInvocation) int {
 		declare = audit.DeclareStopDecisionSurface
 	}
 	root := inv.layout.InstallationRoot
-	before := stopMovesSnapshot(root)
-	path, err := declare(root, audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goal.StopSurfaceGoalReader}, id, reason)
+	before := stopMovesSnapshot(root.Path())
+	path, err := declare(root.Path(), audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goal.StopSurfaceGoalReader}, id, reason)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error() + "; nothing was declared",
 			next: inv.publicArgv("goal", "allow", id, "stop-test-changes", "--reason", "TEXT"), nextReason: "a person allows goal " + id + " to move Stop assertions, then this declares the moves"})
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), Summary: "declared the Stop decision moves in " + path + "; commit it with the change",
 		Data: map[string]any{"declaration": path}}
-	if before == stopMovesSnapshot(root) {
+	if before == stopMovesSnapshot(root.Path()) {
 		result.Outcome, result.Summary = intentUnchanged, "the declaration "+path+" already records these moves; nothing changed"
 	}
 	return inv.render(result)
@@ -2250,11 +2250,11 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		return result
 	}
 	if inv.stateRoot == "" {
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
 		if err != nil {
 			return refused("this installation's state can't be found", err)
 		}
-		inv.stateRoot = root
+		inv.stateRoot = root.Path()
 	}
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
 		return refused("who is at this terminal can't be checked here", nil)

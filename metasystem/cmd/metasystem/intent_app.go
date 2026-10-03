@@ -146,7 +146,7 @@ func (inv *intentInvocation) appVerb(verb string) int {
 		return inv.render(*problem)
 	}
 	targets := []intentTarget{{Kind: "app", ID: layout.GitRoot}}
-	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
+	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, layout.GitRoot, installation)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})

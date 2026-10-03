@@ -91,7 +91,7 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.installation == nil {
 		owners.installation = func(root string) (string, error) {
 			layout, err := inv.owners.resolver.ResolveLayout(root)
-			return layout.InstallationRoot, err
+			return layout.InstallationRoot.Path(), err
 		}
 	}
 	if owners.unset == nil {
@@ -409,7 +409,7 @@ func (inv *intentInvocation) landingActor(owners laneVerbOwners) string {
 		return by
 	}
 	if inv.resolveLayout() == nil {
-		return owners.by(inv.layout.InstallationRoot)
+		return owners.by(inv.layout.InstallationRoot.Path())
 	}
 	return "a person at " + inv.cwd
 }
@@ -426,7 +426,7 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	path := inv.callerPath(inv.input.args[0])
 	seat := ""
 	if inv.resolveLayout() == nil {
-		seat = inv.layout.InstallationRoot
+		seat = inv.layout.InstallationRoot.Path()
 	}
 	invalid := func(err error) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path),
@@ -575,7 +575,7 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 	}
 	proveAt := inv.cwd
 	if inv.resolveLayout() == nil {
-		proveAt = inv.layout.InstallationRoot
+		proveAt = inv.layout.InstallationRoot.Path()
 	}
 	if _, err := owners.person(proveAt); err != nil {
 		refused := inv.personRefusal("", err, inv.input.text("by"))
@@ -834,7 +834,7 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 	}
 	proveAt := inv.cwd
 	if inv.resolveLayout() == nil {
-		proveAt = inv.layout.InstallationRoot
+		proveAt = inv.layout.InstallationRoot.Path()
 	}
 	by, err := owners.person(proveAt)
 	if err != nil {

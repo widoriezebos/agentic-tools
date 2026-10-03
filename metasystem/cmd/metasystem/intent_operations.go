@@ -41,7 +41,7 @@ func (inv *intentInvocation) engineVerb(verb string, args ...string) (verbresult
 	if envelope == nil {
 		envelope = runIntentOwnerEnvelope
 	}
-	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot}, verb)
+	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot.Path()}, verb)
 	return result, nil, readErr
 }
 
@@ -290,11 +290,11 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		if problem := inv.resolveLayout(); problem != nil {
 			return inv.render(*problem)
 		}
-		inv.stateRoot, _ = inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		inv.stateRoot, _ = inv.stateRootPath(inv.layout.InstallationRoot.Path())
 	} else if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot}}
+	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot.Path()}}
 	scope := map[string]any{"scope": "installation", "stateRoot": inv.stateRoot}
 	switch choice {
 	case "recover":
@@ -419,13 +419,13 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
 	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
-	request := missionResolveRequest{root: root, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
+	request := missionResolveRequest{root: root.Path(), mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
 		by: inv.input.text("by"), reason: inv.input.text("reason")}
 	done := fmt.Sprintf("mission %s: problem %s is resolved as confirmed restored; files were not changed by this command", mission, inv.input.text("problem"))
 	if choice != "confirm-restored" {
@@ -520,7 +520,7 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot}}
+	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot.Path()}}
 	base, err := goal.BaseTip(inv.stateRoot)
 	var deltas []goal.SnapshotDelta
 	if err == nil {
@@ -626,12 +626,12 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "this installation's records cannot be found, so nothing was read",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
-	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot})
+	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot.Path(), StateRoot: stateRoot.Path()})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the project's records cannot be read: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record homes"})
 	}

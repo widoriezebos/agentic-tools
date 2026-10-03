@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // connectionBed is a physical Git repository (the work bed's goal ledger
@@ -764,5 +765,25 @@ func TestIntentGoalWorktreePreparation(t *testing.T) {
 	}
 	if path, result := w.prepare(owners); result != nil || path != w.worktree || connectionGit(t, path, "symbolic-ref", "--short", "HEAD") != "goal/"+w.id {
 		t.Fatalf("racing creation: %q %+v", path, result)
+	}
+}
+
+// A review's close is aimed at the checkout the review ran in, which arrives
+// as a plain path: it replaces the selected installation only when it holds
+// metasystem.conf.
+func TestReviewCloseAdmitsItsCheckoutThroughParseInstallation(t *testing.T) {
+	t.Parallel()
+	selected, checkout := t.TempDir(), t.TempDir()
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, selected)}}
+	if closer, refused := inv.closerAt(nil, checkout); closer != nil || refused == nil || refused.Outcome != intentRefused ||
+		!strings.Contains(strings.Join(refused.Details, "\n"), "is not a metasystem installation") {
+		t.Fatalf("closerAt = %v, %+v; want a refusal of a checkout without metasystem.conf", closer, refused)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	closer, refused := inv.closerAt(nil, checkout)
+	if refused != nil || closer.layout.InstallationRoot.Path() != checkout || inv.layout.InstallationRoot.Path() != selected {
+		t.Fatalf("closerAt = %+v, %+v; want a copy aimed at %s that leaves the selected installation %s", closer, refused, checkout, selected)
 	}
 }

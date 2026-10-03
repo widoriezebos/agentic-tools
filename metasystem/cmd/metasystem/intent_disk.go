@@ -219,7 +219,7 @@ func runIntentDiskShow(inv *intentInvocation) int {
 	if caches != nil {
 		data["caches"] = caches
 	}
-	root, rootProblem := diskEvidenceRoot(inv.layout.InstallationRoot)
+	root, rootProblem := diskEvidenceRoot(inv.layout.InstallationRoot.Path())
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "what MetaSystem keeps on this computer's disk", Data: data,
 		Targets: []intentTarget{{Kind: "checkout", ID: top}},
 		view: func(page *textui.Page) {
@@ -876,7 +876,7 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 // done or disk.cache-trim-person-budget-sec is spent, telling each pass
 // that left a cache unfinished on stderr.
 func diskTrim(inv *intentInvocation, owners diskOwners) (int, []string, []gocache.TrimReport, *intentResult) {
-	run := steward.CacheTrimRun{Top: inv.layout.InstallationRoot, UserCacheDir: owners.userCacheDir, StateDir: owners.stateDir, Clock: owners.now, Pass: owners.trimPass}
+	run := steward.CacheTrimRun{Top: inv.layout.InstallationRoot.Path(), UserCacheDir: owners.userCacheDir, StateDir: owners.stateDir, Clock: owners.now, Pass: owners.trimPass}
 	reports, err := steward.TrimMachineCachesForPerson(context.Background(), run, func(pass int, reports []gocache.TrimReport) {
 		for _, report := range reports {
 			if report.EndedBy == "budget" {

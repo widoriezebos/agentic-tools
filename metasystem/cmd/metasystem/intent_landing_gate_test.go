@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 const gateBedTip = "2222222222222222222222222222222222222222"
@@ -169,7 +170,7 @@ func TestThePushGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
 	}
 	gateOf := func(amend func(*goal.GoalFile)) error {
 		b, _, _ := gatedDeliveryBed(t, amend)
-		inv := &intentInvocation{owners: b.deliveryOwners(), layout: stateroot.Layout{InstallationRoot: b.install}, stateRoot: b.root()}
+		inv := &intentInvocation{owners: b.deliveryOwners(), layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, b.install)}, stateRoot: b.root()}
 		return inv.pushGate()(b.install, bedGoal)
 	}
 

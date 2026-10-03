@@ -265,16 +265,16 @@ func resolveCompleteManifestRoot(root string) (completeManifestRoot, error) {
 	if err != nil {
 		return completeManifestRoot{}, fmt.Errorf("resolve frozen state root: %w", err)
 	}
-	stateRoot, err = filepath.EvalSymlinks(stateRoot)
+	statePath, err := filepath.EvalSymlinks(stateRoot.Path())
 	if err != nil {
 		return completeManifestRoot{}, fmt.Errorf("resolve frozen state root: %w", err)
 	}
-	statePrefix, err := filepath.Rel(projectRoot, stateRoot)
+	statePrefix, err := filepath.Rel(projectRoot, statePath)
 	if err != nil {
 		return completeManifestRoot{}, fmt.Errorf("resolve frozen state-root prefix: %w", err)
 	}
 	if statePrefix == ".." || strings.HasPrefix(statePrefix, ".."+string(filepath.Separator)) {
-		return completeManifestRoot{}, fmt.Errorf("frozen state root %s is outside project root %s", stateRoot, projectRoot)
+		return completeManifestRoot{}, fmt.Errorf("frozen state root %s is outside project root %s", statePath, projectRoot)
 	}
 	if statePrefix == "." {
 		statePrefix = ""

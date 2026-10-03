@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // review run RUN connects a built unit to the goal branch evidence landing
@@ -124,7 +125,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	// The selected installation's endpoint and claim authorize every
 	// effect; the goal worktree's own resolution must agree, because the
 	// read and publication owners resolve there.
-	endpoint, err := conn.endpoint(original)
+	endpoint, err := conn.endpoint(original.Path())
 	if err != nil {
 		return refuse(retry, "try again; --verbose shows the cause", "the goal branch can't be reached, so nothing was committed", "the goal branch endpoint is unavailable: %v", err)
 	}
@@ -132,7 +133,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return refuse(inv.publicArgv("system", "check"), "shows both configurations", "the goal worktree points at another goal branch than this checkout, so nothing was committed",
 			"goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s", install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
 	}
-	check := conn.claimCheck(original, goalID, endpoint)
+	check := conn.claimCheck(original.Path(), goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
 		return refuse(inv.publicArgv("goal", "show", goalID), "shows who holds the goal", fmt.Sprintf("this session can't commit to goal %s's branch, so nothing was committed", goalID), "%v", err)
 	}
@@ -140,7 +141,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	tip := func() (string, error) {
 		if endpointTip == "" {
 			var tipErr error
-			endpointTip, tipErr = conn.endpointTip(original, endpoint)
+			endpointTip, tipErr = conn.endpointTip(original.Path(), endpoint)
 			if tipErr != nil {
 				return "", tipErr
 			}
@@ -287,8 +288,8 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	if inv.input.has("model") {
 		args = append(args, "--model", inv.input.text("model"))
 	}
-	if install != original {
-		args = append(args, "--selected-installation", original)
+	if install != original.Path() {
+		args = append(args, "--selected-installation", original.Path())
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
@@ -413,6 +414,22 @@ func resolveUnitCommit(git func(string, ...string) ([]byte, error), install, end
 	return found, nil
 }
 
+// closerAt is this invocation aimed at the installation at root, the checkout
+// the review ran in, so the close owner writes the review's records there.
+// root arrives as a plain path and is admitted as an installation before it
+// replaces the selected one: a directory that holds no metasystem.conf is
+// refused, never closed into.
+func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*intentInvocation, *intentResult) {
+	installation, err := stateroot.ParseInstallation(root)
+	if err != nil {
+		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's checkout holds no MetaSystem installation, so nothing was closed",
+			next: inv.publicArgv("system", "check"), nextReason: "names what is wrong here", Details: []string{err.Error()}}
+	}
+	closer := *inv
+	closer.layout.InstallationRoot = installation
+	return &closer, nil
+}
+
 // commitReview requests, collects and publishes the committed read of one
 // Goal-Unit commit through the branch read owner and the collected-read
 // publication owner, with its records in root. A terminal critic whose
@@ -434,8 +451,10 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			if inv.reviewWork == nil && inv.input.has("dispositions") {
 				// An explicitly named commit's review closes with the author's
 				// decisions through the whole close owner, then collects below.
-				closer := *inv
-				closer.layout.InstallationRoot = root
+				closer, refused := inv.closerAt(targets, root)
+				if refused != nil {
+					return *refused
+				}
 				closed := closer.closeChain(result.RootJob)
 				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 					closed.Targets = append(targets, closed.Targets...)
@@ -453,8 +472,10 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				}
 				// A completed examination with no findings has nothing to
 				// decide: its empty join closes through the whole close owner.
-				closer := *inv
-				closer.layout.InstallationRoot = root
+				closer, refused := inv.closerAt(targets, root)
+				if refused != nil {
+					return *refused
+				}
 				closer.input = intentInput{values: map[string][]string{"dispositions": {join}}}
 				closed := closer.closeChain(result.RootJob)
 				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {

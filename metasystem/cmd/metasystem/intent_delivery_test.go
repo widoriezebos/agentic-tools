@@ -70,7 +70,7 @@ func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bed.install = layout.InstallationRoot
+	bed.install = layout.InstallationRoot.Path()
 	bed.owners = &intentDeliveryOwners{
 		// The bed's close owner runs as a person's act (its engine wrapper
 		// classifies HUMAN); the record-writer authority owner judges that

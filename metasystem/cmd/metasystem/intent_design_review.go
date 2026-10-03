@@ -44,7 +44,7 @@ type designReviewEntry struct {
 }
 
 func (inv *intentInvocation) designReviewEntryPath(recordID string) string {
-	return filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json")
+	return inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json")
 }
 
 func (inv *intentInvocation) readDesignReviewEntry(recordID string) designReviewEntry {
@@ -67,7 +67,7 @@ func (inv *intentInvocation) writeDesignReviewEntry(recordID string, entry desig
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteText(path, string(data)+"\n", inv.layout.InstallationRoot)
+	_, err = atomicfile.WriteText(path, string(data)+"\n", inv.layout.InstallationRoot.Path())
 	return err
 }
 
@@ -101,7 +101,7 @@ func (plan designReviewPlan) writeMissingInputs() error {
 // existing critique chain; nil means no chain exists and the first review
 // is dispatched as before.
 func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentResult {
-	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, plan.goalID, plan.design)
+	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
 	switch {
 	case len(chains) == 0:
 		if inv.input.has("dispositions") || inv.input.has("retry") || inv.input.has("after") {
@@ -166,7 +166,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	}
 	// The design changed since the newest examination: its findings need
 	// the author's decisions before the chain continues.
-	returnPath := inv.returnPathAt(inv.layout.InstallationRoot, chain.Root, chain.NewestRound)
+	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
 	digest, _, _ := reviewReturnDigest(returnPath)
 	findings, _, _ := readIntentFindings(returnPath)
 	binding := reviewBinding{Goal: plan.goalID, Work: "design:" + plan.recordID, Attempt: int(chain.NewestRound), Subject: examined,
@@ -200,7 +200,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was requested",
 			next: inv.typedArgvLess("dispositions", "after"), nextReason: "shows the current findings and writes their decisions file"}
 	}
-	returnPath := inv.returnPathAt(inv.layout.InstallationRoot, chain.Root, bound.Round)
+	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round)
 	if digest, _, readErr := reviewReturnDigest(returnPath); readErr != nil || digest != bound.Return || entry.Subjects[strconv.FormatInt(bound.Round, 10)] != bound.Subject {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("the decisions file doesn't answer review %d of design %s as it was recorded; nothing was requested", bound.Round, plan.recordID),
@@ -244,7 +244,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the follow-up review's brief can't be written, so nothing was requested",
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 		}
-		if _, err := atomicfile.WriteText(followUp, text, inv.layout.InstallationRoot); err != nil {
+		if _, err := atomicfile.WriteText(followUp, text, inv.layout.InstallationRoot.Path()); err != nil {
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the follow-up review's brief can't be written, so nothing was requested",
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 		}
@@ -300,7 +300,7 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 	}
 	if request.Child == "" {
 		// A lost response: the operation's own record names the child.
-		if job, record, err := dispatchcore.FindOperationRecord(inv.layout.InstallationRoot, request.OperationID); err == nil && job != "" {
+		if job, record, err := dispatchcore.FindOperationRecord(inv.layout.InstallationRoot.Path(), request.OperationID); err == nil && job != "" {
 			if recordText(record, "parentJob") == "" || !designChildOf(inv, record, request.Root) {
 				return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1,
 					Summary:  "this request is recorded on a job that belongs to another critique; nothing was requested",
@@ -349,7 +349,7 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 // designChildOf reports whether a job record is a round of the critique
 // root, by its chain.
 func designChildOf(inv *intentInvocation, record map[string]any, root string) bool {
-	chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot, recordText(record, "jobId"))
+	chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot.Path(), recordText(record, "jobId"))
 	return err == nil && chainRoot == root
 }
 
@@ -378,7 +378,7 @@ func (inv *intentInvocation) acquireDesignCritiqueClaim(goalID string) *intentRe
 // recordFirstDesignExamination retains the design version the first
 // examination of a new chain reads.
 func (inv *intentInvocation) recordFirstDesignExamination(plan designReviewPlan) {
-	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, plan.goalID, plan.design)
+	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
 	if len(chains) != 1 {
 		return
 	}
@@ -421,7 +421,7 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 			Summary: fmt.Sprintf("design %s is unchanged, but you accepted finding(s) %s; nothing was closed", plan.recordID, strings.Join(accepted, ", ")),
 			next:    inv.sameCommand(), nextReason: "after changing the design to address them; the critique then reviews the new version"}
 	}
-	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
+	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
 		return withCauseRef(err, intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: "the decisions can't be recorded, so nothing was closed",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("critique %s: %v", chain.Root, err)}})
@@ -475,7 +475,7 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	if recordText(chain.Newest, "status") != "completed" {
 		return &result
 	}
-	returnPath := inv.returnPathAt(inv.layout.InstallationRoot, chain.Root, chain.NewestRound)
+	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
 	digest, _, err := reviewReturnDigest(returnPath)
 	if err != nil {
 		return &result

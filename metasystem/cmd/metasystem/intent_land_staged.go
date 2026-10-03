@@ -92,7 +92,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			Summary: notAnInstallation(path, err),
 			next:    append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "names the repository; or run it inside one"})
 	}
-	request.Root = layout.InstallationRoot
+	request.Root = layout.InstallationRoot.Path()
 	owners := landingPathOwners()
 	if request.GoalSet && !inv.input.switched("local") {
 		// A hand-made change landed in a goal's name meets the goal's gate
@@ -100,9 +100,9 @@ func runIntentLandStaged(inv *intentInvocation) int {
 		// The gate's facts are lines on the synced ledger; an installation
 		// with none lands through the landing path's own held check as it
 		// did before.
-		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
-		inv.layout, inv.stateRoot = layout, stateRoot
-		if rootErr == nil && converted(stateRoot) {
+		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot.Path())
+		inv.layout, inv.stateRoot = layout, stateRoot.Path()
+		if rootErr == nil && converted(stateRoot.Path()) {
 			if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {
 				return inv.render(*refused)
 			}

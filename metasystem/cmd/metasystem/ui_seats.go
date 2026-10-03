@@ -88,7 +88,7 @@ func (inv *intentInvocation) uiOtherSeats(layout stateroot.Layout) uiSeatInvento
 			inventory.Problems = append(inventory.Problems, fmt.Sprintf("machine %s: %s", machine.Name, problem.Summary))
 			continue
 		}
-		roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, seatLayout.GitRoot, installation)
+		roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.stateRootPath, seatLayout.GitRoot, installation)
 		if err != nil {
 			inventory.Problems = append(inventory.Problems, fmt.Sprintf("machine %s: %v", machine.Name, err))
 			continue

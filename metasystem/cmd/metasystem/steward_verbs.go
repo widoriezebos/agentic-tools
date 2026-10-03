@@ -229,7 +229,7 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "steward revive: %v\n", rootErr)
 			return 1
 		}
-		if err := steward.PrepareIntent(repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
+		if err := steward.PrepareIntent(repo, receiptRoot.Path("receipts.log"), it); err != nil {
 			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}

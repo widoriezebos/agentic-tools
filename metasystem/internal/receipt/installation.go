@@ -24,7 +24,7 @@ func AddToInstallation(root string, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("receipt: %w", err)
 	}
 	opts.Root = root
-	opts.File = filepath.Join(appRoot, filepath.FromSlash(relative), "receipts.log")
+	opts.File = appRoot.Path(filepath.FromSlash(relative), "receipts.log")
 	defaults := map[*string]string{&opts.Skills: "none", &opts.Verify: "skipped", &opts.Corrections: "0", &opts.StopLoss: "no"}
 	for field, value := range defaults {
 		if *field == "" {

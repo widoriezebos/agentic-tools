@@ -243,11 +243,11 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 		return work, nil
 	}
 	conn := inv.connection()
-	endpoint, err := conn.endpoint(inv.layout.InstallationRoot)
+	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return work, nil
 	}
-	base, err := conn.endpointTip(inv.layout.InstallationRoot, endpoint)
+	base, err := conn.endpointTip(inv.layout.InstallationRoot.Path(), endpoint)
 	if err != nil {
 		return work, nil
 	}
@@ -552,8 +552,8 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		if inv.input.has("model") {
 			args = append(args, "--model", inv.input.text("model"))
 		}
-		if install != inv.layout.InstallationRoot {
-			args = append(args, "--selected-installation", inv.layout.InstallationRoot)
+		if install != inv.layout.InstallationRoot.Path() {
+			args = append(args, "--selected-installation", inv.layout.InstallationRoot.Path())
 		}
 		targets := []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: item.Unit}, {Kind: "commit", ID: item.Commit}}
 		result := inv.commitReview(targets, install, id, item.Commit, args)

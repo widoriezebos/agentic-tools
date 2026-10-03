@@ -87,7 +87,7 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 		return path
 	}
 	checkout := canonical(inv.layout.GitRoot)
-	roots := project.Roots{Checkout: checkout, Installation: canonical(inv.layout.InstallationRoot), StateRoot: canonical(inv.stateRoot)}
+	roots := project.Roots{Checkout: checkout, Installation: canonical(inv.layout.InstallationRoot.Path()), StateRoot: canonical(inv.stateRoot)}
 	var home string
 	for _, candidate := range project.Homes(roots) {
 		if candidate.Kind == project.KindDesign && candidate.Glob == "" && designWithin(candidate.Path, checkout) {
@@ -492,7 +492,7 @@ func (inv *intentInvocation) goalDesignAttempts(id string) []designAttemptView {
 	if manager == nil {
 		return nil
 	}
-	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: inv.stateRoot}
+	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot.Path(), StateRoot: inv.stateRoot}
 	candidates := []string{}
 	if read, err := project.Read(roots); err == nil {
 		for _, record := range read.List(project.KindDesign, project.ListOptions{Goal: id}) {

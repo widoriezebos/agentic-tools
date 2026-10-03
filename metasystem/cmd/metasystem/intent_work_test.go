@@ -675,13 +675,13 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	layout, _ := owners.resolver.ResolveLayout(bed.root())
 	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || result.Next == nil ||
 		!slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-1"}) || layout.InstallationRoot == "" ||
-		!slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--job", "job-1", "--timeout", "5m0s"}) {
+		!slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot.Path(), "--job", "job-1", "--timeout", "5m0s"}) {
 		t.Fatalf("wait deadline: code=%d %+v args=%v", code, result, waitArgs)
 	}
 	// The printed continuation is itself a public command that resumes the
 	// same recorded wait through the wait owner.
 	code, result = run("work", "wait", "wait:wait-1")
-	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || !slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--resume", "wait-1"}) ||
+	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || !slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot.Path(), "--resume", "wait-1"}) ||
 		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-1"}) {
 		t.Fatalf("wait resume: code=%d %+v args=%v", code, result, waitArgs)
 	}
@@ -715,7 +715,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		t.Fatalf("wait without a result: code=%d %+v", code, result)
 	}
 	code, result = run("test", "run", "--goal", bed.id, "--authority", "claimed-goal", "--mode", "standard")
-	if code != 1 || result.Outcome != intentFailed || parsed.Root != layout.InstallationRoot || parsed.GoalID != bed.id || parsed.AuthorityGoalID != "claimed-goal" {
+	if code != 1 || result.Outcome != intentFailed || parsed.Root != layout.InstallationRoot.Path() || parsed.GoalID != bed.id || parsed.AuthorityGoalID != "claimed-goal" {
 		t.Fatalf("test: code=%d %+v parsed=%+v", code, result, parsed)
 	}
 	if encoded, _ := json.Marshal(result.Data); string(encoded) != `{"outcome":"red"}` {

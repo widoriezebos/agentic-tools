@@ -162,7 +162,7 @@ func (o hookOwners) StateRoot(installation string) (string, int) {
 		o.diagnose("%v", err)
 		return "", 1
 	}
-	return root + "\n", 0
+	return root.Path() + "\n", 0
 }
 
 func (o hookOwners) HookDelegate(root, metasystemRoot, job string, callerPid int) (string, int) {
@@ -436,7 +436,7 @@ func (o hookOwners) ReceiptCheck(root string) (string, string, int) {
 	if err != nil {
 		return "", "receipt: " + err.Error() + "\n", 1
 	}
-	options.File = filepath.Join(receiptRoot, "receipts.log")
+	options.File = receiptRoot.Path("receipts.log")
 	result := receipt.Check(options)
 	var stdout, stderr strings.Builder
 	for _, line := range result.Out {
