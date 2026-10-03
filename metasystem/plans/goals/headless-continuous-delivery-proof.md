@@ -1,6 +1,6 @@
 # headless-continuous-delivery-proof
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 15
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="False acceptance would authorize unattended delivery without its mandatory controls; the proof combines existing mechanisms in an isolated repository."
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Next: stay blocked until its open blockers are done (fleet-pull, one-approval-gate, design-gate-at-dispatch, landing-design-provenance, chain-landing-carries-the-reviewed-diff, manifest-floor-at-dispatch); then plan the run on a throwaway repository using the steward-started seat for the empty-queue wake-up. Done when: the run records consecutive landed goals, correct skips, refused shortcuts and the automatic pickup of a goal approved after the queue emptied.
 - OpenedAt: 2026-09-07T21:10:19Z
-- Revision: 51
+- Revision: 52
 - BlockedBy: chain-landing-after-base-move-recertifies, critique-always, design-gate-at-dispatch, first-headless-run, host-runtime-setup, landing-design-provenance, manifest-floor-at-dispatch, metasystem-stop-verb, seat-works-without-a-person
 - Labels: headless-fleet, headless-proof
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:29:13Z revision=52 opid=QPEHAGW03NMT88MB9MG6G2Z73T-m1e-718ba0eb authority=proven digest=732b322a3f45de867edfb83363d08e8e40d079d3269ec809e181b52545dbfff2 episode=52
 
 History:
 - 2026-09-07T21:10:19Z 22FAT0ZP0DTE6WQH9F6Q7CQ8DW-m1-76f67331 open actor=human:Wido targets=headless-continuous-delivery-proof
@@ -67,4 +68,5 @@ History:
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:18 to=2:17
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:17 to=2:16; blocker one-approval-gate waived: one-approval-gate is concluded on Wido's word; the proof no longer waits for a mission-contract change
 - 2026-10-03T12:28:58Z KZV4ERVBRHNVHQEAZ4AG9FQBZ1-m1e-718ba0eb set-priority actor=human:Wido targets=arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=host-setup-from-scratch from=2:16 to=2:15 requested-sequence=20
-Integrity: sha256=55ae02df17c48cd3f2ac3c50215247f4c8417ed7078e7df98c75a7cefda80910
+- 2026-10-03T12:29:13Z QPEHAGW03NMT88MB9MG6G2Z73T-m1e-718ba0eb approve actor=human:Wido targets=headless-continuous-delivery-proof
+Integrity: sha256=7697973dfd4b338722e4011df14958e577a2f73a0ed5cb6da88c9e79fcdf9049
