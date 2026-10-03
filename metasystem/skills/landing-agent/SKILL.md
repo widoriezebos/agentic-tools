@@ -25,7 +25,8 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 ## The loop
 
 1. Read `landing status --json`. If `paused`, stop. If `running_proof` is set, end your turn.
-2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3.
+2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3. A green proof is
+   never left unpushed: when the push refuses because main moved, do case 5 before anything else.
 3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then
    `git merge --no-ff SHA` for the `sha` of every `waiting` line, and `landing prove`. End your
    turn.
@@ -41,7 +42,10 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    `git merge --abort` and return that goal with the conflicting paths as the reason; land the
    rest.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
-   merge again on the new main and prove again.
+   check out the new main, merge the same shas the green proof covered, in the same order, and
+   `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
+   the same turn. Lines that began waiting meanwhile are not added: proven work is pushed first, and
+   they are the next batch.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
 7. **The proof won't run** (`running_proof.state` is `died`, or the command fails before testing
    anything): prove once more; if it fails again, return the waiting goals with what you saw as
