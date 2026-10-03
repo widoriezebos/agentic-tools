@@ -1446,6 +1446,10 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		if result != nil {
 			return *result
 		}
+		// The join is checked before anything is written.
+		if violations := validate.CritiqueClosed(inv.returnPath(job, recordRound(round)), inv.flagPath("dispositions")); len(violations) > 0 {
+			return joinRefusal(targets, job, violations, inv.sameCommand())
+		}
 		// Only a follow-up dispatch folds the round before it, so the
 		// terminal round the decisions answer is folded here; a repeat is
 		// unchanged. The fold decides nothing: the round's material findings
