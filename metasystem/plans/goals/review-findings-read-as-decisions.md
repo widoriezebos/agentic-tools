@@ -1,6 +1,6 @@
 # review-findings-read-as-decisions
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 21
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="The surface where a person decides what lands; a wrong consequence text makes him record what he did not mean, so severity 2; new fields in the critic's return and new decision acts, novelty 2; every review sitting, exposure 2; nothing accumulates beyond the review records"
@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: UX design first, by a UX designer, from m1e's input at agentic-tools-evidence/review-sitting-ux-20261003/design-input.md (the screenshot, the three questions a person asks, the summary line, the finding card in plain layers, the four decisions with their consequences, the verdict step, phone width, and where the plain text comes from: the critic writes title, why-it-matters and recommendation as return fields under the message audit, the Partner only as fallback). Agree the finding fields with critique-stops-on-convergence. Tier-2 critique, then build in slices: the summary and cards with the four decisions (desktop and phone), the critic's plain fields and their audit, the verdict step. Done when: a person can read a sitting without any id or path, every button says what follows, and a recorded decision is shown back as 'recorded on goal X as ...'; tests cover each decision act. ADDED 16:35 (Wido: 'it is totally unclear what these do ... UX needs a hard look at this to help me understand what this is and what it is for'): the review header is in scope too, screen 2 of the design input: the goal and version under review told by step and time (the commit id behind a hint), whether a newer version exists, the reviewer's state in words, 'Try this version: Start' for the reviewed application with what it does and where, and one place for 'See the change / See the evidence' per finding. No 'tip', 'candidate', 'anchor' or 'desk' on screen; every control a verb with its consequence. ADDED 16:40 (Wido: the whole flow): screen 3 of the design input: a guided review in four steps (what you are looking at; what the reviewer found, untouched findings follow the recommendation; try it; your verdict with the nod first and one press), End and Step out as one leave; a nod with open findings asks once instead of refusing; a sitting of an old version says so and offers the one act. The UX designer designs the flow before the cards.; ASKED B0KQAT0JSVGN1M30T41RTZ7Q3A (other): Review room redesign: may I build step 1 as drawn? Mock: ~/metasystem-evidence/agentic-tools-ui/review-findings-20261003/mocks/blocking-1440.png CORRECTION 2026-10-03 19:20 (Wido: 'I don't know where the phone width came from I NEVER ASKED FOR THAT'): phone width was added by m1e, not asked; it is out of scope: no phone-width layout and no phone tests; desktop only. Follow-up unit after step 1 lands (fix forward, risks accepted in Wido's word 21:42 and 22:18): (a) a verdict refuses and asks again when the record changed after it was shown, end to end including the retry, compared again under the authority's own lock; (b) a finding with no recommendation and no decision of the person's needs the person's own decision, with the impact said before the reason (R-143); (c) Review the current version carries offered, unsaved findings into the earlier-findings section the new look reads (F-1). Estimate 1.5 h. UPDATE 2026-10-04 01:00: the follow-up unit (a), (b) and (c) is handed to the lane (unit c15894d89, read 15e127d57, four reads; the fourth's finding accepted as a risk in Wido's word 00:55). Remaining, fix forward, one unit, estimate 2 h: (d) the freshness class as ONE rule: the verdict write compares the whole record as shown (version, every finding and every finding's answer), not case by case; one test per change kind (another version, an added finding, a changed answer, a decision still saving); (e) two rooms pressing Review the current version on one review in the same second: the second room's offered, unsaved finding is carried into Earlier findings too (F-1 of read 54dafc9b); (f) a decision pressed on the card of a hand-written finding with no mark refuses ('This finding is not in the record'): give the line an identity on its first decision, so the card and the verdict both record it.
 - OpenedAt: 2026-10-03T14:24:15Z
-- Revision: 60
+- Revision: 61
 - Pinned: ui
 - Budget: elapsedLimit=1d4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -20,8 +20,7 @@
 - AcceptedRisk: finding=F-1 chain=code-critic-530a7c874a7e7ee144997ade by=Wido opid=RRJC4FCQ19MRQNQMETFRHVJAXQ-ui-31a738e9
 - AcceptedRisk: finding=RULING-R-143-m1e chain=code-critic-530a7c874a7e7ee144997ade by=Wido opid=1KKD6B4Y6FSX9F0GQEPC01S56V-ui-31a738e9
 - AcceptedRisk: finding=RULING-review-findings-read-as-decisions chain=code-critic-35b4a6ad78148089275aa9d5 by=Wido opid=Y23VNZ7SKN1KA8TN6WERYYW43J-ui-31a738e9
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T22:11:54Z revision=58 accountingRevision=56 episodeAt=2026-10-03T14:50:04Z episodeRevision=9 idleSeconds=14
-- StopCapability: generation=58 revision=58 machine=ui claimEpoch=3 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=56 episodeAt=2026-10-03T14:50:04Z episodeRevision=9 idleSeconds=14 released=2026-10-03T23:30:44Z
 
 History:
 - 2026-10-03T14:24:15Z 5NY52EMF7696VJY0TBPGZ5W14X-m1e-718ba0eb open actor=human:Wido targets=review-findings-read-as-decisions
@@ -84,4 +83,5 @@ History:
 - 2026-10-03T22:11:54Z RXVTSNEM2XJFYKM4D1GK41V00K-ui-71c5cb39 claim actor=ui+steward-seat targets=review-findings-read-as-decisions
 - 2026-10-03T22:54:46Z Y23VNZ7SKN1KA8TN6WERYYW43J-ui-31a738e9 accept-risk actor=human:Wido targets=review-findings-read-as-decisions reason=Accepted by m1e in Wido word (land fast, fix non-breaking forward): improbable, needs a second room deciding the same finding between the plan and the press; what the pressing person saw is what is recorded; the freshness class is fixed forward as one rule comparing the whole record as shown
 - 2026-10-03T22:55:43Z J8GFVTPMH6XDKT8XYGSF66QXND-ui-71c5cb39 edit actor=ui+steward-seat targets=review-findings-read-as-decisions
-Integrity: sha256=9e02adc626c0d101b6db6ad3ae7b39c318051519c31530394a2bef735a1e26b6
+- 2026-10-03T23:30:44Z DJA83BGXY6A00BWCVEDH6HEJD6-ui-71c5cb39 release actor=ui+steward-seat targets=review-findings-read-as-decisions reason=its follow-up unit landed (f1e52b7bb); lines d, e and f wait until fleet-page-redesign step 3 lands, in the order m1e gave
+Integrity: sha256=18e695a390cdea2830a72dd0992f1672e3c17c729ffab292e115b28128b31cfd
