@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestCallRegistrationsReadsStrictSnapshot(t *testing.T) {
@@ -99,7 +101,7 @@ func TestCallSessionsDiscoversPairsWithoutReadingSamples(t *testing.T) {
 		for _, session := range []string{"high.tmp", "safe-session", "unsafe/session"} {
 			transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 			writeCallRows(t, transcript, claudeAssistant(session, 10, 0, 0, false, "2026-09-13T10:00:00Z"))
-			if _, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+			if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
 				t.Fatal(err)
 			}
 		}

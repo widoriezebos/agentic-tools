@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
@@ -17,7 +19,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 		firstAt := "2026-09-13T10:00:00Z"
 		secondAt := "2026-09-13T11:00:00Z"
 		writeCallRows(t, transcript, claudeAssistant("first", 10, 0, 0, false, firstAt))
-		if _, err := LatestCall(stateRoot, "claude", "snapshot", ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+		if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "snapshot", ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
 			t.Fatal(err)
 		}
 		if err := RegisterSession(stateRoot, "claude", "snapshot", 101, 1001); err != nil {
@@ -61,7 +63,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 		t.Cleanup(func() { callFileOpens = previousOpen })
 		writerDone := make(chan error, 1)
 		go func() {
-			_, err := LatestCall(stateRoot, "claude", "snapshot", ReadOptions{Capability: PerCall, Transcript: transcript})
+			_, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "snapshot", ReadOptions{Capability: PerCall, Transcript: transcript})
 			writerDone <- err
 		}()
 		<-writerAttempted
@@ -101,7 +103,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 		stateRoot := t.TempDir()
 		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 		writeCallRows(t, transcript, claudeAssistant("ordered", 10, 0, 0, false, "2026-09-13T10:00:00Z"))
-		if _, err := LatestCall(stateRoot, "claude", "ordered", ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+		if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "ordered", ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
 			t.Fatal(err)
 		}
 		if err := RegisterSession(stateRoot, "claude", "ordered", 201, 2001); err != nil {
@@ -113,7 +115,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 			run  func() error
 		}{
 			{"latest call", func() error {
-				_, err := LatestCall(stateRoot, "claude", "ordered", ReadOptions{Capability: PerCall, Transcript: transcript})
+				_, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "ordered", ReadOptions{Capability: PerCall, Transcript: transcript})
 				return err
 			}},
 			{"calls", func() error {
@@ -180,7 +182,7 @@ func TestCallRetentionPreservesNonBlockingReads(t *testing.T) {
 		}
 	}
 	assertStoreBusy("latest call", func() error {
-		_, err := LatestCall(stateRoot, "claude", "busy", ReadOptions{
+		_, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "busy", ReadOptions{
 			Capability: PerCall, Transcript: transcript, NonBlocking: true,
 		})
 		return err

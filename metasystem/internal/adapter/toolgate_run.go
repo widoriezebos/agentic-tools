@@ -105,7 +105,7 @@ func RunToolGate(opts ToolGateOptions) error {
 		return nil
 	}
 
-	budget, err := config.ContextBudget(opts.Installation.Path())
+	budget, err := config.ContextBudget(opts.Installation)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func RunToolGate(opts ToolGateOptions) error {
 
 	readOptions := toolGateReadOptions(payload.TranscriptPath, deadline, opts.Clock)
 	readOptions.Capability = usage.PerCall
-	reading, readErr := usage.LatestCall(opts.Installation.Path(), "claude", payload.SessionID, readOptions)
+	reading, readErr := usage.LatestCall(opts.Installation, "claude", payload.SessionID, readOptions)
 	if readErr != nil {
 		cause := "read-error"
 		if toolGateBusy(readErr) {

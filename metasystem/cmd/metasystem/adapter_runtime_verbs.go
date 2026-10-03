@@ -55,7 +55,7 @@ func runAdapterClaudeToolGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0
 	}
-	mode, err := config.ToolGateMode(installation.Path())
+	mode, err := config.ToolGateMode(installation)
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0

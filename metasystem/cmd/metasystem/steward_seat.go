@@ -29,8 +29,8 @@ type stewardSeatLauncher struct {
 	start func(launch.StartSpec) (launch.Record, error)
 	// repositoryTop is the Git top of the checkout that holds a path.
 	repositoryTop func(string) (string, error)
-	// settings are the launch settings of the installation at a state root.
-	settings func(stateRoot string) (launch.Settings, error)
+	// settings are the launch settings of an installation.
+	settings func(installationRoot string) (launch.Settings, error)
 	// laneRoot is the checkout the host's landing lane record names.
 	laneRoot func() (string, bool, error)
 }
@@ -38,8 +38,15 @@ type stewardSeatLauncher struct {
 // SeatAllowed answers the steward's seat decision (Amendment 1): the host's
 // landing lane never starts a seat, whatever its settings, and elsewhere a
 // seat starts only when the installation's layered settings turn
-// launch.seat.runtime on.
-func (l stewardSeatLauncher) SeatAllowed(stateRoot string) (bool, string, error) {
+// launch.seat.runtime on. The steward asks with its own root, which holds
+// both the checkout's state and the installation's settings.
+func (l stewardSeatLauncher) SeatAllowed(root string) (bool, string, error) {
+	return l.seatAllowed(root, root)
+}
+
+// seatAllowed reads the landing lane against the checkout that holds the
+// state root and the settings from the installation's metasystem.conf.
+func (l stewardSeatLauncher) seatAllowed(stateRoot, installationRoot string) (bool, string, error) {
 	top, err := l.repositoryTop(stateRoot)
 	if err != nil {
 		return false, "", fmt.Errorf("the checkout that holds %s cannot be read: %w", stateRoot, err)
@@ -54,7 +61,7 @@ func (l stewardSeatLauncher) SeatAllowed(stateRoot string) (bool, string, error)
 			return false, "this checkout is the host's landing lane, and the landing lane never starts a seat", nil
 		}
 	}
-	settings, err := l.settings(stateRoot)
+	settings, err := l.settings(installationRoot)
 	if err != nil {
 		return false, "", err
 	}
@@ -64,11 +71,11 @@ func (l stewardSeatLauncher) SeatAllowed(stateRoot string) (bool, string, error)
 	return true, "", nil
 }
 
-// installationSettings are the launch settings of the installation at a
-// state root, layered as settings read them: metasystem.conf, then
-// metasystem.conf.local, then the environment.
-func installationSettings(stateRoot string) (launch.Settings, error) {
-	return launch.ResolveSettings(filepath.Join(stateRoot, "metasystem.conf"), launchLookupEnv)
+// installationSettings are the launch settings of an installation, layered
+// as settings read them: metasystem.conf, then metasystem.conf.local, then
+// the environment.
+func installationSettings(installationRoot string) (launch.Settings, error) {
+	return launch.ResolveSettings(filepath.Join(installationRoot, "metasystem.conf"), launchLookupEnv)
 }
 
 // hostLandingLaneRoot is the checkout the host's landing lane record names.
@@ -101,7 +108,7 @@ func newStewardSeatLauncher() stewardSeatLauncher {
 // installation from there), and binds to the fence that state root keeps.
 // The launch names no goal, for a goal id names no checkout.
 func (l stewardSeatLauncher) StartSeat(spec steward.SeatLaunchSpec) error {
-	allowed, reason, err := l.SeatAllowed(spec.StateRoot)
+	allowed, reason, err := l.seatAllowed(spec.StateRoot, spec.Installation)
 	if err != nil {
 		return err
 	}
@@ -116,7 +123,7 @@ func (l stewardSeatLauncher) StartSeat(spec steward.SeatLaunchSpec) error {
 	if start == nil {
 		// The seat runs on the installation's own settings, which turned
 		// it on, not on those the engine binary's folder would resolve.
-		settings, err := l.settings(spec.StateRoot)
+		settings, err := l.settings(spec.Installation)
 		if err != nil {
 			return err
 		}

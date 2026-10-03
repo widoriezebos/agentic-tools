@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // validateRepo prepares a repository whose registration checks are gated off
@@ -164,7 +165,7 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 			putFile(t, filepath.Join(root, "metasystem.conf"), test.setting)
 			// The code is data beside the plain words, never in them.
 			words := strings.Replace(strings.TrimPrefix(test.want, "key="), " reason=", " ", 1)
-			_, loadErr := ContextBudget(root)
+			_, loadErr := ContextBudget(stateroottest.Installation(t, root))
 			if refusal.CodeOf(loadErr) != "CONTEXT_CONFIG_INVALID" || !strings.Contains(loadErr.Error(), words) ||
 				strings.Contains(loadErr.Error(), "CONTEXT_CONFIG_INVALID") || !strings.Contains(refusal.DetailOf(loadErr), "CONTEXT_CONFIG_INVALID "+test.want) {
 				t.Fatalf("accessor accepted %q: %v", test.setting, loadErr)
@@ -189,7 +190,7 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 	root := t.TempDir()
 	setting := ContextHandoffMarginTokensKey + "=143362\n"
 	putFile(t, filepath.Join(root, "metasystem.conf"), setting)
-	budget, err := ContextBudget(root)
+	budget, err := ContextBudget(stateroottest.Installation(t, root))
 	if problems := validateRepo(t, validConf+setting); err != nil || budget.Trigger != ContextConstructionLineTokens || len(problems) != 0 {
 		t.Fatalf("construction line was not accepted: budget=%+v err=%v problems=%v", budget, err, problems)
 	}

@@ -228,7 +228,7 @@ func TestToolGateNoDecisionWhenTheCallStoreIsBusy(t *testing.T) {
 func TestToolGateLeavesTheCursor(t *testing.T) {
 	root, transcript := toolGateFixture(t, 10)
 	session := "unchanged"
-	if _, err := usage.LatestCall(root, "claude", session, usage.ReadOptions{Capability: usage.PerCall, Transcript: transcript}); err != nil {
+	if _, err := usage.LatestCall(stateroottest.Installation(t, root), "claude", session, usage.ReadOptions{Capability: usage.PerCall, Transcript: transcript}); err != nil {
 		t.Fatal(err)
 	}
 	appendToolGateSample(t, transcript, "second", 120000)

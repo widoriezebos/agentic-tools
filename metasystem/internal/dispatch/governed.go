@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const governedObligationRevisionMismatch = "obligationRevision"
@@ -158,7 +159,13 @@ func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.Governed
 	}
 	decision := o.Decide(goal.EffectAuthorizeSpend)
 	active := o.State == goal.ObligationLimited || o.State == goal.ObligationEnforced
-	policy, err := config.CorrelationPolicy(repoRoot)
+	// The policy slot is the installation's configuration: a root that holds
+	// no metasystem.conf is refused, never read as an empty slot.
+	installation, err := stateroot.ParseInstallation(repoRoot)
+	policy := ""
+	if err == nil {
+		policy, err = config.CorrelationPolicy(installation)
+	}
 	if err != nil {
 		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "policy=unreadable", fmt.Errorf("the review policy setting cannot be read: %w", err))
 	}

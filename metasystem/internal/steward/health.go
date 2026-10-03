@@ -492,7 +492,7 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(func() RoleVerdict { return checkSessionMain(runRoot, prober) }),
 		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
 		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
-		timed(func() RoleVerdict { return checkContextBudget(runRoot, metasystemRoot, now, prober) }),
+		timed(func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),

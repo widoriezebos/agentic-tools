@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestLatestCallReadsAClaudeTranscriptToTheFigure(t *testing.T) {
@@ -28,7 +30,7 @@ func TestLatestCallReadsAClaudeTranscriptToTheFigure(t *testing.T) {
 		claudeAssistant("B", 5000, 0, 45000, false, "2026-09-13T10:03:00Z"),
 	)
 
-	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{
 		Capability: PerCall,
 		Home:       home,
 		Toplevel:   toplevel,
@@ -64,7 +66,7 @@ func TestLatestCallReadsBoundedTail(t *testing.T) {
 	session := "bounded-tail"
 	oldRow := claudeAssistant("old", 1, 0, 0, false, "2026-09-13T10:00:00Z")
 	writeCallRows(t, transcript, oldRow)
-	baseline, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript})
+	baseline, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,7 @@ func TestLatestCallReadsBoundedTail(t *testing.T) {
 	callBytesRead = func(count int) { bytesRead += count }
 	t.Cleanup(func() { callBytesRead = previousCounter })
 
-	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{
 		Capability: PerCall,
 		Transcript: transcript,
 		MaxBytes:   262144,
@@ -139,7 +141,7 @@ func TestLatestCallSkipsAPartialLine(t *testing.T) {
 		partialSuffix := len(partial) / 2
 		window := int64(partialSuffix + 1 + len(complete) + 1)
 
-		reading, err := LatestCall(t.TempDir(), "claude", "partial-line", ReadOptions{
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "claude", "partial-line", ReadOptions{
 			Capability: PerCall,
 			Transcript: transcript,
 			MaxBytes:   window,
@@ -155,7 +157,7 @@ func TestLatestCallSkipsAPartialLine(t *testing.T) {
 	t.Run("line-longer-than-window", func(t *testing.T) {
 		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 		writeCallRows(t, transcript, strings.Repeat("x", 4096))
-		reading, err := LatestCall(t.TempDir(), "claude", "long-line", ReadOptions{
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "claude", "long-line", ReadOptions{
 			Capability: PerCall,
 			Transcript: transcript,
 			MaxBytes:   128,
@@ -174,7 +176,7 @@ func TestLatestCallHonoursTheDeadline(t *testing.T) {
 	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 	session := "deadline"
 	writeCallRows(t, transcript, claudeAssistant("old", 1, 0, 0, false, "2026-09-13T10:00:00Z"))
-	if _, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
 		t.Fatal(err)
 	}
 	for index := 0; index < 100; index++ {
@@ -210,7 +212,7 @@ func TestLatestCallHonoursTheDeadline(t *testing.T) {
 		return lastClockInstant
 	}
 
-	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{
 		Capability: PerCall,
 		Transcript: transcript,
 		Deadline:   start.Add(3 * time.Nanosecond),
@@ -288,7 +290,7 @@ func TestLatestCallNonBlockingReturnsBusyOnEitherHeldLock(t *testing.T) {
 			previousCounter := callBytesRead
 			callBytesRead = func(count int) { bytesRead += count }
 			defer func() { callBytesRead = previousCounter }()
-			_, readErr := LatestCall(stateRoot, "claude", session, ReadOptions{
+			_, readErr := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{
 				Capability:  PerCall,
 				Transcript:  transcript,
 				NonBlocking: true,
@@ -318,7 +320,7 @@ func TestLatestCallKeysCodexSamplesByResponseID(t *testing.T) {
 	)
 	writeCodexCallRollout(t, home, session, rows...)
 
-	reading, err := LatestCall(stateRoot, "codex", session, ReadOptions{Capability: PerCall, Home: home})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +358,7 @@ func TestCodexReaderDecodesEachLineOnce(t *testing.T) {
 	t.Cleanup(func() { callJSONDecodes = previous })
 
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	first, err := LatestCall(stateRoot, "codex", "one-decode", opts)
+	first, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", "one-decode", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +370,7 @@ func TestCodexReaderDecodesEachLineOnce(t *testing.T) {
 	}
 
 	appendCallTestBytes(t, transcript, []byte("}\n"))
-	second, err := LatestCall(stateRoot, "codex", "one-decode", opts)
+	second, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", "one-decode", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +391,7 @@ func TestCodexRolloutWithoutUsageRecordsIsUnknown(t *testing.T) {
 		`{"type":"event_msg","payload":{"type":"token_count"}}`,
 	)
 
-	reading, err := LatestCall(stateRoot, "codex", session, ReadOptions{Capability: PerCall, Home: home})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,11 +423,11 @@ func TestMarkersCountCompactionsPerRuntime(t *testing.T) {
 		`{"type":"compacted","timestamp":"2026-09-13T12:01:00Z","ordinal":17}`,
 	)
 
-	claudeReading, err := LatestCall(stateRoot, "claude", claudeSession, ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel})
+	claudeReading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", claudeSession, ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel})
 	if err != nil {
 		t.Fatal(err)
 	}
-	codexReading, err := LatestCall(stateRoot, "codex", codexSession, ReadOptions{Capability: PerCall, Home: home})
+	codexReading, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", codexSession, ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +462,7 @@ func TestPerInvocationRuntimeAnswersUnknown(t *testing.T) {
 		{PerInvocation, "unknown (per-invocation usage only)"},
 		{NoStream, "unknown (no per-call stream)"},
 	} {
-		reading, err := LatestCall(stateRoot, "devin", "session", ReadOptions{Capability: test.capability})
+		reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "devin", "session", ReadOptions{Capability: test.capability})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -482,7 +484,7 @@ func TestMissingTranscriptAnswersUnknownWithThePath(t *testing.T) {
 	toplevel := t.TempDir()
 	installation := t.TempDir()
 	session := "missing"
-	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{
 		Capability:   PerCall,
 		Home:         home,
 		Toplevel:     toplevel,
@@ -510,7 +512,7 @@ func TestMissingTranscriptAnswersUnknownWithThePath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(unreadableHome, 0o755) })
 	unreadableState := t.TempDir()
-	reading, err = LatestCall(unreadableState, "claude", session, ReadOptions{
+	reading, err = LatestCall(stateroottest.Installation(t, unreadableState), "claude", session, ReadOptions{
 		Capability:   PerCall,
 		Home:         unreadableHome,
 		Toplevel:     toplevel,
@@ -591,7 +593,7 @@ func TestCallsFiltersBySinceAndRegistersSessionsOnce(t *testing.T) {
 		claudeAssistant("two", 2, 0, 0, false, "2026-09-13T13:01:00Z"),
 		claudeAssistant("three", 3, 0, 0, false, "2026-09-13T13:02:00Z"),
 	)
-	if _, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel}); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel}); err != nil {
 		t.Fatal(err)
 	}
 	since := time.Date(2026, 9, 13, 13, 1, 0, 0, time.UTC)
@@ -631,10 +633,10 @@ func TestCallPathRulesAndRuntimeValidation(t *testing.T) {
 	if _, err := LatestCall("relative", "claude", "session", ReadOptions{Capability: PerCall}); err == nil {
 		t.Fatal("relative state root was accepted")
 	}
-	if _, err := LatestCall(t.TempDir(), "Bad/runtime", "session", ReadOptions{Capability: PerCall}); err == nil {
+	if _, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "Bad/runtime", "session", ReadOptions{Capability: PerCall}); err == nil {
 		t.Fatal("invalid runtime was accepted")
 	}
-	reading, err := LatestCall(t.TempDir(), "fake", "session", ReadOptions{Capability: PerCall})
+	reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "fake", "session", ReadOptions{Capability: PerCall})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,7 +703,7 @@ func TestCallResolutionAndEmptySamples(t *testing.T) {
 	if samples, markers, err := Calls(stateRoot, "claude", "absent", time.Time{}); err != nil || samples != nil || markers != nil {
 		t.Fatalf("missing samples: samples=%#v markers=%#v err=%v", samples, markers, err)
 	}
-	reading, err := LatestCall(stateRoot, "codex", "absent", ReadOptions{Capability: PerCall, Home: home})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", "absent", ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -712,14 +714,14 @@ func TestCallResolutionAndEmptySamples(t *testing.T) {
 	writeCodexCallRollout(t, home, "duplicate", `{"type":"session_meta"}`)
 	second := filepath.Join(home, ".codex", "sessions", "2026", "09", "14", "rollout-second-duplicate.jsonl")
 	writeCallRows(t, second, `{"type":"session_meta"}`)
-	reading, err = LatestCall(stateRoot, "codex", "duplicate", ReadOptions{Capability: PerCall, Home: home})
+	reading, err = LatestCall(stateroottest.Installation(t, stateRoot), "codex", "duplicate", ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if reading.Reason != "unknown (2 rollouts match session duplicate)" {
 		t.Fatalf("duplicate-rollout reason = %q", reading.Reason)
 	}
-	if _, err := LatestCall(stateRoot, "claude", "session", ReadOptions{Capability: "surprise"}); err == nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "session", ReadOptions{Capability: "surprise"}); err == nil {
 		t.Fatal("invalid capability was accepted")
 	}
 }
@@ -767,7 +769,7 @@ func TestCallResolutionTreatsSessionAsLiteralText(t *testing.T) {
 	toplevel := t.TempDir()
 	directory := filepath.Join(home, ".claude", "projects", ClaudeProjectFolder(toplevel))
 	writeCallRows(t, filepath.Join(home, ".claude", "projects", "escaped.jsonl"), claudeAssistant("wrong", 99, 0, 0, false, "2026-09-13T20:00:00Z"))
-	reading, err := LatestCall(stateRoot, "claude", "../escaped", ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "../escaped", ReadOptions{Capability: PerCall, Home: home, Toplevel: toplevel})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,7 +778,7 @@ func TestCallResolutionTreatsSessionAsLiteralText(t *testing.T) {
 	}
 
 	writeCodexCallRollout(t, home, "real-session", codexUsage("wrong", 88, 0, 0, 1, "2026-09-13T20:01:00Z"))
-	reading, err = LatestCall(stateRoot, "codex", "*", ReadOptions{Capability: PerCall, Home: home})
+	reading, err = LatestCall(stateroottest.Installation(t, stateRoot), "codex", "*", ReadOptions{Capability: PerCall, Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +797,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 			writeCodexCallRollout(t, home, session, codexUsage("right", 1, 0, 0, 1, "2026-09-13T22:00:00Z"))
 			misleadingHome := filepath.Join(parent, "home-misleading-"+decimal(index))
 			writeCodexCallRollout(t, misleadingHome, session, codexUsage("wrong", 99, 0, 0, 1, "2026-09-13T22:01:00Z"))
-			reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+			reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -807,7 +809,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 
 	t.Run("zero-matches", func(t *testing.T) {
 		home := t.TempDir()
-		reading, err := LatestCall(t.TempDir(), "codex", "missing", ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", "missing", ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -822,7 +824,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 		session := "duplicate-literal"
 		writeCodexCallRollout(t, home, session, codexUsage("one", 1, 0, 0, 1, "2026-09-13T22:02:00Z"))
 		writeCallRows(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "14", "rollout-other-"+session+".jsonl"), codexUsage("two", 2, 0, 0, 2, "2026-09-13T22:03:00Z"))
-		reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -835,7 +837,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 		home := t.TempDir()
 		session := `session[*]?\`
 		writeCodexCallRollout(t, home, session, codexUsage("literal-session", 3, 0, 0, 3, "2026-09-13T22:04:00Z"))
-		reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -847,7 +849,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 	t.Run("explicit-transcript-override", func(t *testing.T) {
 		transcript := filepath.Join(t.TempDir(), "explicit.jsonl")
 		writeCallRows(t, transcript, codexUsage("explicit", 4, 0, 0, 4, "2026-09-13T22:05:00Z"))
-		reading, err := LatestCall(t.TempDir(), "codex", "not-discovered", ReadOptions{Capability: PerCall, Home: filepath.Join(t.TempDir(), "[*]"), Transcript: transcript})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", "not-discovered", ReadOptions{Capability: PerCall, Home: filepath.Join(t.TempDir(), "[*]"), Transcript: transcript})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -868,7 +870,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 		if err := os.Symlink(targetYear, filepath.Join(root, "2026")); err != nil {
 			t.Fatal(err)
 		}
-		reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -891,7 +893,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 		}
 		writeCallRows(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "rollout-shallow-"+session+".jsonl"), codexUsage("wrong-shallow", 7, 0, 0, 7, "2026-09-13T22:08:00Z"))
 		writeCallRows(t, filepath.Join(day, "extra", "rollout-deep-"+session+".jsonl"), codexUsage("wrong-deep", 8, 0, 0, 8, "2026-09-13T22:09:00Z"))
-		reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -918,7 +920,7 @@ func TestCodexRolloutTreatsHomeAsLiteralPath(t *testing.T) {
 		if _, err := os.ReadDir(unreadable); err == nil {
 			t.Skip("directory permissions are not enforceable")
 		}
-		reading, err := LatestCall(t.TempDir(), "codex", session, ReadOptions{Capability: PerCall, Home: home})
+		reading, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "codex", session, ReadOptions{Capability: PerCall, Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -60,7 +60,7 @@ func TestToolGateSeparatedRootsDecidesFromTheInstallation(t *testing.T) {
 	// this session, so the gate finds no new sample and allows. Had it read its
 	// samples anywhere else, it would have read the 85K call and denied it.
 	seeded := transcriptOf("seeded", 85000)
-	if _, err := usage.LatestCall(installation, "claude", "seeded", usage.ReadOptions{Transcript: seeded, Capability: usage.PerCall}); err != nil {
+	if _, err := usage.LatestCall(stateroottest.Installation(t, installation), "claude", "seeded", usage.ReadOptions{Transcript: seeded, Capability: usage.PerCall}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(usage.SamplesPath(installation, "claude", "seeded")); err != nil {

@@ -2,15 +2,16 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // CorrelationPolicy reads the deliberately empty policy slot. A, B, or C is
 // the complete activation vocabulary; an empty value means no correlation
 // policy has authority yet.
-func CorrelationPolicy(repoRoot string) (string, error) {
+func CorrelationPolicy(installation roots.Installation) (string, error) {
 	value, code, err := Get(GetParams{Key: "metasystem.governance.correlation-policy",
-		ConfPath: filepath.Join(repoRoot, "metasystem.conf")})
+		ConfPath: installation.Path("metasystem.conf")})
 	if err != nil || code != 0 {
 		return "", err
 	}

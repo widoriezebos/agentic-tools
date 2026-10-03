@@ -52,8 +52,8 @@ type markerRow struct {
 
 var writeCallCursor = atomicWriteJSON
 
-func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser, opts ReadOptions) (Reading, error) {
-	lockPath := CursorPath(stateRoot, runtime, session) + ".lock"
+func readUnderCursor(installationRoot, runtime, session, path string, parse lineParser, opts ReadOptions) (Reading, error) {
+	lockPath := CursorPath(installationRoot, runtime, session) + ".lock"
 	var held *lock.FileLock
 	var err error
 	if opts.NonBlocking {
@@ -66,14 +66,14 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	}
 	defer unlockCallFile(held)
 
-	cursorPath := CursorPath(stateRoot, runtime, session)
+	cursorPath := CursorPath(installationRoot, runtime, session)
 	if opts.MaxBytes > 0 || !opts.Deadline.IsZero() {
 		return readCallObservation(cursorPath, runtime, session, path, parse, opts)
 	}
-	if err := recoverCallRetirement(stateRoot, cursorPath); err != nil {
+	if err := recoverCallRetirement(installationRoot, cursorPath); err != nil {
 		return Reading{}, err
 	}
-	samplesPath := SamplesPath(stateRoot, runtime, session)
+	samplesPath := SamplesPath(installationRoot, runtime, session)
 	cursor, loaded, err := loadCallCursor(cursorPath, runtime, session)
 	if err != nil {
 		return Reading{}, err
@@ -337,30 +337,30 @@ func readCallObservation(cursorPath, runtime, session, path string, parse linePa
 	return reading, nil
 }
 
-func Calls(stateRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
-	if err := validateCallLocation(stateRoot, runtime); err != nil {
+func Calls(installationRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
+	if err := validateCallLocation(installationRoot, runtime); err != nil {
 		return nil, nil, err
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	maintenance, err := lockCallMaintenance(installationRoot, false, false)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer unlockCallFile(maintenance)
-	return callsUnderMaintenance(stateRoot, runtime, session, since)
+	return callsUnderMaintenance(installationRoot, runtime, session, since)
 }
 
-func callsUnderMaintenance(stateRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
-	cursorPath := CursorPath(stateRoot, runtime, session)
+func callsUnderMaintenance(installationRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
+	cursorPath := CursorPath(installationRoot, runtime, session)
 	lock, err := lockCallFile(cursorPath + ".lock")
 	if err != nil {
 		return nil, nil, err
 	}
 	defer unlockCallFile(lock)
 
-	if err := recoverCallRetirement(stateRoot, cursorPath); err != nil {
+	if err := recoverCallRetirement(installationRoot, cursorPath); err != nil {
 		return nil, nil, err
 	}
-	path := SamplesPath(stateRoot, runtime, session)
+	path := SamplesPath(installationRoot, runtime, session)
 	cursor, loaded, err := loadCallCursor(cursorPath, runtime, session)
 	if err != nil {
 		return nil, nil, err
@@ -413,30 +413,30 @@ func callsUnderMaintenance(stateRoot, runtime, session string, since time.Time) 
 	return samples, markers, nil
 }
 
-func RegisterSession(stateRoot, runtime, session string, pid, pidStartedAt int64) error {
-	return registerSession(stateRoot, runtime, session, pid, pidStartedAt, false)
+func RegisterSession(installationRoot, runtime, session string, pid, pidStartedAt int64) error {
+	return registerSession(installationRoot, runtime, session, pid, pidStartedAt, false)
 }
 
 // RegisterSessionNonBlocking records a session only when the registry lock is
 // immediately available.
-func RegisterSessionNonBlocking(stateRoot, runtime, session string, pid, pidStartedAt int64) error {
-	return registerSession(stateRoot, runtime, session, pid, pidStartedAt, true)
+func RegisterSessionNonBlocking(installationRoot, runtime, session string, pid, pidStartedAt int64) error {
+	return registerSession(installationRoot, runtime, session, pid, pidStartedAt, true)
 }
 
-func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
-	if err := validateCallLocation(stateRoot, runtime); err != nil {
+func registerSession(installationRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
+	if err := validateCallLocation(installationRoot, runtime); err != nil {
 		return err
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, false, nonBlocking)
+	maintenance, err := lockCallMaintenance(installationRoot, false, nonBlocking)
 	if err != nil {
 		return err
 	}
 	defer unlockCallFile(maintenance)
-	return registerSessionUnderMaintenance(stateRoot, runtime, session, pid, pidStartedAt, nonBlocking)
+	return registerSessionUnderMaintenance(installationRoot, runtime, session, pid, pidStartedAt, nonBlocking)
 }
 
-func registerSessionUnderMaintenance(stateRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
-	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
+func registerSessionUnderMaintenance(installationRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
+	path := filepath.Join(installationRoot, "artifacts", "agents", "context", "sessions.jsonl")
 	lockPath := path + ".lock"
 	var held *lock.FileLock
 	var err error

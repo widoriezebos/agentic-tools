@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	refusalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"golang.org/x/sys/unix"
 )
@@ -53,7 +54,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 					options.Home = home
 					writeDiscoveredContextTranscript(t, home, root, "claude", "session", test.tokens, false)
 				}
-				role, reading, err := ContextBudgetLine(root, root, now, options)
+				role, reading, err := ContextBudgetLine(stateroottest.Installation(t, root), now, options)
 				if err != nil || role.Status != test.status || !strings.Contains(role.Reason, test.reason) ||
 					reading.Latest == nil || reading.Latest.PromptTokens != test.tokens {
 					t.Fatalf("tokens %d diagnostic=%t = role %+v reading %+v err %v", test.tokens, diagnostic, role, reading, err)
@@ -83,7 +84,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		if err := os.WriteFile(transcript, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
 		if err != nil || role.Status != HealthAlive || role.Reason != "diagnostic transcript override; unknown (no call recorded yet)" {
 			t.Fatalf("empty transcript = %+v err=%v", role, err)
 		}
@@ -91,7 +92,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 
 	t.Run("missing source", func(t *testing.T) {
 		root := t.TempDir()
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: "claude", Session: "missing", Home: root, Toplevel: root})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "claude", Session: "missing", Home: root, Toplevel: root})
 		if err != nil || role.Status != HealthUnknown || !strings.HasPrefix(role.Reason, "unknown (no transcript at ") || role.Remedy == "" {
 			t.Fatalf("missing source = %+v err=%v", role, err)
 		}
@@ -106,7 +107,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		if err := os.WriteFile(sessions, []byte("not a directory"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: "codex", Session: "session", Home: root, Toplevel: root})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "codex", Session: "session", Home: root, Toplevel: root})
 		if err != nil || role.Status != HealthUnknown || !strings.Contains(role.Reason, "cannot read rollout directory "+sessions) {
 			t.Fatalf("unreadable rollout discovery = %+v err=%v", role, err)
 		}
@@ -119,7 +120,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		if err := os.WriteFile(transcript, []byte(line), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: "codex", Session: "legacy", Transcript: transcript, Toplevel: root})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "codex", Session: "legacy", Transcript: transcript, Toplevel: root})
 		if err != nil || role.Status != HealthAlive || role.Reason != "diagnostic transcript override; unknown (rollout carries no token_usage_record (codex CLI before 0.153))" {
 			t.Fatalf("legacy rollout = %+v err=%v", role, err)
 		}
@@ -128,7 +129,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	t.Run("sidechain only", func(t *testing.T) {
 		root := t.TempDir()
 		transcript := writeContextClaudeTranscript(t, root, 120000, true)
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
 		if err != nil || role.Status != HealthAlive || role.Reason != "diagnostic transcript override; unknown (only sidechain records so far)" {
 			t.Fatalf("sidechain transcript = %+v err=%v", role, err)
 		}
@@ -144,7 +145,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	} {
 		t.Run(test.runtime, func(t *testing.T) {
 			root := t.TempDir()
-			role, _, err := ContextBudgetLine(root, root, now, ContextOptions{Runtime: test.runtime, Session: "session", Toplevel: root})
+			role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: test.runtime, Session: "session", Toplevel: root})
 			if err != nil || role.Status != HealthAlive || role.Reason != test.reason {
 				t.Fatalf("%s capability = %+v err=%v", test.runtime, role, err)
 			}
@@ -154,7 +155,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 				root := t.TempDir()
 				writeContextHolder(t, root, test.runtime, "stale")
 				probe := healthProbe{123: {state: state}}
-				role, reading, err := contextBudgetLineWithProber(root, root, now, ContextOptions{}, probe)
+				role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now, ContextOptions{}, probe)
 				if err != nil || role.Status != HealthAlive || role.Reason != test.reason || reading.Capability != test.capability {
 					t.Fatalf("%s inferred %s capability = role %+v reading %+v err=%v", test.runtime, state, role, reading, err)
 				}
@@ -167,7 +168,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 
 	t.Run("no holder", func(t *testing.T) {
 		root := t.TempDir()
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err != nil || role.Status != HealthAlive || !strings.Contains(role.Reason, "no announced holder") || !strings.Contains(role.Reason, "worktree-lease.json") {
 			t.Fatalf("missing holder = %+v err=%v", role, err)
 		}
@@ -176,7 +177,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	t.Run("empty holder", func(t *testing.T) {
 		root := t.TempDir()
 		writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json"), map[string]any{"holderMainId": ""})
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err != nil || role.Status != HealthAlive || !strings.Contains(role.Reason, "no announced holder") || !strings.Contains(role.Reason, "no holderMainId") {
 			t.Fatalf("empty holder = %+v err=%v", role, err)
 		}
@@ -185,7 +186,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	t.Run("holder without announcement", func(t *testing.T) {
 		root := t.TempDir()
 		writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json"), map[string]any{"holderMainId": "main-absent"})
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err != nil || role.Status != HealthAlive || !strings.Contains(role.Reason, "no announced holder") || !strings.Contains(role.Reason, "main-absent") {
 			t.Fatalf("holder without announcement = %+v err=%v", role, err)
 		}
@@ -199,7 +200,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		writeStewardRecord(t, filepath.Join(directory, "legacy-session-123.json"), map[string]any{
 			"sessionId": "legacy-session", "runtime": "devin", "pid": pid, "pidStartedAt": started,
 		})
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err != nil || role.Status != HealthAlive || role.Reason != "unknown (per-invocation usage only)" {
 			t.Fatalf("legacy main id fallback = %+v err=%v", role, err)
 		}
@@ -214,7 +215,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err == nil || role.Status != HealthUnknown || !strings.Contains(role.Reason, path) || role.Remedy == "" {
 			t.Fatalf("malformed lease = %+v err=%v", role, err)
 		}
@@ -223,7 +224,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	t.Run("unregistered holder", func(t *testing.T) {
 		root := t.TempDir()
 		writeLiveContextHolder(t, root, "other-runtime", "session")
-		role, _, err := ContextBudgetLine(root, root, now, ContextOptions{})
+		role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{})
 		if err != nil || role.Status != HealthAlive || role.Reason != "unknown (runtime other-runtime is not registered)" {
 			t.Fatalf("unregistered holder = %+v err=%v", role, err)
 		}
@@ -240,7 +241,7 @@ func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcript := writeContextClaudeTranscript(t, root, 90000, false)
-	role, _, err := ContextBudgetLine(root, root, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
+	role, _, err := ContextBudgetLine(stateroottest.Installation(t, root), time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
 	want := "diagnostic transcript override; 90 thousand tokens this call, trigger 80, proof line 150, proof maximum 200, ceiling 200; over the trigger"
 	if err != nil || role.Status != HealthAlive || role.Reason != want {
 		t.Fatalf("configured verdict = %+v, want reason %q", role, want)
@@ -250,7 +251,7 @@ func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(invalidRoot, "metasystem.conf"), []byte("context.ceiling.tokens=invalid\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	role, reading, err := contextBudgetLineWithProber(invalidRoot, invalidRoot, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
+	role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, invalidRoot), time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
 	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "context.ceiling.tokens must be a positive integer") ||
 		strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID") || refusalpkg.CodeOf(err) != "CONTEXT_CONFIG_INVALID" ||
 		role.Remedy != "metasystem settings check --repo "+invalidRoot || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
@@ -275,6 +276,9 @@ func TestContextVerdictOverProofMaximumIsDead(t *testing.T) {
 func TestHealthLineCarriesContextBudget(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
@@ -329,7 +333,7 @@ func TestContextBudgetDoesNotAttributeUsageToAStaleHolder(t *testing.T) {
 			writeContextHolder(t, root, "claude", "stale")
 			probe := healthProbe{123: {state: state}}
 
-			role, reading, err := contextBudgetLineWithProber(root, root, now, ContextOptions{
+			role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now, ContextOptions{
 				Transcript: transcript, Toplevel: root,
 			}, probe)
 			if err != nil || role.Status != HealthUnknown || role.NoAutomaticRemedy || reading.Latest != nil ||
@@ -362,7 +366,7 @@ func TestContextHolderResolutionSkipsForeignMalformedAnnouncements(t *testing.T)
 		state: identity.Alive,
 	}}
 
-	role, reading, err := contextBudgetLineWithProber(root, root, time.Now().UTC(), ContextOptions{
+	role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), time.Now().UTC(), ContextOptions{
 		Transcript: transcript, Toplevel: root,
 	}, probe)
 	if err != nil || role.Status != HealthAlive || reading.Latest == nil || reading.Latest.PromptTokens != 120000 {
@@ -412,7 +416,7 @@ func TestContextBudgetReturnsBusyUnknownWithoutWaiting(t *testing.T) {
 	}}
 	done := make(chan RoleVerdict, 1)
 	go func() {
-		done <- checkContextBudget(root, root, time.Now().UTC(), probe)
+		done <- checkContextBudget(stateroottest.Installation(t, root), time.Now().UTC(), probe)
 	}()
 	role := <-done
 	if role.Status != HealthUnknown || !strings.Contains(role.Reason, "cursor is busy") || role.Remedy == "" {
@@ -449,7 +453,7 @@ func TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting(t *testing.T) {
 	}}
 	done := make(chan RoleVerdict, 1)
 	go func() {
-		done <- checkContextBudget(root, root, time.Now().UTC(), probe)
+		done <- checkContextBudget(stateroottest.Installation(t, root), time.Now().UTC(), probe)
 	}()
 	role := <-done
 	if role.Status != HealthUnknown || !strings.Contains(role.Reason, "session registry is busy") ||
@@ -464,7 +468,7 @@ func TestRoleContextNamesTheNewestSpill(t *testing.T) {
 	home := t.TempDir()
 	writeDiscoveredContextTranscript(t, home, root, "claude", "session", 120000, false)
 	opts := ContextOptions{Runtime: "claude", Session: "session", Home: home, Toplevel: root}
-	if _, _, err := ContextBudgetLine(root, root, firstAt, opts); err != nil {
+	if _, _, err := ContextBudgetLine(stateroottest.Installation(t, root), firstAt, opts); err != nil {
 		t.Fatal(err)
 	}
 	spill := filepath.Join(root, filepath.FromSlash(output.Dir), "goal-list.txt")
@@ -478,7 +482,7 @@ func TestRoleContextNamesTheNewestSpill(t *testing.T) {
 	if err := os.Chtimes(spill, spillAt, spillAt); err != nil {
 		t.Fatal(err)
 	}
-	role, reading, err := ContextBudgetLine(root, root, firstAt.Add(2*time.Minute), opts)
+	role, reading, err := ContextBudgetLine(stateroottest.Installation(t, root), firstAt.Add(2*time.Minute), opts)
 	if err != nil || !reading.PreviousReadAt.Equal(firstAt) || !strings.Contains(role.Reason, "; newest spill: goal-list.txt (6 bytes)") {
 		t.Fatalf("newest spill role = %+v reading=%+v err=%v", role, reading, err)
 	}
@@ -500,7 +504,7 @@ func TestContextTranscriptOverrideUsesPrivateEvidence(t *testing.T) {
 				if err := usagepkg.RegisterSession(root, runtimeName, holderSession, 123, 456); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := usagepkg.LatestCall(root, runtimeName, holderSession, usagepkg.ReadOptions{
+				if _, err := usagepkg.LatestCall(stateroottest.Installation(t, root), runtimeName, holderSession, usagepkg.ReadOptions{
 					Capability: usagepkg.PerCall, Home: home, Toplevel: root, Installation: root, Now: now,
 				}); err != nil {
 					t.Fatal(err)
@@ -521,7 +525,7 @@ func TestContextTranscriptOverrideUsesPrivateEvidence(t *testing.T) {
 					expectedTokens = 111000
 				}
 				before := snapshotContextEvidence(t, root)
-				role, reading, err := contextBudgetLineWithProber(root, root, now.Add(time.Minute), opts, probe)
+				role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(time.Minute), opts, probe)
 				if err != nil || role.Status != HealthAlive || !strings.HasPrefix(role.Reason, "diagnostic transcript override; ") ||
 					reading.Latest == nil || reading.Latest.Runtime != runtimeName || reading.Latest.Session != expectedSession ||
 					reading.Latest.PromptTokens != expectedTokens || !reading.PreviousReadAt.IsZero() || reading.NewSamples != 1 {
@@ -535,7 +539,7 @@ func TestContextTranscriptOverrideUsesPrivateEvidence(t *testing.T) {
 			root := t.TempDir()
 			writeContextHolder(t, root, runtimeName, "fresh")
 			override := writeContextRuntimeTranscript(t, t.TempDir(), runtimeName, "fresh", 120000, false)
-			role, reading, err := contextBudgetLineWithProber(root, root, now, ContextOptions{Transcript: override}, probe)
+			role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now, ContextOptions{Transcript: override}, probe)
 			if err != nil || role.Status != HealthAlive || reading.Latest == nil || reading.Latest.PromptTokens != 120000 {
 				t.Fatalf("fresh inferred diagnostic = role %+v reading %+v err %v", role, reading, err)
 			}
@@ -559,7 +563,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 		state: identity.Alive,
 	}}
 	liveOpts := ContextOptions{Home: home, Toplevel: root}
-	role, reading, err := contextBudgetLineWithProber(root, root, now, liveOpts, probe)
+	role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now, liveOpts, probe)
 	if err != nil || role.Status != HealthDead || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || reading.NewSamples != 1 {
 		t.Fatalf("seed health read = role %+v reading %+v err %v", role, reading, err)
 	}
@@ -583,7 +587,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 		newSamples int
 		newMarkers int
 	}{{empty, 0, 0}, {copyPath, 1, 0}, {distinct, 1, 1}} {
-		role, diagnosticReading, err := contextBudgetLineWithProber(root, root, now.Add(time.Minute), ContextOptions{
+		role, diagnosticReading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(time.Minute), ContextOptions{
 			Transcript: diagnostic.path, Home: home, Toplevel: root,
 		}, probe)
 		if err != nil || !strings.HasPrefix(role.Reason, "diagnostic transcript override; ") ||
@@ -592,7 +596,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 		}
 		assertContextEvidence(t, root, original)
 
-		role, reading, err = contextBudgetLineWithProber(root, root, now.Add(2*time.Minute), liveOpts, probe)
+		role, reading, err = contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(2*time.Minute), liveOpts, probe)
 		if err != nil || role.Status != HealthDead || reading.Latest == nil || reading.Latest.PromptTokens != 210001 ||
 			reading.NewSamples != 0 || reading.NewMarkers != 0 {
 			t.Fatalf("health after override %s = role %+v reading %+v err %v", diagnostic.path, role, reading, err)
@@ -609,7 +613,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		t.Fatal(err)
 	}
-	role, reading, err = contextBudgetLineWithProber(root, root, now.Add(3*time.Minute), liveOpts, probe)
+	role, reading, err = contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(3*time.Minute), liveOpts, probe)
 	if err != nil || role.Status != HealthDead || reading.NewSamples != 1 || reading.NewMarkers != 0 {
 		t.Fatalf("appended health read = role %+v reading %+v err %v", role, reading, err)
 	}
@@ -635,7 +639,7 @@ func TestContextTranscriptOverrideIgnoresLiveStoreFailures(t *testing.T) {
 				if err := usagepkg.RegisterSession(root, "claude", session, 123, 456); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := usagepkg.LatestCall(root, "claude", session, usagepkg.ReadOptions{
+				if _, err := usagepkg.LatestCall(stateroottest.Installation(t, root), "claude", session, usagepkg.ReadOptions{
 					Capability: usagepkg.PerCall, Transcript: liveTranscript, Now: now,
 				}); err != nil {
 					t.Fatal(err)
@@ -679,7 +683,7 @@ func TestContextTranscriptOverrideIgnoresLiveStoreFailures(t *testing.T) {
 
 			override := writeContextRuntimeTranscript(t, t.TempDir(), "claude", "diagnostic", 120000, false)
 			before := snapshotContextEvidence(t, root)
-			role, reading, err := contextBudgetLineWithProber(root, root, now.Add(time.Minute), ContextOptions{Transcript: override}, probe)
+			role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(time.Minute), ContextOptions{Transcript: override}, probe)
 			if err != nil || role.Status != HealthAlive || reading.Latest == nil || reading.Latest.PromptTokens != 120000 {
 				t.Fatalf("diagnostic beside %s = role %+v reading %+v err %v", failure, role, reading, err)
 			}
@@ -759,7 +763,7 @@ func TestContextTranscriptOverrideDisposesPrivateCursor(t *testing.T) {
 	removeContextDiagnosticRoot = originalRemove
 	liveRoot := t.TempDir()
 	before := snapshotContextEvidence(t, liveRoot)
-	role, _, err := ContextBudgetLine(liveRoot, liveRoot, time.Now().UTC(), ContextOptions{
+	role, _, err := ContextBudgetLine(stateroottest.Installation(t, liveRoot), time.Now().UTC(), ContextOptions{
 		Runtime: "claude", Session: "allocation", Transcript: sample,
 	})
 	if !errors.Is(err, allocationFailure) || role.Status != HealthUnknown || !strings.HasPrefix(role.Reason, "diagnostic transcript override; ") {
@@ -783,7 +787,7 @@ func TestContextTranscriptOverrideDisposesPrivateCursor(t *testing.T) {
 	if !errors.Is(err, cleanupFailure) || reading.Latest == nil || reading.Latest.PromptTokens != 120000 {
 		t.Fatalf("cleanup failure lost reading: reading %+v err %v", reading, err)
 	}
-	role, cleanupReading, err := ContextBudgetLine(liveRoot, liveRoot, time.Now().UTC(), ContextOptions{
+	role, cleanupReading, err := ContextBudgetLine(stateroottest.Installation(t, liveRoot), time.Now().UTC(), ContextOptions{
 		Runtime: "claude", Session: "cleanup-role", Transcript: sample,
 	})
 	if !errors.Is(err, cleanupFailure) || role.Status != HealthUnknown || !strings.HasPrefix(role.Reason, "diagnostic transcript override; ") ||
