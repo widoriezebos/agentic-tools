@@ -9,8 +9,7 @@
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 51
-- BlockedBy: recovery-to-good-state
+- Revision: 52
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
 
@@ -66,4 +65,5 @@ History:
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:15 to=2:14
 - 2026-10-03T11:16:57Z NQHY2C14WSEJR4TT3XPVQBV2KZ-m1e-718ba0eb unpark actor=human:Wido targets=recovery-rehearsal
 - 2026-10-03T11:17:05Z H8HAJ4QNHDAASBS3N4RETB0K3W-m1e-718ba0eb edit actor=human:Wido targets=recovery-rehearsal
-Integrity: sha256=fc37d0993f1ae92974cf414cbf4f2f70d9bbc78eae5f373e9d3b92ff920a1919
+- 2026-10-03T11:17:14Z 5MJHRZVFYYJQHT0ZQ5KE46EXW4-m1e-718ba0eb unblock actor=human:Wido targets=recovery-rehearsal,recovery-to-good-state reason=blockedBy drops recovery-to-good-state
+Integrity: sha256=323ad5370ed556837578dea9f617c063935040fef53db26e35d1a08dab1c5e38
