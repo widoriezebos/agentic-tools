@@ -308,7 +308,7 @@ func SystemInstallation(git func(args ...string) GitResult, root string) (instal
 // any worktree git cannot map are left out. git runs in each call's Dir.
 func ServedInstallations(git Git, root string) []string {
 	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	if err != nil || !recordsLinkedWorktrees(resolved) {
 		return nil
 	}
 	top := git(GitCall{Dir: resolved, Args: []string{"rev-parse", "--show-toplevel"}})
@@ -338,6 +338,27 @@ func ServedInstallations(git Git, root string) []string {
 		}
 	}
 	return served
+}
+
+// recordsLinkedWorktrees reports whether the repository whose work tree
+// holds dir records any linked worktree: its .git directory has an entry
+// under worktrees. Without one there is no goal worktree to serve, and the
+// reaper, which ticks in every armed checkout, starts no Git process to find
+// that out. A linked worktree's own .git is a file: it serves none.
+func recordsLinkedWorktrees(dir string) bool {
+	for current := dir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(filepath.Join(current, ".git"))
+		if err == nil {
+			if !info.IsDir() {
+				return false
+			}
+			entries, err := os.ReadDir(filepath.Join(current, ".git", "worktrees"))
+			return err == nil && len(entries) > 0
+		}
+		if filepath.Dir(current) == current {
+			return false
+		}
+	}
 }
 
 // helmSubject names what a helm yield admitted: the branch HEAD names, the
