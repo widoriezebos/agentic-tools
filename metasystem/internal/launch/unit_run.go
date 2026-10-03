@@ -733,7 +733,11 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	refs, err := git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)")
+	// Only the refs a proof could write are compared: local branches, tags,
+	// notes and the stash. Remote-tracking refs and the engine's own
+	// refs/metasystem/ namespace move while a proof runs (the presence
+	// publisher and the goal ledger's fetch), and a proof writes neither.
+	refs, err := git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
