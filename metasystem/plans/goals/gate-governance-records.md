@@ -1,6 +1,6 @@
 # gate-governance-records
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 11
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="Written records and a sweep that flags an overdue review; nothing refuses; every later gate must carry the record, so its format stays with us"
@@ -9,9 +9,10 @@
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 47
-- BlockedBy: commit-goal-binding
+- Revision: 48
+- BlockedBy: commit-goal-binding, design-gate-at-dispatch
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T11:16:43Z blocker=design-gate-at-dispatch because=blocked by commit-goal-binding, design-gate-at-dispatch; returns when they are done
 
 History:
 - 2026-09-01T13:20:51Z KXNWNMA2TJPZ62GB3H4B03YR3V-m0-c5dbf036 open actor=human:Wido targets=gate-governance-records
@@ -61,4 +62,5 @@ History:
 - 2026-10-03T11:15:52Z 12JJH25GGDJVZS86VCFX4A7F7R-m1e-718ba0eb unpark actor=human:Wido targets=gate-governance-records
 - 2026-10-03T11:16:02Z HZE2DD9ES2Y23H82935PE8FTSR-m1e-718ba0eb edit actor=human:Wido targets=gate-governance-records
 - 2026-10-03T11:16:36Z P9KVK8AB7VRV1K1J21F05KKGVJ-m1e-718ba0eb unblock actor=human:Wido targets=gate-governance-records,design-gate-at-dispatch reason=blockedBy drops design-gate-at-dispatch
-Integrity: sha256=bdd4e7238d0135cb41689d245317a598f60e007ddd6f213888ec02101c819866
+- 2026-10-03T11:16:43Z 3JS07572TD8ZZM4WDXJAZMV5W8-m1e-718ba0eb block actor=human:Wido targets=gate-governance-records reason=blocked by commit-goal-binding, design-gate-at-dispatch; returns when they are done
+Integrity: sha256=ef6186d92bf3ba8646c2046d3bc4b9bb0fe5dd33237cf7357932959468b07472
