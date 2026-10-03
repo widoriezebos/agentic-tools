@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1k",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1k/metasystem",
+  "generation": 7,
+  "engine": "414a60992dad9dbb82978d931497839066164372",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "seat-1ce3aaa003249ec1",
+    "job": "seat-1ce3aaa003249ec1",
+    "role": "working",
+    "round": 0,
+    "goal": "agent-works-as-project-partner",
+    "startedAt": "2026-10-03T15:51:35Z"
+  },
+  "working": {
+    "goal": "agent-works-as-project-partner",
+    "phase": {
+      "role": "working",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "seat-1ce3aaa003249ec1",
+      "role": "working",
+      "status": "running",
+      "startedAt": "2026-10-03T15:51:35Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 0,
+      "attemptLimit": 10,
+      "reservedMinutes": 0,
+      "reservedMinutesLimit": 1200,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "seat-1ce3aaa003249ec1",
+        "role": "working",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-10-03T15:51:35Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T21:58:48Z",
+  "diskFreeBytes": 178195664896
+}
