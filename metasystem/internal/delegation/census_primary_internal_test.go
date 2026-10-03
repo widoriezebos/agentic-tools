@@ -69,7 +69,14 @@ func newCensusPrimaryBed(t *testing.T) censusPrimaryBed {
 // installation, completed ageSec seconds before the bed's now.
 func (b censusPrimaryBed) arm(t *testing.T, ageSec int64) {
 	t.Helper()
-	supervision := filepath.Join(b.primaryInstall, "artifacts", "agents", "supervision")
+	b.armAt(t, b.primaryInstall, b.primary, ageSec)
+}
+
+// armAt writes the census of the system armed at installation, whose
+// repository scope is checkout.
+func (b censusPrimaryBed) armAt(t *testing.T, installation, checkout string, ageSec int64) {
+	t.Helper()
+	supervision := filepath.Join(installation, "artifacts", "agents", "supervision")
 	if err := os.MkdirAll(supervision, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +85,7 @@ func (b censusPrimaryBed) arm(t *testing.T, ageSec int64) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(state)
-	fingerprint, err := census.Fingerprint(b.primaryInstall, b.primary)
+	fingerprint, err := census.Fingerprint(installation, checkout)
 	if err != nil {
 		t.Fatalf("census fingerprint: %v", err)
 	}
@@ -173,5 +180,25 @@ func TestJobCapLinkedWorktreeReadsPrimaryWatcherCeiling(t *testing.T) {
 	err := s.authorizeJobCap("job-a", "implementer", "fake", "fake-model", "", "", "", "dispatch", output)
 	if ExitCode(err) != 1 || !strings.Contains(stderr.String(), "its 500m cap is not below the watcher's 330m ceiling") {
 		t.Fatalf("exit %d stderr %q", ExitCode(err), stderr.String())
+	}
+}
+
+// A linked worktree armed as its own installation runs its own system: its
+// gate reads its own census, never the primary's, and its own stale census
+// still refuses even when the primary's is fresh.
+func TestCensusGateArmedLinkedWorktreeReadsItsOwnCensus(t *testing.T) {
+	t.Parallel()
+	b := newCensusPrimaryBed(t)
+	b.armAt(t, b.linkedInstall, b.linked, 7)
+	var fresh bytes.Buffer
+	if err := b.session(&fresh).requireFreshCensus(); err != nil {
+		t.Fatalf("an armed linked worktree's own fresh census refused: %v\n%s", err, fresh.String())
+	}
+	b.arm(t, 7)
+	b.armAt(t, b.linkedInstall, b.linked, 600)
+	var stale bytes.Buffer
+	err := b.session(&stale).requireFreshCensus()
+	if ExitCode(err) != 1 || !strings.Contains(stale.String(), "--repo "+b.linked+"\n") {
+		t.Fatalf("own stale census: exit %d stderr %q, want a refusal naming the worktree", ExitCode(err), stale.String())
 	}
 }

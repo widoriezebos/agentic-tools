@@ -111,11 +111,16 @@ func (s *session) requireFreshCensus() error {
 }
 
 // supervisedInstallation names the installation whose running system
-// supervises this session's root, and its repository scope: for a linked
-// worktree, the same installation in its primary checkout
-// (landpath.PrimaryInstallation); otherwise the session's own. A root git
-// cannot map keeps its own, whose census it then must have.
+// supervises this session's root, and its repository scope. An
+// installation that was armed itself (its own arming record or census
+// exists) runs its own system. Otherwise a linked worktree's is the same
+// installation in its primary checkout (landpath.PrimaryInstallation). A
+// root git cannot map keeps its own, whose census it then must have.
 func (s *session) supervisedInstallation() (root, repo string) {
+	own := filepath.Join(s.root, "artifacts", "agents", "supervision")
+	if exists(filepath.Join(own, "state.json")) || exists(filepath.Join(own, "last-census.json")) {
+		return s.root, s.repoScope
+	}
 	git := func(args ...string) landpath.GitResult {
 		stdout, stderr, err := s.l.ports.Git.Run(s.ctx, s.root, args...)
 		code := 0
