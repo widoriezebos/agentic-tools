@@ -40,8 +40,11 @@ describe("a verdict the record carries and the goal does not", () => {
   const drafted = correctionBrief(entriesIn(source), RECORD, TIP);
 
   it("is offered again on load with the brief the human edited, else the one composed from the fix findings", () => {
-    expect(strandedVerdict(source, RECORD, undefined, "# Edited brief\n")).toEqual({
-      goal: "g", fixes: 1, asked: { record: RECORD, verdict: "send-back", work: "", brief: "# Edited brief\n" },
+    // It is bound to the version and the record revision the room reads now
+    // (review-findings-read-as-decisions RF-02).
+    expect(strandedVerdict(source, RECORD, undefined, "# Edited brief\n", "blob:2")).toEqual({
+      goal: "g", fixes: 1, followUps: [],
+      asked: { record: RECORD, verdict: "send-back", work: "", brief: "# Edited brief\n", tip: TIP, revision: "blob:2" },
     });
     expect(strandedVerdict(source, RECORD, undefined, null)?.asked.brief).toBe(drafted);
     expect(drafted).toContain("the owner reads the wrong tree");
@@ -49,7 +52,7 @@ describe("a verdict the record carries and the goal does not", () => {
     const other: Verdict = { verdict: "send-back", by: "Wido", at: "", tip: MOVED, record: "plans/reviews/review-of-g.md", answered: false };
     expect(strandedVerdict(source, RECORD, other, null)).not.toBeNull();
     expect(strandedVerdict(recorded("clear to land", TIP), RECORD, undefined, "# Edited brief\n")?.asked)
-      .toEqual({ record: RECORD, verdict: "clear-to-land", work: "", brief: "" });
+      .toEqual({ record: RECORD, verdict: "clear-to-land", work: "", brief: "", tip: TIP, revision: "" });
   });
 
   it("is nothing where the goal's history carries the reviewed line for this record and tip", () => {
@@ -73,7 +76,7 @@ describe("a verdict the record carries and the goal does not", () => {
         </TooltipPrimitive.Provider>
       </MemoryRouter>,
     );
-    expect(markup).toContain("The Outcome is recorded, and the verdict is not yet on the goal: send back.");
+    expect(markup).toContain("Your verdict is written in the review, and is not yet on the goal: send it back.");
     expect(markup).toContain("1. Read the reviewed tree.");
     expect(markup).toMatch(/<button[^>]*>Record the verdict on the goal</u);
   });

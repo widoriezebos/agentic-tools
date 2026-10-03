@@ -51,12 +51,13 @@ export function Seeing() {
  * It is the card's own first row rather than a line of its own above the
  * transcript, because everything a human touches belongs to one object.
  */
-export function SeeingRow() {
+export function SeeingRow({ seeing }: { seeing?: string } = {}) {
   const { attachments, detach, moved, refresh, sheetDraft } = usePartner();
   const [open, setOpen] = useState(false);
   return (
     <div className="ms-composer-seeing">
       <SeeingButton
+        seeing={seeing}
         onOpen={() => {
           setOpen(true);
         }}
@@ -102,12 +103,17 @@ export function SeeingRow() {
 }
 
 /** The words themselves, which open the sheet wherever they stand. */
-function SeeingButton({ onOpen }: { onOpen: () => void }) {
+/**
+ * The Seeing line, as the capture names the page, or in the words the page
+ * gives it where the capture's own would be a path: a review names itself
+ * (review-findings-read-as-decisions §3).
+ */
+function SeeingButton({ onOpen, seeing }: { onOpen: () => void; seeing?: string }) {
   const { capture } = usePartner();
   return (
     <button type="button" className="ms-seeing-chip" aria-haspopup="dialog" onClick={onOpen}>
       <span className="ms-seeing-what">Seeing:</span>
-      <b>{seeingLine(capture)}</b>
+      <b>{seeing ?? seeingLine(capture)}</b>
     </button>
   );
 }

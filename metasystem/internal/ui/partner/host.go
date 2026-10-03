@@ -203,6 +203,17 @@ type Deposit struct {
 	// entries — the decision it becomes, and the open question it becomes —
 	// and each needs its own clause (g1-s55 D1).
 	Clause string `json:"clause,omitempty"`
+	// Severity, Title, Why and Recommend are a finding's plain layers
+	// (review-findings-read-as-decisions §4): how much it matters (blocks, fix
+	// or note), the problem in a person's words, why it matters, and the one
+	// decision the reviewer recommends (must-fix, fix-later, not-a-problem or
+	// accept). The recommendation's own why rides Reason, as a decision's
+	// reason does. Text, Anchor and Consequence are the finding's evidence, as
+	// the reviewer wrote it.
+	Severity  string `json:"severity,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Why       string `json:"why,omitempty"`
+	Recommend string `json:"recommend,omitempty"`
 	// Subject is the record this deposit was admitted against, stamped by the
 	// service from the sitting. The page writes an admitted deposit into that
 	// record and no other, so which record it is cannot be the browser's guess.
@@ -1236,6 +1247,10 @@ func clause(held *Deposit, line string) {
 		{uitools.DepositReason, &held.Reason},
 		{uitools.DepositConsequence, &held.Consequence},
 		{uitools.DepositClause, &held.Clause},
+		{uitools.DepositSeverity, &held.Severity},
+		{uitools.DepositTitle, &held.Title},
+		{uitools.DepositWhy, &held.Why},
+		{uitools.DepositRecommends, &held.Recommend},
 	} {
 		if rest, named := strings.CutPrefix(line, one.label); named {
 			*one.into = strings.TrimSpace(rest)

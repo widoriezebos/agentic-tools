@@ -253,7 +253,9 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return suggest(args.Text("editor"), args.Text("field"), args.Text("text"))
 	case OpDeposit:
 		return deposit(args.Text("kind"), args.Text("text"),
-			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"))
+			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"),
+			Finding{Severity: args.Text("severity"), Title: args.Text("title"), Why: args.Text("why"),
+				Recommend: args.Text("recommend")})
 	case OpPropose:
 		return r.propose(args)
 	case OpRefusal:

@@ -392,7 +392,8 @@ func TestAFindingIsAReviewsOwnAndADeskItemEverySittings(t *testing.T) {
 		Reads: []fakeacp.Read{
 			{Name: "mcp__metasystem__deposit", Title: "deposit(finding)",
 				Result: "prepared\nDeposit: finding\nAnchor: internal/owner.go:60\n" +
-					"Consequence: the lock stays held\n--- the deposit follows, whole and to the end ---\n" +
+					"Consequence: the lock stays held\n" + layers("A press that dies halfway leaves the lock held.") +
+					"--- the deposit follows, whole and to the end ---\n" +
 					"nothing covers a press that dies here\n"},
 			{Name: "mcp__metasystem__present", Title: "present(source)",
 				Result: "prepared for the desk\nDesk: source\nPath: internal/owner.go\nFrom: 41\nTo: 88\n"},
@@ -448,4 +449,163 @@ func TestAFindingIsAReviewsOwnAndADeskItemEverySittings(t *testing.T) {
 	// g1-s67 D4: every sitting has a room with a desk, a shaping one included.
 	testutil.Expect(t, "a desk item in a shaping room too", presented, true)
 	testutil.Expect(t, "and no activity saying otherwise", activity, "")
+}
+
+// layers is a finding's plain layers in the tool's framing, under one title.
+func layers(title string) string {
+	return "Severity: blocks\nTitle: " + title + "\nWhy: The next press waits forever.\n" +
+		"Recommends: must-fix\nReason: Release the lock on every way out.\n"
+}
+
+// review-findings-read-as-decisions §4 at the service: a finding reaches a
+// person only with its plain layers, and a title carrying an id, a path or a
+// timestamp does not reach them as a card to decide; each says why in words.
+func TestAFindingReachesAPersonOnlyWithItsPlainLayers(t *testing.T) {
+	t.Parallel()
+	finding := func(framing string) fakeacp.Read {
+		return fakeacp.Read{Name: "mcp__metasystem__deposit", Title: "deposit(finding)",
+			Result: "prepared\nDeposit: finding\nAnchor: internal/owner.go:60\n" + framing +
+				"--- the deposit follows, whole and to the end ---\nnothing covers a press that dies here\n"}
+	}
+	script := fakeacp.Script{
+		Reads: []fakeacp.Read{
+			finding(layers("A press that dies halfway leaves the lock held.")),
+			finding(strings.Replace(layers("x"), "Severity: blocks\n", "", 1)),
+			finding(layers("The review read e2f9c92, not the version that lands.")),
+			finding(layers("The strip in panel.ts:284 is untested.")),
+			finding(layers("It was marked ready at 12:19:54Z.")),
+		},
+		Chunks: []string{"Asked: ..."},
+	}
+	held := reviewService(t, script)
+	events, stop := held.service.Subscribe()
+	defer stop()
+	_, err := held.service.Sit(context.Background(), "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
+	testutil.Require(t, "the review opened", err, nil)
+	found := []partner.Deposit{}
+	for _, beat := range drain(t, events) {
+		if beat.Deposit != nil {
+			found = append(found, *beat.Deposit)
+		}
+	}
+	testutil.Require(t, "five findings arrived", len(found), 5)
+	testutil.Expect(t, "the whole one is offered", found[0].Offered, true)
+	testutil.Expect(t, "with its title", found[0].Title, "A press that dies halfway leaves the lock held.")
+	testutil.Expect(t, "and its recommendation", found[0].Recommend, "must-fix")
+	testutil.Expect(t, "one without its severity is not", found[1].Offered, false)
+	testutil.Expect(t, "and names the field", found[1].NotOffered,
+		"a finding says how much it matters as its severity: blocks, fix or note")
+	for at, said := range []string{"a commit id", "a path", "a timestamp"} {
+		testutil.Expect(t, "a title carrying "+said+" is not offered", found[2+at].Offered, false)
+		testutil.Expect(t, "a title carrying "+said+" says why", strings.HasPrefix(found[2+at].NotOffered,
+			"a finding's title is the problem in a person's words, with no commit id, file path or timestamp"), true)
+	}
+}
+
+// The review's own requests ask for the plain layers and one recommended
+// decision per finding, and leave the verdict to the person: the reviewer now
+// recommends (review-findings-read-as-decisions, open question 1).
+func TestTheReviewRequestsAskForPlainLayersAndARecommendation(t *testing.T) {
+	t.Parallel()
+	sitting := partner.Sitting{Subject: reviewOf(reviewA), Purpose: partner.PurposeReview}
+	opening := partner.ReviewOpeningRequest(sitting)
+	for _, asked := range []string{
+		"Open this review",
+		"one plain paragraph",
+		"its severity (blocks, fix or note)",
+		"a title: the problem in one plain sentence, with no commit id, file path or timestamp",
+		"why it matters",
+		"recommend one decision per finding",
+		"Never give the verdict",
+	} {
+		testutil.Expect(t, "the opening asks: "+asked, strings.Contains(opening, asked), true)
+	}
+	testutil.Expect(t, "and no longer forbids a recommendation", strings.Contains(opening, "Never say whether to accept"), false)
+	walk := partner.WalkRequest("built", sitting)
+	for _, asked := range []string{"recommend one decision", "Never give the verdict", "already carries"} {
+		testutil.Expect(t, "a walk asks: "+asked, strings.Contains(walk, asked), true)
+	}
+	testutil.Expect(t, "nor does a walk", strings.Contains(walk, "Never say whether to accept"), false)
+}
+
+// RF-03 and RF-06: the opening request is asked again on the version the
+// record names now — by Review the current version, and by Ask again after a
+// look that did not finish — naming what was raised about the earlier version
+// and the person's decision on each, as earlier: nothing carries over by
+// itself, and the reviewer says which still apply.
+func TestTheOpeningIsAskedAgainNamingTheEarlierFindingsAsEarlier(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	opener, watched := fakeacp.OpenWatched(fakeacp.Script{Chunks: []string{"Looked again."}})
+	host := partner.NewHostOn(partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"}, root, opener)
+	t.Cleanup(host.Close)
+	source := "# Review of g1-s64\n\n- Kind: review\n- Goals: g1-s64\n- Reviewed: " + strings.Repeat("c", 40) +
+		" (the tip of goal/g1-s64)\n- Previously: " + strings.Repeat("a", 40) + "\n\n## Findings\n\n" +
+		"## Earlier findings\n\n- 2026-10-02 · Wido · A press that dies halfway leaves the ledger locked. [d:deposit:t1#0]\n" +
+		"  - Severity: blocks\n  - Answer: fix — waits for Send back\n\n## Outcome\n"
+	facts := partner.Facts{Document: func(id string) (project.Document, error) {
+		return project.Document{ID: id, Source: source, Record: &project.Head{Kind: "review", Goals: []string{"g1-s64"}}}, nil
+	}}
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		facts, func() time.Time { return time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC) })
+	events, stop := service.Subscribe()
+	defer stop()
+	ctx := context.Background()
+	sitting, err := service.Sit(ctx, "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
+	testutil.Require(t, "the review opened", err, nil)
+	drain(t, events)
+
+	_, err = service.Walk(ctx, "Wido", reviewA, partner.WalkAgain, inTheRoom(reviewA))
+	testutil.Require(t, "the opening asked again", err, nil)
+	drain(t, events)
+	read, err := service.SnapshotIn("Wido", reviewA, 100)
+	testutil.Require(t, "read back", err, nil)
+	asked := read.Messages[len(read.Messages)-2]
+	testutil.Expect(t, "the interface's own question", asked.Interface, true)
+	for _, said := range []string{
+		"Open this review again",
+		"A press that dies halfway leaves the ledger locked.",
+		"fix — waits for Send back",
+		"Nothing of it carries over by itself",
+		"say which still apply",
+	} {
+		testutil.Expect(t, "it says: "+said, strings.Contains(asked.Text, said), true)
+	}
+	testutil.Expect(t, "and it is the opening's own brief after that",
+		strings.Contains(asked.Text, "Give each finding its severity"), true)
+	testutil.Expect(t, "the runtime was asked it", strings.Contains(prompt(t, watched, len(watched.Prompts())-1), "Open this review again"), true)
+	_, err = service.Walk(ctx, "Wido", design, partner.WalkAgain, inTheRoom(design))
+	testutil.Expect(t, "only a review is opened again", err != nil, true)
+	_ = sitting
+}
+
+// Fix round 3, F-2: a look at this version that stopped or failed is asked
+// again as a fresh opening of the same version, which the completion rule then
+// follows: what was already offered stands and is not offered again, and it
+// is not a move to another version.
+func TestALookThatDidNotFinishIsOpenedOnceMore(t *testing.T) {
+	t.Parallel()
+	held := reviewService(t, fakeacp.Script{Chunks: []string{"Looked again."}})
+	events, stop := held.service.Subscribe()
+	defer stop()
+	ctx := context.Background()
+	sitting, err := held.service.Sit(ctx, "Wido", reviewOf(reviewA), partner.PurposeReview, inTheRoom(reviewA))
+	testutil.Require(t, "the review opened", err, nil)
+	drain(t, events)
+
+	_, err = held.service.Walk(ctx, "Wido", reviewA, partner.WalkResume, inTheRoom(reviewA))
+	testutil.Require(t, "the look asked once more", err, nil)
+	drain(t, events)
+	read, err := held.service.SnapshotIn("Wido", reviewA, 100)
+	testutil.Require(t, "read back", err, nil)
+	asked := read.Messages[len(read.Messages)-2]
+	testutil.Expect(t, "the interface's own question", asked.Interface, true)
+	testutil.Expect(t, "its fixed words", asked.Text, partner.ReviewResumeRequest(sitting))
+	for _, said := range []string{"Open this review once more", "did not finish", "do not offer it again", "Give each finding its severity"} {
+		testutil.Expect(t, "it says: "+said, strings.Contains(asked.Text, said), true)
+	}
+	testutil.Expect(t, "and it is not a move to another version", strings.HasPrefix(asked.Text, "Open this review again"), false)
+	_, err = held.service.Walk(ctx, "Wido", design, partner.WalkResume, inTheRoom(design))
+	testutil.Expect(t, "only a review's look is asked once more", err != nil, true)
 }

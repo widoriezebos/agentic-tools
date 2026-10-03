@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ANSWERS,
   reviewStart,
   deskKey,
   deskReadKey,
@@ -13,7 +12,6 @@ import {
   CLEAR_REFUSED,
   reviewOutcome,
   outcomeShape,
-  answerLine,
   retipped,
   RoomKeeper,
   reviewedOf,
@@ -24,16 +22,12 @@ import {
   keepAfterSilence,
   keepDue,
   KEEP_AFTER_SILENCE,
-  mayHaveMoved,
-  NOD_LINE,
-  nodded,
   onDesk,
   outcomeWithVerdict,
   parseAnchor,
   roomOf,
   roomState,
   unansweredIn,
-  VERDICTS,
   withDraft,
   withoutDraft,
   type Desk,
@@ -113,13 +107,6 @@ describe("ending", () => {
 
   it("lists every recorded finding still unanswered, which Clear to land refuses on", () => {
     expect(unansweredIn(entries).map((entry) => entry.text)).toEqual(["the press dies", "no test kills it"]);
-  });
-
-  it("offers three ways, each with its consequence said", () => {
-    expect(VERDICTS.map((verdict) => verdict.label)).toEqual(["Clear to land", "Send back", "End without a verdict"]);
-    for (const verdict of VERDICTS) {
-      expect(verdict.consequence).not.toBe("");
-    }
   });
 
   it("writes the verdict as the Outcome's first line and names what was examined", () => {
@@ -239,19 +226,6 @@ describe("ending", () => {
     expect(outcome).toMatch(/Verdict: clear to land\n\nExamined: \S/u);
   });
 
-  it("says a nod plainly when the piles are empty", () => {
-    expect(nodded([])).toBe(true);
-    expect(nodded(entries)).toBe(false);
-    expect(NOD_LINE).toContain("nothing anyone can be held to");
-  });
-});
-
-describe("a moved tip", () => {
-  it("marks the findings anchored in a file that changed, and no other", () => {
-    const changed = ["internal/owner.go"];
-    expect(mayHaveMoved(finding("a", "unanswered", "internal/owner.go:60"), changed)).toBe(true);
-    expect(mayHaveMoved(finding("b", "unanswered", "internal/other.go:3"), changed)).toBe(false);
-  });
 });
 
 describe("the room's working state", () => {
@@ -411,26 +385,6 @@ describe("keeping the room in order", () => {
     server.out[0].arrive();
     await kept;
     expect(server.mark.text).toBe("above");
-  });
-});
-
-describe("the four answers' own refusals", () => {
-  it("writes a follow-up only once its goal is open, and an acceptance only with a reason", () => {
-    expect(answerLine("fix", "")).toEqual({ line: "fix — waits for Send back" });
-    expect(answerLine("left open", "")).toEqual({ line: "left open" });
-    expect(answerLine("follow-up", "")).toEqual({ refusal: "A follow-up is written once its goal is open." });
-    expect(answerLine("follow-up", "g2-s01")).toEqual({ line: "follow-up — goal g2-s01" });
-    expect(answerLine("accepted", "  ")).toEqual({
-      refusal: "An accepted risk is recorded with your reason. Write the reason before accepting it.",
-    });
-    expect(answerLine("accepted", "the lease bounds it")).toEqual({ line: "accepted — the lease bounds it" });
-  });
-
-  it("says each answer's consequence before it is pressed", () => {
-    expect(ANSWERS.map((one) => one.label)).toEqual(["Fix in this goal", "Follow-up goal", "Accept, with reason", "Leave open"]);
-    for (const one of ANSWERS) {
-      expect(one.consequence).not.toBe("");
-    }
   });
 });
 

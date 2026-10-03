@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import { Desk, SourceShown } from "./Desk";
 import { EndShapingWays, Room } from "./ReviewRoom";
 import {
-  endOf,
   firstDesk,
   localDeposit,
   openingDesk,
@@ -154,9 +153,6 @@ describe("the room of a sitting that shapes a record", () => {
   });
 
   it("ends by purpose: a shaping room drafts the Outcome or ends without recording, and no verdict", () => {
-    expect(endOf("shape a design")).toBe("outcome");
-    expect(endOf("shape intent")).toBe("outcome");
-    expect(endOf("review")).toBe("verdict");
     const shown = around(<EndShapingWays busy={false} onDraft={() => undefined} onWithout={() => undefined} />);
     expect(shown).toContain(`>${END}<`);
     expect(shown).toContain(`>${END_WITHOUT}<`);

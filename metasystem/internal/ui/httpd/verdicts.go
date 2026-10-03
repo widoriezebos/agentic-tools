@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
@@ -68,6 +69,10 @@ type reviewBody struct {
 	Verdict string `json:"verdict"`
 	Brief   string `json:"brief"`
 	Work    string `json:"work"`
+	// Tip and Revision are the version and the saved record the person
+	// decided on (review-findings-read-as-decisions RF-02).
+	Tip      string `json:"tip"`
+	Revision string `json:"revision"`
 }
 
 // sessionFor is the launch route's rule, for every act here: a live session
@@ -115,6 +120,8 @@ func (h *handler) reviewGoal(w http.ResponseWriter, r *http.Request, id string) 
 	recorded, err := h.info.Verdict(signed, id, act.Reviewed{
 		Record: strings.TrimSpace(body.Record), Verdict: strings.TrimSpace(body.Verdict),
 		Brief: body.Brief, Work: strings.TrimSpace(body.Work),
+		Tip: strings.TrimSpace(body.Tip), Revision: strings.TrimSpace(body.Revision),
+		Branch: h.branchAtThePress(id),
 	})
 	if err != nil {
 		var refusal *act.Refusal
@@ -129,6 +136,21 @@ func (h *handler) reviewGoal(w http.ResponseWriter, r *http.Request, id string) 
 		Recorded act.Recorded   `json:"recorded"`
 		Backlog  backlogPayload `json:"backlog"`
 	}{Recorded: recorded, Backlog: h.backlogPayload(r)})
+}
+
+// branchAtThePress is the version of one goal that would land, read now —
+// fetched from origin first, as the landing gate reads a word to land — and
+// never the room's earlier read (fix round 1, F-3); "" where it cannot be read,
+// which the act refuses in words.
+func (h *handler) branchAtThePress(goal string) string {
+	if h.info.Review == nil {
+		return ""
+	}
+	tip, err := h.info.Review.BranchTipAtOrigin(goal)
+	if err != nil {
+		return ""
+	}
+	return tip
 }
 
 // appRouteOf is one of the two candidate writes a path names.
@@ -153,28 +175,43 @@ func appGoal(path, suffix string) (string, bool) {
 	return goal, true
 }
 
-func (h *handler) appStatus(w http.ResponseWriter, goal string) {
+func (h *handler) appStatus(w http.ResponseWriter, r *http.Request, goal string) {
 	w.Header().Set("Content-Type", "application/json")
-	h.answerCandidate(w, goal, "status")
+	h.answerCandidate(w, goal, r.URL.Query().Get("commit"), "status")
 }
 
 func (h *handler) appAct(w http.ResponseWriter, r *http.Request, goal, action string) {
 	if _, ok := h.sessionFor(w, r); !ok {
 		return
 	}
-	var body struct{}
+	var body struct {
+		// Commit is the version the page shows, which the run is at
+		// (review-findings-read-as-decisions RF-04, fix round 3 F-1).
+		Commit string `json:"commit"`
+	}
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerCandidate(w, goal, action)
+	h.answerCandidate(w, goal, body.Commit, action)
 }
 
-func (h *handler) answerCandidate(w http.ResponseWriter, goal, action string) {
+// answerCandidate runs one app form for a goal's candidate: at the commit the
+// page shows — the version a person is deciding on, never the review as it
+// may have moved since the page read it (fix round 3, F-1) — or at the goal's
+// branch as it stands where no commit is named. A commit that is not one of
+// the goal's branch is refused in words, before anything runs.
+func (h *handler) answerCandidate(w http.ResponseWriter, goal, commit, action string) {
 	if h.info.Candidate == nil {
 		writeFailure(w, "this engine was built without the candidate's run")
 		return
 	}
-	run, err := h.info.Candidate(goal, action)
+	at, refusal := h.versionToRun(goal, strings.TrimSpace(commit))
+	if refusal != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeActRefusal(w, "commit", refusal)
+		return
+	}
+	run, err := h.info.Candidate(goal, at, action)
 	if err != nil {
 		var refusal *CandidateRefusal
 		if errors.As(err, &refusal) {
@@ -206,6 +243,27 @@ func (h *handler) reviewedTipOf(record string) string {
 	return reviewed.Tip
 }
 
+// versionToRun is the commit a candidate's run is at, or why it is not run:
+// a whole commit id of the goal's branch, or "" for the branch as it stands.
+func (h *handler) versionToRun(goal, commit string) (string, string) {
+	if commit == "" {
+		return "", ""
+	}
+	if !wholeCommit.MatchString(commit) {
+		return "", commit + " is not a whole commit id; Try it runs a version by its commit"
+	}
+	if h.info.Review == nil {
+		return "", "this engine reads no goal branch, so it cannot say whether " + commit[:12] + " is a version of goal " + goal
+	}
+	if on, err := h.info.Review.OnBranch(goal, commit); err != nil || !on {
+		return "", commit[:12] + " is not a version of goal " + goal + "'s branch, so it is not run here"
+	}
+	return commit, ""
+}
+
+// wholeCommit is a commit id written out whole, which is all a run is at.
+var wholeCommit = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
+
 // candidateFor is what the Behaves walk of one review is told of the goal's
 // candidate: its address and running commit as app status reads them, beside
 // the tip the record names. Every other walk is told nothing.
@@ -226,7 +284,7 @@ func (h *handler) candidateFor(record, part string) *partner.Candidate {
 		candidate.Evidence = h.evidenceFor(document.Source)
 	}
 	if h.info.Candidate != nil {
-		if run, err := h.info.Candidate(reviewed.Goal, "status"); err == nil && run.State == "running" && run.Address != "" {
+		if run, err := h.info.Candidate(reviewed.Goal, reviewed.Tip, "status"); err == nil && run.State == "running" && run.Address != "" {
 			candidate.Address, candidate.Running = run.Address, run.Commit
 		}
 	}

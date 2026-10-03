@@ -49,6 +49,14 @@ export type Changes = {
   total: number;
   current: string;
   moved: boolean;
+  /**
+   * When the reviewed version was made and who made it, and when the branch's
+   * version now was made (review-findings-read-as-decisions §3): a version is
+   * said by its time, with its commit behind the (i). Absent where unread.
+   */
+  at?: string;
+  by?: string;
+  currentAt?: string;
 };
 
 /** One line of a hunk. */

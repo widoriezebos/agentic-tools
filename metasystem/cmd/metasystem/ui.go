@@ -718,8 +718,8 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				},
 				// The goal's candidate, from the room's pill (D3): the three
 				// app forms, run as the public verbs are run.
-				Candidate: func(goal, action string) (httpd.Candidate, error) {
-					return candidateRun(roots, goal, action)
+				Candidate: func(goal, at, action string) (httpd.Candidate, error) {
+					return candidateRun(roots, goal, at, action)
 				},
 				BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 					return tierBudgets(roots.Installation)

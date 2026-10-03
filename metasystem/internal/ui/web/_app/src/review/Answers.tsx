@@ -1,125 +1,187 @@
 import { createContext, useEffect, useId, useState } from "react";
 
-import { ANSWERS, parseAnchor, type AnswerKind } from "./room";
+import {
+  choiceSaid,
+  decisionNamed,
+  decisionOfAnswer,
+  decisionOfRecommend,
+  decisionsFor,
+  parseAnchor,
+  type Decision,
+  type RoomFinding,
+} from "./room";
 import { loadBacklog, type Backlog } from "../backlog/api";
 import { OpenSheet } from "../backlog/OpenSheet";
 import { usePartner } from "../partner/store";
-import { answerOf } from "../partner/sitting";
+import { ACCEPTED, FIX, followUp, NOT_A_PROBLEM } from "../partner/sitting";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import { Trouble } from "../shell/Trouble";
 
 /**
- * The files that changed on the branch since the tip the review names, while
- * the room says the tip moved: a finding anchored in one of them carries "may
- * have moved" on its card and on the board until the new tip is reviewed (D9).
+ * The files that changed on the branch since the version the review names,
+ * while the room says it moved (D9): the shaping room's board reads it.
  */
 export const MovedFiles = createContext<readonly string[]>([]);
 
 /**
- * A recorded finding's four answers (g1-s65 D8), on its card and on the board.
+ * A finding's decision (review-findings-read-as-decisions §3): the choices its
+ * severity offers, each with the consequence it has, said before the press;
+ * the reviewer's recommendation marked while the person has decided nothing,
+ * and the person's decision marked once they have. One press records the
+ * finding with the decision, and pressing the decision that stands writes
+ * nothing (R-129-ui).
  *
- * Each press says its consequence beside it, before it is pressed, and each one
- * rewrites that finding's Answer line in the record through the recorder, by the
- * entry's mark: the door's counts and End's refusal read the record, so an
- * answer is a fact of the record and not of this browser (Astra S65-01).
- *
- * Two of the four ask for something first. Follow-up goal opens the New goal
- * sheet with the finding as its prefilled intent, and the answer is written only
- * once the goal has been opened, naming it. Accept opens a small sheet whose
- * reason is required; its words are kept with the room's drafts while it is open.
+ * Two of the four ask for something first. Fix after landing opens the New goal
+ * sheet with the title as its intent and why it matters as its next step, and
+ * the decision is written only once the goal is open, naming it (R-4). Not a
+ * problem and I accept this risk ask for the person's reason in a small sheet;
+ * an acceptance's words are kept with the room's drafts while its sheet is open.
  */
-export function FindingAnswers({ mark, text, answer, moved }: { mark: string; text: string; answer: string; moved: boolean }) {
-  const { answerFinding, accepting, noteAccepting, keepRoomNow } = usePartner();
+export function FindingDecisions({ finding }: { finding: RoomFinding }) {
+  const { decideFinding, accepting, noteAccepting, keepRoomNow } = usePartner();
   const [refusal, setRefusal] = useState("");
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
-  const reason = accepting[mark];
+  const [why, setWhy] = useState<string | null>(null);
+  const reason = accepting[finding.id];
+  const chosen = decisionOfAnswer(finding.answer);
+  const recommended = decisionOfRecommend(finding.recommend);
 
-  const press = async (kind: AnswerKind, detail: string) => {
+  const press = async (answer: string): Promise<boolean> => {
     setBusy(true);
     setRefusal("");
     try {
-      setRefusal(await answerFinding(mark, kind, detail));
+      const refused = await decideFinding(finding.id, answer);
+      setRefusal(refused);
+      return refused === "";
     } finally {
       setBusy(false);
     }
   };
 
-  const now = answerOf(answer);
+  const choose = (decision: Decision) => {
+    if (decision === chosen) {
+      return;
+    }
+    switch (decision) {
+      case "fix":
+        void press(FIX);
+        return;
+      case "follow-up":
+        setOpening(true);
+        return;
+      case "not a problem":
+        setWhy("");
+        return;
+      case "accepted":
+        noteAccepting(finding.id, reason ?? "");
+    }
+  };
+
   return (
-    <div className="ms-finding-answers">
-      <p className={`ms-finding-answer ms-finding-answer--${now.replace(/\s+/gu, "-")}`}>
-        <span className="ms-deposit-label">Answer</span>
-        {answer === "" ? "unanswered" : answer}
-        {moved && <span className="ms-finding-moved">may have moved</span>}
-      </p>
-      <ul className="ms-finding-presses">
-        {ANSWERS.map((one) => (
-          <li key={one.answer} className="ms-finding-press">
-            <Button
-              disabled={busy}
-              primary={one.answer === "fix" && now === "unanswered"}
+    <div className="ms-decide">
+      <span className="ms-decide-label">Your decision</span>
+      <div className="ms-decide-choices">
+        {decisionsFor(finding.severity).map((decision) => {
+          const mine = chosen === decision;
+          const advised = chosen === "" && recommended === decision;
+          return (
+            <button
+              key={decision}
+              type="button"
+              className={`ms-decide-choice${mine ? " ms-decide-choice--chosen" : ""}${advised ? " ms-decide-choice--recommended" : ""}`}
+              aria-pressed={mine}
+              disabled={busy || finding.id === ""}
               onClick={() => {
-                if (one.answer === "follow-up") {
-                  setOpening(true);
-                  return;
-                }
-                if (one.answer === "accepted") {
-                  noteAccepting(mark, reason ?? "");
-                  return;
-                }
-                void press(one.answer, "");
+                choose(decision);
               }}
             >
-              {one.label}
-            </Button>
-            <span className="ms-finding-consequence">{one.consequence}</span>
-          </li>
-        ))}
-      </ul>
-      {refusal !== "" && (
-        <Trouble text={refusal} role="status" variant="small" />
-      )}
+              <b>
+                {decisionNamed(decision).label}
+                {mine && <span className="ms-decide-mark">your decision</span>}
+                {advised && <span className="ms-decide-mark">recommended</span>}
+              </b>
+              <small>{choiceSaid(decision, finding)}</small>
+            </button>
+          );
+        })}
+      </div>
+      {refusal !== "" && <Trouble text={refusal} role="status" variant="small" />}
       {opening && (
         <FollowUp
-          intent={text}
+          intent={finding.title}
+          nextStep={finding.why}
           onClose={() => {
             setOpening(false);
           }}
           onOpened={(goal) => {
             setOpening(false);
-            void press("follow-up", goal);
+            void press(followUp(goal));
           }}
         />
       )}
       <Sheet
-        open={reason !== undefined}
+        open={why !== null}
         onOpenChange={(open) => {
           if (!open) {
-            noteAccepting(mark, null);
+            setWhy(null);
           }
         }}
         side="right"
-        label="Accept this finding"
-        title="Accept, with reason"
+        label="Not a problem"
+        title="Not a problem"
+        closeLabel="Close without deciding"
+        bodyClassName="ms-sitting-sheet ms-review-sheet"
+        sheetName="Not a problem"
+      >
+        <ReasonSheet
+          said="Say why this is not a problem. Your reason is recorded with the finding."
+          title={finding.title}
+          reason={why ?? ""}
+          busy={busy}
+          refusal={refusal}
+          press="Record: not a problem"
+          onReason={setWhy}
+          onLeave={() => undefined}
+          onPress={() => {
+            void press(NOT_A_PROBLEM(why ?? "")).then((done) => {
+              if (done) {
+                setWhy(null);
+              }
+            });
+          }}
+        />
+      </Sheet>
+      <Sheet
+        open={reason !== undefined}
+        onOpenChange={(open) => {
+          if (!open) {
+            noteAccepting(finding.id, null);
+          }
+        }}
+        side="right"
+        label="I accept this risk"
+        title="I accept this risk"
         closeLabel="Close without accepting"
         bodyClassName="ms-sitting-sheet ms-review-sheet"
-        sheetName="Accept, with reason"
+        sheetName="I accept this risk"
       >
-        <AcceptSheet
-          text={text}
+        <ReasonSheet
+          said={choiceSaid("accepted", { ...finding, answer: "" })}
+          title={finding.title}
           reason={reason ?? ""}
           busy={busy}
           refusal={refusal}
+          press="I accept this risk"
           onReason={(said) => {
-            noteAccepting(mark, said);
+            noteAccepting(finding.id, said);
           }}
           onLeave={() => {
             void keepRoomNow();
           }}
-          onAccept={() => {
-            void press("accepted", reason ?? "");
+          onPress={() => {
+            void press(ACCEPTED(reason ?? ""));
           }}
         />
       </Sheet>
@@ -127,31 +189,33 @@ export function FindingAnswers({ mark, text, answer, moved }: { mark: string; te
   );
 }
 
-function AcceptSheet({
-  text,
+/** A choice's small sheet: what it records, the finding, the person's reason, and the press. */
+export function ReasonSheet({
+  said,
+  title,
   reason,
   busy,
   refusal,
+  press,
   onReason,
   onLeave,
-  onAccept,
+  onPress,
 }: {
-  text: string;
+  said: string;
+  title: string;
   reason: string;
   busy: boolean;
   refusal: string;
+  press: string;
   onReason: (said: string) => void;
   onLeave: () => void;
-  onAccept: () => void;
+  onPress: () => void;
 }) {
   const field = useId();
   return (
     <>
-      <p className="ms-sitting-said">
-        {"Accepting records the risk with your reason on this finding\u2019s own line. " +
-          "The reason is yours, and the finding is not accepted without one."}
-      </p>
-      <p className="ms-deposit-text">{text}</p>
+      <p className="ms-sitting-said">{said}</p>
+      <p className="ms-deposit-text">{title}</p>
       <label className="ms-sitting-label" htmlFor={field}>
         Your reason
       </label>
@@ -167,15 +231,13 @@ function AcceptSheet({
       />
       {reason.trim() === "" && (
         <p className="ms-deposit-needs" role="status">
-          An accepted risk is recorded with your reason. Write the reason before accepting it.
+          Write your reason first; it is recorded with your decision.
         </p>
       )}
-      {refusal !== "" && (
-        <Trouble text={refusal} role="status" variant="small" />
-      )}
+      {refusal !== "" && <Trouble text={refusal} role="status" variant="small" />}
       <div className="ms-sitting-foot">
-        <Button primary disabled={busy || reason.trim() === ""} onClick={onAccept}>
-          Accept it
+        <Button primary disabled={busy || reason.trim() === ""} onClick={onPress}>
+          {press}
         </Button>
       </div>
     </>
@@ -186,7 +248,17 @@ function AcceptSheet({
  * The New goal sheet, opened with the finding as its intent. The answer is
  * written only from its onDone, which is the ledger saying the goal exists.
  */
-function FollowUp({ intent, onClose, onOpened }: { intent: string; onClose: () => void; onOpened: (goal: string) => void }) {
+export function FollowUp({
+  intent,
+  nextStep = "",
+  onClose,
+  onOpened,
+}: {
+  intent: string;
+  nextStep?: string;
+  onClose: () => void;
+  onOpened: (goal: string) => void;
+}) {
   const [backlog, setBacklog] = useState<Backlog | null>(null);
   const [refusal, setRefusal] = useState("");
   useEffect(() => {
@@ -214,6 +286,7 @@ function FollowUp({ intent, onClose, onOpened }: { intent: string; onClose: () =
     <OpenSheet
       backlog={backlog}
       intent={intent}
+      nextStep={nextStep}
       onClose={onClose}
       onDone={(_opened, id) => {
         onOpened(id);

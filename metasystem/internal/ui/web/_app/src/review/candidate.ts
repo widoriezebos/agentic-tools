@@ -37,13 +37,29 @@ export class CandidateError extends Error {
   }
 }
 
-/** The one request: a read without a body, an act with an empty one. */
-async function call(resource: string, acting: boolean, signal?: AbortSignal): Promise<Candidate> {
-  const response = await fetch(resource, {
-    signal,
+/**
+ * One request of Try it, as it is sent: a read without a body, an act with an
+ * empty one; each names the commit the page shows, where it shows one (RF-04,
+ * fix round 3 F-1): the server runs exactly that version, and refuses one that
+ * is not the goal's, however the review has moved since the page read it.
+ */
+export function candidateRequest(resource: string, acting: boolean, commit: string): { url: string; method: string; body?: string } {
+  const named = !acting && commit !== "" ? `?commit=${encodeURIComponent(commit)}` : "";
+  return {
+    url: `${resource}${named}`,
     method: acting ? "POST" : "GET",
+    body: acting ? JSON.stringify(commit === "" ? {} : { commit }) : undefined,
+  };
+}
+
+/** The one request, sent. */
+async function call(resource: string, acting: boolean, commit: string, signal?: AbortSignal): Promise<Candidate> {
+  const asked = candidateRequest(resource, acting, commit);
+  const response = await fetch(asked.url, {
+    signal,
+    method: asked.method,
     headers: acting ? { Accept: "application/json", "Content-Type": "application/json" } : { Accept: "application/json" },
-    body: acting ? "{}" : undefined,
+    body: asked.body,
   });
   if (!response.ok) {
     let said: { error?: string; code?: string; signIn?: boolean } = {};
@@ -61,14 +77,19 @@ function base(goal: string): string {
   return APP + encodeURIComponent(goal);
 }
 
-export function loadCandidate(goal: string, signal?: AbortSignal): Promise<Candidate> {
-  return call(`${base(goal)}${STATUS}`, false, signal);
+/** The routes' own address for one goal's run. */
+export function candidateRoute(goal: string, action: "status" | "start" | "stop"): string {
+  return `${base(goal)}${action === "status" ? STATUS : action === "start" ? START : STOP}`;
 }
 
-export function startCandidate(goal: string): Promise<Candidate> {
-  return call(`${base(goal)}${START}`, true);
+export function loadCandidate(goal: string, commit = "", signal?: AbortSignal): Promise<Candidate> {
+  return call(`${base(goal)}${STATUS}`, false, commit, signal);
 }
 
-export function stopCandidate(goal: string): Promise<Candidate> {
-  return call(`${base(goal)}${STOP}`, true);
+export function startCandidate(goal: string, commit = ""): Promise<Candidate> {
+  return call(`${base(goal)}${START}`, true, commit);
+}
+
+export function stopCandidate(goal: string, commit = ""): Promise<Candidate> {
+  return call(`${base(goal)}${STOP}`, true, commit);
 }
