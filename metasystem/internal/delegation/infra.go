@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -116,19 +117,25 @@ func (s *session) requireFreshCensus() error {
 // own system; an unarmed linked worktree's is its primary checkout's. A
 // root that keeps its own must then have its own census.
 func (s *session) supervisedInstallation() (root, repo string) {
+	installation, checkout := systemInstallation(s.ctx, s.l.ports.Git, s.root)
+	if checkout == "" {
+		return s.root, s.repoScope
+	}
+	return installation, checkout
+}
+
+// systemInstallation is landpath.SystemInstallation over the lifecycle's
+// Git port, run in root.
+func systemInstallation(ctx context.Context, ops GitOps, root string) (installation, checkout string) {
 	git := func(args ...string) landpath.GitResult {
-		stdout, stderr, err := s.l.ports.Git.Run(s.ctx, s.root, args...)
+		stdout, stderr, err := ops.Run(ctx, root, args...)
 		code := 0
 		if err != nil {
 			code = 1
 		}
 		return landpath.GitResult{Stdout: stdout, Stderr: stderr, Code: code}
 	}
-	installation, checkout := landpath.SystemInstallation(git, s.root)
-	if checkout == "" {
-		return s.root, s.repoScope
-	}
-	return installation, checkout
+	return landpath.SystemInstallation(git, root)
 }
 
 // requireOpenDispatchFence is require_open_dispatch_fence.

@@ -78,8 +78,12 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	if harness := os.Getenv("METASYSTEM_HARNESS_ROOT"); harness != "" {
 		eventRoot = harness
 	}
+	// The lease is the seat's: an unarmed goal worktree's caller is
+	// announced, and holds the lease, at its primary checkout
+	// (landpath.SystemInstallation); any other root keeps its own.
+	leaseRoot, _ := systemInstallation(context.Background(), ownerGit{}, root)
 	return Ports{
-		Lease:   ownerLease{root: root},
+		Lease:   ownerLease{root: leaseRoot},
 		Steward: ownerSteward{root: root},
 		Adapter: ownerAdapter{root: root, engine: engine, env: config.ConfigEnv},
 		Goal:    ownerGoal{root: root, now: now},
