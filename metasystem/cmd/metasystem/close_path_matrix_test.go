@@ -157,6 +157,19 @@ func (b *closeMatrixBed) fold(n int) {
 	}
 }
 
+// acceptRisk records a person's accepted risk of finding id as goal
+// accept-risk does: bound to the digest of the finding as shown (F4).
+func (b *closeMatrixBed) acceptRisk(id string) {
+	b.t.Helper()
+	shown, err := dispatchcore.CritiqueRegisterDecisionFinding(b.install, matrixRoot, id, bedGoal)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	if err := dispatchcore.CritiqueRegisterAcceptRisk(b.install, matrixRoot, id, "person-op", shown.Digest); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
 // finish runs work finish on the chain with the author's decisions on the
 // terminal round's findings.
 func (b *closeMatrixBed) finish(rows ...string) (int, intentResult) {
@@ -302,11 +315,25 @@ func TestClosePathMatrix(t *testing.T) {
 		{"person-accepted risk", []string{"code-critic", "design-critic"}, func(t *testing.T, b *closeMatrixBed) {
 			b.round(1, severe("F1"))
 			b.fold(1)
-			if err := dispatchcore.CritiqueRegisterAcceptRisk(b.install, matrixRoot, "F1", "person-op"); err != nil {
-				t.Fatal(err)
-			}
+			b.acceptRisk("F1")
 			code, result := b.finish("| F1 | accepted | a person accepted the risk | none |")
 			b.expectClosed(code, result, true)
+		}},
+		{"equal-rigor re-report of an accepted risk with new evidence refuses", []string{"code-critic", "design-critic"}, func(t *testing.T, b *closeMatrixBed) {
+			// The acceptance covers the finding as the person saw it (F4):
+			// round 2 reports it again with other evidence, which reopens
+			// it for a new decision.
+			b.round(1, severe("F1"))
+			b.fold(1)
+			b.acceptRisk("F1")
+			b.round(2, severe("F1"))
+			code, result := b.finish("| F1 | accepted | a person accepted the risk | none |")
+			if result.Outcome == intentConfirmed || code == 0 || b.closed() {
+				t.Fatalf("an acceptance of other content closed the chain: exit %d %+v", code, result)
+			}
+			if entry := b.entry("F1"); entry["status"] != "open" || entry["decisionOpid"] != "" {
+				t.Fatalf("the re-reported finding kept the earlier acceptance: %v", entry)
+			}
 		}},
 		{"undecided material finding refuses", []string{"code-critic", "design-critic"}, func(t *testing.T, b *closeMatrixBed) {
 			b.round(1, severe("F1"))
@@ -344,9 +371,10 @@ func TestClosePathMatrix(t *testing.T) {
 		{"lower-rigor re-report of an accepted risk", []string{"code-critic", "design-critic"}, func(t *testing.T, b *closeMatrixBed) {
 			b.round(1, severe("F1"))
 			b.fold(1)
-			if err := dispatchcore.CritiqueRegisterAcceptRisk(b.install, matrixRoot, "F1", "person-op"); err != nil {
-				t.Fatal(err)
-			}
+			b.acceptRisk("F1")
+			// Round 2 reviews another tree: the acceptance covers the
+			// finding's content only (F4, Wido 2026-10-03), which the
+			// lower-rigor re-report leaves as decided.
 			b.round(2, bounded("F1"))
 			code, result := b.finish("| F1 | accepted | a person accepted the risk | none |")
 			b.expectClosed(code, result, true)

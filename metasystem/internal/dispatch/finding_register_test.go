@@ -630,24 +630,24 @@ func TestCritiqueRegisterReadsDecisionAndAcceptsRisk(t *testing.T) {
 		t.Fatalf("foreign goal decision finding = %v", err)
 	}
 
-	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op"); err != nil {
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op", finding.Digest); err != nil {
 		t.Fatal(err)
 	}
-	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op"); err != nil {
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op", finding.Digest); err != nil {
 		t.Fatalf("accepted-risk retry = %v", err)
 	}
 	entry := registerEntryByID(t, readRegister(t, repo, "critic"), "F-2")
-	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || entry["decisionOpid"] != "decision-op" {
+	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || entry["decisionOpid"] != "decision-op" || entry["acceptedDigest"] != finding.Digest {
 		t.Fatalf("accepted risk was not persisted: %v", entry)
 	}
-	if _, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "goal-a"); err != nil {
-		t.Fatalf("accepted-risk replay cannot read its decision finding: %v", err)
+	if replay, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "goal-a"); err != nil || replay.Digest != finding.Digest {
+		t.Fatalf("accepted-risk replay cannot read its decision finding: %+v %v", replay, err)
 	}
-	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "different-op"); err == nil ||
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "different-op", finding.Digest); err == nil ||
 		!strings.Contains(err.Error(), "not open or disputed") {
 		t.Fatalf("second acceptance operation = %v", err)
 	}
-	if err := CritiqueRegisterAcceptRisk(repo, "critic", "missing", "decision-op"); err == nil ||
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "missing", "decision-op", finding.Digest); err == nil ||
 		!strings.Contains(err.Error(), "is absent") {
 		t.Fatalf("absent acceptance finding = %v", err)
 	}

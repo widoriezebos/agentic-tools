@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,6 +28,11 @@ const materialByRoundField = "materialByRound"
 const reviewRoundLimitField = "reviewRoundLimit"
 const criticRoundsConsumedField = "criticRoundsConsumed"
 
+// acceptancesBoundField lists, one plain line each, the accepted risks that
+// predate content binding and were bound to the finding as it stood when a
+// fold or stamp first met them (R-142-m1e).
+const acceptancesBoundField = "acceptancesBound"
+
 func init() {
 	// These fields are written only by the locked finding-register owner.
 	// Register them here so generic record transitions cannot pre-seed proof.
@@ -34,6 +40,7 @@ func init() {
 	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
 	dedicatedMetadataFields[cleanReadRoundsField] = true
 	dedicatedMetadataFields[materialByRoundField] = true
+	dedicatedMetadataFields[acceptancesBoundField] = true
 }
 
 type registerFinding struct {
@@ -52,6 +59,62 @@ type registerFinding struct {
 	Evidence       string
 	EvidenceDigest string
 	Multiplicity   int64
+	// AcceptedDigest is the readsubject.AcceptedFindingDigest a person's
+	// accepted risk covers; set only on an accepted-risk entry.
+	AcceptedDigest string
+}
+
+// acceptanceDigest is the digest an acceptance of f must carry: its content
+// only (readsubject.AcceptedFindingDigest).
+func (f registerFinding) acceptanceDigest() string {
+	return readsubject.AcceptedFindingDigest(encodeFindingRegister([]registerFinding{f})[0].(map[string]any))
+}
+
+// reopenChangedAcceptances reopens every accepted risk whose content is no
+// longer what the person accepted: the acceptance does not cover it, so the
+// finding is open again and needs a new decision (F4). A re-review of another
+// tree that reports the same content keeps the acceptance.
+// An acceptance that predates content binding is bound first
+// (bindPredatingAcceptances), so it is never reopened for lacking a digest.
+func reopenChangedAcceptances(register []registerFinding) {
+	for i := range register {
+		f := &register[i]
+		if f.Status == "accepted-risk" && f.AcceptedDigest != "" && f.AcceptedDigest != f.acceptanceDigest() {
+			f.Status, f.Resolution, f.DecisionOpID, f.AcceptedDigest = "open", "", "", ""
+		}
+	}
+}
+
+// bindPredatingAcceptances binds every accepted risk recorded before content
+// binding (no digest) to the finding as it stands, and records one plain line
+// for each on the root. A person's recorded decision is never overruled by
+// the machine (R-142-m1e): from here on only a change of the finding's content
+// reopens it. It reports whether it bound any.
+func bindPredatingAcceptances(root map[string]any, register []registerFinding) (bool, error) {
+	var lines []any
+	for i := range register {
+		f := &register[i]
+		if f.Status != "accepted-risk" || f.AcceptedDigest != "" {
+			continue
+		}
+		f.AcceptedDigest = f.acceptanceDigest()
+		lines = append(lines, map[string]any{
+			"findingId": f.FindingID, "decisionOpid": f.DecisionOpID, "acceptedDigest": f.AcceptedDigest,
+			"line": fmt.Sprintf("finding %s: the acceptance (decision %s) predates content binding, so it covers the finding as it stood here; bound to digest %s", f.FindingID, f.DecisionOpID, f.AcceptedDigest),
+		})
+	}
+	if len(lines) == 0 {
+		return false, nil
+	}
+	current := []any{}
+	if value, present := root[acceptancesBoundField]; present {
+		var ok bool
+		if current, ok = value.([]any); !ok {
+			return false, fmt.Errorf("%s is not an array", acceptancesBoundField)
+		}
+	}
+	root[acceptancesBoundField] = append(current, lines...)
+	return true, nil
 }
 
 type reviewedSubject struct {
@@ -134,6 +197,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			if round != foldedRound+1 {
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1).withRun(jobStatusRun(rootJob))
 			}
+			// A predating acceptance is bound to the content it stands on
+			// before this round can change it (R-142-m1e).
+			if _, bindErr := bindPredatingAcceptances(root, register); bindErr != nil {
+				return fmt.Errorf("critique root record %s: %v", rootJob, bindErr)
+			}
 			state.records[rootJob] = root
 			materialHistoryValue, materialHistoryPresent := root[materialByRoundField]
 			if !materialHistoryPresent {
@@ -215,6 +283,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 				}
 			}
+			reopenChangedAcceptances(advanced)
 			if conflictErr := refuseCrossRootClassConflict(state, rootJob, advanced); conflictErr != nil {
 				return conflictErr
 			}
@@ -407,6 +476,9 @@ func CritiqueOpenFindingIDs(repoRoot, rootJob string) (ids []string, err error) 
 type CritiqueDecisionFinding struct {
 	FindingID, Chain, GoalID, RigorClass, Artifact, Title, Claim, Evidence string
 	Facts                                                                  any
+	// Digest is the readsubject.AcceptedFindingDigest of the register
+	// finding as shown; CritiqueRegisterAcceptRisk stamps only that content.
+	Digest string
 }
 
 func CritiqueRegisterDecisionFinding(repoRoot, rootJob, findingID, goalID string) (CritiqueDecisionFinding, error) {
@@ -462,7 +534,8 @@ func CritiqueRegisterDecisionFinding(repoRoot, rootJob, findingID, goalID string
 				if title == "" {
 					title = claim
 				}
-				result = CritiqueDecisionFinding{FindingID: f.FindingID, Chain: rootJob, GoalID: goalID, RigorClass: string(f.RigorClass), Artifact: f.Artifact, Title: title, Claim: claim, Evidence: evidence, Facts: f.Facts}
+				result = CritiqueDecisionFinding{FindingID: f.FindingID, Chain: rootJob, GoalID: goalID, RigorClass: string(f.RigorClass), Artifact: f.Artifact, Title: title, Claim: claim, Evidence: evidence, Facts: f.Facts,
+					Digest: f.acceptanceDigest()}
 				return nil
 			}
 		}
@@ -494,15 +567,24 @@ func criticFindingText(repoRoot, rootJob, criticJob, findingID string) (string, 
 	return "", "", false
 }
 
-func CritiqueRegisterAcceptRisk(repoRoot, rootJob, findingID, opid string) error {
-	_, err := CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid)
+// ErrAcceptedFindingChanged says the register finding is no longer the content
+// the person was shown when they accepted its risk.
+var ErrAcceptedFindingChanged = errors.New("changed since it was shown for acceptance")
+
+// CritiqueRegisterAcceptRisk stamps a person's accepted risk on the register
+// finding, bound to acceptedDigest (see CritiqueRegisterStampAcceptedRisk).
+func CritiqueRegisterAcceptRisk(repoRoot, rootJob, findingID, opid, acceptedDigest string) error {
+	_, err := CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid, acceptedDigest)
 	return err
 }
 
 // CritiqueRegisterStampAcceptedRisk records a person's accepted risk on the
 // register entry and says whether it changed the register: false when the
-// entry already carries that decision.
-func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid string) (bool, error) {
+// entry already carries that decision over that content. The acceptance is
+// bound to acceptedDigest, the CritiqueDecisionFinding.Digest of the snapshot
+// the person decided on; a finding whose content changed since that snapshot is refused with ErrAcceptedFindingChanged and stays
+// open (F4).
+func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid, acceptedDigest string) (bool, error) {
 	stamped := false
 	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
 		return "", withRecordLock(repoRoot, rootJob, func(path string) error {
@@ -514,13 +596,22 @@ func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid string
 			if err != nil {
 				return err
 			}
+			// A predating acceptance this stamp meets is bound to the
+			// finding as it stands (R-142-m1e); that alone is not a stamp.
+			bound, err := bindPredatingAcceptances(root, register)
+			if err != nil {
+				return err
+			}
 			found := false
 			changed := false
 			for i := range register {
 				if register[i].FindingID == findingID {
 					found = true
-					if register[i].Status == "accepted-risk" && register[i].DecisionOpID == opid {
-						return nil
+					if acceptedDigest == "" || register[i].acceptanceDigest() != acceptedDigest {
+						return fmt.Errorf("finding %s %w; read it again and decide anew", findingID, ErrAcceptedFindingChanged)
+					}
+					if register[i].Status == "accepted-risk" && register[i].DecisionOpID == opid && register[i].AcceptedDigest == acceptedDigest {
+						continue
 					}
 					if register[i].Status != "open" && register[i].Status != "disputed" {
 						return fmt.Errorf("finding %s is not open or disputed", findingID)
@@ -528,18 +619,19 @@ func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid string
 					register[i].Status = "accepted-risk"
 					register[i].Resolution = "accepted-risk"
 					register[i].DecisionOpID = opid
+					register[i].AcceptedDigest = acceptedDigest
 					changed = true
 				}
 			}
 			if !found {
 				return fmt.Errorf("finding %s is absent", findingID)
 			}
-			if changed {
+			if changed || bound {
 				root[findingRegisterField] = encodeFindingRegister(register)
 				if err := writeRecord(path, root); err != nil {
 					return err
 				}
-				stamped = true
+				stamped = changed
 			}
 			return nil
 		})
@@ -909,7 +1001,7 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 		return Closure{}, false, err
 	}
 	if present {
-		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) && readsubject.SameAcceptedRisks(existing.AcceptedRisks, want.AcceptedRisks) {
+		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) && readsubject.RecordedAcceptedRisksHold(existing.AcceptedRisks, want.AcceptedRisks) {
 			return want, false, nil
 		}
 		return Closure{}, false, fmt.Errorf("critique %s was already closed at round %d, so it is not closed again at round %d (subjects %s, %s)", rootJob, existing.Round, want.Round, existing.Subject.Digest(), want.Subject.Digest())
@@ -1142,8 +1234,18 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 	register := make([]registerFinding, 0, len(items))
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
-		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14 && len(entry) != 15) {
+		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14 && len(entry) != 15 && len(entry) != 16) {
 			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
+		}
+		// The sixteenth field binds an accepted risk to the content accepted.
+		acceptedDigest, acceptedDigestPresent := entry["acceptedDigest"]
+		if (len(entry) == 16) != acceptedDigestPresent {
+			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
+		}
+		if acceptedDigestPresent {
+			if digest, isString := acceptedDigest.(string); !isString || !hexDigest64.MatchString(digest) || asString(entry["status"]) != "accepted-risk" {
+				return nil, fmt.Errorf("entry %d names an accepted digest outside an accepted risk", index)
+			}
 		}
 		finding := registerFinding{
 			FindingID:      asString(entry["findingId"]),
@@ -1159,11 +1261,12 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			DecisionOpID:   asString(entry["decisionOpid"]),
 			Evidence:       asString(entry["evidence"]),
 			EvidenceDigest: asString(entry["evidenceDigest"]),
+			AcceptedDigest: asString(acceptedDigest),
 		}
-		if len(entry) == 14 || len(entry) == 15 {
+		if len(entry) >= 14 {
 			finding.Grain = asString(entry["grain"])
 		}
-		if len(entry) == 15 {
+		if len(entry) >= 15 {
 			finding.Fixture = asString(entry["fixture"])
 		}
 		if len(entry) == 7 && finding.Status == "resolved" {
@@ -1176,7 +1279,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk") {
 			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
 		}
-		if len(entry) == 13 || len(entry) == 14 || len(entry) == 15 {
+		if len(entry) >= 13 {
 			unresolved := finding.Status == "open" || finding.Status == "disputed"
 			if unresolved && (finding.Resolution != "" || finding.DecisionOpID != "") {
 				return nil, fmt.Errorf("entry %d carries a resolution while unresolved", index)
@@ -1222,7 +1325,7 @@ func encodeFindingRegister(register []registerFinding) []any {
 		if grain != "mechanical" && grain != "invariant" {
 			grain = "invariant"
 		}
-		items[index] = map[string]any{
+		entry := map[string]any{
 			"findingId": finding.FindingID, "critic": finding.Critic,
 			"rigorClass": string(finding.RigorClass), "grain": grain, "fixture": finding.Fixture, "factsDigest": finding.FactsDigest,
 			"status": finding.Status, "evidenceDigest": finding.EvidenceDigest,
@@ -1231,6 +1334,10 @@ func encodeFindingRegister(register []registerFinding) []any {
 			"resolution": finding.Resolution, "decisionOpid": finding.DecisionOpID,
 			"evidence": finding.Evidence,
 		}
+		if finding.Status == "accepted-risk" && finding.AcceptedDigest != "" {
+			entry["acceptedDigest"] = finding.AcceptedDigest
+		}
+		items[index] = entry
 	}
 	return items
 }
@@ -1524,8 +1631,10 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		if rigorRank(class) < rigorRank(current.RigorClass) {
 			// A lower-rigor re-report disputes only a finding still
 			// unresolved. A decided entry (resolved, deferred, or a person's
-			// accepted risk) keeps its decision, as it does for an
-			// equal-rigor re-report; only a higher rigor reopens it.
+			// accepted risk) keeps its decision and the content it was
+			// decided on; a higher rigor reopens it, and so does an
+			// equal-rigor re-report of an accepted risk whose content
+			// changed (reopenChangedAcceptances, F4).
 			if current.Status == "open" {
 				advanced[existingIndex].Status = "disputed"
 			}
@@ -1534,6 +1643,17 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		if rigorRank(class) > rigorRank(current.RigorClass) {
 			candidate.Critic = current.Critic
 			candidate.Multiplicity = current.Multiplicity
+			advanced[existingIndex] = candidate
+			continue
+		}
+		if current.Status == "accepted-risk" {
+			// An equal-rigor re-report of an accepted risk carries what the
+			// critic now reports, so reopenChangedAcceptances can compare it
+			// with the content the person accepted (F4).
+			candidate.Critic = current.Critic
+			candidate.Multiplicity = current.Multiplicity
+			candidate.Status, candidate.Resolution = current.Status, current.Resolution
+			candidate.DecisionOpID, candidate.AcceptedDigest = current.DecisionOpID, current.AcceptedDigest
 			advanced[existingIndex] = candidate
 		}
 	}

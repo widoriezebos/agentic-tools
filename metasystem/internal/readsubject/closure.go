@@ -1,6 +1,8 @@
 package readsubject
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -21,10 +23,31 @@ type Closure struct {
 }
 
 // AcceptedRisk is one register finding a person accepted as a risk, with the
-// decision operation that recorded the act.
+// decision operation that recorded the act and the AcceptedFindingDigest of
+// the content the person accepted.
 type AcceptedRisk struct {
-	FindingID    string `json:"findingId"`
-	DecisionOpID string `json:"decisionOpid"`
+	FindingID      string `json:"findingId"`
+	DecisionOpID   string `json:"decisionOpid"`
+	AcceptedDigest string `json:"acceptedDigest"`
+}
+
+// AcceptedFindingDigest is the canonical digest of what a person accepts as a
+// risk: the register finding's identity, rigor class, artifact, title, facts
+// and evidence digests. An acceptance covers exactly this digest; a finding
+// whose digest has changed is not accepted.
+//
+// Content only, not the reviewed subject (Wido 2026-10-03): "You are asked
+// again only when the problem changes. A rebase with the same finding keeps
+// your acceptance." A re-review of another tree that reports the same
+// finding keeps the acceptance.
+func AcceptedFindingDigest(entry map[string]any) string {
+	content := map[string]string{}
+	for _, field := range []string{"findingId", "rigorClass", "artifact", "title", "factsDigest", "evidenceDigest"} {
+		content[field] = stringValue(entry[field])
+	}
+	data, _ := json.Marshal(content)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // SameAcceptedRisks says whether two closures name the same accepted risks.
@@ -34,6 +57,23 @@ func SameAcceptedRisks(a, b []AcceptedRisk) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// RecordedAcceptedRisksHold says whether the accepted risks a closure recorded
+// are the ones its register holds now. A closure written before content
+// binding names no digest; its acceptance is never overruled (R-142-m1e), so
+// it holds while the finding and decision operation are the same.
+func RecordedAcceptedRisksHold(recorded, register []AcceptedRisk) bool {
+	if len(recorded) != len(register) {
+		return false
+	}
+	for i := range recorded {
+		predating := recorded[i].AcceptedDigest == "" && recorded[i].FindingID == register[i].FindingID && recorded[i].DecisionOpID == register[i].DecisionOpID
+		if recorded[i] != register[i] && !predating {
 			return false
 		}
 	}
@@ -80,10 +120,16 @@ func ReadClosure(root map[string]any) (Closure, bool, error) {
 			entry, ok := item.(map[string]any)
 			finding, findingOK := entry["findingId"].(string)
 			opid, opidOK := entry["decisionOpid"].(string)
-			if !ok || len(entry) != 2 || !findingOK || finding == "" || !opidOK || opid == "" {
+			if !ok || len(entry) < 2 || len(entry) > 3 || !findingOK || finding == "" || !opidOK || opid == "" {
 				return Closure{}, true, fmt.Errorf("closure accepted risk %d must name a finding and its decision operation", index)
 			}
-			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid})
+			// A closure written before acceptances were bound to their
+			// content names no digest (RecordedAcceptedRisksHold).
+			digest, digestOK := entry["acceptedDigest"].(string)
+			if len(entry) == 3 && (!digestOK || digest == "") {
+				return Closure{}, true, fmt.Errorf("closure accepted risk %d must name the digest of the content accepted", index)
+			}
+			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid, AcceptedDigest: digest})
 		}
 	}
 
@@ -99,9 +145,12 @@ func CleanRegister(value any) (bool, error) {
 
 // LandableRegister says whether a closed register yields the read a landing
 // takes: every entry is withdrawn, ruled out-of-scope (never a severe or
-// unproven finding), or accepted as a risk by a person's recorded act. It
+// unproven finding), or accepted as a risk by a person's recorded act whose
+// accepted digest is the entry's AcceptedFindingDigest (an acceptance that
+// predates content binding has none and covers the finding as it stands). It
 // returns the accepted risks the read must record. Open, disputed, deferred,
-// refuted or accepted (a fix required) entries are not landable.
+// refuted or accepted (a fix required) entries, and an acceptance of other
+// content, are not landable.
 func LandableRegister(value any) (bool, []AcceptedRisk, error) {
 	_, landable, risks, err := classifyRegister(value)
 	return landable, risks, err
@@ -130,12 +179,19 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 		withFixture := hasExactFields(entry,
 			"findingId", "critic", "rigorClass", "grain", "fixture", "factsDigest", "facts", "artifact", "title",
 			"status", "resolution", "decisionOpid", "evidence", "evidenceDigest", "multiplicity")
-		if !legacy && !modern && !withGrain && !withFixture {
+		withAcceptance := hasExactFields(entry,
+			"findingId", "critic", "rigorClass", "grain", "fixture", "factsDigest", "facts", "artifact", "title",
+			"status", "resolution", "decisionOpid", "evidence", "evidenceDigest", "multiplicity", "acceptedDigest")
+		if !legacy && !modern && !withGrain && !withFixture && !withAcceptance {
 			return false, false, nil, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
 		}
 		status, ok := entry["status"].(string)
 		if !ok {
 			return false, false, nil, fmt.Errorf("finding register entry %d has no string status", index)
+		}
+		acceptedDigest, digestOK := entry["acceptedDigest"].(string)
+		if withAcceptance && (status != "accepted-risk" || !digestOK || acceptedDigest == "") {
+			return false, false, nil, fmt.Errorf("finding register entry %d names an accepted digest outside an accepted risk", index)
 		}
 		resolution := ""
 		if legacy {
@@ -165,10 +221,17 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 		switch {
 		case pairIsClean:
 		case status == "resolved" && resolution == "out-of-scope" && class != "severe" && class != "unproven":
-		case status == "accepted-risk" && opid != "":
+		case status == "accepted-risk" && opid != "" && !withAcceptance:
+			// An acceptance recorded before content binding carries no
+			// digest. A person's recorded decision is never overruled
+			// (R-142-m1e): it covers the finding as it stands, and the
+			// first fold that meets it binds that content.
+			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid, AcceptedDigest: AcceptedFindingDigest(entry)})
+		case status == "accepted-risk" && opid != "" && acceptedDigest == AcceptedFindingDigest(entry):
 			// Only a person's goal accept-risk records this pair, with
-			// the decision operation that carried the act.
-			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid})
+			// the decision operation that carried the act, and it covers
+			// only the finding content the person saw.
+			risks = append(risks, AcceptedRisk{FindingID: finding, DecisionOpID: opid, AcceptedDigest: acceptedDigest})
 		default:
 			landable = false
 		}
@@ -291,7 +354,7 @@ func ReadClosedClosure(agents string, root map[string]any, members []map[string]
 	if !landable {
 		return closure, true, fmt.Errorf("closure root %s does not have a clean finding register", rootID)
 	}
-	if !SameAcceptedRisks(closure.AcceptedRisks, risks) {
+	if !RecordedAcceptedRisksHold(closure.AcceptedRisks, risks) {
 		return closure, true, fmt.Errorf("closure root %s records accepted risks %v, but its register holds %v", rootID, closure.AcceptedRisks, risks)
 	}
 	foldedRound, ok := strictInteger(root["findingRegisterRound"])
