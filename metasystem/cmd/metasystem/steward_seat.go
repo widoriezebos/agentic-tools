@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
@@ -153,4 +154,29 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 // steward starts its seat main when ready work has no seat.
 func wireStewardSeat(config *steward.TickConfig) {
 	config.Seat = newStewardSeatLauncher()
+}
+
+// hostSeatCapped reports whether the steward of any seat of this host has
+// stopped starting seats for goal id under the approval approvalOpid. A seat
+// whose records can't be read caps nothing: the approve stays the repeat it
+// would be without this reading.
+func hostSeatCapped(id, approvalOpid string) bool {
+	home, err := board.Home()
+	if err != nil {
+		return false
+	}
+	entries, err := os.ReadDir(board.Dir(home))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		installation, ok := board.SeatInstallation(home, entry.Name())
+		if !ok {
+			continue
+		}
+		if capped, err := steward.SeatCapped(installation, id, approvalOpid); err == nil && capped {
+			return true
+		}
+	}
+	return false
 }

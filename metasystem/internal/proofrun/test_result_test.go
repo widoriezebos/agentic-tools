@@ -672,7 +672,7 @@ func TestDetachedSuiteFailureEvidenceBoundsFailedGroupBundle(t *testing.T) {
 	if !strings.HasPrefix(bundle, filepath.Join(root, "artifacts", "agents", "suite-failures")+string(filepath.Separator)) {
 		t.Fatalf("failure bundle path=%q in log:\n%s", bundle, logBytes)
 	}
-	copied := filepath.Join(bundle, "source-001-suite-failures", "nested")
+	copied := filepath.Join(bundle, "_source-001-suite-failures", "nested")
 	if data, err := os.ReadFile(filepath.Join(copied, "failure.log")); err != nil || string(data) != "small-log\n" {
 		t.Fatalf("bundle log=%q err=%v", data, err)
 	}

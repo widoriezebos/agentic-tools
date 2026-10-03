@@ -325,6 +325,13 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			next:    inv.sameCommand(), nextReason: "the same command publishes this commit; it never makes another"}
 	}
 	data["published"] = pushed.Tip
+	if goal.ReadsWaived(file) {
+		// No critic may read this goal's work (tier 1, or a box of zero
+		// review rounds): the hand-in ends at publication, ready to land.
+		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
+			Summary: fmt.Sprintf("work %s is committed as %s and published; goal %s lands its work without a read", work, shortSHA(commit), id),
+			next:    inv.publicArgv("work", "land", id), nextReason: "lands the goal's work"}
+	}
 	args := []string{"--root", install, "--goal", id, "--unit", commit, "--brief", frozenBrief}
 	if install != original {
 		args = append(args, "--selected-installation", original)

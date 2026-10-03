@@ -80,6 +80,8 @@ type Manager struct {
 	// admits no landing launch.
 	Lane              func() (LaneCheckout, error)
 	supervisorClaimed func(Record)
+	// recordedEnd is called once a supervised launch's end is recorded.
+	recordedEnd func(Record)
 }
 
 func (m *Manager) resolvedSettings() (Settings, error) {
@@ -451,6 +453,10 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		declared, copyErr = copyDeclaredOutputs(record, stateDir)
 		outputs = append(outputs, declared...)
 	}
+	// The child's group is proved gone and its outputs are collected, so the
+	// output paths are free before the end is recorded: whoever starts the
+	// next writer of the same paths on reading that end finds them free.
+	releaseOutputs()
 	record, err = m.update(id, func(record *Record) error {
 		record.OutputOwnerUnproven = false
 		if record.State.Terminal() {
@@ -501,6 +507,9 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	})
 	if err != nil {
 		return Record{}, err
+	}
+	if m.recordedEnd != nil {
+		m.recordedEnd(record)
 	}
 	compressFinishedLog(record, command.LogPath, m.CompressAbove)
 	return record, nil

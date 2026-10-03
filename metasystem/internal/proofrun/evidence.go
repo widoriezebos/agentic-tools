@@ -111,7 +111,10 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 		if source == "" {
 			continue
 		}
-		label := fmt.Sprintf("source-%03d-%s", index+1, safeEvidenceName(filepath.Base(source)))
+		// The leading underscore keeps the go command out of a copied source
+		// tree: a bundle under the installation's artifacts/ would otherwise
+		// join the module's ./... and break go vet and the static gate.
+		label := fmt.Sprintf("_source-%03d-%s", index+1, safeEvidenceName(filepath.Base(source)))
 		target := filepath.Join(destination, label)
 		info, err := os.Lstat(source)
 		if err != nil {

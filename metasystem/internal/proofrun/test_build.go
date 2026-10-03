@@ -1525,6 +1525,12 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		if merged.WaitErr == nil && run.outcome.WaitErr != nil {
 			merged.WaitErr = run.outcome.WaitErr
 		}
+		if merged.WorkerErr == nil && run.outcome.WorkerErr != nil {
+			merged.WorkerErr = run.outcome.WorkerErr
+		}
+		if merged.CustodyErr == nil && run.outcome.CustodyErr != nil {
+			merged.CustodyErr = run.outcome.CustodyErr
+		}
 		if closeErr == nil && run.closeErr != nil {
 			closeErr = run.closeErr
 		}
@@ -1658,15 +1664,22 @@ func assignSupervisorOutcome(result *GroupResult, outcome supervisorOutcome) {
 		}
 		return
 	}
-	if outcome.WaitErr == nil {
+	// The worker's own end is its exit status; a resource custodian that
+	// failed after it is named by the group's verdict, never read as the
+	// worker's exit.
+	waitErr := outcome.WaitErr
+	if outcome.CustodyErr != nil {
+		waitErr = outcome.WorkerErr
+	}
+	if waitErr == nil {
 		exit := 0
 		result.NativeExitStatus = &exit
 		return
 	}
 	var exitErr *exec.ExitError
-	if !errors.As(outcome.WaitErr, &exitErr) {
+	if !errors.As(waitErr, &exitErr) {
 		result.Status = "unavailable"
-		result.NotRunReason = outcome.WaitErr.Error()
+		result.NotRunReason = waitErr.Error()
 		return
 	}
 	exit := exitErr.ExitCode()
@@ -2136,11 +2149,16 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		}
 		if result.Status == "" {
 			evidenceFailed, evidenceSummary := nativeEvidenceSummaryForGroup(request, group, result.Observed)
-			if exit != 0 || !result.CollectionComplete || evidenceFailed {
+			if exit != 0 || !result.CollectionComplete || evidenceFailed || supervised.CustodyErr != nil {
 				result.Status = "failed"
 				rerunEligible = group.Adapter == "go" && evidenceFailed
 				if exit == 0 && !result.CollectionComplete {
 					result.Status = "invalid"
+				}
+				// A worker that exited 0 with no failing test failed only by
+				// its resource custodian, whose reason is the verdict's.
+				if result.NotRunReason == "" && supervised.CustodyErr != nil && exit == 0 && evidenceSummary == "" {
+					result.NotRunReason = fmt.Sprintf("the test process exited 0, then its resource custodian failed: %v", supervised.CustodyErr)
 				}
 				// A script bed's reason comes from its failed-scenarios block,
 				// written by the deferred verdict line above.

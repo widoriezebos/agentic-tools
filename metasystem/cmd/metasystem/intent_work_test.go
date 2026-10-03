@@ -448,6 +448,31 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	if len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, workArgv) || plan.Proof[0].Dir != bed.worktree {
 		t.Fatalf("proof=%+v, want the exact argv %v", plan.Proof, workArgv)
 	}
+	// From a folder below the checkout's top, the check runs in the goal
+	// worktree's copy of that folder, where a module below the top is found.
+	for _, dir := range []string{filepath.Join(bed.root(), "module"), filepath.Join(bed.worktree, "module")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nestedBrief := brief
+	if !filepath.IsAbs(nestedBrief) {
+		nestedBrief = filepath.Join(bed.root(), nestedBrief)
+	}
+	command, rest, _ := resolveIntentArgv(append([]string{"work", "build", bed.id, "nested", "--brief", nestedBrief, "--lines", "30"}, workCheck...))
+	var stdout, stderr bytes.Buffer
+	if code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, filepath.Join(bed.root(), "module"), bed.workOwners()); code != 0 {
+		t.Fatalf("build from a folder below the top = %d %s %s", code, stdout.String(), stderr.String())
+	}
+	var nested intentResult
+	if err := json.Unmarshal(stdout.Bytes(), &nested); err != nil {
+		t.Fatal(err)
+	}
+	bed.recordReadDirs(nested)
+	if nestedPlan, err := launch.ReadUnitPlan(resultData(t, nested)["plan"].(string)); err != nil || len(nestedPlan.Proof) != 1 ||
+		nestedPlan.Proof[0].Dir != filepath.Join(bed.worktree, "module") {
+		t.Fatalf("the check from a folder below the top runs in the worktree's copy of it: %+v %v", nestedPlan.Proof, err)
+	}
 	// The read's findings directory outlives the command, so it is a
 	// registered temporary store the unit's named inputs own (Part B R1).
 	if len(plan.Read.Outputs) != 1 {

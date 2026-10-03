@@ -499,6 +499,9 @@ type syncRequestDependencies struct {
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
 	// helm reads whether the act's seat is at the helm; nil is helm.Active.
 	helm func(root string) helm.State
+	// seatCapped reads whether a steward has stopped starting seats for a
+	// goal under an approval; nil reads every seat of this host.
+	seatCapped func(goalID, approvalOpid string) bool
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
@@ -2590,6 +2593,10 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	req.ApprovedRef = f.approvedRef
+	req.RearmCapped = dependencies.seatCapped
+	if req.RearmCapped == nil {
+		req.RearmCapped = hostSeatCapped
+	}
 	var res goal.PublishResult
 	if f.sweep {
 		res, err = goal.ApproveSweep(req, f.confirm, &proof)

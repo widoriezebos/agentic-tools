@@ -35,7 +35,12 @@ type journeyBed struct {
 }
 
 func newJourneyBed(t *testing.T) *journeyBed {
-	c := newConnectionBed(t)
+	return newJourneyBedWith(t, workApprovedBox)
+}
+
+// newJourneyBedWith is the journey bed with its goal record shaped by amend.
+func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
+	c := newConnectionBedWith(t, amend)
 	owners := c.connectionOwners()
 	b := &deliveryBed{intentBed: c.intentBed, install: c.root(), owners: owners.delivery}
 	realCloseOwner(t, b)

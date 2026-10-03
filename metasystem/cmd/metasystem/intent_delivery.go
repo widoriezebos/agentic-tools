@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -2157,6 +2158,13 @@ func (inv *intentInvocation) closeJobReview(job string, reviewed intentResult) i
 // guards will; it proves permission to start, not that the close completes.
 func recordWriterPreflight(root, job string) (string, error) {
 	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+	return recordWriterAdmits(caller, err, job)
+}
+
+// recordWriterAdmits is the record-writer owner's answer for a classified
+// caller: a test names the caller it means, never the person or agent whose
+// shell runs it.
+func recordWriterAdmits(caller lease.ClassifyResult, err error, job string) (string, error) {
 	if err != nil {
 		return "authority-unestablished", err
 	}

@@ -3,6 +3,7 @@ package outage
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -258,5 +259,68 @@ func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
 	}
 	if mark, ok := StandingAt(root, t0.Add(time.Minute)); !ok || mark.LastClass != ProviderLimit {
 		t.Fatalf("the usage limit did not stand as an outage: %+v %v", mark, ok)
+	}
+}
+
+// A limit line that names its reset ends the mark then: on 2026-10-03 a
+// session limit that reset at 3:30 held every seat start until the horizon
+// ran out at 3:47. A reset after the horizon, a zone that does not load, an
+// epoch already past and an overload keep the horizon alone; a later
+// failure's own line replaces an earlier reset.
+func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
+	t.Parallel()
+	seen := time.Date(2026, 10, 3, 1, 17, 52, 0, time.UTC)
+	stands := func(t *testing.T, root string, at time.Time) bool {
+		t.Helper()
+		_, ok := StandingAt(root, at)
+		return ok
+	}
+	root := t.TempDir()
+	m, err := Record(root, ProviderLimit, "You've hit your session limit · resets 3:30am (Europe/Amsterdam)", "steward-seat", seen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ResetAt != "2026-10-03T01:30:00Z" {
+		t.Fatalf("reset = %q, want 3:30 in Amsterdam", m.ResetAt)
+	}
+	if !stands(t, root, time.Date(2026, 10, 3, 1, 29, 59, 0, time.UTC)) || stands(t, root, time.Date(2026, 10, 3, 1, 30, 0, 0, time.UTC)) {
+		t.Fatal("the mark must stand until the named reset and lapse at it")
+	}
+
+	epoch := t.TempDir()
+	if m, err := Record(epoch, ProviderLimit, "Claude AI usage limit reached|"+strconv.FormatInt(seen.Add(5*time.Minute).Unix(), 10), "mission-runner", seen); err != nil || m.ResetAt != "2026-10-03T01:22:52Z" {
+		t.Fatalf("epoch reset = %+v, %v", m, err)
+	}
+
+	local := t.TempDir()
+	m, err = Record(local, ProviderLimit, "5-hour limit reached ∙ resets 3pm", "mission-runner", seen)
+	reset, parseErr := time.Parse(time.RFC3339, m.ResetAt)
+	if err != nil || parseErr != nil || reset.In(time.Local).Hour() != 15 || !reset.After(seen) || reset.Sub(seen) > 24*time.Hour {
+		t.Fatalf("a zoneless reset is the next 3pm on this machine: %+v, %v", m, err)
+	}
+
+	for _, line := range []string{
+		"You've hit your usage limit · resets 11pm (Europe/Amsterdam)",
+		"You've hit your usage limit · resets 3:30am (Nowhere/Atlantis)",
+		"Claude AI usage limit reached|" + strconv.FormatInt(seen.Add(-time.Hour).Unix(), 10),
+	} {
+		later := t.TempDir()
+		if _, err := Record(later, ProviderLimit, line, "steward-seat", seen); err != nil {
+			t.Fatal(err)
+		}
+		if !stands(t, later, seen.Add(Horizon)) || stands(t, later, seen.Add(Horizon+time.Second)) {
+			t.Fatalf("%q must keep the horizon alone", line)
+		}
+	}
+	overload := t.TempDir()
+	if m, err := Record(overload, "overloaded", "API Error: 529 Overloaded · resets 1am", "mission-runner", seen); err != nil || m.ResetAt != "" {
+		t.Fatalf("an overload names no reset: %+v, %v", m, err)
+	}
+
+	if m, err := Record(root, "overloaded", "API Error: 529", "mission-runner", seen.Add(time.Minute)); err != nil || m.ResetAt != "" {
+		t.Fatalf("a later failure's line replaces the reset: %+v, %v", m, err)
+	}
+	if !stands(t, root, time.Date(2026, 10, 3, 1, 31, 0, 0, time.UTC)) {
+		t.Fatal("a mark fed by an overload after the limit stands on its horizon")
 	}
 }

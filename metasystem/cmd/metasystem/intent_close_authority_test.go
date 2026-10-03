@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // humanRecordWriter is the record-writer authority owner's answer for a
@@ -15,17 +16,22 @@ func humanRecordWriter(_, job string) (string, error) {
 	return "", nil
 }
 
-// TestIntentCloseRecordWriterPreflight: the real preflight classifies this
-// executing process in the checkout and asks the real record-writer owner.
-// The authenticated lease holder is admitted; without it the owner refuses,
-// and a public close then starts nothing and offers no repair.
+// TestIntentCloseRecordWriterPreflight: the preflight asks the real
+// record-writer owner. This process, classified for real once announced as
+// the lease holder, is admitted; an agent session that does not hold the
+// work is refused, and a public close then starts nothing and offers no
+// repair. The refused caller is named rather than classified, so the test
+// means the same from a person's terminal, which the owner admits.
 func TestIntentCloseRecordWriterPreflight(t *testing.T) {
 	t.Parallel()
 	refused := newDeliveryBed(t)
-	if cause, err := recordWriterPreflight(refused.install, "crit1"); err == nil || (cause != "record-writer-refused" && cause != "authority-unestablished") {
+	notHolding := func(_, job string) (string, error) {
+		return recordWriterAdmits(lease.ClassifyResult{Class: lease.ClassMain}, nil, job)
+	}
+	if cause, err := notHolding(refused.install, "crit1"); err == nil || cause != "record-writer-refused" {
 		t.Fatalf("a caller without authority: %q %v", cause, err)
 	}
-	refused.owners.recordWriter = recordWriterPreflight
+	refused.owners.recordWriter = notHolding
 	refused.writeJob(map[string]any{"jobId": "crit1", "role": "code-critic", "status": "completed", "round": 1, "findingRegister": []any{}})
 	refused.writeReturn("crit1", 1, "crit1")
 	decisions := refused.root() + "/decisions.md"

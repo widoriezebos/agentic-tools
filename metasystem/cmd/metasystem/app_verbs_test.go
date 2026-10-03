@@ -890,7 +890,7 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "evidence:") || !strings.Contains(out, "copied to") {
 		t.Fatalf("the next start copies the ended run's evidence: %d\n%s", code, out)
 	}
-	copies, _ := filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "source-*-run.txt"))
+	copies, _ := filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "_source-*-run.txt"))
 	if len(copies) != 1 {
 		t.Fatalf("one evidence copy under the goal, got %v\n%s", copies, out)
 	}
@@ -898,7 +898,7 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	if !strings.Contains(string(summary), "ended: "+ended.Ended.At+" (exit 5)") || !strings.Contains(string(summary), "check: none recorded") {
 		t.Fatalf("the copy is the ended record, read before it was removed:\n%s", summary)
 	}
-	tails, _ := filepath.Glob(filepath.Join(filepath.Dir(copies[0]), "source-*-log-tail.txt"))
+	tails, _ := filepath.Glob(filepath.Join(filepath.Dir(copies[0]), "_source-*-log-tail.txt"))
 	if len(tails) != 1 {
 		t.Fatalf("the copy carries the log tail, got %v", tails)
 	}
@@ -912,7 +912,7 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	if code, out := bed.run("app", "stop", "--goal", "g1"); code != 0 || !strings.Contains(out, "copied to") {
 		t.Fatalf("stop copies the goal run's evidence: %d\n%s", code, out)
 	}
-	copies, _ = filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "source-*-run.txt"))
+	copies, _ = filepath.Glob(filepath.Join(evidence, "goals", "g1", "app", applaunch.KeyFor("goal/g1"), "*", "_source-*-run.txt"))
 	if len(copies) != 2 {
 		t.Fatalf("stop made a second evidence copy, got %v", copies)
 	}
