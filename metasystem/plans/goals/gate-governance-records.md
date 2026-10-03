@@ -9,8 +9,8 @@
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 46
-- BlockedBy: commit-goal-binding, design-gate-at-dispatch
+- Revision: 47
+- BlockedBy: commit-goal-binding
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +60,5 @@ History:
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:12 to=2:11
 - 2026-10-03T11:15:52Z 12JJH25GGDJVZS86VCFX4A7F7R-m1e-718ba0eb unpark actor=human:Wido targets=gate-governance-records
 - 2026-10-03T11:16:02Z HZE2DD9ES2Y23H82935PE8FTSR-m1e-718ba0eb edit actor=human:Wido targets=gate-governance-records
-Integrity: sha256=77e712a0419b92d639260fd0c3d16b488d0369e32e761523dda8ca1e21fcbf71
+- 2026-10-03T11:16:36Z P9KVK8AB7VRV1K1J21F05KKGVJ-m1e-718ba0eb unblock actor=human:Wido targets=gate-governance-records,design-gate-at-dispatch reason=blockedBy drops design-gate-at-dispatch
+Integrity: sha256=bdd4e7238d0135cb41689d245317a598f60e007ddd6f213888ec02101c819866
