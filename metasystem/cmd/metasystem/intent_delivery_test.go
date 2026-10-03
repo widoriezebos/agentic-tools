@@ -54,18 +54,25 @@ func newDeliveryBedAmended(t *testing.T, amend func(*goal.GoalFile)) *deliveryBe
 	// The landing gate is not what these beds prove: its own beds run the
 	// production gate over the ledger (intent_landing_gate_test.go).
 	bed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
-	bed.owners.recordLanded = func(*intentInvocation, string) error { return nil }
+	bed.owners.recordLanded = func(*intentInvocation, string, string) error { return nil }
 	return bed
 }
 
 func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
 	t.Helper()
-	bed := &deliveryBed{intentBed: newIntentBed(t, false, amend)}
+	bed := gitlessDeliveryBed(t, amend)
 	// The project's design homes and the close owner resolve the checkout
 	// through Git itself.
 	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
+	return bed
+}
+
+// gitlessDeliveryBed is newDeliveryBedWith with no Git in its setup.
+func gitlessDeliveryBed(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
+	t.Helper()
+	bed := &deliveryBed{intentBed: newIntentBed(t, false, amend)}
 	layout, err := stateroot.NewResolver(fakeTop(bed.root()), noExecutable).ResolveLayout(bed.root())
 	if err != nil {
 		t.Fatal(err)

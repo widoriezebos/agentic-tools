@@ -154,7 +154,7 @@ func newWorkIdemDeliveryBed(t *testing.T) *deliveryBed {
 		// The landing gate has its own beds (intent_landing_gate_test.go);
 		// these witnesses prove the repeat of a landing the gate admitted.
 		landingGate:  func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil },
-		recordLanded: func(*intentInvocation, string) error { return nil },
+		recordLanded: func(*intentInvocation, string, string) error { return nil },
 		recordWriter: humanRecordWriter,
 		process: func(process intentProcess) intentProcessResult {
 			bed.calls = append(bed.calls, process.argv)

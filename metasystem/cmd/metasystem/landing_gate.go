@@ -104,15 +104,23 @@ func productionIntentBranchTip(root, goalID string) (string, error) {
 // admitLanding is the gate at a form's admission: nil to proceed, or the
 // refusal the person reads, naming the human verb that carries past it.
 func (inv *intentInvocation) admitLanding(targets []intentTarget, goalID, tip string) *intentResult {
+	_, refused := inv.admittedUnder(targets, goalID, tip)
+	return refused
+}
+
+// admittedUnder is admitLanding that also answers what the gate admitted the
+// landing under: the words its landed line carries.
+func (inv *intentInvocation) admittedUnder(targets []intentTarget, goalID, tip string) (string, *intentResult) {
 	gate := inv.delivery().landingGate
 	if gate == nil {
 		gate = productionIntentLandingGate
 	}
-	if _, err := gate(inv, goalID, tip); err != nil {
+	under, err := gate(inv, goalID, tip)
+	if err != nil {
 		result := landingGateRefusal(targets, goalID, err)
-		return &result
+		return "", &result
 	}
-	return nil
+	return under, nil
 }
 
 // landingGateRefusal is the gate's refusal in the two lines a person reads:
@@ -182,8 +190,10 @@ func landed(result intentResult) bool {
 }
 
 // noteLanded writes the holder's landed line once a landing's publication is
-// confirmed, naming what it landed under. A seat that does not hold the goal
-// (a person landing by hand) records nothing; the landing stands either way.
+// confirmed, naming what the gate admitted it under, as its record kept it; a
+// record that kept none is worded from the ledger at the tip that landed. A
+// seat that does not hold the goal (a person landing by hand) records nothing;
+// the landing stands either way.
 func (inv *intentInvocation) noteLanded(goalID string, result intentResult) intentResult {
 	if !landed(result) {
 		return result
@@ -205,7 +215,15 @@ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) inte
 	if record == nil {
 		record = productionRecordLanded
 	}
-	if err := record(inv, goalID); err != nil {
+	kept := result.Data.(map[string]any)["landing"].(intentLanded)
+	under, err := kept.Under, error(nil)
+	if under == "" {
+		under, err = inv.ledgerLandedUnder(goalID, kept.Subject)
+	}
+	if err == nil {
+		err = record(inv, goalID, under)
+	}
+	if err != nil {
 		if data, ok := result.Data.(map[string]any); ok {
 			data["landedLine"] = err.Error()
 		}
@@ -213,24 +231,30 @@ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) inte
 	return result
 }
 
-func productionRecordLanded(inv *intentInvocation, goalID string) error {
+// ledgerLandedUnder words the landed line of a goal's landing at tip from the
+// ledger.
+func (inv *intentInvocation) ledgerLandedUnder(goalID, tip string) (string, error) {
 	projection, _, problem := inv.projection()
 	if problem != nil {
-		return fmt.Errorf("%s", problem.Summary)
+		return "", fmt.Errorf("%s", problem.Summary)
 	}
 	file := projection.Tree.Live[goalID]
 	if file == nil {
-		return fmt.Errorf("goal %s is not live", goalID)
+		return "", fmt.Errorf("goal %s is not live", goalID)
 	}
 	settings, err := landingGateSettings(inv.layout.InstallationRoot)
 	if err != nil {
-		return err
+		return "", err
 	}
+	return goal.LandedUnder(file, tip, settings), nil
+}
+
+func productionRecordLanded(inv *intentInvocation, goalID, under string) error {
 	request, err := syncReqWithProofAtWithDependencies("landed", inv.stateRoot, "", "", nil, inv.owners.commandNow, inv.owners.dependencies)
 	if err != nil {
 		return err
 	}
-	result, err := goal.RecordLanded(request, goalID, goal.LandedUnder(file, settings))
+	result, err := goal.RecordLanded(request, goalID, under)
 	if err == nil && result.Outcome != goal.OutcomeConfirmed && !result.Unchanged {
 		err = fmt.Errorf("%s", result.Detail)
 	}

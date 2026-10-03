@@ -7,11 +7,13 @@ package main
 // revision is started once: its answer on the goal ends it.
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // holderStop is one Stop of the session holding the bed's goal (mac-cli+m1),
@@ -153,5 +155,31 @@ func TestASendBacksRevisionIsStartedOnceAtStopsWithOpenWork(t *testing.T) {
 	second := holderStopOver(t, bed, owners, holderDue.Add(time.Minute), openWorkScan)
 	if len(calls) != 1 || strings.Contains(second.Display, "REVISION") {
 		t.Fatalf("the second Stop started the revision again: calls=%d\n%s", len(calls), second.Display)
+	}
+}
+
+// The Stop says LANDED only for an answer that carries a landing on main: a
+// due goal still waiting in the landing lane is LANDING.
+func TestTheStopSaysLandingForAWaitingGoal(t *testing.T) {
+	t.Parallel()
+	b, owners, install := gitlessLaneBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) }, "critic-root", "critic-root")
+	if _, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: owners.status.BranchTip, At: "2026-09-01T09:30:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	verdict := holderStop(t, b.intentBed, b.deliveryOwners(), holderDue)
+	if !strings.Contains(verdict.Display, "LANDING "+bedGoal+": goal "+bedGoal+" at ") || !strings.Contains(verdict.Display, "is waiting in the landing lane") ||
+		strings.Contains(verdict.Display, "LANDED") {
+		t.Fatalf("the Stop does not say the goal is still landing: %s", verdict.Display)
+	}
+
+	// The answer as the Stop reads it from work land --json.
+	encoded, err := json.Marshal(intentResult{Outcome: intentUnchanged, Summary: "goal " + bedGoal + " landed on main through the landing lane",
+		Data: map[string]any{"route": "lane", "queue": plain.Entry{Goal: bedGoal, State: plain.StateLanded}}})
+	var landed intentResult
+	if err != nil || json.Unmarshal(encoded, &landed) != nil {
+		t.Fatalf("the landed answer does not round-trip: %v", err)
+	}
+	if line := holderStepLine(goal.HolderStep{Goal: bedGoal}, landed); !strings.HasPrefix(line, "LANDED "+bedGoal+": ") {
+		t.Fatalf("a landed answer: %q", line)
 	}
 }

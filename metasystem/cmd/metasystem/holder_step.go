@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // The holder's step on its Stop path (g1-s70 D3, SOL-S70-02).
@@ -47,16 +48,19 @@ func holderStepTaker(cwd string, owners intentOwners) func(goal.HolderStep) stri
 func holderStepLine(step goal.HolderStep, result intentResult) string {
 	taken := result.Outcome != intentRefused && result.Outcome != intentFailed
 	data, _ := result.Data.(map[string]any)
+	// The answer carries a landing on main: a pushed landing, or a queue line
+	// the lane has landed.
+	queue, _ := data["queue"].(map[string]any)
+	landed := data["landing"] != nil || queue["state"] == plain.StateLanded
 	switch {
 	case step.Revise && taken:
 		return fmt.Sprintf("REVISION STARTED %s, %s: %s", step.Goal, step.Why, result.Summary)
 	case step.Revise:
 		return fmt.Sprintf("REVISION REFUSED %s, %s: %s", step.Goal, step.Why, result.Summary)
-	case taken:
-		if joined, _ := data["joinedNow"].(bool); joined {
-			return fmt.Sprintf("LANDED %s: joined batch %v", step.Goal, data["batchId"])
-		}
+	case taken && landed:
 		return fmt.Sprintf("LANDED %s: %s", step.Goal, result.Summary)
+	case taken:
+		return fmt.Sprintf("LANDING %s: %s", step.Goal, result.Summary)
 	}
 	line := "LANDING REFUSED " + step.Goal
 	if code, _ := data["code"].(string); code != "" {

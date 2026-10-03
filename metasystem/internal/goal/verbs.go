@@ -531,7 +531,7 @@ func creditWait(f *GoalFile, r VerbRequest) error {
 	}
 	mark, err := time.Parse(time.RFC3339, f.Landing.At)
 	if err != nil || wait.Start.Before(mark) || wait.End.Before(wait.Start) || wait.End.After(r.Now) {
-		return fmt.Errorf("goal %s has waited to land since %s, so its wait can't run from %s to %s, starting before then, ending before it starts, or ending after this act at %s; nothing was written",
+		return fmt.Errorf("the wait given does not fit inside the goal's time waiting to land; nothing was written\ngoal %s has waited since %s; the wait given runs from %s to %s, and must start then or later, not end before it starts, and end by this act at %s",
 			f.Id, f.Landing.At, wait.Start.UTC().Format(time.RFC3339), wait.End.UTC().Format(time.RFC3339), r.stamp())
 	}
 	f.Claimed.IdleSeconds += uint64(wait.End.Sub(wait.Start) / time.Second)
@@ -2279,14 +2279,8 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if f.State != StateClaimed || f.Claimed == nil {
-				return nil, fmt.Errorf("goal %s is %s, not claimed; land-ready marks the claim holder's built work", id, f.State)
-			}
-			if !ownPair(f.Claimed, r.Actor) {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; land-ready is the claim holder's own act", id, f.Claimed.Machine, f.Claimed.Lineage)
-			}
-			if f.StopFence != nil {
-				return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume, a human act, clears the fence", id, f.StopFence.StopID)
+			if err := LandReadyRefusal(f, id, r.Actor); err != nil {
+				return nil, err
 			}
 			if f.Landing != nil {
 				return nil, AlreadyHolds{Reason: "goal " + id + " is already queued to land (since " + f.Landing.At + ")"}
@@ -2297,6 +2291,22 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// LandReadyRefusal is why land-ready would refuse actor on the goal's file:
+// the goal is not claimed, the claim is another session's, or a stop fence
+// stands. nil when the mark would be taken, or the goal is already marked.
+func LandReadyRefusal(f *GoalFile, id string, actor Actor) error {
+	if f.State != StateClaimed || f.Claimed == nil {
+		return fmt.Errorf("goal %s is %s, not claimed; land-ready marks the claim holder's built work", id, f.State)
+	}
+	if !ownPair(f.Claimed, actor) {
+		return fmt.Errorf("goal %s is claimed by %s+%s; land-ready is the claim holder's own act", id, f.Claimed.Machine, f.Claimed.Lineage)
+	}
+	if f.StopFence != nil {
+		return fmt.Errorf("goal %s is breach-stopped by %s; only goal resume, a human act, clears the fence", id, f.StopFence.StopID)
+	}
+	return nil
 }
 
 // Done concludes one goal and moves it to the archive — the one

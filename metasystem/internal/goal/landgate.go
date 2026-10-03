@@ -193,9 +193,8 @@ func validGateHistory(h HistoryLine) error {
 	return nil
 }
 
-// word is the newest human word on the landing at hand: a verdict or a
-// land-without-sitting decision, since the goal's standing Landing record (or
-// over the whole history of a claim that never had one).
+// word is a human word on the landing: a verdict or a land-without-sitting
+// decision, bound to the tip it was given at.
 type word struct {
 	kind    string // VerdictClearToLand, VerdictSendBack or LandWithoutSittingVerb
 	tip     string
@@ -212,30 +211,63 @@ func since(f *GoalFile) int {
 	return 0
 }
 
+// newestWord is the newest human word since the goal's standing Landing
+// record (or over the whole history of a claim that never had one): what
+// shows where the review stands, so a new hand-in reads as a new review.
 func newestWord(f *GoalFile) *word {
 	if f == nil {
 		return nil
 	}
+	return newestWordFrom(f, since(f), "")
+}
+
+// newestWordFrom is the newest human word on f's history from index from on,
+// given at tip when tip is not empty.
+func newestWordFrom(f *GoalFile, from int, tip string) *word {
 	var newest *word
-	for _, h := range f.History[since(f):] {
+	for _, h := range f.History[from:] {
+		var said *word
 		switch h.Verb {
 		case reviewVerb:
 			if line, err := parseReviewReason(h.Reason); err == nil {
-				newest = &word{kind: line.Verdict, tip: line.Tip, by: line.By, opid: h.Opid, record: line.Record}
+				said = &word{kind: line.Verdict, tip: line.Tip, by: line.By, opid: h.Opid, record: line.Record}
 			}
 		case LandWithoutSittingVerb:
 			if decided, err := parseWithoutSitting(h.Reason); err == nil {
-				newest = &word{kind: LandWithoutSittingVerb, tip: decided.Tip, by: decided.By, opid: h.Opid, because: decided.Reason}
+				said = &word{kind: LandWithoutSittingVerb, tip: decided.Tip, by: decided.By, opid: h.Opid, because: decided.Reason}
 			}
+		}
+		if said != nil && (tip == "" || said.tip == tip) {
+			newest = said
 		}
 	}
 	return newest
 }
 
+// claimWord is the word that decides a landing at tip: the newest word given
+// at tip over the whole claim (from the history's newest claim line on), so
+// marking the goal never hides a word the person already gave for it. With
+// none at tip it is the claim's newest word, which says where it was given.
+func claimWord(f *GoalFile, tip string) *word {
+	if f == nil {
+		return nil
+	}
+	from := 0
+	for index, h := range f.History {
+		if h.Verb == "claim" {
+			from = index
+		}
+	}
+	if said := newestWordFrom(f, from, tip); said != nil || tip == "" {
+		return said
+	}
+	return newestWordFrom(f, from, "")
+}
+
 // Gate decides whether a goal's work at tip may be published now: refused
 // under a standing hold at every tier; at or above the tier refused unless the
-// newest human word on the landing is clear to land or land without a sitting,
-// recorded against this tip; below the tier it proceeds. It answers the words
+// newest human word given at this tip during the claim is clear to land or
+// land without a sitting; below the tier it proceeds. It answers the words
 // the landed line carries: what the landing is under.
 func Gate(f *GoalFile, tip string, s GateSettings) (string, error) {
 	if f == nil {
@@ -250,7 +282,7 @@ func Gate(f *GoalFile, tip string, s GateSettings) (string, error) {
 	if !s.WaitsForHuman(f) {
 		return fmt.Sprintf("landing.review.auto-after=%s, tier %d below human-from-tier=%d", s.AutoAfterText, tier, s.HumanFromTier), nil
 	}
-	said := newestWord(f)
+	said := claimWord(f, tip)
 	missing := func(why string) error {
 		return &GateRefusal{Code: GateWaitsForHuman, Reason: fmt.Sprintf(
 			"goal %s is tier %d, at or above landing.review.human-from-tier=%d, and waits for a person: %s; a person reviews it in a sitting that ends clear to land, or lands it without a sitting: metasystem goal land-without-sitting %s --reason TEXT",
@@ -551,12 +583,13 @@ func landedRequest(r VerbRequest, id, reason string) PublishRequest {
 	}
 }
 
-// LandedUnder is what a landing whose publication was confirmed was under, as
-// the holder's landed line says it: the setting and the tier below the
-// threshold, or the human's newest word at or above it. The publication passed
-// the gate, so the word is the one that let it through.
-func LandedUnder(f *GoalFile, s GateSettings) string {
-	said := newestWord(f)
+// LandedUnder words a confirmed landing's landed line from the ledger, for a
+// landing whose record does not carry what the gate admitted it under: the
+// setting and the tier below the threshold, or the human's word at tip at or
+// above it. The publication passed the gate, so the word is the one that let
+// it through.
+func LandedUnder(f *GoalFile, tip string, s GateSettings) string {
+	said := claimWord(f, tip)
 	if s.WaitsForHuman(f) && said != nil && said.kind != VerdictSendBack {
 		return said.under(GateTier(f), s)
 	}

@@ -367,16 +367,41 @@ func TestGateHistoryGrammar(t *testing.T) {
 	}
 }
 
+// The gate answers what the landed line names: the setting and the tier
+// below the threshold, or the person's word at or above it.
 func TestLandedUnderNamesTheSettingOrTheWord(t *testing.T) {
 	t.Parallel()
-	if under := LandedUnder(tiered("g", 1), gateSettings); under != "landing.review.auto-after=4h, tier 1 below human-from-tier=2" {
-		t.Fatalf("below the tier: %q", under)
+	if under, err := Gate(tiered("g", 1), reviewedTip, gateSettings); err != nil || under != "landing.review.auto-after=4h, tier 1 below human-from-tier=2" {
+		t.Fatalf("below the tier: %q %v", under, err)
 	}
 	f := tiered("g", 2)
 	humanLine(f, "2026-08-20T11:00:00Z", "01J5X0000000000000000000L1-mac-ui-1a2b3c4d", "review",
 		"reviewed verdict=clear-to-land tip="+reviewedTip+" record="+reviewPath+" by=Wido")
-	if under := LandedUnder(f, gateSettings); !strings.HasPrefix(under, "reviewed verdict=clear-to-land by=Wido tip=9c1f0a2") {
-		t.Fatalf("at the tier: %q", under)
+	if under, err := Gate(f, reviewedTip, gateSettings); err != nil || !strings.HasPrefix(under, "reviewed verdict=clear-to-land by=Wido tip=9c1f0a2") {
+		t.Fatalf("at the tier: %q %v", under, err)
+	}
+	// A hand-in marks the goal again after the person's word: the word still
+	// names what the landing passed under.
+	marked := "01J5X0000000000000000000M2-mac-a-1a2b3c4d"
+	f.History = append(f.History, HistoryLine{At: "2026-08-20T11:30:00Z", Opid: marked, Verb: "land-ready", Actor: "mac-a+lin-1", Targets: []string{f.Id}, Keep: -1})
+	f.Landing = &LandingRecord{At: "2026-08-20T11:30:00Z", Opid: marked}
+	if under, err := Gate(f, reviewedTip, gateSettings); err != nil || !strings.HasPrefix(under, "reviewed verdict=clear-to-land by=Wido tip=9c1f0a2") {
+		t.Fatalf("a word given before the mark: %q %v", under, err)
+	}
+}
+
+// A person clears tip A, then sends back tip B, and the branch is back at A:
+// the gate admits A on the clear, and its answer, the landed line's words,
+// names that clear.
+func TestLandedUnderNamesTheWordThatAdmittedTheTip(t *testing.T) {
+	t.Parallel()
+	f := tiered("g", 2)
+	humanLine(f, "2026-08-20T11:00:00Z", "01J5X0000000000000000000L1-mac-ui-1a2b3c4d", "review",
+		"reviewed verdict=clear-to-land tip="+reviewedTip+" record="+reviewPath+" by=Wido")
+	humanLine(f, "2026-08-20T12:00:00Z", "01J5X0000000000000000000L2-mac-ui-1a2b3c4d", "review",
+		"reviewed verdict=send-back tip="+strings.Repeat("4", 40)+" record="+reviewPath+" by=Wido brief="+BriefPathFor(reviewPath))
+	if admitted, err := Gate(f, reviewedTip, gateSettings); err != nil || !strings.HasPrefix(admitted, "reviewed verdict=clear-to-land by=Wido tip=9c1f0a2") {
+		t.Fatalf("the gate admitted %q (%v)", admitted, err)
 	}
 }
 

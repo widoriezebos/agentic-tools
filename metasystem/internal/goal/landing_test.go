@@ -1097,8 +1097,26 @@ func TestAWaitEndOutsideTheMarkIsRefused(t *testing.T) {
 		r.Waits = map[string]Wait{"waited": act.wait}
 		res, err := act.run(r, "waited", "the lane is slow")
 		span := act.wait.Start.Format(time.RFC3339) + " to " + act.wait.End.Format(time.RFC3339)
-		if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "so its wait can't run from "+span) || acceptedTipForEndpoint(t, a) != before {
+		if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "the wait given does not fit inside the goal's time waiting to land; nothing was written\ngoal waited has waited since "+mark.Format(time.RFC3339)+"; the wait given runs from "+span) || acceptedTipForEndpoint(t, a) != before {
 			t.Fatalf("act %d with a wait from %s: %+v %v", i, span, res, err)
+		}
+	}
+}
+
+// The refusal's first line fits a person's line whatever the goal's id; the
+// second line names the goal and the times.
+func TestTheWaitRefusalFitsTheLineBudget(t *testing.T) {
+	t.Parallel()
+	id, mark, at := strings.Repeat("g", 64), time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC), time.Date(2026, 9, 12, 11, 0, 0, 0, time.UTC)
+	f := &GoalFile{Id: id, Claimed: &ClaimRecord{Machine: "mac-a", Lineage: "lin-1"}, Landing: &LandingRecord{At: mark.Format(time.RFC3339)}}
+	err := creditWait(f, VerbRequest{Actor: Actor{Machine: "mac-a", Lineage: "lin-1"}, Now: at, Waits: map[string]Wait{id: {mark.Add(-time.Second), at}}})
+	first, second, _ := strings.Cut(fmt.Sprint(err), "\n")
+	if err == nil || len([]rune(first)) > 100 || !strings.Contains(second, "goal "+id) {
+		t.Fatalf("the refusal's lines: %q (%d characters), %q", first, len([]rune(first)), second)
+	}
+	for _, stamp := range []time.Time{mark, mark.Add(-time.Second), at} {
+		if !strings.Contains(second, stamp.Format(time.RFC3339)) {
+			t.Fatalf("the second line does not name %s: %q", stamp.Format(time.RFC3339), second)
 		}
 	}
 }

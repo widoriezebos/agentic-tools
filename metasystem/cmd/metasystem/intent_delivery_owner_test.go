@@ -314,6 +314,8 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 	landingRoot := filepath.Join(t.TempDir(), "landing")
 	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
 	owners := defaultIntentOwners()
+	// The hand-in runs as the session holding the goal.
+	owners.dependencies.ownerLineage = func() string { return "m1" }
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {

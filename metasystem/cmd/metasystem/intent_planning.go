@@ -1021,17 +1021,11 @@ func (inv *intentInvocation) bindObligation(id string) int {
 // heldGoals are the live goals claimed by this machine under the acting
 // session's lineage.
 func (inv *intentInvocation) heldGoals(projection goal.Projection) ([]string, string, error) {
-	lineage := inv.input.text("lineage")
-	if lineage == "" && inv.owners.dependencies.ownerLineage != nil {
-		lineage = inv.owners.dependencies.ownerLineage()
-	}
-	if lineage == "" {
-		return nil, "", errors.New("no session is named: the command has no --lineage and the shell names no session")
-	}
-	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
+	session, err := inv.sessionActor()
 	if err != nil {
 		return nil, "", err
 	}
+	machine, lineage := session.Machine, session.Lineage
 	var held []string
 	for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
 		file := projection.Tree.Live[id]
@@ -1040,6 +1034,23 @@ func (inv *intentInvocation) heldGoals(projection goal.Projection) ([]string, st
 		}
 	}
 	return held, machine, nil
+}
+
+// sessionActor is this session as a goal owner names it: this machine, and
+// the lineage --lineage gives or else the one the shell names.
+func (inv *intentInvocation) sessionActor() (goal.Actor, error) {
+	lineage := inv.input.text("lineage")
+	if lineage == "" && inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
+	}
+	if lineage == "" {
+		return goal.Actor{}, errors.New("no session is named: the command has no --lineage and the shell names no session")
+	}
+	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
+	if err != nil {
+		return goal.Actor{}, err
+	}
+	return goal.Actor{Machine: machine, Lineage: lineage}, nil
 }
 
 // uniqueHeldGoal is the goal named, or else the one goal this session holds.

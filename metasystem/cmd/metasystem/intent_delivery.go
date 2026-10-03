@@ -259,6 +259,15 @@ type intentDeliveryOwners struct {
 	// laneInstall is the installation of the registered lane checkout,
 	// where its queue.jsonl lives; nil resolves the checkout's layout.
 	laneInstall func(landingRoot string) (string, error)
+	// landMark marks a handed-in goal as waiting to land; nil runs the
+	// claim holder's land-ready.
+	landMark func(inv *intentInvocation, goalID string) intentResult
+	// containedIn says, in the checkout at dir, whether main contains a
+	// handed-in sha; nil reads the checkout with Git.
+	containedIn func(dir, main string) func(sha string) (bool, error)
+	// laneSeat names this seat on a hand-in's queue line; nil names it by
+	// its enrolled nickname, else its path.
+	laneSeat func(installation string) string
 	// boardView reads the host board for a one-shot view of the checkout,
 	// checking its cards against the goal ledger at ledgerRoot (the state
 	// root); nil reads the host this command runs on.
@@ -270,8 +279,9 @@ type intentDeliveryOwners struct {
 	// branchTip reads a goal branch's tip at origin; nil reads origin.
 	branchTip func(root, goalID string) (string, error)
 	// recordLanded writes the holder's landed line after a confirmed
-	// publication; nil selects the ledger's own act.
-	recordLanded func(inv *intentInvocation, goalID string) error
+	// publication, naming what the gate admitted it under; nil selects the
+	// ledger's own act.
+	recordLanded func(inv *intentInvocation, goalID, under string) error
 	foldUnitHook func(inv *intentInvocation, run string) int
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.
@@ -1740,6 +1750,10 @@ type intentLanded struct {
 	// Delivered is the landing's plain sentence of what it delivers
 	// (work land G --delivered), posted to the channel once on main.
 	Delivered string `json:",omitempty"`
+	// Under is what the landing gate admitted the push under, the words
+	// the holder's landed line carries. A record without it has the line
+	// worded from the ledger at Subject.
+	Under string `json:",omitempty"`
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
@@ -1932,7 +1946,8 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 			Summary: fmt.Sprintf("goal %s already landed %s on %s", goalID, landed.Landing, landed.Endpoint)}
 	}
-	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanding)
+	machine, _ := inv.owners.dependencies.machine(inv.stateRoot)
+	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanding, machine)
 	selection := []string{"--last"}
 	if through != "" {
 		selection = []string{"--through", through}
@@ -1967,7 +1982,8 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	// The proof took its time; the gate is read again against the fresh
 	// ledger right before the publication (g1-s70 D2).
-	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+	under, refused := inv.admittedUnder(targets, goalID, state.BranchTip)
+	if refused != nil {
 		refused.Data = data
 		return *refused
 	}
@@ -1983,9 +1999,9 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 			next:    inv.sameCommand(), nextReason: "pushes the prepared landing; its checks are reused"}
 	}
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet,
-		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
+		Delivered: strings.TrimSpace(inv.input.text("delivered")), Under: under}
 	data["landing"] = landed
-	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded)
+	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded, machine)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
@@ -2008,9 +2024,10 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 // (D14, R24): landing when the route begins, with this landing process as
 // owner, so an abandoned attempt reads as a dead owner and the goal's next
 // real transition overwrites it; landed after the push. The card is the
-// goal's live card, or this installation's own seat. A card that cannot be
-// written is reported and the landing goes on.
-func writeHandLandingCard(stderr io.Writer, root, goalID string, stage board.Stage) {
+// goal's live card, or this installation's own seat on the named machine
+// (none when the machine has no name). A card that cannot be written is
+// reported and the landing goes on.
+func writeHandLandingCard(stderr io.Writer, root, goalID string, stage board.Stage, machine string) {
 	home, err := board.Home()
 	if err != nil {
 		return
@@ -2018,7 +2035,7 @@ func writeHandLandingCard(stderr io.Writer, root, goalID string, stage board.Sta
 	seat, found := board.Seat{}, false
 	if live, ok := board.LiveCard(home, goalID); ok {
 		seat, found = live.Seat, true
-	} else if machine, resolveErr := goal.ResolveMachine(root); resolveErr == nil {
+	} else if machine != "" {
 		seat, found = board.Seat{Machine: machine, Installation: realpath.Resolve(root)}, true
 	}
 	if !found {
