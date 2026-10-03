@@ -1,15 +1,15 @@
 # app-doctrine
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 20
 - Intent: What: An adopted app's own patterns, architecture choices and conventions are written down as its doctrine and keep evolving as the app grows. The first version exists: the inception interview writes a starting doctrine file. What is left: make the doctrine a binding input to every critique of changes to the app, let the counselor flag when the doctrine no longer matches the code, and decide who changes it (any seat proposes and a person ratifies, or a dedicated architect role). Why: Today the doctrine is written once and then nothing reads or updates it, so it goes stale and critics ignore the app's own rules. Pros: Critiques judge against the app's own rules, and drift gets noticed. Cons: One more input to maintain, the ownership question may add a new role, and there is nothing to test against until an app has lived past inception.
 - Origin: human
 - Next step: Next: Write the design: how the doctrine enters every critique brief automatically, how the counselor detects drift, and who owns doctrine changes, with that last answer brought to Wido. Done when: Wido has accepted a design that answers all three.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 101
+- Revision: 102
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-30T18:45:20Z because=Parked until an adopted app has lived past inception and its doctrine needs its first change. This goal was always meant to come last, and without such an app there is nothing real to design against.
+- Abandoned: by=human:Wido at=2026-10-03T09:54:53Z revision=102 opid=GVEFVEKEM14VAKYC5XWFEH9SCV-m1e-718ba0eb carried=next-adoption-follow-ups because=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
 
 History:
 - 2026-08-23T16:30:15Z QNX0208M1DP6RBHG6PESWWNNSB-m1-bf243850 open actor=human:wido targets=app-doctrine
@@ -113,4 +113,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
-Integrity: sha256=3623f3ba83aab28ef1434b0f938526bc1489de7c2f1120e34888450e16bd44f3
+- 2026-10-03T09:54:53Z GVEFVEKEM14VAKYC5XWFEH9SCV-m1e-718ba0eb abandon actor=human:Wido targets=app-doctrine,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=next-adoption-follow-ups reason=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
+Integrity: sha256=ac13f8903b05dd8976a2140db8f84bc21a23b55d3858ccb97c768f374f040c6b
