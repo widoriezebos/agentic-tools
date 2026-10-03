@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1g",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem",
+  "generation": 15,
+  "engine": "eb7ba1fac396bdf26214c160a4dfb61cca107bff",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "20261003t184948-f8ab4c4b55-r1-s1",
+    "job": "20261003t184948-f8ab4c4b55-r1-s1",
+    "role": "building",
+    "round": 1,
+    "goal": "seat-path-lands-without-help",
+    "startedAt": "2026-10-03T18:49:49Z"
+  },
+  "working": {
+    "goal": "seat-path-lands-without-help",
+    "phase": {
+      "role": "building",
+      "round": 1,
+      "roundLimit": 20
+    },
+    "job": {
+      "id": "20261003t184948-f8ab4c4b55-r1-s1",
+      "role": "building",
+      "status": "running",
+      "startedAt": "2026-10-03T18:49:49Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 2,
+      "attemptLimit": 30,
+      "reservedMinutes": 18,
+      "reservedMinutesLimit": 3600,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "20261003t184948-f8ab4c4b55-r1-s1",
+        "role": "building",
+        "round": 1,
+        "status": "running",
+        "startedAt": "2026-10-03T18:49:49Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T19:57:48Z",
+  "diskFreeBytes": 182832148480
+}
