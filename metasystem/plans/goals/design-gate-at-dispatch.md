@@ -18,15 +18,15 @@ Open read items (fix unit gate2-preliminary-r5): 1
 Open read items (fix unit switch-preliminary-r3): 1
 - ReadItem: id=switch-preliminary-r3-1 read=switch-preliminary-r3 state=open addedAt=2026-10-03T21:57:50Z changedAt=- closingReference="" text="Under design.gate.mode=refuse the build refusal prints an empty governed-by= (cmd/metasystem/intent_work.go:602-608) and the dispatch record's GovernedBy is empty (intent_design_gate.go:138-139), because the ruling ids come with unit governance (refusal.GovernedBy, design section 7 unit 5). Unit governance must fill both from the map, omit the detail when no id is known, and assert a non-empty id in intent_design_gate_switch_test.go:78."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 60
+- Revision: 61
 - Labels: headless-fleet, headless-process
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 1
-- NormApproval: approvedRef=9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=53
-- Approved: by=human:Wido at=2026-10-03T17:56:51Z revision=54 opid=9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb authority=proven digest=16d0e7418ca60e9c92b80969e972b86ff0911f0100839d9216ac3e4132b56d31 episode=54
+- Budget: elapsedLimit=1d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 2
+- NormApproval: approvedRef=CTTAW7B0ZY968C3MDT8ZVYD1QW-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=60
+- Approved: by=human:Wido at=2026-10-03T22:10:47Z revision=61 opid=CTTAW7B0ZY968C3MDT8ZVYD1QW-m1e-718ba0eb authority=proven digest=88ba267c770bc39f1c414df2c53532aea6f0f4d35bd16a622dd1f2f75677a6d0 episode=61
 - Sliced: machine=m1k lineage=steward-seat revision=50 at=2026-10-03T16:24:27Z
-- Claimed: machine=m1k lineage=steward-seat at=2026-10-03T17:56:51Z revision=54 accountingRevision=54 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
-- StopCapability: generation=54 revision=54 machine=m1k claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1k lineage=steward-seat at=2026-10-03T22:10:47Z revision=61 accountingRevision=61 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
+- StopCapability: generation=61 revision=61 machine=m1k claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -89,4 +89,5 @@ History:
 - 2026-10-03T20:29:36Z J5XX6VXKH7CG095M75HHZNYRR9-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T21:01:07Z D9GE44B9E7W6TET1F848DGF51J-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T21:57:50Z HG4G2V0ADE1Q8MJZNSP68BRXX6-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
-Integrity: sha256=213c1582d9781d146645231e2d910869c920df8a3379b845bbaad48537a140b2
+- 2026-10-03T22:10:47Z CTTAW7B0ZY968C3MDT8ZVYD1QW-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T17:56:51Z
+Integrity: sha256=c2874dbf01d4f9c3b56b8436a544ccb2b840e5874e82ffd94004ff0b0878362a
