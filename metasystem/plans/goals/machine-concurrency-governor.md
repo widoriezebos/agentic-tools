@@ -1,6 +1,6 @@
 # machine-concurrency-governor
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 31
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: overload makes proofs flaky and slow, no data loss; novelty 2: a machine-wide admission governor is new; exposure 3: every seat on the machine; accumulation 1: one governor and its config"
@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: Next: when a dispatch or suite failure is traced to machine load again, write a small design for load-aware admission using that incident as its test case. Done when: a fixture that dispatches beside a saturating load passes without timeouts. RETURNED 2026-10-03 (parked-list cleanup): its trigger fired. Evidence: tests failed only under load at 31 on 18 cores overnight (machinery-blocks item 46); on 2026-10-03 the host ran at load 30 to 43 with six seats each running 45 to 70 minute full test runs at once, redding runs that passed on rerun (m1g, m1i). Wido's standing rules to design to: parallel only with spare CPU, one suite at a time on the fastest venue, machinery concurrency derived from capacity, long whole-package runs in the VM, tests fixed with artificial clocks never retries. Decide with Wido whether load-aware admission is wanted beside the clock fixes; coordinate with lane-reproves-only-what-a-change-can-affect (fewer and smaller runs) and a-red-main-is-known-once.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 245
+- Revision: 246
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T11:03:39Z revision=246 opid=CX07NGF5J9FAW6T51HMWWECD2D-m1e-718ba0eb authority=proven digest=7206140caf0fe40fb4271631444db91b4ea03a8bf84ee705f084cec89ebbd198 episode=246
 
 History:
 - 2026-08-29T07:38:20Z XAR0VVP0CKT8476P0AZ8K4KG68-m1-bf243850 open actor=human:wido targets=machine-concurrency-governor
@@ -258,4 +260,5 @@ History:
 - 2026-10-03T09:59:10Z RYD9V9YN18QS5P964FN8SYT8PW-m1e-718ba0eb set-priority actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=machine-concurrency-governor from=2:27 to=1:29 requested-sequence=append
 - 2026-10-03T10:03:30Z 0N8P30YRNHMMRZG9MD1HP7M1CH-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=agent-works-as-project-partner from=1:29 to=1:30 requested-sequence=1
 - 2026-10-03T10:58:18Z MBANEVVSQBZRV55DSAJBJPBYYQ-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=notifications-can-be-dismissed from=1:30 to=1:31 requested-sequence=3
-Integrity: sha256=776e8f5fa5560dac8d35b51b7b4708c63157e56ccd0579770ea6ee8b87c27352
+- 2026-10-03T11:03:39Z CX07NGF5J9FAW6T51HMWWECD2D-m1e-718ba0eb approve actor=human:Wido targets=machine-concurrency-governor
+Integrity: sha256=aef60a76bfe1db1f2bf4c42bd55f69f4c551867f1fce6bda2aa2156731d29530
