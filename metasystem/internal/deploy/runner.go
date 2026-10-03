@@ -40,8 +40,9 @@ type Runner struct {
 	// run.json records it, before the pause is checked and its process
 	// starts; Started, when set, is told each such process as it starts.
 	Starting, Started func(Active)
-	// acting is set on the runner of a person's rollback: it holds the lock
-	// while deploys are paused, and its calls run all the same.
+	// acting is set on the runner of a person's rollback, which holds the
+	// lock while deploys are paused, and on a run's version calls after its
+	// build: their calls run all the same.
 	acting bool
 	// trees are the clean trees of the commits this run's or act's adapter
 	// calls are about, each with the contract read from it.
@@ -105,6 +106,11 @@ func (r *Runner) Run() (Report, error) {
 			switch report.Lines[count-1].Outcome {
 			case OutcomeActive:
 				report.Outcome = RunDeployed
+				if report.Lines[count-1].Kind == KindRollback {
+					// A pause ended the run's rollback once it returned to
+					// the deploy before.
+					report.Outcome = RunStopped
+				}
 			case OutcomeStopped:
 				report.Outcome = RunStopped
 			default:
@@ -257,6 +263,13 @@ func (r *Runner) reconcile(tip, log string, report *Report) (*Line, answer, *Lin
 		case r.acting && active.state == stateUnknown && active.exit < 0:
 			ended.Outcome = OutcomeStopped
 		}
+		if r.endedByPause(active) {
+			// Nothing was made active yet: the line stays stopped, naming
+			// what version reports in one more call.
+			asker := *r
+			asker.acting = true
+			ended.Detail += "; version then reports " + reported(asker.call("version", about, "", current, log, &Active{Kind: KindDeploy, Commit: tip}))
+		}
 		return nil, active, &ended, appendLine(r.Dir, ended)
 	}
 	// pending.json goes only once the record holds what it may name, so a
@@ -331,11 +344,35 @@ func (r *Runner) attempt(tip string, current *Line, log string) (Line, error) {
 		}
 		return finish(outcome, detail)
 	}
+	// version is asked even while paused, as a rollback's calls are: once a
+	// pause ended a call, the line is what version reports in one more call.
+	verify := func() answer {
+		asker := *r
+		asker.acting = true
+		return asker.call("version", tip, "", current, log, &Active{Kind: KindDeploy, Commit: tip})
+	}
+	// made are the artifacts this run made or was making active by the
+	// ended call: none for the build, the built one after it, and the
+	// deploy before once the run rolls back to it.
+	afterPause := func(ended answer, made ...*Line) (Line, error) {
+		if switched(&line, ended, verify(), made...) {
+			if line.Commit != tip {
+				// The deploy before is active again: a return to it, away
+				// from tip.
+				line.Kind, line.Previous = KindRollback, CommitRef(tip)
+			}
+			return finish(OutcomeActive, line.Detail)
+		}
+		return stoppedOr(OutcomeStopped, line.Detail)
+	}
 	if _, err := r.treeOf(tip); err != nil {
 		return finish(OutcomeBuildFailed, err.Error())
 	}
 	active := Active{Kind: KindDeploy, Commit: tip}
 	built := r.call("build", tip, "", current, log, &active)
+	if r.endedByPause(built) {
+		return afterPause(built)
+	}
 	if !built.done("built") {
 		return stoppedOr(OutcomeBuildFailed, built.describe())
 	}
@@ -348,7 +385,13 @@ func (r *Runner) attempt(tip string, current *Line, log string) (Line, error) {
 	if activated.state == stateFailed || activated.state == stateUnsupported || activated.state == statePaused {
 		return stoppedOr(OutcomeActivateFailed, activated.describe())
 	}
-	verified := r.call("version", tip, "", current, log, &Active{Kind: KindDeploy, Commit: tip})
+	if r.endedByPause(activated) {
+		return afterPause(activated, &line)
+	}
+	verified := verify()
+	if r.endedByPause(verified) {
+		return afterPause(verified, &line)
+	}
 	if verified.done(OutcomeActive) && verified.Artifact == line.Artifact && verified.Digest == line.Digest {
 		detail := ""
 		if !activated.done(OutcomeActive) {
@@ -367,6 +410,9 @@ func (r *Runner) attempt(tip string, current *Line, log string) (Line, error) {
 	detail := "version did not report " + Short(tip) + " active after its activation: " + reported(verified)
 	if current != nil && current.Artifact != "" {
 		back := r.call("rollback", current.Commit, "", current, log, &Active{Kind: KindRollback, Commit: current.Commit})
+		if r.endedByPause(back) {
+			return afterPause(back, &line, current)
+		}
 		switch {
 		case back.done(OutcomeActive):
 			detail += "; rolled back to " + Short(current.Commit)
@@ -482,6 +528,37 @@ func commitOf(line *Line) string {
 		return ""
 	}
 	return line.Commit
+}
+
+// endedByPause says whether a pause ended the call that answered a: a
+// signal ended it while deploys are paused.
+func (r *Runner) endedByPause(a answer) bool {
+	paused, _ := r.paused()
+	return paused && a.state == stateUnknown && a.exit < 0
+}
+
+// switched makes line, whose adapter call a pause ended, what version
+// reports in the new call after it: active, naming the target's own
+// commit, only when version reports one of targets' artifacts, those the
+// run or act made or was making active, and stopped otherwise. It says
+// whether line is active.
+func switched(line *Line, ended, verified answer, targets ...*Line) bool {
+	var target *Line
+	for _, made := range targets {
+		if target == nil && verified.Artifact == made.Artifact && verified.Digest == made.Digest {
+			target = made
+		}
+	}
+	switch {
+	case !verified.done(OutcomeActive) && !verified.done(OutcomeNone):
+		line.Outcome, line.Detail = OutcomeStopped, "a pause ended the adapter's "+ended.operation+" and the active artifact is unknown, since version then reports "+reported(verified)
+	case target == nil || !verified.done(OutcomeActive) || verified.Artifact != target.Artifact || verified.Digest != target.Digest:
+		line.Outcome, line.Detail = OutcomeStopped, ended.describe()+"; version then reports "+reported(verified)
+	default:
+		line.Commit, line.Version, line.Artifact, line.Digest = target.Commit, verified.Version, verified.Artifact, verified.Digest
+		line.Outcome, line.Detail = OutcomeActive, "a pause ended the adapter's "+ended.operation+" after the switch; version then reports "+reported(verified)
+	}
+	return line.Outcome == OutcomeActive
 }
 
 func reported(a answer) string {

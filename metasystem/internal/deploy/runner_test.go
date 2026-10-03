@@ -585,13 +585,15 @@ func TestRefusedRollbackStartsNoDeploy(t *testing.T) {
 
 // A pause while a rollback's adapter call is held answers at once, while
 // the rollback still runs: it ends that call, and the rollback answers
-// failed with what version then reports and appends its stopped line; its
-// pause holds.
+// failed with what version then reports, c1 switched to before the pause,
+// and appends its one line, active for c1, so status names c1; its pause
+// holds.
 func TestPauseEndsAStalledRollback(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.deployed("c1")
 	b.deployed("c2")
+	before := len(b.lines())
 	hold, verify := b.fifo("rollback"), b.fifo("verify")
 	t.Cleanup(func() { b.releaseIfHeld(hold); b.releaseIfHeld(verify) })
 	b.script("rollback", step{HoldAfter: hold})
@@ -621,10 +623,11 @@ func TestPauseEndsAStalledRollback(t *testing.T) {
 	}
 	b.release(verify)
 	rollback := <-rolled
-	if line := rollback.report.Line; rollback.err != nil || rollback.report.Outcome != RollbackFailed || line == nil || line.Outcome != OutcomeStopped ||
-		!strings.Contains(line.Detail, "version then reports version v-c1 ("+b.artifact("c1")+")") {
-		t.Fatalf("rollback = %+v %v; want it failed and stopped, naming c1 as version reports it", rollback.report, rollback.err)
+	if line := rollback.report.Line; rollback.err != nil || rollback.report.Outcome != RollbackFailed || line == nil || line.Outcome != OutcomeActive ||
+		!strings.Contains(line.Detail, "after the switch; version then reports version v-c1 ("+b.artifact("c1")+")") {
+		t.Fatalf("rollback = %+v %v; want it failed and its line active for c1, as version reports it", rollback.report, rollback.err)
 	}
+	requireOneLineNaming(t, b, before, "c1")
 	if err := testenv.AwaitProcessTargetGone(-rolling.PID); err != nil {
 		t.Fatal(err)
 	}
@@ -632,8 +635,96 @@ func TestPauseEndsAStalledRollback(t *testing.T) {
 	if pause, held, _ := ReadPause(b.dir); !held || pause.By != "Wido" || b.run("lane").Outcome != RunPaused || b.active() != b.artifact("c1") {
 		t.Fatalf("after the pause paused %v by %s, active %s", held, pause.By, b.active())
 	}
-	if got := outcomes(b.lines()); got != "deploy:c1:active deploy:c2:active rollback:c1:stopped" {
+	if got := outcomes(b.lines()); got != "deploy:c1:active deploy:c2:active rollback:c1:active" {
 		t.Fatalf("record = %s", got)
+	}
+}
+
+// A pause that ends a run's activate after it switched to c2: the run asks
+// version all the same and appends its one line, active for c2, so status
+// names c2.
+func TestPauseAfterTheSwitchRecordsTheActivation(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.deployed("c1")
+	before := len(b.lines())
+	hold := b.fifo("activate")
+	t.Cleanup(func() { b.releaseIfHeld(hold) })
+	b.script("activate", step{HoldAfter: hold})
+	b.main("c2")
+	_, done := startRun(t, b, "lane")
+	activating := b.inFlight("activate", "c2")
+	t.Cleanup(func() { _ = syscall.Kill(-activating.PID, syscall.SIGKILL) })
+	// The pause ends the activate, or the run does when the pause came as
+	// the activate started.
+	if pause, err := b.runner("Ann", nil).Pause("the activation hangs"); err != nil || pause.Stopped != nil && pause.Stopped.PID != activating.PID {
+		t.Fatalf("pause = %+v %v; want the activate stopped", pause, err)
+	}
+	report := <-done
+	if report.Outcome != RunDeployed || len(report.Lines) != 1 || !strings.Contains(report.Lines[0].Detail, "a pause ended the adapter's activate after the switch") {
+		t.Fatalf("the run = %+v; want c2 active as version reports it", report)
+	}
+	requireOneLineNaming(t, b, before, "c2")
+}
+
+// A pause that ends a run's rollback after a failed verification of c2,
+// once the rollback switched back to c1: the run asks version all the
+// same and appends its one line, a return to c1 away from c2, so status
+// names c1 current and c2 its previous.
+func TestPauseAfterTheRollbackRecordsTheReturn(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.deployed("c1")
+	before := len(b.lines())
+	hold := b.fifo("rollback")
+	t.Cleanup(func() { b.releaseIfHeld(hold) })
+	b.script("version", step{}, step{Artifact: "elsewhere"}, step{})
+	b.script("rollback", step{HoldAfter: hold})
+	b.main("c2")
+	_, done := startRun(t, b, "lane")
+	rolling := b.inFlight("rollback", "c1")
+	t.Cleanup(func() { _ = syscall.Kill(-rolling.PID, syscall.SIGKILL) })
+	if _, err := b.runner("Ann", nil).Pause("the rollback hangs"); err != nil {
+		t.Fatal(err)
+	}
+	report := <-done
+	if lines := report.Lines; report.Outcome != RunStopped || len(lines) != 1 || lines[0].Kind != KindRollback || lines[0].Outcome != OutcomeActive || lines[0].Previous != "c2" ||
+		!strings.Contains(lines[0].Detail, "a pause ended the adapter's rollback after the switch; version then reports version v-c1") {
+		t.Fatalf("the run = %+v; want it stopped and its line the return to c1 from c2 as version reports it", report)
+	}
+	requireOneLineNaming(t, b, before, "c1")
+	if status, err := ReadStatus(b.dir, 0); err != nil || status.Current.Previous != "c2" || status.Previous != nil {
+		t.Fatalf("status = %+v (%v); want c1 current with c2, never active, its previous", status, err)
+	}
+}
+
+// A pause that ends the build of c2, while the record holds no line and
+// version reports c1, makes nothing active: the run's line is stopped,
+// naming c1's artifact as version reports it, and status names no c2.
+func TestPauseEndingABuildRecordsNoSwitch(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.deployed("c1")
+	if err := os.Remove(recordPath(b.dir)); err != nil {
+		t.Fatal(err)
+	}
+	b.script("build", step{HoldBefore: b.fifo("build")})
+	b.main("c2")
+	stalled(t, b, "build c2", func(_ *bed, r *Runner) { _, _ = r.Run() })
+	status, err := ReadStatus(b.dir, 0)
+	if lines := b.lines(); err != nil || len(lines) != 1 || lines[0].Outcome != OutcomeStopped || lines[0].Artifact != "" ||
+		!strings.Contains(lines[0].Detail, "version then reports version v-c1 ("+b.artifact("c1")+")") || status.Current != nil {
+		t.Fatalf("record %+v, status names %+v (%v); want one stopped line naming c1's artifact and nothing current", lines, status.Current, err)
+	}
+}
+
+// requireOneLineNaming requires one line appended to the record's first
+// before lines, and status naming commit, at its artifact, as current.
+func requireOneLineNaming(t *testing.T, b *bed, before int, commit string) {
+	t.Helper()
+	status, err := ReadStatus(b.dir, 0)
+	if lines := b.lines(); err != nil || len(lines) != before+1 || status.Current == nil || status.Current.Commit != commit || status.Current.Artifact != b.artifact(commit) {
+		t.Fatalf("status names %+v (%v) after %s; want one line appended and %s current", status.Current, err, outcomes(lines[before:]), commit)
 	}
 }
 

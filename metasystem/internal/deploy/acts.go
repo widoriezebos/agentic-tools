@@ -122,12 +122,19 @@ func (r *Runner) Rollback() (report RollbackReport, err error) {
 	case back.state == stateFailed || back.state == stateUnsupported:
 		line.Detail = back.describe()
 	default:
-		verified := actor.call("version", target.Commit, "", &target, log, &Active{Kind: KindRollback, Commit: target.Commit})
+		verify := func() answer {
+			return actor.call("version", target.Commit, "", &target, log, &Active{Kind: KindRollback, Commit: target.Commit})
+		}
+		ended, verified := back, verify()
+		if !actor.endedByPause(back) && actor.endedByPause(verified) {
+			// A pause ended the version after the rollback: it is asked once more.
+			ended, verified = verified, verify()
+		}
 		switch {
-		case back.state == stateUnknown && back.exit < 0 || verified.state == stateUnknown && verified.exit < 0:
+		case actor.endedByPause(ended):
 			// A call was ended, as a person's pause ends it: the rollback
-			// failed, whatever version reports active now.
-			line.Outcome, line.Detail = OutcomeStopped, back.describe()+"; version then reports "+reported(verified)
+			// failed, and its line is what version then reports.
+			switched(&line, ended, verified, &target)
 		case verified.done(OutcomeActive) && verified.Artifact == target.Artifact && verified.Digest == target.Digest:
 			report.Outcome, line.Outcome = RollbackDone, OutcomeActive
 		default:
@@ -213,9 +220,9 @@ type PauseReport struct {
 
 // Pause holds deploys until a person resumes them, and ends the adapter
 // call run.json names, whoever made it, a rollback's included: its process
-// group ends, and the run or rollback that made it appends its stopped line
-// as it ends. It takes no lock and waits for no run, so a stalled one never
-// keeps a person from stopping it.
+// group ends, and the run or rollback that made it appends its line as it
+// ends, from what version then reports. It takes no lock and waits for no
+// run, so a stalled one never keeps a person from stopping it.
 func (r *Runner) Pause(reason string) (report PauseReport, err error) {
 	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
 		return report, err

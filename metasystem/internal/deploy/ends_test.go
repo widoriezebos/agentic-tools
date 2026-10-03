@@ -10,9 +10,12 @@ import (
 )
 
 // Every way a run or a person's act ends is told by one record line:
-// active, the failure of the operation that failed, or stopped when a
-// pause ended the call. One that found nothing to do, or was refused,
-// writes none. Each row starts with c1 active and main's tip at c2.
+// active, the failure of the operation that failed, or, when a pause ended
+// a call, what version reports in one more call: active, naming its own
+// commit, when it reports the artifact the run built or the rollback's
+// target, stopped otherwise. One that found nothing to do, or was
+// refused, writes none. Each row starts with c1 active and main's tip at
+// c2.
 func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 	t.Parallel()
 	run := func(_ *bed, r *Runner) { _, _ = r.Run() }
@@ -44,13 +47,17 @@ func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 		setup func(b *bed)
 		act   func(b *bed, r *Runner)
 		// stall is the call, "operation commit", a second person's pause
-		// ends once its process started.
+		// ends once its process started, after any calls listed before it.
 		stall   string
 		outcome string // "" when nothing is written
+		// current, when set, is the commit status then names current;
+		// detail is part of the line's detail.
+		current, detail string
 	}{
 		{name: "now: version fails", setup: func(b *bed) { b.script("version", step{Exit: 1, Reason: "no state"}) }, act: run, outcome: OutcomeVersionFailed},
 		{name: "now: version answers unreadably", setup: func(b *bed) { b.script("version", step{Raw: "not json"}) }, act: run, outcome: OutcomeVersionFailed},
-		{name: "now: version stalls and a pause ends it", setup: func(b *bed) { b.script("version", held(b), step{}) }, act: run, stall: "version c2", outcome: OutcomeStopped},
+		{name: "now: version stalls and a pause ends it", setup: func(b *bed) { b.script("version", held(b), step{}) }, act: run, stall: "version c2", outcome: OutcomeStopped,
+			current: "c1", detail: "; version then reports version v-c1"},
 		{name: "now: a pause comes as version answers", act: func(b *bed, r *Runner) {
 			r.Started = func(version Active) {
 				testenv.Await(b.t, "version to answer", func() bool { return !version.AdapterAlive() })
@@ -61,10 +68,19 @@ func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 			run(b, r)
 		}, outcome: OutcomeStopped},
 		{name: "now: build fails", setup: func(b *bed) { b.script("build", step{Exit: 1, Reason: "compile error"}) }, act: run, outcome: OutcomeBuildFailed},
-		{name: "now: build stalls and a pause ends it", setup: func(b *bed) { b.script("build", held(b)) }, act: run, stall: "build c2", outcome: OutcomeStopped},
+		{name: "now: build stalls and a pause ends it", setup: func(b *bed) { b.script("build", held(b)) }, act: run, stall: "build c2", outcome: OutcomeStopped,
+			current: "c1", detail: "; version then reports version v-c1"},
 		{name: "now: activate fails", setup: func(b *bed) { b.script("activate", step{Exit: 1, Reason: "port in use"}) }, act: run, outcome: OutcomeActivateFailed},
 		{name: "now: activate stalls and a pause ends it", setup: func(b *bed) { b.script("activate", held(b)) }, act: run, stall: "activate c2", outcome: OutcomeStopped},
 		{name: "now: version after activate fails", setup: func(b *bed) { b.script("version", step{}, step{Exit: 3}) }, act: run, outcome: OutcomeVerifyFailed},
+		{name: "now: version after the switch stalls and a pause ends it", setup: func(b *bed) { b.script("version", step{}, held(b), step{}) }, act: run, stall: "activate c2, version c2",
+			outcome: OutcomeActive, current: "c2", detail: "a pause ended the adapter's version after the switch"},
+		{name: "now: version after the switch stalls, a pause ends it, and version asked again fails", setup: func(b *bed) { b.script("version", step{}, held(b), step{Exit: 3}) },
+			act: run, stall: "activate c2, version c2", outcome: OutcomeStopped, detail: "the active artifact is unknown"},
+		{name: "now: the rollback after a failed verify stalls and a pause ends it", setup: func(b *bed) {
+			b.script("version", step{}, step{Artifact: "elsewhere"}, step{})
+			b.script("rollback", held(b))
+		}, act: run, stall: "rollback c1", outcome: OutcomeActive, current: "c2", detail: "a pause ended the adapter's rollback after the switch; version then reports version v-c2"},
 		{name: "now: deploys main's tip", act: run, outcome: OutcomeActive},
 		{name: "now: nothing to do, paused before any call", setup: paused, act: run},
 		{name: "now: nothing to do, main's tip already active", setup: func(b *bed) { b.main("c1") }, act: run},
@@ -77,6 +93,8 @@ func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 			b.script("rollback", step{Exit: 3})
 			b.script("version", step{}, held(b), step{})
 		}, act: rollback, stall: "version c1", outcome: OutcomeStopped},
+		{name: "rollback: version after the switch stalls and a pause ends it", setup: func(b *bed) { onC2(b); b.script("version", step{}, held(b), step{}) },
+			act: rollback, stall: "version c1", outcome: OutcomeActive, current: "c1", detail: "a pause ended the adapter's version after the switch"},
 		{name: "rollback: returns to the deploy before", setup: onC2, act: rollback, outcome: OutcomeActive},
 		{name: "rollback: refused with no deploy before, and nothing starts", act: rollback},
 		{name: "rollback: refused while a run holds the lock", setup: func(b *bed) { onC2(b); locked(b) }, act: rollback},
@@ -116,22 +134,30 @@ func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if want == 1 && (!strings.Contains(appended[0].Detail, row.detail) ||
+				row.current != "" && (status.Current == nil || status.Current.Commit != row.current || status.Current.Artifact != b.artifact(row.current))) {
+				t.Fatalf("appended %+v, status names %+v; want the detail holding %q and %s current", appended[0], status.Current, row.detail, row.current)
+			}
 		})
 	}
 }
 
-// stalled runs act until its call of operation on commit started, ends
-// that call with a second person's pause, and waits for act to end.
-func stalled(t *testing.T, b *bed, call string, act func(*bed, *Runner)) {
+// stalled runs act until its calls, "operation commit" each and separated
+// by ", ", started in turn, ends the last with a second person's pause, and
+// waits for act to end.
+func stalled(t *testing.T, b *bed, calls string, act func(*bed, *Runner)) {
 	t.Helper()
-	operation, commit, _ := strings.Cut(call, " ")
 	started, done := make(chan Active, 32), make(chan struct{})
 	go func() {
 		defer close(done)
 		defer close(started)
 		act(b, b.runner("Wido", started))
 	}()
-	stalling := awaitStart(t, started, operation, commit)
+	var stalling Active
+	for _, call := range strings.Split(calls, ", ") {
+		operation, commit, _ := strings.Cut(call, " ")
+		stalling = awaitStart(t, started, operation, commit)
+	}
 	t.Cleanup(func() { _ = syscall.Kill(-stalling.PID, syscall.SIGKILL) })
 	if _, err := b.runner("Ann", nil).Pause("it hangs"); err != nil {
 		t.Fatal(err)
