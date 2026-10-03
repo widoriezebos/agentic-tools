@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -59,10 +60,20 @@ func component(result Result, name string) ComponentOutcome {
 // classified MAIN, and takes the unheld lease fresh at epoch 1 under the
 // same lineage: up answers "holder". up proves the pair and the caller's
 // descent only; the steward plumbing above the session is never examined.
+//
+// The same seat may run session start by hand when its SessionStart hook
+// announced nothing (the engine was being rebuilt). The announcement then
+// names the Claude session Claude Code exports for that process, so the
+// session can register waits; the same variables naming another process are
+// ignored, and an announcement already made under the pid alone gains the
+// session on the next start.
 func TestUpAdoptsTheLaunchersLineageForAMain(t *testing.T) {
+	const claudeSessionID = "9dfd48b8-b9b3-4574-84c5-bff4688961d4"
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", seatLineage)
 	t.Setenv("METASYSTEM_SESSION_ID", "")
 	t.Setenv("METASYSTEM_DELEGATE_ROOT", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", claudeSessionID)
+	t.Setenv("CLAUDE_PID", "")
 	options := seatUpOptions(t)
 	result := ordinary(options)
 	if result.Outcome != "armed" || result.Authority != "writer" || component(result, "checkout-lease").Outcome != "holder" {
@@ -83,6 +94,40 @@ func TestUpAdoptsTheLaunchersLineageForAMain(t *testing.T) {
 	if current.OwnerLineage != seatLineage || current.ClaimEpoch != 1 || current.Pid != options.Pid || len(current.Takeovers) != 0 {
 		t.Fatalf("lease = %+v", current)
 	}
+
+	start := func(t *testing.T, options Options, claudePid int64) string {
+		t.Helper()
+		t.Setenv("CLAUDE_PID", strconv.FormatInt(claudePid, 10))
+		if result := ordinary(options); result.Outcome != "armed" {
+			t.Fatalf("session start = %#v", result)
+		}
+		view, err := lease.ClassifyVerb(options.Root, options.Pid)
+		if err != nil || view.Announcement == nil {
+			t.Fatalf("classification = %+v, %v", view, err)
+		}
+		return view.Announcement.EffectiveRuntimeSession()
+	}
+	t.Run("hand-run-start-names-the-claude-session", func(t *testing.T) {
+		options := seatUpOptions(t)
+		if got := start(t, options, options.Pid); got != claudeSessionID {
+			t.Fatalf("runtime session = %q, want %q", got, claudeSessionID)
+		}
+	})
+	t.Run("hand-run-start-ignores-another-process", func(t *testing.T) {
+		options := seatUpOptions(t)
+		if got := start(t, options, options.Pid+1); got != "" {
+			t.Fatalf("runtime session = %q, want none", got)
+		}
+	})
+	t.Run("hand-run-start-binds-a-pid-only-announcement", func(t *testing.T) {
+		options := seatUpOptions(t)
+		if got := start(t, options, options.Pid+1); got != "" {
+			t.Fatalf("first start runtime session = %q, want none", got)
+		}
+		if got := start(t, options, options.Pid); got != claudeSessionID {
+			t.Fatalf("second start runtime session = %q, want %q", got, claudeSessionID)
+		}
+	})
 }
 
 // heldSeat starts a live stand-in for a seat main and announces it under the

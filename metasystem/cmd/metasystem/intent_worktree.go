@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"time"
 )
@@ -164,6 +165,11 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 	// configuration completed; the owner never overwrites existing files.
 	// What the copy places is recorded as the engine's (Round D3 F-1), so
 	// the worktree's release does not count it as work.
+	// A verb run inside the goal worktree has no other checkout to copy
+	// from: the worktree is its own source, and is used as it is.
+	if realpath.ResolveExisting(inv.layout.GitRoot) == realpath.ResolveExisting(path) {
+		return path, nil
+	}
 	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
 	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {

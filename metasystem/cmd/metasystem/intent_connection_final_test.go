@@ -179,6 +179,16 @@ func TestIntentGoalWorktreeIsolationRetry(t *testing.T) {
 	if path, result := c.prepare(owners); result != nil || path == "" || read() != `{"mine":true}` {
 		t.Fatalf("user file: %q %+v", path, result)
 	}
+	// A verb run inside the goal worktree has no other checkout to copy
+	// from, so the worktree is used as it is.
+	inside, err := owners.resolver.ResolveLayout(c.worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromInside := &intentInvocation{owners: owners, layout: inside, cwd: c.worktree}
+	if path, result := fromInside.prepareGoalWorktree(c.id); result != nil || path != c.worktree || read() != `{"mine":true}` {
+		t.Fatalf("from inside the worktree: %q %+v", path, result)
+	}
 }
 
 // connectionRuntimeBuilder hosts the real launch supervisor for the build
