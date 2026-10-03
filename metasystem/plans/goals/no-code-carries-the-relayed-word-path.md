@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: What: Remove the old "temporary human word" feature, where an agent passed on a person's approval by quoting it, from the code. Wido asked for it on 20 September ("I need clean code"). The feature was retired on 7 September, but its code is still in 18 production files, and one part is still live: the steward can be armed with a relayed word without the person's own terminal. Why: Retired but reachable code is a security hole as well as clutter. Pros: Removes a live bypass and a lot of code; the general power of attorney now gives a lawful way to arm remotely. Cons: Goal records that already carry the old fields must still be read, or the whole ledger is refused; the change touches many files.
 - Origin: human
-- Next step: Next: Refresh the list of places (now also seat launch, up, and the browser's propose tool), switch the steward arm and launch paths to the power-of-attorney arm, delete the rest, and keep reading the old fields in records that already have them; the notes on branch rwr1 (c9892f737) are the starting point. Done when: production code no longer mentions --temporary-human-word, arming the steward without the person's terminal or power of attorney is refused, and the full ledger still loads.
+- Next step: Next: Refresh the list of places (now also seat launch, up, and the browser's propose tool), switch the steward arm and launch paths to the power-of-attorney arm, delete the rest, and keep reading the old fields in records that already have them; the notes on branch rwr1 (c9892f737) are the starting point. Done when: production code no longer mentions --temporary-human-word, arming the steward without the person's terminal or power of attorney is refused, and the full ledger still loads. RETURNED 2026-10-03: nothing blocks it; the relayed-word path is still live (cmd/metasystem/steward_verbs.go:359-379, --temporary-human-word / --review-by) and was last used for machine start on 2026-10-02; the general power of attorney now covers that use. Branch origin/rwr1 (c9892f737) holds the notes and the build brief.
 - OpenedAt: 2026-09-20T07:22:42Z
-- Revision: 6
+- Revision: 7
 - BudgetExceptions: 0
 
 History:
@@ -17,4 +17,5 @@ History:
 - 2026-09-30T18:57:55Z 6YMKQ01YVK8HYNYGXS6KKW02EH-ui-bc2fda53 unapprove actor=human:Wido targets=no-code-carries-the-relayed-word-path reason=the backlog clean-up of 2026-09-30 rewrites the intent in plain English; approved again with the same box
 - 2026-09-30T18:58:00Z AAFF9F9G41X1W92FQ0NV4GM1W7-ui-bc2fda53 edit actor=human:Wido targets=no-code-carries-the-relayed-word-path
 - 2026-10-03T09:59:38Z HA5AW790RRAM24XMJ7X5C9SZ8Z-m1e-718ba0eb unpark actor=human:Wido targets=no-code-carries-the-relayed-word-path
-Integrity: sha256=730c98ce75ee4221e0a5447bffdea497f79ee65306bf3ae07f6b039e11917575
+- 2026-10-03T10:00:05Z 4XGX46JQ843HFBTAG65MPNHN4B-m1e-718ba0eb edit actor=human:Wido targets=no-code-carries-the-relayed-word-path
+Integrity: sha256=9bf85f9446cd10dc9432f814d685a3931dce76c3127cf5468f6e5ca835a91a2d
