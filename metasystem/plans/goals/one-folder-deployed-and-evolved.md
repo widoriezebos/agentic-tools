@@ -1,6 +1,6 @@
 # one-folder-deployed-and-evolved
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 10
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Moves where every adopted project's state lives and what an upgrade replaces; a wrong boundary loses project state on upgrade (severity 3); a new layout rule and a new upgrade boundary (novelty 2); every adopter and this repository (exposure 3); every agent turn reads these paths (accumulation 2)"
@@ -9,15 +9,14 @@
 - Origin: main
 - Next step: Build step 1 of the accepted design as eleven works stacked on the goal branch and landed together (briefs plans/one-folder-u1*.md to u5 in the m1f checkout). root-types is reviewed and published (dbd7a656c). root-structs is on attempt 5 (plans/one-folder-u1c-root-structs-fix-a5-brief.md): it completes moving the process family's run state to the installation; when it returns green, run work review G --work root-structs, then build root-readers (u1d). Handoff: plans/handoff-one-folder-deployed-and-evolved.md.
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 31
+- Revision: 32
 - Pinned: m1f
 - Budget: elapsedLimit=3d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb minutes=2400 reviewRounds=20 goalRevision=28
 - Approved: by=human:Wido at=2026-10-03T07:54:32Z revision=29 opid=N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb authority=proven digest=5c7788eb0c79a195de9f08861c09e91ebefc5e0693bb11b267c69dab7052a115 episode=29
 - Sliced: machine=m1f lineage=steward-seat revision=10 at=2026-10-03T00:30:02Z
-- Claimed: machine=m1f lineage=steward-seat at=2026-10-03T07:54:32Z revision=29 accountingRevision=29 episodeAt=2026-10-02T20:46:14Z episodeRevision=10
-- StopCapability: generation=29 revision=29 machine=m1f claimEpoch=9 fenceEpoch=0
+- Episode: machine=m1f lineage=steward-seat accountingRevision=29 episodeAt=2026-10-02T20:46:14Z episodeRevision=10 idleSeconds=0 released=2026-10-03T09:21:28Z
 
 History:
 - 2026-10-02T14:27:17Z 835YY2SYJ5EB97ZYCSK1FZJDB5-m1e-9c612d71 open actor=human:Wido targets=one-folder-deployed-and-evolved
@@ -51,4 +50,5 @@ History:
 - 2026-10-03T07:54:32Z N1NP4VY9EMPF70HBGM84HZX4EH-m1e-718ba0eb set-budget actor=human:Wido targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z
 - 2026-10-03T07:56:57Z 74GC7GC0HN0GDXXTC1HMFS6DRB-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=every-launched-agent-waits-inside-its-turn from=1:8 to=1:9 requested-sequence=1
 - 2026-10-03T08:55:13Z X4ERA2S34QV3PDK0J0T2TQ4H9K-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=lane-reproves-only-what-a-change-can-affect from=1:9 to=1:10 requested-sequence=2
-Integrity: sha256=3e0a161895da9c2b9132d321b2e8d5116b99ac25690e52b2838da44594428e93
+- 2026-10-03T09:21:28Z JT3N6AK7CFK6WE100WMMRV5CH4-m1f-71c5cb39 release actor=m1f+steward-seat targets=one-folder-deployed-and-evolved reason=rebind the claim to the budget Wido set at 09:54 (critic dispatch refused: revision bound under claim 9, current claim 1)
+Integrity: sha256=5cf0d0ffca2a31dcc81532aae087f9916049996d3456b17d27c63a0f7ef3b8b5
