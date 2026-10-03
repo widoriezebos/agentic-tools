@@ -135,6 +135,22 @@ func (inv *intentInvocation) registeredWorktreesOf(root string) (map[string]regi
 	return registered, nil
 }
 
+// worktreeFolderHere is the goal worktree's copy of the folder this command
+// runs from, so a command run there finds what it would find here (a Go
+// module below the repository's top); the worktree's top when this folder
+// is the top, lies outside the checkout, or has no copy in the worktree.
+func (inv *intentInvocation) worktreeFolderHere(worktree string) string {
+	relative, err := filepath.Rel(realpath.ResolveExisting(inv.layout.GitRoot), realpath.ResolveExisting(inv.cwd))
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return worktree
+	}
+	folder := filepath.Join(worktree, relative)
+	if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+		return worktree
+	}
+	return folder
+}
+
 // prepareGoalWorktree returns the worktree that has goal/G checked out,
 // creating it at the deterministic sibling <checkout>-<goal> when none
 // exists. Creation happens only after the goal claim and checkout lease are
