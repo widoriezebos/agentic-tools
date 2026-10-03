@@ -1,6 +1,6 @@
 # review-findings-read-as-decisions
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="The surface where a person decides what lands; a wrong consequence text makes him record what he did not mean, so severity 2; new fields in the critic's return and new decision acts, novelty 2; every review sitting, exposure 2; nothing accumulates beyond the review records"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: UX design first, by a UX designer, from m1e's input at agentic-tools-evidence/review-sitting-ux-20261003/design-input.md (the screenshot, the three questions a person asks, the summary line, the finding card in plain layers, the four decisions with their consequences, the verdict step, phone width, and where the plain text comes from: the critic writes title, why-it-matters and recommendation as return fields under the message audit, the Partner only as fallback). Agree the finding fields with critique-stops-on-convergence. Tier-2 critique, then build in slices: the summary and cards with the four decisions (desktop and phone), the critic's plain fields and their audit, the verdict step. Done when: a person can read a sitting without any id or path, every button says what follows, and a recorded decision is shown back as 'recorded on goal X as ...'; tests cover each decision act. ADDED 16:35 (Wido: 'it is totally unclear what these do ... UX needs a hard look at this to help me understand what this is and what it is for'): the review header is in scope too, screen 2 of the design input: the goal and version under review told by step and time (the commit id behind a hint), whether a newer version exists, the reviewer's state in words, 'Try this version: Start' for the reviewed application with what it does and where, and one place for 'See the change / See the evidence' per finding. No 'tip', 'candidate', 'anchor' or 'desk' on screen; every control a verb with its consequence.
 - OpenedAt: 2026-10-03T14:24:15Z
-- Revision: 5
+- Revision: 6
 - Pinned: ui
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T14:24:23Z revision=2 opid=NA4JNMP5XPHSFYYJH8AM5QCKWC-m1e-718ba0eb authority=proven digest=1342c0bb2c1ef2ce9a62f7b53641dfb1b493229d3d6476646087368bd889a15b episode=2
 
 History:
 - 2026-10-03T14:24:15Z 5NY52EMF7696VJY0TBPGZ5W14X-m1e-718ba0eb open actor=human:Wido targets=review-findings-read-as-decisions
@@ -21,4 +19,5 @@ History:
 - 2026-10-03T14:24:31Z HDFE195SEN9JDHSEY3WZGMM6KS-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agents-show-one-line-of-what-they-do,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,goal-budget-follows-its-plan,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=review-findings-read-as-decisions from=unranked to=1:6 requested-sequence=6
 - 2026-10-03T14:24:39Z 4AF0HMH2J3VR1P8V4WZ0FWQFD4-m1e-718ba0eb set-pin actor=human:Wido targets=review-findings-read-as-decisions
 - 2026-10-03T14:25:59Z RY9EHM5JD865K6E9Q04SBC6YJ9-m1e-718ba0eb edit actor=human:Wido targets=review-findings-read-as-decisions
-Integrity: sha256=af0c35f0e5c8a03271a0b7e188c21e93c4ea433ad62809e1048031d132227cef
+- 2026-10-03T14:29:59Z XFGV466PEBXPFD01K4NDEX3FZJ-m1e-718ba0eb unapprove actor=human:Wido targets=review-findings-read-as-decisions reason=Wido 2026-10-03 16:40: widened from the findings and the header to the whole review flow; approved again in the same minute
+Integrity: sha256=fc546955fde1a1ee581ace3cdf43255f7c8c2cef4d3be4f631f9c4dbf2f327c1
