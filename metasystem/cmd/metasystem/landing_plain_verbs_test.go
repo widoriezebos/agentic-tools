@@ -468,3 +468,27 @@ func waitForEngineChildExit(t *testing.T, fifo string) {
 		t.Fatal(err)
 	}
 }
+
+// landing prove of a tree already proven green reports it at once, names
+// landing push as the next step and starts nothing in the background, so
+// the landing agent pushes in the same turn instead of ending it to wait
+// for a wake its own instant result already consumed.
+func TestPlainLaneProveReportsAKnownGreenAtOnce(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, "true")
+	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 || !strings.Contains(text, "proven green") {
+		t.Fatalf("prove --wait = %d\n%s", code, text)
+	}
+	var launched [][]string
+	bed.owners.landing.plainProve = plain.ProveSeams{
+		Executable: func() (string, error) { return "/engine/metasystem", nil },
+		Launch: func(argv []string, _, _ string) (int64, error) {
+			launched = append(launched, argv)
+			return int64(os.Getpid()), nil
+		}}
+	code, text := bed.run(t, "landing", "prove")
+	if code != 0 || !strings.Contains(text, "already proven green") || !strings.Contains(text, "metasystem landing push") || len(launched) != 0 {
+		t.Fatalf("prove of a proven tree = %d %v\n%s", code, launched, text)
+	}
+}

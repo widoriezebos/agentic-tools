@@ -594,3 +594,46 @@ func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
 		t.Fatalf("the ledger-only change after a green code proof: %+v", result)
 	}
 }
+
+// A tree already proven green, or one that differs from a green tree only in
+// goal ledger files, is settled at once, with no proof in the background: a
+// background proof that ends inside the agent's own turn leaves nobody to
+// push. A code change, or a tree whose own last result is red, settles
+// nothing, so its proof runs.
+func TestAKnownGreenSettlesWithoutABackgroundProof(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.seat("seat-a", "goal-a")
+	b.merge("goal-a")
+	seams := ProveSeams{Now: func() time.Time { return bedNow }}
+	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
+		t.Fatalf("an unproven tree settled: %v %v", ok, err)
+	}
+	green := b.prove(b.greenScript)
+	if settled, ok, err := Settled(b.install, b.checkout, seams); err != nil || !ok || settled.Tree != green.Tree || settled.Attempt != green.Attempt {
+		t.Fatalf("the proven tree: %+v %v %v", settled, ok, err)
+	}
+	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "a goal act\n")
+	b.git(b.checkout, "add", "-A")
+	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
+	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+	settled, ok, err := Settled(b.install, b.checkout, seams)
+	if err != nil || !ok || settled.Tree != ledgerTree || settled.Result != Green || !strings.Contains(settled.Reason, "only goal ledger files changed") {
+		t.Fatalf("a ledger-only change: %+v %v %v", settled, ok, err)
+	}
+	if recorded, found, err := ResultFor(b.install, ledgerTree); err != nil || !found || recorded.Attempt != settled.Attempt {
+		t.Fatalf("the inherited green is recorded for push: %+v %v %v", recorded, found, err)
+	}
+	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
+	b.git(b.checkout, "add", "-A")
+	b.git(b.checkout, "commit", "--quiet", "-m", "code")
+	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
+		t.Fatalf("a code change settled: %v %v", ok, err)
+	}
+	if red := b.prove("exit 1\n"); red.Result != Red {
+		t.Fatalf("the red proof: %+v", red)
+	}
+	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
+		t.Fatalf("a tree whose own last result is red settled: %v %v", ok, err)
+	}
+}
