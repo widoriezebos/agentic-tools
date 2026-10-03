@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M40AVPXKBX1BPNJ9K77FHVWG
-- Status: draft
+- Status: accepted
 - Goals: fleet-page-redesign
+
+Critique: Codex Astra (tier 2, run directly), closed after round 2, the failsafe (material per round 6, 0; round 2 confirmed FR-01 to FR-07 closed). Wido approved step 1 as drawn on 2026-10-03 (channel answer "yes").
 
 Wido, 2026-10-03: "a mess from a UX perspective. Long page with a lot of text, and it states .. needs you but it is unclear what I can do and where from this."
 
@@ -117,3 +119,7 @@ Six material, all in step 1, each folded above with its smallest change and no n
 | FR-05 | yes | folded: "questions: this checkout only" stays visible beside the counts; the long sentence moves to the help (R2-8) |
 | FR-06 | yes | folded: Seen shows "no presence", "presence unreadable" and "unknown, clock ahead by ..." as visible words from the existing reason; only the column goes |
 | FR-07 | no | folded anyway, one word: "Came back (N)", since the list keeps older unresolved returns |
+
+## Critique round 2 (Astra, the failsafe)
+
+FR-01 to FR-07 all closed; no new finding. VERDICT: 0 material.
