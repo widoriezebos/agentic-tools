@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="False acceptance would authorize unattended delivery without its mandatory controls; the proof combines existing mechanisms in an isolated repository."
 - Tier: 3
 - Intent: What: a proof run in which one machine, with no person watching, delivers several approved goals in a row (one of them with a design), skips work it must not touch (unapproved, blocked, or meant for another machine), refuses every attempt to skip a required review, and picks up a newly approved goal after its queue ran empty. Nothing is run yet; it waits on several gate goals. The 'wake up after an empty queue' part is now provided by the steward-started seat (seat-works-without-a-person). Why: one successful delivery does not show the machines can work alone over time and keep to the rules. Pros: real evidence that continuous unattended delivery is safe. Cons: a long, costly run, and it can only start once its blocking goals are done.
 - Origin: human
 - Next step: Next: stay blocked until its open blockers are done (fleet-pull, one-approval-gate, design-gate-at-dispatch, landing-design-provenance, chain-landing-carries-the-reviewed-diff, manifest-floor-at-dispatch); then plan the run on a throwaway repository using the steward-started seat for the empty-queue wake-up. Done when: the run records consecutive landed goals, correct skips, refused shortcuts and the automatic pickup of a goal approved after the queue emptied. FOLDED IN 2026-10-03 at Wido's word (drain the waiting lane), from headless-fleet-coordination-proof, as step 2 after the single-machine proof: re-check which parts still apply to a one-computer fleet (one winner per contested goal, concurrent independent goals, machines continuing approved work while the planning session is down) and run what applies, recorded.
 - OpenedAt: 2026-09-07T21:10:19Z
-- Revision: 62
+- Revision: 63
 - BlockedBy: chain-landing-after-base-move-recertifies, critique-always, design-gate-at-dispatch, first-headless-run, host-runtime-setup, manifest-floor-at-dispatch, metasystem-stop-verb, seat-works-without-a-person
 - Labels: headless-fleet, headless-proof
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -79,4 +79,5 @@ History:
 - 2026-10-03T15:59:45Z FGC8T60HDZBVD8Y6BRQK2E7NFX-m1e-718ba0eb abandon actor=human:Wido targets=landing-design-provenance reason=blockedBy landing-design-provenance re-pointed to design-gate-at-dispatch
 - 2026-10-03T16:00:41Z WNBNB887JQT03CZXQK9WYPVS8E-m1e-718ba0eb edit actor=human:Wido targets=headless-continuous-delivery-proof
 - 2026-10-03T20:23:52Z Z66GMM3TBKSQJBSECRRBDT255T-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,design-gate-at-dispatch,every-launched-agent-waits-inside-its-turn,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,notifications-can-be-dismissed,questions-reach-the-person-only-when-his,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,seat-sessions-stay-small,steward-acts-on-behaviour-patterns reason=priority-order subject=conflicts-resolve-unattended from=1:4 to=1:5 requested-sequence=1
-Integrity: sha256=212e8e8e87d7555550188ee3ae2073896a230e8974b10afc8b99d93e0bbf6872
+- 2026-10-03T20:24:01Z B58PPXBXZAE6XFYPS63FAG1PP7-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,commit-goal-binding,design-gate-at-dispatch,every-launched-agent-waits-inside-its-turn,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,notifications-can-be-dismissed,questions-reach-the-person-only-when-his,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,seat-sessions-stay-small,steward-acts-on-behaviour-patterns reason=priority-order subject=lane-reproves-only-what-a-change-can-affect from=1:5 to=1:6 requested-sequence=2
+Integrity: sha256=82e542596b69ba4ed456a7dd0ec1c61689e33a11492c0c47886937c6463f8109
