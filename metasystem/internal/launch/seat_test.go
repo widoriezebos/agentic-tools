@@ -124,6 +124,38 @@ func TestSeatLaunchIsSessionShapedAndNamesItsLineage(t *testing.T) {
 	}
 }
 
+// TestLaunchEnvironmentNamesItsKind: every launch's command environment names
+// its record's kind, so a build launched from a seat's session carries build
+// in place of the seat it inherited, and a seat launch carries seat.
+func TestLaunchEnvironmentNamesItsKind(t *testing.T) {
+	t.Parallel()
+	build, buildProcesses, _, _ := manager(t)
+	build.Adapters["claude-headless"] = ClaudeHeadless{Binary: "/fixture/bin/claude"}
+	build.Supervisor = supervisingStarter(t, build)
+	if _, err := build.Start(StartSpec{ID: "build-kind", Kind: "build", Brief: brief(t), WorkingDirectory: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	if got, set := environmentValue(buildProcesses.command.Environment, KindEnv); !set || got != "build" {
+		t.Fatalf("build environment %s = %q set=%t; environment=%q", KindEnv, got, set, buildProcesses.command.Environment)
+	}
+	child := childEnvironment([]string{"PATH=/fixture/bin", KindEnv + "=seat"}, buildProcesses.command.Environment)
+	if got := slices.DeleteFunc(slices.Clone(child), func(entry string) bool { return !strings.HasPrefix(entry, KindEnv+"=") }); !slices.Equal(got, []string{KindEnv + "=build"}) {
+		t.Fatalf("a build child of a seat carries %q", got)
+	}
+
+	seat, seatProcesses, _, _ := manager(t)
+	seat.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
+	seat.Supervisor = supervisingStarter(t, seat)
+	seat.Settings = seatOn()
+	checkout := t.TempDir()
+	if _, err := seat.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: seatBrief(t), Tag: "n0nce"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, set := environmentValue(seatProcesses.command.Environment, KindEnv); !set || got != "seat" {
+		t.Fatalf("seat environment %s = %q set=%t; environment=%q", KindEnv, got, set, seatProcesses.command.Environment)
+	}
+}
+
 // TestSeatLaunchSettingsResolveLikeALane (D-seat): launch.seat.runtime,
 // launch.seat.model and launch.seat.effort resolve as launch.build.* do: auto
 // takes the first listed runtime on PATH, the model follows the resolved

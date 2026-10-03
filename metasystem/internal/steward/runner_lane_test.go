@@ -48,9 +48,9 @@ func TestRunnerKeepsTheLandingLaneOutsideTheHelm(t *testing.T) {
 }
 
 // TestRunnerStepsAWaitingLaneBetweenCycles: while the lane waits on a proof
-// the runner steps its keeper every laneRecheck, so the landing agent wakes
-// within it of the proof's end, not at the next ten-minute cycle; an idle
-// lane is stepped once per cycle.
+// or, idle, on a hand-in the runner steps its keeper every laneRecheck, so
+// the landing agent wakes within it of the proof's end or of the hand-in,
+// not at the next ten-minute cycle.
 func TestRunnerStepsAWaitingLaneBetweenCycles(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
@@ -93,10 +93,19 @@ func TestRunnerStepsAWaitingLaneBetweenCycles(t *testing.T) {
 		t.Fatalf("the agent woke at %v; want within %v of the proof's end at %v", woke, laneRecheck, proofEnds)
 	}
 
-	idle := run(func(time.Time) lane.AgentRun {
-		return lane.AgentRun{Outcome: lane.AgentIdle, Line: "the landing lane at /lane is idle; no landing agent runs"}
-	}, 15*time.Minute)
-	if idle != 2 {
-		t.Fatalf("idle lane keeper steps = %d over a cycle and a half; want one per cycle (2)", idle)
+	handIn := start.Add(2 * time.Minute)
+	woke = time.Time{}
+	run(func(now time.Time) lane.AgentRun {
+		if now.Before(handIn) {
+			return lane.AgentRun{Outcome: lane.AgentIdle, Line: "the landing lane at /lane is idle; no landing agent runs"}
+		}
+		if woke.IsZero() {
+			woke = now
+			return lane.AgentRun{Outcome: lane.AgentStarted, Line: "woke the landing agent at /lane: queued"}
+		}
+		return lane.AgentRun{Outcome: lane.AgentRunning, Line: "the landing agent is running at /lane"}
+	}, 5*time.Minute)
+	if woke.IsZero() || woke.Sub(handIn) > laneRecheck {
+		t.Fatalf("the agent woke at %v; want within %v of the hand-in at %v", woke, laneRecheck, handIn)
 	}
 }

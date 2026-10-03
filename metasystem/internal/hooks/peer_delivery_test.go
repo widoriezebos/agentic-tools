@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
@@ -211,6 +212,44 @@ func TestDeliveryFieldIsTheRuntimesDeclaration(t *testing.T) {
 			t.Fatalf("the holder's start = %q", run.stdout)
 		}
 	})
+}
+
+// TestPeerStartOffersALaunchedStepNothing: a session the launcher started
+// for a step resolves the seat's machine from the goal worktree, but its
+// start is offered none of the machine's mail and marks none; the message
+// stays pending, and the seat's own start and a session started by hand
+// still receive it.
+func TestPeerStartOffersALaunchedStepNothing(t *testing.T) {
+	t.Parallel()
+	start := func(installation hookInstallation, env map[string]string, session string) string {
+		t.Helper()
+		run := runHook(t, installation, packetOps(t, installation, "role packet"), hookCall{runtime: "claude", event: "start", env: env, payload: `{"session_id":"` + session + `","source":"startup"}` + "\n"})
+		if run.status != 0 {
+			t.Fatalf("start status %d, stderr %q", run.status, run.stderr)
+		}
+		return startContextField(t, run.stdout)
+	}
+	for _, kind := range []string{"build", "read"} {
+		env, home := peerBoard(t)
+		message := peerAsk(t, home, board.Address{Machine: "m1b"}, "is the lane green?")
+		installation := newHookInstallation(t)
+		env[launch.KindEnv] = kind
+		if field := start(installation, env, "s-1"); field != "role packet" {
+			t.Fatalf("a %s session's start was offered the machine's mail: %q", kind, field)
+		}
+		if markerExists(home, message, "m1b") {
+			t.Fatalf("a %s session's start marked the machine's message", kind)
+		}
+		env[launch.KindEnv] = "seat"
+		if field := start(installation, env, "s-2"); !strings.Contains(field, "id "+message.ID+":") || !markerExists(home, message, "m1b") {
+			t.Fatalf("after a %s session's start, the seat's start = %q", kind, field)
+		}
+	}
+	env, home := peerBoard(t)
+	message := peerAsk(t, home, board.Address{Machine: "m1b"}, "is the lane green?")
+	if field := start(newHookInstallation(t), env, "s-1"); !strings.Contains(field, "id "+message.ID+":") || !markerExists(home, message, "m1b") {
+		t.Fatalf("a session started by hand = %q", field)
+	}
 }
 
 // TestStopOutputIgnoresPendingMessages (R26, U10f-1; D14B-01): the Stop
