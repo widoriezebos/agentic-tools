@@ -4,7 +4,9 @@ import { NavLink } from "react-router";
 
 import {
   failureMessage,
+  loadBoard,
   loadFleet,
+  type BoardPayload,
   type Box,
   type Held,
   type Launch,
@@ -30,14 +32,12 @@ import {
   flagWords,
   healthWords,
   jobWords,
-  NEEDS_YOU_REMEDY,
   NO_BOX,
   publicationWords,
   reservedWords,
   RESERVED_MEANING,
   rolesAlive,
   rolesNeedingAttention,
-  runningNow,
   runningWords,
   seatName,
   seenTitle,
@@ -46,7 +46,6 @@ import {
   sinceWords,
   workingByGoal,
   workingSource,
-  workingWords,
   type WorkingGroup,
 } from "./fleet";
 import { minuteTime } from "../backlog/format";
@@ -56,37 +55,59 @@ import { onFleetEvent, onStreamReopen } from "../notifications/stream";
 import { Pane } from "../panes/Pane";
 import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
-import { Button, Chip, Hint } from "../shell/controls";
+import { Button, Chip, Hint, Skeleton } from "../shell/controls";
 import { LiveDot } from "../shell/LiveLine";
 import { useOffersRefresh } from "../shell/refresh";
 import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
-import { HostBoard } from "./HostBoard";
+import { LaneBlock } from "./LandingLane";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
 import { visibleCard } from "./launching";
+import {
+  doingOf,
+  needsOf,
+  queueOf,
+  SCOPE,
+  seatOf,
+  unreadOf,
+  verdictOf,
+  type BoardReading,
+  type Doing,
+  type FleetReading,
+  type Need,
+  type Verdict,
+} from "./panel";
 import { Trouble } from "../shell/Trouble";
 
 /**
- * Fleet: who is doing what, and whether execution is healthy.
+ * Fleet: what the machine is doing, and whether it needs the person.
  *
- * It answers one question from two sources and nothing else — the presence
- * copy this interface fetched for itself, for what each machine's standing
- * is, and one accepted ledger tip, for who holds what — and the server
- * composes both into one payload. Nothing here judges: a standing, a flag and
- * the needs-you selection all arrive decided, and this file turns them into
- * rows.
+ * Read top to bottom it answers the questions a person brings to it, in the
+ * order they bring them: one verdict on top, in words, with what it checked;
+ * Needs you, collected from every source in one list and absent when empty;
+ * this seat; the fleet's table, one row per machine, with what each is doing;
+ * and this computer's landing lane with what waits, proves, landed and came
+ * back.
  *
- * Nothing here acts either. A goal held by a machine that has gone quiet is
- * flagged, and the words name the acts a human makes at a terminal: `goal
- * steal` reassigns a claim, `goal resume` lifts a breach fence. The page has
- * neither.
+ * It is two reads, made together: the fleet (presence and the ledger's
+ * claims, composed on the server) and this computer's board, which carries
+ * the seats' progress cards, the landing lane and this checkout's questions.
+ * Nothing here judges a standing or a stage; the server composed both, and
+ * src/fleet/panel.ts turns them into the verdict, the list and the words.
+ * A read that fails says so in its own section and names that section in the
+ * verdict; the other section still draws.
  *
- * It is read when the pane mounts, when a human presses the section's
- * refresh, and when the server says a presence attempt finished — which
- * arrives on the one stream this build holds open. There is no timer here and
- * no second reader: without that event a mounted page would keep showing the
- * reading it loaded with, however many times the fleet ticked.
+ * The one act is Land now. Every other fix is said as the plain sentence of
+ * what to do. A goal held by a machine that has gone quiet is flagged, and
+ * the words name the acts a person makes at a terminal: `goal steal`
+ * reassigns a claim, `goal resume` lifts a breach fence.
+ *
+ * Both are read when the pane mounts, when a person presses the section's
+ * refresh, and when the server says a presence attempt or a board change
+ * happened — which arrives on the one stream this build holds open. There is
+ * no timer here: without that event a mounted page keeps the reading it
+ * loaded with.
  */
 
 type PaneState =
@@ -97,8 +118,11 @@ type PaneState =
   // state whole, so it cannot outlive the reading it was recorded against.
   | { state: "read"; page: FleetPayload; problem?: string };
 
+type BoardState = { state: "loading" } | { state: "failed"; message: string } | { state: "read"; board: BoardPayload; problem?: string };
+
 export function FleetPane() {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
+  const [board, setBoard] = useState<BoardState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -126,12 +150,35 @@ export function FleetPane() {
     };
   }, [attempt]);
 
+  // The board is read beside the fleet, on the same attempt, and kept the
+  // same way: a refused re-read leaves the last lane on screen and says so.
+  useEffect(() => {
+    const aborter = new AbortController();
+    loadBoard(aborter.signal)
+      .then((answered) => {
+        setBoard({ state: "read", board: answered });
+      })
+      .catch((error: unknown) => {
+        if (!aborter.signal.aborted) {
+          setBoard((held) =>
+            held.state === "read"
+              ? { ...held, problem: failureMessage(error) }
+              : { state: "failed", message: failureMessage(error) },
+          );
+        }
+      });
+    return () => {
+      aborter.abort();
+    };
+  }, [attempt]);
+
   const again = useCallback(() => {
     setAttempt((previous) => previous + 1);
   }, []);
 
   const reload = useCallback(() => {
     setRead({ state: "loading" });
+    setBoard({ state: "loading" });
     again();
   }, [again]);
 
@@ -162,43 +209,120 @@ export function FleetPane() {
 
   return (
     <Pane title="Fleet">
-      {read.state === "loading" && <Loading />}
-      {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
-      {read.state === "read" && read.problem !== undefined && (
-        <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${read.problem}`} role="status" />
-      )}
-      {read.state === "read" && <Blocks page={read.page} />}
-      {read.state === "read" && <HostBoard />}
+      <Panel fleet={read} board={board} onRetry={reload} onLanded={again} />
     </Pane>
+  );
+}
+
+/** The board this page has not read yet. */
+const UNREAD_BOARD: BoardReading = { state: "loading" };
+
+/**
+ * The fleet's blocks from one fleet reading, beside whatever board reading
+ * there is; with none given, the board is still being read.
+ */
+export function Blocks({ page, board = UNREAD_BOARD }: { page: FleetPayload; board?: BoardReading }) {
+  const fleet = useMemo<FleetReading>(() => ({ state: "read", page }), [page]);
+  return <Panel fleet={fleet} board={board} />;
+}
+
+/** The whole panel, top to bottom, from both readings in whatever state each is. */
+export function Panel({
+  fleet,
+  board,
+  onRetry,
+  onLanded,
+}: {
+  fleet: FleetReading;
+  board: BoardReading;
+  onRetry?: () => void;
+  onLanded?: () => void;
+}) {
+  // The instant every age on this page is measured against: one clock, read
+  // once as the page renders, so two rows cannot be a second apart.
+  const now = useMemo(() => new Date(), [fleet, board]);
+  // The one rule: what each section could not read, which the verdict, Needs
+  // you and Land now read from here.
+  const unread = unreadOf(fleet, board);
+  const needs = needsOf(fleet, board, now);
+  const verdict = verdictOf(fleet, board, needs, now);
+  const read = board.state === "read" ? board.board : null;
+  return (
+    <section className="ms-fleet">
+      <VerdictStrip verdict={verdict} />
+      {(needs.length > 0 || unread.questions.length > 0) && <NeedsYou needs={needs} questionsUnread={unread.questions} />}
+      {fleet.state === "loading" && <Loading />}
+      {fleet.state === "failed" && <Failure message={fleet.message} onRetry={onRetry} />}
+      {fleet.state === "read" && (
+        <FleetBlocks page={fleet.page} problem={fleet.problem} board={read} needs={needs} now={now} />
+      )}
+      <LaneBlock
+        lane={read === null ? undefined : read.lane}
+        titles={read?.titles}
+        problem={board.state === "failed" ? board.message : board.state === "read" ? (board.problem ?? "") : ""}
+        unread={unread.lane}
+        loading={board.state === "loading"}
+        now={now}
+        onLanded={onLanded}
+      />
+    </section>
+  );
+}
+
+/** The one sentence on top, the counts beside it, and what it checked. */
+function VerdictStrip({ verdict }: { verdict: Verdict }) {
+  return (
+    <section className={`ms-fleet-verdict ms-fleet-verdict--${verdict.tone}`} aria-label="Verdict" role="status">
+      <p className="ms-fleet-verdict-line">
+        <span className="ms-fleet-verdict-words">{verdict.words}</span>
+        {verdict.facts.length > 0 && <span className="ms-fleet-verdict-facts">{verdict.facts.join(" · ")}</span>}
+      </p>
+      <p className="ms-fleet-quiet">{SCOPE}</p>
+    </section>
   );
 }
 
 function Loading() {
   return (
-    <section className="ms-fleet">
-      <p className="ms-fleet-quiet">Reading the fleet…</p>
+    <section className="ms-fleet-block" aria-label="The fleet">
+      <h2 className="ms-fleet-heading">The fleet</h2>
+      <div className="ms-fleet-skeleton" aria-busy="true" aria-label="Reading the fleet">
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+      </div>
     </section>
   );
 }
 
-function Failure({ message, onRetry }: { message: string; onRetry: () => void }) {
+function Failure({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <section className="ms-fleet">
-      <h2 className="ms-fleet-heading">The fleet could not be read</h2>
-      <Trouble text={`The fleet could not be read: ${message}`}>{message}</Trouble>
-      <Button onClick={onRetry}>Try again</Button>
+    <section className="ms-fleet-block" aria-label="The fleet">
+      <h2 className="ms-fleet-heading">The fleet</h2>
+      <Trouble text={`The fleet could not be read: ${message}`} />
+      {onRetry !== undefined && <Button onClick={onRetry}>Try again</Button>}
     </section>
   );
 }
 
-export function Blocks({ page }: { page: FleetPayload }) {
-  // The instant every age on this page is measured against: one clock, read
-  // once as the page renders, so two rows cannot be a second apart.
-  const now = useMemo(() => new Date(), [page]);
+/** This seat and the table, from one fleet reading and the board beside it. */
+function FleetBlocks({
+  page,
+  problem,
+  board,
+  needs,
+  now,
+}: {
+  page: FleetPayload;
+  problem: string | undefined;
+  board: BoardPayload | null;
+  needs: Need[];
+  now: Date;
+}) {
   // Which rows this viewer left open. It is read once, here, because the
   // capture below has to say which rows were open as well: what a human was
-  // looking at is the phase sentence alone or the phase with the goal, the
-  // job, the box and the chain under it, and those are two different screens.
+  // looking at is the Doing words alone or the words with the goal, the job,
+  // the box and the chain under it, and those are two different screens.
   const [open, setOpen] = useState(() => readFleetOpen());
   const toggle = useCallback((machine: string) => {
     setOpen((was) => {
@@ -210,51 +334,93 @@ export function Blocks({ page }: { page: FleetPayload }) {
       return next;
     });
   }, []);
+  const doing = useMemo(() => {
+    const words = new Map<string, Doing>();
+    for (const machine of page.machines) {
+      words.set(machine.machine, doingOf(machine, seatOf(board, machine.machine), queueOf(board), now));
+    }
+    return words;
+  }, [page, board, now]);
   // What this page is about, for a question asked from it. The rows travel
   // because only the page knows what was on screen; the standings travel as
   // the page judged nothing and displayed them.
-  useAbout(aboutLine("Fleet", ""), { returnTo: "/fleet", fleet: captureOfFleet(page, now, open) });
+  useAbout(aboutLine("Fleet", ""), {
+    returnTo: "/fleet",
+    fleet: captureOfFleet(page, now, open, {
+      needsYou: needs.map((one) => one.words),
+      doing: Object.fromEntries([...doing].map(([machine, one]) => [machine, one.words])),
+    }),
+  });
 
   return (
-    <section className="ms-fleet">
-      {page.needsYou.length > 0 && <NeedsYou held={page.needsYou} />}
-      <ThisSeatBlock seat={page.this} now={now} />
-      <TheFleet page={page} now={now} open={open} onToggle={toggle} />
+    <>
+      {problem !== undefined && (
+        <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
+      )}
+      <ThisSeatBlock seat={page.this} doing={page.this.machine === "" ? undefined : doing.get(page.this.machine)} now={now} />
+      <TheFleet page={page} board={board} doing={doing} now={now} open={open} onToggle={toggle} />
+    </>
+  );
+}
+
+/**
+ * Needs you: everything that needs the person, from every source, in one
+ * list, newest first — each with what to do in plain words, and the goal to
+ * open or the question to answer where it has one.
+ *
+ * Empty, the block is absent rather than a line saying nothing needs you: the
+ * verdict on top already says All good, and a standing "all clear" row is a
+ * row a reader learns to skip.
+ */
+function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: readonly string[] }) {
+  return (
+    <section className="ms-fleet-block ms-fleet-block--needs" aria-label="Needs you">
+      <h2 className="ms-fleet-heading">
+        Needs you
+        <Help id="fleet-needs-you" />
+      </h2>
+      {questionsUnread.length > 0 && (
+        <Trouble text={`This checkout's questions could not be read: ${questionsUnread.join("; ")}`} variant="small" />
+      )}
+      {needs.length > 0 && (
+        <ul className="ms-fleet-needs">
+          {needs.map((one) => (
+            <li key={one.key} className="ms-fleet-needs-row">
+              <span className="ms-fleet-needs-words">{one.words}</span>
+              {one.goal !== "" && (
+                <NavLink className="ms-fleet-needs-act" to={goalPath(one.goal)}>
+                  Open goal
+                </NavLink>
+              )}
+              {one.answer && (
+                <NavLink className="ms-fleet-needs-act" to="/decisions">
+                  Answer
+                </NavLink>
+              )}
+              {one.goals.length > 0 && (
+                <span className="ms-fleet-needs-goals">
+                  {one.goals.map((goal) => (
+                    <NavLink key={goal.id} className="ms-fleet-hold-title" to={goalPath(goal.id)}>
+                      {goal.title}
+                    </NavLink>
+                  ))}
+                </span>
+              )}
+              {one.todo !== "" && <span className="ms-fleet-needs-todo">{one.todo}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
 /**
- * Needs you: one line per held goal whose holder has gone silent.
- *
- * Empty, the block is absent rather than a line saying nothing needs you: the
- * fleet's good outcome is a page with two blocks on it, and a standing "all
- * clear" row is a row a reader learns to skip.
+ * This seat: what it is called, whether it is armed, and what it is doing —
+ * in its own row's Doing words where the table has a row for it, so the two
+ * never disagree.
  */
-function NeedsYou({ held }: { held: Held[] }) {
-  return (
-    <section className="ms-fleet-block ms-fleet-block--needs">
-      <h2 className="ms-fleet-heading">
-        Needs you
-        <Help id="fleet-needs-you" />
-      </h2>
-      <ul className="ms-fleet-needs">
-        {held.map((one) => (
-          <li key={`${one.machine}/${one.goal}`} className="ms-fleet-needs-row">
-            <NavLink className="ms-fleet-goal" to={goalPath(one.goal)}>
-              {one.goal}
-            </NavLink>
-            <span className="ms-fleet-needs-words">is {flagWords(one)}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="ms-fleet-quiet">{NEEDS_YOU_REMEDY}</p>
-    </section>
-  );
-}
-
-/** This seat: what it is called, whether it is armed, and what it is doing. */
-function ThisSeatBlock({ seat, now }: { seat: ThisSeat; now: Date }) {
+function ThisSeatBlock({ seat, doing, now }: { seat: ThisSeat; doing: Doing | undefined; now: Date }) {
   const attention = rolesNeedingAttention(seat.health);
   const alive = rolesAlive(seat.health);
   return (
@@ -272,7 +438,7 @@ function ThisSeatBlock({ seat, now }: { seat: ThisSeat; now: Date }) {
               belongs on this line and nowhere else. */}
           {seat.publication !== null && seat.publication.rung > 0 && <Help id="rung" />}
         </li>
-        <li className="ms-fleet-fact">{runningWords(seat.running, seat.runningProblem)}</li>
+        <li className="ms-fleet-fact">{doing === undefined ? runningWords(seat.running, seat.runningProblem) : doing.words}</li>
         <li className="ms-fleet-fact">{healthWords(seat.health, now)}</li>
       </ul>
       {attention.length > 0 && (
@@ -313,11 +479,15 @@ function RoleRow({ role }: { role: Role }) {
  */
 function TheFleet({
   page,
+  board,
+  doing,
   now,
   open,
   onToggle,
 }: {
   page: FleetPayload;
+  board: BoardPayload | null;
+  doing: ReadonlyMap<string, Doing>;
   now: Date;
   open: Set<string>;
   onToggle: (machine: string) => void;
@@ -399,7 +569,7 @@ function TheFleet({
                 <Help id="presence" />
               </th>
               <th scope="col">
-                Running
+                Doing
                 <Help id="phase" />
               </th>
               <th scope="col">
@@ -417,6 +587,7 @@ function TheFleet({
               <MachineRow
                 key={machine.machine}
                 machine={machine}
+                doing={doing.get(machine.machine) ?? IDLE}
                 now={now}
                 open={open.has(machine.machine)}
                 onToggle={onToggle}
@@ -424,6 +595,18 @@ function TheFleet({
             ))}
           </tbody>
         </table>
+      )}
+      {board !== null && !board.readable && (
+        <Trouble
+          text={`This computer's board could not be read, so Doing says what each seat's records say: ${board.reason ?? ""}`}
+          variant="small"
+        />
+      )}
+      {board !== null && board.readable && (board.unreadable ?? []).length > 0 && (
+        <Trouble
+          text={`Part of this computer's board could not be read, so Doing says what those seats' records say: ${(board.unreadable ?? []).join("; ")}`}
+          variant="small"
+        />
       )}
       <p className="ms-fleet-provenance" title={claimsTitle(page)}>
         {copyLine(page, now)}
@@ -448,13 +631,18 @@ function TheFleet({
  * the table draws beneath this one. Its open state is remembered per viewer
  * either way, which a native disclosure would have had to be told anyway.
  */
+/** What a row says before anything was composed for it. */
+const IDLE: Doing = { words: "idle", active: false, source: "none" };
+
 function MachineRow({
   machine,
+  doing,
   now,
   open,
   onToggle,
 }: {
   machine: Machine;
+  doing: Doing;
   now: Date;
   open: boolean;
   onToggle: (machine: string) => void;
@@ -494,12 +682,12 @@ function MachineRow({
           {title === "" ? <span>{seen}</span> : <Hint label={title}>{<span>{seen}</span>}</Hint>}
           {since !== "" && <span className="ms-fleet-since">{since}</span>}
         </td>
-        <td className="ms-fleet-cell">
-          <span className="ms-fleet-label">Running</span>
+        <td className="ms-fleet-cell ms-fleet-cell--doing">
+          <span className="ms-fleet-label">Doing</span>
           {/* The rail's dot, before the words of a machine that is working;
-              the words themselves are the table's own (g1-s74 D5). */}
-          {runningNow(machine).length > 0 && <LiveDot />}
-          <span>{workingWords(machine, now)}</span>
+              the words themselves are the table's own. */}
+          {doing.active && <LiveDot />}
+          <span>{doing.words}</span>
         </td>
         <td className="ms-fleet-cell ms-fleet-cell--holds">
           <span className="ms-fleet-label">Holds</span>
@@ -518,15 +706,21 @@ function MachineRow({
           {machine.engine === "" ? (
             <span className="ms-fleet-quiet">unknown</span>
           ) : (
-            <span className="ms-mono">
-              {shortEngine(machine.engine)} · generation {machine.generation}
-            </span>
+            <Hint label={machine.engine}>
+              <span className="ms-mono">{shortEngine(machine.engine)}</span>
+            </Hint>
           )}
         </td>
       </tr>
       <tr className="ms-fleet-opened" id={disclosed} hidden={!open}>
         <td className="ms-fleet-open-cell" colSpan={6}>
-          <Work machine={machine} now={now} />
+          <p className="ms-fleet-work-line">
+            <span className="ms-fleet-work-name">Engine</span>
+            <span className="ms-mono">
+              {machine.engine === "" ? "unknown" : machine.engine} · generation {machine.generation}
+            </span>
+          </p>
+          <Work machine={machine} doing={doing} now={now} />
         </td>
       </tr>
     </>
@@ -543,12 +737,12 @@ function MachineRow({
  * goal's — a round and the critique of it — so the goal is named once, above
  * the jobs that are on it.
  */
-function Work({ machine, now }: { machine: Machine; now: Date }) {
+function Work({ machine, doing, now }: { machine: Machine; doing: Doing; now: Date }) {
   if (machine.workingProblem !== "") {
     return <Trouble text={machine.workingProblem} />;
   }
   if (machine.working.length === 0) {
-    return <p className="ms-fleet-quiet">This machine is running nothing.</p>;
+    return <p className="ms-fleet-quiet">{NOTHING_IN_HAND[doing.source]}</p>;
   }
   return (
     <div className="ms-fleet-work">
@@ -567,6 +761,18 @@ function Work({ machine, now }: { machine: Machine; now: Date }) {
     </div>
   );
 }
+
+/**
+ * What the opened row says where no job is in hand: where the Doing words
+ * came from instead, so the row and its opening never disagree.
+ */
+const NOTHING_IN_HAND: Record<Doing["source"], string> = {
+  board: "No job of this machine's is in hand; what it is doing is read from this computer's board.",
+  lane: "No job of this machine's is in hand; its work waits in this computer's landing lane.",
+  jobs: "This machine publishes only its newest chain, so its jobs cannot be opened here.",
+  none: "This machine is running nothing.",
+  problem: "This machine is running nothing.",
+};
 
 /** One goal of the opened block: the goal once, then every job on it. */
 function GoalWork({ group, title, now }: { group: WorkingGroup; title: string; now: Date }) {
@@ -699,16 +905,19 @@ function Bar({ share }: { share: number }) {
   );
 }
 
-/** One goal a machine holds, as the chip that opens it. */
+/**
+ * One goal a machine holds, by its title, as the link that opens it: the id
+ * is in the link and in its hint, with the goal's lane.
+ */
 function HoldChip({ held }: { held: Held }) {
   const chip = (
-    <NavLink className="ms-fleet-goal" to={goalPath(held.goal)}>
-      {held.goal}
+    <NavLink className="ms-fleet-hold-title" to={goalPath(held.goal)}>
+      {held.title === "" ? held.goal : held.title}
     </NavLink>
   );
   return (
     <span className="ms-fleet-hold">
-      <Hint label={`${laneTitle(held.lane)}${held.title === "" ? "" : ` · ${held.title}`}`}>{chip}</Hint>
+      <Hint label={`${laneTitle(held.lane)} · ${held.goal}`}>{chip}</Hint>
       {held.flag !== "" && <Chip marker>{flagWords(held)}</Chip>}
     </span>
   );

@@ -74,6 +74,10 @@ type Entry struct {
 	Delivered string `json:"delivered,omitempty"`
 	// ReturnedAt is when it was returned.
 	ReturnedAt string `json:"returned_at,omitempty"`
+	// LandedAt is when a landed hand-in reached main: the time of the push
+	// that brought its commit, read from pushes.jsonl (LandingTimes); empty
+	// where no push of the lane's last day brought it.
+	LandedAt string `json:"landed_at,omitempty"`
 }
 
 // withLock runs fn under the lane's file lock, creating its folder.
@@ -104,25 +108,38 @@ func appendLine(path string, value any) error {
 }
 
 // readLines decodes every line of a JSON-lines file into T; a missing file
-// is empty. A line that does not decode (a crash mid-append) is skipped.
+// is empty. A line that does not decode (a crash mid-append) is skipped, so
+// the keeper and the verbs never stop on a partial append.
 func readLines[T any](path string) ([]T, error) {
+	out, _, err := countedLines[T](path)
+	return out, err
+}
+
+// countedLines is readLines that also counts the lines it skipped because
+// they do not decode, for the lane's status to say (fix round 4); a blank
+// line holds no record and is not counted.
+func countedLines[T any](path string) ([]T, int, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var out []T
+	skipped := 0
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		var value T
-		if json.Unmarshal(scanner.Bytes(), &value) == nil {
+		switch {
+		case json.Unmarshal(scanner.Bytes(), &value) == nil:
 			out = append(out, value)
+		case len(bytes.TrimSpace(scanner.Bytes())) > 0:
+			skipped++
 		}
 	}
-	return out, scanner.Err()
+	return out, skipped, scanner.Err()
 }
 
 // Entries are the queue's hand-ins, oldest first, each with its recorded
@@ -133,6 +150,11 @@ func Entries(install string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	return entriesOf(lines), nil
+}
+
+// entriesOf are the hand-ins the queue's lines record, as Entries says.
+func entriesOf(lines []Line) []Entry {
 	entries := []Entry{}
 	index := map[string]int{}
 	for _, line := range lines {
@@ -162,7 +184,7 @@ func Entries(install string) ([]Entry, error) {
 		}
 		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
 	}
-	return entries, nil
+	return entries
 }
 
 // Waiting are the hand-ins not returned, landed or not.

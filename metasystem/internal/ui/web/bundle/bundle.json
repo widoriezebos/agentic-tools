@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:56f4fd868041d60c5bf602049ad467e968cf7ff8fa22d0fc7e770e3d2ae666f4",
+  "sourceDigest": "sha256:a72dbaa35662caf8da070eeb6b9280108bf8d08b9718919660d37a785af088f6",
   "source": [
     {
       "path": ".npmrc",
@@ -396,27 +396,19 @@
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
-      "sha256": "509f1b72d5e39b6e3d81857c22526c95ecf9791ac83ae673ca81aa1f5da38bac"
+      "sha256": "c9bcc711859edc38c95d041c480171f0c7421362705f76ed061e7081c1e19157"
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "5ed0b072553f93836ee7f945dac9441a00625db097806f28a8f6c568c0da5cfd"
-    },
-    {
-      "path": "src/fleet/HostBoard.test.tsx",
-      "sha256": "34b8accfc9d4e8a9df11b885323a953aa37caad50bd00eab3c8c63d788460f2d"
-    },
-    {
-      "path": "src/fleet/HostBoard.tsx",
-      "sha256": "6faf4ddb433ba12cf2126d0457ac9a70814586f3d401a0d3cf6b0b9091fe17d9"
+      "sha256": "16d05d77022793855783e313e960456b9c58097da534ad8910925541c90dedc9"
     },
     {
       "path": "src/fleet/LandingLane.test.tsx",
-      "sha256": "fdc18d420e9f4ed912e0c43bf02031a263ed9c79ff4e588a1f63da5f2c7e2e9a"
+      "sha256": "f5a889b8e7f242d4d79d0958ef90187a2f7e1664a91700a3eea881f5c94ff99d"
     },
     {
       "path": "src/fleet/LandingLane.tsx",
-      "sha256": "43c689f369cd6c3b4e8f8543af62d4ea5ede94d64f6ecc4a0467de6c78ce2cf0"
+      "sha256": "e73d5bc584d06f18c0d36c51683bd2e8cdf2a6e57613f7e8ba20ec416a08c2f8"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -440,15 +432,15 @@
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "3eac20112fc753b134654271e6b5a34db603cae9e05d3f73a1655d8477cb4e65"
+      "sha256": "503a0d284ca7f42a27f9b3601d44e513342ec571406743df223a1da6d0526603"
     },
     {
       "path": "src/fleet/breathing.test.tsx",
-      "sha256": "e63b180125785a68bc1068e2b29ede1edf934306d84adbf24cb08f4a793257f7"
+      "sha256": "101bdc57de4218f4bde88da849f79ffbeb60811a7ca1c1ed072c76a24b3d9af6"
     },
     {
       "path": "src/fleet/capture.ts",
-      "sha256": "7d40c84d82691ece50a1a400b356d10a022f51fcca434672be962dea1593af3f"
+      "sha256": "d94317b1b7541bcc1e53b6414c43d51943d315dd9c734948b926c8923f6e3469"
     },
     {
       "path": "src/fleet/discard.test.ts",
@@ -456,11 +448,11 @@
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "72ee47d3dd715690533506cf252efdf4ef7d4f7552309374657da9ce42324d7e"
+      "sha256": "840c3d1eb20d6001ad3d63dfc2bd7f8cd06242a3be0455ab0c694bad28115d70"
     },
     {
       "path": "src/fleet/fleet.ts",
-      "sha256": "5855057ae21b546ca6f86207648fb2265367eefc2be7063f5bb2610e1a9168f9"
+      "sha256": "4022477b23498b308a5f912bea9b11b6604fe8ab5ad67e5fb8d51f43ce0b2ea5"
     },
     {
       "path": "src/fleet/launching.test.ts",
@@ -469,6 +461,14 @@
     {
       "path": "src/fleet/launching.ts",
       "sha256": "1c6d39c0646181ccb3f535c3c8bc1ee5e0fb2e52366e852477a75aef645134d6"
+    },
+    {
+      "path": "src/fleet/panel.test.ts",
+      "sha256": "842047c69450acb413377361ae1433bedc0460105f97b46bee15d9183decf216"
+    },
+    {
+      "path": "src/fleet/panel.ts",
+      "sha256": "45fb7a18a4de6ececcf4debfff03d9745fc9873e24abed0cb34b6c83d1a12d69"
     },
     {
       "path": "src/fleet/rendering.test.tsx",
@@ -504,7 +504,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "9f6e80c54da871c7d22e91ddc0b82408f82d68d9b1b6bc57f83975f9aec347a5"
+      "sha256": "e05e12bfae9cdee503af31ec4e3eb5b992d16048d2d9b9e7e60adf9b1c78ffab"
     },
     {
       "path": "src/index.css",
@@ -704,7 +704,7 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "a6d3291770a9b4d602a9eacc93c7e76febd1c67165ffee8c2113f37b2350643a"
+      "sha256": "bb2624148c485fb7d55d3bd164b7f6931e89e23a03859f5733774efa04bbb0f0"
     },
     {
       "path": "src/partner/applying.ts",
@@ -1264,7 +1264,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "6d9a3fe9c1398f1800d4143945f2509463f844fa933479f2d28edee2b6d21ee2"
+      "sha256": "95eb654808e1700c2e195fa4247bb515885565944057c7e69f2df4563fb5e737"
     },
     {
       "path": "src/shell/troubles.test.tsx",
@@ -1610,11 +1610,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "740ca5ce62574ab8efc2d3ed9e8808ad4d8a27c48a0068da818794b1fa17a71b"
+      "sha256": "fb70323b5bcd01d7311eab08a1c81c90b472879ee2b332a03d9ed26bbddc0cf0"
     },
     {
       "path": "assets/index.js",
-      "sha256": "1fdfcc4ae1e8d875c0ce65b3275b9c5773f3f88809d03096777c4db67d3ea7af"
+      "sha256": "c5e5f1e4d17d27683c6d415a34d62fb671c4410909cf76e0c6b6362ac6f0c92c"
     },
     {
       "path": "assets/info-A6RAGUB7.js",
@@ -1806,7 +1806,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "74c937d8b5db27da521f8303157281d6059e465a83f3a9e5a3fb5b016f2398f1"
+      "sha256": "6e6dc4a9427c5d5a0f39acb28e2b97b7fb86a0fd8f4678ac840b9cc9e3bd5986"
     },
     {
       "path": "theme.js",

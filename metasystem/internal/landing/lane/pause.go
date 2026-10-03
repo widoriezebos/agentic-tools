@@ -15,7 +15,14 @@ type Pause struct {
 	// Reason is why it was stopped, in the stopper's words; empty when
 	// none was given.
 	Reason string `json:"reason,omitempty"`
+	// unreadable marks the pause ReadPause gives for a record it could not
+	// read.
+	unreadable bool
 }
+
+// Unreadable says whether this pause stands for a pause record that could
+// not be read (ReadPause fails closed); the lane's status says it.
+func (pause Pause) Unreadable() bool { return pause.unreadable }
 
 func pausePath(home string) string { return filepath.Join(HostDir(home), "landing-lane-paused.json") }
 
@@ -29,7 +36,7 @@ func ReadPause(home string) (Pause, bool) {
 	var pause Pause
 	ok, err := readJSON(pausePath(home), &pause)
 	if err != nil {
-		return Pause{By: unreadablePauseBy}, true
+		return Pause{By: unreadablePauseBy, unreadable: true}, true
 	}
 	return pause, ok
 }

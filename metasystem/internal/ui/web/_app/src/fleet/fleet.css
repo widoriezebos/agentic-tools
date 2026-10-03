@@ -1,6 +1,6 @@
 /*
- * Fleet: three blocks down one column — what needs a human, this seat, and a
- * table of the machines.
+ * Fleet: one column — the verdict, what needs the person, this seat, a table
+ * of the machines and this computer's landing lane.
  *
  * The table is the page. Every other element on it is a line of words under a
  * heading, because a standing is a word and a silence is a sentence, and
@@ -82,7 +82,7 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -90,7 +90,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px 8px;
   min-width: 0;
   font-size: 13px;
   line-height: 20px;
@@ -99,7 +99,7 @@
 
 .ms-fleet-needs-words {
   min-width: 0;
-  color: var(--ms-text-2);
+  color: var(--ms-text);
 }
 
 /* A goal, as the link that opens it. */
@@ -902,42 +902,29 @@
 /* ------------------------------------------------------ landing lane -- */
 
 /*
- * The host's landing lane, above its seats. The owner's state takes the same
- * status tokens the standings pill does: running is the ok pair, unready
- * the marker pair, stopped the danger colour on the surface, and idle the
- * muted surface, because a ready lane with nothing to land is not an alarm. Every line wraps, so the panel reads at phone width without a
- * sideways scroll; a long root path breaks anywhere rather than overflowing.
+ * This computer's landing lane, under the table: its one state word in the
+ * heading beside Land now, then the four lists. The state word takes the
+ * status tokens the standings pill does: Running is the ok pair, Needs
+ * attention the marker pair, Paused the danger colour on the surface.
+ *
+ * Each list is a label over its items, and each item one line of words with
+ * its Details beneath; at phone width the line wraps under itself rather
+ * than scrolling. A long path in Details breaks anywhere.
  */
-.ms-fleet-lane-summary {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  color: var(--ms-text);
-  overflow-wrap: anywhere;
+.ms-fleet-lane-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 
-.ms-fleet-lane-owner,
-.ms-fleet-lane-queue {
+.ms-fleet-lane-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
 
-.ms-fleet-lane-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  margin: 0;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ms-text);
-}
-
-.ms-fleet-lane-label,
 .ms-fleet-lane-sub {
   margin: 0;
   font-size: 12px;
@@ -946,27 +933,18 @@
   color: var(--ms-text-2);
 }
 
-.ms-fleet-lane-label {
-  min-width: 48px;
-}
-
-.ms-fleet-lane-facts,
-.ms-fleet-lane-seat {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--ms-text-3);
-}
-
-.ms-fleet-lane-facts {
-  margin-left: 4px;
-}
-
 .ms-fleet-lane-note {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
   color: var(--ms-text-2);
   overflow-wrap: anywhere;
+}
+
+.ms-fleet-lane-state {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
 }
 
 .ms-fleet-lane-state--ok {
@@ -987,7 +965,7 @@
   color: var(--ms-danger);
 }
 
-/* A command to copy: one press selects all of it. */
+/* The command a verb's answer names as its next step: one press selects it. */
 .ms-fleet-lane-command {
   padding: 1px 6px;
   border-radius: 4px;
@@ -1024,26 +1002,232 @@
 .ms-fleet-lane-members {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin: 0;
-  padding: 0 0 0 56px;
+  padding: 0 0 0 12px;
   list-style: none;
   min-width: 0;
 }
 
 .ms-fleet-lane-member {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 13px;
   line-height: 20px;
   color: var(--ms-text);
   overflow-wrap: anywhere;
 }
 
-.ms-fleet-lane-root {
+.ms-fleet-lane-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+/* What follows a waiting hand-in's title: its seat and how long it waits. */
+.ms-fleet-lane-detail {
+  color: var(--ms-text-2);
+}
+
+/* The time a hand-in landed, in a column of its own width. */
+.ms-fleet-lane-time {
+  flex: none;
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-lane-goal,
+.ms-fleet-lane-open,
+.ms-fleet-needs-act,
+.ms-fleet-hold-title {
+  color: var(--ms-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ms-border-strong);
+}
+
+.ms-fleet-lane-goal:hover,
+.ms-fleet-lane-open:hover,
+.ms-fleet-needs-act:hover,
+.ms-fleet-hold-title:hover {
+  color: var(--ms-accent);
+  border-bottom-color: var(--ms-accent);
+}
+
+.ms-fleet-lane-open,
+.ms-fleet-needs-act {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------- details -- */
+
+/*
+ * One Details disclosure per item: the commit, the branch, the seat, the log
+ * path — what a person wants now and then and never at a glance. Closed it is
+ * one small word under the line it belongs to.
+ */
+.ms-fleet-details {
+  min-width: 0;
+}
+
+.ms-fleet-details-summary {
+  width: fit-content;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  cursor: pointer;
+}
+
+.ms-fleet-details-summary:hover {
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-details-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 4px 0 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ms-fleet-details-row {
+  display: contents;
+}
+
+.ms-fleet-details-row dt {
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-details-row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ms-text-2);
   overflow-wrap: anywhere;
 }
 
+/* ----------------------------------------------------------- verdict -- */
+
+/*
+ * The verdict: one sentence on top, the counts beside it, and what it
+ * checked under it. The colour only reinforces the words: the ok pair for
+ * All good, the marker pair when something needs the person or a section
+ * could not be read, and the plain surface while the page is reading.
+ */
+.ms-fleet-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-fleet-verdict--ok {
+  border-color: var(--ms-ok);
+  background: var(--ms-ok-bg);
+}
+
+.ms-fleet-verdict--attention,
+.ms-fleet-verdict--unread {
+  border-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+}
+
+.ms-fleet-verdict-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0;
+  min-width: 0;
+}
+
+.ms-fleet-verdict-words {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--ms-text);
+}
+
+.ms-fleet-verdict--ok .ms-fleet-verdict-words {
+  color: var(--ms-ok-fg);
+}
+
+.ms-fleet-verdict--attention .ms-fleet-verdict-words,
+.ms-fleet-verdict--unread .ms-fleet-verdict-words {
+  color: var(--ms-marker-fg);
+}
+
+.ms-fleet-verdict-facts {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+/* The goals one thing that needs the person is about, by title, on a line
+   of their own under its sentence, and what to do under them. */
+.ms-fleet-needs-goals,
+.ms-fleet-needs-todo {
+  flex-basis: 100%;
+}
+
+.ms-fleet-needs-goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* What to do about one thing that needs the person, in plain words. */
+.ms-fleet-needs-todo {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+/* Loading has a shape: a few bars where the section will stand. */
+.ms-fleet-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/*
+ * One column at phone width: the verdict's counts go under its sentence,
+ * each thing that needs the person stacks its words over what to do and the
+ * link, and a lane item's words stand over its Details.
+ */
 @media (max-width: 599px) {
+  .ms-fleet-verdict-line {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ms-fleet-needs-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .ms-fleet-lane-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
   .ms-fleet-lane-members {
-    padding-left: 12px;
+    padding-left: 0;
   }
 }

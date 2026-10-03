@@ -645,6 +645,12 @@ func armedWord(in Inputs, now time.Time) string {
 // Overview's own rows carry.
 const ledeRunes = 80
 
+// Title is a goal's title as every list of goals in this interface writes
+// it: the first sentence of its intent, bounded. The board's payload titles
+// the goals it names with it, so a goal reads the same on the fleet's rows
+// and in its landing lane.
+func Title(intent string) string { return lede(intent) }
+
 // lede is what a chip calls a goal: the title every other list of goals in
 // this interface writes, in a chip's own length.
 func lede(intent string) string {

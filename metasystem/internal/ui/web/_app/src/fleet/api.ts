@@ -386,22 +386,62 @@ function waitFor<T>(read: Promise<T>, signal?: AbortSignal): Promise<T> {
 export type BoardLine = { machine: string; text: string };
 
 /**
- * The host board: every armed seat of this host with its line, whether the
- * registry could be read at all, and the bridge's state. `seats` is the
- * classified picture the lines were rendered from; the block reads the lines.
+ * One goal on one armed seat of this computer, as its progress card says it:
+ * the stage, the round of its limit, a proof's sections done of planned, and
+ * since when. `unknown` is why the card cannot be believed — a writer that is
+ * dead, a stall, or a claim that moved to another machine — and such a card
+ * says nothing about what the seat is doing.
+ */
+export type BoardGoal = {
+  goal: string;
+  stage?: string;
+  round?: { n: number; max: number | null };
+  proof?: { attempt: string; done: number; planned: number };
+  batch?: string;
+  since?: string;
+  lastProgressAt?: string;
+  unknown?: string;
+};
+
+/** One armed seat of this computer and the goals its cards name. */
+export type BoardSeat = { machine: string; installation: string; unknown?: string; goals: BoardGoal[] };
+
+/** One open question this checkout's seats asked the person. */
+export type BoardQuestion = {
+  id: string;
+  goal: string;
+  about?: string;
+  machine: string;
+  /** The question's first line, as the asker wrote it. */
+  question: string;
+  openedAt: string;
+};
+
+/**
+ * The host board: every armed seat of this host with its goals, whether the
+ * registry could be read at all, and the bridge's state; the landing lane;
+ * the title of every goal it names; and this checkout's open questions.
  */
 export type BoardPayload = {
   readable: boolean;
   reason?: string;
   bridge: string;
-  seats: unknown[];
+  seats: BoardSeat[];
   lines: BoardLine[];
   /**
-   * The host's one batch-landing lane (U12). Null where this host has none;
+   * The host's one landing lane (U12). Null where this host has none;
    * absent from a server built before the lane existed, which the panel says
    * rather than taking for "no lane".
    */
   lane?: Lane | null;
+  /** Goal titles by id, for every goal the seats, the queue and the questions name. */
+  titles?: Record<string, string>;
+  /** This checkout's open questions; absent from a server that does not read them. */
+  questions?: BoardQuestion[];
+  /** Why the questions, or some of their records, could not be read; "" when every record was. */
+  questionsProblem?: string;
+  /** The parts of this computer's board that were not read, one line each. */
+  unreadable?: string[];
 };
 
 /**
@@ -438,6 +478,10 @@ export type LaneEntry = {
   state: "waiting" | "returned" | "superseded" | "landed" | (string & {});
   reason?: string;
   returned_at?: string;
+  /** The hand-in's one plain sentence of what it delivers, from its seat. */
+  delivered?: string;
+  /** When a landed hand-in reached main: the time of the push that brought it. */
+  landed_at?: string;
 };
 
 /** The lane's proof recorded running; died is one that ended without a result. */
@@ -448,6 +492,8 @@ export type LaneRunningProof = {
   attempt: string;
   log?: string;
   state: "running" | "died" | (string & {});
+  /** The waiting hand-ins this proof's commit holds, by goal. */
+  goals?: string[];
 };
 
 /** The newest proof the lane recorded. */
@@ -486,6 +532,10 @@ export type Lane = {
   running_proof?: LaneRunningProof | null;
   last_proof?: LaneProof | null;
   last_push?: LanePush | null;
+  /** The lane's records this read could not read, one sentence each. */
+  problems?: string[];
+  /** Why this computer's lane registration could not be read, where it could not. */
+  unreadable?: string;
 };
 
 export type LaneWake = { reasons: string[]; unread: string[] };

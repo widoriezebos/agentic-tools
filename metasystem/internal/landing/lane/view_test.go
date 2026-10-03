@@ -101,3 +101,48 @@ func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
 		t.Fatalf("gone lane view = %+v %q", view.Owner, view.Summary)
 	}
 }
+
+// A lane record that can't be read is said in the view's unreadable field as
+// well as its summary, so a reader tells it from a lane that was never
+// registered; a lane with no record carries none.
+func TestViewSaysALaneRecordItCannotRead(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	if err := os.MkdirAll(HostDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(RecordPath(home), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view := BuildView(viewSources(home, false))
+	if view.Root != nil || view.Unreadable == "" || !strings.Contains(view.Summary, "can't be read") {
+		t.Fatalf("view of an unreadable record = %+v; want no root and the read error said", view)
+	}
+	if none := BuildView(viewSources(t.TempDir(), false)); none.Unreadable != "" {
+		t.Fatalf("a lane never registered reads as unreadable: %q", none.Unreadable)
+	}
+}
+
+// Fix round 4, sweep: a probe of the landing agent, or a check of whether
+// the lane can run, that fails for a reason other than a refusal is kept as
+// what the view could not read, for the status's problems; a refusal is a
+// read that answered.
+func TestViewKeepsWhatItCouldNotCheck(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	register(t, home, root)
+	sources := viewSources(home, false)
+	sources.Owner = func(string) (OwnerProbe, error) { return OwnerProbe{}, os.ErrPermission }
+	if view := BuildView(sources); view.Owner.Unread != "whether the landing agent runs is unknown: "+os.ErrPermission.Error() {
+		t.Fatalf("unread %q; want the probe's failure", view.Owner.Unread)
+	}
+	sources = viewSources(home, false)
+	sources.Ready = func(string) error { return os.ErrPermission }
+	if view := BuildView(sources); view.Owner.Unread != "whether the lane can run is unknown: "+os.ErrPermission.Error() {
+		t.Fatalf("unread %q; want the readiness check's failure", view.Owner.Unread)
+	}
+	sources.Ready = func(root string) error { return UnarmedRefusal(root) }
+	if view := BuildView(sources); view.Owner.Unread != "" {
+		t.Fatalf("unread %q; want none for a refusal", view.Owner.Unread)
+	}
+}

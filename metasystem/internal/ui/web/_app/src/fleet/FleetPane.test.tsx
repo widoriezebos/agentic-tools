@@ -6,11 +6,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import type { Held, Machine, Page, ThisSeat } from "./api";
+import type { BoardPayload, Held, Lane, Machine, Page, ThisSeat } from "./api";
 import { captureOfFleet } from "./capture";
 import { copyLine, NEEDS_YOU_REMEDY, NO_PRESENCE } from "./fleet";
 import { minuteTime } from "../backlog/format";
-import { Blocks } from "./FleetPane";
+import { Blocks, Panel } from "./FleetPane";
+import { SCOPE, type BoardReading, type FleetReading } from "./panel";
 
 /**
  * What the Fleet page puts on the screen, from the payload shapes the server
@@ -118,24 +119,149 @@ function page(over: Partial<Page> = {}): Page {
 }
 
 /** The pane's blocks, rendered as markup, with no request anywhere near it. */
-function rendered(payload: Page): string {
+function rendered(payload: Page, board?: BoardReading): string {
   // Blocks is what FleetPane renders once its read has answered; the read
   // itself is the pane's own effect, which never runs under static markup.
   return renderToStaticMarkup(
     <MemoryRouter>
       <TooltipPrimitive.Provider>
-        <Blocks page={payload} />
+        <Blocks page={payload} board={board} />
       </TooltipPrimitive.Provider>
     </MemoryRouter>,
   );
 }
 
+/** The whole panel, from both readings, whatever state each is in. */
+function panel(fleet: FleetReading, board: BoardReading): string {
+  return renderToStaticMarkup(
+    <MemoryRouter>
+      <TooltipPrimitive.Provider>
+        <Panel fleet={fleet} board={board} onRetry={() => undefined} />
+      </TooltipPrimitive.Provider>
+    </MemoryRouter>,
+  );
+}
+
+function lane(over: Partial<Lane> = {}): Lane {
+  return {
+    root: "/w/landing",
+    registered_by: "wido",
+    registered_at: "2026-09-25T08:00:00Z",
+    owner: { state: "idle", pid: null, since: null, last_exit: null, stopped_by: null, retry_hint: null },
+    summary: "landing lane /w/landing: idle",
+    paused: false,
+    agent_alive: false,
+    queue: [],
+    running_proof: null,
+    last_proof: null,
+    last_push: null,
+    problems: [],
+    ...over,
+  };
+}
+
+function board(over: Partial<BoardPayload> = {}): BoardReading {
+  return {
+    state: "read",
+    board: {
+      readable: true,
+      bridge: "live",
+      seats: [],
+      lines: [{ machine: "m1g", text: "one-folder-deployed-and-evolved unknown: claim moved to m1f" }],
+      lane: lane(),
+      titles: {},
+      questions: [],
+      questionsProblem: "",
+      ...over,
+    },
+  };
+}
+
+/** A fleet with nothing that needs anyone. */
+function calm(over: Partial<Page> = {}): Page {
+  return page({
+    needsYou: [],
+    this: seat({ health: { ...seat().health!, roles: [{ role: "steward-runner", status: "alive", reason: "runner alive" }] } }),
+    machines: [machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true })],
+    ...over,
+  });
+}
+
+describe("the verdict strip", () => {
+  it("stands on top and says All good on this computer when every read succeeded and nothing needs you", () => {
+    const markup = rendered(calm(), board());
+
+    expect(markup.indexOf("All good on this computer")).toBeGreaterThanOrEqual(0);
+    expect(markup.indexOf("All good on this computer")).toBeLessThan(markup.indexOf("This seat"));
+    expect(markup).toContain("ms-fleet-verdict--ok");
+    expect(markup).toContain(SCOPE.replaceAll("'", "&#x27;"));
+    expect(markup).toContain("0 seats working · 0 waiting to land · updated");
+  });
+
+  it("counts what needs you instead", () => {
+    const markup = rendered(page(), board());
+
+    expect(markup).toContain("1 thing needs you");
+    expect(markup).toContain("ms-fleet-verdict--attention");
+  });
+
+  it("names the section it could not read, and that section says so", () => {
+    const markup = rendered(calm(), { state: "failed", message: "board answered 500" });
+
+    expect(markup).toContain("Can&#x27;t read this computer&#x27;s board, the landing lane and questions");
+    expect(markup).toContain("The landing lane could not be read: board answered 500");
+    expect(markup).toContain("This checkout&#x27;s questions could not be read: board answered 500");
+    expect(markup).not.toContain("All good");
+  });
+
+  it("names a fleet it could not read again, beside the reading it keeps", () => {
+    const markup = panel({ state: "read", page: calm(), problem: "fleet answered 502" }, board());
+
+    expect(markup).toContain("Can&#x27;t read the fleet");
+    expect(markup).toContain("what is on screen is the last reading: fleet answered 502");
+    expect(markup).toContain("<table");
+  });
+
+  it("never says All good over a presence copy it could not read, and keeps Launch a machine, whose own flow checks itself", () => {
+    const markup = rendered(
+      calm({ copy: { ...page().copy, problem: "presence ref list: exit status 128" } }),
+      board(),
+    );
+
+    expect(markup).toContain("Can&#x27;t read the fleet");
+    expect(markup).not.toContain("All good");
+    expect(markup).toContain("presence ref list: exit status 128");
+    expect(markup).toMatch(/<button[^>]*>Launch a machine<\/button>/);
+    expect(markup).not.toContain("waits until the fleet can be read");
+  });
+
+  it("says a first fleet read that failed in the fleet's own section, with Try again", () => {
+    const markup = panel({ state: "failed", message: "fleet answered 500" }, board());
+
+    expect(markup).toContain("Can&#x27;t read the fleet");
+    expect(markup).toContain("The fleet could not be read: fleet answered 500");
+    expect(markup).toContain(">Try again<");
+    // The lane read on its own and is still drawn.
+    expect(markup).toContain("Landing lane");
+  });
+
+  it("draws a skeleton, never an empty page, while the first reads are on their way", () => {
+    const markup = panel({ state: "loading" }, { state: "loading" });
+
+    expect(markup).toContain("Reading…");
+    expect(markup).toContain("ms-skeleton");
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).not.toContain("All good");
+  });
+});
+
 describe("the fleet page", () => {
-  it("shows a needs-you line for every silent holder, with the remedies named", () => {
+  it("shows a needs-you line for every silent holder, by its title, with the remedies named", () => {
     const markup = rendered(page());
 
     expect(markup).toContain("Needs you");
-    expect(markup).toContain("tests-parallel-and-deterministic");
+    expect(markup).toContain("“Run the suite in parallel.” is held by m1c, unreachable since");
+    expect(markup).toContain('href="/backlog/goal/tests-parallel-and-deterministic"');
     expect(markup).toContain(`held by m1c, unreachable since ${minuteTime(held().since)}`);
     expect(markup).toContain(NEEDS_YOU_REMEDY);
     expect(markup).toContain("goal steal");
@@ -143,18 +269,57 @@ describe("the fleet page", () => {
   });
 
   it("leaves the block out entirely when nothing needs a human", () => {
-    const calm = page({
-      needsYou: [],
-      machines: [machine({ machine: "m1u", standing: "reachable", holds: [], this: true })],
-    });
-
-    const markup = rendered(calm);
+    const markup = rendered(calm(), board());
 
     expect(markup).not.toContain("Needs you");
     expect(markup).not.toContain(NEEDS_YOU_REMEDY);
     // A calm fleet is not an empty one: the table is still there.
     expect(markup).toContain("This seat");
     expect(markup).toContain("The fleet");
+  });
+
+  it("collects the lane, the returns, a red proof, the questions and this computer's health into Needs you", () => {
+    const unhealthy = calm({
+      this: seat({
+        armed: "not armed",
+        health: { state: "unhealthy", observedAt: "2026-09-25T14:30:00Z", problem: "", roles: [{ role: "steward-runner", status: "dead", reason: "runner gone" }] },
+      }),
+    });
+    const read = board({
+      titles: { "plain-lane": "Plain lane landing." },
+      lane: lane({
+        owner: { state: "stopped", pid: null, since: "2026-09-25T13:40:00Z", last_exit: null, stopped_by: "m1e", retry_hint: null },
+        paused: true,
+        queue: [
+          { goal: "plain-lane", branch: "goal/plain-lane", sha: "abc", seat: "m1g", at: "2026-09-25T12:00:00Z", state: "returned", reason: "the full test run is red", returned_at: "2026-09-25T14:00:00Z" },
+        ],
+      }),
+      questions: [{ id: "q-1", goal: "plain-lane", machine: "m1f", question: "Land slice 2 now?", openedAt: "2026-09-25T14:10:00Z" }],
+    });
+
+    const markup = rendered(unhealthy, read);
+    const needs = markup.slice(markup.indexOf("Needs you"), markup.indexOf("This seat"));
+
+    expect(needs).toContain("The landing lane is paused by m1e since");
+    expect(needs).toContain("It lands nothing until someone resumes it with landing start at a terminal.");
+    expect(needs).toContain("“Plain lane landing.” came back: the full test run is red.");
+    expect(needs).toContain(">Open goal<");
+    expect(needs).toContain("m1f asks about “Plain lane landing.”: Land slice 2 now?");
+    expect(needs).toContain('href="/decisions"');
+    expect(needs).toContain(">Answer<");
+    expect(needs).toContain("This computer&#x27;s steward is not running.");
+    expect(markup).toContain("4 things need you");
+    // A paused lane is said once in Needs you; the lane says its one word.
+    expect(markup).toContain(">Paused<");
+    expect(markup).not.toContain("Pause<");
+  });
+
+  it("says in Needs you when this checkout's questions could not be read", () => {
+    const markup = rendered(calm(), board({ questionsProblem: "channel folder unreadable" }));
+
+    expect(markup).toContain("Needs you");
+    expect(markup).toContain("This checkout&#x27;s questions could not be read: channel folder unreadable");
+    expect(markup).toContain("Can&#x27;t read questions");
   });
 
   it("says a checkout with no nickname publishes no presence", () => {
@@ -214,8 +379,112 @@ describe("the fleet page", () => {
     expect(markup).toContain("reachable");
     expect(markup).toContain(`since ${minuteTime(machine().since)}`);
     expect(markup).toContain("3f9c1e2");
-    expect(markup).toContain("generation 4");
     expect(markup).toContain("this seat");
+  });
+
+  it("shows the engine short in the row and the generation in the opened row", () => {
+    const markup = rendered(page());
+    const engine = markup.slice(markup.indexOf("ms-fleet-cell--engine"));
+    const cell = engine.slice(0, engine.indexOf("</td>"));
+    const opened = markup.slice(markup.indexOf('id="ms-fleet-work-m1c"'));
+
+    expect(cell).toContain("3f9c1e2");
+    expect(cell).not.toContain("generation");
+    expect(cell).not.toContain("3f9c1e2abcdef");
+    expect(opened).toContain("3f9c1e2abcdef · generation 4");
+  });
+
+  it("shows a held goal by its title, with its id in the link", () => {
+    const markup = rendered(page());
+    const holds = markup.slice(markup.indexOf("ms-fleet-cell--holds", markup.indexOf("<tbody")));
+
+    expect(holds).toContain('href="/backlog/goal/tests-parallel-and-deterministic"');
+    expect(holds).toContain(">Run the suite in parallel.</a>");
+  });
+
+  it("says what each machine is doing in a Doing column, from this computer's board", () => {
+    const read = board({
+      seats: [
+        {
+          machine: "m1c",
+          installation: "/w/m1c/metasystem",
+          goals: [{ goal: "tests-parallel-and-deterministic", stage: "review", round: { n: 3, max: 20 }, since: "2026-09-25T14:28:00Z" }],
+        },
+      ],
+    });
+
+    const markup = rendered(page(), read);
+
+    expect(markup).toContain("<th scope=\"col\">Doing");
+    expect(markup).not.toContain("<th scope=\"col\">Running");
+    expect(markup).toContain("reviewing · round 3 of 20 · ");
+  });
+
+  it("no longer draws the This host list, nor the board's stale cards anywhere", () => {
+    const read = board({
+      seats: [
+        { machine: "m1g", installation: "/w/m1g/metasystem", goals: [{ goal: "one-folder-deployed-and-evolved", stage: "build", since: "2026-09-25T10:00:00Z", unknown: "claim moved to m1f" }] },
+      ],
+    });
+
+    const markup = rendered(page({ machines: [...page().machines, machine({ machine: "m1g", standing: "reachable", holds: [] })] }), read);
+
+    expect(markup).not.toContain("This host");
+    expect(markup).not.toContain("claim moved");
+    expect(markup).not.toContain("one-folder-deployed-and-evolved");
+    expect(markup).not.toContain("bridge live");
+  });
+
+  it("says in This seat what its own row's Doing column says, never idle beside work", () => {
+    const read = board({
+      seats: [{ machine: "m1u", installation: "/w/m1u/metasystem", goals: [{ goal: "fleet-panel-ux", stage: "build", since: "2026-09-25T14:25:00Z" }] }],
+    });
+    const holding = page({
+      this: seat({ running: null }),
+      machines: [
+        machine({
+          machine: "m1u",
+          standing: "reachable",
+          this: true,
+          holds: [held({ goal: "fleet-panel-ux", title: "The fleet panel.", machine: "m1u", standing: "reachable", flag: "", since: "" })],
+        }),
+      ],
+    });
+
+    const markup = rendered(holding, read);
+    const seatBlock = markup.slice(markup.indexOf("This seat"), markup.indexOf("The fleet"));
+
+    expect(seatBlock).toContain("building · ");
+    expect(seatBlock).not.toContain(">idle<");
+  });
+
+  it("says under the table which parts of this computer's board it could not read", () => {
+    const markup = rendered(calm(), board({ unreadable: ["/h/board/m1e: the nickname m1e names 2 armed checkouts; neither is read"] }));
+
+    expect(markup).toContain("Can&#x27;t read this computer&#x27;s board");
+    expect(markup).toContain(
+      "Part of this computer&#x27;s board could not be read, so Doing says what those seats&#x27; records say: /h/board/m1e: the nickname m1e names 2 armed checkouts; neither is read",
+    );
+  });
+
+  it("keeps the questions it could read beside the records it could not", () => {
+    const markup = rendered(
+      calm(),
+      board({
+        questions: [{ id: "q-1", goal: "", about: "lane", machine: "m1f", question: "Return the branch?", openedAt: "2026-09-25T14:10:00Z" }],
+        questionsProblem: "1 of its records can't be read: /c/q-2.json: unexpected end of JSON input",
+      }),
+    );
+
+    expect(markup).toContain("Can&#x27;t read questions · 1 thing needs you");
+    expect(markup).toContain("m1f asks about the landing lane: Return the branch?");
+    expect(markup).toContain("This checkout&#x27;s questions could not be read: 1 of its records can&#x27;t be read");
+  });
+
+  it("draws the landing lane after the table", () => {
+    const markup = rendered(calm(), board());
+
+    expect(markup.indexOf("The fleet")).toBeLessThan(markup.indexOf("Landing lane"));
   });
 
   it("ends with where the presence copy and the claims came from", () => {
@@ -246,6 +515,16 @@ describe("the fleet page", () => {
 });
 
 describe("the capture a question from this page carries", () => {
+  it("carries what the page showed: every Needs you line, and each row's Doing words", () => {
+    const capture = captureOfFleet(page(), now, new Set(), {
+      needsYou: ["The landing lane is paused by m1e since 13:40."],
+      doing: { m1u: "building · 42 min" },
+    });
+
+    expect(capture.needsYou).toEqual(["The landing lane is paused by m1e since 13:40."]);
+    expect(capture.machines?.[0].phase).toBe("building · 42 min");
+  });
+
   it("is the rows the page displayed, bounded, with the whole named", () => {
     const capture = captureOfFleet(page(), now);
 
@@ -302,8 +581,17 @@ describe("the fleet at phone width", () => {
   it("carries a label in every cell, so a card reads without the header row", () => {
     const markup = rendered(page());
 
-    for (const label of ["Machine", "Standing", "Seen", "Running", "Holds", "Engine"]) {
+    for (const label of ["Machine", "Standing", "Seen", "Doing", "Holds", "Engine"]) {
       expect(markup).toContain(`<span class="ms-fleet-label">${label}</span>`);
     }
+  });
+
+  it("stacks the verdict, Needs you and the lane's lists into one column", () => {
+    const phone = css.slice(css.indexOf("@media (max-width: 599px)"));
+
+    expect(phone).toContain(".ms-fleet-verdict-line");
+    expect(phone).toContain(".ms-fleet-needs-row");
+    expect(phone).toContain(".ms-fleet-lane-item");
+    expect(phone.match(/flex-direction: column;/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
   });
 });

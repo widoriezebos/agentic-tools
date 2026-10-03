@@ -122,6 +122,8 @@ func TestAHoldCarriesTheTitleAndLaneOfTheSameProjection(t *testing.T) {
 		holds[0].Title, "Finish the test repairs and integrate them.")
 	testutil.Expect(t, "its lane is the projection's lane", holds[0].Lane, "in-progress")
 	testutil.Expect(t, "a reachable holder raises no flag", holds[0].Flag, "")
+	testutil.Expect(t, "every other reader titles a goal the same way", Title("Finish the test repairs and integrate them. Then land."),
+		holds[0].Title)
 }
 
 // A chip names a goal by the title every other list gives it, which starts

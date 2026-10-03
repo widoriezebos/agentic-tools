@@ -1564,7 +1564,7 @@ body {
   outline: 2px solid var(--ms-bg);
 }
 
-/* The Fleet table's Running column: the dot before the words. */
+/* The Fleet table's Doing column: the dot before the words. */
 .ms-fleet-cell .ms-live-dot {
   margin-right: 6px;
 }

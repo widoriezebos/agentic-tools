@@ -230,3 +230,22 @@ func TestBoardImportsNothingAboveIt(t *testing.T) {
 }
 
 func jsonMarshal(card Card) ([]byte, error) { return json.MarshalIndent(card, "", "  ") }
+
+// TestBoardMarksAStrayDirectory: a seat directory no armed seat names is
+// reported as stray, apart from the parts of the board that could not be
+// read (a nickname shared by two checkouts, a board that can't be listed).
+func TestBoardMarksAStrayDirectory(t *testing.T) {
+	t.Parallel()
+	home := fixtureHome(t)
+	now := t0.Add(time.Minute)
+	put(t, home, Card{Seat: seatOf("stranger"), Goal: "goal-s", Stage: StageLandReady, Since: t0, LastProgressAt: t0})
+	seats := []Seat{seatOf("m1e"), {Machine: "m1e", Installation: "/second/metasystem"}}
+	_, unreadable := Read(home, seats, aliveProber{}, now, 20*time.Minute)
+	stray := map[string]bool{}
+	for _, u := range unreadable {
+		stray[filepath.Base(u.Path)] = u.Stray
+	}
+	if len(stray) != 2 || !stray["stranger"] || stray["m1e"] {
+		t.Fatalf("unreadable %+v: want the stranger's directory stray and the shared nickname not", unreadable)
+	}
+}

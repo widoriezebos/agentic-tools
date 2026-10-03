@@ -12,8 +12,11 @@ package httpd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,11 +60,53 @@ type boardPayload struct {
 	// view, paused, agent_alive, the queue, the running proof, the last
 	// proof and the last push; null when no lane is registered on this host.
 	Lane *plain.Status `json:"lane"`
+	// Titles is the title of every goal the seats, the lane's queue and the
+	// questions name, by goal id, from the same ledger observation the cards
+	// are checked against. A goal the ledger does not carry has none.
+	Titles map[string]string `json:"titles"`
+	// Questions are this checkout's open channel questions: what a seat has
+	// asked the person and nobody has answered. QuestionsProblem says why
+	// they, or some of their records, could not be read; "" when every
+	// record was read.
+	Questions        []boardQuestion `json:"questions"`
+	QuestionsProblem string          `json:"questionsProblem"`
+	// Unreadable are the parts of this computer's board that were not read,
+	// one plain line each: the goal ledger the cards are checked against, a
+	// nickname two armed checkouts share, a board or a seat directory that
+	// can't be listed, a card that can't be parsed. A directory no armed seat
+	// names is a leftover and is not among them.
+	Unreadable []string `json:"unreadable"`
+}
+
+// UnreadQuestions is a question reader's answer when it read some of this
+// checkout's question records and not others: the open questions it could
+// read come back beside it, and Records names the ones it could not.
+type UnreadQuestions struct{ Records []string }
+
+func (u *UnreadQuestions) Error() string {
+	switch len(u.Records) {
+	case 0:
+		return "no record was named as unreadable"
+	case 1:
+		return "1 of its records can't be read: " + u.Records[0]
+	}
+	return fmt.Sprintf("%d of its records can't be read; the first: %s", len(u.Records), u.Records[0])
 }
 
 type boardLine struct {
 	Machine string `json:"machine"`
 	Text    string `json:"text"`
+}
+
+// boardQuestion is one open question as the panel shows it: who asks, about
+// which goal or what, the question's first line, and since when.
+type boardQuestion struct {
+	ID       string `json:"id"`
+	Goal     string `json:"goal"`
+	About    string `json:"about,omitempty"`
+	Machine  string `json:"machine"`
+	Question string `json:"question"`
+	OpenedAt string `json:"openedAt"`
 }
 
 // board answers the board panel. A build with no board reader is a 500
@@ -80,47 +125,164 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	now := h.now()
 	var laneView *plain.Status
 	if source.Lane != nil {
-		if read := source.Lane(now); read.Root != nil {
+		// A lane with no root is no lane, unless reading it failed: then
+		// the page is told what could not be read rather than that there
+		// is none.
+		if read := source.Lane(now); read.Root != nil || len(read.Problems) > 0 {
 			laneView = &read
 		}
 	}
+	observed, observable := h.boardObservation()
+	payload := boardPayload{Lines: []boardLine{}, Lane: laneView, Unreadable: []string{}}
+	if !observable {
+		payload.Unreadable = append(payload.Unreadable, "the goal ledger can't be read: "+ledgerProblem(h.info.Observe != nil, observed))
+	}
+	payload.Questions, payload.QuestionsProblem = h.boardQuestions()
 	view := board.View{Bridge: board.BridgeState(source.Home), Seats: []board.SeatView{}}
 	seats, err := source.Seats()
 	if err != nil {
 		view.Reason = "registry: " + err.Error()
-		return boardPayload{View: view, Lines: []boardLine{}, Lane: laneView}
+		payload.View = view
+		payload.Titles = titlesOf(observed, payload)
+		return payload
 	}
-	picture, _ := board.Read(source.Home, seats, source.Prober, now, source.Stall)
-	if claims, ok := h.boardClaims(); ok {
-		picture = board.CheckClaims(picture, seats, claims)
+	picture, unreadable := board.Read(source.Home, seats, source.Prober, now, source.Stall)
+	payload.Unreadable = append(payload.Unreadable, unreadParts(unreadable, picture.Unknown)...)
+	if observable {
+		picture = board.CheckClaims(picture, seats, claimsOf(observed))
 	}
 	bridge := view.Bridge
 	view = board.NewView(seats, picture)
 	view.Readable, view.Bridge = true, bridge
-	lines := make([]boardLine, 0, len(view.Seats))
 	for _, seat := range view.Seats {
-		lines = append(lines, boardLine{Machine: seat.Machine, Text: seat.Text(now, time.Local)})
+		payload.Lines = append(payload.Lines, boardLine{Machine: seat.Machine, Text: seat.Text(now, time.Local)})
 	}
-	return boardPayload{View: view, Lines: lines, Lane: laneView}
+	payload.View = view
+	payload.Titles = titlesOf(observed, payload)
+	return payload
 }
 
-// boardClaims are the live claims of the accepted ledger this server reads;
-// false when it cannot read one, and then no card is checked against it.
-func (h *handler) boardClaims() (map[string]string, bool) {
+// unreadParts are the parts of the board a read failed on, as the page says
+// them: the reader's own unreadable list without its stray directories, and
+// the seats and cards it could not read.
+func unreadParts(unreadable []board.Unreadable, unknown []board.Unknown) []string {
+	parts := []string{}
+	for _, one := range unreadable {
+		if !one.Stray {
+			parts = append(parts, one.Path+": "+one.Reason)
+		}
+	}
+	for _, one := range unknown {
+		switch {
+		case strings.HasPrefix(one.Reason, board.ReasonSeatUnreadable):
+			parts = append(parts, one.Seat.Machine+": "+one.Reason)
+		case one.Reason == board.ReasonCardUnreadable:
+			parts = append(parts, one.Seat.Machine+": "+one.Goal+": "+one.Reason)
+		}
+	}
+	return parts
+}
+
+// boardObservation is the accepted ledger this server reads, taken once per
+// read so the claims the cards are checked against and the titles beside
+// them are of one commit; false when it cannot read one, and then no card is
+// checked against it and no goal is titled.
+func (h *handler) boardObservation() (snapshot.Observation, bool) {
 	if h.info.Observe == nil {
-		return nil, false
+		return snapshot.Observation{}, false
 	}
 	observed := h.info.Observe()
-	if observed.State != snapshot.StateRead || observed.Tree == nil {
-		return nil, false
+	return observed, observed.State == snapshot.StateRead && observed.Tree != nil
+}
+
+// ledgerProblem is why a board read has no ledger to check its cards against
+// and title its goals from, in the observation's own words where it has any.
+func ledgerProblem(observing bool, observed snapshot.Observation) string {
+	switch {
+	case !observing:
+		return "this server reads no goal ledger"
+	case observed.Message != "":
+		return observed.Message
 	}
+	return "the accepted ledger could not be read"
+}
+
+// claimsOf are the live claims of one observation: every claimed goal and
+// the machine that holds it.
+func claimsOf(observed snapshot.Observation) map[string]string {
 	claims := map[string]string{}
 	for id, file := range observed.Tree.Live {
 		if file != nil && file.Claimed != nil && file.Claimed.Machine != "" {
 			claims[id] = file.Claimed.Machine
 		}
 	}
-	return claims, true
+	return claims
+}
+
+// titlesOf titles every goal the payload names, live, done or abandoned:
+// a hand-in that landed is usually a goal its seat has since concluded.
+func titlesOf(observed snapshot.Observation, payload boardPayload) map[string]string {
+	titles := map[string]string{}
+	if observed.State != snapshot.StateRead || observed.Tree == nil {
+		return titles
+	}
+	name := func(id string) {
+		if id == "" {
+			return
+		}
+		file, live := observed.Tree.Live[id]
+		if !live {
+			file, _ = observed.Tree.Archived(id)
+		}
+		if file != nil && file.Intent != "" {
+			titles[id] = fleet.Title(file.Intent)
+		}
+	}
+	for _, seat := range payload.Seats {
+		for _, entry := range seat.Goals {
+			name(entry.Goal)
+		}
+	}
+	if payload.Lane != nil {
+		for _, entry := range payload.Lane.Queue {
+			name(entry.Goal)
+		}
+	}
+	for _, question := range payload.Questions {
+		name(question.Goal)
+	}
+	return titles
+}
+
+// boardQuestions are this checkout's open questions, or why they could not
+// be read. The question is its first fact, the line the asker wrote first.
+func (h *handler) boardQuestions() ([]boardQuestion, string) {
+	questions := []boardQuestion{}
+	if h.info.Asks == nil {
+		return questions, "this server reads no questions"
+	}
+	open, err := h.info.Asks()
+	problem := ""
+	var unread *UnreadQuestions
+	switch {
+	case errors.As(err, &unread):
+		problem = unread.Error()
+	case err != nil:
+		return questions, err.Error()
+	}
+	for _, question := range open {
+		asked := ""
+		if len(question.Facts) > 0 {
+			asked = strings.TrimSpace(question.Facts[0])
+		}
+		opened := ""
+		if !question.OpenedAt.IsZero() {
+			opened = question.OpenedAt.UTC().Format(time.RFC3339)
+		}
+		questions = append(questions, boardQuestion{ID: question.ID, Goal: question.Goal, About: question.About,
+			Machine: question.Machine, Question: asked, OpenedAt: opened})
+	}
+	return questions, problem
 }
 
 // bridgeFollower is this server's one subscription to the host board's

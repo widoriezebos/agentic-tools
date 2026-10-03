@@ -42,7 +42,7 @@ export type FleetMachine = {
   standing: string;
   /** The age words the row showed, in this browser's own clock. */
   seen?: string;
-  /** The sentence the Running column showed: the phase, the job and its cap. */
+  /** The sentence the Doing column showed: what the machine is doing and for how long. */
   phase?: string;
   /** Whether the human had this row's disclosure open. */
   open?: boolean;

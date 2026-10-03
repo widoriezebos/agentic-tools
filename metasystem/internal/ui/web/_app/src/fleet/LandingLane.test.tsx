@@ -1,21 +1,22 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { minuteTime } from "../backlog/format";
-import type { BoardPayload, Lane, LaneEntry, LandNowAnswer, LaneOwner, LaneOwnerState } from "./api";
-import { HostBlocks } from "./HostBoard";
-import { LandNowView, LaneBlock, landNowLines, landNowOffer, START_COMMAND } from "./LandingLane";
+import type { Lane, LaneEntry, LandNowAnswer, LaneOwner } from "./api";
+import { LandNowView, LaneBlock, landNowLines, landNowOffer } from "./LandingLane";
+import { unreadOf, type BoardReading } from "./panel";
 
 /**
- * The landing lane's panel on the Fleet page (U12, Wido 2026-09-29): the
- * host's one batch-landing lane, read from the same /api/board response the
- * host board reads. The panel shows; the `metasystem landing` verbs act, so
- * a remedy is a command a person copies. Its one button is Land now (goal
- * fleet-card-can-land-now), offered only when work is queued and no landing
- * agent runs.
+ * The landing lane's block on the Fleet page: one state word, the one button
+ * that makes sense in that state (Land now, only when work waits and nothing
+ * proves), and the lane's four lists — what waits, what is being proved,
+ * what landed today and what came back — each item with a Details disclosure
+ * for the commit, the branch and the seat. It is read from the same
+ * /api/board response the Doing column and the questions are.
  *
- * Rendered through its pure half, as the host board's test is: the component's
- * first act is a read and this file reaches no network.
+ * Rendered through its pure half: the component's first act is a read and
+ * this file reaches no network.
  */
 
 function owner(over: Partial<LaneOwner> = {}): LaneOwner {
@@ -55,91 +56,183 @@ function lane(over: Partial<Lane> = {}): Lane {
     running_proof: null,
     last_proof: null,
     last_push: null,
+    problems: [],
     ...over,
   };
 }
 
-// The fixture's day: every stamp above is on 2026-09-29, so the panel
-// writes times of day. Pinned, so the tests do not depend on today's date.
-const NOW = new Date("2026-09-29T12:00:00Z");
+// The fixture's day, at the viewer's own noon: every stamp above is on that
+// calendar day in every zone the suite runs in, so the panel writes times of
+// day. Pinned, so the tests do not depend on today's date.
+const NOW = new Date(2026, 8, 29, 12, 0, 0);
 
-function draw(value: Lane | null | undefined): string {
-  return renderToStaticMarkup(<LaneBlock lane={value} now={NOW} />);
+function local(hours: number, minutes = 0): string {
+  return new Date(2026, 8, 29, hours, minutes, 0).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-describe("the landing lane panel", () => {
-  it("heads the panel with the server's summary and names the lane root", () => {
+/**
+ * The block as the panel draws it, with what the panel's one rule says the
+ * lane could not read (unreadOf) for a board read that carried this lane.
+ */
+function draw(value: Lane | null | undefined, titles: Record<string, string> = {}, problem = ""): string {
+  const board: BoardReading =
+    problem !== ""
+      ? { state: "failed", message: problem }
+      : { state: "read", board: { readable: true, bridge: "live", seats: [], lines: [], lane: value, questions: [], questionsProblem: "", unreadable: [] } };
+  return renderToStaticMarkup(
+    <MemoryRouter>
+      <LaneBlock lane={value} titles={titles} problem={problem} unread={unreadOf({ state: "loading" }, board).lane} now={NOW} />
+    </MemoryRouter>,
+  );
+}
+
+describe("the landing lane block", () => {
+  it("heads the block with the lane's one state word", () => {
+    expect(draw(lane())).toContain(">Running<");
+    expect(draw(lane({ owner: owner({ state: "idle", pid: null }), agent_alive: false }))).toContain(">Running<");
+    expect(draw(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true, agent_alive: false }))).toContain(">Paused<");
+    expect(draw(lane({ owner: owner({ state: "unready", last_exit: "x" }), agent_alive: false }))).toContain(">Needs attention<");
+  });
+
+  it("uses one word per state: never stopped, started again or not paused", () => {
+    const paused = draw(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true, agent_alive: false, queue: [entry()] }));
+    for (const word of ["stopped", "started again", "not paused", "agent alive"]) {
+      expect(paused).not.toContain(word);
+    }
+    expect(paused).toContain("Land now waits until the lane is resumed.");
+  });
+
+  it("keeps the root, the agent's pid and the server's summary behind one Details disclosure", () => {
     const markup = draw(lane());
-    expect(markup).toContain("Landing lane");
-    expect(markup).toContain("landing agent running (pid 4242)");
-    expect(markup).toContain("/Users/someone/landing-root");
-    expect(markup).toContain("wido");
+    const details = markup.slice(markup.indexOf("<details"));
+    expect(markup).toContain("<summary");
+    expect(details).toContain("/Users/someone/landing-root");
+    expect(details).toContain("4242");
+    expect(details).toContain("landing agent running (pid 4242)");
+    expect(details).toContain("wido");
   });
 
-  const colours: [LaneOwnerState, string][] = [
-    ["running", "ms-fleet-lane-state--ok"],
-    ["idle", "ms-fleet-lane-state--neutral"],
-    ["stopped", "ms-fleet-lane-state--bad"],
-    ["unready", "ms-fleet-lane-state--warn"],
-  ];
-  for (const [state, colour] of colours) {
-    it(`draws the owner ${state} in its own status colour`, () => {
-      const markup = draw(lane({ owner: owner({ state }) }));
-      expect(markup).toContain(colour);
-      expect(markup).toContain(`>${state.replace("-", " ")}<`);
-    });
-  }
-
-  it("says since when a running owner runs, with no restart count and no prompt", () => {
-    const markup = draw(lane());
-    expect(markup).toContain(`since ${minuteTime("2026-09-29T08:10:00Z")}`);
-    expect(markup).toContain("pid 4242");
-    expect(markup).not.toContain("restart");
-    expect(markup).not.toContain(START_COMMAND);
-  });
-
-  it("gives an idle lane no prompt: idle is a ready lane with nothing to land", () => {
-    const markup = draw(lane({ owner: owner({ state: "idle", pid: null, since: null }), agent_alive: false }));
-    expect(markup).toContain(">idle<");
-    expect(markup).not.toContain(START_COMMAND);
-    expect(markup).not.toContain("since unknown");
-  });
-
-  it("gives an unready lane its reason and fix, and no start prompt", () => {
+  it("puts the last proof and the last push in that disclosure, never as lines of their own", () => {
     const markup = draw(
       lane({
-        owner: owner({
-          state: "unready",
-          pid: null,
-          last_exit: "exit status 2",
-          retry_hint: "the landing checkout has local changes; run metasystem landing status --verbose",
-        }),
+        last_proof: { tree: "t1", commit: "c0ffee1234567", result: "green", log: "/l/proof.log", at: "2026-09-29T10:00:00Z" },
+        last_push: { old: "0123456789ab", commit: "fedcba987654", tree: "t2", at: "2026-09-29T10:30:00Z" },
       }),
     );
-    expect(markup).toContain("the landing checkout has local changes; run metasystem landing status --verbose");
-    expect(markup).toContain("exit status 2");
-    expect(markup).not.toContain(START_COMMAND);
-    expect(markup).not.toContain("<button");
+    const details = markup.slice(markup.indexOf("<details"));
+    expect(details).toContain("c0ffee1");
+    expect(details).toContain("/l/proof.log");
+    expect(details).toContain("0123456 → fedcba9");
+    expect(markup.indexOf("c0ffee1")).toBeGreaterThan(markup.indexOf("<details"));
   });
 
-  it("names who stopped a stopped lane, why, and the command to resume it", () => {
+  it("lists what waits by title, seat and age, each with its own Details", () => {
+    const markup = draw(lane({ queue: [entry({ goal: "seat-path", at: local(11, 56) })] }), { "seat-path": "Seat path lands without help." });
+    expect(markup).toContain("Waiting");
+    // The title is the link; the seat and the age beside it are words.
+    expect(markup).toMatch(/href="\/backlog\/goal\/seat-path"[^>]*>Seat path lands without help\.<\/a>/);
+    expect(markup).toContain("m1e · 4 min");
+    const item = markup.slice(markup.indexOf("Seat path lands"));
+    expect(item).toContain("<details");
+    expect(item).toContain("goal/goal-a");
+    expect(item).toContain("1234567890abcdef");
+  });
+
+  it("says how long the running proof has run, and a proof that died", () => {
+    const running = draw(lane({ running_proof: { tree: "abcdef1234567", since: local(11, 54), attempt: "a-7", state: "running", log: "/l/a-7.log" } }));
+    expect(running).toContain("Proving");
+    expect(running).toContain("started 6 min ago");
+    expect(running).toContain("/l/a-7.log");
+    const died = draw(lane({ running_proof: { tree: "abcdef1234567", since: local(11), attempt: "a-7", state: "died" } }));
+    expect(died).toContain("stopped without a result; the next proof runs it again");
+  });
+
+  it("lists what landed today by the push's time and the delivered sentence", () => {
     const markup = draw(
-      lane({ owner: owner({ state: "stopped", pid: null, stopped_by: "wido", stopped_because: "maintenance" }) }),
+      lane({
+        queue: [
+          entry({ goal: "a", state: "landed", landed_at: local(9, 54), delivered: "Stuck agents now ask you on Telegram and wait." }),
+          entry({ goal: "b", state: "landed", landed_at: local(6, 54) }),
+        ],
+      }),
+      { b: "The fleet card can land work now." },
     );
-    expect(markup).toContain("Stopped by wido: maintenance.");
-    expect(markup).toContain(START_COMMAND);
-    expect(markup).toContain("ms-fleet-lane-command");
+    expect(markup).toContain("Landed today");
+    expect(markup).toContain(minuteTime(local(9, 54)));
+    expect(markup).toContain("Stuck agents now ask you on Telegram and wait.");
+    expect(markup).toContain("The fleet card can land work now.");
+    expect(markup.indexOf("Stuck agents")).toBeLessThan(markup.indexOf("The fleet card"));
   });
 
-  it("says a lane with no root registered has none", () => {
-    const markup = draw(lane({ root: null, registered_by: null, registered_at: null }));
-    expect(markup).toContain("No lane root is registered.");
+  it("lists what came back with why and the goal to open", () => {
+    const markup = draw(
+      lane({ queue: [entry({ goal: "lane-check-red", state: "returned", reason: "the full test run is red", returned_at: local(11) })] }),
+    );
+    expect(markup).toContain("Came back");
+    expect(markup).toContain("lane-check-red · the full test run is red");
+    expect(markup).toContain(">Open goal<");
+    expect(markup).toContain('href="/backlog/goal/lane-check-red"');
   });
 
-  it("says a host without a lane has none", () => {
+  it("says nothing waits when the lane holds nothing", () => {
+    const markup = draw(lane());
+    expect(markup).toContain("Nothing is waiting to land.");
+    expect(markup).not.toContain("Waiting<");
+  });
+
+  it("says, in the block, which of the lane's records it could not read", () => {
+    // The server's own sentence; its apostrophe is escaped in markup.
+    const markup = draw(lane({ problems: ["the queue can't be read: permission denied"] }));
+    expect(markup).toContain("Part of the landing lane could not be read: the queue can&#x27;t be read: permission denied");
+    expect(markup).toContain("ms-trouble");
+  });
+
+  it("says a lane it could not read at all, in the block", () => {
+    const markup = draw(undefined, {}, "board answered 500");
+    expect(markup).toContain("The landing lane could not be read: board answered 500");
+  });
+
+  it("names what the running proof holds, each title opening its goal", () => {
+    const markup = draw(
+      lane({
+        queue: [entry({ goal: "seat-path" })],
+        running_proof: { tree: "t", commit: "c", since: local(11, 54), attempt: "a-9", state: "running", goals: ["seat-path"] },
+      }),
+      { "seat-path": "Seat path lands without help." },
+    );
+    const proving = markup.slice(markup.indexOf("Proving"));
+    expect(proving).toMatch(/href="\/backlog\/goal\/seat-path"[^>]*>Seat path lands without help\.<\/a>/);
+    expect(proving).toContain("started 6 min ago");
+    expect(markup).not.toContain("Waiting");
+  });
+
+  it("says a lane whose registration could not be read, never that there is none", () => {
+    const markup = draw(
+      lane({
+        root: null,
+        registered_by: null,
+        registered_at: null,
+        owner: owner({ state: "unready", pid: null, since: null }),
+        queue: [],
+        problems: ["the lane's registration can't be read: permission denied"],
+      }),
+    );
+    expect(markup).toContain("The landing lane could not be read: the lane&#x27;s registration can&#x27;t be read: permission denied");
+    expect(markup).not.toContain("No landing lane is registered");
+    expect(markup).not.toContain("Needs attention");
+    expect(markup).not.toContain("Nothing is waiting to land.");
+  });
+
+  it("says a computer without a lane has none", () => {
     const markup = draw(null);
     expect(markup).toContain("Landing lane");
-    expect(markup).toContain("No landing lane is registered on this host.");
+    expect(markup).toContain("No landing lane is registered on this computer.");
+  });
+
+  it("says a failed re-read over a last reading of no lane, never only that there is none", () => {
+    const markup = draw(null, {}, "the server did not answer");
+    expect(markup).toContain("The landing lane could not be read again, so what is on screen is the last reading: the server did not answer");
+    expect(markup).toContain("No landing lane is registered on this computer.");
   });
 
   it("says an older server does not report the lane, never that there is none", () => {
@@ -147,94 +240,15 @@ describe("the landing lane panel", () => {
     expect(markup).toContain("This server does not report the landing lane.");
     expect(markup).not.toContain("No landing lane is registered");
   });
-});
-
-describe("the plain lane on the card", () => {
-  it("says whether the lane is paused and whether a landing agent is alive", () => {
-    const open = draw(lane());
-    expect(open).toContain("not paused");
-    expect(open).toContain("agent alive");
-    const stopped = draw(lane({ paused: true, agent_alive: false, owner: owner({ state: "stopped", pid: null }) }));
-    expect(stopped).toContain(">paused<");
-    expect(stopped).toContain("no agent running");
-  });
-
-  it("lists the queue's waiting and returned hand-ins with goal, seat, state and reason", () => {
-    const markup = draw(
-      lane({
-        queue: [
-          entry(),
-          entry({ goal: "goal-b", seat: "ui", state: "returned", reason: "red on app-standard" }),
-          entry({ goal: "goal-c", state: "landed" }),
-          entry({ goal: "goal-d", state: "superseded" }),
-        ],
-      }),
-    );
-    expect(markup).toContain("Queue");
-    expect(markup).toContain("goal-a");
-    expect(markup).toContain("@ m1e");
-    expect(markup).toContain(">waiting<");
-    expect(markup).toContain("goal-b");
-    expect(markup).toContain("@ ui");
-    expect(markup).toContain(">returned<");
-    expect(markup).toContain("red on app-standard");
-    expect(markup).not.toContain("goal-c");
-    expect(markup).not.toContain("goal-d");
-    expect(markup).toContain("2 landed or superseded not shown");
-  });
-
-  it("says nothing waits when the queue holds nothing to land", () => {
-    expect(draw(lane())).toContain("Nothing waits in the queue.");
-  });
-
-  it("draws the running proof, and a proof that died without a result", () => {
-    const running = draw(
-      lane({ running_proof: { tree: "abcdef1234567", since: "2026-09-29T11:00:00Z", attempt: "a-7", state: "running" } }),
-    );
-    expect(running).toContain("Proving");
-    expect(running).toContain("abcdef1");
-    expect(running).toContain("attempt a-7");
-    expect(running).toContain(`since ${minuteTime("2026-09-29T11:00:00Z")}`);
-    const died = draw(
-      lane({ running_proof: { tree: "abcdef1234567", since: "2026-09-29T11:00:00Z", attempt: "a-7", state: "died" } }),
-    );
-    expect(died).toContain("died without a result");
-  });
-
-  it("draws the last proof and the last push", () => {
-    const markup = draw(
-      lane({
-        last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l", at: "2026-09-29T10:00:00Z", reason: "timed out" },
-        last_push: { old: "0123456789ab", commit: "fedcba987654", tree: "t2", at: "2026-09-29T10:30:00Z" },
-      }),
-    );
-    expect(markup).toContain("Last proof");
-    expect(markup).toContain(">red<");
-    expect(markup).toContain("c0ffee1");
-    expect(markup).toContain("timed out");
-    expect(markup).toContain("Last push");
-    expect(markup).toContain("0123456 → fedcba9");
-    expect(markup).toContain(`at ${minuteTime("2026-09-29T10:30:00Z")}`);
-  });
 
   it("draws no batch: the plain lane has none", () => {
     expect(draw(lane())).not.toContain("batch");
   });
-});
 
-describe("the host's blocks", () => {
-  const board: BoardPayload = { readable: true, bridge: "live", seats: [], lines: [] };
-
-  it("draws the lane above the host board", () => {
-    const markup = renderToStaticMarkup(<HostBlocks board={{ ...board, lane: lane() }} />);
-    expect(markup.indexOf("Landing lane")).toBeGreaterThanOrEqual(0);
-    expect(markup.indexOf("Landing lane")).toBeLessThan(markup.indexOf("This host"));
-  });
-
-  it("still draws the host board from a server without the lane", () => {
-    const markup = renderToStaticMarkup(<HostBlocks board={board} />);
-    expect(markup).toContain("This server does not report the landing lane.");
-    expect(markup).toContain("This host");
+  it("draws a skeleton, not nothing, while the lane is read", () => {
+    const markup = renderToStaticMarkup(<LaneBlock lane={undefined} loading unread={[]} now={NOW} />);
+    expect(markup).toContain("ms-skeleton");
+    expect(markup).toContain('aria-busy="true"');
   });
 });
 
@@ -253,31 +267,31 @@ const LAND_NOW_BUTTON = /<button[^>]*>Land now<\/button>/u;
 
 describe("Land now on the landing lane card", () => {
   it("is offered when work is queued and no landing agent runs", () => {
-    expect(landNowOffer(queued())).toEqual({ offered: true, reason: "" });
+    expect(landNowOffer(queued(), [])).toEqual({ offered: true, reason: "" });
     const button = LAND_NOW_BUTTON.exec(draw(queued()));
     expect(button).not.toBe(null);
     expect(button?.[0]).not.toContain("disabled");
   });
 
   it("is offered for a waiting hand-in, read from the queue and not the wake", () => {
-    expect(landNowOffer(queued({ wake: { reasons: [], unread: [] } })).offered).toBe(true);
-    expect(landNowOffer(queued({ wake: undefined })).offered).toBe(true);
+    expect(landNowOffer(queued({ wake: { reasons: [], unread: [] } }), []).offered).toBe(true);
+    expect(landNowOffer(queued({ wake: undefined }), []).offered).toBe(true);
   });
 
   it("is not offered, and says nothing, when nothing in the queue waits", () => {
     const returned = queued({ queue: [entry({ state: "returned", reason: "red" }), entry({ goal: "goal-c", state: "landed" })] });
-    expect(landNowOffer(returned)).toEqual({ offered: false, reason: "" });
+    expect(landNowOffer(returned, [])).toEqual({ offered: false, reason: "" });
     expect(draw(returned)).not.toContain("Land now");
   });
 
   it("reads the keeper's wake from a server that sends no queue", () => {
-    expect(landNowOffer(queued({ queue: undefined })).offered).toBe(true);
-    expect(landNowOffer(queued({ queue: undefined, wake: { reasons: [], unread: [] } })).offered).toBe(false);
+    expect(landNowOffer(queued({ queue: undefined }), []).offered).toBe(true);
+    expect(landNowOffer(queued({ queue: undefined, wake: { reasons: [], unread: [] } }), []).offered).toBe(false);
   });
 
   it("is not offered while the landing agent runs, and says why in one line", () => {
     const running = queued({ owner: owner({ state: "running" }), agent_alive: true });
-    const offer = landNowOffer(running);
+    const offer = landNowOffer(running, []);
     expect(offer.offered).toBe(false);
     expect(offer.reason).toBe("The landing agent is already running; it lands the queued work.");
     const markup = draw(running);
@@ -285,12 +299,27 @@ describe("Land now on the landing lane card", () => {
     expect(markup).toContain(offer.reason);
   });
 
-  it("is not offered while the lane is stopped, and says why in one line", () => {
+  it("is not offered while the lane is paused, and says why in one line", () => {
     const stopped = queued({ owner: owner({ state: "stopped", pid: null, stopped_by: "wido" }), paused: true });
-    const offer = landNowOffer(stopped);
+    const offer = landNowOffer(stopped, []);
     expect(offer.offered).toBe(false);
-    expect(offer.reason).toBe("Land now waits until the lane is started again.");
+    expect(offer.reason).toBe("Land now waits until the lane is resumed.");
     expect(draw(stopped)).not.toContain("<button");
+  });
+
+  it("is not offered while any part of the lane could not be read, and says why in one line", () => {
+    const torn = queued({ problems: ["the running proof can't be read: permission denied"] });
+    expect(landNowOffer(torn, torn.problems ?? [])).toEqual({ offered: false, reason: "Land now waits until the landing lane can be read." });
+    expect(draw(torn)).not.toMatch(LAND_NOW_BUTTON);
+    expect(draw(torn)).toContain("Land now waits until the landing lane can be read.");
+  });
+
+  it("is not offered while a proof runs, and says why in one line", () => {
+    const proving = queued({ running_proof: { tree: "t", since: "2026-09-29T11:50:00Z", attempt: "a-8", state: "running" } });
+    expect(landNowOffer(proving, [])).toEqual({ offered: false, reason: "Land now waits while a proof runs." });
+    expect(draw(proving)).not.toMatch(LAND_NOW_BUTTON);
+    const died = queued({ running_proof: { tree: "t", since: "2026-09-29T11:50:00Z", attempt: "a-8", state: "died" } });
+    expect(landNowOffer(died, []).offered).toBe(true);
   });
 
   it("is not offered while the lane cannot run, and says the lane's own fix in one line", () => {
@@ -303,7 +332,7 @@ describe("Land now on the landing lane card", () => {
         retry_hint: "name the landing checkout's machine once (any one word), then run metasystem landing start",
       }),
     });
-    const offer = landNowOffer(unready);
+    const offer = landNowOffer(unready, []);
     expect(offer).toEqual({
       offered: false,
       reason:
@@ -314,7 +343,7 @@ describe("Land now on the landing lane card", () => {
 
   it("is not offered while the lane cannot run, even with no fix to name", () => {
     const unready = queued({ owner: owner({ state: "unready", pid: null, since: null, retry_hint: null }) });
-    expect(landNowOffer(unready)).toEqual({ offered: false, reason: "Land now is unavailable until the lane can run." });
+    expect(landNowOffer(unready, [])).toEqual({ offered: false, reason: "Land now is unavailable until the lane can run." });
   });
 
   const started: LandNowAnswer = {

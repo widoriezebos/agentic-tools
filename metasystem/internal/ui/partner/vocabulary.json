@@ -102,7 +102,7 @@
   {
     "id": "fleet",
     "term": "Fleet",
-    "text": "The machines working on this project and whether each has been heard from lately, with the goals each one holds. A goal whose holder has gone quiet is flagged here; nothing on this page acts on it."
+    "text": "The machines working on this project: whether each has been heard from lately, what it is doing, and the goals it holds. A goal whose holder has gone quiet is flagged, and Needs you says what a person does about it at a terminal."
   },
   {
     "id": "decisions-section",
@@ -312,7 +312,7 @@
   {
     "id": "fleet-needs-you",
     "term": "Needs you",
-    "text": "The goals held by a machine this seat has not heard from lately, or by one that has published no presence at all. The goal stays claimed and nothing here changes that: reassigning it or lifting its fence is a decision a person makes at a terminal."
+    "text": "Everything on this page that waits for you, newest first: the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each says what to do, or opens the goal or the question; Land now is the one act this page makes."
   },
   {
     "id": "this-seat",
@@ -332,7 +332,7 @@
   {
     "id": "engine",
     "term": "Engine",
-    "text": "The build a machine was running when it last published, with the enrolment generation beside it. Two seats on different builds can read the same ledger by different rules, which is what makes it worth showing."
+    "text": "The build a machine was running when it last published, by its first seven characters; the whole stamp and the enrolment generation are in the row's opening. Two seats on different builds can read the same ledger by different rules, which is what makes it worth showing."
   },
   {
     "id": "rung",
@@ -341,8 +341,8 @@
   },
   {
     "id": "phase",
-    "term": "Phase",
-    "text": "What a machine is in the middle of: the role of the job it is running, the round that job is on, and the goal it serves. A critic's round counts against the limit its chain froze; a build has no round limit of its own, so it shows a round and no denominator."
+    "term": "Doing",
+    "text": "What a machine is doing, and for how long: building, reviewing with the round of its limit, proving with the sections done of those planned, waiting to land, or idle. It is read from this computer's board where the board has a card for a goal the machine holds, and otherwise from the job records the machine keeps or published. A dash is a machine this seat has not heard from, so what it is doing is not known here."
   },
   {
     "id": "box",
