@@ -3,6 +3,7 @@ package dispatch
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -93,7 +94,7 @@ func TestReadRoundSubjectAbsentOnOldRounds(t *testing.T) {
 
 func TestReadClosureAbsentOnOldRoots(t *testing.T) {
 	closure, present, err := ReadClosure(map[string]any{"jobId": "critic"})
-	if err != nil || present || closure != (Closure{}) {
+	if err != nil || present || !reflect.DeepEqual(closure, Closure{}) {
 		t.Fatalf("absent closure = %+v, %v, %v; want zero, false, nil", closure, present, err)
 	}
 

@@ -1440,9 +1440,13 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
 			Summary: fmt.Sprintf("job %s is a round of chain %s", job, parent), next: inv.publicArgv("work", "finish", qualifiedJob(parent)), nextReason: "work finish names the chain's root"}
 	}
-	if closed, _ := root["chainClosed"].(bool); closed {
+	_, hasClosure := root["closure"]
+	if closed, _ := root["chainClosed"].(bool); closed && (hasClosure || !criticRole(recordText(root, "role"))) {
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Summary: fmt.Sprintf("chain %s is already closed", job), Data: map[string]any{"chainClosed": true}}
 	}
+	// A critic chain closed without a closure runs the close again: a
+	// register its person's accepted risks made landable records its
+	// closure then, and any other register stays closed without one.
 	if evidence := inv.input.text("evidence"); evidence != "" && !validIntentJobID(evidence) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--evidence %q is not a job id; nothing was closed", evidence),
 			next: inv.typedArgvLess("evidence"), nextReason: "or --evidence with the id of the job that holds the review evidence"}

@@ -228,7 +228,8 @@ func CritiqueChainClose(repoRoot, rootJob string, runnerClosed bool) error {
 			if err := CloseCheck(repoRoot, rootJob); err != nil {
 				return err
 			}
-			if closed, _ := root["chainClosed"].(bool); closed {
+			closed, _ := root["chainClosed"].(bool)
+			if _, hasClosure := root[closureField]; closed && hasClosure {
 				return nil
 			}
 
@@ -241,6 +242,12 @@ func CritiqueChainClose(repoRoot, rootJob string, runnerClosed bool) error {
 			if err != nil {
 				return err
 			}
+			if closed && !writeClosure {
+				return nil
+			}
+			// A chain closed before its register earned a closure (a
+			// person's accepted risk once closed without a read) records
+			// the closure when it is closed again.
 			if writeClosure {
 				root[closureField] = encodeClosure(closure)
 			}
