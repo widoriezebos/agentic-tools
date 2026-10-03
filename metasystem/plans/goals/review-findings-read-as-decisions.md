@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: UX design first, by a UX designer, from m1e's input at agentic-tools-evidence/review-sitting-ux-20261003/design-input.md (the screenshot, the three questions a person asks, the summary line, the finding card in plain layers, the four decisions with their consequences, the verdict step, phone width, and where the plain text comes from: the critic writes title, why-it-matters and recommendation as return fields under the message audit, the Partner only as fallback). Agree the finding fields with critique-stops-on-convergence. Tier-2 critique, then build in slices: the summary and cards with the four decisions (desktop and phone), the critic's plain fields and their audit, the verdict step. Done when: a person can read a sitting without any id or path, every button says what follows, and a recorded decision is shown back as 'recorded on goal X as ...'; tests cover each decision act. ADDED 16:35 (Wido: 'it is totally unclear what these do ... UX needs a hard look at this to help me understand what this is and what it is for'): the review header is in scope too, screen 2 of the design input: the goal and version under review told by step and time (the commit id behind a hint), whether a newer version exists, the reviewer's state in words, 'Try this version: Start' for the reviewed application with what it does and where, and one place for 'See the change / See the evidence' per finding. No 'tip', 'candidate', 'anchor' or 'desk' on screen; every control a verb with its consequence. ADDED 16:40 (Wido: the whole flow): screen 3 of the design input: a guided review in four steps (what you are looking at; what the reviewer found, untouched findings follow the recommendation; try it; your verdict with the nod first and one press), End and Step out as one leave; a nod with open findings asks once instead of refusing; a sitting of an old version says so and offers the one act. The UX designer designs the flow before the cards.; ASKED B0KQAT0JSVGN1M30T41RTZ7Q3A (other): Review room redesign: may I build step 1 as drawn? Mock: ~/metasystem-evidence/agentic-tools-ui/review-findings-20261003/mocks/blocking-1440.png CORRECTION 2026-10-03 19:20 (Wido: 'I don't know where the phone width came from I NEVER ASKED FOR THAT'): phone width was added by m1e, not asked; it is out of scope: no phone-width layout and no phone tests; desktop only.
 - OpenedAt: 2026-10-03T14:24:15Z
-- Revision: 45
+- Revision: 46
 - Pinned: ui
 - Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -17,6 +17,7 @@
 - Sliced: machine=ui lineage=steward-seat revision=9 at=2026-10-03T17:07:14Z
 - AcceptedRisk: finding=F-2 chain=code-critic-0096f159385f5dfd4ed5e8e0 by=Wido opid=8N3V47RGFDXBC1D5CHQDNGT6XD-ui-31a738e9
 - AcceptedRisk: finding=RULING-R-143-m1e chain=code-critic-0096f159385f5dfd4ed5e8e0 by=Wido opid=BVM00MJKJX6S02DMXEQX407W1R-ui-31a738e9
+- AcceptedRisk: finding=F-1 chain=code-critic-530a7c874a7e7ee144997ade by=Wido opid=RRJC4FCQ19MRQNQMETFRHVJAXQ-ui-31a738e9
 - Claimed: machine=ui lineage=steward-seat at=2026-10-03T19:50:34Z revision=45 accountingRevision=45 episodeAt=2026-10-03T14:50:04Z episodeRevision=9 idleSeconds=7
 - StopCapability: generation=45 revision=45 machine=ui claimEpoch=3 fenceEpoch=0
 
@@ -66,4 +67,5 @@ History:
 - 2026-10-03T19:42:06Z 8N3V47RGFDXBC1D5CHQDNGT6XD-ui-31a738e9 accept-risk actor=human:Wido targets=review-findings-read-as-decisions reason=Accepted by m1e in Wido word (land fast, fix non-breaking forward): improbable, needs two review rooms changing one record at the moment of a verdict; fix forward as a follow-up on this goal
 - 2026-10-03T19:42:11Z BVM00MJKJX6S02DMXEQX407W1R-ui-31a738e9 accept-risk actor=human:Wido targets=review-findings-read-as-decisions reason=Accepted by m1e in Wido word (land fast, fix non-breaking forward): improbable, the same two-rooms race at the moment of a verdict; fix forward as a follow-up on this goal
 - 2026-10-03T19:50:34Z J371C2NWXHDMTPPQ3P4KJ8YBAS-m1e-718ba0eb set-budget actor=human:Wido targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T18:01:59Z
-Integrity: sha256=b9f8cc5319b6cb02865f5a1b705ac7ad57d0c3cb918fefd840fcdb6da23bff01
+- 2026-10-03T20:18:32Z RRJC4FCQ19MRQNQMETFRHVJAXQ-ui-31a738e9 accept-risk actor=human:Wido targets=review-findings-read-as-decisions reason=Accepted by m1e in Wido word (land fast, fix non-breaking forward): an offered finding not yet saved is not passed to a fresh look at a newer version; it stays visible under the earlier version and the fresh look examines the whole version; fix forward in the verdict-freshness follow-up
+Integrity: sha256=721e3c44c4a6447736da61e73708b5547a68471545b595cbced67a69127984aa
