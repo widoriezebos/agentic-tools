@@ -111,6 +111,7 @@ type rostersFile struct {
 type RosterRefusal struct {
 	Code, Message string
 	Argv          []string
+	Problem       string // why an unusable file can't be used
 }
 
 func (r *RosterRefusal) Error() string         { return r.Message }
@@ -136,11 +137,52 @@ func RosterRow(home, roster, row string, runtimes []string) (RosterAgent, error)
 	then := " A person sets it with: " + strings.Join(command, " ") + ". Nothing was started."
 	switch {
 	case !ok:
-		return RosterAgent{}, &RosterRefusal{RosterUnset, "No agent is set for " + row + " in roster " + roster + " on this computer." + then, command}
+		return RosterAgent{}, &RosterRefusal{RosterUnset, "No agent is set for " + row + " in roster " + roster + " on this computer." + then, command, ""}
 	case agent.Runtime != "main" && !slices.Contains(runtimes, agent.Runtime):
-		return RosterAgent{}, &RosterRefusal{RosterRuntime, fmt.Sprintf("Roster %s runs %s on %s, and this installation runs %s.%s", roster, row, agent.Runtime, plainList(runtimes), then), command}
+		return RosterAgent{}, &RosterRefusal{RosterRuntime, fmt.Sprintf("Roster %s runs %s on %s, and this installation runs %s.%s", roster, row, agent.Runtime, plainList(runtimes), then), command, ""}
 	}
 	return agent, nil
+}
+
+// RosterIDs are the rosters' identifiers, in the table's order.
+func RosterIDs() (ids []string) {
+	for _, kind := range rosterKinds {
+		ids = append(ids, kind.id)
+	}
+	return ids
+}
+
+// RosterView is one roster as a person reads it: every row of its type, set or not.
+type RosterView struct {
+	ID   string       `json:"id"`
+	Type string       `json:"type"`
+	Rows []RosterLine `json:"rows"`
+}
+
+// RosterLine is one row of a roster; an unset row names no agent.
+type RosterLine struct {
+	Row string `json:"row"`
+	Set bool   `json:"set"`
+	RosterAgent
+}
+
+// Rosters answers every roster of the table, in its order. An unusable file
+// is refused as RosterRow refuses it, so no row is ever answered from it.
+func Rosters(home string) ([]RosterView, error) {
+	file, problem := readRosters(home)
+	if problem != "" {
+		return nil, unusable(home, problem)
+	}
+	var views []RosterView
+	for _, kind := range rosterKinds {
+		view := RosterView{ID: kind.id, Type: kind.kind}
+		for _, row := range kind.rows {
+			agent, set := file.Rosters[kind.id].Rows[row]
+			view.Rows = append(view.Rows, RosterLine{row, set, agent})
+		}
+		views = append(views, view)
+	}
+	return views, nil
 }
 
 // SetRosterRow writes one row of the computer's rosters, value being
@@ -151,11 +193,7 @@ func RosterRow(home, roster, row string, runtimes []string) (RosterAgent, error)
 func SetRosterRow(home, roster, row, value string, runtimes []string, resolve func(runtime, model string) (string, error)) (changed bool, err error) {
 	i := slices.IndexFunc(rosterKinds, func(kind rosterKind) bool { return kind.id == roster })
 	if i < 0 {
-		var ids []string
-		for _, kind := range rosterKinds {
-			ids = append(ids, kind.id)
-		}
-		return false, unchanged("%s is not a roster; the rosters are %s", roster, plainList(ids))
+		return false, unchanged("%s is not a roster; the rosters are %s", roster, plainList(RosterIDs()))
 	}
 	if !slices.Contains(rosterKinds[i].rows, row) {
 		return false, unchanged("%s is not a row of %s; its rows are %s", row, roster, plainList(rosterKinds[i].rows))
@@ -338,7 +376,7 @@ func rowProblem(row string, agent RosterAgent) string {
 }
 
 func unusable(home, problem string) error {
-	return &RosterRefusal{RosterUnreadable, "The rosters file " + RostersPath(home) + " can't be used: " + problem + ". metasystem roster list shows what is wrong. Nothing was started.", []string{"metasystem", "roster", "list"}}
+	return &RosterRefusal{RosterUnreadable, "The rosters file " + RostersPath(home) + " can't be used: " + problem + ". metasystem roster list shows what is wrong. Nothing was started.", []string{"metasystem", "roster", "list"}, problem}
 }
 
 func unchanged(format string, args ...any) error {
