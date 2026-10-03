@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -83,6 +84,9 @@ func Page(path string, limit int, before string) ([]Notice, error) {
 			reached = true
 			return
 		}
+		if !ForAPerson(notice) {
+			return
+		}
 		if len(ring) == limit {
 			copy(ring, ring[1:])
 			ring = ring[:limit-1]
@@ -135,7 +139,9 @@ func Open(path string, after string) (*Follower, []Notice, error) {
 	resumed := false
 	forEachNotice(data, func(notice Notice) {
 		if resumed {
-			behind = append(behind, notice)
+			if ForAPerson(notice) {
+				behind = append(behind, notice)
+			}
 			return
 		}
 		if notice.ID == after {
@@ -186,7 +192,11 @@ func (f *Follower) Next() ([]Notice, error) {
 		return nil, err
 	}
 	arrived := []Notice{}
-	forEachNotice(data, func(notice Notice) { arrived = append(arrived, notice) })
+	forEachNotice(data, func(notice Notice) {
+		if ForAPerson(notice) {
+			arrived = append(arrived, notice)
+		}
+	})
 	// Only complete lines are consumed: a fragment at the end is an append in
 	// flight, and it is read again whole on the next pass.
 	f.offset += int64(completeLength(data))
@@ -260,12 +270,36 @@ func forEachLine(data []byte, each func(line []byte)) {
 
 // forEachNotice walks the complete lines that parse. A line that does not is
 // skipped: one corrupt record must not end the history around it.
+//
+// Every line that parses is walked, a person's or not, because an id is a
+// cursor: a page that was given an id before ForAPerson held it may still ask
+// for what lies before or after it. What a reader answers goes through
+// ForAPerson.
 func forEachNotice(data []byte, each func(Notice)) {
 	forEachLine(data, func(line []byte) {
 		if notice, ok := decode(line); ok {
 			each(notice)
 		}
 	})
+}
+
+// rawHealthVerdict opens every line the steward's health verdict renders
+// (HealthVerdict.Line in internal/steward, and the closed-fence prefixes
+// stopfence.HealthPrefix gives it). The steward journals that line as the
+// message of its health alert episode, under source "alert" like every other
+// alert, so the message is the only thing that tells it apart.
+const rawHealthVerdict = "HEALTH "
+
+// ForAPerson reports whether a journal line is a person's notification. The
+// steward's raw health verdict is not: it is every role with its pids, tokens,
+// paths and remedies on one line, which operators read on purpose through
+// `metasystem system status`, `system check` and the steward's logs, and which
+// a person must never be shown as a notification.
+// Page, Open and Next all answer through it, and they are the only readers
+// the interface has, so the history, the stream and everything counted from
+// them agree.
+func ForAPerson(notice Notice) bool {
+	return !strings.HasPrefix(notice.Message, rawHealthVerdict)
 }
 
 // decode reads one line. A record with no id is not a notice: the id is what

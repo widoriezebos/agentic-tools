@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 )
 
@@ -89,7 +90,7 @@ func TestNotificationHistoryAnswersNewestFirstWithItsUnreadMarkUnclaimed(t *test
 	t.Parallel()
 	path := journalWith(t,
 		journalLine(t, "N1", "steward", "the runner armed", true),
-		journalLine(t, "N2", "alert", "HEALTH unhealthy — runner stale", false),
+		journalLine(t, "N2", "alert", "the steward could not reach the operator", false),
 	)
 	served := New(Info{NotificationJournal: path}, loopback(), testBundle())
 
@@ -307,13 +308,13 @@ func TestTheStreamOpensWithACommentAndSendsOnlyWhatArrives(t *testing.T) {
 		t.Fatalf("the stream did not offer a retry hint: %q", retry)
 	}
 
-	appendJournal(t, path, journalLine(t, "S3", "alert", "HEALTH unhealthy — runner stale", false))
+	appendJournal(t, path, journalLine(t, "S3", "alert", "the steward could not reach the operator", false))
 	id, name, data := stream.event(t)
 	testutil.Expect(t, "the event's id", id, "S3")
 	testutil.Expect(t, "the event's name", name, "notification")
 	var notice notifications.Notice
 	testutil.Require(t, "decode the event", json.Unmarshal([]byte(data), &notice), nil)
-	testutil.Expect(t, "the message", notice.Message, "HEALTH unhealthy — runner stale")
+	testutil.Expect(t, "the message", notice.Message, "the steward could not reach the operator")
 	testutil.Expect(t, "the source", notice.Source, "alert")
 	testutil.Expect(t, "the delivery gate, visible", notice.Delivered, false)
 }
@@ -362,4 +363,60 @@ func TestTheStreamBeatsWithAComment(t *testing.T) {
 			t.Fatalf("the stream ended: %v", err)
 		}
 	}
+}
+
+// The steward's raw health verdict is an operator's reading, read on purpose
+// through system status and the logs. It is never a person's notification: not
+// in the history, not down the stream, and not in what the inbox counts
+// (owner's rule, 2026-10-03). A notice beside it that a person can act on
+// still arrives everywhere.
+func TestARawHealthVerdictIsNoPersonsNotification(t *testing.T) {
+	t.Parallel()
+	const raw = "HEALTH unhealthy — steward-runner=alive (pid 4242); trunk-red=dead (remedy: run it)"
+	const actionable = "seat m1e has been idle with approved work for 40 minutes"
+	at := overviewNow.Add(-time.Hour)
+	path := journalWith(t,
+		journalAt(t, "H0", "steward", "the runner armed", at),
+		journalAt(t, "H1", "alert", raw, at),
+		journalAt(t, "H2", "alert", actionable, at),
+	)
+
+	history := historyAnswer(t, "decode the history", request(t,
+		New(Info{NotificationJournal: path}, loopback(), testBundle()),
+		http.MethodGet, notificationsPath, "127.0.0.1:7878", nil))
+	got := []string{}
+	for _, notice := range history.Notifications {
+		got = append(got, notice.ID)
+	}
+	testutil.Expect(t, "the history", strings.Join(got, ","), "H2,H0")
+
+	// A resuming stream is given what it missed, and the verdict is not in it;
+	// a live stream is given what arrives, and the verdict is not in that.
+	stream := streamed(t, path, "H0")
+	id, _, _ := stream.event(t)
+	testutil.Expect(t, "what the resumed stream missed", id, "H2")
+	appendJournal(t, path, journalAt(t, "H3", "alert", "HEALTH STOPPED healthy — steward-runner=alive", at))
+	appendJournal(t, path, journalAt(t, "H4", "alert", actionable, at))
+	id, _, data := stream.event(t)
+	testutil.Expect(t, "what the live stream sends next", id, "H4")
+	testutil.Expect(t, "and no verdict rides inside it", strings.Contains(data, "HEALTH"), false)
+
+	info := decisionsInfo()
+	info.NotificationJournal = journalWith(t,
+		journalAt(t, "D1", "alert", raw, at),
+		journalAt(t, "D2", "alert", actionable, at),
+	)
+	page := decisionsPage(t, New(info, loopback(), testBundle()), "the read")
+	alerts := []string{}
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindAlert {
+			alerts = append(alerts, need.ID)
+		}
+	}
+	testutil.Expect(t, "the alerts the inbox carries", strings.Join(alerts, ","), "D2")
+	// The count is the count of the same inbox with the verdict never written.
+	without := decisionsInfo()
+	without.NotificationJournal = journalWith(t, journalAt(t, "D2", "alert", actionable, at))
+	baseline := decisionsPage(t, New(without, loopback(), testBundle()), "the read without the verdict")
+	testutil.Expect(t, "and what it counts", page.Counts.NeedsYou, baseline.Counts.NeedsYou)
 }

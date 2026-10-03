@@ -2,10 +2,10 @@
 
 - Kind: design
 - Id: 01M3Z76QRHDCBSE48GQY6G0MSS
-- Status: draft
+- Status: accepted
 - Goals: landing-deploys-the-engine
 
-Revision 3: folds critique rounds 1 and 2 (Codex on Astra: 8 then 4 material findings, all accepted; round 2's fold removes the request file whose patches caused three of its four findings; the adjudication is at the end of this page). Facts were read at `b31a1e8e9` on 2026-10-02. Paths are relative to the installation, `metasystem/` in this repository. Nothing here is built yet.
+Revision 5: accepted by Wido on 2026-10-03, 15:20 CEST (ruling R-144-m1h, in `memory/rulings.md`): his decisions are under "Decisions Wido made" below, decision 3 now makes the central engine a per-project choice declared at adoption, and the obligation on the neighbouring one-folder design is recorded. Revision 4 recorded the rules the step-1 build settled with its reader (unit `chain`, nine preliminary reads): a person's rollback or resume does not overlap a run, every run and act ends with one record line, `version`'s `none` is recorded, and each operation runs its own commit's adapter; they are marked "(revision 4)" below. Revision 3 folded critique rounds 1 and 2 (Codex on Astra: 8 then 4 material findings, all accepted; round 2's fold removes the request file whose patches caused three of its four findings; the adjudication is at the end of this page). Facts were read at `b31a1e8e9` on 2026-10-02. Paths are relative to the installation, `metasystem/` in this repository. Nothing here is built yet.
 
 ## Wido's words (2026-10-01, binding)
 
@@ -43,7 +43,7 @@ This switch is step 2, not step 1. It changes how the engine finds its installat
 
 ## Decision 2: the deploy contract
 
-**Where a project declares it.** A new key `deploy.contract` in `metasystem.conf`, default `deploy.json`, beside `launch.contract` (`internal/config/defaults.go:67`). A project without the file has no deploy: the lane does nothing more after its push, and each deploy verb says so.
+**Where a project declares it.** A new key `deploy.contract` in `metasystem.conf`, default `deploy.json`, beside `launch.contract` (`internal/config/defaults.go:67`). A project without the file has no deploy: the lane does nothing more after its push, and each deploy verb says so. The same holds when `deploy.contract` names a file that does not exist (revision 4).
 
 ```json
 {
@@ -53,7 +53,7 @@ This switch is step 2, not step 1. It changes how the engine finds its installat
 }
 ```
 
-**How it is called.** The adapter is an executable in any language, called as `<argv> OPERATION` with one JSON request on standard input and one JSON response on standard output, the pattern of the agent-adapter contract (`internal/runtimes/external/external.go:1-7`). Standard error goes to the deploy's log. Every operation runs in a clean tree of the commit it is about: a detached Git worktree the engine creates under `~/.metasystem/deploy/<project>/work/<commit>/` and removes afterwards. The lane checkout is never built in, because its HEAD moves with the next merge.
+**How it is called.** The adapter is an executable in any language, called as `<argv> OPERATION` with one JSON request on standard input and one JSON response on standard output, the pattern of the agent-adapter contract (`internal/runtimes/external/external.go:1-7`). Standard error goes to the deploy's log. Every operation reads `deploy.json` from, and runs in, a clean tree of the commit it is about: `version` the current deploy's commit (main's tip when nothing is current), `build` and `activate` the tip being deployed, `rollback` the commit it returns to; a working tree's file is never used to call an adapter (revision 4). The tree is a detached Git worktree the engine creates under `~/.metasystem/deploy/<project>/work/<commit>/` and removes afterwards. The lane checkout is never built in, because its HEAD moves with the next merge.
 
 **Request.** `{"schema":1, "operation":…, "project":…, "commit":…, "source":…, "artifact":…, "previous":{"commit","version","artifact","digest"} or null}`. `source` is the clean tree's absolute path. `artifact` is what `build` returned.
 
@@ -66,9 +66,9 @@ This switch is step 2, not step 1. It changes how the engine finds its installat
 
 **Exit meanings.** 0: done, and the response is the truth. 1: failed, and the response carries `"outcome":"failed"` and a `reason`; nothing changed. 64: the adapter does not support this operation. Any other exit or unreadable output: failed with the state unknown; the engine calls `version` to learn what is active.
 
-**No time limit.** A slow build is still a build: the runner waits for the adapter to exit and never fails it on elapsed time (ruling R-35-m3). `deploy status` names the running adapter's process, when it started and when its log last grew, so a stalled adapter is visible. A person ends it with `deploy pause`, which stops the run in progress: it ends the adapter's process group and appends a `stopped` line, and the next run's `version` call learns what is active.
+**No time limit.** A slow build is still a build: the runner waits for the adapter to exit and never fails it on elapsed time (ruling R-35-m3). `deploy status` names the running adapter's process, when it started and when its log last grew, so a stalled adapter is visible. A person ends it with `deploy pause`, which stops the run in progress: it ends the adapter's process group, and the run appends a `stopped` line; the next run's `version` call learns what is active. The runner records each adapter call in progress before it starts the process, and checks the pause before each operation (revision 4).
 
-**The record.** `~/.metasystem/deploy/<project>/deploys.jsonl`, one line per finished attempt, appended under a lock file beside it. `<project>` names the repository the same way for every checkout of it on this computer: the fetch URL of the landing endpoint's remote (origin), normalized and hashed to a short hexadecimal name. Every checkout of one repository therefore shares one record, one lock and one `pause.json`, as they share the one pointer they all move; a pause made from a person's checkout holds the lane's deploys too. The enrollment's repository identity is the checkout's own path (`internal/steward/runner.go:849-854`) and is not used here. The record lives under the home directory because every seat on the computer must read the same one. Fields: `kind` (deploy or rollback), `commit`, `version`, `artifact`, `digest`, `previous` (the commit that was current), `by`, `startedAt`, `endedAt`, `outcome` (`active`, `build-failed`, `activate-failed`, `verify-failed`, `stopped`), `detail`, `log`. The current deploy is the newest line whose outcome is `active`; there is no second "current" file. Before the first deploy there is no current deploy, and `version` answers `none`. Beside it: `pause.json` (who, when, why). There is no request file: what to deploy is always origin's main.
+**The record.** `~/.metasystem/deploy/<project>/deploys.jsonl`, one line per finished attempt, appended under a lock file beside it. `<project>` names the repository the same way for every checkout of it on this computer: the fetch URL of the landing endpoint's remote (origin), normalized (scheme, user and a trailing `.git` dropped, host lower-cased, a non-default port kept) and hashed to a short hexadecimal name. Every checkout of one repository therefore shares one record, one lock and one `pause.json`, as they share the one pointer they all move; a pause made from a person's checkout holds the lane's deploys too. The enrollment's repository identity is the checkout's own path (`internal/steward/runner.go:849-854`) and is not used here. The record lives under the home directory because every seat on the computer must read the same one. Fields: `kind` (deploy or rollback), `commit`, `version`, `artifact`, `digest`, `previous` (the commit that was current), `by`, `startedAt`, `endedAt`, `outcome` (`active`, `build-failed`, `activate-failed`, `verify-failed`, `version-failed`, `stopped`, `none`), `detail`, `log`. Every run and every person's act that calls an adapter ends with exactly one line, unless it found nothing to do (paused before any call, main's tip already active, or the lock held by another run) (revision 4). The current deploy is the newest line whose outcome is `active`, unless a later `none` line says `version` found nothing active (revision 4); there is no second "current" file. Before the first deploy there is no current deploy, and `version` answers `none`. Beside it: `pause.json` (who, when, why). There is no request file: what to deploy is always origin's main.
 
 **The run.** Every trigger starts the runner; it carries no commit. The runner's target is always origin's main tip as it fetches it: landed by construction, and never behind what is active, because main only moves forward. The runner takes the lock (when the lock is held it exits at once: the holder fetches main again before it finishes), asks `version` and reconciles the record with it (`none`: no deploy is current), and fetches main. It stops when paused, when the tip is current, or when this run already failed on the tip; otherwise it runs `build`, `activate` and `version`, appends a line, and fetches main again. A failed attempt appends its failure line and ends the run: a tip is tried once per run, and the next push or `deploy now` tries again. After releasing the lock, and only when not paused, the runner fetches main once more and starts over when the tip is neither current nor already tried by this run, so a push that found the lock held just before the release is not lost.
 
@@ -107,6 +107,8 @@ A failed deploy never undoes the push. In step 1 a failure is told by the record
 | First deploy on a computer | `version` answers `none`; the line's `previous` is null. `deploy rollback` is refused as `DEPLOY_NO_PREVIOUS`. | Nothing was active before. |
 | Build fails after a push | A `build-failed` line with the log's path; the run ends. The next push or `deploy now` tries again. | The previous engine; the pointer is untouched. |
 | Activation interrupted | No line was written. The lock dies with the process. The next run asks `version`, records what is active, removes leftover staging directories and continues. | Whichever the atomic rename left: old or new, never half. |
+| A person's rollback or resume while a run holds the lock | Refused as `DEPLOY_RUNNING`, naming `deploy pause` to stop the run first; nothing changes and nothing starts (revision 4). | The run in progress. |
+| `version` answers `none` after a deploy | A `none` line: `deploy status` says nothing is active; the runner deploys main's tip as a first deploy; a rollback returns to the newest earlier active deploy or is refused as `DEPLOY_NO_PREVIOUS` (revision 4). | Nothing. |
 | Trigger while paused | Nothing is built; the runner exits at once and does not start over. `deploy status` shows main's tip waiting. `deploy now` is refused as `DEPLOY_PAUSED`, naming `deploy resume`. | The current deploy. |
 | Two pushes close together, or triggers out of order | A trigger that finds the lock held exits. The holder fetches main after its attempt and once more after releasing the lock, and deploys the newest tip. A commit main has moved past is never built. | One run at a time. |
 | `deploy now` when main's tip is already active | Nothing is built or written; the verb reports that the deploy already holds (ruling R-129-ui). | The current deploy. |
@@ -128,9 +130,9 @@ A rollback always pauses. Otherwise the next unrelated landing would deploy the 
 |---|---|---|---|
 | `deploy status` (`--history N`, `--verify`, `--json`) | Current version, commit, time and actor; previous; main's tip when it is not yet active; paused; a run in progress with its start and its log's last growth; last failure. `--verify` asks the adapter. | person, lane, seat | "Engine" card: current engine and state; a history list |
 | `deploy now` | Deploys origin's main tip as fetched; when it is already active, says so and writes nothing. | person, lane, seat | "Deploy now" button |
-| `deploy rollback` | Activates the deploy before the newest forward one and pauses; asked again, it already holds. | person | "Roll back" button, with a confirmation |
-| `deploy pause --reason TEXT` | Holds deploys and stops a run in progress. | person | "Pause" button |
-| `deploy resume` | Lifts the pause and deploys main's tip. | person | "Resume" button |
+| `deploy rollback` | Activates the deploy before the newest forward one and pauses; asked again, it already holds; refused while a run is in progress, naming `deploy pause` (revision 4). | person | "Roll back" button, with a confirmation |
+| `deploy pause --reason TEXT` | Holds deploys and stops a run in progress, answering at once without waiting for it (revision 4). | person | "Pause" button |
+| `deploy resume` | Lifts the pause and deploys main's tip; refused while a run is in progress, naming `deploy pause` (revision 4). | person | "Resume" button |
 | `deploy seats` | Each seat's engine and generation, marked current, behind or unknown. | person, lane, seat | the per-seat engine column, with a "behind" mark |
 
 `deploy seats` reads what each seat already publishes: its presence record carries the enrolled build commit and generation (`internal/seat/record.go:66-67`, `internal/steward/runner.go:128-132`), and the Fleet page already shows them (`internal/ui/fleet/fleet.go:230-231`).
@@ -192,19 +194,25 @@ Skills and documents still arrive by pull; that is out of scope.
 
 ## Beside `one-folder-deployed-and-evolved`
 
-That accepted design keeps the engine at `metasystem/bin/metasystem`, lists `bin/` as rebuilt by an upgrade, and says the installation is found from `bin/..`. Step 1 here changes none of that: it adds an engine outside every checkout and no reader moves. When that design's step 1 lands, `deploy.json` should take the same default home as `launch.json` (`project/`) and join its payload exclusions. Step 2 here does conflict with it; see decisions 3 and 4 below. This page does not rewrite it.
+That accepted design keeps the engine at `metasystem/bin/metasystem`, lists `bin/` as rebuilt by an upgrade, and says the installation is found from `bin/..`. Step 1 here changes none of that: it adds an engine outside every checkout and no reader moves. When that design's step 1 lands, `deploy.json` should take the same default home as `launch.json` (`project/`) and join its payload exclusions. Step 2 here does conflict with it for a project declared central (decisions 3 and 4 below). This page does not rewrite it.
 
-## Decisions reserved for Wido
+**Obligation before step 2 (Wido, 2026-10-03).** The accepted one-folder design gets an amendment before step 2 is built: a project whose `metasystem.engine-delivery` names the central engine has no engine folder and finds its installation from the working directory, not from `bin/..`.
 
-1. **The contract.** Accept the key `deploy.contract`, the file `deploy.json`, the four operations and the exit meanings as written? It is a contract every adopted project will see.
-2. **Replace, not feed.** Accept that enrollments bind to `~/.metasystem/engines/<commit>/` and that per-checkout builds and pins are retired in step 2?
-3. **Who gets the central engine.** Recommended: this repository only; an adopted project keeps `metasystem/bin/metasystem` as the neighbouring design says, and uses the contract only to deploy its own application. The alternative changes that accepted design.
-4. **Finding the installation.** Step 2 needs the engine to find its installation from the working directory, not from `bin/..`, and a new value for `metasystem.engine-delivery` (today only `source`, `internal/config/defaults.go:61`). Both touch the neighbouring design.
-5. **The safe point.** Recommended: session start, with a running session finishing on its enrolled engine. Your "hard cutover" could instead mean every call runs the newest engine at once, which changes a generation in mid-session.
-6. **Telling of a failed deploy.** The channel carries one kind of news today, a landing. Should a failed deploy be a second kind?
-7. **Other computers.** Should a computer that did not push deploy by itself when it sees main moved, or only when a person runs `deploy now`?
-8. **Who may roll back.** Recommended: a person only, with `deploy now` open to seats because it only deploys main's tip, which only moves forward.
-9. **The search path.** Should `system setup` add `~/.metasystem/bin` to PATH, or only print the line?
+## Decisions Wido made (2026-10-03, ruling R-144-m1h)
+
+His words on decision 3: "can this be a repo/project level config? The default should be determined during adopt. If adoption happens with a central engine then that engine should be used." On the rest: "for the rest, all agreed (make them compatible with my decision about using the engine that was used during adoption".
+
+1. **The contract.** Accepted as written: the key `deploy.contract`, the file `deploy.json`, the four operations and the exit meanings.
+2. **Replace, not feed.** Yes, for a project declared central: its enrollments bind to `~/.metasystem/engines/<commit>/` and its per-checkout builds and pins are retired in step 2. A project declared source keeps building its own engine.
+3. **Who gets the central engine.** Per project, declared at adoption and never inferred at run time. `metasystem.engine-delivery` (today only `source`, `internal/config/defaults.go:61`) gains a value for this computer's central engine. An adoption run by the central engine writes that value; an adoption run from a source checkout writes `source`; a person can change the setting later. This replaces the earlier recommendation, "this repository only". Risks he was told: two computers can run different engines against one project, so each proof records the engine it ran on; a central project's CI needs an engine from somewhere, which stays open until such a project has one.
+4. **Finding the installation.** Yes, following from 3: a central project has no engine folder, so its engine finds the installation from the working directory. The one-folder design's amendment is the obligation recorded above.
+5. **The safe point.** Session start; a running session finishes on the engine it started with.
+6. **Telling of a failed deploy.** No channel news. It shows on the Fleet page under Needs you (with the Fleet card, step 3); until then the record, `deploy status` and the next `landing push` line tell it.
+7. **Other computers.** Not now: on a computer that did not push, a person runs `deploy now`.
+8. **Who may roll back.** A person only; seats may run `deploy now`.
+9. **The search path.** `deploy status` only prints the line to add; nothing edits a shell profile.
+
+The revision-4 rules marked above were accepted as presented. Step 1 is unaffected by decisions 3 and 4.
 
 ## Not checked
 

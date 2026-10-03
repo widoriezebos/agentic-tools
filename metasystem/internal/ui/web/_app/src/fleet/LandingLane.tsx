@@ -1,13 +1,13 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { NavLink } from "react-router";
 
 import { goalPath } from "../routes";
 import { Button, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Trouble } from "../shell/Trouble";
-import { failureMessage, landNow, proofLogAddress, ResourceError } from "./api";
+import { failureMessage, landNow, pauseLane, proofLogAddress, ResourceError, resumeLane } from "./api";
 import type { Lane, LaneEntry, LandNowAnswer } from "./api";
-import { laneCounts, laneLists, laneNotRead, laneState, when, type LaneItem, type LaneLists, type ProvingItem } from "./panel";
+import { laneActOf, laneCounts, laneLists, laneNotRead, laneState, when, type LaneItem, type LaneLists, type ProvingItem } from "./panel";
 
 /**
  * This computer's landing lane on the Fleet page: one heading line — the
@@ -20,13 +20,15 @@ import { laneCounts, laneLists, laneNotRead, laneState, when, type LaneItem, typ
  * push behind the block's.
  *
  * It is drawn from the same /api/board response the Doing column and the
- * questions are, so it adds no request. Its one act is Land now (goal
- * fleet-card-can-land-now): it runs `metasystem landing run` through the
- * server and shows the verb's two lines. It is offered only when a hand-in
- * waits, the lane is not paused, can run, no landing agent is alive and no
- * proof runs, and says in one line why not where work waits all the same.
- * What else the person can do about the lane is said in Needs you, as the
- * plain sentence of what to do.
+ * questions are, so it adds no request. Its acts stand beside the state word:
+ * Pause on a running lane or Resume on a paused one (fleet-panel-ux step 2,
+ * slice 2b), which the server runs as the signed-in person, and Land now
+ * (goal fleet-card-can-land-now), which runs `metasystem landing run`; each
+ * shows its verb's two lines under the heading. Land now is offered only when
+ * a hand-in waits, the lane is not paused, can run, no landing agent is alive
+ * and no proof runs, and says in one line why not where work waits all the
+ * same. Neither lane act is offered while any part of the lane could not be
+ * read.
  *
  * A server built before the lane existed sends no `lane` field at all; the
  * block says it does not report one rather than claiming there is none.
@@ -114,21 +116,33 @@ export function LaneBlock({
   return (
     <LandNow lane={lane} unread={unread} onLanded={onLanded}>
       {(landing) => (
-        <Panel
-          state={<span className={`ms-fleet-pill ms-fleet-lane-state ms-fleet-lane-state--${state.tone}`}>{state.word}</span>}
-          counts={laneCounts(lane, lists)}
-          action={landing.button}
-        >
-          {problem !== "" && (
-            <Trouble text={`The landing lane could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
+        <LaneAct lane={lane} unread={unread} onActed={onLanded}>
+          {(acting) => (
+            <Panel
+              state={<span className={`ms-fleet-pill ms-fleet-lane-state ms-fleet-lane-state--${state.tone}`}>{state.word}</span>}
+              counts={laneCounts(lane, lists)}
+              action={
+                acting.button === undefined && landing.button === undefined ? undefined : (
+                  <>
+                    {acting.button}
+                    {landing.button}
+                  </>
+                )
+              }
+            >
+              {problem !== "" && (
+                <Trouble text={`The landing lane could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
+              )}
+              {(lane.problems ?? []).map((one) => (
+                <Trouble key={one} text={`Part of the landing lane could not be read: ${one}`} variant="small" />
+              ))}
+              {acting.lines}
+              {landing.lines}
+              <Lists lane={lane} lists={lists} now={now} />
+              <LaneDetails lane={lane} now={now} />
+            </Panel>
           )}
-          {(lane.problems ?? []).map((one) => (
-            <Trouble key={one} text={`Part of the landing lane could not be read: ${one}`} variant="small" />
-          ))}
-          {landing.lines}
-          <Lists lane={lane} lists={lists} now={now} />
-          <LaneDetails lane={lane} now={now} />
-        </Panel>
+        </LaneAct>
       )}
     </LandNow>
   );
@@ -445,10 +459,23 @@ function LandNowLines({ offer, answer, problem }: { offer: LandNowOffer; answer:
   if ((offer.offered || offer.reason === "") && answer === null && problem === "") {
     return null;
   }
-  const lines = answer === null ? null : landNowLines(answer);
   return (
     <>
       {!offer.offered && offer.reason !== "" && <p className="ms-fleet-lane-note">{offer.reason}</p>}
+      <ActAnswer answer={answer} problem={problem} />
+    </>
+  );
+}
+
+/**
+ * A verb's answer to the last press of an act the server runs as you — Land
+ * now, Pause, Resume or Stop — as its two lines, a refusal drawn as one; and
+ * a press that could not reach the verb, in one line. Nothing before a press.
+ */
+export function ActAnswer({ answer, problem }: { answer: LandNowAnswer | null; problem: string }) {
+  const lines = answer === null ? null : landNowLines(answer);
+  return (
+    <>
       {lines !== null && !lines.refused && (
         <div className="ms-fleet-lane-answer" role="status">
           <AnswerLines lines={lines} />
@@ -490,6 +517,76 @@ function AnswerLines({ lines }: { lines: AnswerLinesOf }) {
   );
 }
 
+/** The ports one press runs through: the act, and what becomes of its answer. */
+export type ActPorts = {
+  act: () => Promise<LandNowAnswer>;
+  answered: (answer: LandNowAnswer) => void;
+  failed: (message: string) => void;
+  signIn: (again: () => void) => void;
+};
+
+/**
+ * One press of an act the server runs as the signed-in person — Land now,
+ * Pause, Resume, Stop: the verb's answer; where the route found nobody signed
+ * in, the sign-in sheet and the same press once more after it, never a second
+ * sheet; anything else in one line.
+ */
+export function pressAct(ports: ActPorts, again = true): Promise<void> {
+  return ports.act().then(ports.answered, (error: unknown) => {
+    if (again && error instanceof ResourceError && error.signIn) {
+      ports.signIn(() => {
+        void pressAct(ports, false);
+      });
+      return;
+    }
+    ports.failed(failureMessage(error));
+  });
+}
+
+/** One act as a component holds it: a press on its way, the last answer, and what failed. */
+export type Acting = { sending: boolean; answer: LandNowAnswer | null; problem: string; press: () => void };
+
+/**
+ * An act's press (pressAct) with its state: the answer is kept until the next
+ * press, and onActed runs after every answer, so the board is read again and
+ * the state word, the rows and Needs you follow. onActed and onFailed are also
+ * handed the answer or the failure, for an owner that must keep it longer than
+ * the component that pressed lives: a Stop's seat leaves the board.
+ */
+export function useAct(act: () => Promise<LandNowAnswer>, onActed?: (answer: LandNowAnswer) => void, onFailed?: (problem: string) => void): Acting {
+  const [sending, setSending] = useState(false);
+  const [answer, setAnswer] = useState<LandNowAnswer | null>(null);
+  const [problem, setProblem] = useState("");
+  const { askToSignIn } = useSession();
+
+  const press = () => {
+    setSending(true);
+    setProblem("");
+    void pressAct({
+      act,
+      answered: (answered) => {
+        setSending(false);
+        setAnswer(answered);
+        onActed?.(answered);
+      },
+      failed: (message) => {
+        setSending(false);
+        setAnswer(null);
+        setProblem(message);
+        onFailed?.(message);
+      },
+      signIn: (again) => {
+        setSending(false);
+        askToSignIn(() => {
+          setSending(true);
+          again();
+        });
+      },
+    });
+  };
+  return { sending, answer, problem, press };
+}
+
 /**
  * Land now's press: one POST, the sign-in sheet once where the route asks for
  * it, and the verb's answer kept until the next press. It hands the block the
@@ -506,38 +603,45 @@ function LandNow({
   onLanded?: () => void;
   children: (landing: { button: ReactNode; lines: ReactNode }) => ReactNode;
 }) {
-  const [sending, setSending] = useState(false);
-  const [answer, setAnswer] = useState<LandNowAnswer | null>(null);
-  const [problem, setProblem] = useState("");
-  const { askToSignIn } = useSession();
-  const retried = useRef(false);
-
-  const send = () => {
-    setSending(true);
-    setProblem("");
-    landNow()
-      .then((answered) => {
-        setSending(false);
-        retried.current = false;
-        setAnswer(answered);
-        onLanded?.();
-      })
-      .catch((error: unknown) => {
-        setSending(false);
-        if (error instanceof ResourceError && error.signIn && !retried.current) {
-          retried.current = true;
-          askToSignIn(send);
-          return;
-        }
-        retried.current = false;
-        setAnswer(null);
-        setProblem(failureMessage(error));
-      });
-  };
-
+  const landing = useAct(landNow, onLanded);
   const offer = landNowOffer(lane, unread);
   return children({
-    button: offer.offered ? <LandNowButton sending={sending} onPress={send} /> : undefined,
-    lines: <LandNowLines offer={offer} answer={answer} problem={problem} />,
+    button: offer.offered ? <LandNowButton sending={landing.sending} onPress={landing.press} /> : undefined,
+    lines: <LandNowLines offer={offer} answer={landing.answer} problem={landing.problem} />,
   });
+}
+
+/**
+ * Pause or Resume (fleet-panel-ux step 2, slice 2b): the one that makes sense
+ * in the lane's state, by laneActOf, beside the state word and before Land
+ * now, and the verb's answer under the heading. The server runs `landing stop`
+ * or `landing start` as the signed-in person. Neither asks a second press:
+ * each is undone by the other.
+ */
+function LaneAct({
+  lane,
+  unread,
+  onActed,
+  children,
+}: {
+  lane: Lane;
+  unread: readonly string[];
+  onActed?: () => void;
+  children: (acting: { button: ReactNode; lines: ReactNode }) => ReactNode;
+}) {
+  const which = laneActOf(lane, unread);
+  const acting = useAct(which === "resume" ? resumeLane : pauseLane, onActed);
+  return children({
+    button: which === null ? undefined : <LaneActButton act={which} sending={acting.sending} onPress={acting.press} />,
+    lines: <ActAnswer answer={acting.answer} problem={acting.problem} />,
+  });
+}
+
+/** Pause, or Resume drawn as the lane's call to act, as the mocks draw them. */
+function LaneActButton({ act, sending, onPress }: { act: "pause" | "resume"; sending: boolean; onPress: () => void }) {
+  return (
+    <Button primary={act === "resume"} disabled={sending} onClick={onPress}>
+      {act === "resume" ? "Resume" : "Pause"}
+    </Button>
+  );
 }

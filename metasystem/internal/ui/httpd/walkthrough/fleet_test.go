@@ -65,3 +65,31 @@ func TestTheFixtureServesItsRedProofsLog(t *testing.T) {
 		t.Fatal("the fixture dialled a board bridge")
 	}
 }
+
+// The fixture's Pause, Resume and Stop answer as the verbs do, in their
+// words, and touch nothing (fleet-panel-ux step 2, slice 2b): Pause names the
+// person who paused, and Stop's admission refuses this fixture's own seat, as
+// the engine refuses the checkout serving the page, and admits any other.
+func TestTheFixturesFleetActsAnswerAsTheVerbsDo(t *testing.T) {
+	t.Parallel()
+	paused, err := fixturePauseLane("Wido")
+	if err != nil || paused.Outcome != "confirmed" || !strings.HasPrefix(paused.Summary, "stopped the landing lane for Wido") {
+		t.Fatalf("pause = %+v %v", paused, err)
+	}
+	resumed, err := fixtureResumeLane("Wido")
+	if err != nil || resumed.Outcome != "confirmed" || !strings.HasPrefix(resumed.Summary, "resumed the landing lane") {
+		t.Fatalf("resume = %+v %v", resumed, err)
+	}
+	refused, err := fixtureAdmitStop(fixtureThis)
+	if err != nil || refused == nil || refused.Outcome != "refused" || refused.Next == nil ||
+		strings.Join(refused.Next.Argv, " ") != "metasystem machine stop "+fixtureThis {
+		t.Fatalf("admission of this fixture's own seat = %+v %v; want it refused with the terminal's command", refused, err)
+	}
+	if admitted, err := fixtureAdmitStop("m1f"); err != nil || admitted != nil {
+		t.Fatalf("admission of another seat = %+v %v; want it admitted", admitted, err)
+	}
+	stopped, err := fixtureStopMachine("Wido", "m1f")
+	if err != nil || stopped.Outcome != "confirmed" || !strings.HasPrefix(stopped.Summary, "stopped MetaSystem on m1f") {
+		t.Fatalf("stop = %+v %v", stopped, err)
+	}
+}

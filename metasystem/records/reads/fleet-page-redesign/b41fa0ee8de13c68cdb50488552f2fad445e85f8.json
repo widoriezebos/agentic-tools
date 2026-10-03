@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "fleet-page-redesign",
+  "unit": "page",
+  "subject": {
+    "commit": "b41fa0ee8de13c68cdb50488552f2fad445e85f8",
+    "parent": "a5d4d68958847d3116ccb0c247fc07e8da200b27",
+    "tree": "019faa2015b73bbb4a9d5a1053497dbdeddfd457",
+    "patchDigest": "85ac99aec91b1eb283cc71a7300361541e262f681fc79dde2d0481947eca8359",
+    "unitDigest": "9659ba439d4c36740b5e174c4f56cd5da839d59cca608665ac85a365965064d5"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-57012dddccd06a81c67c3e9a",
+    "round": 1,
+    "closureSha256": "c9e0d18db170565d8483320835dc0b7145c65650ae321829ba0397826dc3fbf3"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "019faa2015b73bbb4a9d5a1053497dbdeddfd457",
+    "runId": "goal-read-gate-20261003t143118z-dff829e1dc45f465"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/ui/httpd/describe_test.go",
+      "readerWord": "reviewed by critic root code-critic-57012dddccd06a81c67c3e9a"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/proposals_test.go",
+      "readerWord": "reviewed by critic root code-critic-57012dddccd06a81c67c3e9a"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/walkthrough/fleet_test.go",
+      "readerWord": "reviewed by critic root code-critic-57012dddccd06a81c67c3e9a"
+    }
+  ],
+  "sha256": "ae1e74385021aaea7ead032f0670689c64e74069441d78462a91cbe797b25499"
+}

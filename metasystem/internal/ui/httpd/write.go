@@ -98,6 +98,12 @@ func writeRouteOf(path string) (written, bool) {
 		return written{route: routeLaunch}, true
 	case landNowPath:
 		return written{route: routeLandNow}, true
+	case lanePausePath:
+		return written{route: routeLanePause}, true
+	case laneResumePath:
+		return written{route: routeLaneResume}, true
+	case machineStopPath:
+		return written{route: routeMachineStop}, true
 	}
 	if id, ok := idBetween(path, launchesPrefix, discardSuffix); ok {
 		return written{route: routeDiscardLaunch, id: id}, true
@@ -245,6 +251,12 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.discardLaunch(w, r, route.id)
 	case routeLandNow:
 		h.landNow(w, r)
+	case routeLanePause:
+		h.laneAct(w, r, h.info.PauseLane, "this engine cannot pause the landing lane from the interface; run metasystem landing stop at a terminal")
+	case routeLaneResume:
+		h.laneAct(w, r, h.info.ResumeLane, "this engine cannot resume the landing lane from the interface; run metasystem landing start at a terminal")
+	case routeMachineStop:
+		h.stopMachine(w, r)
 	case routeApprove:
 		h.approveGoal(w, r, route.id)
 	case routeWithdraw:
