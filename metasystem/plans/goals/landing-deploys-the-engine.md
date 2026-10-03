@@ -1,6 +1,6 @@
 # landing-deploys-the-engine
 
-- State: approved
+- State: claimed
 - Priority: 2
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
@@ -9,13 +9,14 @@
 - Origin: human
 - Next step: After the lane's first real landing: one design page (core question: engine pins vs central binary), Astra at most 2 rounds, one builder, one real run Wido 2026-10-01: full control by verbs where applicable (deploy status/now/rollback/pause, which engine each seat runs) and all of it from the UI too (Fleet page: current engine, per-seat engine, deploy now, rollback, history); the design names each verb and its UI action. Wido 2026-10-01: must fit other languages, e.g. Java/Maven: the lane only calls the project's deploy adapter (build artifact from the pushed commit, place/activate it, report the version, roll back) with language-neutral input/output; the metasystem's Go engine is just one adapter; a Maven adapter (mvn package/deploy of a jar, or a container image) is the design's worked second example. Updated 2026-10-02: its precondition 'after the lane's first real landing' is MET (fleet-card-can-land-now landed through the plain lane, 91579aa80). Next: design, then build, per the intent (controllable by verbs and the UI, language-generic). Observed 2026-10-02 night (coordinator m1e): seats edit code directly in their own checkout (m1g, m1h: uncommitted files in the main checkout), and the steward's engine is built from that same tree, so a seat's own gate run (go run ./cmd/devgate build) turns work in progress into the next engine generation its steward re-arms on (m1g gen 2, m1h gen 3). Deploying must build the engine from a clean landed commit into a location apart from any seat's working tree, and every seat on the host picks it up between sessions. Today's landed fixes (fleet Running column 46a3fc613, machine start a0159fd3f, seat claim fallback 3681afe27) are waiting for exactly that.; ASKED ZFWM1XJ97HCRVHN4X6V29B0GVZ (other): The engine-deploy design has had the two critique rounds you allowed. Every finding is fixed on the page, but the engine will not close the critique until the fixes are confirmed. How shall I go on?; ASKED 788N7BCHP55Q8N5Y5MFJT6SY3E (other): Before step 1 of the engine-deploy design is built, it needs your word on four choices. Accept my four recommendations?; ANSWERED 788N7BCHP55Q8N5Y5MFJT6SY3E: yes; ASKED F3NG4CWYAQRJF4JSKVHMSE033A (budget-above-norm): The engine-deploy work needs more time: raise its budget from 4 to 8 hours and from 6 to 10 attempts?; ASKED AER0BVCYYF2DWQAKVK42163JW2 (other): Accept the engine-deploy design? Its critique closed clean (Astra's third round found nothing).
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 42
+- Revision: 43
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=39
 - Approved: by=human:Wido at=2026-10-03T09:43:07Z revision=40 opid=F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb authority=proven digest=d099bf693da6151d598f145280797e1e2ad317a86fe65a6f8ca5708150e88837 episode=40
 - Sliced: machine=m1h lineage=steward-seat revision=34 at=2026-10-03T06:28:20Z
-- Episode: machine=m1h lineage=steward-seat accountingRevision=40 episodeAt=2026-10-03T06:22:44Z episodeRevision=34 idleSeconds=0 released=2026-10-03T12:03:28Z
+- Claimed: machine=m1h lineage=steward-seat at=2026-10-03T12:03:33Z revision=43 accountingRevision=40 episodeAt=2026-10-03T06:22:44Z episodeRevision=34 idleSeconds=5
+- StopCapability: generation=43 revision=43 machine=m1h claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T15:20:49Z VFWZW80FZ53PQW3JTWNRYTDB40-m1e-528c72bf open actor=human:Wido targets=landing-deploys-the-engine
@@ -60,4 +61,5 @@ History:
 - 2026-10-03T09:43:07Z F0XKTRRECAEJ98T0NKF6T70DKM-m1e-718ba0eb set-budget actor=human:Wido targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T06:22:44Z
 - 2026-10-03T11:50:23Z Z8H1X2CP44ZMPMXZ0ZDNZ7H5M0-m1h-71c5cb39 ask actor=m1h+steward-seat targets=landing-deploys-the-engine
 - 2026-10-03T12:03:28Z KR1SD72S6PHG56R7CQQZG40RPD-m1h-71c5cb39 release actor=m1h+steward-seat targets=landing-deploys-the-engine reason=re-binding the claim to this session after the budget raise moved its epoch; re-claimed at once
-Integrity: sha256=fdc92d8b9c9e633a36ab11525053227f4fc3da54fc65a8d5d6483aaa0462b9e7
+- 2026-10-03T12:03:33Z 55GCHVEB26DWDQ5CRHEX1S438P-m1h-71c5cb39 claim actor=m1h+steward-seat targets=landing-deploys-the-engine
+Integrity: sha256=d32631393d4b25febe71f933cd0e7d3c069d24d8e64943bc0dbe56cf10ce000c
