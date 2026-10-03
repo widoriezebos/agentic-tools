@@ -17,6 +17,7 @@ import (
 type rosterOwners struct {
 	home      func() (string, error)      // the registry home whose host folder holds the rosters file
 	lookupEnv func(string) (string, bool) // nil reads the process's environment
+	write     config.RosterWriter
 }
 
 func rosterIntentCommands() []intentCommand {
@@ -80,11 +81,11 @@ func runIntentRosterSet(inv *intentInvocation) int {
 	}
 	roster, row, value := inv.input.args[0], inv.input.args[1], inv.input.args[2]
 	runtimes := config.RuntimeNames(listed)
-	changed, err := config.SetRosterRow(home, roster, row, value, runtimes, func(runtime, model string) (string, error) {
+	changed, err := owners.write.SetRow(home, roster, row, value, runtimes, func(runtime, model string) (string, error) {
 		canonical, _, err := config.ResolveModelAlias(confPath, runtime, model)
 		return canonical, err
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, config.ErrRosterNotDurable) {
 		code := 1
 		// The store's input refusals end this way; file and resolver failures
 		// need repair rather than another roster, row or value.
@@ -117,7 +118,11 @@ func runIntentRosterSet(inv *intentInvocation) int {
 	if value == "main" {
 		use = "the calling session does that work itself"
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: roster + " " + row + " is now " + shown + " on this computer; " + use + ".", Data: data})
+	summary := roster + " " + row + " is now " + shown + " on this computer; " + use + "."
+	if errors.Is(err, config.ErrRosterNotDurable) {
+		summary += "\nit is written, but this computer could not confirm it is on disk; metasystem roster show " + roster + " checks it after a restart"
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, Data: data})
 }
 
 // runIntentRosters prints every roster, or only id, row by row; an unset row reads "not set", never a value.

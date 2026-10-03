@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -26,6 +27,11 @@ func init() {
 // rosterRun runs roster verbs in a checkout listing runtimes, with a home holding rosters.
 func rosterRun(t *testing.T, runtimes, rosters string, person ...bool) (home string, run func(words ...string) (int, string)) {
 	t.Helper()
+	return rosterRunWithWriter(t, runtimes, rosters, nil, person...)
+}
+
+func rosterRunWithWriter(t *testing.T, runtimes, rosters string, write config.RosterWriter, person ...bool) (home string, run func(words ...string) (int, string)) {
+	t.Helper()
 	base := realpath.Resolve(t.TempDir())
 	checkout, home := filepath.Join(base, "checkout"), filepath.Join(base, "home")
 	helmMust(t, os.MkdirAll(filepath.Join(checkout, ".git"), 0o755), os.MkdirAll(filepath.Join(checkout, "metasystem"), 0o755), os.MkdirAll(filepath.Join(home, "host"), 0o700),
@@ -38,7 +44,7 @@ func rosterRun(t *testing.T, runtimes, rosters string, person ...bool) (home str
 		prove: func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 			return humanauthority.Proof{}, errors.New("not the person")
 		},
-		rosters: rosterOwners{home: func() (string, error) { return home, nil }, lookupEnv: func(string) (string, bool) { return "", false }}}
+		rosters: rosterOwners{home: func() (string, error) { return home, nil }, lookupEnv: func(string) (string, bool) { return "", false }, write: write}}
 	if len(person) > 0 && person[0] {
 		owners.prove = enrolledPersonProver(t, filepath.Join(checkout, "metasystem"), helmNow)
 	}
@@ -50,6 +56,22 @@ func rosterRun(t *testing.T, runtimes, rosters string, person ...bool) (home str
 }
 
 const rosterRows = `{"version": 1, "rosters": {"tier-1": {"type": "tier", "rows": {"build": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "xhigh"}}}, "seat": {"type": "seat", "rows": {"seat": {"runtime": "codex", "model": "gpt-5.5", "effort": "high"}}}`
+
+func TestRosterSetNotDurableIsSuccess(t *testing.T) {
+	t.Parallel()
+	write := config.RosterWriter(func(path string, data []byte, mode os.FileMode, anchor string) (bool, error) {
+		_, err := atomicfile.WriteFile(path, data, mode, anchor)
+		return false, err
+	})
+	home, run := rosterRunWithWriter(t, "claude,codex", "", write, true)
+	want := "seat seat is now codex gpt-6-sol xhigh on this computer; the next seat agent uses it.\nit is written, but this computer could not confirm it is on disk; metasystem roster show seat checks it after a restart\n"
+	if code, out := run("set", "seat", "seat", "codex:gpt-6-sol:xhigh"); code != 0 || out != want {
+		t.Fatalf("unconfirmed write = %d\n%s; want success\n%s", code, out, want)
+	}
+	if agent, err := config.RosterRow(home, "seat", "seat", []string{"codex"}); err != nil || agent.Model != "gpt-6-sol" {
+		t.Fatalf("written row = %+v, %v", agent, err)
+	}
+}
 
 // TestRosterShowPrintsRowsAndNotSet: a row no person set reads "not set" and
 // names no agent, in the text and in --json; roster list prints every roster.

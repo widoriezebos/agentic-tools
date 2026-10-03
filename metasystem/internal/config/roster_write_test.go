@@ -10,8 +10,26 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
+
+func TestSetRosterRowDurability(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(t.TempDir(), "home")
+	write := config.RosterWriter(func(path string, data []byte, mode os.FileMode, anchor string) (bool, error) {
+		if anchor != filepath.Dir(home) {
+			t.Errorf("anchor = %q; want the home's parent %q", anchor, filepath.Dir(home))
+		}
+		_, err := atomicfile.WriteFile(path, data, mode, anchor)
+		return false, err
+	})
+	changed, err := write.SetRow(home, "seat", "seat", "codex:gpt-6-sol:xhigh", installed, runs)
+	if !changed || !errors.Is(err, config.ErrRosterNotDurable) {
+		t.Fatalf("SetRow = %v, %v; want changed and ErrRosterNotDurable", changed, err)
+	}
+	wantRow(t, home, "seat", "seat", config.RosterAgent{Runtime: "codex", Model: "gpt-6-sol", Effort: "xhigh"})
+}
 
 // runs resolves claude's alias claude-fable-5 to claude-fable-5-1, never unknown.
 func runs(runtime, model string) (string, error) {

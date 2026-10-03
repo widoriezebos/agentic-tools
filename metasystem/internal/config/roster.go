@@ -9,6 +9,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -185,12 +186,23 @@ func Rosters(home string) ([]RosterView, error) {
 	return views, nil
 }
 
+// ErrRosterNotDurable means the row is written, but may not survive a crash.
+var ErrRosterNotDurable = errors.New("the roster row is written, but its durability could not be confirmed")
+
+// RosterWriter replaces the rosters file; nil uses the atomic, durable writer.
+type RosterWriter func(path string, data []byte, mode os.FileMode, anchor string) (bool, error)
+
 // SetRosterRow writes one row of the computer's rosters, value being
 // RUNTIME:MODEL:EFFORT, RUNTIME:MODEL for the Partner, or main; resolve is the
 // model a runtime runs for a written one. A refused write leaves the file as
 // it was; the file is read under the lock, so no writer loses a row another
 // wrote meanwhile, and an unusable file is refused, never repaired.
 func SetRosterRow(home, roster, row, value string, runtimes []string, resolve func(runtime, model string) (string, error)) (changed bool, err error) {
+	return RosterWriter(nil).SetRow(home, roster, row, value, runtimes, resolve)
+}
+
+// SetRow is SetRosterRow with this writer. ErrRosterNotDurable returns changed true.
+func (write RosterWriter) SetRow(home, roster, row, value string, runtimes []string, resolve func(runtime, model string) (string, error)) (changed bool, err error) {
 	i := slices.IndexFunc(rosterKinds, func(kind rosterKind) bool { return kind.id == roster })
 	if i < 0 {
 		return false, unchanged("%s is not a roster; the rosters are %s", roster, plainList(RosterIDs()))
@@ -268,8 +280,15 @@ func SetRosterRow(home, roster, row, value string, runtimes []string, resolve fu
 	entry.Type, entry.Rows[row] = rosterKinds[i].kind, agent
 	file.Version, file.Rosters[roster] = &version, entry
 	data, err := json.MarshalIndent(file, "", "  ")
-	if err == nil {
-		_, err = atomicfile.WriteFile(RostersPath(home), append(data, '\n'), 0o600, host)
+	if err != nil {
+		return false, err
+	}
+	if write == nil {
+		write = atomicfile.WriteFile
+	}
+	durable, err := write(RostersPath(home), append(data, '\n'), 0o600, filepath.Dir(home))
+	if err == nil && !durable {
+		return true, ErrRosterNotDurable
 	}
 	return err == nil, err
 }
