@@ -9,13 +9,14 @@
 - Origin: main
 - Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.; ASKED 1N0QNKE8BHGK6Z6KZA81DN5P2Q (other): Fleet page redesign: may I build it as drawn? Mocks: ~/metasystem-evidence/agentic-tools-ui/fleet-page-redesign-20261003/mocks/ (one-thing-1440.png shows it best).; ANSWERED 1N0QNKE8BHGK6Z6KZA81DN5P2Q: yes INPUT (Wido 2026-10-03): the page shows, per seat and goal, estimate against actual, and marks a goal or slice that exceeded its estimate (signal owned by goal-budget-follows-its-plan).
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 17
+- Revision: 18
 - Pinned: ui
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T06:25:26Z revision=2 opid=0DS710R47TV1D9T0E451S6CZXN-m1e-718ba0eb authority=proven digest=ae70358e64dde97bdd8c3e538fe37fc545889d295120052b64091b216882e651 episode=2
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T07:22:05Z revision=10 accountingRevision=10 episodeAt=2026-10-03T07:22:05Z episodeRevision=10
-- StopCapability: generation=10 revision=10 machine=ui claimEpoch=3 fenceEpoch=0
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=17
+- Approved: by=human:Wido at=2026-10-03T10:24:22Z revision=18 opid=28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb authority=proven digest=93c733cb9ebe27b75c137d276b2daec8b381b09306d8f212890e1d90ae096284 episode=18
+- Claimed: machine=ui lineage=steward-seat at=2026-10-03T10:24:22Z revision=18 accountingRevision=18 episodeAt=2026-10-03T07:22:05Z episodeRevision=10
+- StopCapability: generation=18 revision=18 machine=ui claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -35,4 +36,5 @@ History:
 - 2026-10-03T08:55:13Z X4ERA2S34QV3PDK0J0T2TQ4H9K-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=lane-reproves-only-what-a-change-can-affect from=1:5 to=1:6 requested-sequence=2
 - 2026-10-03T09:40:02Z PYTFNX4QQE0Q1NZVZJTN8D17KD-m1e-718ba0eb edit actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T07:22:05Z
 - 2026-10-03T10:03:30Z 0N8P30YRNHMMRZG9MD1HP7M1CH-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=agent-works-as-project-partner from=1:6 to=1:7 requested-sequence=1
-Integrity: sha256=ad609008086dfaec8167b836ddaac28a180602597b63e2cd29555ae5586a96bc
+- 2026-10-03T10:24:22Z 28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T07:22:05Z
+Integrity: sha256=5fc1e30cbca7956155b71239f594961d768ee00c4727bc08913fd2edc6d5a392
