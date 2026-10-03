@@ -413,11 +413,31 @@ func TestFakeHostHold(t *testing.T) {
 			}
 			defer output.Close()
 			command.Stdout, command.Stderr = output, output
+			// The hold leads a process group of its own. Its loop keeps a
+			// `sleep` child that a signal to the hold alone orphans, and in
+			// the ignore-term case that child also ignores TERM. Left behind,
+			// it outlives the test binary inside the proof runner's custody
+			// group, which counts it as a surviving descendant and fails the
+			// whole package with exit 1 after every test passed. The test
+			// stops the group and waits until it is empty.
+			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			if err := command.Start(); err != nil {
 				t.Fatal(err)
 			}
 			pid := command.Process.Pid
-			t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+			groupGone := false
+			awaitGroupGone := func() {
+				if err := testenv.AwaitProcessTargetGone(-pid); err != nil {
+					t.Fatalf("the hold's process group: %v", err)
+				}
+				groupGone = true
+			}
+			t.Cleanup(func() {
+				if !groupGone {
+					_ = syscall.Kill(-pid, syscall.SIGKILL)
+					_ = testenv.AwaitProcessTargetGone(-pid)
+				}
+			})
 			waited := make(chan error, 1)
 			go func() { waited <- command.Wait() }()
 			testenv.Await(t, "the hold's ready file", func() bool {
@@ -452,13 +472,16 @@ func TestFakeHostHold(t *testing.T) {
 				if present(h.path("host-stopped")) || syscall.Kill(pid, 0) != nil {
 					t.Fatal("an ignore-term hold stopped on SIGTERM")
 				}
-				_ = syscall.Kill(pid, syscall.SIGKILL)
+				_ = syscall.Kill(-pid, syscall.SIGKILL)
 				<-waited
+				awaitGroupGone()
 				return
 			}
 			if err := <-waited; err != nil {
 				t.Fatalf("hold ended %v, want exit 0", err)
 			}
+			// The hold's TERM trap signals its sleep child before it exits.
+			awaitGroupGone()
 			if !present(h.path("host-stopped")) {
 				t.Fatal("the hold wrote no stopped file")
 			}
