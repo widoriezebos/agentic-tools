@@ -1,15 +1,15 @@
 # app-guardrail-program
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 21
 - Intent: What: An umbrella goal: the metasystem can build someone else's app safely and largely on its own, with the app bringing its guardrails (specs, reference outputs, budgets, test batteries) and the metasystem bringing the discipline around them. Four of its six parts are done (the app covenant, the inception interview, guardrail adequacy checks, and the first evolution of guardrails). Left are app-guardrail-custody (the person's approval for weakening guardrails) and app-doctrine (the app's living rules). Why: It keeps the vision in one place and says when the whole program is finished. Pros: One place to see the program's state. Cons: The umbrella has no work of its own; it stays open only as long as its two members wait.
 - Origin: human
 - Next step: Next: Conclude this goal when app-guardrail-custody and app-doctrine have both concluded. Done when: both are done and the empty-repository walkthrough (adopt into an empty repository, go through the interview, receive covenant, doctrine and a starter backlog) still runs end to end.
 - OpenedAt: 2026-08-23T16:29:12Z
-- Revision: 100
+- Revision: 101
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-30T18:46:12Z because=Parked until app-guardrail-custody and app-doctrine are both done. It has no work of its own left.
+- Abandoned: by=human:Wido at=2026-10-03T09:54:40Z revision=101 opid=EWXW6GSCK2HDQM5K718QJDSB4J-m1e-718ba0eb carried=next-adoption-follow-ups because=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, Wido): it was an umbrella with no work of its own; its two open members move there.
 
 History:
 - 2026-08-23T16:29:12Z K7RVVBASDDAGTWG6580PG9492P-m1-bf243850 open actor=human:wido targets=app-guardrail-program
@@ -112,4 +112,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
-Integrity: sha256=35fe8cb6be8e651ca1e409d73fd1c6cff8a3d01b4911975127ba33e5c77f3726
+- 2026-10-03T09:54:40Z EWXW6GSCK2HDQM5K718QJDSB4J-m1e-718ba0eb abandon actor=human:Wido targets=app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=next-adoption-follow-ups reason=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, Wido): it was an umbrella with no work of its own; its two open members move there.
+Integrity: sha256=41e7e742511151c42cd034d5595571822fb51f0ac0b7e1d0c6b60cbd0a842a4f
