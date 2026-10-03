@@ -1,6 +1,6 @@
 # approval-stays-and-waiting-goals-return-by-themselves
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Changes what approval, waiting and budget mean for every goal, every seat and the person; a wrong rule starts work nobody agreed to or strands agreed work, and a changed ledger form can make the goal ledger unreadable to a running engine; the picker's condition and the dependency edges exist, the split of the records is new; it shapes every future goal"
@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: Design first, at this goal's tier. Input: agentic-tools-evidence/approval-and-waiting-20261003/design.md (m1e's deep look of 2026-10-03, revision 2: the engine's rules with their lines, the census from the goal histories, decisions D1 to D8, five slices with estimates, six decisions reserved for Wido) with its Astra critique rounds and their adjudication beside it. Turn it into the design page under plans/designs, run this tier's critique under the review stop rule, and get Wido's rulings on the reserved decisions before any build. Then build in the stated slices: S1 the order and the display of what a goal waits for, S2 a retry without approval, S3 no dependency parks, S5 a critic's intent finding becomes a question (none of these changes the ledger form); S4 the agreement over the intent alone and budget acts under their own authority, which is one coordinated cutover with the machinery stopped on every seat and waits for Wido's ruling on whether a budget act restarts the spend count. Owns: what the agreement binds, the can-continue condition, the order, the pause rules, the migration of checksums and dependency parks. Does not own: what may be opened, the ideas list, the Ready cap, the measures and the triage of withdrawn and never-approved goals (backlog-holds-only-work-that-can-start); budget values, estimates, accounting and alerts (goal-budget-follows-its-plan); whether a question blocks (questions-with-a-default-do-not-block); what happens before a retry (steward-acts-on-behaviour-patterns). Estimate from the design input: about 7.5 working days of build, above this tier's standard box; the budget is set from the accepted design's estimates.
 - OpenedAt: 2026-10-03T12:45:24Z
-- Revision: 5
+- Revision: 6
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T13:02:34Z revision=6 opid=77PNTCKSV1VE2DZE3Q16S8K0J7-m1e-718ba0eb authority=proven digest=f86cd146c53358d6baaf2d2febad3d0017c634a20d241ac8354719c3b8e18da4 episode=6
 
 History:
 - 2026-10-03T12:45:24Z N9424HAGX4M5PSNZ2KQH2BB32A-m1e-718ba0eb open actor=human:Wido targets=approval-stays-and-waiting-goals-return-by-themselves
@@ -18,4 +20,5 @@ History:
 - 2026-10-03T12:45:48Z J6AV36TEMGKDQHJ4HQFA55MPJ3-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,goal-budget-follows-its-plan,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=approval-stays-and-waiting-goals-return-by-themselves from=unranked to=1:2 requested-sequence=2
 - 2026-10-03T13:02:23Z BX053FR7BWVDBEC90K45M94ZWA-m1e-718ba0eb unapprove actor=human:Wido targets=approval-stays-and-waiting-goals-return-by-themselves reason=m1e 2026-10-03: correcting two statements in the text after the first critique round (three withdrawals carried a condition; no restoration of withdrawn approvals here); approved again in the same minute
 - 2026-10-03T13:02:28Z 57X3P1MY0TYMGQ7Y46PQMWYQ5Y-m1e-718ba0eb edit actor=human:Wido targets=approval-stays-and-waiting-goals-return-by-themselves
-Integrity: sha256=d10f6f5371d880d813e1831c73e0034f708e9fb6e2991128484f3768452f47dc
+- 2026-10-03T13:02:34Z 77PNTCKSV1VE2DZE3Q16S8K0J7-m1e-718ba0eb approve actor=human:Wido targets=approval-stays-and-waiting-goals-return-by-themselves
+Integrity: sha256=0e3628966b1cdc754a584a70e90f6d7c8352856cefc7f81383c4cd640e5665e9
