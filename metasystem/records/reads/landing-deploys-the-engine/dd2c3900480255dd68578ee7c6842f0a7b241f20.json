@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "landing-deploys-the-engine",
+  "unit": "chain-status",
+  "subject": {
+    "commit": "dd2c3900480255dd68578ee7c6842f0a7b241f20",
+    "parent": "e63867e5fd2d24965989ec1e1c44d2a17fbffdb6",
+    "tree": "b78d275fffc6d3c6976c3a834986a44db6df1d8b",
+    "patchDigest": "f6e98e44df029efa2cef311529163d3bb3e8c7c108df92c5c6a89b17a49425c1",
+    "unitDigest": "f0658332ccadbf70ff5e035c1735f766141439603970da570512b478c6b9d721"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c37dcad364f65af4e4054b9b",
+    "round": 1,
+    "closureSha256": "5c52983d9a5e279e0c9f253a299763ddb447b62d8ee9a3e8776cf2637b9b6857"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b78d275fffc6d3c6976c3a834986a44db6df1d8b",
+    "runId": "goal-read-gate-20261003t154355z-53868bbdff209bb8"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/deploy/ends_test.go",
+      "readerWord": "reviewed by critic root code-critic-c37dcad364f65af4e4054b9b"
+    },
+    {
+      "path": "metasystem/internal/deploy/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-c37dcad364f65af4e4054b9b"
+    }
+  ],
+  "sha256": "3049e857617537e1e067e3313c708c0de1f6d5d43031a9f29881d40b1d6bad2f"
+}
