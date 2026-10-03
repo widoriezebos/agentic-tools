@@ -508,6 +508,9 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				}
 			}
 		}
+		if refuted := inv.refutedClose(targets, store, goalID, result.RootJob); refuted != nil {
+			return *refuted
+		}
 		result, code, err = owners.branchRead(append(args, "--collect"))
 	}
 	if err != nil {
