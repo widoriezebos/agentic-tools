@@ -155,7 +155,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				check := isolatedGitEnvironment(fixture.worktree, objects, true)
 				add(fixture.worktree, fixture.worktree+"\n", nil, "rev-parse", "--show-toplevel")
 				add(fixture.worktree, "head\n", nil, "rev-parse", "HEAD")
-				add(fixture.worktree, "refs/heads/goal/goal head\n", nil, "for-each-ref", "--format=%(refname) %(objectname)")
+				add(fixture.worktree, "refs/heads/goal/goal head\n", nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
 				add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 				add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 				add(fixture.worktree, "", check, "ls-files", "-v", "--stage", "-z", "--full-name", "--", ".")
@@ -609,6 +609,14 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 			runGit(t, repo, "commit", "-m", "proof commit")
 		}},
 		{"ref", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/heads/x", "HEAD") }},
+		{"tag", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/tags/x", "HEAD") }},
+		// The presence publisher and the goal ledger's fetch move these refs
+		// while any proof runs; the proof wrote none of them.
+		{"background-refs", "", func(t *testing.T, repo string) {
+			for _, ref := range []string{"refs/remotes/origin/presence/m1x", "refs/metasystem/presence-copy/m1x", "refs/metasystem/goals/accepted"} {
+				runGit(t, repo, "update-ref", ref, "HEAD")
+			}
+		}},
 		{"staged-blob-and-path", "index", func(t *testing.T, repo string) {
 			writeFile(t, filepath.Join(repo, "staged"), "new\n")
 			runGit(t, repo, "add", "staged")
