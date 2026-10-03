@@ -87,13 +87,82 @@ func frozenInputHolds(inputs []frozenInput, diskRoot string) bool {
 	return false
 }
 
+// BriefDraft is a path a brief cites that the delegate's tree lacks, with
+// the bytes a checkout holds for it.
+type BriefDraft struct {
+	Path    string
+	Content []byte
+}
+
+// BriefDraftsHeld returns the drafts text cites, read as admission reads it
+// for a delegate dispatched from installation root, that one of the
+// checkouts (installation folders, in order) holds as a regular file: at
+// the cited path from the checkout's repository top, else under the
+// installation folder itself, as a brief written from the installation
+// names it. The first checkout holding a path gives its bytes. A cited path
+// no checkout holds is left out, so admission still refuses it.
+func BriefDraftsHeld(text []byte, root string, checkouts ...string) ([]BriefDraft, error) {
+	top, err := gitOutput(root, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, err
+	}
+	prefix, err := gitBriefTreeFacts{}.InstallPrefix(root)
+	if err != nil {
+		return nil, err
+	}
+	cited, err := briefDraftPaths(text, top, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var drafts []BriefDraft
+	for _, rel := range cited {
+		if content, found := draftHeld(rel, checkouts); found {
+			drafts = append(drafts, BriefDraft{Path: rel, Content: content})
+		}
+	}
+	return drafts, nil
+}
+
+func draftHeld(rel string, checkouts []string) ([]byte, bool) {
+	for _, checkout := range checkouts {
+		if checkout == "" {
+			continue
+		}
+		var locations []string
+		if top, err := gitOutput(checkout, "rev-parse", "--show-toplevel"); err == nil {
+			locations = append(locations, filepath.Join(top, filepath.FromSlash(rel)))
+		}
+		locations = append(locations, filepath.Join(checkout, filepath.FromSlash(rel)))
+		for _, path := range locations {
+			if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if content, err := os.ReadFile(path); err == nil {
+				return content, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // BriefDraftPaths returns the repository paths text cites, by the same
 // reading admission uses, that the commit at root's HEAD does not hold
 // (runtime artifact paths excluded): the drafts a caller must freeze before
 // a delegate can be admitted to read them.
 func BriefDraftPaths(text []byte, root string) ([]string, error) {
+	prefix, err := gitBriefTreeFacts{}.InstallPrefix(root)
+	if err != nil {
+		return nil, err
+	}
+	return briefDraftPaths(text, root, prefix)
+}
+
+// briefDraftPaths is BriefDraftPaths for root's repository read from an
+// installation folder prefix: a path cited from the installation that the
+// tree holds under the prefix is no draft.
+func briefDraftPaths(text []byte, root, prefix string) ([]string, error) {
 	facts := gitBriefTreeFacts{}
-	bounds, err := parseBriefBounds(scanBriefHeaders(text), func() (string, error) { return facts.InstallPrefix(root) })
+	bounds, err := parseBriefBounds(scanBriefHeaders(text), func() (string, error) { return prefix, nil })
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +185,7 @@ func BriefDraftPaths(text []byte, root string) ([]string, error) {
 		if artifactAuthorityPath(candidate) {
 			continue
 		}
-		if present, _ := facts.HasPath(root, commit, candidate); !present {
+		if present, _ := treeHolds(facts, root, []string{commit}, candidate, prefix); !present {
 			drafts = append(drafts, candidate)
 		}
 	}

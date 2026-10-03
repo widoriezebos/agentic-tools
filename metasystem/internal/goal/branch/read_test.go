@@ -321,13 +321,14 @@ func writeReadCriticRecord(t *testing.T, root, job, goalID, commit, parent, crea
 	writeJSONFixture(t, root, "artifacts/agents/jobs/"+job+".json", record)
 }
 
-func TestGLEBranchReadInterruptedLaunchWithoutJobRecordDispatchesFrozenIntentAgain(t *testing.T) {
+func TestGLEBranchReadInterruptedLaunchWithoutJobRecordStartsTheChangedRequest(t *testing.T) {
 	t.Parallel()
 	r := newReadFactRepository(t, false)
 	unit := r.unit
 	r.expectStart()
 	r.expectGateAndBrief()
 	r.expectStart()
+	r.expect(readFactCall{method: "Range", args: []string{r.root, r.base, r.unit, "goal-a"}, commits: r.rangeFacts()})
 	r.expectStart()
 	input := filepath.Join(t.TempDir(), "accepted.md")
 	if err := os.WriteFile(input, []byte("accepted design A\n"), 0o644); err != nil {
@@ -350,8 +351,8 @@ func TestGLEBranchReadInterruptedLaunchWithoutJobRecordDispatchesFrozenIntentAga
 				firstBrief = string(body)
 				panic("process interrupted before any job record")
 			}
-			if string(body) != firstBrief {
-				t.Fatalf("second dispatch changed the frozen brief: first=%q second=%q", firstBrief, body)
+			if !strings.Contains(string(body), "accepted design B") || firstBrief == string(body) {
+				t.Fatalf("the second dispatch is not the changed request: first=%q second=%q", firstBrief, body)
 			}
 			writeReadJobWithSubject(t, r.root, "critic-again", unit, "running", false, r.readSubject())
 			return "critic-again", nil
@@ -365,16 +366,18 @@ func TestGLEBranchReadInterruptedLaunchWithoutJobRecordDispatchesFrozenIntentAga
 		}()
 		_, _ = branch.RunBranchRead(request)
 	}()
+	// The job records say no critic was reserved, so the interrupted start
+	// bound nothing: a changed request starts the review with its brief.
 	if err := os.WriteFile(input, []byte("accepted design B\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || delegates != 1 {
-		t.Fatalf("changed request after interruption=%v delegates=%d", err, delegates)
-	}
-	request.BriefPath, request.Runtime, request.Model = "", "", ""
 	result, err := branch.RunBranchRead(request)
 	if err != nil || result.State != "dispatched" || result.RootJob != "critic-again" || delegates != 2 {
-		t.Fatalf("omitted options after interruption=%+v err=%v delegates=%d", result, err, delegates)
+		t.Fatalf("changed request after interruption=%+v err=%v delegates=%d", result, err, delegates)
+	}
+	request.BriefPath, request.Runtime, request.Model = "", "", ""
+	if result, err = branch.RunBranchRead(request); err != nil || result.State != "open" || delegates != 2 {
+		t.Fatalf("omitted options after the dispatch=%+v err=%v delegates=%d", result, err, delegates)
 	}
 }
 
@@ -421,6 +424,7 @@ func TestGLEBranchReadFailedDispatchWithoutJobRecordMayBeRequestedAgain(t *testi
 	r.expectStart()
 	r.expectGateAndBrief()
 	r.expectStart()
+	r.expect(readFactCall{method: "Range", args: []string{r.root, r.base, r.unit, "goal-a"}, commits: r.rangeFacts()})
 	input := filepath.Join(t.TempDir(), "accepted.md")
 	if err := os.WriteFile(input, []byte("accepted design before the failed dispatch\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -753,7 +757,6 @@ func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
 	r.expectStart()
 	r.expectGateAndBrief()
 	r.expectStart()
-	r.expectStart()
 	input := filepath.Join(t.TempDir(), "accepted.md")
 	original := []byte("accepted design before refusal\n")
 	if err := os.WriteFile(input, original, 0o644); err != nil {
@@ -792,13 +795,62 @@ func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
 	if err := os.WriteFile(input, []byte("changed source after refusal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || delegates != 1 {
-		t.Fatalf("conflicting retry=%v delegates=%d", err, delegates)
-	}
 	request.BriefPath, request.Runtime, request.Model = "", "", ""
 	result, err := branch.RunBranchRead(request)
 	if err != nil || result.State != "dispatched" || delegates != 2 || launches != 1 {
 		t.Fatalf("frozen retry=%+v err=%v delegates=%d launches=%d", result, err, delegates, launches)
+	}
+}
+
+// TestBranchReadRefusedDispatchBindsNothing: a dispatch refused before any
+// critic started binds nothing, so a request with a corrected brief starts
+// the review with it (runtime and model as it names them); once a critic
+// was dispatched, the review stays bound to that brief.
+func TestBranchReadRefusedDispatchBindsNothing(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	unit := r.unit
+	r.expectStart()
+	r.expectGateAndBrief()
+	r.expectStart()
+	r.expect(readFactCall{method: "Range", args: []string{r.root, r.base, r.unit, "goal-a"}, commits: r.rangeFacts()})
+	r.expectStart()
+	dir := t.TempDir()
+	refused, corrected := filepath.Join(dir, "refused.md"), filepath.Join(dir, "corrected.md")
+	if err := os.WriteFile(refused, []byte("cites a path the tree lacks\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(corrected, []byte("cites only what the tree holds\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var dispatched []string
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, Repository: r, BriefPath: refused, Runtime: "codex",
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, _, _, runtime, model string) (string, error) {
+			body, err := os.ReadFile(brief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(body), "cites a path the tree lacks") {
+				return "", &branch.ReadNeverLaunchedError{Err: errors.New("brief authority admission refused")}
+			}
+			dispatched = append(dispatched, runtime+"/"+model)
+			writeReadJobWithSubject(t, r.root, "critic-corrected", unit, "running", false, r.readSubject())
+			return "critic-corrected", nil
+		},
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || len(dispatched) != 0 {
+		t.Fatalf("refused dispatch=%v dispatched=%v", err, dispatched)
+	}
+	request.BriefPath, request.Runtime = corrected, ""
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "dispatched" || len(dispatched) != 1 || dispatched[0] != "/" {
+		t.Fatalf("corrected brief after a refused dispatch=%+v err=%v dispatched=%v", result, err, dispatched)
+	}
+	request.BriefPath = refused
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || len(dispatched) != 1 {
+		t.Fatalf("another brief after a dispatch=%v dispatched=%v", err, dispatched)
 	}
 }
 

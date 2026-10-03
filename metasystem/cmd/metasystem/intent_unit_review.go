@@ -312,6 +312,36 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	return result
 }
 
+// neverLaunchedCause is why a review's dispatch started nothing, in the
+// dispatch's own words, and its remedy line when it gave one: the
+// delegate's refusal detail when it reported one, else the refusal's own
+// lines after the read owner's heading.
+func neverLaunchedCause(err error) (cause, remedy string) {
+	text := err.Error()
+	var outcome *readDelegateOutcomeError
+	if errors.As(err, &outcome) && strings.TrimSpace(outcome.Outcome.Detail) != "" {
+		text = outcome.Outcome.Detail
+	}
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && line != branch.ReadDispatchFailed {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return "the dispatch refused without a reason", ""
+	}
+	cause = lines[0]
+	for _, heading := range []string{"brief authority admission refused: ", "dispatch refused: "} {
+		cause = strings.TrimPrefix(cause, heading)
+	}
+	if len(lines) > 1 {
+		remedy = lines[1]
+	}
+	return cause, remedy
+}
+
 // resolveUnitCommit finds the unit's Goal-Unit commit on the branch the
 // commit owner installed at tip, through the branch range owner, and adopts
 // it only when it binds the retained subject: for a first commit, tip is
@@ -485,8 +515,12 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			return intentResult{Targets: targets, Outcome: intentInProgress, Summary: "whether the review's critic started isn't known yet; it is never started twice",
 				Data: map[string]any{"code": refusal.Code}, next: inv.sameCommand(), nextReason: "finds out and continues", Details: []string{err.Error()}}
 		case errors.As(err, &neverLaunched):
-			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: err.Error(),
-				next: inv.sameCommand(), nextReason: "no critic was started; the read may be requested again"}
+			cause, remedy := neverLaunchedCause(err)
+			if remedy == "" {
+				remedy = "nothing was started or kept, so the same command asks again"
+			}
+			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: "no reviewer was started: " + cause,
+				next: inv.sameCommand(), nextReason: remedy, Details: []string{err.Error()}}
 		case errors.As(err, &refusal):
 			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: refusal.Message, Data: map[string]any{"code": refusal.Code},
 				next: inv.sameCommand(), nextReason: "once that is settled", Details: []string{err.Error()}}
