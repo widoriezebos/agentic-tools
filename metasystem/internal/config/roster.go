@@ -16,6 +16,9 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // The three ways a roster read refuses, recorded with a refused launch.
@@ -49,6 +52,9 @@ var (
 	efforts    = []string{"low", "medium", "high", "xhigh", "max"}
 	// mainRows are the rows no launch reads; the calling session does them.
 	mainRows = []string{"verify", "investigate", "warden", "behavior-judge"}
+	// authorReviewer pairs the row that does a piece of work with the row
+	// that reviews it; within a roster the two name different models.
+	authorReviewer = [][2]string{{"build", "code-critique"}, {"design", "design-critique"}}
 )
 
 // TierRoster is the roster a goal of the given risk tier works from. Work
@@ -135,6 +141,99 @@ func RosterRow(home, roster, row string, runtimes []string) (RosterAgent, error)
 		return RosterAgent{}, &RosterRefusal{RosterRuntime, fmt.Sprintf("Roster %s runs %s on %s, and this installation runs %s.%s", roster, row, agent.Runtime, plainList(runtimes), then), command}
 	}
 	return agent, nil
+}
+
+// SetRosterRow writes one row of the computer's rosters, value being
+// RUNTIME:MODEL:EFFORT, RUNTIME:MODEL for the Partner, or main; resolve is the
+// model a runtime runs for a written one. A refused write leaves the file as
+// it was; the file is read under the lock, so no writer loses a row another
+// wrote meanwhile, and an unusable file is refused, never repaired.
+func SetRosterRow(home, roster, row, value string, runtimes []string, resolve func(runtime, model string) (string, error)) (changed bool, err error) {
+	i := slices.IndexFunc(rosterKinds, func(kind rosterKind) bool { return kind.id == roster })
+	if i < 0 {
+		var ids []string
+		for _, kind := range rosterKinds {
+			ids = append(ids, kind.id)
+		}
+		return false, unchanged("%s is not a roster; the rosters are %s", roster, plainList(ids))
+	}
+	if !slices.Contains(rosterKinds[i].rows, row) {
+		return false, unchanged("%s is not a row of %s; its rows are %s", row, roster, plainList(rosterKinds[i].rows))
+	}
+	agent := RosterAgent{Runtime: "main"}
+	if fields := strings.Split(value, ":"); value != "main" {
+		// A value with more fields than a row has, or an empty one, is never
+		// cut short to fit: the empty agent draws the row's form sentence.
+		agent = RosterAgent{}
+		if len(fields) <= 3 && !slices.Contains(fields, "") {
+			fields = append(fields, "", "")
+			agent = RosterAgent{Runtime: fields[0], Model: fields[1], Effort: fields[2]}
+		}
+	}
+	if problem := rowProblem(row, agent); problem != "" {
+		return false, unchanged("%s", problem)
+	}
+	if agent.Runtime != "main" && !slices.Contains(runtimes, agent.Runtime) {
+		return false, unchanged("%s is not one of this installation's runtimes (%s)", agent.Runtime, strings.Join(runtimes, ", "))
+	}
+	if !filepath.IsAbs(home) {
+		return false, unchanged("the rosters need an absolute home, got %q", home)
+	}
+	host := filepath.Dir(RostersPath(home))
+	if err := os.MkdirAll(host, 0o700); err != nil {
+		return false, err
+	}
+	held, err := lock.File(filepath.Join(host, "rosters.lock"), 0o600, lock.Exclusive)
+	if err != nil {
+		return false, err
+	}
+	defer held.Release()
+	file, problem := readRosters(home)
+	if problem != "" {
+		return false, unchanged("the rosters file %s can't be used: %s", RostersPath(home), problem)
+	}
+	entry := file.Rosters[roster]
+	if current, ok := entry.Rows[row]; ok && current == agent {
+		return false, nil
+	}
+	// A reviewer on the author's model, even under an alias, shares the
+	// author's blind spots, so the review would pass what the work got wrong.
+	for _, pair := range authorReviewer {
+		at := slices.Index(pair[:], row)
+		if at < 0 || entry.Rows[pair[1-at]].Model == "" {
+			continue
+		}
+		rows, runs, written := [2]RosterAgent{agent, agent}, [2]string{}, []string{}
+		rows[1-at] = entry.Rows[pair[1-at]]
+		for k, r := range rows {
+			if runs[k], err = resolve(r.Runtime, r.Model); err != nil {
+				return false, unchanged("can't tell which model %s runs for %s: %w", r.Runtime, r.Model, err)
+			} else if runs[k] != r.Model {
+				written = append(written, pair[k]+" is written "+r.Model)
+			}
+		}
+		both := agent.Model
+		if runs[0] != runs[1] {
+			continue
+		} else if rows[0].Model != rows[1].Model {
+			both = runs[0] + " (" + plainList(written) + ")"
+		}
+		return false, unchanged("%s %s and %s would both run %s; the author and the reviewer of a piece of work are different models", roster, pair[0], pair[1], both)
+	}
+	if file.Rosters == nil {
+		file.Rosters = map[string]rosterEntry{}
+	}
+	if entry.Rows == nil {
+		entry.Rows = map[string]RosterAgent{}
+	}
+	version := 1
+	entry.Type, entry.Rows[row] = rosterKinds[i].kind, agent
+	file.Version, file.Rosters[roster] = &version, entry
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err == nil {
+		_, err = atomicfile.WriteFile(RostersPath(home), append(data, '\n'), 0o600, host)
+	}
+	return err == nil, err
 }
 
 // readRosters checks the whole file, so one broken row refuses every read.
@@ -240,6 +339,10 @@ func rowProblem(row string, agent RosterAgent) string {
 
 func unusable(home, problem string) error {
 	return &RosterRefusal{RosterUnreadable, "The rosters file " + RostersPath(home) + " can't be used: " + problem + ". metasystem roster list shows what is wrong. Nothing was started.", []string{"metasystem", "roster", "list"}}
+}
+
+func unchanged(format string, args ...any) error {
+	return fmt.Errorf(format+"; nothing was changed", args...)
 }
 
 // plainList writes items as a person says them: "claude and codex".
