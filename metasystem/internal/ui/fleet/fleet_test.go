@@ -124,6 +124,16 @@ func TestAHoldCarriesTheTitleAndLaneOfTheSameProjection(t *testing.T) {
 	testutil.Expect(t, "a reachable holder raises no flag", holds[0].Flag, "")
 }
 
+// A chip names a goal by the title every other list gives it, which starts
+// after the label a goal's intent opens with.
+func TestAChipNamesAGoalWithoutTheLabelOfItsIntent(t *testing.T) {
+	t.Parallel()
+	testutil.Expect(t, "the title starts after the label",
+		lede("What: finish the test repairs. Why: the gate is red."), "finish the test repairs.")
+	testutil.Expect(t, "a title is a chip long", lede("What: "+strings.Repeat("word ", 30)),
+		strings.TrimRight(strings.Repeat("word ", 16), " ")+"…")
+}
+
 // A ledger this seat could not read leaves every standing standing and raises
 // no flag at all: nothing is known about who holds what.
 func TestAnUnreadableLedgerReportsStandingsAndNoFlags(t *testing.T) {

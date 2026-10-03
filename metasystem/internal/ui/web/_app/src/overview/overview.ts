@@ -1,4 +1,4 @@
-import type { Changed, FreshnessState, Group, Health, Item, Lane, NeedsYou, Page, Where } from "./api";
+import type { Changed, FreshnessState, Group, Health, Item, Lane, NeedsYou, Page, Seat, Where } from "./api";
 import { laneFor } from "../backlog/lanes";
 import { dateAndTime, minuteTime } from "../backlog/format";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
@@ -248,9 +248,15 @@ export function changedCounts(changed: Changed): string {
   ].join(" · ");
 }
 
+/** What a seat is called: its machine's name, which is how a person knows one. */
+export function seatName(seat: Seat): string {
+  return seat.machine === "" ? "seat not recorded" : seat.machine;
+}
+
 /**
- * Where the rest of the changes are, or null where the timeline is showing all
- * of them.
+ * Where the rest of the changes are read, or null where the timeline is
+ * showing all of them. No page lists the changes themselves, so the link says
+ * the page it opens rather than promising a list.
  *
  * There is one way through rather than one per kind, because one line under a
  * short list is the whole point of the short list. It goes to the board while
@@ -258,13 +264,13 @@ export function changedCounts(changed: Changed): string {
  * where a goal's movement is read, and a page hiding only record changes has
  * nothing there for a human to find.
  */
-export function seeAll(changed: Changed, shown: readonly Entry[]): string | null {
+export function seeAll(changed: Changed, shown: readonly Entry[]): { to: string; label: string } | null {
   const goalsShown = shown.filter((one) => one.where.kind === "goal").length;
   if (changed.concluded.count + changed.moved.count > goalsShown) {
-    return backlogPath();
+    return { to: backlogPath(), label: "Open the backlog →" };
   }
   if (changed.records.count > shown.length - goalsShown) {
-    return projectPath("designs");
+    return { to: projectPath("designs"), label: "Open the designs →" };
   }
   return null;
 }

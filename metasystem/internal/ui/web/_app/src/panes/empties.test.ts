@@ -19,7 +19,7 @@ const expected: Empty[] = [
     kind: "not projected",
     heading: "Settings pages are not built yet",
     body: "Pages for runtimes and models, connections and channels, identity and authority, execution defaults, and storage and retention will be read and changed here.",
-    note: "Arrives with gate 7",
+    note: "Appearance is the one setting this page can change today",
     link: null,
     action: null,
   },
@@ -98,11 +98,13 @@ describe("the empty states", () => {
     }
   });
 
-  it("name the slice or gate that brings each view", () => {
+  it("say what is true of a view that is not built, and name no slice or gate", () => {
     for (const empty of empties) {
       if (empty.kind === "not projected") {
-        expect({ id: empty.id, note: empty.note.startsWith("Arrives with ") }).toEqual({ id: empty.id, note: true });
+        expect({ id: empty.id, repeats: empty.note.toLowerCase().includes("not built") }).toEqual({ id: empty.id, repeats: false });
       }
+      const words = `${empty.heading} ${empty.body} ${empty.note}`;
+      expect({ id: empty.id, names: /\bgate \d|\bg\d+-s\d+|Arrives with/.test(words) }).toEqual({ id: empty.id, names: false });
     }
   });
 

@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { Chip } from "./controls";
+import { goalTitle } from "../goalTitle";
 
 /**
  * A field that must hold goals the ledger already carries, so it is never
@@ -49,14 +50,13 @@ export type PickableGoal = {
 const FIRST_WORDS = 80;
 
 /**
- * The intent's first words, cut at a word rather than inside one.
+ * The first words of a goal's title, cut at a word rather than inside one.
  *
- * There is no first-sentence helper in this build to reuse, and an intent is
- * not reliably one sentence, so the cut is by length: what fits on a line,
+ * An intent is not reliably one sentence, so the cut is by length: what fits on a line,
  * ending where a word ends, with an ellipsis saying that the line continues.
  */
 export function firstWords(intent: string): string {
-  const line = intent.trim().replace(/\s+/g, " ");
+  const line = goalTitle(intent).replace(/\s+/g, " ");
   if (line.length <= FIRST_WORDS) {
     return line;
   }

@@ -4,6 +4,7 @@ import type { Landed, Page, Problem } from "./api";
 import {
   concludedLine,
   countLine,
+  engineBuild,
   engineLine,
   firstSentence,
   freshLine,
@@ -72,6 +73,21 @@ describe("the header", () => {
     expect(engineLine(page())).toBe(
       "last published MetaSystem engine 5b9d958 · generation 4 · published 2026-09-25 10:45",
     );
+  });
+
+  // A whole commit hash is forty characters a reader does not compare; the
+  // line says its short form and keeps the whole value as its title.
+  it("says a whole commit hash by its first seven characters, and keeps the whole of it", () => {
+    const whole = "b31a1e8e9abed31fdedb97e68611a4d474893ccd";
+    const hashed = page({ engine: { build: whole, generation: 2, publishedAt: "2026-09-25T10:45:00" } });
+
+    expect(engineLine(hashed)).toBe("last published MetaSystem engine b31a1e8 · generation 2 · published 2026-09-25 10:45");
+    expect(engineBuild(hashed)).toBe(whole);
+    // A build that is not a hash, or is already short, is said whole and has nothing behind it.
+    const named = page({ engine: { build: "v1.4.0-rc", generation: 2, publishedAt: "" } });
+    expect(engineLine(named)).toBe("last published MetaSystem engine v1.4.0-rc · generation 2");
+    expect(engineBuild(named)).toBe("");
+    expect(engineBuild(page())).toBe("");
   });
 
   it("says so in words where this seat has published none", () => {

@@ -76,7 +76,7 @@ describe("the groups", () => {
 
   it("are named for what is in them", () => {
     expect(groupsOf(everyKind, now).map((group) => group.title)).toEqual([
-      "Questions", "Drafts to accept", "Designs landed", "Asks from a seat", "Alerts",
+      "Questions", "Drafts to accept", "Designs to mark done", "Asks from a seat", "Alerts",
       "Approvals to renew", "Stopped goals", "Parked by a seat", "Rulings past review",
       "Goals waiting for approval",
     ]);

@@ -1,4 +1,5 @@
 import type { Landed, Page, Problem } from "./api";
+import { dateAndTime, day, isLongHash, shortTip, UNKNOWN } from "../backlog/format";
 
 /**
  * What the Application page says, as statements a test can point at.
@@ -67,18 +68,28 @@ export function countLine(page: Page): string {
  * tick, and a seat that has not ticked since it was rebuilt publishes the
  * build it had when it last ticked. A seat with no record at all says so,
  * rather than showing an empty build a human would read as one.
+ *
+ * A commit hash is said by its short form, as Settings says the engine build;
+ * the whole value is the line's title (`engineBuild`), for whoever compares it.
  */
 export function engineLine(page: Page): string {
   const engine = page.engine;
   if (engine === null || engine.build === "") {
     return "no engine build available";
   }
-  const parts = [`last published MetaSystem engine ${engine.build}`, `generation ${String(engine.generation)}`];
+  const build = isLongHash(engine.build) ? shortTip(engine.build) : engine.build;
+  const parts = [`last published MetaSystem engine ${build}`, `generation ${String(engine.generation)}`];
   const at = dayAndMinute(engine.publishedAt);
   if (at !== "") {
     parts.push(`published ${at}`);
   }
   return parts.join(" · ");
+}
+
+/** The whole build behind the engine line's short one, or "" where the line shows it whole. */
+export function engineBuild(page: Page): string {
+  const build = page.engine?.build ?? "";
+  return isLongHash(build) ? build : "";
 }
 
 /**
@@ -219,20 +230,14 @@ export function firstSentence(text: string): string {
 
 /** The local calendar day of a recorded instant, or "" where none was. */
 export function dayOf(stamp: string): string {
-  const at = parse(stamp);
-  if (at === null) {
-    return "";
-  }
-  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+  const said = day(stamp);
+  return said === UNKNOWN ? "" : said;
 }
 
 /** The local day and clock to the minute, for the engine's own tick. */
 export function dayAndMinute(stamp: string): string {
-  const at = parse(stamp);
-  if (at === null) {
-    return "";
-  }
-  return `${dayOf(stamp)} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const said = dateAndTime(stamp);
+  return said === UNKNOWN ? "" : said;
 }
 
 /* ------------------------------------------------------ known problems -- */

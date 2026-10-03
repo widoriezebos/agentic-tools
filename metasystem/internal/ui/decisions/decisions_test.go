@@ -255,6 +255,33 @@ func TestEverySilenceLineIsTheOneTheEngineMakesTrue(t *testing.T) {
 	}
 }
 
+// A seat is named by its machine, never by its machine and lineage joined.
+func TestAHolderIsNamedByItsMachine(t *testing.T) {
+	t.Parallel()
+	held := row("held", "A goal a seat holds", backlog.LaneReview)
+	held.Claim = &backlog.Claim{Machine: "m1f", Lineage: "steward-seat"}
+	if got := holderOf(held); got != "m1f" {
+		t.Errorf("holderOf = %q, want the machine's name alone", got)
+	}
+}
+
+// A goal is named by the words after the label its intent opens with: the
+// row's title and the ask both start there, and a record that states only the
+// label is named by its id.
+func TestAGoalIsNamedWithoutTheLabelOfItsIntent(t *testing.T) {
+	t.Parallel()
+	labelled := row("plain-words", "What: the header reads on a phone. Why: it is cut today.", backlog.LaneToDo)
+	if got := titleOf(labelled); got != "the header reads on a phone" {
+		t.Errorf("titleOf = %q, want the first sentence after the label", got)
+	}
+	if got := titleOf(row("bare", "What:", backlog.LaneToDo)); got != "bare" {
+		t.Errorf("titleOf = %q, want the id where only the label is stated", got)
+	}
+	if got := titleOf(row("plain", "The inbox reads one row per kind. More.", backlog.LaneToDo)); got != "The inbox reads one row per kind" {
+		t.Errorf("titleOf = %q, want an intent with no label cut as it was", got)
+	}
+}
+
 // A design with no status of its own does not lose the end of its sentence.
 func TestALandedDesignWithNoStatusSaysSoRatherThanTrailingOff(t *testing.T) {
 	t.Parallel()

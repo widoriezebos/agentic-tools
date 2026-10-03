@@ -33,6 +33,7 @@ import {
   moreLine,
   needsKinds,
   plural,
+  seatName,
   seeAll,
   timeline,
   whenLine,
@@ -366,8 +367,8 @@ function Changed({ page }: { page: OverviewPayload }) {
           )}
           {rest !== null && (
             <p className="ms-overview-foot">
-              <NavLink className="ms-overview-more" to={rest}>
-                See all →
+              <NavLink className="ms-overview-more" to={rest.to}>
+                {rest.label}
               </NavLink>
             </p>
           )}
@@ -473,10 +474,6 @@ function holderWords(holder: Holder): string {
 function ClaimedCard({ claimed }: { claimed: Claimed }) {
   // The instant is read against the browser's clock as the card renders, once.
   const when = whenLine(claimed.at, new Date());
-  const seat =
-    claimed.seat.machine === ""
-      ? "seat not recorded"
-      : `${claimed.seat.machine}${claimed.seat.lineage === "" ? "" : `+${claimed.seat.lineage}`}`;
   return (
     <li className="ms-overview-card">
       <Where where={{ kind: "goal", id: claimed.id }} className="ms-overview-row">
@@ -484,7 +481,7 @@ function ClaimedCard({ claimed }: { claimed: Claimed }) {
         <span className="ms-overview-row-title">{claimed.title === "" ? claimed.id : claimed.title}</span>
       </Where>
       <p className="ms-overview-card-facts">
-        <Chip>{seat}</Chip>
+        <Chip>{seatName(claimed.seat)}</Chip>
         {/* The flag beside the seat, where the server could read a standing
             for that machine. It says what is known and asks for nothing: the
             Fleet page is where a human goes to act on it.

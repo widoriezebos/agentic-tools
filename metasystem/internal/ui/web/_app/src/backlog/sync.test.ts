@@ -72,7 +72,8 @@ describe("a ledger that is current", () => {
 
   it("is at rest, and says only when this page read and what it read", () => {
     expect(sync.state).toBe("rest");
-    expect(sync.line).toBe(`Synced ${minuteTime(OBSERVED)} · 2ef5d8d`);
+    expect(sync.line).toBe(`Synced ${minuteTime(OBSERVED)}`);
+    expect(sync.report).toContain("2ef5d8d");
   });
 
   it("puts no line on the page, because nothing is wrong", () => {

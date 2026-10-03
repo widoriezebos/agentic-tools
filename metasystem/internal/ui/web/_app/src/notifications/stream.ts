@@ -19,7 +19,7 @@
  * resumes the notification journal from it, so a Partner id there would name
  * something that journal cannot find and the reconnect would lose every
  * notification in between. The Partner joins its beats to the conversation's
- * snapshot instead, by turn and sequence, which is what the open listener
+ * snapshot instead, by turn and sequence, which is what the reopen listener
  * below is for.
  *
  * Nothing here retries. EventSource reconnects on its own when the connection
@@ -62,7 +62,24 @@ const FLEET = "fleet";
  */
 const partnerListeners = new Set<(event: PartnerEvent) => void>();
 const openListeners = new Set<() => void>();
+const heardListeners = new Set<() => void>();
 const fleetListeners = new Set<() => void>();
+
+// Whether the page's stream has opened or failed since it was opened. A reader
+// that waits for it reads then.
+let heard = false;
+
+function hear(): void {
+  if (heard) {
+    return;
+  }
+  heard = true;
+  const waiting = [...heardListeners];
+  heardListeners.clear();
+  for (const held of waiting) {
+    held();
+  }
+}
 
 /** Listen for the Partner's beats. The returned function stops listening. */
 export function onPartnerEvent(listener: (event: PartnerEvent) => void): () => void {
@@ -84,14 +101,35 @@ export function onFleetEvent(listener: () => void): () => void {
 }
 
 /**
- * Listen for the connection opening, which happens once on load and again on
- * every reconnect. It is what the Partner re-reads its conversation on: a
- * reconnect means beats may have been missed, and the snapshot is the truth.
+ * Listen for the connection opening again after it failed or dropped. It is
+ * what the Partner re-reads its conversation on, and what the fleet's readers
+ * re-read the fleet on: while the connection was down, beats and presence
+ * attempts may have been missed, and a fresh read is the truth.
  */
-export function onStreamOpen(listener: () => void): () => void {
+export function onStreamReopen(listener: () => void): () => void {
   openListeners.add(listener);
   return () => {
     openListeners.delete(listener);
+  };
+}
+
+/**
+ * Call `read` once, when the stream first opens, or at once when it already
+ * has. The server sends a beat only to a connection it already holds, so a
+ * read made after the open misses nothing: every beat after it reaches the
+ * page, and every turn before it is in what it read. A stream that fails
+ * before it opens has `read` called then instead, so a page whose stream
+ * cannot connect still reads; its later open is a reopen. The returned
+ * function stops waiting.
+ */
+export function onceStreamOpens(read: () => void): () => void {
+  if (heard) {
+    read();
+    return () => {};
+  }
+  heardListeners.add(read);
+  return () => {
+    heardListeners.delete(read);
   };
 }
 
@@ -140,20 +178,47 @@ export function openNotificationStream(arrived: (notification: Notification) => 
       held();
     }
   };
-  const opened = () => {
-    for (const held of openListeners) {
-      held();
-    }
-  };
   source.addEventListener(EVENT, listener as EventListener);
   source.addEventListener(PARTNER, partner as EventListener);
   source.addEventListener(FLEET, fleet);
-  source.addEventListener("open", opened);
+  const stopReopens = followReopens(source);
   return () => {
     source.removeEventListener(EVENT, listener as EventListener);
     source.removeEventListener(PARTNER, partner as EventListener);
     source.removeEventListener(FLEET, fleet);
-    source.removeEventListener("open", opened);
+    stopReopens();
     source.close();
+  };
+}
+
+/**
+ * Tell the reopen listeners of each open of one connection that follows a
+ * failure, and the readers waiting for the stream of its first open or
+ * failure. The browser says "error" whenever the connection fails or drops,
+ * before it tries again; an open after one is a reconnect. The returned
+ * function stops following, and a reader that waits after it waits for the
+ * next connection.
+ */
+export function followReopens(source: EventTarget): () => void {
+  let down = false;
+  const failed = () => {
+    down = true;
+    hear();
+  };
+  const opened = () => {
+    hear();
+    if (down) {
+      down = false;
+      for (const held of openListeners) {
+        held();
+      }
+    }
+  };
+  source.addEventListener("error", failed);
+  source.addEventListener("open", opened);
+  return () => {
+    source.removeEventListener("error", failed);
+    source.removeEventListener("open", opened);
+    heard = false;
   };
 }

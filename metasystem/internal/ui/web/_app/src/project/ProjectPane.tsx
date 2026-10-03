@@ -20,12 +20,17 @@ import {
   FIND_PLACEHOLDER,
   found,
   FOUND_NOTE,
+  goalFacts,
   goalGroups,
+  goalOffers,
   kindTitle,
   listedIn,
   newActionFor,
   NO_SLICE_PLAN,
+  otherFiles,
   noMatchLine,
+  recordsAbout,
+  standsLine,
   nothingLine,
   pageSections,
   projectWideLine,
@@ -69,8 +74,13 @@ import {
   type Backlog,
   type Row as GoalRow,
 } from "../backlog/api";
-import { editable, editReason } from "../backlog/editing";
+import { ActSheet } from "../backlog/ActSheet";
 import { EditSheet } from "../backlog/EditSheet";
+import type { Move } from "../backlog/moves";
+import { RankSheet } from "../backlog/RankSheet";
+import { stepFor, type Placement } from "../backlog/reorder";
+import { goalSubject } from "../backlog/subjects";
+import { clockTime, day } from "../backlog/format";
 import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
 import { Help } from "../help/Help";
@@ -79,7 +89,7 @@ import { useOffersRefresh } from "../shell/refresh";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath, sittingPath } from "../routes";
 import { CardMenu } from "../backlog/CardMenu";
-import { opensMenu, type At } from "../backlog/menu";
+import { opensMenu, type At, type OfferId } from "../backlog/menu";
 import { ProposedChip } from "../partner/ProposedChip";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
@@ -573,7 +583,7 @@ function Columns({
               {newButton(trailing.newAction)}
               <IconButton
                 label={trailing.refresh}
-                hint={`Read at ${timeOf(pane.readAt)} · ${trailing.refresh}`}
+                hint={`Read at ${clockTime(pane.readAt)} · ${trailing.refresh}`}
                 onClick={onReload}
               >
                 <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -618,7 +628,7 @@ function Columns({
               {count(briefing.checkout.records, "record")} in {count(briefing.checkout.homes, "home")} ·{" "}
               {count(briefing.checkout.goals, "ledger goal")} · {count(briefing.checkout.problems, "problem")}
             </p>
-            <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
+            <p className="ms-briefing-note-line">Read at {clockTime(pane.readAt)}</p>
           </section>
         </aside>
         {sheet !== null && (
@@ -842,9 +852,11 @@ function Block({
 }
 
 /**
- * The goal page opens with the goal itself: its id above the title, the
- * ledger's own reason for it as the lede, where it stands, and the way through
- * to the Backlog, which is where a goal is worked rather than read about.
+ * The goal page opens with the goal itself: its id above a title that says
+ * what the goal is, the facts its row of the board carries, the acts the
+ * backlog offers for it as buttons, the ledger's own reason for it as the
+ * lede, and the way through to the Backlog, which is where a goal is worked
+ * rather than read about.
  *
  * The way through shows this goal. It used to open the Backlog and nothing
  * else — the board came up wherever it opens, and the goal a human had just
@@ -885,17 +897,51 @@ export function GoalBlock({
   // Which view the Backlog will open in, read the way that page reads it:
   // once, as what this browser was last left on.
   const [view] = useState(() => readBacklogView());
-  const [editing, setEditing] = useState(false);
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const { ask } = usePartner();
   const goal = briefing.goal;
   if (goal === null) {
     return null;
   }
-  // The goal's own row, which is what the sheet is prefilled from and what
-  // says whether it may be edited at all. The project payload knows the
-  // goal's state; it does not carry its next step or its labels, and a sheet
-  // cannot be filled from a page that has not read the board.
-  const mine = ledger?.rows.find((row) => row.ref.id === goal.id);
-  const reason = mine === undefined ? "" : editReason(mine);
+  // The goal's own row, which is what the facts are read from, what the acts
+  // are offered for and what a sheet is prefilled from. The project payload
+  // knows the goal's state; it does not carry its next step, its rank or its
+  // seat, and a sheet cannot be filled from a page that has not read the board.
+  // A goal that is done or abandoned is in the board's closed rows, not its
+  // open ones, and is offered what its card offers there: a question.
+  const mine = ledger === null ? undefined : [...ledger.rows, ...ledger.closed].find((row) => row.ref.id === goal.id);
+  const offers = mine === undefined || ledger === null ? [] : goalOffers(mine, ledger.rows);
+  const stands = mine === undefined ? "" : standsLine(mine, offers);
+  // Each button opens what the backlog card's menu opens for the same act. A
+  // step up or down opens the rank sheet at the rank the step would give, so a
+  // press here is always looked at before it is published.
+  const choose = (id: OfferId) => {
+    if (mine === undefined || ledger === null) {
+      return;
+    }
+    if (id === "ask") {
+      ask(goalSubject(mine, ledger.ledger.tip, ledger.observedAt));
+    } else if (id === "edit") {
+      setOpened({ act: "edit" });
+    } else if (id === "approve" || id === "withdraw") {
+      setOpened({ act: "move", move: id });
+    } else if (id === "rank") {
+      setOpened({ act: "rank", placement: { priority: mine.priority, sequence: mine.sequence } });
+    } else if (id === "up" || id === "down") {
+      const placement = stepFor(mine, id, ledger.rows);
+      if (placement !== null) {
+        setOpened({ act: "rank", placement });
+      }
+    }
+  };
+  // A confirmed act reads the page again, records and all.
+  const done = () => {
+    setOpened(null);
+    onEdited();
+  };
+  const close = () => {
+    setOpened(null);
+  };
   return (
     <section className="ms-briefing-block">
       <p className="ms-facts-eyebrow ms-mono">{goal.id}</p>
@@ -907,47 +953,46 @@ export function GoalBlock({
             (g1-s61 D2). A goal page is where a human comes to read the thing
             whole, and a proposal waiting on it belongs in that reading. */}
         <ProposedChip goal={goal.id} />
-        <span className="ms-project-count">{goal.count}</span>
-        {/* The edit, beside the intent it changes. A goal the ledger will
-            not take an edit of says which act would let it, because "no
-            button" and "the wrong state" look the same from here. */}
-        {mine !== undefined && editable(mine) && (
-          <span className="ms-briefing-act">
-            <button
-              type="button"
-              className="ms-act-link"
-              onClick={() => {
-                setEditing(true);
-              }}
-            >
-              Edit…
-            </button>
-            <Help id="edit-goal" />
-          </span>
-        )}
-        {reason !== "" && <span className="ms-project-count">{reason}</span>}
+        {/* A goal the ledger does not carry keeps its bare count: that page
+            is the missing goal's, and says only that it is missing. */}
+        <span className="ms-project-count">{goal.found ? recordsAbout(goal.count) : goal.count}</span>
         <span className="ms-briefing-act">
           <NavLink className="ms-briefing-link" to={backlogPath(goal.id)}>
             {showLabel(view)}
           </NavLink>
         </span>
       </div>
+      {mine !== undefined && <GoalFacts row={mine} />}
+      {offers.length > 0 && (
+        <div className="ms-goal-acts" role="group" aria-label="Acts on this goal">
+          {offers.map((offer) => (
+            <Button
+              key={offer.id}
+              onClick={() => {
+                choose(offer.id);
+              }}
+            >
+              {offer.label}
+            </Button>
+          ))}
+          {offers.some((offer) => offer.id === "edit") && <Help id="edit-goal" />}
+        </div>
+      )}
+      {/* A goal the ledger will not take an edit of, or any act on at all,
+          says what stands in the way, because "no button" and "the wrong
+          state" look the same from here. */}
+      {stands !== "" && <p className="ms-goal-stands">{stands}</p>}
       {goal.found ? (
         goal.intent !== "" && <Lede intent={goal.intent} />
       ) : (
         <p className="ms-project-reason">The ledger carries no goal named {goal.id}.</p>
       )}
-      {editing && mine !== undefined && ledger !== null && (
+      {opened !== null && mine !== undefined && ledger !== null && opened.act === "edit" && (
         <EditSheet
           goal={mine}
           backlog={ledger}
-          onClose={() => {
-            setEditing(false);
-          }}
-          onDone={() => {
-            setEditing(false);
-            onEdited();
-          }}
+          onClose={close}
+          onDone={done}
           // A save nobody could confirm may have landed, so the row on this
           // page is the read the sheet already made, and the sheet — its draft
           // and the words saying the save was not confirmed — stays mounted
@@ -958,7 +1003,41 @@ export function GoalBlock({
           onReread={onReread}
         />
       )}
+      {opened !== null && mine !== undefined && ledger !== null && opened.act === "move" && (
+        <ActSheet request={{ move: opened.move, goal: mine }} backlog={ledger} onClose={close} onDone={done} />
+      )}
+      {opened !== null && mine !== undefined && ledger !== null && opened.act === "rank" && (
+        <RankSheet goal={mine} placement={opened.placement} backlog={ledger} onClose={close} onDone={done} />
+      )}
     </section>
+  );
+}
+
+/** Which of the backlog's sheets a goal page has open over its head. */
+type Opened = { act: "edit" } | { act: "move"; move: Move } | { act: "rank"; placement: Placement };
+
+/**
+ * The goal's facts under its title, each labelled, wrapping on a narrow
+ * screen; the next step under its own label, whole, because it is the line a
+ * human opens a goal to read.
+ */
+function GoalFacts({ row }: { row: GoalRow }) {
+  const facts = goalFacts(row);
+  return (
+    <>
+      {facts.length > 0 && (
+        <ul className="ms-goal-facts">
+          {facts.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+        </ul>
+      )}
+      {row.nextStep !== "" && (
+        <p className="ms-goal-next-step">
+          <span className="ms-goal-next-label">Next step</span> {row.nextStep}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -1290,7 +1369,7 @@ function Slices({ plan }: { plan: SlicePlan }) {
         <p className="ms-project-note">Slicing has not started on this goal.</p>
       ) : (
         <p className="ms-project-note">
-          Slicing started {dateOf(plan.started.at)}, by <span className="ms-mono">{plan.started.machine}</span>
+          Slicing started {day(plan.started.at)}, by <span className="ms-mono">{plan.started.machine}</span>
           {plan.started.lineage === "" ? "" : ` (${plan.started.lineage})`}. Once it has, the goal can only advance
           through a split.
         </p>
@@ -1478,7 +1557,7 @@ function RecordRow({ row, action, chips = false }: { row: Row; action?: ReactNod
  */
 function Documents({ groups, total }: { groups: DocumentGroup[]; total: number }) {
   return (
-    <Block title={DOCUMENTS_TITLE} note={`${String(total)} files, no kind claimed`}>
+    <Block title={DOCUMENTS_TITLE} note={otherFiles(total)}>
       {groups.length === 0 ? (
         <p className="ms-project-none">Nothing recorded yet.</p>
       ) : (
@@ -1544,17 +1623,6 @@ export function ownership(owner: string): string {
     default:
       return "ownership unknown";
   }
-}
-
-/** A recorded instant, shown in the reader's own locale, never reinterpreted. */
-export function dateOf(stamp: string): string {
-  const at = new Date(stamp);
-  return Number.isNaN(at.getTime()) ? stamp : at.toLocaleDateString();
-}
-
-export function timeOf(stamp: string): string {
-  const at = new Date(stamp);
-  return Number.isNaN(at.getTime()) ? stamp : at.toLocaleTimeString();
 }
 
 /**

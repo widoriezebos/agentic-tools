@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { StoreFacts } from "./Settings";
-import type { Store } from "../shell/workspace";
+import { AboutFacts, LandingGateFacts, StoreFacts } from "./Settings";
+import { dateAndTime } from "../backlog/format";
+import type { Store, Workspace } from "../shell/workspace";
 
 /**
  * What Settings tells a human about the private store (g1-s54 D3).
@@ -62,5 +63,70 @@ describe("the private store's lines", () => {
     );
     expect(markup).toContain("this seat keeps no private store");
     expect(markup).not.toContain("Another workspace");
+  });
+});
+
+/**
+ * What a person reads on the card, and what stands behind Details for whoever
+ * maintains the workspace: a whole build hash and a setting's key.
+ */
+describe("the facts a person reads", () => {
+  const workspace: Workspace = {
+    schemaVersion: 1,
+    subject: "agentic-tools",
+    mode: "self-hosted",
+    conflict: false,
+    checkout: "/Users/one/agentic-tools",
+    installation: "/Users/one/agentic-tools/metasystem",
+    stateRoot: "/Users/one/agentic-tools/.metasystem",
+    engineBuild: "a0159fd3c1e24b7788aa90c1d2e3f4a5b6c7d8e9",
+    startedAt: "2026-10-02T21:25:07Z",
+    executableDigest: "",
+    sourceHead: "",
+    adoptedFrom: "",
+    adoptionRecord: "absent",
+  };
+  /** The markup with every Details disclosure taken out: what is read without opening one. */
+  const read = (markup: string) => markup.replace(/<details[\s\S]*?<\/details>/g, "");
+
+  it("shows the engine build short, and whole under Details", () => {
+    const markup = renderToStaticMarkup(<AboutFacts workspace={workspace} />);
+    expect(read(markup)).toContain("a0159fd");
+    expect(read(markup)).not.toContain(workspace.engineBuild);
+    expect(markup).toContain("<summary>Details</summary>");
+    expect(markup).toContain(workspace.engineBuild);
+  });
+
+  it("shows a build that is not a commit hash whole, with no Details", () => {
+    for (const engineBuild of ["walkthrough", "v1.4.2-rc1"]) {
+      const markup = renderToStaticMarkup(<AboutFacts workspace={{ ...workspace, engineBuild }} />);
+      expect(read(markup)).toContain(`>${engineBuild}<`);
+      expect(markup).not.toContain("<summary>Details</summary>");
+    }
+  });
+
+  it("shows when the server started in the reader's own time, and no row that states no fact", () => {
+    const markup = renderToStaticMarkup(<AboutFacts workspace={workspace} />);
+    expect(markup).toContain(dateAndTime(workspace.startedAt));
+    expect(markup).not.toContain(workspace.startedAt);
+    expect(markup).not.toContain("Source at HEAD");
+  });
+
+  it("names a landing setting by its plain label, with its key under Details", () => {
+    const markup = renderToStaticMarkup(
+      <LandingGateFacts
+        gate={{
+          facts: [
+            { key: "landing.review.human-from-tier", value: "2", source: "conf" },
+            { key: "landing.review.later", value: "on", source: "default" },
+          ],
+        }}
+      />,
+    );
+    expect(read(markup)).toContain("Waits for a person from tier");
+    expect(read(markup)).toContain("Another landing setting");
+    expect(read(markup)).not.toContain("landing.review");
+    expect(markup).toContain("landing.review.human-from-tier");
+    expect(markup).toContain("landing.review.later");
   });
 });

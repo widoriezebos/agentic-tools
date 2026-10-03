@@ -10,7 +10,8 @@ import { clockTime, dateAndTime, minuteTime, shortTip } from "./format";
  * to be two lines above the board, ahead of the work and read every time by a
  * human who had no question about it. It is one chip now, and the report is
  * its tooltip: a human who wants the detail asks for it, and nobody reads it
- * by accident.
+ * by accident. Which commit was read is detail of that kind, so the chip says
+ * when and the report says which.
  *
  * What the chip judges is the server's fetch loop and nothing else. The
  * accepted commit's age used to raise the chip's voice, and that was a
@@ -67,7 +68,7 @@ export function syncOf(ledger: Ledger | null, observedAt: string): Sync {
   if (state === "behind") {
     return { state: "behind", line: behindLine(ledger), report, wrong: "" };
   }
-  return { state: "rest", line: `Synced ${minuteTime(observedAt)} · ${shortTip(ledger.tip)}`, report, wrong: "" };
+  return { state: "rest", line: `Synced ${minuteTime(observedAt)}`, report, wrong: "" };
 }
 
 /**

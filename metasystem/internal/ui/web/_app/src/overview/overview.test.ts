@@ -16,6 +16,7 @@ import {
   moreLine,
   needsKinds,
   plural,
+  seatName,
   seeAll,
   timeline,
   whenLine,
@@ -115,6 +116,13 @@ function health(problems: Item[], syncedAt: string, freshness: FreshnessState = 
     problems: { count: problems.length, items: problems },
   };
 }
+
+describe("a seat's name", () => {
+  it("is its machine's name, without the lineage", () => {
+    expect(seatName({ machine: "m1f", lineage: "steward-seat" })).toBe("m1f");
+    expect(seatName({ machine: "", lineage: "" })).toBe("seat not recorded");
+  });
+});
 
 describe("the glance strip", () => {
   const busy = page({
@@ -281,14 +289,14 @@ describe("the timeline", () => {
     expect(changedCounts(noChange())).toBe("0 moved · 0 landed · 0 records · 0 messages");
   });
 
-  it("offers the board while a goal change is hidden, and the records after that", () => {
-    expect(seeAll(changed, timeline(changed))).toBe("/backlog");
+  it("offers the board while a goal change is hidden, and the records after that, each named by where it goes", () => {
+    expect(seeAll(changed, timeline(changed))).toEqual({ to: "/backlog", label: "Open the backlog →" });
     const records: Changed = {
       ...noChange(),
       records: { count: 9, items: [item("plans/a.md", "A design", "design", at(0, 13, 0), "document")] },
       total: 9,
     };
-    expect(seeAll(records, timeline(records))).toBe("/project/designs");
+    expect(seeAll(records, timeline(records))).toEqual({ to: "/project/designs", label: "Open the designs →" });
   });
 
   it("offers nothing where the timeline is showing all of it", () => {

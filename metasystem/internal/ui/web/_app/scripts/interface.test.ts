@@ -43,7 +43,8 @@ describe("the interface manifest", () => {
     const settings = manifest.sections.find((section) => section.id === "settings");
     expect(settings?.projected).toBe(false);
     expect(settings?.availability).toContain("This build does not project Settings");
-    expect(settings?.availability).toContain("Arrives with gate 7");
+    expect(settings?.availability).toContain("Appearance is the one setting this page can change today.");
+    expect(settings?.availability).toMatch(/[^.]\.$/);
     expect(settings?.purpose).toContain("workspace's own configuration");
     expect(settings?.purpose).not.toContain("This build");
 

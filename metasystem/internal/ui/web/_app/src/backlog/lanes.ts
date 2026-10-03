@@ -99,6 +99,18 @@ export const DONE: LaneId = "done";
 /** The concluded lane that stays behind the closed-items toggle. */
 export const ABANDONED: LaneId = "abandoned";
 
+/**
+ * What the ledger says of every goal in a lane, which the lane's own help says
+ * once. A card or a row that repeated it would say of each goal what the
+ * column it stands in already says of all of them.
+ */
+const LANE_SAYS: Partial<Record<LaneId, string>> = { "to-do": "not approved" };
+
+/** The gaps a goal's card and row say: the record's own, without what its lane says of every goal in it. */
+export function ownGaps(row: { lane: LaneId; gaps: readonly string[] }): string[] {
+  return row.gaps.filter((gap) => gap !== LANE_SAYS[row.lane]);
+}
+
 export function laneTitle(id: LaneId): string {
   return laneFor(id)?.title ?? id;
 }

@@ -30,7 +30,6 @@ package fleet
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -646,23 +645,8 @@ func armedWord(in Inputs, now time.Time) string {
 // Overview's own rows carry.
 const ledeRunes = 80
 
-// lede is the first sentence of an intent, bounded, the way every other list
-// of goals in this interface writes one.
-func lede(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	if at := strings.Index(text, ". "); at >= 0 {
-		text = text[:at+1]
-	}
-	runes := []rune(text)
-	if len(runes) <= ledeRunes {
-		return text
-	}
-	cut := ledeRunes
-	for cut > 0 && runes[cut] != ' ' {
-		cut--
-	}
-	if cut == 0 {
-		cut = ledeRunes
-	}
-	return strings.TrimRight(string(runes[:cut]), " ,;:") + "…"
+// lede is what a chip calls a goal: the title every other list of goals in
+// this interface writes, in a chip's own length.
+func lede(intent string) string {
+	return snapshot.GoalTitle(intent, ledeRunes)
 }

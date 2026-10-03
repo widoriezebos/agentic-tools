@@ -1,3 +1,5 @@
+import { minuteTime } from "../backlog/format";
+
 /**
  * Who the server is acting as, and the two acts that change it.
  *
@@ -146,15 +148,7 @@ export function controlFor(status: SessionStatus): Control {
 
 /** The local wall clock to the minute, which is how long a session has left. */
 export function clock(stamp: string): string {
-  if (stamp === "") {
-    return "unknown";
-  }
-  const at = new Date(stamp);
-  if (Number.isNaN(at.getTime())) {
-    return "unknown";
-  }
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  return minuteTime(stamp);
 }
 
 /**

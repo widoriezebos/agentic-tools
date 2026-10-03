@@ -8,6 +8,12 @@
  *
  * Nothing here counts down. The page sets no timer, so a time on screen is a
  * time from the response, and it stays what it was until the next response.
+ *
+ * There is one format and this file owns it: a time is HH:mm on the 24-hour
+ * clock, a day is YYYY-MM-DD, and the two together are a day and then a time.
+ * Seconds appear only where two times are seconds apart. Every page asks here,
+ * so one instant reads the same wherever it is shown, and nothing else asks
+ * the browser's locale how to write one.
  */
 
 /** What every formatter says when the record carries no instant. */
@@ -25,13 +31,18 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-/** The local calendar day and clock, to the minute. */
-export function dateAndTime(stamp: string): string {
+/** The local calendar day. */
+export function day(stamp: string): string {
   const at = parse(stamp);
   if (at === null) {
     return UNKNOWN;
   }
-  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${minuteTime(stamp)}`;
+  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/** The local calendar day and clock, to the minute. */
+export function dateAndTime(stamp: string): string {
+  return parse(stamp) === null ? UNKNOWN : `${day(stamp)} ${minuteTime(stamp)}`;
 }
 
 /**
@@ -83,4 +94,13 @@ export function ageBetween(from: string, to: string): string {
 /** The short object name a human compares by eye. */
 export function shortTip(tip: string): string {
   return tip.slice(0, 7);
+}
+
+/**
+ * Whether a build is a commit hash longer than its seven-character short form.
+ * Only such a value is cut; a name or a version is read whole, since cutting
+ * it would break it mid-word.
+ */
+export function isLongHash(build: string): boolean {
+  return /^[0-9a-f]{8,}$/i.test(build);
 }

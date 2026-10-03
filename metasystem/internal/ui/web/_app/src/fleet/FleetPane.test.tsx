@@ -222,7 +222,9 @@ describe("the fleet page", () => {
     const markup = rendered(page());
 
     expect(markup).toContain(copyLine(page(), now).split(";")[1].trim());
-    expect(markup).toContain("5b9d958");
+    expect(copyLine(page(), now)).toContain("claims from the accepted ledger");
+    expect(copyLine(page(), now)).not.toContain("5b9d958");
+    expect(markup).toContain('title="The accepted ledger at 5b9d958"');
   });
 
   it("says the copy's own trouble where the last fetch failed", () => {
