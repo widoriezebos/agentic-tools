@@ -1,14 +1,16 @@
 # gate-governance-records
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 12
 - Intent: What: Each new refusal gate comes with a short record: who owns it, when it is reviewed, an example it must refuse, how to appeal, and what happens if the check itself breaks. It also runs in warning-only mode first. Why: A gate without an owner or a review date turns into ceremony nobody owns. Pros: Gates stay honest and can be removed when they stop earning their keep. Cons: Little to govern yet: commit-goal binding has its refusal, the design gate is not built.
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 41
+- Revision: 42
+- BlockedBy: design-gate-at-dispatch
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T10:01:13Z blocker=design-gate-at-dispatch because=blocked by design-gate-at-dispatch; returns when it is done
 
 History:
 - 2026-09-01T13:20:51Z KXNWNMA2TJPZ62GB3H4B03YR3V-m0-c5dbf036 open actor=human:Wido targets=gate-governance-records
@@ -52,4 +54,5 @@ History:
 - 2026-10-02T21:00:28Z K4A0AE4BVRC9XS7D07FWCP8YB2-m1e-9c612d71 abandon actor=human:Wido targets=adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:14 to=2:13
 - 2026-10-02T21:00:35Z VNGSNCZW70RGG931E6Y9XRKWYT-m1e-9c612d71 abandon actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:13 to=2:12
 - 2026-10-03T10:01:07Z H2ZZPTJCWDY3W9P51JXMV202Z0-m1e-718ba0eb unpark actor=human:Wido targets=gate-governance-records
-Integrity: sha256=a129e020e3ad0217cc206258cfdd9cda7a4ad3397008d484bc3f7aede8ec6b15
+- 2026-10-03T10:01:13Z VMX05Q3SNJ1HTD0FRA7KG2DMRB-m1e-718ba0eb block actor=human:Wido targets=gate-governance-records reason=blocked by design-gate-at-dispatch; returns when it is done
+Integrity: sha256=8ae2652128bdea856d80eac04e6da38282bc97b991564b2d75c0555e7f37659f
