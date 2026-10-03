@@ -255,12 +255,17 @@ func (g *gateRun) collectStatic() int {
 	if err == nil {
 		g.scratch = scratch.Name()
 		_ = scratch.Close()
-		if runBuild(g.ctx, []string{"--out", g.scratch}, g.root, d.withEnvironment(g.env).quiet()) != 0 {
-			reds = append(reds, "build failed (devgate build)")
+		// A green build says nothing here; a red one's own words are its
+		// reason, so they are kept for the block.
+		var buildOut bytes.Buffer
+		build := d.withEnvironment(g.env)
+		build.stdout, build.stderr = io.Discard, &buildOut
+		if runBuild(g.ctx, []string{"--out", g.scratch}, g.root, build) != 0 {
+			reds = append(reds, "build failed (devgate build):\n"+strings.TrimRight(buildOut.String(), "\n"))
 			g.dropScratch()
 		}
 	} else {
-		reds = append(reds, "build failed (devgate build)")
+		reds = append(reds, fmt.Sprintf("build failed (devgate build): its scratch file could not be created: %v", err))
 	}
 	if g.scratch != "" {
 		if owner, err := d.owners.runOwnerRef(d.selfPid); err != nil {
