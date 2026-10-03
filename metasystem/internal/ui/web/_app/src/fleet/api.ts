@@ -436,6 +436,8 @@ export type BoardPayload = {
   lane?: Lane | null;
   /** Goal titles by id, for every goal the seats, the queue and the questions name. */
   titles?: Record<string, string>;
+  /** How each queued goal the ledger holds as concluded ended ("done" or "abandoned"); a return of one is history. */
+  ended?: Record<string, string>;
   /** This checkout's open questions; absent from a server that does not read them. */
   questions?: BoardQuestion[];
   /** Why the questions, or some of their records, could not be read; "" when every record was. */
