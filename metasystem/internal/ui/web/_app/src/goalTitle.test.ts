@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { goalTitle } from "./goalTitle";
+import { goalSentence, goalTitle } from "./goalTitle";
 import { firstWords } from "./shell/GoalPicker";
 
 /**
@@ -24,5 +24,18 @@ describe("a goal's title from its intent", () => {
 
   it("is what the goal picker cuts its first words from", () => {
     expect(firstWords("What: refunds are issued within a day")).toBe("refunds are issued within a day");
+  });
+});
+
+/** A goal's page heads it with one sentence: the first, ended where the server ends one. */
+describe("a goal's title in one sentence", () => {
+  it("is the first sentence after the label, on one line", () => {
+    expect(goalSentence("What: the header reads on a phone.  Why: it is cut today.")).toBe("the header reads on a phone.");
+    expect(goalSentence("What:\n  the header\n reads on a phone")).toBe("the header reads on a phone");
+  });
+
+  it("is not ended by a full stop inside a word", () => {
+    expect(goalSentence("Ship v1.2 of the reader, e.g.the board. Then more.")).toBe("Ship v1.2 of the reader, e.g.the board.");
+    expect(goalSentence("")).toBe("");
   });
 });

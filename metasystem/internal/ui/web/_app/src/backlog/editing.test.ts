@@ -153,7 +153,7 @@ describe("which goal may be edited here", () => {
   it("says which act would let it through, in words from the state", () => {
     expect(editReason(row())).toBe("");
     expect(editReason(row({ state: "approved", approved: approval }))).toBe(
-      "approved: withdraw the approval to edit the intent",
+      "This goal is approved; withdraw its approval to edit it.",
     );
     expect(
       editReason(
@@ -163,12 +163,23 @@ describe("which goal may be edited here", () => {
           claim: { machine: "mac-b", lineage: "lin-1", at: "", landingAt: "" },
         }),
       ),
-    ).toBe("claimed by mac-b: edit at a terminal");
+    ).toBe("mac-b is working on this goal, so it can't be edited here.");
+    expect(editReason(row({ state: "claimed" }))).toBe("Another seat is working on this goal, so it can't be edited here.");
     // An approval survives a claim and a park, so the state is read first or
     // a goal a seat holds would be told to withdraw an approval instead.
     expect(editReason(row({ state: "parked", approved: approval }))).toBe(
-      "parked: return it to the queue to edit",
+      "This goal is parked; return it to the queue to edit it.",
     );
+  });
+
+  // Nobody reading the page is sent to a terminal: the sentence says what
+  // stands in the way, and the act that would clear it is one this interface has.
+  it("sends nobody to a terminal", () => {
+    const claimed = row({ state: "claimed", claim: { machine: "m1f", lineage: "steward-seat", at: "", landingAt: "" } });
+
+    expect(editReason(claimed)).toBe("m1f is working on this goal, so it can't be edited here.");
+    expect(editReason(claimed)).not.toContain("terminal");
+    expect(editReason(claimed)).not.toContain("steward-seat");
   });
 
   // A goal that is over has no act that would let it be edited, so there is

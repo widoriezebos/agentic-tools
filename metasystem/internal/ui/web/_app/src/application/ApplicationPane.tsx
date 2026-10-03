@@ -8,6 +8,7 @@ import {
   concludedLine,
   countLine,
   dayOf,
+  engineBuild,
   engineLine,
   firstSentence,
   isNarrowed,
@@ -239,7 +240,7 @@ function Header({ page }: { page: ApplicationPayload }) {
       <h2 className="ms-application-subject">{subjectLine(page)}</h2>
       {words !== "" && <p className="ms-application-mode">{words}</p>}
       <p className="ms-application-engine">
-        <span>{engineLine(page)}</span>
+        <span title={engineBuild(page) === "" ? undefined : engineBuild(page)}>{engineLine(page)}</span>
         <Help id="last-engine" />
       </p>
       <p className="ms-application-counts">

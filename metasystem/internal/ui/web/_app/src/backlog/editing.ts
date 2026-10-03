@@ -149,9 +149,10 @@ export function editable(row: Row): boolean {
  * it be, or "" where there is nothing to say.
  *
  * Three states have an answer, and each answer is a different act: an
- * approval is withdrawn, a claim is another seat's and is edited where that
- * seat is, and a park is lifted. A goal that is over has no answer, and a
- * sentence inventing one would be offering an edit that does not exist.
+ * approval is withdrawn, a claim is another seat's work in progress, and a
+ * park is lifted. A goal that is over has no answer, and a sentence inventing
+ * one would be offering an edit that does not exist. Each answer is a whole
+ * sentence a person reads, and none sends them anywhere this interface is not.
  */
 export function editReason(row: Row): string {
   if (editable(row)) {
@@ -162,20 +163,20 @@ export function editReason(row: Row): string {
   // would otherwise be said to need its approval withdrawn when what stands
   // in the way is the claim.
   if (row.state === "claimed") {
-    return `claimed by ${holderOf(row)}: edit at a terminal`;
+    return `${holderOf(row)} is working on this goal, so it can't be edited here.`;
   }
   if (row.state === "parked") {
-    return "parked: return it to the queue to edit";
+    return "This goal is parked; return it to the queue to edit it.";
   }
   if (row.state === "approved" || row.approved !== undefined) {
-    return "approved: withdraw the approval to edit the intent";
+    return "This goal is approved; withdraw its approval to edit it.";
   }
   return "";
 }
 
-/** The seat holding a claim, by its machine's name, or the word for none. */
+/** The seat holding a claim, by its machine's name, or the words for none. */
 function holderOf(row: Row): string {
-  return row.claim === undefined ? "another seat" : row.claim.machine;
+  return row.claim === undefined ? "Another seat" : row.claim.machine;
 }
 
 /** What the sheet says the act will do, and what it will leave alone. */

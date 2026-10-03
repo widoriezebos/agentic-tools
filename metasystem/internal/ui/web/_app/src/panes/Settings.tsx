@@ -2,7 +2,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { EmptyState, Pane } from "./Pane";
-import { dateAndTime, shortTip } from "../backlog/format";
+import { dateAndTime, isLongHash, shortTip } from "../backlog/format";
 import { Help } from "../help/Help";
 import { Button, Skeleton } from "../shell/controls";
 import { useWorkspaceState } from "../shell/identity";
@@ -210,15 +210,6 @@ export function AboutFacts({ workspace }: { workspace: Workspace }) {
       <Fact name="Adopted from">{adoption(workspace)}</Fact>
     </dl>
   );
-}
-
-/**
- * Whether a build is a commit hash longer than its seven-character short form.
- * Only such a value is cut; a name or a version is read whole, since cutting
- * it would break it mid-word.
- */
-function isLongHash(build: string): boolean {
-  return /^[0-9a-f]{8,}$/i.test(build);
 }
 
 /** What the installation records about where it came from, in its own words. */

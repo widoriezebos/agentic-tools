@@ -125,7 +125,7 @@ import {
 } from "./proposing";
 import { loadBacklog, reviewGoal, type Verdict } from "../backlog/api";
 import type { Chosen } from "./subject";
-import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
+import { onceStreamOpens, onPartnerEvent, onStreamReopen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
 import { useSession } from "../shell/identity";
 import { useTroubles, type TroubleAsk } from "../shell/troubles";
@@ -994,7 +994,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The conversation, once when the page loads and again whenever the page
   // moves to another one: the room's, a sitting's in the drawer, or the human's
   // own. What was on screen goes first, so nothing of one conversation is shown
-  // under another's name.
+  // under another's name. The read waits for the stream to open, which on page
+  // load comes after this effect: the server sends beats only to a stream it
+  // holds, so a turn that ran between an earlier read and the open would reach
+  // the page neither way.
   useEffect(() => {
     setStore({ ...emptyStore, conversation: where });
     setDepositMarks({});
@@ -1003,8 +1006,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setDeskRead(null);
     setAccepting({});
     const aborter = new AbortController();
-    read(aborter.signal);
+    const stopWaiting = onceStreamOpens(() => read(aborter.signal));
     return () => {
+      stopWaiting();
       aborter.abort();
     };
   }, [read, where]);
@@ -1016,7 +1020,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   useEffect(() => onPartnerEvent((event) => {
     setStore((held) => received(held, event));
   }), []);
-  useEffect(() => onStreamOpen(() => {
+  useEffect(() => onStreamReopen(() => {
     read();
   }), [read]);
 

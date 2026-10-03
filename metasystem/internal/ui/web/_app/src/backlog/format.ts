@@ -95,3 +95,12 @@ export function ageBetween(from: string, to: string): string {
 export function shortTip(tip: string): string {
   return tip.slice(0, 7);
 }
+
+/**
+ * Whether a build is a commit hash longer than its seven-character short form.
+ * Only such a value is cut; a name or a version is read whole, since cutting
+ * it would break it mid-word.
+ */
+export function isLongHash(build: string): boolean {
+  return /^[0-9a-f]{8,}$/i.test(build);
+}

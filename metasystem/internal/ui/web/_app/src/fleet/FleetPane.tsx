@@ -52,7 +52,7 @@ import {
 import { minuteTime } from "../backlog/format";
 import { laneTitle } from "../backlog/lanes";
 import { Help } from "../help/Help";
-import { onFleetEvent, onStreamOpen } from "../notifications/stream";
+import { onFleetEvent, onStreamReopen } from "../notifications/stream";
 import { Pane } from "../panes/Pane";
 import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
@@ -139,15 +139,12 @@ export function FleetPane() {
   // re-read keeps whatever is on screen until the answer arrives, because a
   // page that blanked itself every minute would be a page nobody could read.
   //
-  // A cold load reads twice: once on mount, and once when the stream opens a
-  // moment later. That is deliberate. The open is not known to be the first
-  // one — a page navigated to while the stream was already up sees only
-  // reconnects — and a reconnect is exactly when attempts may have been
-  // missed, so the second read is kept rather than a first-open flag added
-  // that would silently skip a real reconnect.
+  // A cold load reads once, on mount. The stream's first open is not a
+  // reconnect and says nothing here; the stream itself tells an open after a
+  // failure from the page's own first one, so a real reconnect still reads.
   useEffect(() => {
     const stopFleet = onFleetEvent(again);
-    const stopOpen = onStreamOpen(again);
+    const stopOpen = onStreamReopen(again);
     return () => {
       stopFleet();
       stopOpen();

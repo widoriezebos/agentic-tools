@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { onFleetEvent, onStreamOpen } from "../notifications/stream";
+import { onFleetEvent, onStreamReopen } from "../notifications/stream";
 import { Trouble } from "../shell/Trouble";
 import { type BoardPayload, failureMessage, loadBoard } from "./api";
 import { LaneBlock } from "./LandingLane";
@@ -42,7 +42,7 @@ export function HostBoard() {
 
   useEffect(() => {
     const stopFleet = onFleetEvent(again);
-    const stopOpen = onStreamOpen(again);
+    const stopOpen = onStreamReopen(again);
     return () => {
       stopFleet();
       stopOpen();
