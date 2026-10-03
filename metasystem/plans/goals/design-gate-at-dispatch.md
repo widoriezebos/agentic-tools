@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
 - Tier: 2
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
@@ -12,7 +12,7 @@ Open read items (fix unit gate2-preliminary-r1): 2
 - ReadItem: id=gate2-preliminary-r1-1 read=gate2-preliminary-r1 state=open addedAt=2026-10-03T20:14:52Z changedAt=- closingReference="" text="Unreadable critique state reads as no open critique: dispatch.DesignCritiqueChains (internal/dispatch/design_chain.go:26-33) goes through loadCritiqueState, which skips unreadable job JSON (critique.go:29-46), so the gate's production chain adapter (cmd/metasystem/intent_design_gate.go:43-51) never reports an error and a page saying 'Critique: closed' records ok instead of unchecked. Harmless while the gate only warns; unit switch must surface the read error before refuse can stop a build."
 - ReadItem: id=gate2-preliminary-r1-2 read=gate2-preliminary-r1 state=open addedAt=2026-10-03T20:14:52Z changedAt=- closingReference="" text="The build's input digest binds the accepted design page's whole bytes (intent_work.go:701-721 request identity; launch plan inputs), so editing only the page's head (status, acceptance or Critique line) after work build strands the unit with UNIT_NAMED_INPUT_CHANGED, as happened to work gate on 2026-10-03. The landing comparison of unit landing should compare the page below its head, and the build request should bind the same content digest (m1e, 2026-10-03)."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 55
+- Revision: 56
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -78,4 +78,5 @@ History:
 - 2026-10-03T17:55:43Z 5A6PT221VK704C6A3PQKQGST65-m1k-71c5cb39 ask actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T17:56:51Z 9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T16:01:55Z
 - 2026-10-03T20:14:52Z KS5Q3QVNEQVWT60S1HEEV1BHSZ-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
-Integrity: sha256=25858e365c3020ba7db1c2227a90ca7741b9cecb1321fbd8490e50235d123c32
+- 2026-10-03T20:23:52Z Z66GMM3TBKSQJBSECRRBDT255T-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,design-gate-at-dispatch,every-launched-agent-waits-inside-its-turn,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,notifications-can-be-dismissed,questions-reach-the-person-only-when-his,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,seat-sessions-stay-small,steward-acts-on-behaviour-patterns reason=priority-order subject=conflicts-resolve-unattended from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=5c892847cce51e9331763984c577bd377e14eaeb6d24d6659adcbfc79540017f
