@@ -1,6 +1,6 @@
 # seam-declaration-convergence
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Changes the result of the read call every runtime driver uses; a caller that misreads the new result hangs or cuts a session; a known tidy-up, tested on both implementations"
@@ -9,11 +9,11 @@
 - Origin: main
 - Next step: Next: When it comes back, first make the reading function (internal/acp/driver.go, Next) return different results for "stream ended" and "time ran out", tested on both implementations; then add the missing capability field to the runtime registry and check the declaration against the driver. Done when: the capability check and the driver agree for every runtime, and the two end cases can be told apart.
 - OpenedAt: 2026-08-25T06:07:07Z
-- Revision: 58
+- Revision: 59
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=57 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=f114d360f06f4183666da35442f0a08a60880d9bb3274efd2e9b40d22dcc3c79 episode=57
-- Parked: by=human:Wido at=2026-10-03T11:17:44Z because=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
+- Abandoned: by=human:Wido at=2026-10-03T12:31:20Z revision=59 opid=5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb because=Moved to the ideas list at Wido's word (2026-10-03): no failure seen since August. Open a new goal when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 
 History:
 - 2026-08-25T06:07:07Z CSDC87CRRNSXSWQRBWXFFHXDSR-m2-bc1be9cb open actor=m2+mac-coordinator targets=seam-declaration-convergence
@@ -74,4 +74,5 @@ History:
 - 2026-10-03T11:17:44Z HSCD21B86T7E9E5KBT0592F9MT-m1e-718ba0eb park actor=human:Wido targets=seam-declaration-convergence reason=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 - 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
 - 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:9 to=3:8
-Integrity: sha256=1fca46fad0655d08d0d0bed06ea9896703e416028f18e48f26020920ac9369ad
+- 2026-10-03T12:31:20Z 5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb abandon actor=human:Wido targets=seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=Moved to the ideas list at Wido's word (2026-10-03): no failure seen since August. Open a new goal when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
+Integrity: sha256=046088163dc4a50657779861378295dcb14bfb56ce0f621d37c3b6712b18dccc

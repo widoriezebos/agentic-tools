@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 10
+- Sequence: 9
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new proposal loop that puts items in front of the person and opens goals from them; a wrong threshold floods the person or the backlog; nothing in the delivery path changes; every later proposal passes through it"
 - Tier: 2
 - Intent: What: The system turns what it observes about its own work into written improvement proposals, discusses them with the person, and ends each one as either a new backlog goal or a recorded drop with its reason. Why: Improvement ideas today depend on someone remembering them in a chat; they get lost, or the same idea is raised again and again. Pros: Ideas become visible, get a clear yes or no, and a dropped idea is not raised again. Cons: A proposal queue can grow faster than the person can review it, so the threshold between small items (straight to the backlog) and big ones (proposal first) must be sharp.
 - Origin: human
 - Next step: Next: Write a short design for the loop only: what feeds the proposal queue, what a proposal contains, where the person sees and answers it, and the two endings (scheduled as a goal, or dropped with a reason); reuse the existing drafts folder and leave metric computation to actionable-metrics. Done when: The design page is in plans/designs and a person has accepted it.
 - OpenedAt: 2026-08-24T13:27:11Z
-- Revision: 102
+- Revision: 103
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -116,4 +116,5 @@ History:
 - 2026-10-03T09:58:28Z 3ESM3MAR17ZJ2PDRQF0X8J986F-m1e-718ba0eb abandon actor=human:Wido targets=registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
 - 2026-10-03T11:14:07Z 5AHP6QRXTWFMDXF9P698N20C34-m1e-718ba0eb edit actor=human:Wido targets=continuous-self-improvement
 - 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:11 to=3:10
-Integrity: sha256=d7373f38a3b0276b38122b60ed26bfd444834403c7967e96c00202b752340357
+- 2026-10-03T12:31:20Z 5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb abandon actor=human:Wido targets=seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:10 to=3:9
+Integrity: sha256=ba1dff5651c8825e0fa701c88791ac30e0f644d7db34bcc4b0bdf2d6f2c09085

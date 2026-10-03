@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 13
+- Sequence: 12
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused reorder, no wrong ledger state; novelty 1: clamp a bound that already has an append form; exposure 2: every human or seat reorder that names a position; accumulation 1: each refusal is visible and retried"
 - Tier: 1
 - Intent: What: The goal prioritize command accepts a position beyond the end of the queue and puts the goal last, reporting the position it actually used. Why: Asking for position 90 in a queue of 62 is refused today, although the only sensible meaning is "last". It broke a batch of Wido's reorderings on 09-15. Pros: Fewer pointless refusals when reordering the backlog. Cons: A typo in a position moves a goal to the end instead of being caught; reporting the used position keeps that visible.
 - Origin: human
 - Next step: Next: In internal/goal/order.go, turn a position past the end into "last" and report the position used; keep refusing positions below 1; update order_test and the two UI tests that expect the refusal (ui/act/act_test.go:257 and ui/httpd/walkthrough/main.go:1580, so tell the ui seat). Done when: goal prioritize with sequence 999 puts the goal last, says which position it got, and the queue stays numbered 1 to N without gaps.
 - OpenedAt: 2026-09-15T06:06:03Z
-- Revision: 34
+- Revision: 35
 - BudgetExceptions: 0
 
 History:
@@ -47,4 +47,5 @@ History:
 - 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:16 to=3:15
 - 2026-10-03T09:58:28Z 3ESM3MAR17ZJ2PDRQF0X8J986F-m1e-718ba0eb abandon actor=human:Wido targets=registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:15 to=3:14
 - 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
-Integrity: sha256=e86482f6cc9488ac1d389d08908159b621da7085fdc3fd59cdfff6e0c8ae81b9
+- 2026-10-03T12:31:20Z 5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb abandon actor=human:Wido targets=seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
+Integrity: sha256=d30504a90f932ce9d05ac1a199f19d2698f53e8c2bbda33d92872c5e07124099
