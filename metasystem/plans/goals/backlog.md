@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 133
+- Revision: 134
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -174,4 +174,5 @@ History:
 - 2026-10-03T12:03:28Z KR1SD72S6PHG56R7CQQZG40RPD-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T06:22:44Z ack
 - 2026-10-03T12:19:54Z EGWE71E3X1BEP1N1HMSNSX5TRG-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T10:41:32Z ack
 - 2026-10-03T12:19:54Z EGWE71E3X1BEP1N1HMSNSX5TRG-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:34:54Z ack
-Integrity: sha256=f1a27be08a5457df3b12b6bba16c4169a74130981f710c06dff1765f17794550
+- 2026-10-03T13:25:02Z KVQQEFT02BGPTG44NY8806WBW0-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-03T02:48:05Z ack
+Integrity: sha256=9fbf37609c1e331632785ba9e0e6b58dcaa3d84b1768d8323d1ce0dea4fd4eb2
