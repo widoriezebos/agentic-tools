@@ -144,7 +144,7 @@ func Prove(root string, installation stateroot.Installation, invokerPID int64, n
 		if state.State == brain.Corrupt {
 			return unproven("this checkout's brain declaration is corrupt (" + state.Reason + ")")
 		}
-		if classification.Class != lease.ClassHuman {
+		if state.Record.Role != brain.Partner && classification.Class != lease.ClassHuman {
 			return unproven("this checkout is declared the brain, and the brain never carries a human's word into a goal verb")
 		}
 	}

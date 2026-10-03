@@ -741,7 +741,7 @@ func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof 
 			return lease.ClassifyResult{}, fmt.Errorf("%s", brain.RemedialRefusal(brainState.Reason, root))
 		}
 		fixtureProof := observedProof != nil && observedProof.FixtureOnly
-		if by != "" && classification.Class != lease.ClassHuman && !fixtureProof {
+		if brainState.Record.Role != brain.Partner && by != "" && classification.Class != lease.ClassHuman && !fixtureProof {
 			return lease.ClassifyResult{}, fmt.Errorf("this is the coordinator's checkout, which never acts in a person's name for goal %s\nrun: %s  (in a terminal you opened yourself)", verb, command)
 		}
 	}
@@ -2803,7 +2803,7 @@ func runGoalUnderAttorneyWithInputs(name string, f *syncFlags, commandNow func(s
 	if f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != "" || f.reviewBy != "" || f.approvedRef != "" {
 		return dependencies.fail(2, fmt.Errorf("goal %s --under is the seat's own act; drop --by and --approved-ref", name))
 	}
-	if brainState := brain.Read(f.root, goal.ExistingLedgerIdentity(f.root)); brainState.State != brain.Undeclared {
+	if brainState := brain.Read(f.root, goal.ExistingLedgerIdentity(f.root)); brainState.State != brain.Undeclared && (brainState.Record == nil || brainState.Record.Role != brain.Partner) {
 		return dependencies.fail(1, fmt.Errorf("this is the coordinator's checkout, which never acts under a grant for goal %s\nrun: metasystem goal %s --by <your name>  (in a terminal you opened yourself)", name, name))
 	}
 	now, err := commandNow(f.root)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -519,16 +520,38 @@ func (r helmReading) attention(env textui.Env) []textui.Attention {
 func (inv *intentInvocation) withHelm(result intentResult, path string) intentResult {
 	reading, active := inv.readHelm(path)
 	grant, granted := inv.liveGeneralGrant(path)
+	partner := brain.ReadResult{State: brain.Undeclared}
+	if _, err := os.Stat(brain.Path(inv.stateRoot)); err == nil {
+		ledger := inv.owners.dependencies.authorityFacts.ledgerIdentity
+		if ledger == nil {
+			ledger = goal.ExistingLedgerIdentity
+		}
+		partner = brain.Read(inv.stateRoot, ledger(inv.stateRoot))
+	}
+	isPartner := partner.State == brain.Declared && partner.Record.Role == brain.Partner
+	if isPartner && grant.Lineage != "project-partner" {
+		granted = false
+	}
 	var lines []string
 	if active {
 		lines = reading.lines
 	}
 	if granted {
 		attorney := attorneyLine(grant, inv.owners.helm.withDefaults().zone)
-		lines = append(lines, attorney)
+		if isPartner {
+			attorney = "PROJECT PARTNER: " + attorney
+		}
+		if isPartner {
+			lines = append([]string{attorney}, lines...)
+		} else {
+			lines = append(lines, attorney)
+		}
 		if data, ok := result.Data.(map[string]any); ok {
 			data["powerOfAttorney"] = attorney
 		}
+	}
+	if isPartner && !granted {
+		lines = append([]string{"PROJECT PARTNER: the declaration remains; no live grant; the partner explains and proposes"}, lines...)
 	}
 	if lines == nil {
 		return result
@@ -539,7 +562,14 @@ func (inv *intentInvocation) withHelm(result intentResult, path string) intentRe
 			items = reading.attention(env)
 		}
 		if granted {
-			items = append(items, grantAttention(grant, env))
+			attention := grantAttention(grant, env)
+			if isPartner {
+				attention.Text = "Project partner · " + attention.Text
+			}
+			items = append(items, attention)
+		}
+		if isPartner && !granted {
+			items = append(items, textui.Attention{State: textui.Live, Text: lines[0]})
 		}
 		return items
 	}

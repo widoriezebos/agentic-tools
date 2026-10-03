@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -34,7 +35,14 @@ type brainActDependencies struct {
 func defaultBrainActDependencies() brainActDependencies {
 	return brainActDependencies{
 		classify: func(root string, callerPid int64) (lease.ClassifyResult, error) {
-			return personVerbCaller(root, callerPid)
+			// Exact fake-runtime roots may supply their terminal through the
+			// existing identity fixture. Grants never answer this classifier.
+			if authorization, err := fixtureauth.New(root); err == nil {
+				if entry, present := authorization.Identity().FixtureEntry(callerPid); present && entry.HasTerminal && entry.Terminal {
+					return lease.ClassifyVerb(root, callerPid)
+				}
+			}
+			return coordinatorDirectCaller(root, callerPid, time.Now(), humanauthority.Prove)
 		},
 		ledgerIdentity: goal.ExistingLedgerIdentity,
 		machine:        goal.ResolveMachine,
@@ -49,6 +57,19 @@ func defaultBrainActDependencies() brainActDependencies {
 		registryHome: brain.RegistryHome,
 		now:          time.Now,
 	}
+}
+
+// coordinatorDirectCaller never lets the helm or a grant answer a declaration
+// change. Its classifier seam represents this direct proof, not person class.
+func coordinatorDirectCaller(root string, pid int64, now time.Time, prove func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)) (lease.ClassifyResult, error) {
+	proof, err := prove(root, pid, nil, now)
+	if err != nil {
+		return lease.ClassifyResult{}, err
+	}
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(root) {
+		return lease.ClassifyResult{}, fmt.Errorf("the enrolled terminal's direct proof is missing")
+	}
+	return lease.ClassifyResult{Class: lease.ClassHuman}, nil
 }
 
 func brainHumanAct(caller ownercall.Process, root, verb string, fixture bool, classify func(string, int64) (lease.ClassifyResult, error)) error {
@@ -67,12 +88,19 @@ func brainHumanAct(caller ownercall.Process, root, verb string, fixture bool, cl
 	}
 	classification, err := classify(root, callerPid)
 	if err != nil {
-		return fmt.Errorf("coordinator %s: who is running this cannot be told: %w", verb, err)
+		return fmt.Errorf("%s\n%s", coordinatorOwnActRefusal(verb), err)
 	}
 	if classification.Class != lease.ClassHuman {
-		return fmt.Errorf("brain %s is a human act; run it from an agent-free terminal", verb)
+		return fmt.Errorf("%s\nbrain %s is a human act; run it from an agent-free terminal", coordinatorOwnActRefusal(verb), verb)
 	}
 	return nil
+}
+
+func coordinatorOwnActRefusal(verb string) string {
+	if verb != "withdraw" {
+		return "brain declare is a human act; run it from an agent-free terminal"
+	}
+	return "withdrawing the coordinator declaration is the person's own act, at their own terminal; a grant never stands in for it; nothing was done"
 }
 
 // brainDeclare is the declaration owner: the human gate classifies the
@@ -83,6 +111,10 @@ func brainDeclare(caller ownercall.Process, stdout, stderr io.Writer, root, by s
 }
 
 func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, by string, fixture bool, deps brainActDependencies) int {
+	return brainDeclareRoleWith(caller, stdout, stderr, root, by, "", fixture, deps)
+}
+
+func brainDeclareRoleWith(caller ownercall.Process, stdout, stderr io.Writer, root, by, role string, fixture bool, deps brainActDependencies) int {
 	if by == "" {
 		fmt.Fprintln(stderr, "brain declare needs --by")
 		return 2
@@ -93,6 +125,10 @@ func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, 
 	// keeps. It reads what the unguarded coordinator read shows and changes
 	// nothing, so no person's proof is needed to answer it.
 	if state := brain.Read(root, ledgerIdentity); ledgerIdentity != "" && state.State == brain.Declared {
+		if state.Record.Role != role {
+			fmt.Fprintf(stderr, "this checkout already has a coordinator with another role; withdraw it first\nrun: metasystem settings coordinator --withdraw --by %s --repo %s\n", state.Record.DeclaredBy, root)
+			return 2
+		}
 		writeJSONLine(stdout, stderr, map[string]any{"state": brain.Declared, "record": state.Record, "unchanged": true,
 			"summary": fmt.Sprintf("this checkout is already the coordinator of ledger %s, declared by %s at %s", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt)})
 		return 0
@@ -138,7 +174,7 @@ func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, 
 		fmt.Fprintln(stderr, "brain declare:", err)
 		return 2
 	}
-	record, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: by, Now: deps.now().UTC()})
+	record, err := brain.Declare(brain.DeclareOptions{StateRoot: root, Role: role, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: by, Now: deps.now().UTC()})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2

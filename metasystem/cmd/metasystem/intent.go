@@ -121,7 +121,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), partnerIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -566,6 +566,7 @@ type intentOwners struct {
 	// attorney are the general power of attorney's seams; the zero value is
 	// production.
 	attorney attorneyIntentOwners
+	partner  partnerOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
@@ -1319,7 +1320,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster"}},
+	{"run", "Run", []string{"status", "helm", "partner", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -1336,6 +1337,7 @@ var intentObjectSummaries = map[string]string{
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
+	"partner":    "open or end the person's project partner in this checkout",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
 	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt, completion",

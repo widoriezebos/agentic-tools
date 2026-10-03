@@ -143,6 +143,10 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 		}
 	}
 	names := []string{"asks", "held", "fleet", "digest"}
+	partner := state.Record != nil && state.Record.Role == brain.Partner
+	if partner {
+		names = append(names, "handoff")
+	}
 	sections := make(map[string]brainBootSection, len(names))
 	states := make(map[string]string, len(names))
 	var missing []string
@@ -175,6 +179,13 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 		name    string
 		percent int
 	}{{"asks", 30}, {"held", 10}, {"fleet", 25}, {"digest", 35}}
+	if partner {
+		allocations[3].percent = 15
+		allocations = append(allocations, struct {
+			name    string
+			percent int
+		}{"handoff", 20})
+	}
 	for index, allocation := range allocations {
 		section, ok := sections[allocation.name]
 		if !ok {
@@ -183,6 +194,9 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 		share := initial*allocation.percent/100 + carry
 		if index == len(allocations)-1 {
 			share = available
+		}
+		if allocation.name == "handoff" {
+			share = min(available, initial*20/100)
 		}
 		text, cut := fitBrainSection(allocation.name, section, payload, share)
 		used := 0
@@ -256,7 +270,7 @@ func readBrainBootSection(dir, name string) (brainBootSection, error) {
 	if err := decoder.Decode(&section); err != nil {
 		return brainBootSection{}, err
 	}
-	if section.Status != "complete" && section.Status != "error" {
+	if section.Status != "complete" && section.Status != "error" && section.Status != "skipped" {
 		return brainBootSection{}, fmt.Errorf("invalid section status %q", section.Status)
 	}
 	return section, nil
@@ -265,6 +279,26 @@ func readBrainBootSection(dir, name string) (brainBootSection, error) {
 func fitBrainSection(name string, section brainBootSection, existing string, share int) (string, bool) {
 	if len(section.Lines) == 0 {
 		return "", false
+	}
+	if name == "handoff" {
+		header := "PROJECT PARTNER HANDOFF (plans/handoff-project-partner.md):\n"
+		body := section.Lines[0].Text
+		room := share - appendedBytes(existing, header)
+		if room < 0 {
+			return "", true
+		}
+		if len(body) <= room {
+			return header + body, false
+		}
+		marker := "\n[handoff cut at its end]"
+		room -= len(marker)
+		if room < 0 {
+			return "", true
+		}
+		for room > 0 && !utf8.ValidString(body[:room]) {
+			room--
+		}
+		return header + body[:room] + marker, true
 	}
 	header := map[string]string{
 		"asks": "ASKS AWAITING WIDO:", "held": "HELD HERE:", "fleet": "FLEET:",
@@ -373,7 +407,21 @@ func writeBrainBootInputs(root, repo, dir string, readers brainBootInputReaders)
 	if err := writeBrainBootSection(dir, "fleet", fleet); err != nil {
 		return err
 	}
-	return writeBrainBootSection(dir, "digest", readBrainDigestWithLayoutReader(repo, readers.resolveLayout))
+	if err := writeBrainBootSection(dir, "digest", readBrainDigestWithLayoutReader(repo, readers.resolveLayout)); err != nil {
+		return err
+	}
+	return writeBrainBootSection(dir, "handoff", readPartnerHandoff(root))
+}
+
+func readPartnerHandoff(root string) brainBootSection {
+	body, err := os.ReadFile(filepath.Join(root, "plans", "handoff-project-partner.md"))
+	if os.IsNotExist(err) {
+		return brainBootSection{Status: "skipped"}
+	}
+	if err != nil {
+		return brainBootSection{Status: "error", Lines: []brainBootLine{{Text: "handoff cannot be read: " + err.Error()}}}
+	}
+	return brainBootSection{Status: "complete", Lines: []brainBootLine{{Text: string(body)}}}
 }
 
 func writeBrainBootSection(dir, name string, section brainBootSection) error {

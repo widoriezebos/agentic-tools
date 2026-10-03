@@ -31,7 +31,9 @@ const (
 
 	// PacketSource names where the role packet's text is kept in the
 	// engine source; the engine never reads it from a checkout.
-	PacketSource = "internal/brain/role-packet.md"
+	PacketSource        = "internal/brain/role-packet.md"
+	Partner             = "partner"
+	PartnerPacketSource = "internal/brain/partner-packet.md"
 )
 
 // rolePacket is the brain seat's role packet and standing instruction,
@@ -40,6 +42,9 @@ const (
 //
 //go:embed role-packet.md
 var rolePacket []byte
+
+//go:embed partner-packet.md
+var partnerPacket []byte
 
 // RolePacket returns a copy of the compiled-in role packet.
 func RolePacket() []byte {
@@ -56,6 +61,7 @@ const (
 
 type Record struct {
 	Schema     int    `json:"schema"`
+	Role       string `json:"role,omitempty"`
 	Ledger     string `json:"ledger"`
 	Machine    string `json:"machine"`
 	DeclaredBy string `json:"declaredBy"`
@@ -102,6 +108,9 @@ func WriteStatus(stateRoot string, record Record, now time.Time) error {
 }
 
 func StatusLine(record Record) string {
+	if record.Role == Partner {
+		return fmt.Sprintf("PROJECT PARTNER: %s for ledger %s since %s", record.Machine, record.Ledger, record.DeclaredAt)
+	}
 	return fmt.Sprintf("BRAIN: %s for ledger %s since %s", record.Machine, record.Ledger, record.DeclaredAt)
 }
 
@@ -181,6 +190,9 @@ func requireJSONEnd(decoder *json.Decoder) error {
 func corrupt(reason string) ReadResult { return ReadResult{State: Corrupt, Reason: reason} }
 
 func validate(record Record, ledgerIdentity string) string {
+	if record.Role != "" && record.Role != Partner {
+		return fmt.Sprintf("unknown coordinator role %q", record.Role)
+	}
 	if record.Schema != Schema {
 		return fmt.Sprintf("wrong schema %d (want 1)", record.Schema)
 	}
@@ -260,6 +272,7 @@ func PointerPath(registryHome, ledgerIdentity string) string {
 
 type DeclareOptions struct {
 	StateRoot      string
+	Role           string
 	RegistryHome   string
 	LedgerIdentity string
 	Machine        string
@@ -277,7 +290,7 @@ func Declare(options DeclareOptions) (Record, error) {
 		return Record{}, err
 	}
 	stamp := options.Now.UTC().Format(time.RFC3339)
-	record := Record{Schema: Schema, Ledger: options.LedgerIdentity, Machine: options.Machine, DeclaredBy: options.DeclaredBy, DeclaredAt: stamp}
+	record := Record{Schema: Schema, Role: options.Role, Ledger: options.LedgerIdentity, Machine: options.Machine, DeclaredBy: options.DeclaredBy, DeclaredAt: stamp}
 	if reason := validate(record, options.LedgerIdentity); reason != "" {
 		return Record{}, errors.New(reason)
 	}
@@ -299,7 +312,7 @@ func Declare(options DeclareOptions) (Record, error) {
 		if other != "" && other != checkout {
 			otherState := Read(other, options.LedgerIdentity)
 			if otherState.State == Declared {
-				return Record{}, fmt.Errorf("this host already has a coordinator for this fleet, at %s; a host has one; withdraw it there first", other)
+				return Record{}, fmt.Errorf("this host already has a coordinator for this fleet, at %s; a host has one; withdraw it there first\nrun: metasystem settings coordinator --withdraw --by %s --repo %s", other, otherState.Record.DeclaredBy, other)
 			}
 		}
 	} else if !os.IsNotExist(readErr) {
@@ -396,22 +409,26 @@ func PhaseOne(stateRoot, ledgerIdentity string, bound int) (ReadResult, string) 
 	if state.State == Undeclared {
 		return state, ""
 	}
-	header := fmt.Sprintf("BRAIN SEAT declaration unreadable for ledger %s. The standing instruction is the engine's compiled role packet (%s).", ledgerIdentity, PacketSource)
+	packet, source, label := rolePacket, PacketSource, "BRAIN SEAT"
+	if state.State == Declared && state.Record.Role == Partner {
+		packet, source, label = partnerPacket, PartnerPacketSource, "PROJECT PARTNER"
+	}
+	header := fmt.Sprintf("BRAIN SEAT declaration unreadable for ledger %s. The standing instruction is the engine's compiled role packet (%s).", ledgerIdentity, source)
 	if state.State == Declared {
-		header = fmt.Sprintf("BRAIN SEAT %s for ledger %s, declared by %s %s. The standing instruction is the engine's compiled role packet (%s).", state.Record.Machine, state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, PacketSource)
+		header = fmt.Sprintf("%s %s for ledger %s, declared by %s %s. The standing instruction is the engine's compiled role packet (%s).", label, state.Record.Machine, state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, source)
 	}
 	parts := []string{header}
 	if state.State == Corrupt {
 		parts = append(parts, RemedialRefusal(state.Reason, stateRoot))
 	}
-	whole := len(header) + 1 + len(rolePacket)
+	whole := len(header) + 1 + len(packet)
 	if whole <= bound*60/100 {
-		parts = append(parts, string(rolePacket))
+		parts = append(parts, string(packet))
 		return state, strings.Join(parts, "\n")
 	}
 	// The smallest bound whose 60 percent share holds the whole packet.
-	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); raise the context bound to at least %d bytes to read it whole before anything else", len(rolePacket), bound, (whole*100+59)/60))
-	parts = append(parts, standingInstruction(rolePacket))
+	parts = append(parts, fmt.Sprintf("PACKET TOO LARGE FOR THIS CHANNEL (%d of %d); raise the context bound to at least %d bytes to read it whole before anything else", len(packet), bound, (whole*100+59)/60))
+	parts = append(parts, standingInstruction(packet))
 	return state, strings.Join(parts, "\n")
 }
 
@@ -449,6 +466,15 @@ func Fence(stateRoot, act, ledgerIdentity string) string {
 	}
 	if result.State == Corrupt {
 		return RemedialRefusal(result.Reason, stateRoot)
+	}
+	if result.Record.Role == Partner {
+		return fmt.Sprintf("this is the project partner's checkout; the partner never %s; a seat does\nrun on a seat's own checkout: metasystem %s", map[string]string{
+			"claim": "claims", "dispatch": "dispatches a builder", "follow-up": "dispatches a builder", "land": "lands",
+			"cancel": "cancels a builder's job", "close": "closes dispatcher records", "reap": "reaps dispatcher records",
+		}[act], map[string]string{
+			"claim": "goal claim", "dispatch": "work build <goal>", "follow-up": "work build <goal>", "land": "work land <goal>",
+			"cancel": "work stop j2:<job id>", "close": "work finish j2:<root job>", "reap": "work status",
+		}[act])
 	}
 	switch act {
 	case "dispatch", "follow-up":
