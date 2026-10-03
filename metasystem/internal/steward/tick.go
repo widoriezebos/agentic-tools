@@ -463,6 +463,10 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	return result, true, nil
 }
 
+// degradedNoticeTicks is how many ticks in a row a degraded verdict holds
+// before it queues its notice.
+const degradedNoticeTicks = 2
+
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
 	ev := Observe(prev, marks)
 	// A standing provider outage pauses the aging, never the reset:
@@ -488,7 +492,14 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if err != nil {
 		return TickResult{}, err
 	}
-	if d.Action == ActNotify {
+	// One degraded read, such as a ledger read inside a burst of ledger
+	// commits, reads fine at the next tick: the verdict is reported every
+	// tick, and its notice waits until it holds degradedNoticeTicks in a row.
+	ev.Degraded = 0
+	if d.Verdict == VerdictDegraded {
+		ev.Degraded = prev.Degraded + 1
+	}
+	if d.Action == ActNotify && (d.Verdict != VerdictDegraded || ev.Degraded >= degradedNoticeTicks) {
 		// A notify verdict IS the visibility the invariant promises:
 		// it goes to the queue, keyed by its verdict so the standing
 		// condition holds one pending message (redelivered after each
