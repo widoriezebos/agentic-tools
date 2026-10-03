@@ -24,6 +24,8 @@ type Design struct {
 type Facts struct {
 	Goal    string
 	Tier    uint8
+	Mode    string
+	Allowed bool
 	Designs []Design
 	Error   error
 }
@@ -39,7 +41,14 @@ type Result struct {
 // person's acceptance; only a closed critique can be contradicted by a chain.
 func Check(f Facts) Result {
 	r := Result{Verdict: "not-design-bearing", Mode: "warn"}
+	if f.Mode == "refuse" {
+		r.Mode = f.Mode
+	}
 	if f.Tier == 1 {
+		return r
+	}
+	if f.Allowed {
+		r.Verdict = "allowed"
 		return r
 	}
 	if f.Error != nil {
@@ -84,5 +93,6 @@ func Check(f Facts) Result {
 			}
 		}
 	}
-	return Result{Verdict: "ok", Mode: "warn"}
+	r.Verdict, r.WouldRefuse, r.Warning = "ok", false, [2]string{}
+	return r
 }

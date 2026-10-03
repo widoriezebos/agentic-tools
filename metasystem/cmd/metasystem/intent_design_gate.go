@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -34,6 +35,7 @@ type designGateRecord struct {
 	Mode           string              `json:"mode"`
 	Verdict        string              `json:"verdict"`
 	WouldRefuse    bool                `json:"wouldRefuse"`
+	Person         bool                `json:"person"`
 	GovernedBy     string              `json:"governedBy"`
 	Time           time.Time           `json:"time"`
 	Designs        []designgate.Design `json:"designs"`
@@ -91,6 +93,17 @@ func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
 	}
 	file, _ := goalRecord(projection, id)
 	f.Tier = goal.GateTier(file)
+	f.Allowed = file != nil && file.DesignGateOff
+	mode, _, code, err := inv.work().config(config.DesignGateModeKey, intentConfPath(inv.layout))
+	if err == nil && code == 0 {
+		f.Mode, err = config.ParseDesignGateMode(mode)
+	} else if err == nil {
+		err = fmt.Errorf("%s could not be read", config.DesignGateModeKey)
+	}
+	if err != nil {
+		f.Error = err
+		return f
+	}
 	designs, problemText := inv.linkedDesigns(id)
 	if problemText != "" {
 		f.Error = fmt.Errorf("%s", problemText)
@@ -119,11 +132,11 @@ func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
 
 var designGateIdentity = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
-func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f designgate.Facts, result designgate.Result) {
+func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f designgate.Facts, result designgate.Result, person bool) {
 	o := inv.designGate()
 	now := time.Now().UTC()
 	r := designGateRecord{Schema: 1, Goal: f.Goal, Unit: unit, Worktree: worktree, Tier: f.Tier, Mode: result.Mode,
-		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Time: now, Designs: []designgate.Design{}}
+		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, Time: now, Designs: []designgate.Design{}}
 	for _, d := range f.Designs {
 		if d.Status == "accepted" {
 			r.Designs = append(r.Designs, d)

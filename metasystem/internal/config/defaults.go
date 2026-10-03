@@ -245,6 +245,8 @@ var coreSettings = []Setting{
 		Meaning: "the lowest goal tier whose landing waits for a person's review or word (g1-s70); 4 lets every tier land by itself"},
 	{Key: LandingAutoAfterKey, Default: "4h",
 		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
+	{Key: DesignGateModeKey, Default: "warn", ProofInput: true,
+		Meaning: "warn about missing accepted design evidence, or refuse an agent's build"},
 	// The host board (batch-lane design D14-r2, R25), read by the steward's
 	// bridge role only.
 	{Key: BoardKeepHoursKey, Default: "24",

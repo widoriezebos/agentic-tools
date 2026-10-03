@@ -33,6 +33,7 @@ type GoalFile struct {
 	// StopSurfaceMoves is the explicit permission for a declaration that
 	// removes or changes a Stop-decision assertion.
 	StopSurfaceMoves bool
+	DesignGateOff    bool
 	NextStep         string
 	Conclude         string // done only
 	OpenedAt         string // ISO 8601, written once at open
@@ -1193,6 +1194,12 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.StopSurfaceMoves = true
+	case "DesignGate":
+		if value != "off" {
+			addProblem("DesignGate %q is not off", value)
+			return
+		}
+		f.DesignGateOff = true
 	case "Next step":
 		f.NextStep = value
 	case "Concluded":
@@ -1734,6 +1741,9 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.StopSurfaceMoves {
 		b.WriteString("- StopSurface: moves\n")
+	}
+	if f.DesignGateOff {
+		b.WriteString("- DesignGate: off\n")
 	}
 	if f.NextStep != "" {
 		fmt.Fprintf(&b, "- Next step: %s\n", f.NextStep)

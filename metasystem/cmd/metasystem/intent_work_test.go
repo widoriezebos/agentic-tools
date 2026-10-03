@@ -45,6 +45,7 @@ type workBed struct {
 	readDirsMu sync.Mutex
 	readDirs   map[string]bool
 	designGate designGateOwners
+	config     func(key, confPath string) (value, source string, code int, err error)
 }
 
 type workClock struct {
@@ -230,6 +231,7 @@ func (b *workBed) workOwners() intentOwners {
 	}
 	owners.work = intentWorkOwners{
 		designGate: b.designGate,
+		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
 			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot}
 		},

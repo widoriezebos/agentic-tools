@@ -37,12 +37,20 @@ func loadCritiqueStateAt(agents string) critiqueState {
 
 func readCritiqueStateAt(agents string) (critiqueState, error) {
 	state := critiqueState{agents: agents, records: map[string]map[string]any{}}
-	paths, err := filepath.Glob(filepath.Join(agents, "jobs", "*.json"))
+	jobs := filepath.Join(agents, "jobs")
+	entries, err := os.ReadDir(jobs)
+	if os.IsNotExist(err) {
+		return state, nil
+	}
 	if err != nil {
-		return state, fmt.Errorf("cannot list job records in %s: %w", filepath.Join(agents, "jobs"), err)
+		return state, fmt.Errorf("cannot list job records in %s: %w", jobs, err)
 	}
 	var firstError error
-	for _, path := range paths {
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(jobs, entry.Name())
 		record, err := readObject(path)
 		if err != nil {
 			if firstError == nil {

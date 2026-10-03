@@ -96,3 +96,36 @@ func TestReadDesignCritiqueChains(t *testing.T) {
 		})
 	}
 }
+
+func TestReadDesignCritiqueChainsReportsUnreadableJobsFolder(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"not a directory", "permission denied"} {
+		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
+			repo := t.TempDir()
+			jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+			if err := os.MkdirAll(filepath.Dir(jobs), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if failure == "not a directory" {
+				if err := os.WriteFile(jobs, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if os.Geteuid() == 0 {
+					t.Skip("root can read folders regardless of their permission bits")
+				}
+				if err := os.Mkdir(jobs, 0); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(jobs, 0o700) })
+			}
+			if chains, err := ReadDesignCritiqueChains(repo, "g", filepath.Join(repo, "page.md")); err == nil || !strings.Contains(err.Error(), jobs) || len(chains) != 0 {
+				t.Fatalf("unreadable folder: chains=%+v err=%v", chains, err)
+			}
+			if chains := DesignCritiqueChains(repo, "g", filepath.Join(repo, "page.md")); len(chains) != 0 {
+				t.Fatalf("unchecked reader behavior changed: %+v", chains)
+			}
+		})
+	}
+}

@@ -598,6 +598,17 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	}
 	gateFacts := inv.designGateFacts(inv.layout.InstallationRoot, id)
 	gateResult := designgate.Check(gateFacts)
+	person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
+	if gateResult.Mode == "refuse" && gateResult.WouldRefuse {
+		reason := strings.TrimPrefix(strings.SplitN(gateResult.Warning[0], ";", 2)[0], "warning: ")
+		if !person {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+				Summary: reason + "; nothing was built", Data: map[string]any{"designGate": gateResult},
+				next:    inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"),
+				Details: []string{fmt.Sprintf("BUILD_DESIGN_NOT_ACCEPTED goal=%s verdict=%s governed-by=", id, gateResult.Verdict)}})
+		}
+		gateResult.Warning[0] = "warning: " + reason + "; it goes on at your word"
+	}
 	if gateResult.Warning[0] != "" {
 		fmt.Fprintln(inv.stderr, gateResult.Warning[0]+"\n"+gateResult.Warning[1])
 	}
@@ -631,7 +642,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	request.prepare = func(directory string) (string, error) {
 		path, err := prepare(directory)
 		if err == nil {
-			inv.recordDesignGate(filepath.Dir(filepath.Dir(directory)), request.worktree, unit, gateFacts, gateResult)
+			inv.recordDesignGate(filepath.Dir(filepath.Dir(directory)), request.worktree, unit, gateFacts, gateResult, person)
 		}
 		return path, err
 	}

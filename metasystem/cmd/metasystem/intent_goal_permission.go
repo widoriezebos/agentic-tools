@@ -41,6 +41,9 @@ func runIntentAllow(inv *intentInvocation) int {
 	if !ok {
 		return code
 	}
+	if permission.Impact != nil {
+		fmt.Fprintln(inv.stderr, permission.Impact(id))
+	}
 	reason, problem := inv.textValue("reason")
 	if problem != nil {
 		return inv.render(*problem)
