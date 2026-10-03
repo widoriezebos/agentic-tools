@@ -495,6 +495,15 @@ func criticFindingText(repoRoot, rootJob, criticJob, findingID string) (string, 
 }
 
 func CritiqueRegisterAcceptRisk(repoRoot, rootJob, findingID, opid string) error {
+	_, err := CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid)
+	return err
+}
+
+// CritiqueRegisterStampAcceptedRisk records a person's accepted risk on the
+// register entry and says whether it changed the register: false when the
+// entry already carries that decision.
+func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid string) (bool, error) {
+	stamped := false
 	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
 		return "", withRecordLock(repoRoot, rootJob, func(path string) error {
 			root, err := readObject(path)
@@ -527,12 +536,15 @@ func CritiqueRegisterAcceptRisk(repoRoot, rootJob, findingID, opid string) error
 			}
 			if changed {
 				root[findingRegisterField] = encodeFindingRegister(register)
-				return writeRecord(path, root)
+				if err := writeRecord(path, root); err != nil {
+					return err
+				}
+				stamped = true
 			}
 			return nil
 		})
 	})
-	return err
+	return stamped, err
 }
 
 func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []string) error {
@@ -1510,7 +1522,13 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		class = critiqueModel.NormalizeWire(row["rigorClass"], row["facts"], row["reopeningTrigger"], true)
 		candidate.RigorClass = class
 		if rigorRank(class) < rigorRank(current.RigorClass) {
-			advanced[existingIndex].Status = "disputed"
+			// A lower-rigor re-report disputes only a finding still
+			// unresolved. A decided entry (resolved, deferred, or a person's
+			// accepted risk) keeps its decision, as it does for an
+			// equal-rigor re-report; only a higher rigor reopens it.
+			if current.Status == "open" {
+				advanced[existingIndex].Status = "disputed"
+			}
 			continue
 		}
 		if rigorRank(class) > rigorRank(current.RigorClass) {

@@ -1122,9 +1122,14 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 		return intentResult{Targets: targets, Outcome: intentInProgress, Summary: "the dispatch named job " + job + " but its record is not readable yet",
 			Data: map[string]any{"delegate": outcome}, next: inv.sameCommand(), nextReason: "collects the same review"}
 	}
+	// A round's return lies under its chain's root, which is the parent only
+	// for round 2: round N's parent is round N-1.
 	root := job
 	if parent := recordText(record, "parentJob"); parent != "" {
 		root = parent
+		if chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot, job); err == nil && chainRoot != "" {
+			root = chainRoot
+		}
 	}
 	status := recordText(record, "status")
 	data := map[string]any{"delegate": outcome, "job": job, "status": status}
@@ -1492,13 +1497,31 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 			return joinRefusal(targets, job, violations, inv.sameCommand())
 		}
 		decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
-		refuted := map[string]string{}
-		for id, decision := range decisions {
-			if decision == "refuted" {
-				refuted[id] = decision
+		// Every earlier answered round's decisions reach the register as the
+		// design close carries them (each round's own decisions file): an
+		// earlier round's accepted finding the later rounds did not raise
+		// again is resolved as accepted, its fix having been examined, and a
+		// refutation stands. A finding the terminal round carries is decided
+		// by these decisions only; an earlier finding nobody decided stays
+		// open.
+		terminal := map[string]bool{}
+		if findings, _, err := readIntentFindings(inv.returnPath(job, recordRound(round))); err == nil {
+			for _, finding := range findings {
+				terminal[finding.ID] = true
 			}
 		}
-		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, refuted); err != nil {
+		applied := map[string]string{}
+		for id, decision := range inv.registerDecisions(job, recordRound(round)) {
+			if !terminal[id] {
+				applied[id] = decision
+			}
+		}
+		for id, decision := range decisions {
+			if decision == "refuted" {
+				applied[id] = decision
+			}
+		}
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, applied); err != nil {
 			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 				Summary: "the decisions can't be recorded, so nothing was closed",
 				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("review %s: %v", job, err)}})
