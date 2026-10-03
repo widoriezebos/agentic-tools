@@ -431,6 +431,42 @@ func TestWakeReasonsAreQueuedAndProofFinished(t *testing.T) {
 	}
 }
 
+// TestKeeperFingerprintMovesWithTheLane: the keeper's fingerprint of the lane
+// stays the same across reads and changes with what a landing agent does: a
+// hand-in it is woken for, a result, a push.
+func TestKeeperFingerprintMovesWithTheLane(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	fingerprint := func() string {
+		t.Helper()
+		got, err := KeeperFingerprint(b.checkout)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	seen := map[string]string{"empty": fingerprint()}
+	if again := fingerprint(); again != seen["empty"] {
+		t.Fatalf("a second read moved the fingerprint: %s, then %s", seen["empty"], again)
+	}
+	b.handIn("m1e", "goal-a", b.seat("seat-a", "goal-a"))
+	seen["hand-in"] = fingerprint()
+	b.merge("goal-a")
+	b.prove(b.greenScript)
+	seen["result"] = fingerprint()
+	if _, err := b.push(); err != nil {
+		t.Fatal(err)
+	}
+	seen["push"] = fingerprint()
+	distinct := map[string]string{}
+	for step, value := range seen {
+		if earlier, ok := distinct[value]; ok {
+			t.Fatalf("%s left the fingerprint as %s did", step, earlier)
+		}
+		distinct[value] = step
+	}
+}
+
 // The keeper holds while running.json names a live proof, and not when its
 // process is gone.
 func TestProofHoldWhileALiveProofRuns(t *testing.T) {

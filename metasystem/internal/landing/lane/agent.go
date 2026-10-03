@@ -27,7 +27,19 @@ type AgentState struct {
 	// StartingAt is a start in progress, claimed under the flock while the
 	// launcher runs outside it.
 	StartingAt string `json:"startingAt,omitempty"`
+	// Fingerprint is the lane as its agent can change it when the launch
+	// started. Barren counts the launches in a row that ended with the lane
+	// unchanged, BarrenLaunches names them, and BarrenFingerprint is the
+	// lane at the last such end.
+	Fingerprint       string   `json:"fingerprint,omitempty"`
+	Barren            int      `json:"barren,omitempty"`
+	BarrenLaunches    []string `json:"barrenLaunches,omitempty"`
+	BarrenFingerprint string   `json:"barrenFingerprint,omitempty"`
 }
+
+// barrenLimit is how many launches in a row may end with the lane unchanged
+// before the keeper starts no more by itself.
+const barrenLimit = 2
 
 func agentStatePath(home string) string {
 	return filepath.Join(HostDir(home), "landing-agent-keeper.json")
@@ -67,6 +79,13 @@ type AgentKeeper struct {
 	// Cancel stops a launch that started while the lane was paused
 	// meanwhile; nil leaves it to the pause's own reach.
 	Cancel func(id string) error
+	// Fingerprint reads the lane as its agent can change it (its queue,
+	// results and pushes): barrenLimit launches in a row that end with it
+	// unchanged hold the next start until it changes. nil holds nothing.
+	Fingerprint func(root string) (string, error)
+	// Explicit is a start asked for by name (landing run), not the keeper's
+	// own: barren runs do not hold it, and it clears their count.
+	Explicit bool
 }
 
 // startClaim bounds a start in progress that another step honours: a start
@@ -177,6 +196,10 @@ func (k AgentKeeper) Run() AgentRun {
 	if !claimed {
 		return result
 	}
+	fingerprint := ""
+	if k.Fingerprint != nil {
+		fingerprint, _ = k.Fingerprint(root)
+	}
 	id, startErr := k.Start(root, wake)
 	if err := withLock(k.Home, func() error {
 		current, err := ReadAgentState(k.Home)
@@ -188,7 +211,8 @@ func (k AgentKeeper) Run() AgentRun {
 			result = agentRun(AgentFailed, root, fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr))
 			return writeJSON(k.Home, agentStatePath(k.Home), current)
 		}
-		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339)}
+		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Fingerprint: fingerprint,
+			Barren: current.Barren, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
 		result = AgentRun{Outcome: AgentStarted, Launch: id, Root: root, Reasons: wake.Reasons,
 			Line: fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))}
 		// A pause that came while it started ends it at once.
@@ -257,12 +281,18 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 			}
 		}
 		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
+		k.countBarren(&state, root)
 		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
 			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 		}
 	}
 	if by, paused := pausedClosed(k.Home); paused {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), false
+	}
+	if reason, held, err := k.barrenHold(root); err != nil {
+		return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
+	} else if held {
+		return agentRun(AgentHeld, root, reason), false
 	}
 	if stopped, stop := k.recheck(root); stop {
 		return stopped, false
@@ -271,6 +301,46 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 		return agentRun(AgentHeld, root, reason), false
 	}
 	return AgentRun{}, true
+}
+
+// countBarren counts an ended launch that left the lane as it found it, and
+// clears the count when the lane changed during the launch.
+func (k AgentKeeper) countBarren(state *AgentState, root string) {
+	if k.Fingerprint == nil || state.Fingerprint == "" {
+		return
+	}
+	now, err := k.Fingerprint(root)
+	if err != nil || now != state.Fingerprint {
+		state.Barren, state.BarrenLaunches, state.BarrenFingerprint = 0, nil, ""
+		return
+	}
+	state.Barren++
+	state.BarrenLaunches = append(state.BarrenLaunches, state.Launch)
+	state.BarrenFingerprint = now
+}
+
+// barrenHold holds the keeper's own start after barrenLimit launches in a
+// row ended with the lane unchanged, until the lane changes (a new hand-in,
+// a result) or a start is asked for by name; either clears the count.
+func (k AgentKeeper) barrenHold(root string) (string, bool, error) {
+	state, _ := ReadAgentState(k.Home)
+	if k.Fingerprint == nil || state.Barren == 0 {
+		return "", false, nil
+	}
+	clear := k.Explicit
+	if !clear && state.Barren >= barrenLimit {
+		now, err := k.Fingerprint(root)
+		clear = err == nil && now != state.BarrenFingerprint
+	}
+	if clear {
+		state.Barren, state.BarrenLaunches, state.BarrenFingerprint = 0, nil, ""
+		return "", false, writeJSON(k.Home, agentStatePath(k.Home), state)
+	}
+	if state.Barren < barrenLimit {
+		return "", false, nil
+	}
+	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person's metasystem landing run starts it, or a new hand-in",
+		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil
 }
 
 // held reads the holds: the first that holds, or cannot be read, stops the

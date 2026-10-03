@@ -672,7 +672,10 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	if refused := inv.laneNotReady(owners, root); refused != nil {
 		return inv.render(*refused)
 	}
-	run := owners.keeper(home, root).Run()
+	// A start asked for by name is not held by the agent's barren runs.
+	keeper := owners.keeper(home, root)
+	keeper.Explicit = true
+	run := keeper.Run()
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons}
 	details := []string{run.Line}
 	switch run.Outcome {
