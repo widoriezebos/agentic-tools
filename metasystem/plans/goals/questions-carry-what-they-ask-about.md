@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 4
+- Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Read-only views of seat files on this computer plus a channel attachment; answering keeps its existing authentication"
 - Tier: 2
 - Intent: A person can answer every question from where they are, without opening a seat's local files (Wido 2026-10-03, about m1h's design question naming plans/designs/landing-deploys-the-engine.md in m1h's checkout: 'hard to answer over telegram because it references a local file I cannot read from there ... the UI should help me with this'). (1) The UI's Decisions page shows every open question from every seat on this computer, not only this checkout's, each with its goal, choices and recommendation. (2) A question names the documents it is about; the UI opens each one read-only as the asking seat has it (its checkout or goal worktree), rendered, with what changed since main. (3) On the phone, the channel message carries what is needed to decide without the file: a short plain summary of the document's relevant part, and the document itself as an attachment (Telegram sends files) or a readable link; a question never relies on a path the person cannot open.
 - Origin: main
 - Next step: Inventory how questions are stored per checkout and how /api/decisions and /api/documents read them; short tier-2 design (fleet-wide question read, document references in a question, read-only document view from another checkout, channel attachment); Astra critique; build; check on a phone. Coordinate with channel-questions-stand-alone (same message shape) and fleet-page-redesign (Needs you links to the question).
 - OpenedAt: 2026-10-03T07:09:13Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T07:09:21Z revision=2 opid=X8AEFTD7FCQ6N6VR4XN9WBT4X8-m1e-718ba0eb authority=proven digest=63e6d9484e1c59dd27e8af47d68b1719c2d2c063fb9eac87aac1c6fae0878d91 episode=2
@@ -18,4 +18,5 @@ History:
 - 2026-10-03T07:09:13Z VRZNVBQNG2YXRVE11RF8CXEHMZ-m1e-718ba0eb open actor=human:Wido targets=questions-carry-what-they-ask-about
 - 2026-10-03T07:09:21Z X8AEFTD7FCQ6N6VR4XN9WBT4X8-m1e-718ba0eb approve actor=human:Wido targets=questions-carry-what-they-ask-about
 - 2026-10-03T07:09:29Z B1FFKPC990YMDJ5WMV2WSXPH3B-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=questions-carry-what-they-ask-about from=unranked to=1:4 requested-sequence=4
-Integrity: sha256=b4c0ad01427b21e1940d217d6eb689ed595d7e86edf5ba291488508062896515
+- 2026-10-03T07:13:47Z STHVD54NNXR779Q0CAHZCP782W-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,converging-reviews-never-ask-the-person,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=converging-reviews-never-ask-the-person from=1:4 to=1:5 requested-sequence=1
+Integrity: sha256=1b679931503bd0a5cd3f2b05d5990eb57e481bc812db8c1ad51a69e7e9e5eeb3
