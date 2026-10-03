@@ -1,6 +1,6 @@
 # token-spend-fence
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 27
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong fence stops or fails to stop spending, no data loss; novelty 2: enforcement on token spend is new; exposure 3: every seat's sessions; accumulation 1: one fence and its records"
@@ -9,10 +9,12 @@
 - Origin: main
 - Next step: Next: On Wido's word, redesign step 2 so the ceiling is checked where agent work starts today (the launch of a builder or delegate, and batch-lane admission) instead of the retired dispatcher; build; then allow spend.mode=enforce. Done when: work that would cross a ceiling is refused with the spend so far and who can raise it, and replaying a heavy day's usage against a ceiling shows the expected refusals. REWRITTEN 2026-10-03 (parked-list cleanup; step 1, measure and alert, landed with 0acb09738). What remains, now including spend-fence-reports-tokens-per-model-and-cause: (1) step 2: enforce a spend ceiling at today's real launch points (seat, builder and delegate launches, lane admission), then allow spend.mode=enforce (internal/config/spend.go:123 refuses it today); (2) show the per-model and per-cause attribution that internal/spend/attribution.go already computes in health and in the fence's daily report, with a per-model alert line; (3) fill the price ledger, including gpt-5.6-sol, so delegates stop landing in delegate:other. The limits themselves (per launch, per seat per day) and who sets them are decided in goal-budget-follows-its-plan; this goal waits for it.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 247
+- Revision: 248
+- BlockedBy: goal-budget-follows-its-plan
 - Labels: robustness, spend
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
+- Parked: by=human:Wido at=2026-10-03T10:01:29Z blocker=goal-budget-follows-its-plan because=blocked by goal-budget-follows-its-plan; returns when it is done
 
 History:
 - 2026-09-03T08:42:26Z XR3P846WY3BC85808G7NY1YZJQ-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
@@ -262,4 +264,5 @@ History:
 - 2026-10-03T09:58:01Z Q6GK1VAG280T39729WAM3P943S-m1e-718ba0eb edit actor=human:Wido targets=token-spend-fence
 - 2026-10-03T09:59:10Z RYD9V9YN18QS5P964FN8SYT8PW-m1e-718ba0eb set-priority actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=machine-concurrency-governor from=2:28 to=2:27 requested-sequence=append
 - 2026-10-03T10:01:24Z JB8FEA0H8JBMEPTXZ9CEDZESDM-m1e-718ba0eb unpark actor=human:Wido targets=token-spend-fence
-Integrity: sha256=d8ade26496a0a2d913fcc5f770a578384045d06a8a277cfb955c637a8fa22139
+- 2026-10-03T10:01:29Z 4JZTA2Y85AN9MN7WGPJHX5STB0-m1e-718ba0eb block actor=human:Wido targets=token-spend-fence reason=blocked by goal-budget-follows-its-plan; returns when it is done
+Integrity: sha256=6d74794276e2b0903890c1d33fdfc4ee321fb281f756c2d60cfc2ee7aa46ddcf
