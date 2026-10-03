@@ -2,8 +2,11 @@
 
 - Kind: design
 - Id: 01M4189Q0RH1NSPD3PNAS6G177
-- Status: draft
+- Status: accepted
 - Goals: design-gate-at-dispatch
+- Critique: closed at round 3 on 0 material findings (Codex Astra, chain design-critic-ba61e618ee427038e15c207a)
+
+Accepted 2026-10-03 21:50 CEST by m1e for Wido under his power of attorney (grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb), after Astra rounds 5/1/0; Wido may overturn.
 
 Revision 3. Author: Fable (claude-fable-5-1), design delegate of seat m1k, 2026-10-03. Cites new in revision 3 were read at main `b03b29ff1`, earlier ones at `1f6edaf24` and `19a4f3335`; paths are under `metasystem/`. Folded in revision 3: DESIGN-GATE-RECORD-IDENTITY, the one accepted finding of Astra's critique round 2 (section 10), in passages marked "(revision 3)". "(revision 2)" marks round 1's folds; sections 10 and 12 are condensed.
 
