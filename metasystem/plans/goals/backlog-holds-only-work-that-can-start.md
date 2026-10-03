@@ -1,6 +1,6 @@
 # backlog-holds-only-work-that-can-start
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=3 novelty=3 exposure=3 accumulation=3 basis="Changes what a goal, an approval and a park mean for every seat and for the person; a wrong model loses work or floods the queue, and it shapes every future goal"
@@ -9,8 +9,10 @@
 - Origin: main
 - Next step: Proper design first, at this goal's tier, after the design of approval-stays-and-waiting-goals-return-by-themselves is accepted, because this goal builds on its model (the three records, the can-continue condition, the order). Input: the analysis at agentic-tools-evidence/backlog-flow-20261003/analysis.md (numbers, seven causes, the proposal, risks) and the parked-list audit (agentic-tools-evidence/parked-audit-20261003/). Part 1: intent, use cases (opening a wish, a follow-up, a defect found at night, the person's triage), threat model, rabbit-hole risks with mitigations (losing knowledge when goals become ideas; a cap that blocks urgent fixes; a second bulk mistake like the reverted 2026-09-11 sweep; triage becoming a chore). Part 2: the ideas list, follow-up stubs and watch entries as records with verbs (every UI act is a verb); the refusal at opening and its alternatives; the Ready cap and the way past it; the measures and where they show (Overview, backlog page, fleet page); the triage of the goals that were never approved (29 on 2026-10-03). The first four ideas are the goals moved out on 2026-10-03: next-adoption-follow-ups, trunk-versus-candidate-is-a-verification-step, uncapped-delegate-fanout, seam-declaration-convergence; each abandoned goal file holds its return condition. Estimates per slice. Astra critique; build in slices. Coordinate with goal-budget-follows-its-plan, steward-acts-on-behaviour-patterns, agent-works-as-project-partner (the partner prepares triage) and fleet-page-redesign.
 - OpenedAt: 2026-10-03T11:05:12Z
-- Revision: 7
+- Revision: 8
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:46:35Z revision=8 opid=DY3TTHH0BNDFGETFRMYGJS61JB-m1e-718ba0eb authority=proven digest=09725771e5e0181d0e5659b17bb17cf68cf437548bf3bb6548e880080871002c episode=8
 
 History:
 - 2026-10-03T11:05:12Z 1HA8H4PS6RVD5CHWVWKP40FX8E-m1e-718ba0eb open actor=human:Wido targets=backlog-holds-only-work-that-can-start
@@ -20,4 +22,5 @@ History:
 - 2026-10-03T12:45:48Z J6AV36TEMGKDQHJ4HQFA55MPJ3-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,goal-budget-follows-its-plan,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=approval-stays-and-waiting-goals-return-by-themselves from=1:2 to=1:3 requested-sequence=2
 - 2026-10-03T12:46:25Z TSSVBQPGG11CR5QSPYYCNRQ1AP-m1e-718ba0eb unapprove actor=human:Wido targets=backlog-holds-only-work-that-can-start reason=Wido 2026-10-03: its rules for agreement, waiting, order and budget move to the new goal approval-stays-and-waiting-goals-return-by-themselves; the text is narrowed and approved again in the same minute
 - 2026-10-03T12:46:30Z T2K8T3794Z85W2Y6KJWF9BKQVG-m1e-718ba0eb edit actor=human:Wido targets=backlog-holds-only-work-that-can-start
-Integrity: sha256=007cf94de4e98182d49d5b6068d082058a19a18250f4d60e2afcf4120ee2955f
+- 2026-10-03T12:46:35Z DY3TTHH0BNDFGETFRMYGJS61JB-m1e-718ba0eb approve actor=human:Wido targets=backlog-holds-only-work-that-can-start
+Integrity: sha256=e35258bcf06932f0fe8c43b5b90d3bfb4a56c0c9fc9cb71a8ee436553755caba
