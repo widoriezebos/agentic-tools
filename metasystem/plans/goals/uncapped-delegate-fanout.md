@@ -1,14 +1,15 @@
 # uncapped-delegate-fanout
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 6
 - Intent: What: An agent that can run shell commands cannot start another paid agent session that escapes its budget and supervision. Why: A critique found that a delegate could start a fresh Claude session (for example in background mode) that carries no budget and may escape its job's process group. Whether this really happens is unproven, because testing it costs money. Pros: Closes an unowned path for spending and for runaway processes. Cons: Blocking nested launches might block legitimate tools, and proving the behaviour safely is hard.
 - Origin: main
 - Next step: Next: When it comes back, pick the owner (a deny rule in the agent's permissions, the process census catching escaped children, or a refusal in the runtime adapter), prove the behaviour without spending money if possible, and wire the refusal. Done when: a delegate's attempt to open a nested agent session is refused or caught, shown by a test.
 - OpenedAt: 2026-09-01T17:34:51Z
-- Revision: 47
+- Revision: 48
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-10-03T10:02:14Z because=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
 
 History:
 - 2026-09-01T17:34:51Z R3VGTAHK92HYJ34RJJZCFT5VEP-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=uncapped-delegate-fanout
@@ -58,4 +59,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:8 to=3:7
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:7 to=3:6
 - 2026-10-03T10:02:08Z DEEW6GC86FV4G5W1MF94ZZ29CX-m1e-718ba0eb unpark actor=human:Wido targets=uncapped-delegate-fanout
-Integrity: sha256=1cb9a5224687f0a193d7cc88ae8b0b05329c09fd025af491a3941f5e65cc50d1
+- 2026-10-03T10:02:14Z VM6W0V7N1NTQ8KAH9VWV930WJ0-m1e-718ba0eb park actor=human:Wido targets=uncapped-delegate-fanout reason=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
+Integrity: sha256=13138e2e07fd5d8a354538c8605d23772dc078ba569bf10f2d6c30bd1d01e142
