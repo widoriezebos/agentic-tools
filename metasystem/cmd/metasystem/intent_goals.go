@@ -482,6 +482,7 @@ func runIntentBudget(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	inv.dropGeneralUnder(projection.Tree.Root)
 	file, where := goalRecord(projection, id)
 	if file == nil {
 		return unknownGoal(inv, id)
@@ -522,6 +523,23 @@ func (inv *intentInvocation) budgetOwner(id, box string, before *goal.GoalFile) 
 		}
 	}
 	return inv.render(result)
+}
+
+// dropGeneralUnder drops --under when it names a general power of attorney
+// on the accepted ledger. A general grant admits the seat's main session as
+// the granting person, as it admits the same act without --under; the scoped
+// grant route covers only named verbs, so the act takes the person's route.
+func (inv *intentInvocation) dropGeneralUnder(root *goal.RootRecord) {
+	under := inv.input.text("under")
+	if under == "" || root == nil {
+		return
+	}
+	for _, entry := range root.PowerOfAttorney {
+		if entry.ID == under && entry.General() {
+			delete(inv.input.values, "under")
+			return
+		}
+	}
 }
 
 // budgetUnderAttorney is a seat's budget act under a recorded power of
@@ -665,6 +683,7 @@ func runIntentApprove(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	inv.dropGeneralUnder(projection.Tree.Root)
 	var files []*goal.GoalFile
 	for _, id := range ids {
 		file := projection.Tree.Live[id]

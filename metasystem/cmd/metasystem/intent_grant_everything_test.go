@@ -393,3 +393,34 @@ func TestAllowAsksTheGrantBeforeRefusingTheSession(t *testing.T) {
 		t.Fatalf("under a grant the session was refused as an agent: %d %+v", code, result)
 	}
 }
+
+// A budget act named --under a general grant takes the route the same act
+// takes without --under: the grant admits the seat's main session as the
+// granting person, and the scoped grant route, which covers named verbs
+// only, never reads it.
+func TestBudgetUnderAGeneralGrantActsAsWithoutUnder(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, makeQueued)
+	now, err := bed.commandNow(bed.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &grantEverythingBed{intentBed: bed, prove: enrolledPersonProver(t, bed.root(), now),
+		holder: lease.CurrentHolderView{MainId: "main-1", OwnerLineage: "lin-main"}}
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "8h")
+	if code != 0 || len(result.Targets) != 1 {
+		t.Fatalf("grant everything = %d %+v", code, result)
+	}
+	grant := result.Targets[0].ID
+	owners := b.owners()
+	owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: grant, Until: "2099-01-01T00:00:00Z"}, at)
+	}
+	code, result = b.runJSON(owners, "goal", "budget", bedGoal, "5h/4/240m/1/2", "--under", grant)
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("goal budget --under a general grant = %d %+v", code, result)
+	}
+	if file := b.goalFile(bedGoal); file.Budget == nil || file.Budget.ElapsedLimit != "5h" || file.Budget.ReviewRoundLimit != 2 || file.State != goal.StateApproved {
+		t.Fatalf("the act approves the goal with the box: %s %+v", file.State, file.Budget)
+	}
+}
