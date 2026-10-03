@@ -69,7 +69,7 @@ var Rows = []Row{
 	{Code: "RECEIPT_USAGE_INCOMPLETE", Owner: "internal/receipt", Site: "receipt.go#incompleteUsage", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_PLAN_INVALID", Owner: "internal/launch", Site: "unit_plan.go#planInvalid", Shape: Question, H1: StandingInput},
 	{Code: "READ_REQUEST_INVALID", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
-	{Code: "record-writer-refused", Owner: "cmd/metasystem", Site: "intent_delivery.go#recordWriterPreflight", Shape: Agent, Override: "review --dispositions", Commands: 1},
+	{Code: "record-writer-refused", Owner: "cmd/metasystem", Site: "intent_delivery.go#recordWriterPreflightAs", Shape: Agent, Override: "review --dispositions", Commands: 1},
 	{Code: "UNIT_REVISION_CONFLICT", Owner: "cmd/metasystem", Site: "intent_selection.go#runIntentRevise", Shape: Question, H1: StandingInput},
 	{Code: "READ_INPUT_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_RETRY_RUNNING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.rejoinRead", Shape: Question, H1: StandingInput},
