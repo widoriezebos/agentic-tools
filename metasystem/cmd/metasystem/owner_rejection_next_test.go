@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -22,21 +23,23 @@ func TestOwnerRejectionCarriesItsRunLineAsTheNextStep(t *testing.T) {
 }
 
 // A rejection is a rule's refusal: the same command would be refused again,
-// so it offers no retry and its sentence stands alone. A lost race, whose
-// cause passes, offers the same command again.
+// so it offers no retry; its second line reads the goal the rule judged. A
+// lost race, whose cause passes, offers the same command again.
 func TestOwnerResultOffersARetryOnlyWhenTheCauseMayPass(t *testing.T) {
 	t.Parallel()
+	targets := []intentTarget{{Kind: "goal", ID: "g1"}}
 	for _, detail := range []string{
 		"the human approved this intent; unapprove the goal, edit it, then approve the new intent",
 		"goal g1 is not open; set-priority changes live backlog goals only",
 	} {
-		result := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeRejected, Detail: detail}}, 1, intentResult{})
-		if result.Outcome != intentRefused || result.Summary != detail || result.retry != "" || len(result.next) != 0 {
-			t.Fatalf("rejection %q = %+v; want the sentence alone, no retry", detail, result)
+		result := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeRejected, Detail: detail}}, 1, intentResult{Targets: targets})
+		if result.Outcome != intentRefused || result.Summary != detail || result.retry != "" ||
+			strings.Join(result.next, " ") != "metasystem goal show g1" || result.nextReason == "" {
+			t.Fatalf("rejection %q = %+v; want the sentence, no retry, and the goal read as the next step", detail, result)
 		}
 	}
-	lost := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeLost, Detail: "winner: other-opid"}}, 1, intentResult{})
-	if lost.Outcome != intentRefused || lost.retry != "the goals changed meanwhile; try again" {
+	lost := ownerResult(&ownerReport{result: &goal.PublishResult{Outcome: goal.OutcomeLost, Detail: "winner: other-opid"}}, 1, intentResult{Targets: targets})
+	if lost.Outcome != intentRefused || lost.retry != "the goals changed meanwhile; try again" || len(lost.next) != 0 {
 		t.Fatalf("lost race = %+v; want the retry", lost)
 	}
 }

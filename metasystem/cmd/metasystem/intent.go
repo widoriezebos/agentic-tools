@@ -1185,13 +1185,16 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
+		// A rejection is a rule's refusal: the same command is refused again,
+		// so its second line reads the goal the rule judged, never the
+		// command again. Any other outcome here (a lost race, a passed
+		// deadline) has a cause that may pass, and the command is offered
+		// again.
 		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1),
+			next: goalShowArgv(confirmed.Targets), nextReason: "shows the goal as the rule above judged it",
 			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
-		// A rejection is a rule's refusal: the same command is refused
-		// again, so its sentence is the whole message. Any other outcome
-		// here (a lost race, a passed deadline) has a cause that may pass.
 		if report.result.Outcome != goal.OutcomeRejected {
-			result.retry = "the goals changed meanwhile; try again"
+			result.next, result.nextReason, result.retry = nil, "", "the goals changed meanwhile; try again"
 		}
 		// A rejection whose second line names the command that clears it
 		// ("run: CMD  (why)") carries that command as the next step. A
@@ -1207,6 +1210,16 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
 		Summary: "the command stopped without saying whether it was done", next: []string{"metasystem", "system", "check"},
 		nextReason: "names what is wrong here"}
+}
+
+// goalShowArgv reads the goal an act targets, or nothing when it names none.
+func goalShowArgv(targets []intentTarget) []string {
+	for _, target := range targets {
+		if target.Kind == "goal" && target.ID != "" {
+			return []string{"metasystem", "goal", "show", target.ID}
+		}
+	}
+	return nil
 }
 
 // partialResult reports a primary act that landed and later work that did
