@@ -1,6 +1,6 @@
 # rosters-are-configuration-items
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 35
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="configuration change touching every dispatch and launch; new interface surface; every seat"
@@ -11,14 +11,15 @@
 Open read items (fix unit code-critic-65d9642b14767982a7fe554f): 1
 - ReadItem: id=code-critic-65d9642b14767982a7fe554f-1 read=code-critic-65d9642b14767982a7fe554f state=open addedAt=2026-10-03T18:52:24Z changedAt=- closingReference="" text="roster list/show split metasystem.runtimes on commas and spaces only (cmd/metasystem/intent_roster.go), so a tab after a comma marks that runtime as not run here in the display; unit 4 should read the runtime list with the settings' own split (internal/config/defaults.go, trims all white space)."
 - OpenedAt: 2026-10-01T08:27:46Z
-- Revision: 88
+- Revision: 89
 - Budget: elapsedLimit=4d4h attemptLimit=30 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 5
 - NormApproval: approvedRef=7D7G4RNBMXKYH46MA6R083BAY1-m1e-718ba0eb minutes=2400 reviewRounds=20 goalRevision=85
 - Approved: by=human:Wido at=2026-10-03T21:09:04Z revision=86 opid=7D7G4RNBMXKYH46MA6R083BAY1-m1e-718ba0eb authority=proven digest=86c8ed64788f0d4b6a39b280158c55c3b6a90c540f39388f8e4675a32a9dc8a9 episode=86
 - Sliced: machine=m1i lineage=steward-seat revision=26 at=2026-10-03T07:51:28Z
 - AcceptedRisk: finding=F-1 chain=code-critic-e50228a3c252b80b7d384a4a by=Wido opid=4JQCTWG2E0TVBEYDSE1NRAME08-m1e-718ba0eb
-- Episode: machine=m1i lineage=steward-seat accountingRevision=86 episodeAt=2026-10-03T04:14:53Z episodeRevision=14 idleSeconds=20 released=2026-10-03T21:28:06Z
+- Claimed: machine=m1i lineage=steward-seat at=2026-10-03T21:28:11Z revision=89 accountingRevision=86 episodeAt=2026-10-03T04:14:53Z episodeRevision=14 idleSeconds=25
+- StopCapability: generation=89 revision=89 machine=m1i claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T08:27:46Z NR62KBQS8JYD6Z4EZ90EX155JH-m1e-528c72bf open actor=human:Wido targets=rosters-are-configuration-items
@@ -109,4 +110,5 @@ History:
 - 2026-10-03T21:09:04Z 7D7G4RNBMXKYH46MA6R083BAY1-m1e-718ba0eb set-budget actor=human:Wido targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T20:56:41Z
 - 2026-10-03T21:24:30Z FRBAFB8M9997C8KGB32ZNDES3J-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=goal-worktree-dispatch-uses-the-primary from=1:34 to=1:35 requested-sequence=8
 - 2026-10-03T21:28:06Z PRDRPE12W326X62FNV8WDHESP8-m1i-71c5cb39 release actor=m1i+steward-seat targets=rosters-are-configuration-items reason=rebind the claim to the box m1e set in Wido's word at 23:10 (4d4h/30/2400m/1/20)
-Integrity: sha256=9b21b6690e9513390fde1ebf5d84fe54982f8c31b0105dddeeb667082bc4bbfa
+- 2026-10-03T21:28:11Z K7CPJYKDY2QVQ9YG8EEKHGKG8W-m1i-71c5cb39 claim actor=m1i+steward-seat targets=rosters-are-configuration-items
+Integrity: sha256=c82987e4fea87685cc2e70620998e011f40238342cf084795fb7dc3ecc185e5d
