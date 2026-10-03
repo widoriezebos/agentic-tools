@@ -1,16 +1,16 @@
 # stop-hook-health-cost
 
-- State: parked
+- State: abandoned
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: an expired deadline refuses a turn end that was safe, which costs a seat a full turn and teaches it to distrust the refusal, but nothing unsafe is permitted; novelty 1: this is profiling and caching inside one existing verb, not new machinery; exposure 3: every seat on every machine pays this cost at every turn end; accumulation 1: first time this has been measured, though it is a plausible contributor to refusals already blamed on other causes"
 - Tier: 3
 - Intent: What: The end-of-turn check spends only a small share of its time budget on the machine health check, proven by a measurement in a test rather than by hand. Why: the check has four seconds; on 2026-09-05 the health call alone took two, the budget ran out and a turn end was refused for no real reason. A fix on 2026-09-06 stopped the health check re-reading everything, but Wido reopened the goal on 2026-09-16 when it took 20 to 42 seconds, and that slowdown was never explained. The hook log now records what each part of the check costs. Pros: turn ends stop failing on time, and the slowdown gets explained. Cons: it competes with higher priorities, and it may be moot if the Stop hook is removed.
 - Origin: main
 - Next step: Next: read the per-part cost lines ("stop phases") in the hook log on each seat and see whether the health call is still the largest cost. Done when: a test measures the health call's share of the budget and passes under a stated limit, with a fix on main first if health is still the largest cost.
 - OpenedAt: 2026-09-05T10:09:49Z
-- Revision: 15
+- Revision: 16
 - BudgetExceptions: 0
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=5 at=2026-09-06T10:52:15Z
-- Parked: by=human:Wido at=2026-09-19T15:48:40Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
+- Abandoned: by=human:Wido at=2026-10-03T09:56:17Z revision=16 opid=JYZ4BQAQXTCGF247KR3Z0K93VV-m1e-718ba0eb carried=health-is-green-when-the-seat-is-healthy because=Folded into health-is-green-when-the-seat-is-healthy (2026-10-03 parked-list cleanup, in Wido's word), which names stop-hook-duration as a standing red to fix.
 
 History:
 - 2026-09-05T10:09:49Z YM1KHGTB9X8C64HM9WQJ3KJNZ5-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-health-cost
@@ -28,4 +28,5 @@ History:
 - 2026-09-19T15:48:40Z GPRCEQ4CV83J30TAZGWJNJK2XM-m1e-c6925449 park actor=human:Wido targets=stop-hook-health-cost reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
 - 2026-09-30T18:54:18Z CZPP7SHMADFAGF92ZSG5A8HBPK-ui-bc2fda53 edit actor=human:Wido targets=stop-hook-health-cost
 - 2026-09-30T18:59:15Z 8H2WTPKXSDZFVATJ1FB86WYAE1-ui-bc2fda53 set-pin actor=human:Wido targets=stop-hook-health-cost
-Integrity: sha256=ba52b2ef12fb5dfff81751c0765223b6bc890229d6d4a4ce6c13eae00cd7d4cc
+- 2026-10-03T09:56:17Z JYZ4BQAQXTCGF247KR3Z0K93VV-m1e-718ba0eb abandon actor=human:Wido targets=stop-hook-health-cost carried=health-is-green-when-the-seat-is-healthy reason=Folded into health-is-green-when-the-seat-is-healthy (2026-10-03 parked-list cleanup, in Wido's word), which names stop-hook-duration as a standing red to fix.
+Integrity: sha256=2f6e6695f9b624e36e09577f21e98c1f3ac7332f0fd765a81c7d234291beca26
