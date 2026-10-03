@@ -621,18 +621,6 @@
   color: var(--ms-text-2);
 }
 
-.ms-send-back-brief {
-  width: 100%;
-  min-height: 160px;
-  padding: 8px;
-  border: 1px solid var(--ms-border);
-  border-radius: 6px;
-  background: var(--ms-surface);
-  color: var(--ms-text);
-  font-size: 12px;
-  resize: vertical;
-}
-
 /* The verdict on the lane card (§3, D2). */
 .ms-card-verdict-line {
   margin: 0;
@@ -650,14 +638,6 @@
 /* The pill stands in the header on its own, beside the facts. */
 .ms-room-candidate {
   font-size: 13px;
-}
-
-/* The brief a stranded send-back will carry, read back rather than edited. */
-pre.ms-send-back-brief {
-  min-height: 0;
-  margin: 0;
-  white-space: pre-wrap;
-  resize: none;
 }
 
 /* ------------------------------------------------------------ the whiteboard -- */

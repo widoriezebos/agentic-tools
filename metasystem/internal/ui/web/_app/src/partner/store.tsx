@@ -145,6 +145,8 @@ import {
   verdictRefused,
   writeRefused,
   outcomeWithVerdict,
+  verdictSource,
+  verdictWriteRefused,
   retippedAfresh,
   VERDICT_MOVED,
   VERSION_CHANGED,
@@ -482,10 +484,11 @@ type Partner = {
   /**
    * Review the current version (RF-03): the record moves on to the branch's
    * current commit, what was raised about the version before moves to Earlier
-   * findings, and the opening is asked again on the version now named. It
-   * answers "" or the refusal in words.
+   * findings — with the findings the reviewer offered and nobody saved, named
+   * by their cards (F-1 of read 530a7c87) — and the opening is asked again on
+   * the version now named. It answers "" or the refusal in words.
    */
-  reviewCurrentVersion: (current: string) => Promise<string>;
+  reviewCurrentVersion: (current: string, offered: readonly string[]) => Promise<string>;
   /** Ask the look once more on this version, after one that stopped or failed (RF-06, fix round 3 F-2). */
   askAgain: () => Promise<void>;
   /**
@@ -517,11 +520,11 @@ type Partner = {
   /**
    * The verdict the record's recorded Outcome carries and the goal does not,
    * read on load, or null (Sol SOL-S69-04): a reload stranded the act Record it
-   * began, and the room offers it again.
+   * began, and the room says so. It is never sent again from here: the person
+   * gives it again under Your verdict, on the review as it then stands
+   * (RULING-R-143-m1e of read 0096f159).
    */
-  stranded: ToPerform | null;
-  /** Put the stranded verdict on the goal. */
-  recordStranded: () => void;
+  stranded: "clear-to-land" | "send-back" | null;
   /** Whether a verdict act is on its way. */
   verdictBusy: boolean;
 
@@ -761,7 +764,6 @@ const nothing: Partner = {
   verdictRefusal: "",
   retryVerdict: () => {},
   stranded: null,
-  recordStranded: () => {},
   verdictBusy: false,
   sitting: null,
   startSitting: async () => "",
@@ -1730,9 +1732,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         // The review changed between the person's press and the server's read
         // (RF-02): nothing was recorded on the goal, the room reads the review
         // as it now stands, says what changed, and the person decides again.
-        // And where a newer version of the goal exists (fix round 1, F-3),
-        // the room says so, reads the version that would land again, and
-        // offers its one act.
+        // The refused verdict is dropped, never rebuilt on the changed record
+        // (RULING-R-143-m1e of read 0096f159): the next one is the verdict
+        // step's own press, planned over the findings as they now stand and
+        // bound to the record as shown at that press. And where a newer
+        // version of the goal exists (fix round 1, F-3), the room says so,
+        // reads the version that would land again, and offers its one act.
         if (error instanceof BacklogError && (error.code === VERSION_CHANGED || error.code === VERSION_MOVED)) {
           pendingVerdict.current = null;
           const held = recording.current;
@@ -1760,11 +1765,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // A review whose record carries a recorded Outcome with its verdict, while
   // the sitting stands: the act Record it began may never have reached the goal
   // — a failed act, then a reload — so the goal's own verdict is read and,
-  // where it is not this one, the room offers it again (Sol SOL-S69-04).
+  // where it is not this one, the room says so (Sol SOL-S69-04) and the person
+  // gives it again under Your verdict; nothing here sends it.
   const reviewRecord = sitting?.purpose === "review" && reading !== null && reading.id === sitting.subject.id ? reading : null;
   const reviewSource = reviewRecord?.source ?? "";
   const reviewGoalId = reviewSource === "" ? "" : reviewedOf(reviewSource).goal;
-  const strandable = reviewRecord !== null && reviewGoalId !== "" && strandedVerdict(reviewSource, reviewRecord.id, undefined, null) !== null;
+  const strandable = reviewRecord !== null && reviewGoalId !== "" && strandedVerdict(reviewSource, reviewRecord.id, undefined) !== null;
   const [goalVerdict, setGoalVerdict] = useState<{ goal: string; verdict: Verdict | undefined } | null>(null);
   useEffect(() => {
     setGoalVerdict(null);
@@ -1791,16 +1797,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     () =>
       reviewRecord === null || goalVerdict?.goal !== reviewGoalId || verdictSaid !== "" || verdictBusy
         ? null
-        : strandedVerdict(reviewRecord.source, reviewRecord.id, goalVerdict.verdict, brief, reviewRecord.revision),
-    [reviewRecord, goalVerdict, reviewGoalId, verdictSaid, verdictBusy, brief],
+        : strandedVerdict(reviewRecord.source, reviewRecord.id, goalVerdict.verdict),
+    [reviewRecord, goalVerdict, reviewGoalId, verdictSaid, verdictBusy],
   );
-  const recordStranded = useCallback(() => {
-    if (stranded === null) {
-      return;
-    }
-    pendingVerdict.current = stranded;
-    void performVerdict();
-  }, [stranded, performVerdict]);
 
   const setBrief = useCallback((text: string | null) => {
     setBriefState(text);
@@ -2250,13 +2249,19 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     return writeRefused(outcome, "decision");
   }, [deposits, store.human, noteAccepting]);
 
-  const reviewCurrentVersion = useCallback(async (current: string): Promise<string> => {
+  const reviewCurrentVersion = useCallback(async (current: string, offered: readonly string[]): Promise<string> => {
     const held = recording.current;
     const into = sittingNow.current?.subject.id ?? "";
     if (held === null || held.reading().id !== into) {
       return NOT_READ_YET;
     }
-    const outcome = await held.rewrite(into, (source) => retippedAfresh(source, current),
+    const who = nameOf(store.human);
+    const when = stampOf(new Date());
+    const unsaved = offered.flatMap((id) => {
+      const card = depositIn(deposits, id);
+      return card === undefined ? [] : [entryOf(card, who, when)];
+    });
+    const outcome = await held.rewrite(into, (source) => retippedAfresh(source, current, unsaved),
       "This review names no version of a goal waiting to land, so there is no current version to move to.");
     if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
       setReading(outcome.reading);
@@ -2267,7 +2272,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setVerdictChanged("");
     await walk(WALK_AGAIN);
     return "";
-  }, [walk]);
+  }, [walk, deposits, store.human]);
 
   const askAgain = useCallback(async () => {
     await walk(WALK_RESUME);
@@ -2284,36 +2289,28 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     const who = nameOf(store.human);
     const when = stampOf(new Date());
     const mark = `verdict-${mintLocal()}`;
-    const outcome = await held.rewrite(into, (source) => {
-      // The version the person decided on is the one this write is about,
-      // or nothing is written (RF-02).
-      if (reviewedOf(source).tip !== asked.tip) {
-        return null;
-      }
-      let next = source;
-      for (const one of asked.answers) {
-        const card = depositIn(deposits, one.id);
-        const composed = decidedSource(next, one.id, one.answer, card === undefined ? undefined : entryOf(card, who, when));
-        if (composed === null) {
-          return null;
-        }
-        next = composed;
-      }
-      if (asked.own.trim() !== "") {
-        next = appended(next, {
-          when, who, text: asked.own, clause: "", section: "Findings", mark: `${LOCAL}${mintLocal()}`, answer: FIX,
-        }, "finding");
-      }
-      const composed = outcomeWithVerdict(asked.verdict, asked.outcome, "", asked.tip);
-      return "refusal" in composed
-        ? null
-        : outcomeWritten(next, { when, who, text: composed.text, clause: "", section: OUTCOME, mark });
-    }, VERDICT_MOVED);
+    const before = held.reading().source;
+    const outcome = await held.rewrite(into, (source) => verdictSource(source, asked, {
+      who, when, mark, ownMark: `${LOCAL}${mintLocal()}`,
+      entryFor: (id) => {
+        const card = depositIn(deposits, id);
+        return card === undefined ? undefined : entryOf(card, who, when);
+      },
+    }), VERDICT_MOVED);
     if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
       setReading(outcome.reading);
     }
     if (outcome.kind !== "recorded") {
-      return writeRefused(outcome, "verdict");
+      // A write refused because the record changed drops the verdict: the ask
+      // closes (an empty answer), and the one line says nothing was recorded
+      // and what changed, so the next press is planned over the record as now
+      // shown (read fcc372ec). Any other refusal is said as it is.
+      const refused = verdictWriteRefused(outcome, asked, before, recording.current?.reading().source ?? before);
+      if ("changed" in refused) {
+        setVerdictChanged(refused.changed);
+        return "";
+      }
+      return refused.refused;
     }
     const brief = asked.brief.trim() === "" ? null : asked.brief;
     const performing = verdictToPerform({ kind: "outcome", verdict: asked.verdict }, "review", into,
@@ -2692,7 +2689,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       stoppedPresenting, stopPresenting, startCard, accepting, noteAccepting, drafts,
       deskRead, noteRead, remarking, startRemark, noteRemark, dropRemark, keepDrawing,
       decideFinding, reviewCurrentVersion, askAgain, giveVerdict, verdictChanged,
-      brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, recordStranded, verdictBusy,
+      brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, verdictBusy,
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
@@ -2712,7 +2709,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       stoppedPresenting, stopPresenting, startCard, accepting, noteAccepting, drafts,
       deskRead, noteRead, remarking, startRemark, noteRemark, dropRemark, keepDrawing,
       decideFinding, reviewCurrentVersion, askAgain, giveVerdict, verdictChanged,
-      brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, recordStranded, verdictBusy,
+      brief, setBrief, verdictSaid, verdictRefusal, retryVerdict, stranded, verdictBusy,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,

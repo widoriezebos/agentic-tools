@@ -11,9 +11,11 @@ import {
   ACCEPTED_LANDING,
   askedFollowing,
   briefOf,
+  decidedAfter,
   followUpsFor,
   LANDED_UNFINISHED,
   verdictAnswers,
+  verdictDecisions,
   decisionOfAnswer,
   earlierTurnsOf,
   END_WITHOUT_SAID,
@@ -30,8 +32,10 @@ import {
   outcomeBody,
   recommendedWay,
   reviewedOf,
+  riskSaid,
   roomFindingsOf,
   steppingOut,
+  UNDECIDED_FOLLOWS,
   versionWhen,
   WALK_WORDS,
   WALKS,
@@ -40,6 +44,7 @@ import {
   type DeskItem,
   type NodPlan,
   type RoomFinding,
+  type VerdictDecision,
 } from "./room";
 import { loadBacklog, type Row } from "../backlog/api";
 import { Help } from "../help/Help";
@@ -126,7 +131,7 @@ export function ReviewView({ record, changes, since, row }: {
   const partner = usePartner();
   const {
     store, sitting, table, room, deposits, putOnDesk, busy, keepRoomNow, stop, conversation, walk,
-    verdictSaid, verdictRefusal, verdictChanged, retryVerdict, stranded, recordStranded, verdictBusy,
+    verdictSaid, verdictRefusal, verdictChanged, retryVerdict, stranded, verdictBusy,
     reviewCurrentVersion, askAgain, giveVerdict, decideFinding,
   } = partner;
   const navigate = useNavigate();
@@ -139,6 +144,16 @@ export function ReviewView({ record, changes, since, row }: {
   const [said, setSaid] = useState("");
   const [pressing, setPressing] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // A verdict refused because the review changed returns the person to the
+  // verdict step (RULING-R-143-m1e of read 0096f159): the line that says so is
+  // brought into view where it arrives, since the review as it now stands may
+  // have grown above it.
+  const changedLine = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (verdictChanged !== "") {
+      changedLine.current?.scrollIntoView({ block: "center" });
+    }
+  }, [verdictChanged]);
   const title = goalHeading(reviewed.goal === "" ? record : reviewed.goal, row?.intent ?? "");
 
   useAbout(`Review of ${title}`, {
@@ -243,12 +258,13 @@ export function ReviewView({ record, changes, since, row }: {
 
   // One verdict, given: the answers it records, the person's own must-fix words
   // where they wrote them, and the Outcome composed from the record (§3).
-  const give = async (verdict: "clear to land" | "send back" | "no verdict", answers: { id: string; answer: string }[],
-    own: string, extra: string, followUps: string[], brief: string) => {
-    const after: RoomFinding[] = findings.map((one) => {
-      const given = answers.find((each) => each.id === one.id);
-      return given === undefined ? one : { ...one, answer: given.answer, recorded: true };
-    });
+  // The decisions are matched to the findings the person was asked about by
+  // the findings themselves, never by id: a finding written by hand has none,
+  // and two of them must not take each other's answer (read 9ac7cf0f).
+  const give = async (verdict: "clear to land" | "send back" | "no verdict", decisions: readonly VerdictDecision[],
+    listed: readonly RoomFinding[], own: string, extra: string, followUps: string[], brief: string, shown: string) => {
+    const after = decidedAfter(listed, decisions);
+    const answers = verdictAnswers(decisions);
     if (own.trim() !== "") {
       after.push({ id: "", title: own.trim(), why: "", severity: "", recommend: "", reason: "", evidence: "", anchor: "",
         consequence: "", answer: FIX, recorded: true });
@@ -256,7 +272,9 @@ export function ReviewView({ record, changes, since, row }: {
     const body = `${outcomeBody(after, examined)}${extra === "" ? "" : `\n\n${extra}`}`;
     setPressing(true);
     setSaid("");
-    const refused = await giveVerdict({ verdict, answers, own, outcome: body, tip: reviewed.tip, followUps, brief });
+    const refused = await giveVerdict({
+      verdict, answers, own, outcome: body, tip: reviewed.tip, followUps, brief, shown, planned: listed.map((one) => one.id),
+    });
     setPressing(false);
     setSaid(refused);
     if (refused === "") {
@@ -272,21 +290,21 @@ export function ReviewView({ record, changes, since, row }: {
   // every answer it records in its one write (F-2), the impact a nod over
   // corrections or over an unfinished look carries into the Outcome
   // (RF-01, R-143-m1e), and a send-back's brief.
-  const finish = (way: Way, plan: NodPlan, reason: string, own: string, opened: Readonly<Record<string, string>>) => {
-    const answers = verdictAnswers(way, plan, reason, opened);
+  const finish = (way: Way, plan: NodPlan, reason: string, own: string, opened: Readonly<Record<string, string>>, shown: string) => {
+    const decisions = verdictDecisions(way, plan, reason, opened);
     if (way === "land") {
       const extra = [
         plan.corrections.length + plan.risks.length === 0 ? "" : `${ACCEPTED_LANDING} ${plan.impact} The reason given: ${reason.trim()}`,
         examination === "complete" ? "" : LANDED_UNFINISHED,
       ].filter((one) => one !== "").join("\n\n");
-      void give("clear to land", answers, "", extra, [...openedGoals(findings), ...Object.values(opened)], "");
+      void give("clear to land", decisions, plan.all, "", extra, [...openedGoals(findings), ...Object.values(opened)], "", shown);
       return;
     }
     const listed = own.trim() === "" ? plan.corrections : [...plan.corrections, {
       id: "", title: own.trim(), why: "", severity: "", recommend: "", reason: "", evidence: "", anchor: "",
       consequence: "", answer: FIX, recorded: true,
     }];
-    void give("send back", answers, own, "", [], briefOf(listed, record, reviewed.tip));
+    void give("send back", decisions, plan.all, own, "", [], briefOf(listed, record, reviewed.tip), shown);
   };
 
   // One press of a way: at once where there is nothing to ask, else one ask —
@@ -296,10 +314,10 @@ export function ReviewView({ record, changes, since, row }: {
     const plan = nodPlan(findings);
     const asks = way === "land" ? plan.asks : plan.corrections.length === 0 || askedFollowing(plan, way).length > 0;
     if (!asks) {
-      finish(way, plan, "", "", {});
+      finish(way, plan, "", "", {}, table.source);
       return;
     }
-    setAsking({ way, plan, reason: "", own: "", queue: [], opened: {} });
+    setAsking({ way, plan, reason: "", own: "", queue: [], opened: {}, shown: table.source });
   };
 
   const reviewCurrent = async () => {
@@ -307,7 +325,10 @@ export function ReviewView({ record, changes, since, row }: {
       return;
     }
     setPressing(true);
-    setSaid(await reviewCurrentVersion(changes.current));
+    // What the reviewer offered and nobody saved goes with the move, so the
+    // new look reads it (F-1 of read 530a7c87).
+    const unsaved = [...read.current, ...read.earlier].filter((one) => !one.recorded && one.id !== "").map((one) => one.id);
+    setSaid(await reviewCurrentVersion(changes.current, unsaved));
     setPressing(false);
   };
 
@@ -355,10 +376,7 @@ export function ReviewView({ record, changes, since, row }: {
             </Button>
           </p>
         )}
-        {verdictChanged !== "" && <p className="ms-guided-banner" role="status">{verdictChanged}</p>}
-        {stranded !== null && verdictRefusal === "" && !moved && (
-          <PendingVerdict pending={stranded} busy={verdictBusy} onPress={recordStranded} />
-        )}
+        {stranded !== null && verdictRefusal === "" && verdictChanged === "" && !moved && <PendingVerdict verdict={stranded} />}
         {verdictRefusal !== "" && (
           <p className="ms-guided-banner" role="status">
             Your verdict is written in the review, and not yet on the goal: {verdictRefusal}{" "}
@@ -423,15 +441,14 @@ export function ReviewView({ record, changes, since, row }: {
               <br />
               {examination === "complete" ? (
                 <>
-                  <strong>The reviewer recommends:</strong> {summary.recommends} If you decide nothing on a finding, it
-                  follows the recommendation.
+                  <strong>The reviewer recommends:</strong> {summary.recommends} {UNDECIDED_FOLLOWS}
                 </>
               ) : (
                 <>
                   <strong>{examination === "reviewing"
                     ? "The reviewer has not finished looking at this version, so this list may still grow."
                     : "The reviewer's look at this version did not finish, so this list may not be whole."}</strong>{" "}
-                  If you decide nothing on a finding, it follows the reviewer&apos;s recommendation.
+                  {UNDECIDED_FOLLOWS}
                   {examination !== "reviewing" && (
                     <>
                       <br />
@@ -491,6 +508,10 @@ export function ReviewView({ record, changes, since, row }: {
 
         <section className="ms-guided-step" aria-labelledby="step-4">
           <h2 id="step-4"><span className="ms-guided-n">4</span> Your verdict</h2>
+          {/* A verdict refused because the review changed is dropped (RULING-R-143-m1e
+              of read 0096f159): the line says so here, where the person pressed, and
+              they decide again below, over the review as it now stands. */}
+          {verdictChanged !== "" && <p ref={changedLine} className="ms-guided-banner" role="status">{verdictChanged}</p>}
           {moved ? (
             <div className="ms-guided-notice">
               <p>
@@ -527,7 +548,7 @@ export function ReviewView({ record, changes, since, row }: {
             </button>
             : {LEAVE_SAID}{" "}
             <button type="button" className="ms-link-button" disabled={pressing || sitting === null}
-              onClick={() => void give("no verdict", [], "", "", [], "")}>
+              onClick={() => void give("no verdict", [], findings, "", "", [], "", table.source)}>
               End without a verdict
             </button>
             : {END_WITHOUT_SAID}
@@ -588,7 +609,7 @@ export function ReviewView({ record, changes, since, row }: {
               setAsking({ ...asking, queue: queue.map((one) => one.id), opened: {} });
               return;
             }
-            finish(asking.way, asking.plan, asking.reason, asking.own, {});
+            finish(asking.way, asking.plan, asking.reason, asking.own, {}, asking.shown);
           }}
         />
       )}
@@ -618,7 +639,7 @@ export function ReviewView({ record, changes, since, row }: {
                 const opened = { ...asking.opened, [next.id]: goal };
                 setAsking({ ...asking, queue, opened });
                 if (queue.length === 0) {
-                  finish(asking.way, asking.plan, asking.reason, asking.own, opened);
+                  finish(asking.way, asking.plan, asking.reason, asking.own, opened, asking.shown);
                 }
               });
             }}
@@ -635,6 +656,8 @@ type Way = "land" | "send back";
 /** What the verdict's one ask holds while it is open, and the follow-up goals it opens in turn. */
 type Asking = {
   way: Way; plan: NodPlan; reason: string; own: string; queue: string[]; opened: Readonly<Record<string, string>>;
+  /** The record as shown when the plan was built: the write refuses findings the plan was not built from. */
+  shown: string;
 };
 
 /** Step 2 where nothing was raised, said by how far the look got (RF-06), with Ask again where it did not finish. */
@@ -710,7 +733,7 @@ function VerdictAsk({
             <>
               <p className="ms-sitting-said">These must be fixed before landing:</p>
               <ul className="ms-guided-list">
-                {plan.corrections.map((one) => <li key={one.id}>{one.title}</li>)}
+                {plan.corrections.map((one) => <li key={`${one.id}|${one.title}`}>{one.title}</li>)}
               </ul>
             </>
           )}
@@ -719,8 +742,8 @@ function VerdictAsk({
               <p className="ms-sitting-said">These need your own decision before landing:</p>
               <ul className="ms-guided-list">
                 {plan.risks.map((one) => (
-                  <li key={one.id}>
-                    {one.severity === "blocks" ? "Blocks landing: " : "The reviewer recommends accepting this risk: "}{one.title}
+                  <li key={`${one.id}|${one.title}`}>
+                    {riskSaid(one)}{one.title}
                   </li>
                 ))}
               </ul>
@@ -752,7 +775,7 @@ function VerdictAsk({
             reviewer, because you decided nothing on {listed.length === 1 ? "it" : "them"}:
           </p>
           <ul className="ms-guided-list">
-            {listed.map((one) => <li key={one.finding.id}>{one.finding.title} — {one.said}</li>)}
+            {listed.map((one) => <li key={`${one.finding.id}|${one.finding.title}`}>{one.finding.title} — {one.said}</li>)}
           </ul>
           {followUpsFor(plan, way).length > 0 && (
             <p className="ms-sitting-said">

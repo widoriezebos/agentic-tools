@@ -1,8 +1,8 @@
 import type { Deposit, Message, Subject } from "../partner/api";
 import type { Store } from "../partner/conversation";
 import {
-  ACCEPTED, answerOf, EARLIER, entriesIn, FIX, followUp, NOT_A_PROBLEM, outcomeIn,
-  type Card, type Entry, type Standing,
+  ACCEPTED, answerOf, appended, decidedSource, EARLIER, entriesIn, FIX, followUp, lineOf, NOT_A_PROBLEM, OUTCOME, outcomeIn,
+  outcomeWritten, recordedIn, type Card, type Entry, type Standing,
 } from "../partner/sitting";
 import { goalSentence } from "../goalTitle";
 import type { Recorded, Verdict as RowVerdict } from "../backlog/api";
@@ -508,25 +508,25 @@ export function verdictToPerform(
  * The verdict a record's recorded Outcome carries that the goal does not (Sol
  * SOL-S69-04): the Outcome opens with an acting verdict and a Reviewed at line
  * naming the record's own tip, and the goal's standing verdict is not this one
- * from this record at this tip. It is what the room offers again after a
- * reload stranded the act that Record it began, with the brief the human
- * edited, kept in the room's drafts, else the one composed from the findings
- * answered fix. Anything else answers null.
+ * from this record at this tip. The room says so after a reload, or after the
+ * act was refused, and sends the person to give it again under Your verdict:
+ * it is never sent again from here, because the record may have changed since
+ * it was written, and a verdict is sent only from the press that decides it on
+ * the record as shown (RULING-R-143-m1e of read 0096f159). Anything else
+ * answers null.
  */
-export function strandedVerdict(
-  source: string, record: string, standing: RowVerdict | undefined, brief: string | null, revision = "",
-): ToPerform | null {
+export function strandedVerdict(source: string, record: string, standing: RowVerdict | undefined): "clear-to-land" | "send-back" | null {
   const said = (outcomeIn(source)?.text ?? "").split("\n").map((line) => line.trim()).filter((line) => line !== "");
-  const verdict = /^Verdict:\s*(.*)$/u.exec(said[0] ?? "")?.[1].trim() ?? "";
+  const verdict = actingVerdict(/^Verdict:\s*(.*)$/u.exec(said[0] ?? "")?.[1].trim() ?? "");
   const at = said[1]?.startsWith(REVIEWED_AT) === true ? said[1].slice(REVIEWED_AT.length).trim() : "";
   const tip = reviewedOf(source).tip;
-  if (actingVerdict(verdict) === "" || tip === "" || at !== tip) {
+  if (verdict === "" || tip === "" || at !== tip) {
     return null;
   }
-  if (standing !== undefined && standing.verdict === actingVerdict(verdict) && standing.tip === tip && sameRecord(standing.record, record)) {
+  if (standing !== undefined && standing.verdict === verdict && standing.tip === tip && sameRecord(standing.record, record)) {
     return null;
   }
-  return verdictToPerform({ kind: "outcome", verdict }, "review", record, source, brief, revision);
+  return verdict;
 }
 
 /** Whether two names of a review record are the same record: the ledger names it from its own root. */
@@ -1161,6 +1161,23 @@ export function findingsSummary(findings: readonly RoomFinding[]): { counts: str
   }
   const counts = findings.length === 0 ? "" : `${numbered(findings.length, "finding", "findings")}.${parts.length === 0 ? "" : ` ${parts.join(", ")}.`}`;
   if (reviewerWay(findings) === "land") {
+    // A finding the reviewer recommended nothing for (a record written before
+    // the layers) is never said to be the reviewer's word to land (F-2 of read
+    // 54dafc9b): it needs the person's own decision, as the nod asks.
+    const bare = findings.filter((one) => decisionOfRecommend(one.recommend) === "").length;
+    if (bare > 0 && bare === findings.length) {
+      return {
+        counts,
+        recommends: `nothing: it gave no recommendation for ${bare === 1 ? "this finding, so it needs" : "these findings, so each needs"} your own decision.`,
+      };
+    }
+    if (bare > 0) {
+      return {
+        counts,
+        recommends: "land it, for the findings it gave a recommendation for; " +
+          `${bare === 1 ? "one has no recommendation and needs" : `${String(bare)} have no recommendation and need`} your own decision.`,
+      };
+    }
     return { counts, recommends: "land it." };
   }
   const blocking = findings.filter((one) => one.severity === "blocks" && decisionOfRecommend(one.recommend) === "fix").length;
@@ -1173,6 +1190,15 @@ export function findingsSummary(findings: readonly RoomFinding[]): { counts: str
     recommends: `send it back, because ${fixes === 1 ? "one finding" : `${String(fixes)} findings`} must be fixed before landing.`,
   };
 }
+
+/**
+ * What an undecided finding follows, said under the summary: the reviewer's
+ * recommendation where there is one; on landing, one without a recommendation
+ * asks for the person's own decision (RULING-R-143-m1e of read 530a7c87).
+ */
+export const UNDECIDED_FOLLOWS =
+  "If you decide nothing on a finding, it follows the reviewer's recommendation where there is one; " +
+  "on landing, one without a recommendation asks for your own decision.";
 
 /** How far the reviewer's look at the version on screen got (RF-06). */
 export type Examination = "reviewing" | "complete" | "stopped" | "failed";
@@ -1272,9 +1298,12 @@ export type NodPlan = {
   corrections: RoomFinding[];
   /**
    * The undecided findings that need the person's own decision before landing
-   * (fix round 4, R-143-m1e): one that blocks landing, or one the reviewer
-   * recommends accepting. A nod records each as a risk accepted in the
-   * person's name with their own reason, never from a recommendation alone.
+   * (fix round 4, R-143-m1e): one that blocks landing, one the reviewer
+   * recommends accepting, or one the reviewer recommended nothing for — a
+   * finding of a record written before the layers (RULING-R-143-m1e of read
+   * 530a7c87). A nod records each as a risk accepted in the person's name with
+   * their own reason, never from a recommendation alone, and never as not
+   * decided.
    */
   risks: RoomFinding[];
   following: { finding: RoomFinding; decision: Decision | ""; said: string }[];
@@ -1283,10 +1312,25 @@ export type NodPlan = {
   asks: boolean;
 };
 
-/** Whether an undecided finding needs the person's own decision before landing. */
+/**
+ * Whether an undecided finding needs the person's own decision before landing:
+ * it blocks, the reviewer recommends accepting it, or the reviewer recommended
+ * nothing for it.
+ */
 function needsOwnDecision(finding: RoomFinding): boolean {
-  return decisionOfAnswer(finding.answer) === "" && effectiveDecision(finding) !== "fix" &&
-    (finding.severity === "blocks" || decisionOfRecommend(finding.recommend) === "accepted");
+  const recommended = decisionOfRecommend(finding.recommend);
+  return decisionOfAnswer(finding.answer) === "" && recommended !== "fix" &&
+    (finding.severity === "blocks" || recommended === "accepted" || recommended === "");
+}
+
+/** What the nod's ask says before a finding that needs the person's own decision: whose word it is. */
+export function riskSaid(finding: RoomFinding): string {
+  if (finding.severity === "blocks") {
+    return "Blocks landing: ";
+  }
+  return decisionOfRecommend(finding.recommend) === "accepted"
+    ? "The reviewer recommends accepting this risk: "
+    : "The reviewer recommended nothing: ";
 }
 
 export function nodPlan(findings: readonly RoomFinding[]): NodPlan {
@@ -1312,21 +1356,26 @@ export function nodPlan(findings: readonly RoomFinding[]): NodPlan {
 /**
  * What landing over undecided findings that need the person's own decision
  * means, said before the reason is asked (fix round 4, R-143-m1e): whose word
- * each is, that each is recorded as a risk the person accepts, what it lets
- * through, the risk it leaves, and how to undo it.
+ * each is — the reviewer's block, its recommendation to accept, or no
+ * recommendation at all — that each is recorded as a risk the person accepts,
+ * what it lets through, the risk it leaves, and how to undo it.
  */
 export function risksImpact(risks: readonly RoomFinding[]): string {
   if (risks.length === 0) {
     return "";
   }
   const blocking = risks.filter((one) => one.severity === "blocks").length;
-  const accepting = risks.length - blocking;
+  const accepting = risks.filter((one) => one.severity !== "blocks" && decisionOfRecommend(one.recommend) === "accepted").length;
+  const unrecommended = risks.length - blocking - accepting;
   const parts: string[] = [];
   if (blocking > 0) {
     parts.push(`${oneOr(blocking)} ${blocking === 1 ? "blocks" : "block"} landing in the reviewer's view`);
   }
   if (accepting > 0) {
     parts.push(`the reviewer recommends accepting ${oneOr(accepting)}`);
+  }
+  if (unrecommended > 0) {
+    parts.push(`the reviewer recommended nothing for ${oneOr(unrecommended)}`);
   }
   const many = risks.length > 1;
   return `${many ? `${String(risks.length)} findings you have not decided` : "One finding you have not decided"} would be ` +
@@ -1380,6 +1429,21 @@ function unfinished(examination: Examination): string {
     : "The reviewer's look at this version did not finish: what you see is what it raised before it ended, and it may have raised more.";
 }
 
+/**
+ * What a send-back records for the findings the person did not decide, said
+ * before the press: the reviewer's recommendation, and not decided where the
+ * reviewer recommended nothing (a record written before the layers).
+ */
+function undecidedSaid(plan: NodPlan): string {
+  const undecided = [...plan.following.map((one) => one.finding), ...plan.risks];
+  if (undecided.length === 0) {
+    return "";
+  }
+  return undecided.some((one) => decisionOfRecommend(one.recommend) === "")
+    ? " What you did not decide is recorded as the reviewer recommends, or as not decided where the reviewer recommended nothing."
+    : " What you did not decide is recorded as the reviewer recommends.";
+}
+
 /** The two ways' consequences, said on each before it is pressed. */
 export function wayConsequence(way: "land" | "send back", findings: readonly RoomFinding[], examination: Examination): string {
   const plan = nodPlan(findings);
@@ -1387,13 +1451,13 @@ export function wayConsequence(way: "land" | "send back", findings: readonly Roo
   if (way === "send back") {
     if (corrections === 0) {
       return "Say what must change first. Your words go to the builder as a correction, and the goal leaves Review until it comes back fixed." +
-        (plan.following.length + plan.risks.length === 0 ? "" : " What you did not decide is recorded as the reviewer recommends.");
+        undecidedSaid(plan);
     }
     const opened = findings.filter((one) => decisionOfAnswer(one.answer) === "follow-up").length;
     return `The builder gets your must-fix ${corrections === 1 ? "decision" : "decisions"} as a correction. ` +
       "The goal leaves Review until it comes back fixed." +
       (opened === 0 ? "" : ` Your fix-after-landing ${opened === 1 ? "follow-up stays" : "follow-ups stay"} open.`) +
-      (plan.following.length + plan.risks.length === 0 ? "" : " What you did not decide is recorded as the reviewer recommends.");
+      undecidedSaid(plan);
   }
   if (findings.length === 0) {
     if (examination !== "complete") {
@@ -1432,17 +1496,20 @@ export const LANDED_UNFINISHED =
  * goal opened for it, and nothing where none was opened (R-4). A decision the
  * person made stands as it is.
  */
-export function verdictAnswers(
+/** One finding's decision as a verdict records it: the finding itself, which an unmarked finding has no id to name, and its answer. */
+export type VerdictDecision = { finding: RoomFinding; answer: string };
+
+export function verdictDecisions(
   way: "land" | "send back", plan: NodPlan, reason: string, opened: Readonly<Record<string, string>>,
-): { id: string; answer: string }[] {
-  const answers: { id: string; answer: string }[] = [];
+): VerdictDecision[] {
+  const answers: VerdictDecision[] = [];
   for (const one of plan.all) {
     const undecided = decisionOfAnswer(one.answer) === "";
     if (plan.corrections.includes(one)) {
       if (way === "land") {
-        answers.push({ id: one.id, answer: ACCEPTED(reason) });
+        answers.push({ finding: one, answer: ACCEPTED(reason) });
       } else if (undecided) {
-        answers.push({ id: one.id, answer: followedAnswer(one, "fix") });
+        answers.push({ finding: one, answer: followedAnswer(one, "fix") });
       }
       continue;
     }
@@ -1452,7 +1519,7 @@ export function verdictAnswers(
         continue;
       }
       answers.push({
-        id: one.id,
+        finding: one,
         answer: way === "land" ? ACCEPTED(reason)
           : decision === "accepted" ? notDecidedAccept(one) : followedAnswer(one, decision, opened[one.id] ?? ""),
       });
@@ -1466,9 +1533,52 @@ export function verdictAnswers(
     if (following.decision === "follow-up" && goal === "") {
       continue;
     }
-    answers.push({ id: one.id, answer: followedAnswer(one, following.decision, goal) });
+    answers.push({ finding: one, answer: followedAnswer(one, following.decision, goal) });
   }
   return answers;
+}
+
+/** The answers a verdict's write records, each by its finding's id: "" for a finding written by hand. */
+export function verdictAnswers(decisions: readonly VerdictDecision[]): { id: string; answer: string }[] {
+  return decisions.map(({ finding, answer }) => ({ id: finding.id, answer }));
+}
+
+/**
+ * The findings as a verdict leaves them, for its Outcome: each with the
+ * decision the verdict records for it, matched by the finding itself, so two
+ * findings written by hand, which carry no mark and share the empty id, never
+ * take each other's answer (read 9ac7cf0f). The findings are the plan's own.
+ */
+export function decidedAfter(findings: readonly RoomFinding[], decisions: readonly VerdictDecision[]): RoomFinding[] {
+  return findings.map((one) => {
+    const given = decisions.find((each) => each.finding === one);
+    return given === undefined ? one : { ...one, answer: given.answer, recorded: true };
+  });
+}
+
+/**
+ * The record with every answer a verdict records written on its finding's
+ * Answer line, in the verdict's one write; null where a finding the record or
+ * a card names cannot be written. A finding written by hand carries no mark,
+ * so it has no identity to write an Answer line to: its decision is recorded
+ * in the Outcome only, and the person's verdict is never refused for it
+ * (RULING-R-142-m1e of read 9ac7cf0f).
+ */
+export function answeredSource(
+  source: string, answers: readonly { id: string; answer: string }[], entryFor: (id: string) => Entry | undefined,
+): string | null {
+  let next = source;
+  for (const one of answers) {
+    if (one.id === "") {
+      continue;
+    }
+    const composed = decidedSource(next, one.id, one.answer, entryFor(one.id));
+    if (composed === null) {
+      return null;
+    }
+    next = composed;
+  }
+  return next;
 }
 
 /**
@@ -1634,20 +1744,35 @@ export function goalHeading(goal: string, intent: string): string {
  * Reviewed line names the current commit, as Review the new tip did, and every
  * finding recorded about the version before moves to Earlier findings, with
  * its answer, so nothing carries forward by itself — it is read as earlier,
- * never decided again, and the engine counts the Findings section alone. Null
- * where the record names no branch tip to move.
+ * never decided again, and the engine counts the Findings section alone.
+ *
+ * The findings the reviewer offered about the version before and nobody
+ * saved go there too, each answered as offered and never decided (F-1 of read
+ * 530a7c87): the new look reads earlier findings from that section alone, and
+ * would otherwise be told nothing was raised. One the record already carries
+ * is not written again, and a record that already names the current version
+ * is answered as it is (R-129-ui). Null where the record names no branch tip
+ * to move.
  */
-export function retippedAfresh(source: string, current: string): string | null {
+export function retippedAfresh(source: string, current: string, offered: readonly Entry[] = []): string | null {
+  if (reviewedOf(source).tip === current && current !== "") {
+    return source;
+  }
   const moved = retipped(source, current);
   if (moved === null) {
     return null;
   }
+  const carried = recordedIn(moved);
+  const unsaved = offered
+    .filter((one) => one.mark !== "" && !carried.has(one.mark))
+    .filter((one, at, list) => list.findIndex((other) => other.mark === one.mark) === at)
+    .flatMap((one) => lineOf({ ...one, section: EARLIER, answer: OFFERED_NEVER_DECIDED }, "finding").trimEnd().split("\n"));
   const lines = moved.split("\n");
   const findings = sectionSpan(lines, "Findings");
   if (findings === null) {
-    return moved;
+    return unsaved.length === 0 ? moved : [...lines, `## ${EARLIER}`, "", ...unsaved, ""].join("\n");
   }
-  const raised = lines.slice(findings.at + 1, findings.end).filter((line) => line.trim() !== "");
+  const raised = [...lines.slice(findings.at + 1, findings.end).filter((line) => line.trim() !== ""), ...unsaved];
   if (raised.length === 0) {
     return moved;
   }
@@ -1664,6 +1789,13 @@ export function retippedAfresh(source: string, current: string): string | null {
   const opened = last === earlier.at + 1 ? [""] : [];
   return [...emptied.slice(0, last), ...opened, ...raised, "", ...emptied.slice(earlier.end)].join("\n");
 }
+
+/**
+ * The Answer an offered finding nobody saved is written with when the review
+ * moves to a newer version (F-1 of read 530a7c87): so a reader — the person,
+ * and the reviewer's new look — can tell it was offered and never decided.
+ */
+export const OFFERED_NEVER_DECIDED = "offered by the reviewer — never decided before the review moved to a newer version";
 
 /** Where one level-two section stands: its heading's line and the next heading's, or null. */
 function sectionSpan(lines: readonly string[], section: string): { at: number; end: number } | null {
@@ -1763,7 +1895,9 @@ export function roomFindingsOf(
  * with its own decision. Where only the later one is recorded, it stands.
  */
 function once(list: RoomFinding[], finding: RoomFinding): void {
-  const at = list.findIndex((one) => one.id === finding.id || sameFinding(one, finding));
+  // An empty id is no identity: findings written by hand carry none, and two
+  // of them are one finding only where they say the same (F-2 of read fcc372ec).
+  const at = list.findIndex((one) => (one.id !== "" && one.id === finding.id) || sameFinding(one, finding));
   if (at < 0) {
     list.push(finding);
     return;
@@ -1790,22 +1924,76 @@ export function findingOfEntry(entry: Entry): RoomFinding {
 }
 
 /**
- * What a verdict refused because the review changed under it says (RF-02):
- * nothing was recorded, what changed — another version, or the findings
- * another room added — and that the room now shows the review as it stands
- * for the person to decide again.
+ * What a verdict refused because the review changed under it says, in one line
+ * (RF-02; RULING-R-143-m1e of read 0096f159): that nothing was recorded, that
+ * the review changed in another room after the person decided, what changed —
+ * another version, or the findings and decisions another room wrote — and that
+ * the room now shows the review as it stands for the person to decide again.
+ * The verdict refused is dropped: it is never sent again by itself.
  */
 export function changedSince(before: string, after: string): string {
   if (reviewedOf(before).tip !== reviewedOf(after).tip) {
-    return "Your verdict was not recorded: this review now names another version than the one you decided on. It shows that version now; decide again.";
+    return "Your verdict was not recorded: in another room, this review moved on to another version after you decided. It shows that version now; decide again.";
   }
-  const known = new Set(entriesIn(before).map((one) => `${one.section}|${one.mark}|${one.text}`));
-  const added = entriesIn(after)
-    .filter((one) => (one.section === "Findings" || one.section === EARLIER) && !known.has(`${one.section}|${one.mark}|${one.text}`))
-    .map((one) => one.text);
-  return "Your verdict was not recorded: this review changed after you decided." +
-    (added.length === 0 ? "" : ` Added since: ${added.join("; ").replace(/([^.!?])$/u, "$1.")}`) +
-    " It shows the review as it stands now; decide again.";
+  const what = whatChanged(entriesIn(before), entriesIn(after));
+  return "Your verdict was not recorded: this review changed in another room after you decided." +
+    (what === "" ? "" : ` What changed: ${what}`) +
+    " It shows the review as it stands now; decide again under Your verdict.";
+}
+
+/** The findings another room added, and the decisions it changed, said by their titles. */
+function whatChanged(before: readonly Entry[], after: readonly Entry[]): string {
+  const finding = (one: Entry) => one.section === "Findings" || one.section === EARLIER;
+  const key = (one: Entry) => (one.mark !== "" ? one.mark : `${one.section}|${one.text}`);
+  const was = new Map(before.filter(finding).map((one) => [key(one), one]));
+  const now = after.filter(finding);
+  const quoted = (list: readonly Entry[]) => joinedAnd(list.map((one) => `"${one.text}"`)).replace(", and ", " and ");
+  const added = now.filter((one) => !was.has(key(one)));
+  const decided = now.filter((one) => was.has(key(one)) && (was.get(key(one))?.answer ?? "") !== (one.answer ?? ""));
+  const parts: string[] = [];
+  if (added.length > 0) {
+    parts.push(`${numbered(added.length, "new finding", "new findings")}, ${quoted(added)}`);
+  }
+  if (decided.length > 0) {
+    parts.push(`${numbered(decided.length, "decision", "decisions")}, on ${quoted(decided)}`);
+  }
+  const said = parts.join("; ");
+  return said === "" || /[.!?]"?$/u.test(said) ? said : `${said}.`;
+}
+
+/**
+ * What the verdict's write says when nothing was written (fix round 2 of the
+ * follow-up, read fcc372ec): where the record changed under it — the save met
+ * another room's write, or the record now names another version or carries a
+ * finding the plan was not built from — the verdict is dropped, the ask closes,
+ * and the one line of fix (a) says that nothing was recorded and what changed,
+ * so the next press is planned over the record as it is then shown. `before`
+ * is the record the write was composed on, `now` the record as it stands.
+ * Otherwise the write's own words.
+ */
+export function verdictWriteRefused(
+  outcome: WriteOutcome, asked: VerdictAsked, before: string, now: string,
+): { changed: string } | { refused: string } {
+  if (outcome.kind === "conflict") {
+    return { changed: changedSince(before, outcome.reading.source) };
+  }
+  if (reviewedOf(now).tip !== asked.tip || unplannedIn(asked, now).length > 0) {
+    return { changed: changedSince(asked.shown, now) };
+  }
+  return { refused: writeRefused(outcome, "verdict") };
+}
+
+/**
+ * The findings a record carries that the verdict's plan was not built from:
+ * in its Findings section now, not in the record as it was shown, and not a
+ * finding the plan listed — which this press's own decisions may have written,
+ * as a fix after landing does before the verdict (read fcc372ec).
+ */
+function unplannedIn(asked: VerdictAsked, now: string): Entry[] {
+  const key = (one: Entry) => `${one.mark}|${one.text}`;
+  const findings = (source: string) => entriesIn(source).filter((one) => one.section === "Findings");
+  const seen = new Set(findings(asked.shown).map(key));
+  return findings(now).filter((one) => !seen.has(key(one)) && (one.mark === "" || !asked.planned.includes(one.mark)));
 }
 
 /** The refusal code the verdict is answered with when the review changed under it (RF-02). */
@@ -1850,7 +2038,53 @@ export type VerdictAsked = {
   tip: string;
   followUps: readonly string[];
   brief: string;
+  /**
+   * The record as it was shown when the person's decisions were planned, and
+   * the findings that plan listed, by their ids (fix round 2 of the follow-up,
+   * read fcc372ec): the write refuses a record whose findings the plan was not
+   * built from.
+   */
+  shown: string;
+  planned: readonly string[];
 };
+
+/** How one verdict's write names who wrote it and when, its own marks, and the card a finding was offered on. */
+export type VerdictWriting = {
+  who: string;
+  when: string;
+  mark: string;
+  ownMark: string;
+  entryFor: (id: string) => Entry | undefined;
+};
+
+/**
+ * The record with one verdict written into it, in one write (§3): every
+ * decision on its finding's Answer line, the person's own must-fix words as a
+ * finding of theirs, and the Outcome composed from what they were shown. Null
+ * — nothing is written — where the record no longer names the version they
+ * decided on (RF-02), or carries a finding their plan was not built from.
+ */
+export function verdictSource(source: string, asked: VerdictAsked, writing: VerdictWriting): string | null {
+  // Nothing is written over a version or a finding the person was not shown
+  // when they decided (RF-02; read fcc372ec): the verdict is dropped, and the
+  // next press is planned over the record as it then stands.
+  if (reviewedOf(source).tip !== asked.tip || unplannedIn(asked, source).length > 0) {
+    return null;
+  }
+  let next = answeredSource(source, asked.answers, writing.entryFor);
+  if (next === null) {
+    return null;
+  }
+  if (asked.own.trim() !== "") {
+    next = appended(next, {
+      when: writing.when, who: writing.who, text: asked.own, clause: "", section: "Findings", mark: writing.ownMark, answer: FIX,
+    }, "finding");
+  }
+  const composed = outcomeWithVerdict(asked.verdict, asked.outcome, "", asked.tip);
+  return "refusal" in composed
+    ? null
+    : outcomeWritten(next, { when: writing.when, who: writing.who, text: composed.text, clause: "", section: OUTCOME, mark: writing.mark });
+}
 
 /**
  * What one choice says on a finding's card (§3): what was recorded, where it is

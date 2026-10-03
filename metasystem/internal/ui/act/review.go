@@ -1,6 +1,7 @@
 package act
 
 import (
+	"bytes"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -66,6 +67,16 @@ func (a Authority) Review(id string, asked Reviewed) (Recorded, error) {
 		return Recorded{}, err
 	}
 	defer done()
+	// The record is read once more under this clone's one lock (F-2 of read
+	// 0096f159): another room may have saved it between the comparison above
+	// and the taking of the lock, and only bytes that passed both are
+	// published. The room's own save of a record takes the same lock
+	// (Holding), so from here to the publication it cannot change underneath.
+	if _, again, err := goal.ResolveReviewRecord(a.root, asked.Record); err != nil {
+		return Recorded{}, refuse(KindRequest, "record", err.Error())
+	} else if !bytes.Equal(again, content) {
+		return Recorded{}, refuse(KindRequest, "version-changed", changedAfterDeciding)
+	}
 	reviewing := goal.ReviewAct{Record: path, Content: content, Verdict: asked.Verdict, Brief: []byte(asked.Brief), Work: asked.Work}
 	if asked.Verdict == goal.VerdictSendBack && strings.TrimSpace(asked.Brief) == "" && asked.Work != "" {
 		published, readErr := goal.ReadPublished(request.Endpoint, goal.BriefPathFor(path))
@@ -104,12 +115,30 @@ func Unseen(asked Reviewed, content []byte) *Refusal {
 			"the review now names another version than the one you decided on; nothing was recorded")
 	}
 	if revision != "" && project.RevisionOf(content) != revision {
-		return refuse(KindRequest, "version-changed",
-			"the review changed after you decided, in another room; nothing was recorded, so decide again")
+		return refuse(KindRequest, "version-changed", changedAfterDeciding)
 	}
 	if branch := strings.TrimSpace(asked.Branch); asked.Verdict == goal.VerdictClearToLand && branch != "" && branch != head {
 		return refuse(KindRequest, "version-moved",
 			"a newer version of this goal exists; nothing was recorded: review the current version")
 	}
 	return nil
+}
+
+// changedAfterDeciding is what a verdict on a record another room changed
+// since the person decided is refused with, before the authority's lock and
+// under it alike: nothing was recorded, and the one act is to decide again.
+const changedAfterDeciding = "the review changed after you decided, in another room; nothing was recorded, so decide again"
+
+// Holding runs one save of a document under this clone's one lock, the lock a
+// verdict holds from its second read of the review record to its publication
+// (F-2 of read 0096f159): a save pressed in another room while a verdict is
+// being published waits until it is published, so the bytes the verdict was
+// compared with are the bytes it publishes. It takes no act and asks for no
+// proof — the save is the document editor's own, with its own revision check
+// — and it waits only while this process publishes or recovers on this clone.
+func (a Authority) Holding(save func() error) error {
+	held := ownerOf(a.root)
+	held.publications.Lock()
+	defer held.publications.Unlock()
+	return save()
 }

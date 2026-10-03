@@ -538,7 +538,7 @@ export const HELP: Record<HelpId, Term> = {
   "the-finding": {
     term: "A finding",
     text:
-      "Something the reviewer raises about this version, in layers: how much it matters (Blocks landing, Worth fixing, or a Note), the problem in plain words, why it matters, and the decision the reviewer recommends, with the evidence folded underneath. Your decision is one of four, each saying what follows: Must fix before landing goes to the builder as a correction when you send the goal back; Fix after landing opens a follow-up goal; Not a problem records your reason; I accept this risk records your acceptance and your reason on this review, in your name. A finding you leave undecided follows the reviewer's recommendation when you give your verdict, and you are told so first.",
+      "Something the reviewer raises about this version, in layers: how much it matters (Blocks landing, Worth fixing, or a Note), the problem in plain words, why it matters, and the decision the reviewer recommends, with the evidence folded underneath. Your decision is one of four, each saying what follows: Must fix before landing goes to the builder as a correction when you send the goal back; Fix after landing opens a follow-up goal; Not a problem records your reason; I accept this risk records your acceptance and your reason on this review, in your name. A finding you leave undecided follows the reviewer's recommendation, where there is one, when you give your verdict, and you are told so first; on landing, one without a recommendation asks for your own decision.",
   },
   "the-walks": {
     term: "The walks",

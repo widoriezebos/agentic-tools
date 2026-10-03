@@ -6,9 +6,11 @@ package act
 // refused in the engine's words.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -207,4 +209,114 @@ func TestAVerdictIsBoundToTheVersionAndTheRecordThePersonSaw(t *testing.T) {
 	if _, err := sessionFor(t, bed).Review("ui-seen", seen(t, record, goal.VerdictClearToLand)); err != nil {
 		t.Fatalf("the verdict on the record as it stands now: %v", err)
 	}
+}
+
+// withAnotherRoomsFinding is the review record as another room saves it: the
+// same version and Outcome, and one finding added.
+func withAnotherRoomsFinding(id string) string {
+	return "# Review of " + id + "\n\n- Kind: review\n- Goals: " + id + "\n- Reviewed: " + actReviewedTip + " (the tip of goal/" + id + ")\n\n" +
+		"## Findings\n\n- 2026-10-03 · Ann · a finding written in another room\n  - Answer: unanswered\n\n" +
+		"## Outcome\n\nVerdict: clear to land\n\nReviewed at: " + actReviewedTip + "\n\nExamined: the change index\n"
+}
+
+// F-2 of read 0096f159: the record is compared once before the authority
+// takes its lock and once more under it, and only bytes that passed both are
+// published. The fixture saves another room's finding into the record after
+// the first comparison passed — while the act is assembling its request under
+// the lock, which is where the fence is read — so the bytes the first
+// comparison passed are no longer the record: nothing is published, in the
+// same words as a record changed before the press reached the authority, and
+// the person's verdict given again on the record as it now stands publishes
+// that record.
+func TestAVerdictIsComparedAgainUnderTheAuthoritysOwnLock(t *testing.T) {
+	t.Parallel()
+	bed := ledger(t)
+	record := waitingReview(t, bed, "ui-between", actReviewedTip)
+	asked := seen(t, record, goal.VerdictClearToLand)
+	authority := sessionFor(t, bed)
+	taken := authority.reads
+	var once sync.Once
+	authority.reads.fence = func(root string) error {
+		once.Do(func() { write(t, record, withAnotherRoomsFinding("ui-between"), 0o644) })
+		return taken.fence(root)
+	}
+	before := len(readGoal(t, bed, "ui-between").History)
+
+	_, err := authority.Review("ui-between", asked)
+	refusal := refusalOf(t, err)
+	testutil.Expect(t, "the refusal's code", refusal.Code, "version-changed")
+	testutil.Expect(t, "in the words a record changed before the press reached the authority is refused with", refusal.Message,
+		"the review changed after you decided, in another room; nothing was recorded, so decide again")
+	testutil.Expect(t, "nothing was recorded", len(readGoal(t, bed, "ui-between").History), before)
+	if _, err := goal.ReadPublished(bed.endpoint(), "plans/reviews/review-of-ui-between.md"); err == nil {
+		t.Fatal("the record was published although it changed after the first comparison")
+	}
+
+	if _, err := authority.Review("ui-between", seen(t, record, goal.VerdictClearToLand)); err != nil {
+		t.Fatalf("the verdict given again on the record as it now stands: %v", err)
+	}
+	published, err := goal.ReadPublished(bed.endpoint(), "plans/reviews/review-of-ui-between.md")
+	if err != nil {
+		t.Fatalf("reading what was published: %v", err)
+	}
+	testutil.Expect(t, "the published record is the one the verdict was given on", string(published), withAnotherRoomsFinding("ui-between"))
+}
+
+// The room's own save of a review record takes the authority's lock (F-2 of
+// read 0096f159), so a save pressed in another room while a verdict is being
+// published waits until it is published, and what is published is the record
+// the verdict was compared with.
+func TestARecordSaveWaitsWhileAVerdictIsPublished(t *testing.T) {
+	t.Parallel()
+	bed := ledger(t)
+	record := waitingReview(t, bed, "ui-saving", actReviewedTip)
+	original, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := sessionFor(t, bed)
+	seam := scripting(bed)
+	publishing, release, once := make(chan struct{}), make(chan struct{}), sync.Once{}
+	seam.capture = func(plain goal.Repository, opid string) (string, error) {
+		once.Do(func() {
+			close(publishing)
+			<-release
+		})
+		return plain.Capture(opid)
+	}
+	answered := make(chan error, 1)
+	go func() {
+		_, err := authority.Review("ui-saving", seen(t, record, goal.VerdictClearToLand))
+		answered <- err
+	}()
+
+	// No clock decides this (R-104-m1e): the verdict, paused inside its
+	// publication, holds the clone's one lock, and the save runs its write
+	// under that same lock, so the one cannot run inside the other.
+	<-publishing
+	if ownerOf(bed.root).publications.TryLock() {
+		t.Fatal("the clone's one lock was free while the verdict was being published, so a save could have run inside it")
+	}
+	close(release)
+	if err := <-answered; err != nil {
+		t.Fatalf("the verdict: %v", err)
+	}
+	if err := authority.Holding(func() error {
+		if ownerOf(bed.root).publications.TryLock() {
+			return errors.New("the save ran without the clone's one lock")
+		}
+		return os.WriteFile(record, []byte(withAnotherRoomsFinding("ui-saving")), 0o644)
+	}); err != nil {
+		t.Fatalf("the save once the verdict was published: %v", err)
+	}
+	published, err := goal.ReadPublished(bed.endpoint(), "plans/reviews/review-of-ui-saving.md")
+	if err != nil {
+		t.Fatalf("reading what was published: %v", err)
+	}
+	testutil.Expect(t, "what is published is the record the verdict was compared with", string(published), string(original))
+	now, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.Expect(t, "the save landed after it", string(now), withAnotherRoomsFinding("ui-saving"))
 }

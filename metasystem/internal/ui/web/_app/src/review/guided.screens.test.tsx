@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { Changes } from "./api";
 import { ReviewView } from "./Guided";
 import { Room } from "./ReviewRoom";
+import { changedSince, strandedVerdict } from "./room";
 import type { Row } from "../backlog/api";
 import { emptyStore } from "../partner/conversation";
 import type { Deposit, Message } from "../partner/api";
@@ -250,6 +251,62 @@ describe("a review of an older version than would land", () => {
     const later = read(around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />, held([], moved)));
     expect(later).toContain("About the older version: 1 finding, with your decisions then");
     expect(later).toContain("The reviewer found nothing to raise.");
+  });
+});
+
+describe("a verdict refused because another room added a finding after the person decided (RULING-R-143-m1e of read 0096f159)", () => {
+  // The record as this room's verdict wrote it, and as it stands once another
+  // room saved a finding that blocks into it.
+  const ours = SOURCE.replace("## Outcome\n", `## Outcome\n\nVerdict: clear to land\n\nReviewed at: ${TIP}\n\nExamined: the reviewer's report\n\n` +
+    "- Recorded from the sitting · 2026-10-03 · Wido [d:verdict-1]\n");
+  const theirs = ours.replace("## Findings\n", `## Findings\n\n${lineOf({
+    when: "2026-10-03", who: "Ann", text: "The retry has no ceiling.", clause: "internal/owner/owner.go:40", section: "Findings",
+    mark: "local-ann1", severity: "blocks", why: "A press can spin forever.", recommends: "must-fix", reason: "Bound it.", answer: "unanswered",
+  }, "finding")}`);
+  const stranded = strandedVerdict(theirs, RECORD, undefined);
+
+  it("says so in one line, shows the review as it now stands, and asks the verdict again over its findings", () => {
+    const shown = around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />,
+      { ...held([], theirs), verdictChanged: changedSince(ours, theirs), stranded });
+    const text = read(shown);
+    expect(text).toContain("Your verdict was not recorded: this review changed in another room after you decided. " +
+      "What changed: 1 new finding, \"The retry has no ceiling.\" It shows the review as it stands now; decide again under Your verdict.");
+    // At the verdict step, where the person pressed, before the ways.
+    expect(text.indexOf("Your verdict was not recorded")).toBeGreaterThan(text.indexOf("4 Your verdict"));
+    expect(text.indexOf("Your verdict was not recorded")).toBeLessThan(text.indexOf("What happens to this goal?"));
+    expect(text).toContain("1 finding. 1 blocks landing.");
+    expect(text).toContain("Why it matters. A press can spin forever.");
+    expect(text).toContain("Your decision");
+    // The verdict step's plan is the current findings': landing now asks first.
+    expect(text).toContain("Send it back recommended");
+    expect(text).toContain("One finding must be fixed before landing: you will be asked to accept that risk and say why, in one step, before anything is recorded.");
+    expect(shown).not.toMatch(/class="ms-guided-way[^"]*" disabled/u);
+    // Nothing sends the earlier verdict again.
+    expect(shown).not.toContain("Record the verdict on the goal");
+    expect(text).not.toContain("is not yet on the goal");
+  });
+
+  it("after a reload says the verdict written in the review is not on the goal, with no press that sends it again", () => {
+    const shown = around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />, { ...held([], theirs), stranded });
+    expect(read(shown)).toContain("Your verdict is written in the review, and is not yet on the goal: looks good, land it. " +
+      "It is not sent again by itself: give it again under Your verdict, where it is decided on the review as it stands now.");
+    expect(shown).not.toContain("Record the verdict on the goal");
+  });
+});
+
+describe("what an undecided finding follows (coordinator's amend to RULING-R-143-m1e of read 530a7c87)", () => {
+  it("is said truly for a finding with no recommendation, whether the look completed or not", () => {
+    const older = SOURCE.replace("## Findings\n", `## Findings\n\n${lineOf({
+      when: "2026-09-29", who: "Wido", text: "The owner reads the wrong tree.", clause: "internal/owner/owner.go:60", section: "Findings",
+      mark: "deposit:older#0", answer: "unanswered",
+    }, "finding")}`);
+    const said = "If you decide nothing on a finding, it follows the reviewer's recommendation where there is one; " +
+      "on landing, one without a recommendation asks for your own decision.";
+    for (const outcome of ["complete", "stopped"] as const) {
+      const text = read(around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />, held([], older, outcome)));
+      expect(text).toContain(said);
+      expect(text).not.toContain("it follows the recommendation.");
+    }
   });
 });
 

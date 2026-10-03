@@ -5,6 +5,7 @@ import {
   followUpsFor,
   earlierTurnsOf,
   verdictAnswers,
+  verdictDecisions,
   landingWaits,
   leadParagraph,
   choiceSaid,
@@ -19,6 +20,7 @@ import {
   outcomeBody,
   recommendedWay,
   reviewerWay,
+  riskSaid,
   versionWhen,
   wayConsequence,
   type RoomFinding,
@@ -61,6 +63,16 @@ describe("the summary line", () => {
     expect(findingsSummary([BLOCKS, { ...BLOCKS, id: "b2" }]).recommends).toBe("send it back, because of the 2 that block.");
     expect(findingsSummary([finding({ severity: "fix" })]).recommends)
       .toBe("send it back, because one finding must be fixed before landing.");
+  });
+
+  it("never says the reviewer recommends landing a finding it recommended nothing for (F-2 of read 54dafc9b)", () => {
+    const older = finding({ id: "deposit:t0#0", title: "The owner reads the wrong tree.", why: "", severity: "", recommend: "", reason: "" });
+    expect(findingsSummary([older]).recommends)
+      .toBe("nothing: it gave no recommendation for this finding, so it needs your own decision.");
+    expect(findingsSummary([older, { ...older, id: "deposit:t0#1" }]).recommends)
+      .toBe("nothing: it gave no recommendation for these findings, so each needs your own decision.");
+    expect(findingsSummary([older, NOTE]).recommends)
+      .toBe("land it, for the findings it gave a recommendation for; one has no recommendation and needs your own decision.");
   });
 });
 
@@ -154,7 +166,7 @@ describe("what a verdict records (fix round 1, F-2)", () => {
 
   it("on a send-back, records every untouched finding as the reviewer recommended, in the same write as the corrections", () => {
     const plan = nodPlan([BLOCKS, WORTH, NOTE, ACCEPTING]);
-    expect(verdictAnswers("send back", plan, "", { [WORTH.id]: "tests-for-failures" })).toEqual([
+    expect(verdictAnswers(verdictDecisions("send back", plan, "", { [WORTH.id]: "tests-for-failures" }))).toEqual([
       { id: BLOCKS.id, answer: `${FIX} (as the reviewer recommended)` },
       { id: WORTH.id, answer: followUp("tests-for-failures") },
       { id: NOTE.id, answer: `${NOT_A_PROBLEM("The design is history.")} (as the reviewer recommended)` },
@@ -174,8 +186,8 @@ describe("what a verdict records (fix round 1, F-2)", () => {
       [ACCEPTING.id, "not decided: the reviewer's recommendation to accept the risk is kept (The lease bounds it.)"],
     ]);
     expect(askedFollowing(plan, "land")).toEqual([]);
-    expect(verdictAnswers("send back", plan, "", {}).map((one) => one.id)).toEqual([ACCEPTING.id]);
-    expect(verdictAnswers("send back", plan, "", { [blockingLater.id]: "one-press-tests" })[0])
+    expect(verdictAnswers(verdictDecisions("send back", plan, "", {})).map((one) => one.id)).toEqual([ACCEPTING.id]);
+    expect(verdictAnswers(verdictDecisions("send back", plan, "", { [blockingLater.id]: "one-press-tests" }))[0])
       .toEqual({ id: blockingLater.id, answer: followUp("one-press-tests") });
   });
 
@@ -193,7 +205,7 @@ describe("what a verdict records (fix round 1, F-2)", () => {
         "Landing lets through what they describe, and that risk stays with the goal after it lands. " +
         "To undo it before it lands, start a new review from the board and send it back.",
     );
-    expect(verdictAnswers("land", plan, "readers retry, and the lease bounds the retry", {})).toEqual([
+    expect(verdictAnswers(verdictDecisions("land", plan, "readers retry, and the lease bounds the retry", {}))).toEqual([
       { id: blockingAccept.id, answer: ACCEPTED("readers retry, and the lease bounds the retry") },
       { id: ACCEPTING.id, answer: ACCEPTED("readers retry, and the lease bounds the retry") },
       { id: NOTE.id, answer: `${NOT_A_PROBLEM("The design is history.")} (as the reviewer recommended)` },
@@ -201,9 +213,40 @@ describe("what a verdict records (fix round 1, F-2)", () => {
     expect(wayConsequence("land", [blockingAccept], "complete")).toContain("needs your own decision before landing");
   });
 
+  it("on a nod, asks the person's own decision for an untouched finding the reviewer recommended nothing for, the impact first (RULING-R-143-m1e of read 530a7c87)", () => {
+    // A review record written before the layers: no severity, no recommendation.
+    const older = finding({ id: "deposit:t0#0", title: "The owner reads the wrong tree.", why: "", severity: "", recommend: "", reason: "" });
+    const plan = nodPlan([older, NOTE]);
+    expect(plan.risks.map((one) => one.id)).toEqual([older.id]);
+    expect(plan.following.map((one) => one.finding.id)).toEqual([NOTE.id]);
+    expect(plan.asks).toBe(true);
+    expect(landingWaits(plan, " ")).toBe(true);
+    expect(plan.impact).toBe(
+      "One finding you have not decided would be recorded as a risk you accept, in your name and with your reason: " +
+        "the reviewer recommended nothing for one. " +
+        "Landing lets through what it describes, and that risk stays with the goal after it lands. " +
+        "To undo it before it lands, start a new review from the board and send it back.",
+    );
+    expect(riskSaid(older)).toBe("The reviewer recommended nothing: ");
+    expect(riskSaid(BLOCKS)).toBe("Blocks landing: ");
+    expect(riskSaid(finding({ severity: "fix", recommend: "accept" }))).toBe("The reviewer recommends accepting this risk: ");
+    const landed = verdictAnswers(verdictDecisions("land", plan, "the tree is read once, at the press", {}));
+    expect(landed).toEqual([
+      { id: older.id, answer: ACCEPTED("the tree is read once, at the press") },
+      { id: NOTE.id, answer: `${NOT_A_PROBLEM("The design is history.")} (as the reviewer recommended)` },
+    ]);
+    // Nothing is ever recorded as not decided on a land.
+    expect(landed.map((one) => one.answer).join(" ")).not.toContain("not decided");
+    expect(wayConsequence("land", [older], "complete")).toContain("needs your own decision before landing");
+    // A send-back keeps what the reviewer did not recommend undecided, as before.
+    expect(verdictAnswers(verdictDecisions("send back", nodPlan([older]), "", {}))).toEqual([
+      { id: older.id, answer: "not decided — the reviewer recommended nothing" },
+    ]);
+  });
+
   it("on a nod, records the corrections accepted with the person's reason and the rest as the reviewer recommended", () => {
     const plan = nodPlan([BLOCKS, WORTH, { ...NOTE, answer: NOT_A_PROBLEM("mine"), recorded: true }]);
-    expect(verdictAnswers("land", plan, "the next begin releases it", { [WORTH.id]: "tests" })).toEqual([
+    expect(verdictAnswers(verdictDecisions("land", plan, "the next begin releases it", { [WORTH.id]: "tests" }))).toEqual([
       { id: BLOCKS.id, answer: ACCEPTED("the next begin releases it") },
       { id: WORTH.id, answer: followUp("tests") },
     ]);
@@ -211,7 +254,7 @@ describe("what a verdict records (fix round 1, F-2)", () => {
 
   it("keeps a decision the person made, and keeps those decisions through the next version", () => {
     const decided = { ...BLOCKS, answer: FIX, recorded: true };
-    expect(verdictAnswers("send back", nodPlan([decided]), "", {})).toEqual([]);
+    expect(verdictAnswers(verdictDecisions("send back", nodPlan([decided]), "", {}))).toEqual([]);
   });
 });
 
@@ -228,6 +271,13 @@ describe("a look that has not finished, with findings already raised (fix round 
   it("says Send it back keeps what was not decided as the reviewer recommends", () => {
     expect(wayConsequence("send back", [BLOCKS, WORTH], "complete"))
       .toContain("What you did not decide is recorded as the reviewer recommends.");
+  });
+
+  it("says Send it back records not decided where the reviewer recommended nothing", () => {
+    const older = finding({ id: "deposit:t0#0", title: "The owner reads the wrong tree.", why: "", severity: "", recommend: "", reason: "" });
+    expect(wayConsequence("send back", [older, WORTH], "complete"))
+      .toContain("What you did not decide is recorded as the reviewer recommends, or as not decided where the reviewer recommended nothing.");
+    expect(wayConsequence("send back", [BLOCKS, WORTH], "complete")).not.toContain("recommended nothing");
   });
 });
 
