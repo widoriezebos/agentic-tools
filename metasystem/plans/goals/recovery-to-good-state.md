@@ -1,6 +1,6 @@
 # recovery-to-good-state
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 13
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A repair and a full stop that act on live processes and seat state in every checkout; a wrong step ends a healthy seat's work or calls a broken state healthy; builds on system start, stop and check, with the repair itself new; design first"
@@ -9,10 +9,12 @@
 - Origin: main
 - Next step: Next: Re-check the eight broken-state examples recorded on 2026-09-02 against today's Go-only engine (system start, stop and check, and restart only when down), keep only those that still happen, and write the design for those. Done when: A short record lists each example as still happening or fixed, with the command used to check it, and a design page exists for the ones that remain.
 - OpenedAt: 2026-09-02T16:03:45Z
-- Revision: 56
+- Revision: 57
 - Labels: headless-fleet, headless-recovery, recovery, robustness
 - Arc: headless-fleet
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T11:18:24Z revision=57 opid=D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb authority=proven digest=ddc099f498a6c95703ca8a9a7367691fa53f4a1a7018e2c27b9c0ca92a80a274 episode=57
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=5 at=2026-09-02T16:26:36Z
 
 History:
@@ -72,4 +74,5 @@ History:
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:15 to=2:14
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:14 to=2:13
 - 2026-10-03T11:14:01Z PSV1Q2VTAANYXZRMQ1PT5JW457-m1e-718ba0eb edit actor=human:Wido targets=recovery-to-good-state
-Integrity: sha256=6180b4f3af7fbada61802b13cc58c7ece52eca86fa0669974064cd5e3239f0f4
+- 2026-10-03T11:18:24Z D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb approve actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,recovery-to-good-state
+Integrity: sha256=a0570b1e727117128b0e0dd9c78702e9b83508d6f17cb2413fe21c538f64deb4

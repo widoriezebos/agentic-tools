@@ -1,6 +1,6 @@
 # commit-goal-binding
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 10
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="A steward check that reports commits on main without a goal; it refuses nothing, but a wrong rule sends one alert per commit to the person or hides hand commits; reuses the steward's existing check and warning patterns; runs on every new commit"
@@ -9,8 +9,10 @@
 - Origin: main
 - Next step: Next: Add a steward check that walks new commits on main since its last position, looks for the goal trailer (Goal-Item), and raises one alert per commit without one; use the existing gentle warning for a person's own commits instead of a separate waiver record, unless you want one. Done when: tests with made-up commits show an unbound agent commit is reported once, a bound one is not, and a person's commit is reported as a warning.
 - OpenedAt: 2026-09-01T07:28:33Z
-- Revision: 40
+- Revision: 41
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T11:18:24Z revision=41 opid=D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb authority=proven digest=5fa9f5bd5545c84a561e1f7b7ce042ac754e945ed28e2a5d5a57ebc563b1e1bb episode=41
 
 History:
 - 2026-09-01T07:28:33Z V8J32XY2RA4GFPJN8NTWMVK2NW-m2-bc1be9cb open actor=m2+mac-coordinator targets=commit-goal-binding
@@ -53,4 +55,5 @@ History:
 - 2026-10-02T21:00:35Z VNGSNCZW70RGG931E6Y9XRKWYT-m1e-9c612d71 abandon actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal,one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step,machinery-blocks-of-2026-10-02 reason=priority-order from=2:12 to=2:11
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:11 to=2:10
 - 2026-10-03T11:13:53Z JXAJEAG9AFQM1C2FMMTDS42NV7-m1e-718ba0eb edit actor=human:Wido targets=commit-goal-binding
-Integrity: sha256=324cebda47363375cd05b279600a854618362a743815d4dc029cedc996b3178a
+- 2026-10-03T11:18:24Z D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb approve actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,recovery-to-good-state
+Integrity: sha256=57b53335681b3e2b441600b6cd385221c51dd4af2db4c8ac370aef80b5f8b81c

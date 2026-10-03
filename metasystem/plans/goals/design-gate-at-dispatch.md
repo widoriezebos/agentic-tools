@@ -1,6 +1,6 @@
 # design-gate-at-dispatch
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design. RETURNED 2026-10-03: the machinery runs again (stewards start seats unattended since 2026-10-02). First confirm on a live example where a design-bearing build is first dispatched today (the seat's unit build), then build the gate there.
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 42
+- Revision: 43
 - Labels: headless-fleet, headless-process
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T11:18:24Z revision=43 opid=D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb authority=proven digest=41efdcd4f4d0d5a433f8977e8a23b06ac67b49b998550651b3ccc4a6be969b60 episode=43
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -56,4 +58,5 @@ History:
 - 2026-10-03T09:59:45Z 5GAZW3MX1SG6AGEAVPMQ2R9W5F-m1e-718ba0eb edit actor=human:Wido targets=design-gate-at-dispatch
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:9 to=2:8
 - 2026-10-03T11:13:33Z 2D1WY5GFNQEVDE9W4E6WVVXW4J-m1e-718ba0eb edit actor=human:Wido targets=design-gate-at-dispatch
-Integrity: sha256=eeb6c373ad1897243df60792908995ac92b87df6279c1dc076b3bb46b3758732
+- 2026-10-03T11:18:24Z D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb approve actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,recovery-to-good-state
+Integrity: sha256=2bd49708690c2cb7d6ae550ed2ec9d2bcdd7f99b301f9d41e0873756b759c5df
