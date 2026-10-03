@@ -88,7 +88,7 @@ func (b *scopeCompositionBed) expectAccountantAndGuard() {
 
 func (b *scopeCompositionBed) expectNoLedger() {
 	b.facts.addErr("LedgerBlobOID", "", mission.ErrNoAnchor, b.engine.Root, b.state,
-		filepath.Join(missionDirPath(b.engine.Root, "demo"), "ledger.md"))
+		filepath.Join(missionDirPath(b.engine.installation(), "demo"), "ledger.md"))
 }
 
 func (b *scopeCompositionBed) expectGit(stdout string, args ...string) {

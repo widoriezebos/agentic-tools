@@ -131,7 +131,9 @@ func (b *processBed) owners() intentOwners {
 			}
 			return b.question, nil
 		},
-		mission: func(root, id string) (*missionrunner.Engine, error) { return missionrunner.NewEngine(root, id), nil },
+		mission: func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			return missionrunner.NewEngineAt(root, installation.Path(), id), nil
+		},
 		ui: func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) {
 			b.t.Error("the interface lifecycle was called")
 			return uiLifecycleResult{}, errors.New("unexpected")
@@ -395,8 +397,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 				resumed = append(resumed, process.argv)
 				return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
 			}})
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(string, string, string) error { return errors.New("anchor refused in the bed") }
 			return engine, nil
 		}
@@ -404,8 +406,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 3 || result.Outcome != intentRefused || missionAskAnswered(askPath) {
 			t.Fatalf("rolled-back answer = %d %+v", code, result)
 		}
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(string, string, string) error { return nil }
 			return engine, nil
 		}

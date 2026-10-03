@@ -247,8 +247,8 @@ func TestIntentProcessCorrections(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(asks, 0o755) })
 		owners := b.owners()
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(string, string, string) error { return nil }
 			return engine, nil
 		}

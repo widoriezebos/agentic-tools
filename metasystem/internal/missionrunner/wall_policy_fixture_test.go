@@ -81,7 +81,7 @@ func (b *wallPolicyBed) authorization(base, reviewed string, changed []string, p
 		b.t.Fatal(err)
 	}
 	record["authorizationDigest"] = digest
-	dir := filepath.Join(missionDirPath(b.root, b.engine.Mission), "authorizations")
+	dir := filepath.Join(missionDirPath(b.engine.installation(), b.engine.Mission), "authorizations")
 	if writePatch {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			b.t.Fatal(err)

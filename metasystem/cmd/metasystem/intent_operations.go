@@ -426,7 +426,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
 	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
-	request := missionResolveRequest{root: root.Path(), mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
+	request := missionResolveRequest{root: root.Path(), installation: inv.layout.InstallationRoot, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
 		by: inv.input.text("by"), reason: inv.input.text("reason")}
 	done := fmt.Sprintf("mission %s: problem %s is resolved as confirmed restored; files were not changed by this command", mission, inv.input.text("problem"))
 	if choice != "confirm-restored" {

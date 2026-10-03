@@ -71,7 +71,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		if err := e.heartbeat(turnID); err != nil {
 			return nil, err
 		}
-		active := activeJobRecords(e.Root, e.Mission)
+		active := activeJobRecords(e.installation(), e.Mission)
 		if len(active) == 0 {
 			return nil, nil
 		}
@@ -89,7 +89,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 				e.dispatchReap(jobRecordID(record))
 			}
 		}
-		live := activeJobRecords(e.Root, e.Mission)
+		live := activeJobRecords(e.installation(), e.Mission)
 		if len(live) == 0 {
 			return nil, nil
 		}
@@ -116,7 +116,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 				return nil, err
 			}
 			lastReap = runClock.now()
-			live = activeJobRecords(e.Root, e.Mission)
+			live = activeJobRecords(e.installation(), e.Mission)
 			if len(live) == 0 {
 				return nil, nil
 			}
@@ -190,9 +190,9 @@ func recordDrainDue(doc map[string]any, now time.Time) time.Time {
 // prove nothing, and a record the CAS finds advanced is left alone this
 // pass — the deadline, not the loop, decides the outcome.
 func (e *Engine) reapReservedRecords(now time.Time) error {
-	reserved := reservedJobIDs(e.Root, e.Mission)
+	reserved := reservedJobIDs(e.installation(), e.Mission)
 	var firstErr error
-	for _, record := range activeJobRecords(e.Root, e.Mission) {
+	for _, record := range activeJobRecords(e.installation(), e.Mission) {
 		job := jobRecordID(record)
 		if !reserved[job] {
 			// The runner's authority ends at its reservation set: a record
@@ -275,7 +275,7 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 				return nil
 			}
 			resolution, _ := doc["capResolution"].(map[string]any)
-			return mission.RefuseBudgetCap(e.Root, missionID, job, resolution, func(line string) {
+			return mission.RefuseBudgetCap(e.installation(), missionID, job, resolution, func(line string) {
 				e.emit("job-refused", line, map[string]string{
 					"missionId": missionID, "jobId": job, "reasonClass": "fence-ask",
 				})
@@ -303,7 +303,7 @@ func (e *Engine) reapCAS(job, expect, target string, patch map[string]any) (bool
 	if err := atomicWriteJSON(sourcePath, patch); err != nil {
 		return false, err
 	}
-	observed, err := dispatch.RecordCAS(e.Root, job, expect, target, sourcePath)
+	observed, err := dispatch.RecordCAS(e.installation(), job, expect, target, sourcePath)
 	if observed != "" {
 		return false, nil
 	}
@@ -457,7 +457,7 @@ func (e *Engine) parkDrainStalled(statePath, ledger, identityName string, cycle 
 	if !ok || len(streams) == 0 {
 		return nil, failf(3, "mission state has no streams")
 	}
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	if err := os.MkdirAll(asksDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -467,8 +467,8 @@ func (e *Engine) parkDrainStalled(statePath, ledger, identityName string, cycle 
 	proposed["parkReason"] = drainStalledReason
 	proposed["gatePassed"] = false
 	proposed["waitingList"] = mergedOpenAskIDs(asksDir, []string{askID})
-	aggregateUsageForProjection(e.Root, e.Mission, "park-drain-stalled")
-	if err := ProjectFences(e.Root, e.Mission, proposed); err != nil {
+	aggregateUsageForProjection(e.installation(), e.Mission, "park-drain-stalled")
+	if err := ProjectFences(e.installation(), e.Mission, proposed); err != nil {
 		return nil, err
 	}
 	updated, err := e.writeState(statePath, proposed)
@@ -490,7 +490,7 @@ func (e *Engine) parkDrainStalled(statePath, ledger, identityName string, cycle 
 // disk means nothing to do. The snapshot is re-derived from the LIVE set,
 // the same set the resume re-proves against.
 func (e *Engine) ensureDrainStallAsk(state map[string]any) error {
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	if hasOpenAskWithReason(asksDir, drainStalledReason) {
 		return nil
 	}
@@ -510,7 +510,7 @@ func (e *Engine) ensureDrainStallAsk(state map[string]any) error {
 		return err
 	}
 	now := time.Now()
-	survivors := e.drainSurvivors(activeJobRecords(e.Root, e.Mission), now)
+	survivors := e.drainSurvivors(activeJobRecords(e.installation(), e.Mission), now)
 	askID := nextAskID(asksDir, drainStalledReason, map[string]bool{})
 	e.emit("drain-stall-ask-reraised", fmt.Sprintf("resume re-raised the missing %s ask", drainStalledReason), map[string]string{
 		"missionId": e.Mission, "askId": askID,

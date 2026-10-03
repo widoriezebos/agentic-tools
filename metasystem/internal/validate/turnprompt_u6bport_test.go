@@ -33,7 +33,7 @@ func u6bportAssembledPrompt(t *testing.T, intent string) (root, promptPath, turn
 	writeFile(t, filepath.Join(turnDir, "turn.json"),
 		`{"missionId":"m1","turnId":"m1-t1-abcd","cycle":1,"runtime":"fake","model":"fake-model","reconciliation":false,"hostSession":null}`)
 	promptPath = filepath.Join(turnDir, "prompt.md")
-	if err := mission.AssemblePrompt(root, "m1", "m1-t1-abcd", promptPath); err != nil {
+	if err := mission.AssemblePrompt(root, root, "m1", "m1-t1-abcd", promptPath); err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
 	return root, promptPath, turnDir

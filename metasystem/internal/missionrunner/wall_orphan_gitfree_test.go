@@ -276,7 +276,7 @@ func assertOrphanResume(t *testing.T, b *resolutionFileBed, orphan string) {
 	if !ok {
 		t.Fatalf("orphan taint id: %v", second)
 	}
-	asks, err := filepath.Glob(filepath.Join(asksDirPath(b.e.Root, b.e.Mission), "*.json"))
+	asks, err := filepath.Glob(filepath.Join(asksDirPath(b.e.installation(), b.e.Mission), "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

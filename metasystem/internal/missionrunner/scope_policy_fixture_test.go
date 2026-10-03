@@ -261,12 +261,12 @@ func (b *scopePolicyBed) captureOrigin(p scopePolicyPosture) {
 func (b *scopePolicyBed) expectAccountant() {
 	b.facts.add("Prefix", "")
 	b.facts.addErr("LedgerBlobOID", "", mission.ErrNoAnchor, b.engine.Root, b.state,
-		filepath.Join(missionDirPath(b.engine.Root, "demo"), "ledger.md"))
+		filepath.Join(missionDirPath(b.engine.installation(), "demo"), "ledger.md"))
 }
 
 func (b *scopePolicyBed) expectLedgerGuard() {
 	b.facts.addErr("LedgerBlobOID", "", mission.ErrNoAnchor, b.engine.Root, b.state,
-		filepath.Join(missionDirPath(b.engine.Root, "demo"), "ledger.md"))
+		filepath.Join(missionDirPath(b.engine.installation(), "demo"), "ledger.md"))
 }
 
 func (b *scopePolicyBed) expectGit(stdout string, args ...string) {

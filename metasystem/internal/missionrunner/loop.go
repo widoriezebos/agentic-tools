@@ -33,7 +33,7 @@ import (
 // generation. The fixture-only ignore switch exists solely to exercise the
 // stop caller's escalation path.
 func (e *Engine) RunLoopAtGeneration(mode, tag, startSignal string, generation int64, ignoreSignals bool) int {
-	if ignoreSignals && !fixtureauth.FixtureModeRoot(e.Root) {
+	if ignoreSignals && !fixtureauth.FixtureModeRoot(e.installation()) {
 		err := failf(3, "mission run-loop --ignore-term is fixture-only")
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -62,7 +62,7 @@ func (e *Engine) RunLoopAtGeneration(mode, tag, startSignal string, generation i
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		return exitFor(err)
 	}
-	claim, err := stopfence.Creating(e.fenceRoot(), "mission-run-loop", generation, ref)
+	claim, err := stopfence.Creating(e.installation(), "mission-run-loop", generation, ref)
 	if err != nil {
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		return exitFor(err)
@@ -119,7 +119,7 @@ func (e *Engine) internalRunAtGeneration(mode, tag, startSignal string, generati
 			_ = writeStartSignal(startSignal, false, nil, err.Error())
 		}
 		if leaseHeld {
-			aggregateUsageForProjection(e.Root, e.Mission, "failure-ramp")
+			aggregateUsageForProjection(e.installation(), e.Mission, "failure-ramp")
 			// Finalize BEFORE releasing: the shared record belongs to the
 			// lease winner, and after release another runner may own
 			// it. A loser that never held the lease
@@ -146,7 +146,7 @@ func (e *Engine) internalRunAtGeneration(mode, tag, startSignal string, generati
 		return fail(err)
 	}
 	leaseHeld = true
-	e.unattendedCheckout = !lease.CheckoutForeignToLineage(e.Root, MissionLineage(e.Mission))
+	e.unattendedCheckout = !lease.CheckoutForeignToLineage(e.installation(), MissionLineage(e.Mission))
 
 	// Publication is lease-serialized: only the
 	// winner writes the shared runner record, so a losing contender can
@@ -378,7 +378,7 @@ func (e *Engine) releaseLease() {
 func (e *Engine) verifyState(statePath string, anchor bool) (map[string]any, error) {
 	var err error
 	if anchor {
-		_, _, err = e.continuity().VerifyStateWithAnchor(statePath, e.Root, filepath.Join(filepath.Dir(statePath), "ledger.md"))
+		_, _, err = e.continuity().VerifyStateWithAnchor(statePath, e.installation(), filepath.Join(filepath.Dir(statePath), "ledger.md"))
 	} else {
 		_, _, err = mission.VerifyStateShape(statePath)
 	}
@@ -462,7 +462,7 @@ func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expec
 // verb is human-reserved, and the runner is not a human); the acting
 // identity pins the git author through AnchorNamed.
 func (e *Engine) anchorState(statePath, ledgerPath, identityName string) error {
-	if err := mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, "", ""); err != nil {
+	if err := mission.AnchorNamed(statePath, e.installation(), ledgerPath, identityName, "", ""); err != nil {
 		return failf(3, "mission anchor refused: %s", strings.TrimSpace(err.Error()))
 	}
 	return nil
@@ -478,7 +478,7 @@ func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHas
 	anchor := e.pinnedAnchorEffect
 	if anchor == nil {
 		anchor = func(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
-			return mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, stateHash, ledgerSHA)
+			return mission.AnchorNamed(statePath, e.installation(), ledgerPath, identityName, stateHash, ledgerSHA)
 		}
 	}
 	if err := anchor(statePath, ledgerPath, identityName, stateHash, ledgerSHA); err != nil {
@@ -681,7 +681,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	if err := e.checkFileModePinned(); err != nil {
 		return "", "", nil, err
 	}
-	code, reconcileErr := e.continuity().Reconcile(statePath, e.Root, ledger)
+	code, reconcileErr := e.continuity().Reconcile(statePath, e.installation(), ledger)
 	if reconcileErr != nil || code != 0 {
 		detail := ""
 		if reconcileErr != nil {
@@ -981,7 +981,7 @@ func (e *Engine) applyPendingReset(statePath, ledger string, state map[string]an
 	if !last.Reset {
 		return false, nil
 	}
-	ask, err := readJSONDoc(filepath.Join(asksDirPath(e.Root, e.Mission), last.AskID+".json"))
+	ask, err := readJSONDoc(filepath.Join(asksDirPath(e.installation(), e.Mission), last.AskID+".json"))
 	if err != nil {
 		return false, nil
 	}
@@ -994,7 +994,7 @@ func (e *Engine) applyPendingReset(statePath, ledger string, state map[string]an
 	proposed["status"] = "running"
 	proposed["parkReason"] = nil
 	proposed["gatePassed"] = false
-	proposed["waitingList"] = openAskIDs(asksDirPath(e.Root, e.Mission))
+	proposed["waitingList"] = openAskIDs(asksDirPath(e.installation(), e.Mission))
 	if _, err := e.writeState(statePath, proposed); err != nil {
 		return false, err
 	}
@@ -1028,7 +1028,7 @@ func (e *Engine) allocateTurn(cycle int64) (turnID, turnDir string, err error) {
 // proposed. The proposal's waiting list assumes these asks land; writing
 // anything else would make the state lie about what can be answered.
 func (e *Engine) writeProposedAsks(asks []map[string]any) error {
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	for _, ask := range asks {
 		askID, _ := ask["askId"].(string)
 		// The SUCCESSOR lands first, THEN its predecessor
@@ -1067,7 +1067,7 @@ func (e *Engine) parkState(statePath, ledger, reason, identityName string) (map[
 	if err != nil {
 		return nil, err
 	}
-	outcome, err := ParkProposal(e.Root, e.Mission, state, reason, nowISO())
+	outcome, err := ParkProposal(e.installation(), e.Mission, state, reason, nowISO())
 	if err != nil {
 		return nil, err
 	}
@@ -1086,7 +1086,7 @@ func (e *Engine) parkStopLoss(statePath, ledger, identityName string, verdict *S
 	if err != nil {
 		return nil, err
 	}
-	outcome, err := StopLossParkProposal(e.Root, e.Mission, state, verdict.Kind, verdict.askQuestion(), nowISO())
+	outcome, err := StopLossParkProposal(e.installation(), e.Mission, state, verdict.Kind, verdict.askQuestion(), nowISO())
 	if err != nil {
 		return nil, err
 	}
@@ -1167,7 +1167,7 @@ func (e *Engine) patienceBookingAnnotations(state map[string]any, inflightCertif
 		return nil
 	}
 	turnLog, _ := state["turnLog"].([]any)
-	return patienceEvaluate(floors, missionJobs(e.Root, e.Mission), turnLog, inflightCertified)
+	return patienceEvaluate(floors, missionJobs(e.installation(), e.Mission), turnLog, inflightCertified)
 }
 
 // continueOrParkStopLoss derives the stop-loss verdict for a still-running
@@ -1230,7 +1230,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	if err != nil {
 		return nil, err
 	}
-	proposed, err := RecordFailureProposal(e.Root, e.Mission, diskState, turn, detail, outcome, consecutiveFailures, feedsBreaker)
+	proposed, err := RecordFailureProposal(e.installation(), e.Mission, diskState, turn, detail, outcome, consecutiveFailures, feedsBreaker)
 	if err != nil {
 		return nil, err
 	}
@@ -1293,7 +1293,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[string]any, expectSHA string) string {
 	turnLog, _ := state["turnLog"].([]any)
 	annotations := []string{}
-	for _, row := range mission.LandedReturns(e.Root, e.Mission, turnLog) {
+	for _, row := range mission.LandedReturns(e.installation(), e.Mission, turnLog) {
 		if len(row) != 3 {
 			continue
 		}
@@ -1314,7 +1314,7 @@ func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[s
 // at mission end, so no chain outlives the mission unclosed.
 func (e *Engine) closeTerminalChains() error {
 	var failures []string
-	for _, rootJob := range CloseableChains(e.Root, e.Mission) {
+	for _, rootJob := range CloseableChains(e.installation(), e.Mission) {
 		e.delegate("reap", "--job", rootJob)
 		stdout, stderr, code := e.delegate("close", "--job", rootJob, "--runner-closed")
 		if code != 0 {
@@ -1415,7 +1415,7 @@ func (e *Engine) measureCandidate(state map[string]any) string {
 // else the newest terminal one whose return has not yet been consumed —
 // read from job records the runner already trusts, never from a claim.
 func (e *Engine) activeCandidateBranch(state map[string]any) string {
-	jobsDir := jobsDirPath(e.Root)
+	jobsDir := jobsDirPath(e.installation())
 	entries, err := os.ReadDir(jobsDir)
 	if err != nil {
 		return ""
@@ -1665,7 +1665,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 			// The cycle's ledger block is already appended, so the park
 			// proposal must carry this cycle's ledger count or the
 			// anchor refuses and the fail ramp fires anyway.
-			outcome, parkErr := ParkProposal(e.Root, e.Mission, state, "host-failure", nowISO())
+			outcome, parkErr := ParkProposal(e.installation(), e.Mission, state, "host-failure", nowISO())
 			if parkErr != nil {
 				return nil, parkErr
 			}
@@ -1736,7 +1736,7 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 			if err != nil {
 				return nil, err
 			}
-			return ConcludeFaultedTurn(e.Root, e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
+			return ConcludeFaultedTurn(e.installation(), e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
 		},
 		parkHostFailure: true,
 	})
@@ -1793,7 +1793,7 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 // cycleReserveAndBuildTurn reserves the cycle against the fences, reads the
 // contract, allocates the turn, and publishes the pending turn record.
 func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool, error) {
-	if err := mission.ReserveCycleWithClock(e.Root, e.Mission, e.now); err != nil {
+	if err := mission.ReserveCycleWithClock(e.Root, e.installation(), e.Mission, e.now); err != nil {
 		final, ferr := e.parkState(c.statePath, c.ledger, "fence", e.Mission)
 		return final, true, ferr
 	}
@@ -2035,7 +2035,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 // cycleGatePrompt assembles the turn prompt and holds it to the prompt
 // checker; a refusal parks the mission rather than burning a second cycle.
 func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) {
-	if err := mission.AssemblePromptWithGoalSource(e.Root, e.Mission, c.turnID, filepath.Join(c.turnDir, "prompt.md"), e.goalSource); err != nil {
+	if err := mission.AssemblePromptWithGoalSource(e.Root, e.installation(), e.Mission, c.turnID, filepath.Join(c.turnDir, "prompt.md"), e.goalSource); err != nil {
 		detail := strings.TrimSpace(err.Error())
 		if detail == "" {
 			detail = "prompt assembly refused"
@@ -2101,7 +2101,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 	}
 	var overloadMark outage.Mark
 	if overloaded {
-		mark, merr := outage.Record(e.Root, overloadClass, overloadEvidence, "mission-runner", time.Now())
+		mark, merr := outage.Record(e.installation(), overloadClass, overloadEvidence, "mission-runner", time.Now())
 		if merr != nil {
 			mark = outage.Mark{ConsecutiveFailures: 1}
 		}
@@ -2160,7 +2160,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 		// reported in the envelope and judged at adjudication. The CLI
 		// exited zero with no overload evidence: the provider answered,
 		// so a standing outage mark clears.
-		_ = outage.Clear(e.Root)
+		_ = outage.Clear(e.installation())
 		if _, err := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "unresumable", "error": "unresumable",
 			"detail": "host session is not resumable", "endedAt": nowISO(),
@@ -2193,7 +2193,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 	}
 	// A clean exit with no overload evidence is a proven provider
 	// conversation: a standing outage mark clears.
-	_ = outage.Clear(e.Root)
+	_ = outage.Clear(e.installation())
 	return nil, false, nil
 }
 
@@ -2201,7 +2201,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 // publishes the proposed asks; a rejected return concludes as a faulted
 // turn that still drains and measures.
 func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) {
-	verdict, err := AdjudicateFiles(e.Root, e.Mission, c.statePath, c.turnPath, filepath.Join(c.turnDir, "result.json"), c.turnDir, nowISO())
+	verdict, err := AdjudicateFiles(e.installation(), e.Mission, c.statePath, c.turnPath, filepath.Join(c.turnDir, "result.json"), c.turnDir, nowISO())
 	if err != nil {
 		detail := err.Error()
 		if _, patchErr := patchTurn(c.turnPath, map[string]any{
@@ -2238,7 +2238,7 @@ func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) 
 	if err := atomicWriteJSON(c.verdictPath, verdictDoc); err != nil {
 		return nil, true, err
 	}
-	if err := os.MkdirAll(asksDirPath(e.Root, e.Mission), 0o755); err != nil {
+	if err := os.MkdirAll(asksDirPath(e.installation(), e.Mission), 0o755); err != nil {
 		return nil, true, err
 	}
 	if err := e.writeProposedAsks(verdict.Asks); err != nil {
@@ -2269,7 +2269,7 @@ func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
 		inflightCertified: inflightCertified,
 		certified:         c.verdict.Certified,
 		propose: func(measurementValue any, gatePassed bool) (map[string]any, error) {
-			return ConcludeFiles(e.Root, e.Mission, c.statePath, c.turnPath,
+			return ConcludeFiles(e.installation(), e.Mission, c.statePath, c.turnPath,
 				c.verdictPath, c.verdict.ReturnPath, filepath.Join(c.turnDir, "result.json"),
 				filepath.Join(c.turnDir, "measurement.json"))
 		},
@@ -2339,7 +2339,7 @@ func (e *Engine) reclaimCheckout() error {
 	// for HUMAN before reading the lease, and a detached runner whose
 	// launcher ancestor died classifies HUMAN — that must reclaim, not
 	// silently skip and anchor ungated.
-	if view, err := lease.RequireHolder(e.Root, self, nil); err == nil && view.Class == "HOLDER" {
+	if view, err := lease.RequireHolder(e.installation(), self, nil); err == nil && view.Class == "HOLDER" {
 		return nil
 	}
 	started, ok := lease.StartedAt(self, nil)
@@ -2347,14 +2347,14 @@ func (e *Engine) reclaimCheckout() error {
 		return failf(3, "checkout reclaim cannot read its own identity")
 	}
 	session := fmt.Sprintf("mission-runner-%s-%d", e.Mission, self)
-	_, announceErr := lease.Announce(e.Root, session, self, started,
+	_, announceErr := lease.Announce(e.installation(), session, self, started,
 		"mission-runner.sh", "metasystem", MissionLineage(e.Mission))
 	// Holdership is PROVEN through the PRODUCTION gate: the
 	// same RequireHolder every gated verb answers to — holder identity
 	// AND a complete claim stamp; a saved-but-unstamped succession, a
 	// silent live-holder refusal, and the check-to-claim race all fail
 	// this gate and surface here.
-	view, err := lease.RequireHolder(e.Root, self, nil)
+	view, err := lease.RequireHolder(e.installation(), self, nil)
 	if err == nil && view.Class == "HOLDER" {
 		return nil
 	}

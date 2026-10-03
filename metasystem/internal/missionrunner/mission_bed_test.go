@@ -32,7 +32,7 @@ func TestMissionBedPreflightRefusesByName(t *testing.T) {
 	t.Run("unarmed supervisor set", func(t *testing.T) {
 		engine, source := newGitFreePreflightBed(t, "")
 		t.Cleanup(source.done)
-		state := filepath.Join(engine.Root, "artifacts", "agents", "supervision", "state.json")
+		state := filepath.Join(engine.installation(), "artifacts", "agents", "supervision", "state.json")
 		if err := os.Rename(state, state+".unarmed"); err != nil {
 			t.Fatal(err)
 		}

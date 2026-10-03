@@ -431,7 +431,7 @@ type processIntentOwners struct {
 	enroll         goalTerminalEnroller
 	ask            func(root string, in channelAskInput) (channel.Question, []string, int, error)
 	question       func(root, id string) (channel.Question, error)
-	mission        func(root, mission string) (*missionrunner.Engine, error)
+	mission        func(root string, installation stateroot.Installation, mission string) (*missionrunner.Engine, error)
 	channelLink    func(root string) (channel.Provider, channel.DestinationConfig)
 	ui             func(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error)
 	executable     func() (string, error)
@@ -1570,14 +1570,14 @@ func (inv *intentInvocation) answerMission(missionID, askID, answer string) inte
 			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids",
 			Details: []string{"a mission and question id are lowercase words with dashes, and the answer is non-empty text"}})
 	}
-	engine, err := inv.owners.processes.mission(inv.stateRoot, missionID)
+	engine, err := inv.owners.processes.mission(inv.stateRoot, inv.layout.InstallationRoot, missionID)
 	if err != nil {
 		return (intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "mission " + missionID + " could not be opened, so nothing was answered",
 			next: inv.publicArgv("mission", "status", missionID), nextReason: "what the mission is doing", Details: []string{err.Error()}})
 	}
 	var output, errs bytes.Buffer
 	engine.Output, engine.Errors = &output, &errs
-	askPath := filepath.Join(inv.stateRoot, "artifacts", "agents", "missions", missionID, "asks", askID+".json")
+	askPath := inv.layout.InstallationRoot.Path("artifacts", "agents", "missions", missionID, "asks", askID+".json")
 	answeredBefore := missionAskAnswered(askPath)
 	code := engine.Answer(askID, answer)
 	lines := intentOwnerLines(output.String(), errs.String())
@@ -2283,14 +2283,14 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	}
 	var ran intentProcessResult
 	if verb == "status" {
-		root := inv.stateRoot
+		root, installation := inv.stateRoot, inv.layout.InstallationRoot
 		// EM-08: a mission with no state here is not a status record; exit
 		// 0 would tell a script the mission exists.
-		if !missionrunner.HasState(cleanOwnerRoot(root), mission) {
+		if !missionrunner.HasState(installation.Path(), mission) {
 			return inv.render(inv.missionStatusWithoutState(mission))
 		}
 		ran = ownerCall(func(stdout, stderr io.Writer) int {
-			return inv.ownerCalls().missionStatus(stdout, stderr, root, mission)
+			return inv.ownerCalls().missionStatus(stdout, stderr, root, installation, mission)
 		})
 	} else {
 		ran = inv.missionOwnerLaunch(mission, verb)

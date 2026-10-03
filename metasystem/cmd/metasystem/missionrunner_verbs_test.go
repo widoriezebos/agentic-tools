@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -215,7 +216,7 @@ func TestMissionLaunchSeparatedRootsRefusesWhenTheInstallationHasNoEngine(t *tes
 	if code != 1 || !strings.HasPrefix(output, "mission start: "+noEngineRefusal+"\n") {
 		t.Fatalf("launch without an engine = code %d %q, want the refusal", code, output)
 	}
-	if engine, err := missionRunnerCommandEngine(root, "m-1"); engine != nil || err == nil || !strings.HasPrefix(err.Error(), noEngineRefusal) {
+	if engine, err := missionRunnerCommandEngineWith(root, "m-1", stateroot.RepositoryTop); engine != nil || err == nil || !strings.HasPrefix(err.Error(), noEngineRefusal) {
 		t.Fatalf("mission engine without an installation = %v, %v", engine, err)
 	}
 	if record, err := stopfence.Read(installation); err != nil || record.State != stopfence.StateClosed || record.Generation != 6 {

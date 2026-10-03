@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // TestMissionOwnersRunInThisProcess is the U9a witness that the public
@@ -218,7 +219,7 @@ func TestMissionStatusWithoutStateIsJudgedFromTheState(t *testing.T) {
 	b := newProcessBed(t)
 	owners := b.owners()
 	calls := defaultIntentOwnerCalls()
-	calls.missionStatus = func(stdout, stderr io.Writer, root, mission string) int {
+	calls.missionStatus = func(stdout, stderr io.Writer, root string, _ stateroot.Installation, mission string) int {
 		fmt.Fprintln(stdout, "no state here, in other words")
 		return 7
 	}

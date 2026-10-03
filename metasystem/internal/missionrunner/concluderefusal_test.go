@@ -27,7 +27,7 @@ func TestConcludeCycleParksOnProposalRefusal(t *testing.T) {
 		}
 		return nil
 	}
-	runnersDir := filepath.Join(engine.Root, "artifacts", "agents", "missions", "runners")
+	runnersDir := filepath.Join(engine.installation(), "artifacts", "agents", "missions", "runners")
 	os.MkdirAll(runnersDir, 0o755)
 	record, _ := json.Marshal(engine.runnerRecord(os.Getpid(), os.Getpid(), 1, "fixture"))
 	os.WriteFile(filepath.Join(runnersDir, engine.Mission+".json"), append(record, byte(10)), 0o644)

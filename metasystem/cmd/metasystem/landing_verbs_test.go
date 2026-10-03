@@ -1295,6 +1295,8 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
 		writeReceiptFixture(t, root, name, `{"floors":{"internal/proofrun":1},"exempt":{"cmd/tool":"fixture command"}}`)
 	}
+	// The full gate's run-state audit reads its list beside the floors.
+	writeReceiptFixture(t, root, "run-state-audit.json", `{"sites":[]}`)
 	// The tiny module the real Go gate proves: its native selection runs
 	// these tests for real and measures their coverage.
 	writeReceiptFixture(t, root, "internal/proofrun/candidate.go", "package proofrun\n\nfunc Candidate() int { return 1 }\n")

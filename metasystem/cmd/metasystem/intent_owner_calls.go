@@ -56,7 +56,7 @@ type intentOwnerCalls struct {
 	// identity's.
 	channelWait func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int
 	// missionStatus prints a mission's runner status line.
-	missionStatus func(stdout, stderr io.Writer, root, mission string) int
+	missionStatus func(stdout, stderr io.Writer, root string, installation stateroot.Installation, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop, or with
 	// wait runs the whole mission in this process; a closed fence's human
 	// reopening classifies caller.
@@ -74,6 +74,7 @@ type intentOwnerCalls struct {
 // safe tree, or adopt the disputed workspace waiving the named claims.
 type missionResolveRequest struct {
 	root, mission string
+	installation  stateroot.Installation
 	taint         int64
 	variant, tree string
 	by, reason    string
@@ -117,8 +118,8 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return configValidateTo(stdout, stderr, conf, cleanOwnerRoot(repo))
 		},
 		delegate: runDelegateWith,
-		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
-			engine := missionrunner.NewEngine(cleanOwnerRoot(root), mission)
+		missionStatus: func(stdout, stderr io.Writer, root string, installation stateroot.Installation, mission string) int {
+			engine := missionrunner.NewEngineAt(cleanOwnerRoot(root), installation.Path(), mission)
 			engine.Output, engine.Errors = stdout, stderr
 			return engine.Status()
 		},
@@ -148,7 +149,7 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return goalCarryLandingWith(dependencies, stdout, stderr, args)
 		},
 		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
-			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)
+			engine := missionrunner.NewEngineAt(cleanOwnerRoot(request.root), request.installation.Path(), request.mission)
 			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.Pid
 			return engine.ResolveTaint(request.taint, request.variant, request.tree, request.by, request.reason, request.waived)
 		},

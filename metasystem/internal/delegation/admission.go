@@ -407,7 +407,7 @@ func (s *session) missionAuthorizeCap(missionID, job, runtime, model, aliasSourc
 	if err != nil {
 		return "", err
 	}
-	result, err := mission.AuthorizeCapWithClock(s.root, missionID, job, runtime, model, aliasSource, requestedPtr, clock)
+	result, err := mission.AuthorizeCapWithClock(s.root, s.root, missionID, job, runtime, model, aliasSource, requestedPtr, clock)
 	if err != nil {
 		return "", err
 	}

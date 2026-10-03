@@ -350,8 +350,8 @@ func (e *Engine) newWallAccountant(preTree string, state map[string]any, auths [
 		return nil, failf(3, "wall accounting cannot resolve the workspace prefix: %v", err)
 	}
 	anchoredLedger := ""
-	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	if oid, aerr := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath); aerr == nil {
+	ledgerPath := filepath.Join(missionDirPath(e.installation(), e.Mission), "ledger.md")
+	if oid, aerr := e.wallReads().LedgerBlobOID(e.installation(), state, ledgerPath); aerr == nil {
 		anchoredLedger = oid
 	} else if !errors.Is(aerr, mission.ErrNoAnchor) {
 		// Any other anchor failure is the runner's own — never a silent
@@ -953,7 +953,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 				// byte equality would refuse the runner's own lawful
 				// interval; the anchored truth must still be a prefix with
 				// every cross-check intact.
-				if err := e.wallReads().AuthenticateLedger(e.Root, state, filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")); err != nil {
+				if err := e.wallReads().AuthenticateLedger(e.installation(), state, filepath.Join(missionDirPath(e.installation(), e.Mission), "ledger.md")); err != nil {
 					// Could-not-run stays the runner's own;
 					// only a ran-and-answered disagreement is a violation.
 					var runFailure *gittree.RunFailure
@@ -1040,7 +1040,7 @@ func (e *Engine) agentBranchJob(ref string) string {
 	if job == ref || job == "" || strings.Contains(job, "/") {
 		return ""
 	}
-	record, err := readJSONDoc(filepath.Join(jobsDirPath(e.Root), job+".json"))
+	record, err := readJSONDoc(filepath.Join(jobsDirPath(e.installation()), job+".json"))
 	if err != nil {
 		return ""
 	}
@@ -1062,7 +1062,7 @@ func (e *Engine) consumedJobs(state map[string]any) (map[string]bool, error) {
 		return nil, err
 	}
 	jobs := map[string]bool{}
-	authDir := filepath.Join(missionDirPath(e.Root, e.Mission), "authorizations")
+	authDir := filepath.Join(missionDirPath(e.installation(), e.Mission), "authorizations")
 	for digest := range index {
 		record, err := readJSONDoc(filepath.Join(authDir, digest+".json"))
 		if err != nil {
@@ -1157,9 +1157,9 @@ func (e *Engine) judgeRefFence(origin *scopeOrigin, cap *wallCapture, state map[
 
 // measureWorktreeRecordsPath is the runner's registry of measurement
 // worktrees — the record that admits them to the census, written by the
-// measurement side under the project root.
-func measureWorktreeRecordsPath(projectRoot string) string {
-	return filepath.Join(projectRoot, "artifacts", "agents", "measure-worktrees.jsonl")
+// measurement side under the installation.
+func measureWorktreeRecordsPath(installation string) string {
+	return filepath.Join(installation, "artifacts", "agents", "measure-worktrees.jsonl")
 }
 
 // measureWorktreeRecord is one registered measurement worktree: the
@@ -1173,7 +1173,7 @@ type measureWorktreeRecord struct {
 // recordedMeasureWorktrees reads the measurement-worktree registry:
 // resolved path to its record.
 func (e *Engine) recordedMeasureWorktrees() map[string]measureWorktreeRecord {
-	data, err := os.ReadFile(measureWorktreeRecordsPath(e.Root))
+	data, err := os.ReadFile(measureWorktreeRecordsPath(e.installation()))
 	if err != nil {
 		return map[string]measureWorktreeRecord{}
 	}
@@ -1287,10 +1287,10 @@ func (e *Engine) judgeMeasureWorktree(record gittree.WorktreeRecord, pinned meas
 // dispatchWorktreeJob names the dispatch job whose disposable worktree
 // lives at path, empty when the path is not a recorded job worktree.
 func (e *Engine) dispatchWorktreeJob(path string) string {
-	// Dispatch creates job worktrees under the PROJECT root's artifacts
-	// tree — e.Root, not the repository toplevel, which differ in a
+	// Dispatch creates job worktrees under the installation's artifacts
+	// tree, not the repository toplevel, which differ in a
 	// nested checkout.
-	base := filepath.Join(e.Root, "artifacts", "agents", "worktrees")
+	base := filepath.Join(e.installation(), "artifacts", "agents", "worktrees")
 	resolvedBase, err := filepath.EvalSymlinks(base)
 	if err != nil {
 		resolvedBase = base
@@ -1305,7 +1305,7 @@ func (e *Engine) dispatchWorktreeJob(path string) string {
 		return ""
 	}
 	job := filepath.ToSlash(rel)
-	record, err := readJSONDoc(filepath.Join(jobsDirPath(e.Root), job+".json"))
+	record, err := readJSONDoc(filepath.Join(jobsDirPath(e.installation()), job+".json"))
 	if err != nil {
 		return ""
 	}
@@ -1631,8 +1631,8 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 	if cap.Unborn {
 		return "", nil
 	}
-	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	anchoredOID, err := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath)
+	ledgerPath := filepath.Join(missionDirPath(e.installation(), e.Mission), "ledger.md")
+	anchoredOID, err := e.wallReads().LedgerBlobOID(e.installation(), state, ledgerPath)
 	if err != nil {
 		if errors.Is(err, mission.ErrNoAnchor) {
 			return "", nil // a mission that has never anchored (fresh beds)
@@ -1673,8 +1673,8 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 // judgeCommitLedgerCarrier refuses a first-parent commit whose ledger
 // path carries anything but the anchored ledger blob (or nothing).
 func (e *Engine) judgeCommitLedgerCarrier(commit string, state map[string]any) (string, error) {
-	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	anchoredOID, err := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath)
+	ledgerPath := filepath.Join(missionDirPath(e.installation(), e.Mission), "ledger.md")
+	anchoredOID, err := e.wallReads().LedgerBlobOID(e.installation(), state, ledgerPath)
 	if err != nil {
 		if errors.Is(err, mission.ErrNoAnchor) {
 			return "", nil // a mission that has never anchored

@@ -214,8 +214,8 @@ func runnerCommandBound(dir string) boundedexec.Bound {
 const upVerb = "up"
 
 // armSupervision arms supervision for the mission's checkout through the
-// checkout engine's `up --json` entry (METASYSTEM_BIN, else
-// <root>/bin/metasystem), with the checkout's own metasystem root, and
+// installation engine's `up --json` entry (METASYSTEM_BIN, else
+// <installation>/bin/metasystem), with the installation as metasystem root, and
 // reads its answer from the envelope, bounded like every runner command.
 func (e *Engine) armSupervision(args []string) (verbresult.Result, error) {
 	if e.ArmSupervision != nil {
@@ -223,16 +223,16 @@ func (e *Engine) armSupervision(args []string) (verbresult.Result, error) {
 	}
 	engine := os.Getenv("METASYSTEM_BIN")
 	if engine == "" {
-		engine = filepath.Join(e.Root, "bin", "metasystem")
+		engine = filepath.Join(e.installation(), "bin", "metasystem")
 	}
-	command := exec.Command(engine, append([]string{"up", "--metasystem-root", e.Root, "--json"}, args...)...)
+	command := exec.Command(engine, append([]string{"up", "--metasystem-root", e.installation(), "--json"}, args...)...)
 	command.Dir = e.Root
 	// The engine inherits the SCRUBBED environment: it lawfully needs no
 	// repository-steering variable, and any git it spawns must judge the
 	// checkout it runs in.
 	command.Env = gittree.ScrubbedEnviron()
 	read := verbresult.Capture(command, upVerb)
-	return read(boundedexec.Run(command, runnerCommandBound(e.Root), "mission runner command up"))
+	return read(boundedexec.Run(command, runnerCommandBound(e.installation()), "mission runner command up"))
 }
 
 // firstDetail words a wrapped tool's refusal: stderr when it said anything
@@ -429,7 +429,7 @@ type armingIdentity struct {
 // announces itself.
 func (e *Engine) resolveArmingIdentity() (armingIdentity, error) {
 	pid := os.Getpid()
-	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
+	if view, err := lease.ClassifyVerbAt(e.installation(), e.classifierInstallation(), int64(pid)); err == nil {
 		if view.Holder && view.Announcement != nil {
 			return armingIdentity{
 				session: view.Announcement.SessionId,
@@ -784,6 +784,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	}
 	command := exec.Command(self, "mission", "run-loop",
 		"--root", e.Root,
+		"--installation", e.installation(),
 		"--mission", e.Mission,
 		"--mode", mode,
 		"--instance-tag", tag,
@@ -791,7 +792,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 		"--fence-generation", strconv.FormatInt(generation, 10),
 	)
 	if os.Getenv("METASYSTEM_MISSION_RUNNER_IGNORE_TERM") != "" {
-		if !fixtureauth.FixtureModeRoot(e.Root) {
+		if !fixtureauth.FixtureModeRoot(e.installation()) {
 			return failf(3, "the mission runner's ignore-term switch is set outside a fixture repository\nunset it; it serves fixtures only")
 		}
 		command.Args = append(command.Args, "--ignore-term")
@@ -809,7 +810,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	if err != nil {
 		return err
 	}
-	claim, err := stopfence.Creating(e.fenceRoot(), "mission-"+mode, generation, creator)
+	claim, err := stopfence.Creating(e.installation(), "mission-"+mode, generation, creator)
 	if err != nil {
 		return err
 	}

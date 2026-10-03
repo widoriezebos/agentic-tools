@@ -86,7 +86,7 @@ func TestWallRuleScopesToRunnerMissionsOnly(t *testing.T) {
 func TestAssembledPromptCarriesWallRuleBytes(t *testing.T) {
 	repo := promptSandbox(t)
 	out := filepath.Join(t.TempDir(), "prompt.md")
-	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)
 	}
 	assembled, err := os.ReadFile(out)

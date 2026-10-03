@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -312,7 +313,7 @@ func supervisionForSubprocess(t *testing.T, engine *Engine) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
+	supervision := filepath.Join(engine.installation(), "artifacts", "agents", "supervision")
 	for _, name := range []string{"state.json", "last-census.json"} {
 		doc := readTestDoc(t, filepath.Join(supervision, name))
 		doc["fingerprint"] = fingerprint
@@ -340,7 +341,7 @@ func writeFreshSupervision(t *testing.T, engine *Engine) {
 	answer := upAnswered(t, "armed", 0)
 	engine.ArmSupervision = func([]string) (verbresult.Result, error) { return answer, nil }
 	engine.SupervisionFingerprint = func(string) (string, error) { return "fixture-fingerprint", nil }
-	root := engine.Root
+	root := engine.installation()
 	stableNow := time.Now().UTC().Truncate(time.Second)
 	engine.Now = func() time.Time { return stableNow }
 	watcherPid, watcherStart := spawnTaggedHold(t, "fixture-watcher-tag")
@@ -704,7 +705,7 @@ func TestWallPreflightContractIdentity(t *testing.T) {
 	})
 	t.Run("symlink", func(t *testing.T) {
 		b := newPreflightPolicyBed(t)
-		sealedCopy := filepath.Join(b.engine.Root, "artifacts", "sealed-copy.contract.md")
+		sealedCopy := filepath.Join(b.engine.installation(), "artifacts", "sealed-copy.contract.md")
 		if err := os.MkdirAll(filepath.Dir(sealedCopy), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -970,7 +971,7 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 // belt for missions whose birth record is also gone.
 func TestLostStateFreezesTheBornMission(t *testing.T) {
 	engine := buildGitFreeHostCycle(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
+	leasePath := filepath.Join(engine.installation(), "artifacts", "agents", "checkout.lease.json")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-ls", signal); code != 0 {
 		t.Fatalf("the bed mission must be born, exit %d", code)
@@ -1318,10 +1319,10 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		// HOST's identity lives only in turns/*/turn.json, and this
 		// bed (FAKEHOST) creates hosts without any delegate job.
 		recordPaths := []string{}
-		if entries, dirErr := os.ReadDir(filepath.Join(engine.Root, "artifacts", "agents", "jobs")); dirErr == nil {
+		if entries, dirErr := os.ReadDir(filepath.Join(engine.installation(), "artifacts", "agents", "jobs")); dirErr == nil {
 			for _, entry := range entries {
 				if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
-					recordPaths = append(recordPaths, filepath.Join(engine.Root, "artifacts", "agents", "jobs", entry.Name()))
+					recordPaths = append(recordPaths, filepath.Join(engine.installation(), "artifacts", "agents", "jobs", entry.Name()))
 				}
 			}
 		}
@@ -1505,7 +1506,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 
 func equipFullCycleFiles(t *testing.T, engine *Engine) {
 	t.Helper()
-	root := engine.Root
+	root := engine.installation()
 	// The bed binary is COMPILED FROM THE REVIEWED TREE, once per test
 	// process: a prebuilt
 	// bin/metasystem can be stale, and a wrapper fixture passing against
@@ -1548,7 +1549,7 @@ func TestInternalRunFullCycle(t *testing.T) {
 	// A standing outage mark rides into the happy path: any provider
 	// success must clear it (provider-outage-posture), witnessed here
 	// rather than in a second full mission run.
-	if _, err := outage.Record(engine.Root, "overloaded", "API Error: 529", "mission-runner", time.Now()); err != nil {
+	if _, err := outage.Record(engine.installation(), "overloaded", "API Error: 529", "mission-runner", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1620,8 +1621,32 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if err != nil || !strings.Contains(string(ledgerBytes), "- Classification: unresolved;") {
 		t.Fatalf("turn one did not classify the real baseline measurement: %v %s", err, ledgerBytes)
 	}
-	if _, ok := outage.Read(engine.Root); ok {
+	if _, ok := outage.Read(engine.installation()); ok {
 		t.Fatal("a completed host turn must clear the seeded outage mark")
+	}
+}
+
+// On separated roots a mission runs from its contract under the state root,
+// while the runner record, the turns, the mission directory and every other
+// piece of run state are written under the installation, where a stop looks.
+func TestInternalRunSeparatedRootsKeepsRunStateUnderTheInstallation(t *testing.T) {
+	t.Parallel()
+	engine := buildGitFreeHostCycleAt(t, "project", "")
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", filepath.Join(t.TempDir(), "start.json"))
+	state, err := readJSONDoc(filepath.Join(engine.Installation, "artifacts", "agents", "missions", "alpha", "state.json"))
+	if status, _ := state["status"].(string); err != nil || status == "" || status == "running" {
+		t.Fatalf("the mission did not reach a terminal under the installation: %v %v", state["status"], err)
+	}
+	record, _, _ := engine.runnerPaths()
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if !strings.HasPrefix(record, engine.Installation+string(filepath.Separator)) || !pathExists(record) || len(turns) == 0 {
+		t.Fatalf("runner record %s and turns %v are not under the installation", record, turns)
+	}
+	if !pathExists(engine.contractPath()) || pathExists(filepath.Join(engine.Installation, "plans")) {
+		t.Fatal("the mission's contract is not the state root's")
+	}
+	if entries, _ := os.ReadDir(engine.Root); slices.ContainsFunc(entries, func(entry os.DirEntry) bool { return entry.Name() == "artifacts" }) {
+		t.Fatal("the mission wrote run state under the state root")
 	}
 }
 
@@ -1716,7 +1741,7 @@ func TestInternalRunParkRequestCycle(t *testing.T) {
 	if reason, _ := state["parkReason"].(string); reason != "all-streams-parked" {
 		t.Fatalf("the park must come from the accepted stream update: %q", reason)
 	}
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "*.json"))
 	if len(asks) == 0 {
 		t.Fatal("no ask landed for the park")
 	}
@@ -1856,7 +1881,7 @@ func TestInternalRunAnswerAndResumeChain(t *testing.T) {
 	if code := engine.Answer("not-an-ask", "approve: nothing"); code == 0 {
 		t.Fatal("an unknown ask id was answered")
 	}
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "*.json"))
 	if len(asks) == 0 {
 		t.Fatal("no ask on disk")
 	}
@@ -1917,7 +1942,7 @@ func TestAnswerRefusalGrammar(t *testing.T) {
 	if code := engine.Answer("ask-1", "approve: x"); code == 0 {
 		t.Fatal("an askless mission answered")
 	}
-	os.MkdirAll(asksDirPath(engine.Root, engine.Mission), 0o755)
+	os.MkdirAll(asksDirPath(engine.installation(), engine.Mission), 0o755)
 	if code := engine.Answer("", "approve: x"); code == 0 {
 		t.Fatal("an empty ask id answered")
 	}
@@ -2093,7 +2118,7 @@ func TestInternalRunSoloBuildRecoversThenRepeatParks(t *testing.T) {
 
 	// The repeat's ask arrives with the ladder's context: the human
 	// reads that the rung already ran once and refused the second pass.
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("the repeat park must raise one ask: %v", asks)
 	}
