@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M40QF3R8V2YH6N4TDK9WXZB7
-- Status: draft
+- Status: accepted
 - Goals: review-findings-read-as-decisions
 
 Design lane (Fable 5.1), 2026-10-03, from m1e's design input (`agentic-tools-evidence/review-sitting-ux-20261003/design-input.md`) and the room's code at `f8e12178d`. Mocks: `~/metasystem-evidence/agentic-tools-ui/review-findings-20261003/mocks/` (blocking, clean, older; each at 1440 and 390 px).
@@ -156,7 +156,7 @@ Builds (all under `metasystem/`):
 
 - `internal/ui/uitools/mcp.go`, `deposit.go`: the deposit tool's schema takes severity, title, why, recommend and reason on a finding; the dispatch passes them; the encoder emits them as labelled lines beside Anchor and Consequence (RF-05).
 - `internal/ui/partner/host.go`, `review.go`, `service.go`: the decoder reads the five labels; the opening and walk requests ask for them; the admission refuses a missing field or a title with an id, path or timestamp, in words. The opening request can be asked again on the current commit, naming the earlier findings and decisions (RF-03). `project-partner.skill.md` and `skills/project-partner/SKILL.md` (byte-identical): "In a review, examine, then recommend one decision per finding; never give the verdict."
-- `internal/ui/review` and `httpd/review.go`: the Changes answer gains `at` and `by` for the reviewed commit and `currentAt` for the branch tip. `httpd/verdicts.go`: the verdict body carries `tip` and `revision`, compared with the record before the act (RF-02). `cmd/metasystem/ui_candidate.go`: start runs `--at <reviewed commit>` (RF-04).
+- `internal/ui/review` and `httpd/review.go`: the Changes answer gains `at` and `by` for the reviewed commit and `currentAt` for the branch tip. `httpd/verdicts.go` and `internal/ui/act/review.go`: the verdict body carries `tip` and `revision`, passed into the authority and compared there with the exact content the act publishes, after its own read (RF-02, round 2: a check in the handler before the act would leave the authority's reread open); a fixture changes the record between the handler and the authority's read and proves nothing is published. `cmd/metasystem/ui_candidate.go`: start runs `--at <reviewed commit>` (RF-04).
 - `web/_app/src/partner/sitting.ts`, `api.ts`, `Deposit.tsx`: the four record lines; the card in layers.
 - `web/_app/src/review/room.ts`: summary counts and the look's state (reviewing, stopped, failed, complete), the recommended verdict rule, the four decisions (today's ANSWERS renamed, `not a problem` added, `left open` dropped), the Outcome composed locally, the nod's ask list, the verdict request with tip and revision. `Answers.tsx`: the decisions. `ReviewRoom.tsx`: the four steps in one column, the code as a sheet, Leave for now, Review the current version as retip plus the opening again. `Pill.tsx`, `help/terms.ts`, `room.css`: words. Bundle rebuilt in the same commit.
 
@@ -201,3 +201,7 @@ Later, when it hurts:
 ## Rulings that bind
 
 R-121-m0, R-124-m1u (step 1, materiality); R-142-m1e, R-143-m1e (never refuse a person; impact first); R-129-ui (a repeated press is success); R-126-m1e (every act here is a public verb or a record write); R-125-m1u, R-128-ui, R-142-ui (what a session may do: the verdict and the app run already admit it; accept-risk does not yet); R-135-m1e (what a person must produce is prose: a reason, a question); R-4 (a fix-after-landing decision links an open goal, never prose alone).
+
+## Critique round 2 (Astra, the failsafe)
+
+RF-01 and RF-03 to RF-07 closed. RF-02 not closed as written: the comparison moved into the authority, against the content it publishes, with the fixture named in the build list. Closed at the failsafe round with that as a build obligation; the code review checks it.
