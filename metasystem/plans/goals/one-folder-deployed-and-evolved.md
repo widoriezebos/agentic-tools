@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 10
+- Sequence: 11
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Moves where every adopted project's state lives and what an upgrade replaces; a wrong boundary loses project state on upgrade (severity 3); a new layout rule and a new upgrade boundary (novelty 2); every adopter and this repository (exposure 3); every agent turn reads these paths (accumulation 2)"
 - Tier: 3
 - Intent: An adopted repository has one MetaSystem folder, metasystem/, that separates what MetaSystem deploys (replaced only by an upgrade) from what the application evolves as it is built with MetaSystem (plans, designs, decisions, records, testing contract, committed config), so adoption works and newcomers see one folder (Wido 2026-10-02). Spec: plans/designs/one-folder-deployed-and-evolved.md; tier 3; Astra critique under the stop rule before any build.
 - Origin: main
 - Next step: Build step 1 of the accepted design as twelve works stacked on the goal branch and landed together: root-types (reviewed), root-structs (committed f92a2bc52; review blocked on an engine defect reported to m1e: a refused dispatch binds the unit's frozen brief), root-audit (next: the run-state audit committed as a ratchet with its assigned-sites list), mission-roots, root-readers, goal-store, landing-roots, registers-and-records, contracts-and-discovery, adopted-layout, project-state, adoption, citations. Briefs in plans/one-folder-u*.md of the m1f checkout. LANDING ACCEPTANCE (agreed with m1e, 2026-10-03): the goal does not land while the run-state audit (rootaudit; plans/one-folder-audit/) lists any step-1 site; every work's acceptance is zero audit lines for the sites the assigned-sites list gives it. Handoff: plans/handoff-one-folder-deployed-and-evolved.md.
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 34
+- Revision: 35
 - Pinned: m1f
 - Budget: elapsedLimit=3d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -54,4 +54,5 @@ History:
 - 2026-10-03T09:21:28Z JT3N6AK7CFK6WE100WMMRV5CH4-m1f-71c5cb39 release actor=m1f+steward-seat targets=one-folder-deployed-and-evolved reason=rebind the claim to the budget Wido set at 09:54 (critic dispatch refused: revision bound under claim 9, current claim 1)
 - 2026-10-03T09:21:35Z H4YSTTVAQPJXH4TT69XM13B9TF-m1f-71c5cb39 claim actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
 - 2026-10-03T09:24:36Z 57S69H31R499DN8QWC9G9TPHC6-m1f-71c5cb39 edit actor=m1f+steward-seat targets=one-folder-deployed-and-evolved
-Integrity: sha256=96a3d8754de9accf390c55bac57cb263031420edf2894d7c6f6ab45d7c1d74a3
+- 2026-10-03T10:03:30Z 0N8P30YRNHMMRZG9MD1HP7M1CH-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=agent-works-as-project-partner from=1:10 to=1:11 requested-sequence=1
+Integrity: sha256=0c1ce2c6606f34c1ac47aec58800ef734757bd6a2a53d73db1e5420b5b2dab91
