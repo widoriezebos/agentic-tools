@@ -1,15 +1,15 @@
 # cross-repo-guardrails
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 17
 - Intent: What: An app's guardrails can include files that live in another repository at a fixed commit, such as a frozen set of reference answers in a separate corpus repository, or a pinned upstream the app depends on. Why: For apps like morpheus and yoda the most valuable checks live outside their own repository; today the metasystem can only describe them, not enforce them. Pros: Those checks become enforced, and moving a pin becomes a reviewed guardrail change. Cons: Real design work (how to name and prove the pinned files without trusting the network, what happens when the other repository is missing on a machine), and no adopted app needs it yet.
 - Origin: human
 - Next step: Next: Design first, about a day: how a guardrail names another repository, commit and paths; how a run proves it has the right files offline; how moving a pin is reviewed; and what happens when that repository is missing. Done when: a design is accepted and a test app can declare one guardrail from another repository at a pinned commit that a run checks.
 - OpenedAt: 2026-08-25T06:41:14Z
-- Revision: 99
+- Revision: 100
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-30T18:47:26Z because=Parked until morpheus, yoda, or another app whose reference data lives in a separate repository at a pinned commit is adopted under the metasystem. Until then nothing needs it.
+- Abandoned: by=human:Wido at=2026-10-03T09:55:14Z revision=100 opid=TXC5ZCD4WSABD7C54CASE6FKDY-m1e-718ba0eb carried=next-adoption-follow-ups because=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
 
 History:
 - 2026-08-25T06:41:14Z T0EJERXXCQJN9VY3TJ59AY10CA-m1-bf243850 open actor=human:wido targets=cross-repo-guardrails
@@ -111,4 +111,5 @@ History:
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
 - 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
-Integrity: sha256=0f99c63a18dff624af40d7a3b98315882291fcd5735f7e277e5ea93a246244cd
+- 2026-10-03T09:55:14Z TXC5ZCD4WSABD7C54CASE6FKDY-m1e-718ba0eb abandon actor=human:Wido targets=cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=next-adoption-follow-ups reason=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
+Integrity: sha256=09da3e3dcb6093dae5e0e33779b6b40f73efbd7b4124d390aa3c7e9faa8def89
