@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 138
+- Revision: 139
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -181,4 +181,5 @@ History:
 - 2026-10-03T15:39:48Z EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-05T22:00:00Z
 - 2026-10-03T15:55:50Z 6FWMCWAS5BRSZANWD0SH5T1CGS-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-03T09:21:35Z ack
 - 2026-10-03T16:36:41Z VTADZVAQD0PH7ZDN51AFNVYYDH-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T09:56:26Z ack
-Integrity: sha256=ba21328416636935758708d2ace199e14cdd5e0e5a3e2eb873f29bc11a613e34
+- 2026-10-03T18:01:52Z AW504GE0NGC15GPJ5BPVMJS4A8-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T14:50:04Z ack
+Integrity: sha256=725c9ad2085ceead019fb00674b0b8abd0c7fe970b84b578684b8a2500b037ee
