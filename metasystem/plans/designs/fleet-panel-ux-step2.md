@@ -95,6 +95,8 @@ Proof, failing first. httpd: each route refuses every hand but a signed-in one a
 
 ## Open questions for Wido
 
+Answered 2026-10-03 07:56: Wido said "Yes" in the channel (question X3B4QE1J1WF37WSZQWFK0EXT1X), recorded as R-142-ui. The question named questions 2 to 4 below as the defaults unless he said otherwise, so they stand as recommended.
+
 1. Resume and Stop from the browser need one ruling row extending R-125-m1u and R-128-ui: a signed-in session is admitted for `landing start` and `machine stop` from the fleet panel, recorded as above. Recommendation: yes; it is what R2-1 and your step-2 go already say, and the register's readers can then check it.
 2. Stop asks a second press; Pause and Resume do not. Recommendation: keep it.
 3. The machine serving the page is neither offered nor admitted for Stop. Recommendation: keep it; the terminal does that one whole.
