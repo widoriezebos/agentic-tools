@@ -11,7 +11,7 @@
 Open read items (fix unit code-critic-65d9642b14767982a7fe554f): 1
 - ReadItem: id=code-critic-65d9642b14767982a7fe554f-1 read=code-critic-65d9642b14767982a7fe554f state=open addedAt=2026-10-03T18:52:24Z changedAt=- closingReference="" text="roster list/show split metasystem.runtimes on commas and spaces only (cmd/metasystem/intent_roster.go), so a tab after a comma marks that runtime as not run here in the display; unit 4 should read the runtime list with the settings' own split (internal/config/defaults.go, trims all white space)."
 - OpenedAt: 2026-10-01T08:27:46Z
-- Revision: 90
+- Revision: 91
 - Budget: elapsedLimit=4d4h attemptLimit=30 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 5
 - NormApproval: approvedRef=7D7G4RNBMXKYH46MA6R083BAY1-m1e-718ba0eb minutes=2400 reviewRounds=20 goalRevision=85
@@ -19,6 +19,7 @@ Open read items (fix unit code-critic-65d9642b14767982a7fe554f): 1
 - Sliced: machine=m1i lineage=steward-seat revision=26 at=2026-10-03T07:51:28Z
 - AcceptedRisk: finding=F-1 chain=code-critic-e50228a3c252b80b7d384a4a by=Wido opid=4JQCTWG2E0TVBEYDSE1NRAME08-m1e-718ba0eb
 - AcceptedRisk: finding=F-1 chain=code-critic-02e7d5d869a4977e608a6e24 by=Wido opid=G2GBDBD9YZ7B55WS3R9C8BBVYW-m1e-718ba0eb
+- AcceptedRisk: finding=synthetic-fdad80a6c78b5bc06d271d76f69b9927f06ca2fb45642d1932ea6e56304cdf07 chain=code-critic-2128897eb0d1f51e6de8e5e9 by=Wido opid=HEKMRWJRM66EH7VPHB1X4BECAS-m1e-718ba0eb
 - Claimed: machine=m1i lineage=steward-seat at=2026-10-03T21:28:11Z revision=89 accountingRevision=86 episodeAt=2026-10-03T04:14:53Z episodeRevision=14 idleSeconds=25
 - StopCapability: generation=89 revision=89 machine=m1i claimEpoch=1 fenceEpoch=0
 
@@ -113,4 +114,5 @@ History:
 - 2026-10-03T21:28:06Z PRDRPE12W326X62FNV8WDHESP8-m1i-71c5cb39 release actor=m1i+steward-seat targets=rosters-are-configuration-items reason=rebind the claim to the box m1e set in Wido's word at 23:10 (4d4h/30/2400m/1/20)
 - 2026-10-03T21:28:11Z K7CPJYKDY2QVQ9YG8EEKHGKG8W-m1i-71c5cb39 claim actor=m1i+steward-seat targets=rosters-are-configuration-items
 - 2026-10-03T22:11:36Z G2GBDBD9YZ7B55WS3R9C8BBVYW-m1e-718ba0eb accept-risk actor=human:Wido targets=rosters-are-configuration-items reason=Accepted by m1e in Wido word: the durability anchor finding on the replayed store commit 51de2eebc is fixed in a3335943c on the same branch (its own read clean); the replayed patch is byte-identical to the reviewed 1559453d6; the fix lands with it (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1i/metasystem)
-Integrity: sha256=e49b3f2348dfef625d34e6b1ed8a28f60ff03efcd4464d6bd89d50e797c99af6
+- 2026-10-03T22:35:36Z HEKMRWJRM66EH7VPHB1X4BECAS-m1e-718ba0eb accept-risk actor=human:Wido targets=rosters-are-configuration-items reason=Accepted by m1e in Wido word: the critic read the patch and found nothing; its Codex sandbox could not create the Go work dir so the engine filed an unproven placeholder. The same patch (identical to 2d6dc613e) passed go test ./internal/config/ ./internal/launch/ in its unit round (run 20261003t115907-07123cb65f round 3) and the seat ran the Roster tests of internal/config green on the rebased tree (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1i-rosters-are-configuration-items/metasystem)
+Integrity: sha256=fe10a55f726676e518c999af679b36cbebe1d9511e847de1ffac732d1a234f1c
