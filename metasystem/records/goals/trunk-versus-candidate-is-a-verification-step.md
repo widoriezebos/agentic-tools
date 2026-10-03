@@ -1,6 +1,6 @@
 # trunk-versus-candidate-is-a-verification-step
 
-- State: parked
+- State: abandoned
 - Priority: 2
 - Sequence: 33
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without a same-input comparison a behaviour change hides behind a text change, as a Stop-message build did on 2026-09-13; novelty 2: the engine has no notion of running one input against two trees; exposure 3: every landing that changes an output the seat or the human reads; accumulation 2: each hand-crafted comparison is redone per landing"
@@ -9,11 +9,11 @@
 - Origin: human
 - Next step: Next: When it comes back, design the comparison command (what an input is, how main's version is set up beside the change, how differences are classified) and the declaration a landing carries; then build. Done when: a landing declared as text-only is refused when the comparison shows a changed decision.
 - OpenedAt: 2026-09-14T19:26:09Z
-- Revision: 135
+- Revision: 136
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=134 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=8a3d732bf52c9229b057d232deff0723646234ee74ebaaed8d9493170778816f episode=134
-- Parked: by=human:wido at=2026-09-30T18:43:52Z because=Parked: the case that caused it (stop decisions) is now covered by an audit test. Bring it back when another change declared as wording-only turns out to have changed a decision.
+- Abandoned: by=human:Wido at=2026-10-03T12:30:58Z revision=136 opid=6Q34C2G0W2CQAK8N6TNEQRPPZT-m1e-718ba0eb because=Moved to the ideas list at Wido's word (2026-10-03): the case that caused it is covered by an audit test. Open a new goal when another change declared as wording-only turns out to have changed a decision.
 
 History:
 - 2026-09-14T19:26:09Z F328BFJ3QRXCKXGDJQ0YCMNB25-m1e-c6925449 open actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step
@@ -151,4 +151,5 @@ History:
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
 - 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
 - 2026-10-03T12:28:58Z KZV4ERVBRHNVHQEAZ4AG9FQBZ1-m1e-718ba0eb set-priority actor=human:Wido targets=arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=host-setup-from-scratch from=2:34 to=2:33 requested-sequence=20
-Integrity: sha256=1a4e0ccbd895aa88edae8b37d99c7277e7fb088ee524e6c94f91cbfb6a5f3a97
+- 2026-10-03T12:30:58Z 6Q34C2G0W2CQAK8N6TNEQRPPZT-m1e-718ba0eb abandon actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step reason=Moved to the ideas list at Wido's word (2026-10-03): the case that caused it is covered by an audit test. Open a new goal when another change declared as wording-only turns out to have changed a decision.
+Integrity: sha256=45c20ed3ed26c86dc3bacc794c5dd5e3437fb0fd32cbb1b050a5730129348b2a
