@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 19
+- Sequence: 18
 - Intent: What: You can name the branch all work lands in, instead of it always being the repository's default branch. Why: Repositories with a protected main branch allow merges only through pull requests, which would block MetaSystem's own landing. Pros: MetaSystem can work in organisation repositories with protected branches, and promotion to main stays a person's decision. Cons: Needs a proper design; the goal ledger has to move with the chosen branch or the two drift apart.
 - Origin: human
 - Next step: Next: When an adopted repository with protected branches comes up, design it (four to six hours): list every place that assumes the default branch, and cover the five recorded points (two governance systems, person-led promotion, the ledger follows the branch, the setting belongs to the app, inception). Done when: the design is accepted.
 - OpenedAt: 2026-08-23T19:32:07Z
-- Revision: 103
+- Revision: 104
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:39Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24: 'low priority, queued behind the app-guardrail program'; no protected-branch incident since; pull forward when inception targets an org repo with protected branches; needs the recorded design loop carrying the five considerations (two governance systems, human promotion, ledger foll
 
@@ -115,4 +115,5 @@ History:
 - 2026-10-03T09:54:40Z EWXW6GSCK2HDQM5K718QJDSB4J-m1e-718ba0eb abandon actor=human:Wido targets=app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
 - 2026-10-03T09:54:53Z GVEFVEKEM14VAKYC5XWFEH9SCV-m1e-718ba0eb abandon actor=human:Wido targets=app-doctrine,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
 - 2026-10-03T09:55:00Z YPRM0M081ZD597YMBM6YZ61PQT-m1e-718ba0eb abandon actor=human:Wido targets=app-guardrail-custody,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
-Integrity: sha256=ace27903c867ad27d02f1462b95edfb324b76ea64192b3db88b1e77b9ccfa9d9
+- 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
+Integrity: sha256=717b33186d50cdb63319bb58ecad99516f031ce177894806bf1bd39127f98bba

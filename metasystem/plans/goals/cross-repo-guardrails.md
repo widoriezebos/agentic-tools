@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 18
+- Sequence: 17
 - Intent: What: An app's guardrails can include files that live in another repository at a fixed commit, such as a frozen set of reference answers in a separate corpus repository, or a pinned upstream the app depends on. Why: For apps like morpheus and yoda the most valuable checks live outside their own repository; today the metasystem can only describe them, not enforce them. Pros: Those checks become enforced, and moving a pin becomes a reviewed guardrail change. Cons: Real design work (how to name and prove the pinned files without trusting the network, what happens when the other repository is missing on a machine), and no adopted app needs it yet.
 - Origin: human
 - Next step: Next: Design first, about a day: how a guardrail names another repository, commit and paths; how a run proves it has the right files offline; how moving a pin is reviewed; and what happens when that repository is missing. Done when: a design is accepted and a test app can declare one guardrail from another repository at a pinned commit that a run checks.
 - OpenedAt: 2026-08-25T06:41:14Z
-- Revision: 98
+- Revision: 99
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:47:26Z because=Parked until morpheus, yoda, or another app whose reference data lives in a separate repository at a pinned commit is adopted under the metasystem. Until then nothing needs it.
 
@@ -110,4 +110,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
-Integrity: sha256=986cf4477cb27c67fa920cd3442334f18f0dfcdb0ce0948d0c54bf3dbb55a2a5
+- 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
+Integrity: sha256=0f99c63a18dff624af40d7a3b98315882291fcd5735f7e277e5ea93a246244cd

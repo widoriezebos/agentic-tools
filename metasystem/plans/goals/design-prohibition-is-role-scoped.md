@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 20
+- Sequence: 19
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no data or process is at risk, but a design delegate refuses its own brief and the goal stalls until a human notices; novelty 1: the rule is one table row and one role prohibition list; exposure 3: every design round on every machine, on the lane Wido chose for design authoring; accumulation 2: every design brief has to carry an override paragraph, and each one is a place the override can be forgotten or misquoted"
 - Tier: 3
 - Intent: What: The rule "helpers may not write the design" applies to builders only; a helper started to write a design may do so. Why: The working-modes rule forbids design writing to every helper. A design helper once refused its job because of it, and design briefs now need an override paragraph to get past it. Pros: A small text change that removes a trap and keeps builders out of design. Cons: None worth noting.
 - Origin: main
 - Next step: Next: Edit the Design row of the Working Modes table in docs/orchestration.md (and working-modes.md if it mirrors it) so a design helper may write the design and a builder may not; check that brief composition picks up the new row. Done when: a design helper's composed prompt allows writing the design and a builder's still forbids it.
 - OpenedAt: 2026-09-08T06:22:17Z
-- Revision: 101
+- Revision: 102
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -115,4 +115,5 @@ History:
 - 2026-10-03T09:54:40Z EWXW6GSCK2HDQM5K718QJDSB4J-m1e-718ba0eb abandon actor=human:Wido targets=app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
 - 2026-10-03T09:54:53Z GVEFVEKEM14VAKYC5XWFEH9SCV-m1e-718ba0eb abandon actor=human:Wido targets=app-doctrine,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
 - 2026-10-03T09:55:00Z YPRM0M081ZD597YMBM6YZ61PQT-m1e-718ba0eb abandon actor=human:Wido targets=app-guardrail-custody,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
-Integrity: sha256=0c8159fb427ea94fda25f56fefdcd18d90fd69e006c9a6193a094113aeee8ae0
+- 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
+Integrity: sha256=fc1e7d1d1bcd5748d6cc177df6b6768a9ced4f831e0aef67f8ee6f64a06d357f

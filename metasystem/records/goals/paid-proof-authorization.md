@@ -1,15 +1,15 @@
 # paid-proof-authorization
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 16
 - Intent: What: Tests that cost real money (for example a paid benchmark against a model provider) are marked as paid, run only under an explicit spending permission, and have their cost counted against a budget. Why: In the morpheus project the paid benchmark runs on a person's memory and goodwill, with no permission or budget in the system. Pros: Paid checks become safe to schedule; a person approves spending once and can see what it cost. Cons: No test in this repository costs money, so there is nothing here to prove it on.
 - Origin: human
 - Next step: Next: When an adopted project declares a paid test, design a cost class for tests (free, metered, paid), the spending permission (reuse the existing grant mechanism rather than inventing a second one), and the rule that a paid test is never part of the routine test set; then build. Done when: a paid test refuses to run without a permission, and its cost shows against a budget.
 - OpenedAt: 2026-08-25T06:41:21Z
-- Revision: 98
+- Revision: 99
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-13T08:24:03Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: no proof in this repository costs money; the driving case is morpheus's bench in another repository and it queues behind cross-repo-guardrails (slice1, 3:56); premise (no cost class on evidence rows) verified true 09-11; Wido's 08-25 study-area vision, unpark on his word.
+- Abandoned: by=human:Wido at=2026-10-03T09:55:07Z revision=99 opid=1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb carried=next-adoption-follow-ups because=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
 
 History:
 - 2026-08-25T06:41:21Z 802Q46SSG0K5GRFARGE73YXKSG-m1-bf243850 open actor=human:wido targets=paid-proof-authorization
@@ -110,4 +110,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:17 to=3:16
-Integrity: sha256=c63998c69313f9fa1b8dd38b300653065847c95136099c3cb3150eb609398b40
+- 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=next-adoption-follow-ups reason=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
+Integrity: sha256=63f69bbb2defd471951119f272b85f1a5363ec6310f1f7d22e6bcc18c0719dc4
