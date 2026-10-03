@@ -227,6 +227,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
 	flags.Var(model, "model", "requested critic model (subject to roster authorization)")
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
+	join := flags.Bool("join", false, "with --brief: join a read of this build already started; the brief starts a read only")
 	retry := flags.Int64("retry", 0, "examine the critic chain's failed round N once more, in the same chain")
 	selected := flags.String("selected-installation", "", "installation whose configured code-critic roster the critic dispatch resolves (a generated goal worktree's selected installation)")
 	parseErr := flags.Parse(args)
@@ -290,7 +291,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 		}
 	}
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
-		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
+		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {

@@ -41,6 +41,15 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	returnPath := filepath.Join(install, "artifacts", "agents", "crit1", "rounds", "1", "return.json")
 	c.writeJSON(returnPath, map[string]any{"jobId": "crit1", "round": 1, "verdict": "1 finding",
 		"findings": []any{map[string]any{"id": "F1", "material": true, "title": "the proof misses a case"}}})
+	// The commit form of the same build joins its read, records the
+	// examination with the work's attempt and writes the bound template.
+	_, result = c.do("work", "review", "--commit", first, "--goal", c.id)
+	if template, _ := resultData(t, result)["template"].(string); result.Outcome != intentInProgress || template == "" || result.Next == nil || !strings.Contains(result.Next.Reason, template) {
+		t.Fatalf("the commit form of a work's attempt names its decisions template: %+v", result)
+	}
+	if subjects := c.runRecord(run).Subjects; subjects[0].Examination != "crit1" || subjects[0].ExaminationRound != 1 || len(c.delegates) != 1 {
+		t.Fatalf("the commit form records the examination with the work's attempt and starts no second read: %+v delegates=%d", subjects, len(c.delegates))
+	}
 	_, result = c.do("work", "review", c.id, "--work", "connect")
 	template, _ := resultData(t, result)["template"].(string)
 	body, _ := os.ReadFile(template)
