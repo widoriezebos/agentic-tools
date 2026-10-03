@@ -216,17 +216,11 @@ export function freshLine(week: Week): string {
 }
 
 /**
- * A record's first statement, without the rest of it.
- *
  * A row is one line, and a conclusion is often three sentences naming the
- * commit, the machine and what is left. The first one is what tells this row
- * from its neighbours; the whole of it is in the open row.
+ * commit, the machine and what is left. The row carries the first of them, by
+ * the one rule every page's rows are cut by.
  */
-export function firstSentence(text: string): string {
-  const trimmed = text.trim();
-  const cut = trimmed.search(/[.\n]/);
-  return cut > 0 ? trimmed.slice(0, cut).trim() : trimmed;
-}
+export { firstSentence } from "../backlog/sentence";
 
 /** The local calendar day of a recorded instant, or "" where none was. */
 export function dayOf(stamp: string): string {

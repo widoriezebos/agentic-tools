@@ -33,9 +33,14 @@ export type NeedsYou = {
   drafts: Group;
   designs: Group;
   alerts: Group;
+  /** The inbox rows of every kind the five groups above do not list. */
+  other: Group;
   /** True when nothing proves a human on this seat. */
   signIn: boolean;
-  /** The five counts added up. It does not count the sign-in row. */
+  /**
+   * The Decisions inbox's length, which is the six counts added up. It does
+   * not count the sign-in row.
+   */
   total: number;
 };
 

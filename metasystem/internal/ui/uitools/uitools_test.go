@@ -211,7 +211,9 @@ func TestQuestionsAndOverviewAnswerFromThePagesOwnReaders(t *testing.T) {
 	testutil.Expect(t, "the open question", strings.Contains(questions.Body, "Who decides? · open · q1"), true)
 	overview := readers.Answer(OpOverview, Args{})
 	testutil.Expect(t, "the landing page's own numbers",
-		strings.Contains(overview.Body, "- Needs you (2 in all):"), true)
+		strings.Contains(overview.Body, "- Needs you (2 from what this tool reads;"), true)
+	testutil.Expect(t, "and the groups it does not list are counted",
+		strings.Contains(overview.Body, "  - other decisions, read on the Decisions page: "), true)
 	testutil.Expect(t, "and the window it compares against",
 		strings.Contains(overview.Body, "The window this page compares against opens"), true)
 }

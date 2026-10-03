@@ -182,6 +182,23 @@ describe("a row's one line", () => {
     );
     expect(firstSentence("")).toBe("");
   });
+
+  // A stop ends the statement only where white space or the end of the line
+  // follows it: the one in a file name, a path or a number is inside a word.
+  // The line is plain text, so the marks that set code apart are not in it.
+  it("is not cut at a stop inside a path or a number, and carries no backticks", () => {
+    expect(
+      firstSentence(
+        "The open-work scanner (`scripts/agents/open-work.py`, run by the stop hook) reads only its own log.",
+      ),
+    ).toBe("The open-work scanner (scripts/agents/open-work.py, run by the stop hook) reads only its own log");
+    expect(firstSentence("internal/supervise race-mode coverage is 85.3% against its 89.5% ratchet floor.")).toBe(
+      "internal/supervise race-mode coverage is 85.3% against its 89.5% ratchet floor",
+    );
+    expect(firstSentence("Version 1.2 shipped. Then more.")).toBe("Version 1.2 shipped");
+    expect(firstSentence("Is it ready? It is.")).toBe("Is it ready?");
+    expect(firstSentence("One line\nand a second. And more.")).toBe("One line");
+  });
 });
 
 describe("known problems", () => {

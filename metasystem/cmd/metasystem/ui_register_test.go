@@ -16,8 +16,11 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 )
 
 const registerFixture = "# Standing rulings register\n\n" +
@@ -72,6 +75,49 @@ func TestTheSelfHostedLayoutNamesTheRegisterWhereItAlwaysWas(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(named))); err != nil {
 		t.Fatalf("the destination the payload names does not open: %v", err)
 	}
+}
+
+// The self-hosted layout keeps the steward's records beneath the state root,
+// a directory inside the Git checkout. A notice, a health verdict and an open
+// question written where the steward and the channel write them are what the
+// interface's readers return, and the checkout holds none of them.
+func TestTheSelfHostedLayoutReadsWhatTheStewardWroteBeneathTheStateRoot(t *testing.T) {
+	t.Parallel()
+	checkout := t.TempDir()
+	state := filepath.Join(checkout, "metasystem")
+	roots := lifecycle.Roots{Checkout: checkout, Installation: state, StateRoot: state}
+	plant := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plant(steward.NotificationJournalPath(state),
+		`{"id":"n1","at":"2026-10-03T08:00:00Z","message":"the seat is waiting","source":"steward","delivered":true}`+"\n")
+	plant(steward.HealthRecordPath(state),
+		`{"verdict":{"observedAt":"2026-10-03T08:00:00Z","aggregate":"alive","roles":[]}}`)
+	plant(filepath.Join(state, "artifacts", "agents", "channel", "questions", "q1.json"),
+		`{"id":"q1","goal":"g","openedAt":"2026-10-03T08:00:00Z","state":"open"}`)
+
+	notices, err := notifications.Page(notificationJournal(roots), 10, "")
+	if err != nil {
+		t.Fatalf("reading the journal: %v", err)
+	}
+	testutil.Expect(t, "the notice the steward journalled", len(notices), 1)
+	health := seatHealth(roots)
+	if health == nil {
+		t.Fatal("the recorded health verdict was not read")
+	}
+	testutil.Expect(t, "the recorded verdict", health.State, "alive")
+	testutil.Expect(t, "the open question", len(openAsks(roots)), 1)
+
+	if _, statErr := os.Stat(steward.NotificationJournalPath(checkout)); !os.IsNotExist(statErr) {
+		t.Fatalf("the checkout has a journal of its own: %v", statErr)
+	}
+	testutil.Expect(t, "the checkout records no verdict", fleet.ReadHealth(checkout) == nil, true)
 }
 
 // An installation outside the checkout has no checkout-relative path at all.

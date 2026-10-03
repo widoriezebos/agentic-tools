@@ -54,37 +54,16 @@ func TestAnInstantIsNewWhenItIsAfterTheWindow(t *testing.T) {
 func TestACalendarDateIsNewFromTheWindowsOwnDay(t *testing.T) {
 	t.Parallel()
 
-	// A question's opened column is a day rather than an instant. The window
-	// opened at 23:00 on 2026-09-23; a question opened on 2026-09-23 is new,
-	// because the day the window opened on is a day the human may not have
-	// seen the whole of, and reading the day as midnight would call this
-	// morning's question old.
-	in := everyKind()
-	in.Since = time.Date(2026, 9, 23, 23, 0, 0, 0, time.UTC)
-	in.Project.Questions = []project.Question{
-		{ID: "Q-same", Opened: "2026-09-23", Question: "Opened on the window's own day", Status: statusOpen},
-		{ID: "Q-after", Opened: "2026-09-24", Question: "Opened the day after", Status: statusOpen},
-		{ID: "Q-before", Opened: "2026-09-22", Question: "Opened the day before", Status: statusOpen},
-	}
-	page := Compose(in, observed)
-
-	want := map[string]bool{"Q-same": true, "Q-after": true, "Q-before": false}
-	for _, need := range page.NeedsYou {
-		if need.Kind != KindQuestion {
-			continue
+	// A date recorded as a day is a day rather than an instant. The window
+	// opened at 23:00 on 2026-09-23; a row dated 2026-09-23 is new, because
+	// the day the window opened on is a day the human may not have seen the
+	// whole of, and reading the day as midnight would call this morning's
+	// row old.
+	since := time.Date(2026, 9, 23, 23, 0, 0, 0, time.UTC)
+	for day, expected := range map[string]bool{"2026-09-23": true, "2026-09-24": true, "2026-09-22": false} {
+		if got := newSince(day, false, since); got != expected {
+			t.Errorf("%s: new = %v, want %v", day, got, expected)
 		}
-		expected, named := want[need.ID]
-		if !named {
-			t.Errorf("an unexpected question: %q", need.ID)
-			continue
-		}
-		if need.New != expected {
-			t.Errorf("%s: new = %v, want %v", need.ID, need.New, expected)
-		}
-		delete(want, need.ID)
-	}
-	if len(want) != 0 {
-		t.Errorf("the inbox lost a question: %v", want)
 	}
 }
 
@@ -251,6 +230,9 @@ func TestAReviewWithNoRegisterRowStillCarriesItsSchedule(t *testing.T) {
 	}
 	if review.Words != "" || review.Context != "" {
 		t.Errorf("the review invented words nobody wrote: %q / %q", review.Words, review.Context)
+	}
+	if review.Title != "R-2" {
+		t.Errorf("a review with no words is titled %q, want its id", review.Title)
 	}
 }
 

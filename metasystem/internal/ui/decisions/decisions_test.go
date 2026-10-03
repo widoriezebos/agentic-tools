@@ -1,6 +1,7 @@
 package decisions
 
 import (
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -46,10 +47,10 @@ func needOf(t *testing.T, page Page, kind string) Need {
 // rather than over ten pages that each prove one rule.
 func everyKind() Inputs {
 	awaiting := row("g1-s40", "Approve this one. The rest of the intent.", backlog.LaneToDo)
-	awaiting.Priority, awaiting.Sequence = 2, 1
+	awaiting.Priority, awaiting.Sequence = 1, 3
 
 	second := row("g1-s41", "The second thing waiting for an approval", backlog.LaneToDo)
-	second.Priority, second.Sequence = 2, 2
+	second.Priority, second.Sequence = 1, 4
 
 	renew := row("g1-s42", "The approval on this one has expired", backlog.LaneToDo)
 	renew.State = goal.StateApproved
@@ -196,7 +197,7 @@ func TestTheInboxCarriesOneRowOfEveryKindTheDesignNames(t *testing.T) {
 		counted[need.Kind]++
 	}
 	want := map[string]int{
-		KindApproval: 2, KindRenewal: 2, KindAsk: 1, KindQuestion: 1,
+		KindApproval: 2, KindRenewal: 2, KindAsk: 1,
 		KindParked: 1, KindStopped: 1, KindDraft: 1, KindLanded: 1,
 		KindRulingReview: 1, KindAlert: 1, KindLanding: 1,
 	}
@@ -235,7 +236,6 @@ func TestEverySilenceLineIsTheOneTheEngineMakesTrue(t *testing.T) {
 		// than for continuing under one.
 		{KindRenewal, []string{"no fresh claim is admitted", "work already claimed continues; renew at the goal"}},
 		{KindAsk, []string{"no recorded consequence"}},
-		{KindQuestion, []string{"it stays open"}},
 		{KindParked, []string{"it stays parked"}},
 		{KindStopped, []string{"it stays stopped; its claim keeps the goal"}},
 		{KindDraft, []string{"it stays a draft, shown as one on Project"}},
@@ -511,6 +511,64 @@ func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
 	}
 }
 
+// What waits on the person's approval is the unapproved goal they ranked
+// first. A lower rank and no rank are ideas on the Backlog, and an open row of
+// the questions register is the project's own list: neither is in the inbox.
+// A seat's open channel question is.
+func TestOnlyAPriorityOneGoalAndAChannelQuestionNeedThePerson(t *testing.T) {
+	t.Parallel()
+	first := row("g-first", "Ranked first", backlog.LaneToDo)
+	first.Priority = 1
+	lower := row("g-lower", "Ranked second", backlog.LaneToDo)
+	lower.Priority = 2
+	unranked := row("g-unranked", "Never ranked", backlog.LaneToDo)
+	unranked.Priority = 0
+	in := Inputs{
+		Rows: []backlog.Row{first, lower, unranked},
+		Project: project.Pane{Questions: []project.Question{
+			{ID: "Q-1", Opened: "2026-09-20", Question: "Which census format?", Status: "open"},
+		}},
+		Asks:  []channel.Question{{ID: "q-1", Goal: "g-first", Kind: "decision", State: "open", OpenedAt: observed}},
+		Human: Standing{Proven: true},
+	}
+	if !AwaitsApproval(first) || AwaitsApproval(lower) || AwaitsApproval(unranked) {
+		t.Fatalf("awaiting approval: first %v, lower %v, unranked %v; want only the first",
+			AwaitsApproval(first), AwaitsApproval(lower), AwaitsApproval(unranked))
+	}
+
+	page := Compose(in, observed)
+	kinds := []string{}
+	for _, need := range page.NeedsYou {
+		kinds = append(kinds, need.Kind+":"+need.ID)
+	}
+	sort.Strings(kinds)
+	if strings.Join(kinds, ",") != "approval:g-first,ask:q-1" {
+		t.Fatalf("the inbox is %v, want the first-ranked goal and the channel question", kinds)
+	}
+	if page.Counts.NeedsYou != 2 || page.Counts.Waiting != 1 {
+		t.Errorf("counts = %+v, want two rows of which one approval", page.Counts)
+	}
+}
+
+// A title is the opening sentence of the first line, as plain text. A stop
+// inside a word, a path or a number does not end the sentence.
+func TestATitleIsTheFirstSentenceAsPlainText(t *testing.T) {
+	t.Parallel()
+	for _, one := range []struct{ name, text, title string }{
+		{"one sentence of several", "Approve this one. The rest of the intent.", "Approve this one"},
+		{"a stop inside a path", "The scanner (`scripts/agents/open-work.py`) reads its own log. More.",
+			"The scanner (scripts/agents/open-work.py) reads its own log"},
+		{"a stop inside a number", "Coverage is 85.3% against its 89.5% floor.", "Coverage is 85.3% against its 89.5% floor"},
+		{"the first line only", "A ruling with no stop\nand a second line", "A ruling with no stop"},
+		{"a question", "Is it ready? It is.", "Is it ready?"},
+		{"nothing at all", "", ""},
+	} {
+		if got := firstSentence(one.text); got != one.title {
+			t.Errorf("%s: title %q, want %q", one.name, got, one.title)
+		}
+	}
+}
+
 // The register is where the caller says it is, and every destination naming
 // it says the same thing, so "open the register" opens.
 func TestTheRegisterPathTravelsAndEveryDestinationUsesIt(t *testing.T) {
@@ -591,6 +649,10 @@ func TestAnInboxReviewIsADueDateAndNeverAnEvent(t *testing.T) {
 		t.Fatalf("the inbox judged an event or missed a due date: %v", reviews)
 	}
 	need := needOf(t, page, KindRulingReview)
+	// The row is called by what was ruled, and is still identified by its id.
+	if need.Title != "A temporary ruling whose review has come round" || need.ID != "R-2" {
+		t.Fatalf("the review is titled %q under id %q, want the ruling's sentence under R-2", need.Title, need.ID)
+	}
 	if need.Asked != "Review R-2, due 2026-09-20: adopt, revise or withdraw" {
 		t.Fatalf("the review did not say what is being asked: %q", need.Asked)
 	}
@@ -650,7 +712,6 @@ func TestTheOrderIsDeadlinesThenPastDueThenApprovalsThenTheOldest(t *testing.T) 
 		"approval/g1-s40",
 		"approval/g1-s41",
 		// Then everything else, oldest first.
-		"question/Q-1",
 		"draft/d-open",
 		"parked/g1-s50",
 		"landed/d-landed",

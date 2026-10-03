@@ -190,6 +190,16 @@ describe("a row's one line", () => {
     );
   });
 
+  // A ruling names files and versions, and the stop inside one of those does
+  // not end its first sentence.
+  it("reads a ruling's first sentence past a stop inside a file name or a number", () => {
+    const words = "The gate reads `settings.json` at 2.5 minutes a round. The rest of it.";
+
+    expect(rowLine(need({ kind: "ruling-review", id: "R-9", words }))).toBe(
+      "The gate reads settings.json at 2.5 minutes a round",
+    );
+  });
+
   it("falls back to the id where the record says nothing", () => {
     expect(rowLine(need({ kind: "ruling-review", id: "R-7", words: "" }))).toBe("R-7");
     expect(rowLine(need({ kind: "draft", id: "d-none", title: "" }))).toBe("d-none");

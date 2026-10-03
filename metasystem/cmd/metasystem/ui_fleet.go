@@ -63,13 +63,16 @@ func fleetReader(
 		// was read and one that could not be read look the same, and the
 		// second must not be judged as every machine having published
 		// nothing — a verdict that would flag every claim on the board.
+		// What the steward recorded for this seat is read from the state
+		// root it wrote beneath; the checkout is named only where Git or the
+		// interface's own launch records are meant.
 		machine, enrolled := seat.Machine(roots.Checkout)
-		publication, publicationProblem := fleet.ReadPublication(roots.Checkout)
+		publication, publicationProblem := fleet.ReadPublication(roots.StateRoot)
 		// The job records are read ONCE and both readings come off that one
 		// read: the newest chain this seat's fact line says, and every job in
 		// flight its row opens to. Two reads a moment apart could name one
 		// job as newest and then list a set it is not in.
-		jobs := seat.ReadWork(roots.Checkout)
+		jobs := seat.ReadWork(roots.StateRoot)
 		running, runningProblem := seat.NewestChain(jobs)
 		// The launches this host holds, reconciled on the way in: a running
 		// record whose process is dead is marked failed here, because a read
@@ -81,12 +84,12 @@ func fleetReader(
 			This: machine, NoNickname: !enrolled,
 			Presence: presence, PresenceProblem: problem, Copy: copied,
 			Observation: observed, Board: board,
-			Previous:    fleet.ReadStandings(roots.Checkout),
+			Previous:    fleet.ReadStandings(roots.StateRoot),
 			Window:      seatPresenceWindow(roots.Installation),
 			Publication: publication, PublicationProblem: publicationProblem,
-			Health:  fleet.ReadHealth(roots.Checkout),
+			Health:  seatHealth(roots),
 			Running: running, RunningProblem: runningProblem,
-			Jobs: jobs, Box: steward.SeatBox(roots.Checkout, now),
+			Jobs: jobs, Box: steward.SeatBox(roots.StateRoot, now),
 			Launches: launches, Present: launch.Present, Launching: launching,
 		}, now), nil
 	}

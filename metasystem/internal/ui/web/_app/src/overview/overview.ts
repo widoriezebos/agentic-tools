@@ -173,12 +173,24 @@ export type Kind = { id: string; label: string; group: Group; to: string | null 
 export function needsKinds(needs: NeedsYou): Kind[] {
   const all: Kind[] = [
     { id: "approvals", label: "Goals awaiting your approval", group: needs.approvals, to: backlogPath() },
-    { id: "questions", label: "Open questions", group: needs.questions, to: projectPath("questions") },
+    { id: "questions", label: "Open questions", group: needs.questions, to: DECISIONS_PATH },
     { id: "drafts", label: "Drafts to accept", group: needs.drafts, to: projectPath("designs") },
     { id: "designs", label: "Designs to mark done", group: needs.designs, to: projectPath("designs") },
     { id: "alerts", label: "Alerts and handoffs", group: needs.alerts, to: null },
   ];
   return all.filter((kind) => kind.group.count > 0);
+}
+
+/** The page that lists everything waiting on a human, whole. */
+export const DECISIONS_PATH = "/decisions";
+
+/**
+ * What the block says about the inbox rows no kind above lists, or null where
+ * there are none. The total counts them, so the block says where they are
+ * rather than showing a figure its rows do not add up to.
+ */
+export function otherLine(needs: NeedsYou): string | null {
+  return needs.other.count > 0 ? `${String(needs.other.count)} more on Decisions` : null;
 }
 
 /* ------------------------------------------------------- what changed -- */
@@ -521,8 +533,8 @@ export function destinationFor(where: Where): Destination {
       return where.id === "" ? { kind: "none" } : { kind: "link", to: goalPath(where.id) };
     case "document":
       return where.id === "" ? { kind: "none" } : { kind: "link", to: documentPath(where.id) };
-    case "question":
-      return { kind: "link", to: projectPath("questions") };
+    case "decisions":
+      return { kind: "link", to: DECISIONS_PATH };
     case "notification":
       return { kind: "notifications", at: where.id };
     case "backlog":
