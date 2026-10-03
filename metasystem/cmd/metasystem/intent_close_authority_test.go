@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
@@ -46,5 +49,37 @@ func TestIntentCloseRecordWriterPreflight(t *testing.T) {
 	announceProofFixtureHolder(t, admitted.install)
 	if cause, err := recordWriterPreflight(admitted.install, "crit1"); err != nil {
 		t.Fatalf("the authenticated lease holder: %q %v", cause, err)
+	}
+
+	// The same session closing from its unarmed goal worktree, where nothing
+	// is announced, is still the holder: its lease is the primary checkout's.
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", admitted.root(), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	git("commit", "--allow-empty", "-q", "-m", "base")
+	worktree := filepath.Join(t.TempDir(), "goal-worktree")
+	git("worktree", "add", "-q", "-b", "goal/crit", worktree)
+	top, err := filepath.EvalSymlinks(admitted.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := filepath.EvalSymlinks(admitted.install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(top, install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreeInstall := filepath.Join(worktree, relative)
+	if err := os.MkdirAll(worktreeInstall, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if cause, err := recordWriterPreflight(worktreeInstall, "crit1"); err != nil {
+		t.Fatalf("the lease holder in its unarmed goal worktree: %q %v", cause, err)
 	}
 }
