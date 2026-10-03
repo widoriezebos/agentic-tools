@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: What: Work that can do destructive things can be closed on the shipped settings, because the required live check can actually be run. Why: The shipped settings give the live check to the main session, which the dispatcher refuses, so such work can never close. It is rare and was worked around once with a local setting. Pros: Removes a dead end. Cons: Only affects rare destructive-reach work in the old dispatch lane.
 - Origin: main
-- Next step: Next: When triggered, pick the smaller fix: give the verifier a launchable lane in the shipped settings with the reason next to it, or record the coordinator's own live check as the verifier job. Done when: a test closes a destructive-reach chain on the shipped settings.
+- Next step: Next: When triggered, pick the smaller fix: give the verifier a launchable lane in the shipped settings with the reason next to it, or record the coordinator's own live check as the verifier job. Done when: a test closes a destructive-reach chain on the shipped settings. 2026-10-03: returns when old-lane-plumbing-is-deleted is done; then re-examine: the refusal it answers came from the old dispatcher, so it may be obsolete under the current launch lane.
 - OpenedAt: 2026-09-10T10:43:49Z
-- Revision: 5
+- Revision: 6
 - BlockedBy: old-lane-plumbing-is-deleted
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -19,4 +19,5 @@ History:
 - 2026-09-30T18:52:58Z 21NPNTW45R3J9C0Y4X9KW1B7TQ-m1e-b6a4eb0a park actor=human:wido targets=live-proof-needs-a-dispatchable-verifier reason=Parked until the next destructive-reach chain is refused for missing live proof (REFUSED-R22-M1-RULING-O-LIVE-PROOF).
 - 2026-10-03T10:01:34Z MN2BDYFYDMHH70DNJBE9HHB979-m1e-718ba0eb unpark actor=human:Wido targets=live-proof-needs-a-dispatchable-verifier
 - 2026-10-03T10:01:42Z X6BW5GV3GWM3RGE262ZPDGV8D4-m1e-718ba0eb block actor=human:Wido targets=live-proof-needs-a-dispatchable-verifier reason=blocked by old-lane-plumbing-is-deleted; returns when it is done
-Integrity: sha256=b2f0db335e6cdaf03314232a1576bee8e3f0ccca1b393edd3c4a910a42181354
+- 2026-10-03T10:01:50Z YM593JMCFWMQ4SM52Z08NS45G6-m1e-718ba0eb edit actor=human:Wido targets=live-proof-needs-a-dispatchable-verifier
+Integrity: sha256=bec9f89e15f51e7f04ed2cdce6ae0e32bb426b227d89d370461efd49148db2da
