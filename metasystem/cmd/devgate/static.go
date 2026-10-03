@@ -270,6 +270,15 @@ func (g *gateRun) collectStatic() int {
 			env = g.env.list()
 		}
 	}
+	// The run-state audit type-checks every package, so it runs only once
+	// the build has passed: a compile error is the build's red, not its own.
+	if g.scratch != "" {
+		if out, ok := d.owners.rootAuditRatchet(g.root); ok {
+			fmt.Fprint(d.stdout, out)
+		} else {
+			reds = append(reds, "run-state audit refused:\n"+strings.TrimRight(out, "\n"))
+		}
+	}
 	if g.fast {
 		var refusalOut bytes.Buffer
 		if d.goTool(g.ctx, g.root, env, []string{"test", "-trimpath", "-p=" + g.workers, "-count=1", "./internal/refusal"}, &refusalOut, &refusalOut) != nil {

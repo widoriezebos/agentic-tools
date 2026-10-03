@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rootaudit"
 )
 
 // owners is every in-process owner the static and full gates consult. Each
@@ -25,6 +27,7 @@ import (
 type owners struct {
 	dependencyRatchet func(root string) (string, bool)
 	parallelRatchet   func(root string) (string, bool)
+	rootAuditRatchet  func(root string) (string, bool)
 	hookStartExits    func(root string) (string, bool)
 	stopSurface       func(root string) (string, bool)
 	projectCheck      func(root string) (string, bool)
@@ -50,6 +53,7 @@ func nativeOwners() owners {
 	return owners{
 		dependencyRatchet: dependencyRatchet,
 		parallelRatchet:   parallelRatchet,
+		rootAuditRatchet:  rootAuditRatchet,
 		hookStartExits:    hookStartExits,
 		stopSurface:       stopSurface,
 		projectCheck:      projectCheck,
@@ -108,6 +112,25 @@ func parallelRatchet(root string) (string, bool) {
 		return refuse(out.String(), "serial Go test count increased")
 	}
 	return "parallel ratchet passed\n", true
+}
+
+// rootAuditRatchet refuses a path to run state built from the state root
+// that run-state-audit.json does not list, and a listed one the scan no
+// longer finds: run state lives under the installation, and the list only
+// shrinks.
+func rootAuditRatchet(root string) (string, bool) {
+	entries, err := rootaudit.ReadBaseline(filepath.Join(root, rootaudit.BaselineFile))
+	if err != nil {
+		return err.Error() + "\n", false
+	}
+	sites, err := rootaudit.Scan(context.Background(), root)
+	if err != nil {
+		return err.Error() + "\n", false
+	}
+	if refusals := rootaudit.Check(entries, sites); len(refusals) != 0 {
+		return strings.Join(refusals, "\n") + "\n", false
+	}
+	return fmt.Sprintf("run-state audit passed: %d open site(s) listed in %s, each owned by a later work\n", len(sites), rootaudit.BaselineFile), true
 }
 
 func hookStartExits(root string) (string, bool) {
