@@ -92,3 +92,17 @@ func TestRefusalReadsAsTwoLines(t *testing.T) {
 		t.Fatalf("detail lost the code, cause, facts or background: %q", detail)
 	}
 }
+
+// The engine's edited source may include a new file git does not track yet.
+// git refuses a stash that names such a path unless untracked files are
+// included, and the remedy would stop at its first command.
+func TestDirtyEnginePathsRemedyStashesNewFilesToo(t *testing.T) {
+	t.Parallel()
+	rendered, err := Render("engine-behind-tip", []Fact{Value("fact", "dirty-engine-paths"), Path("path", "cmd/main.go"), Path("path", "cmd/new_test.go")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(rendered.Remedy, "git stash push --include-untracked -- 'cmd/main.go' 'cmd/new_test.go' && ") || !strings.HasSuffix(rendered.Remedy, " && git stash pop") {
+		t.Fatalf("remedy = %q; want the stash to take untracked paths too, and the pop last", rendered.Remedy)
+	}
+}

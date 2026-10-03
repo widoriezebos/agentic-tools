@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -57,6 +58,12 @@ func (OSHost) Exists(path string) (bool, error) {
 // Canonical resolves a path's symlinks through its deepest existing ancestor,
 // so a path whose leaf is absent still names the directory it would land in.
 func (OSHost) Canonical(path string) (string, error) { return realpath.Resolve(path), nil }
+
+// StateRoot is the directory an installation keeps its ledger beneath, from
+// the state-root owner an existing checkout resolves it through.
+func (OSHost) StateRoot(installation string) (string, error) {
+	return stateroot.RootForInstallation(installation)
+}
 
 // EvidenceRoot is an installation's evidence root as the engine's one owner
 // resolves it under this host's view of the environment.

@@ -294,6 +294,9 @@ func (b *signedInLaunchBed) MakeDir(path string) (bool, error) {
 func (b *signedInLaunchBed) EvidenceRoot(installation string) (config.EvidenceRoot, error) {
 	return config.EvidenceRoot{Path: filepath.Join(b.evidence, filepath.Base(filepath.Dir(installation))), Origin: "default"}, nil
 }
+func (b *signedInLaunchBed) StateRoot(installation string) (string, error) {
+	return filepath.Dir(installation), nil
+}
 func (b *signedInLaunchBed) CopyLocalConf(string, string) error { return nil }
 func (b *signedInLaunchBed) MakeManifest(string) error          { return nil }
 func (b *signedInLaunchBed) Stamp(string) (string, error)       { return signedInLaunchStamp, nil }

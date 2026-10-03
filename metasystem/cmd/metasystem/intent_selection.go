@@ -206,6 +206,8 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 // corrected by hand after a build. The range is its only record.
 type manualWorkItem struct {
 	Unit, Commit, Worktree, Goal string
+	// ReadsWaived says the goal lands its work without a read (tier 1).
+	ReadsWaived bool
 }
 
 func (item manualWorkItem) read() (branch.BranchReadResult, error) {
@@ -221,11 +223,16 @@ func (item manualWorkItem) stage() string {
 		return "reviewed; its read is collected but not yet published (attestation " + shortSHA(read.AttestationCommit) + ")"
 	case err == nil && read.State == "examining":
 		return "committed and under independent examination"
+	case item.ReadsWaived:
+		return "committed, ready to land without a read"
 	}
 	return "committed, ready for review"
 }
 
 func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) ([]string, string) {
+	if item.ReadsWaived {
+		return inv.publicArgv("work", "land", id), "a tier-1 goal's work lands without a read"
+	}
 	read, err := item.read()
 	if err == nil && read.State == "collected" && read.Published {
 		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
@@ -259,6 +266,10 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 	if err != nil {
 		return work, nil
 	}
+	waived := false
+	if projection, _, problem := inv.projection(); problem == nil && projection.Tree != nil {
+		waived = goal.ReadsWaived(projection.Tree.Live[id])
+	}
 	var manual []manualWorkItem
 	for _, commit := range commits {
 		if commit.Kind != branch.Unit || len(commit.Units) != 1 {
@@ -275,7 +286,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 			}
 			work = slices.Delete(work, index, index+1)
 		}
-		manual = append(manual, manualWorkItem{Unit: name, Commit: commit.ID, Worktree: worktree, Goal: id})
+		manual = append(manual, manualWorkItem{Unit: name, Commit: commit.ID, Worktree: worktree, Goal: id, ReadsWaived: waived})
 	}
 	return work, manual
 }

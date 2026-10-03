@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -91,16 +92,57 @@ func (s *session) reportPlanDrift() {
 
 // requireFreshCensus is require_fresh_census: the engine's freshness and
 // fingerprint verdict, or its exit code.
+//
+// The census is read where the system runs: a linked worktree's
+// installation (a goal worktree) has none of its own, so its gate reads the
+// installation in its primary checkout, and a refusal names that checkout.
 func (s *session) requireFreshCensus() error {
-	verdict := filepath.Join(s.agents, "supervision", "last-census.json")
-	state := filepath.Join(s.agents, "supervision", "state.json")
+	root, repo := s.supervisedInstallation()
+	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
+	verdict := filepath.Join(supervision, "last-census.json")
+	state := filepath.Join(supervision, "state.json")
 	// The re-arm remedy named in census refusals: the public form that arms
 	// a checkout (the `up` owner).
 	arm := "metasystem system start"
 	if !exists(verdict) {
-		return s.die(1, fmt.Sprintf("dispatch refused: census verdict is absent; run %s --repo %s", arm, s.repoScope))
+		return s.die(1, fmt.Sprintf("dispatch refused: census verdict is absent; run %s --repo %s", arm, repo))
 	}
-	return s.censusFresh(verdict, state, arm)
+	return s.censusFresh(root, repo, verdict, state, arm)
+}
+
+// supervisedInstallation names the installation whose running system
+// supervises this session's root, and its repository scope. An
+// installation that was armed itself (its own arming record or census
+// exists) runs its own system. Otherwise a linked worktree's is the same
+// installation in its primary checkout (landpath.PrimaryInstallation). A
+// root git cannot map keeps its own, whose census it then must have.
+func (s *session) supervisedInstallation() (root, repo string) {
+	own := filepath.Join(s.root, "artifacts", "agents", "supervision")
+	if exists(filepath.Join(own, "state.json")) || exists(filepath.Join(own, "last-census.json")) {
+		return s.root, s.repoScope
+	}
+	git := func(args ...string) landpath.GitResult {
+		stdout, stderr, err := s.l.ports.Git.Run(s.ctx, s.root, args...)
+		code := 0
+		if err != nil {
+			code = 1
+		}
+		return landpath.GitResult{Stdout: stdout, Stderr: stderr, Code: code}
+	}
+	checkout, installation, problem := landpath.PrimaryInstallation(git, s.root)
+	if problem != "" || installation == "" {
+		return s.root, s.repoScope
+	}
+	if resolved, err := filepath.EvalSymlinks(installation); err == nil {
+		installation = resolved
+	}
+	if installation == s.root {
+		return s.root, s.repoScope
+	}
+	if resolved, err := filepath.EvalSymlinks(checkout); err == nil {
+		checkout = resolved
+	}
+	return installation, checkout
 }
 
 // requireOpenDispatchFence is require_open_dispatch_fence.
@@ -511,8 +553,8 @@ func (s *session) guardRelease() error {
 
 // censusFresh is `job census-fresh --root`: freshness and the fingerprint
 // match are the engine's one verdict.
-func (s *session) censusFresh(verdict, state, arm string) error {
-	fingerprint, err := census.Fingerprint(s.root, s.repoScope)
+func (s *session) censusFresh(root, repo, verdict, state, arm string) error {
+	fingerprint, err := census.Fingerprint(root, repo)
 	if err != nil {
 		s.eprintf("dispatch refused: census fingerprint cannot be computed: %v\n", err)
 		return exitWith(1)
@@ -522,7 +564,7 @@ func (s *session) censusFresh(verdict, state, arm string) error {
 		s.eprintf("dispatch refused: census clock cannot be resolved: %v\n", err)
 		return exitWith(1)
 	}
-	if err := dispatch.CensusFresh(verdict, state, arm, s.repoScope, fingerprint, now); err != nil {
+	if err := dispatch.CensusFresh(verdict, state, arm, repo, fingerprint, now); err != nil {
 		s.eprintln(err.Error())
 		var window dispatch.ArmingWindowError
 		if errors.As(err, &window) {

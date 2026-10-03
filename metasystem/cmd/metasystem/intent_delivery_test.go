@@ -458,15 +458,8 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit2", 1, "crit2", map[string]any{"id": "C1", "material": false})
 	criticDispositions := filepath.Join(b.root(), "crit2.md")
 	b.writeFile(criticDispositions, deliveryDispositionsHeader+"| C1 | noted | wording only | none |\n")
-	code, result = b.do("work", "finish", "j2:crit2", "--dispositions", criticDispositions)
-	expectOutcome(t, "unfolded critic round", code, result, intentRefused)
-	if !strings.Contains(fmt.Sprint(result.Data), "folded through round 0 while terminal round 1 exists") {
-		t.Fatalf("the real close check refuses an unfolded round: %+v", result)
-	}
-	// The reap owner folds each finished round into the register.
-	if advanced, err := dispatchcore.CritiqueRegisterAdvance(b.install, "crit2", "crit2"); err != nil || advanced != "advanced" {
-		t.Fatalf("register advance = %q, %v", advanced, err)
-	}
+	// No follow-up ever folds crit2's round 1: the close below folds its
+	// terminal round itself (findingRegisterRound 1 is asserted at the end).
 	// The multi-chain refusal offers the public close of each chain; the
 	// root and file are substituted into exactly the printed command.
 	_, refused := b.do("design", "review", design, "--tool-calls", "30")
@@ -668,7 +661,9 @@ func TestIntentLandRecovery(t *testing.T) {
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
-	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "reviews": "commit:" + strings.Repeat("3", 40), "findingRegister": []any{}})
+	// The bed has no repository, so the critic root names no commit subject
+	// the close's fold would have to read; the branch read is the bed's.
+	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "findingRegister": []any{}})
 	b.writeReturn("crit9", 1, "crit9", map[string]any{"id": "F1", "material": true})
 	var reads [][]string
 	b.owners.branchRead = func(args []string) (branch.BranchReadResult, int, error) {

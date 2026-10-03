@@ -286,7 +286,9 @@ func (c *connectionBed) criticDispatch(install string) func(string, string, stri
 func (c *connectionBed) writeCritic(install, job, commit, status string, closed bool) {
 	c.t.Helper()
 	record := map[string]any{"jobId": job, "role": "code-critic", "round": 1, "status": status,
-		"reviews": "commit:" + commit, "goalId": c.id, "goalRevision": 1, "findingRegister": []any{}}
+		"reviews": "commit:" + commit, "goalId": c.id, "goalRevision": 1, "findingRegister": []any{},
+		// A dispatched critic root carries its register round and round limit.
+		"findingRegisterRound": 0, "reviewRoundLimit": 3, "criticRoundsConsumed": 0}
 	if closed {
 		subject, present, err := dispatchcore.ComputeReadSubject(dispatchcore.ReadSubjectRequest{RepoRoot: install, Role: "code-critic", Reviews: "commit:" + commit})
 		if err != nil || !present {

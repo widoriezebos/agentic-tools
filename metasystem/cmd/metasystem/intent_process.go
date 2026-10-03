@@ -967,13 +967,15 @@ func runIntentStatusWork(inv *intentInvocation) int {
 }
 
 // jobListView is work status without a target (output-style §6.9): how
-// many jobs run in this checkout, then one row each with its reference,
-// goal, kind, state and start. A place with no repository says it lists
-// launches only.
+// many jobs are listed and where they come from, then one row each with its
+// reference, goal, kind, state and start. Launches are the user's on this
+// host, whichever checkout started them; only the dispatch jobs are this
+// checkout's own, and the headline says both. A place with no repository
+// says it lists launches only.
 func (inv *intentInvocation) jobListView(jobs []intentJob, all bool) func(*textui.Page) {
 	place := "outside a repository"
 	if inv.stateRoot != "" {
-		place = "in " + inv.statusSeatName(inv.layout.GitRoot)
+		place = "among this host's launches and " + inv.statusSeatName(inv.layout.GitRoot) + "'s jobs"
 	}
 	return func(page *textui.Page) {
 		env := page.Env()

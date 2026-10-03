@@ -122,6 +122,20 @@ func TestStaticCollectsEveryRedInOneBlock(t *testing.T) {
 	}
 }
 
+// A red engine build carries the build's own words: a red that says only
+// "build failed" leaves the reader to rerun the build by hand to learn why.
+func TestStaticBuildRedCarriesTheBuildsOwnWords(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	w.statuses["build"], w.outputs["build"] = 1, "cmd/metasystem/main.go:1:1: syntax error\n"
+	if code := w.static(); code != 1 {
+		t.Fatalf("exit %d, want 1:\n%s", code, w.output())
+	}
+	if want := "--- build failed (devgate build):\ncmd/metasystem/main.go:1:1: syntax error\ngo-build: build failed\n"; !strings.Contains(w.stderr.String(), want) {
+		t.Fatalf("stderr lacks %q:\n%s", want, w.stderr.String())
+	}
+}
+
 func TestStaticRefusesABrokenGofmtByName(t *testing.T) {
 	t.Parallel()
 	w := newGateWorld(t)

@@ -8,8 +8,99 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
+
+// Real Git is needed here: its detached worktree and hook subprocess are
+// the ancestry boundary that the wrapper token must cross.
+func TestCommitStagedScratchTokenGitAdapter(t *testing.T) {
+	t.Parallel()
+	t.Run("token_write_refused", func(t *testing.T) {
+		t.Parallel()
+		f := newBranchFixture(t)
+		f.base = f.commit(t, "metasystem/artifacts", "blocks the token directory", "base installation")
+		stage(t, f, "metasystem/code.go", "one")
+		before := snapshotCheckout(t, f.root)
+		worktrees := git(t, f.root, "worktree", "list", "--porcelain")
+		_, err := branch.CommitStaged(branch.CommitRequest{Repo: filepath.Join(f.root, "metasystem"), Remote: "origin", EndpointTip: f.base,
+			GoalID: "goal-a", Unit: "u1", OpID: "scratch-token-failure", Kind: branch.Unit, CheckClaim: claimAllowed})
+		if err == nil || !strings.Contains(err.Error(), "couldn't create its wrapper token, so nothing was committed") {
+			t.Fatalf("token write refusal=%v", err)
+		}
+		requireCheckoutUnchanged(t, f.root, before)
+		if got := git(t, f.root, "worktree", "list", "--porcelain"); got != worktrees {
+			t.Fatalf("failed mint left a scratch worktree: %s", got)
+		}
+		if _, present, _ := localFixtureRef(f.root, "refs/heads/goal/goal-a"); present {
+			t.Fatal("failed mint created a goal branch")
+		}
+		t.Logf("failed closed and removed scratch worktree: %v", err)
+	})
+	for _, prefix := range []string{"", "metasystem"} {
+		for _, amend := range []bool{false, true} {
+			name := "root/create"
+			if prefix != "" {
+				name = "nested/create"
+			}
+			if amend {
+				name = strings.TrimSuffix(name, "create") + "amend_replay"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				f := newBranchFixture(t)
+				if amend {
+					commitUnit(t, f, "u1", "metasystem/code.go", "one")
+					f.commit(t, "metasystem/plans/later.md", "later", "later plan\n\nGoal-Plan: goal-a")
+				}
+				hooks := t.TempDir()
+				log := filepath.Join(hooks, "calls")
+				binary, err := os.Executable()
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := "#!/bin/sh\nexec " + shellquote.Token(binary) + " scratch-token-guard " + shellquote.Token(prefix) + " " + shellquote.Token(log) + "\n"
+				// cherry-pick runs prepare-commit-msg, but not pre-commit.
+				for _, hook := range []string{"pre-commit", "prepare-commit-msg"} {
+					if err := testexec.WriteFile(filepath.Join(hooks, hook), []byte(body), 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				git(t, f.root, "config", "core.hooksPath", hooks)
+				stage(t, f, "metasystem/code.go", "two")
+				tip, err := branch.CommitStaged(branch.CommitRequest{Repo: filepath.Join(f.root, prefix), Remote: "origin", EndpointTip: f.base,
+					GoalID: "goal-a", Unit: "u1", OpID: "scratch-token", Kind: branch.Unit, Amend: amend, CheckClaim: claimAllowed})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := git(t, f.root, "show", tip+":metasystem/code.go"); got != "two" {
+					t.Fatalf("committed content=%q", got)
+				}
+				calls, err := os.ReadFile(log)
+				if err != nil {
+					t.Fatal(err)
+				}
+				paths := strings.Split(strings.TrimSpace(string(calls)), "\n")
+				wantCalls := 2
+				if amend {
+					wantCalls = 3
+					if got := git(t, f.root, "show", tip+":metasystem/plans/later.md"); got != "later" {
+						t.Fatalf("replayed plan=%q", got)
+					}
+				}
+				if len(paths) != wantCalls {
+					t.Fatalf("guard calls=%d want %d: %s", len(paths), wantCalls, calls)
+				}
+				for _, path := range paths {
+					if _, err := os.Stat(path); !os.IsNotExist(err) {
+						t.Fatalf("scratch token remains at %s: %v", path, err)
+					}
+				}
+				t.Logf("agent commit accepted by %d real guard invocations; scratch tokens removed", len(paths))
+			})
+		}
+	}
+}
 
 func TestCommitStagedGitAdapter(t *testing.T) {
 	t.Parallel()

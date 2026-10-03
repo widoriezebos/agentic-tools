@@ -3,6 +3,7 @@ package gittree
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -69,6 +70,14 @@ func TestDetachedWorktreeWorkspaceMatchesPhysicalCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", symlinkTemporaryRoot)
+	// The process scratch this test creates lives under its own TMPDIR,
+	// which is removed when it ends: release it so a later test in the
+	// same process makes a fresh one instead of reusing a deleted root.
+	t.Cleanup(func() {
+		if err := diskstore.ReleaseProcessScratch(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
 
 	detached, err := (Workspace{Dir: filepath.Join(repository, "metasystem")}).NewDetachedWorktree(candidate)
 	if err != nil {

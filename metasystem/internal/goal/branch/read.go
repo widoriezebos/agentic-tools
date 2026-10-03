@@ -48,8 +48,9 @@ type BranchReadResult struct {
 	Retry string
 }
 
-// ReadNeverLaunchedError is returned only when the delegate boundary proves
-// that no critic process was started. Other launch failures remain uncertain.
+// ReadNeverLaunchedError is returned only when no critic process was started:
+// the delegate boundary said so, or its failure left no launchable critic job
+// record for this request. The review may be requested again.
 type ReadNeverLaunchedError struct{ Err error }
 
 func (e *ReadNeverLaunchedError) Error() string { return e.Err.Error() }
@@ -315,6 +316,84 @@ func branchReadJobState(repo, job string) (string, error) {
 	return lens.Status(), nil
 }
 
+// reservedCriticRoot names the critic root reserved for one request to review
+// a unit commit, or none. The delegate boundary starts a critic process only
+// from a job record it wrote first, and it names that record after the request:
+// the job id is derived from the goal, the goal revision the record names and
+// the brief the critic reads. A critic root is this request's only when its job
+// id is the one derived from this goal, the record's own goal revision and the
+// frozen brief. Another caller's examination of the same commit read another
+// brief and has another id, so it is never this request's critic. For the
+// holder of the read lock a matching record is this request's critic whatever
+// its status, and no matching record proves that this request started no
+// critic process. A record that cannot be read may be that reservation, so it
+// is an error and never "none".
+//
+// A record without a positive round is not a match. The round number is
+// written when a reservation completes its setup and becomes launchable, and a
+// process is started only from a launchable record. A reservation without it
+// ended in setup: it started no process, and it has no round for the review
+// to report or to retry.
+func reservedCriticRoot(repo, goalID, unitCommit, frozenBriefSHA256 string) (string, error) {
+	dir := filepath.Join(repo, "artifacts", "agents", "jobs")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var root string
+	var newest time.Time
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		record, err := dispatch.ReadRecordObject(filepath.Join(dir, name))
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", name, err)
+		}
+		lens := dispatch.JobRecordOf(record)
+		reviews, _ := record["reviews"].(string)
+		round, _ := lens.Round()
+		if lens.Role() != "code-critic" || lens.ParentJob() != "" || lens.GoalID() != goalID || reviews != "commit:"+unitCommit || round < 1 {
+			continue
+		}
+		// A record that names no goal revision, and a request with no frozen
+		// brief, have no derived id, so nothing binds the one to the other.
+		revision, _ := lens.GoalRevision()
+		derived, err := dispatch.DefaultOperationID(goalID, revision, dispatch.DispatchModeFresh, "code-critic", frozenBriefSHA256, "")
+		if revision < 1 || err != nil || lens.JobID() != derived {
+			continue
+		}
+		// A critic root that cannot be read back by its job id cannot be
+		// adopted, and passing over it would start a second critic.
+		if lens.JobID() != strings.TrimSuffix(name, ".json") {
+			return "", fmt.Errorf("%s: its job id is not its file name", name)
+		}
+		createdAt, _ := record["createdAt"].(string)
+		created, _ := time.Parse(time.RFC3339, createdAt)
+		if root == "" || created.After(newest) {
+			root, newest = lens.JobID(), created
+		}
+	}
+	return root, nil
+}
+
+// settleBranchReadDispatch decides a request that was saved as pending and
+// has no critic root, from the job records: the reserved critic becomes its
+// root, and a request with no reservation may be dispatched again from its
+// frozen brief. Unreadable job records refuse and leave the request pending.
+func settleBranchReadDispatch(request BranchReadRequest, common, recordPath string, record branchReadRecord) (branchReadRecord, error) {
+	root, err := reservedCriticRoot(request.Repo, request.GoalID, request.UnitCommit, record.FrozenBriefSHA256)
+	if err != nil {
+		return record, operationRefusal(ReadDispatchPendingCode, "the job records can't be read, so whether the reviewer of build %s started is unknown: %s\nrun: metasystem work status %s", request.UnitCommit, firstLine(err), request.GoalID)
+	}
+	record.RootJob, record.DispatchPending, record.DispatchRetryable = root, false, root == ""
+	return record, saveBranchReadRecord(common, recordPath, record)
+}
+
 func criticTestChangesWithRepository(repository BranchReadRepository, repo, commit, job string) ([]TestChange, error) {
 	entries, err := repository.Entries(repo, commit)
 	if err != nil {
@@ -369,7 +448,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
 	}
 	if record.DispatchPending && record.RootJob == "" {
-		return result, operationRefusal(ReadDispatchPendingCode, "whether the reviewer of build %s started is unknown\nrun: metasystem work status %s", request.UnitCommit, request.GoalID)
+		// An earlier dispatch never reported back. The job records say
+		// whether it reserved a critic.
+		if record, err = settleBranchReadDispatch(request, common, recordPath, record); err != nil {
+			return result, err
+		}
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
@@ -477,14 +560,25 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	job, err := request.Delegate(briefPath, request.GoalID, request.UnitCommit, effectiveRuntime, effectiveModel)
 	if err != nil || job == "" {
+		failure := errors.Join(fmt.Errorf("goal branch read could not dispatch its critic"), err)
 		var neverLaunched *ReadNeverLaunchedError
 		if job == "" && errors.As(err, &neverLaunched) {
 			record.DispatchPending, record.DispatchRetryable = false, true
 			if saveErr := saveBranchReadRecord(common, recordPath, record); saveErr != nil {
 				return result, fmt.Errorf("%s: pre-launch refusal could not be recorded for retry: %w", ReadDispatchPendingCode, errors.Join(err, saveErr))
 			}
+			return result, failure
 		}
-		return result, errors.Join(fmt.Errorf("goal branch read could not dispatch its critic"), err)
+		// The delegate did not say whether it reserved a critic before it
+		// failed. The job records do.
+		settled, settleErr := settleBranchReadDispatch(request, common, recordPath, record)
+		if settleErr != nil {
+			return result, errors.Join(failure, settleErr)
+		}
+		if settled.RootJob == "" {
+			return result, &ReadNeverLaunchedError{Err: failure}
+		}
+		return result, failure
 	}
 	record.RootJob, record.DispatchPending, record.DispatchRetryable = job, false, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {

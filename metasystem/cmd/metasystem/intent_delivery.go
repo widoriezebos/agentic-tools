@@ -1446,9 +1446,34 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		if result != nil {
 			return *result
 		}
+		// The join is checked before anything is written.
+		if violations := validate.CritiqueClosed(inv.returnPath(job, recordRound(round)), inv.flagPath("dispositions")); len(violations) > 0 {
+			return joinRefusal(targets, job, violations, inv.sameCommand())
+		}
+		// Only a follow-up dispatch folds the round before it, so the
+		// terminal round the decisions answer is folded here; a repeat is
+		// unchanged. The fold decides nothing: the round's material findings
+		// enter the register open, and only the decisions below resolve them.
+		if _, err := dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot, job, recordText(round, "jobId")); err != nil {
+			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: fmt.Sprintf("review %s round %d can't be recorded with its chain; nothing was closed", job, recordRound(round)),
+				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
+		}
 		if violations := validate.CritiqueClosedWithRegister(inv.returnPath(job, recordRound(round)), inv.flagPath("dispositions"),
 			inv.layout.InstallationRoot, job); len(violations) > 0 {
 			return joinRefusal(targets, job, violations, inv.sameCommand())
+		}
+		decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
+		refuted := map[string]string{}
+		for id, decision := range decisions {
+			if decision == "refuted" {
+				refuted[id] = decision
+			}
+		}
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, refuted); err != nil {
+			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: "the decisions can't be recorded, so nothing was closed",
+				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("review %s: %v", job, err)}})
 		}
 	} else if inv.input.has("dispositions") {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,

@@ -192,7 +192,9 @@ var Table = []Cause{
 		for index := range paths {
 			paths[index] = quoted(paths[index])
 		}
-		commands := []string{"git stash push -- " + strings.Join(paths, " ")}
+		// An edited path may be a new file git does not track; git refuses
+		// a stash naming one unless untracked files are included.
+		commands := []string{"git stash push --include-untracked -- " + strings.Join(paths, " ")}
 		commands = append(commands, rearm(f)...)
 		return append(commands, "git stash pop")
 	}},

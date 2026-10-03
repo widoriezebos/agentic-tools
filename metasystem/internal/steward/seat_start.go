@@ -447,9 +447,12 @@ func seatBrief(selection SeatSelection) string {
 	}
 	return fmt.Sprintf(`# Seat session
 
-You are this seat's session; `+"`metasystem goal claim %s`"+` takes the work named here, or continues what this seat already holds; work it, land it; stop when nothing is claimable.
+You are this seat's session: `+"`metasystem goal claim %s`"+` takes or continues this work.
+Work it and land it; stop when nothing is claimable.
 
 The steward started you for goal %s: %s.
+
+Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `+"`metasystem work wait`"+` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `+"`metasystem question ask`"+`, or nothing is claimable.
 `, selection.Goal, selection.Goal, why)
 }
 

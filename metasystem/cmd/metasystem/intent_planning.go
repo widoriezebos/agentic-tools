@@ -13,6 +13,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -1098,37 +1099,17 @@ func runIntentClaim(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	named := id != ""
 	if id == "" {
 		if inv.input.switched("arc") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--arc needs the goal whose arc to claim; nothing was done",
 				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 		}
-		machine, err := inv.owners.dependencies.machine(inv.stateRoot)
-		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this machine's name can't be told, so no ready goal could be picked; nothing was done",
-				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}})
+		next, problem := inv.frontierPick(projection)
+		if problem != nil {
+			return inv.render(*problem)
 		}
-		frontier, err := goal.Next(projection, machine, inv.input.values["label"]...)
-		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was claimed",
-				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}.withCause(err))
-		}
-		selection := goal.SelectNext(frontier)
-		switch selection.Kind {
-		case goal.NextSelectionContinue:
-			// Held work is continued, never switched for the frontier's next goal.
-			return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(selection.GoalID),
-				Summary: fmt.Sprintf("%s already holds %s; continue it (a claim never switches held work)", machine, selection.GoalID),
-				next:    inv.publicArgv("goal", "show", selection.GoalID), nextReason: "the held goal and its next step",
-				Data: map[string]any{"machine": machine, "selection": selection}})
-		case goal.NextSelectionReady:
-			id = selection.GoalID
-		default:
-			return inv.render(intentResult{Outcome: intentRefused, code: 1,
-				Summary: fmt.Sprintf("no goal is ready for %s; nothing was claimed", machine),
-				next:    inv.publicArgv("goal", "list"), nextReason: "a goal is ready once a person approves it",
-				Data: map[string]any{"machine": machine, "frontier": frontier}})
-		}
+		id = next
 	} else if inv.input.has("label") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--label picks among ready goals, and a goal is named; nothing was done",
 			next: inv.typedArgvLess("label"), nextReason: "claims the named goal"})
@@ -1136,23 +1117,115 @@ func runIntentClaim(inv *intentInvocation) int {
 	if file, _ := goalRecord(projection, id); file == nil {
 		return unknownGoal(inv, id)
 	}
+	// A steward seat names the goal its brief named; another machine may
+	// have taken it since. The seat then takes what a claim without a goal
+	// picks, never stalling on the taken one; any other session or person
+	// named it deliberately and keeps the refusal.
+	seat := named && !inv.input.switched("arc") && box == "" && inv.claimLineage() == launch.SeatOwnerLineage
+	asked, taken := id, ""
+	if seat {
+		next, holder, problem := inv.seatFallback(projection, id)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		id, taken = next, holder
+	}
+	result := inv.claimGoal(id, box, projection)
+	if taken != "" && result.Outcome == intentConfirmed {
+		summary := fmt.Sprintf("%s was taken by %s; claimed %s instead", asked, taken, id)
+		result.Summary, result.text = summary, nil
+		result.view = func(page *textui.Page) { page.Done(summary) }
+		result.next, result.nextReason = inv.publicArgv("goal", "show", id), "the claimed goal and its next step"
+	}
+	return inv.render(result)
+}
+
+// frontierPick is the goal a claim without a goal takes: this machine's next
+// ready goal. Held work is answered as continued, and an empty frontier as
+// nothing claimable; both come back as the result to print.
+func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *intentResult) {
+	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
+	if err != nil {
+		return "", &intentResult{Outcome: intentRefused, code: 1, Summary: "this machine's name can't be told, so no ready goal could be picked; nothing was done",
+			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}
+	}
+	frontier, err := goal.Next(projection, machine, inv.input.values["label"]...)
+	if err != nil {
+		failed := intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was claimed",
+			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}.withCause(err)
+		return "", &failed
+	}
+	selection := goal.SelectNext(frontier)
+	switch selection.Kind {
+	case goal.NextSelectionContinue:
+		// Held work is continued, never switched for the frontier's next goal.
+		return "", &intentResult{Outcome: intentUnchanged, Targets: inv.targets(selection.GoalID),
+			Summary: fmt.Sprintf("%s already holds %s; continue it (a claim never switches held work)", machine, selection.GoalID),
+			next:    inv.publicArgv("goal", "show", selection.GoalID), nextReason: "the held goal and its next step",
+			Data: map[string]any{"machine": machine, "selection": selection}}
+	case goal.NextSelectionReady:
+		return selection.GoalID, nil
+	default:
+		return "", &intentResult{Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("no goal is ready for %s; nothing was claimed", machine),
+			next:    inv.publicArgv("goal", "list"), nextReason: "a goal is ready once a person approves it",
+			Data: map[string]any{"machine": machine, "frontier": frontier}}
+	}
+}
+
+// claimLineage is the session the claim is made for: --lineage, else the
+// lineage the shell names.
+func (inv *intentInvocation) claimLineage() string {
+	if lineage := inv.input.text("lineage"); lineage != "" {
+		return lineage
+	}
+	if inv.owners.dependencies.ownerLineage != nil {
+		return inv.owners.dependencies.ownerLineage()
+	}
+	return ""
+}
+
+// seatFallback answers a steward seat's claim of id: id itself when no other
+// machine holds it, else the frontier's pick with the holder named. Held work
+// and an empty frontier come back as the result to print, after the holder.
+func (inv *intentInvocation) seatFallback(projection goal.Projection, id string) (string, string, *intentResult) {
+	file := projection.Tree.Live[id]
+	if file == nil || file.State != goal.StateClaimed || file.Claimed == nil {
+		return id, "", nil
+	}
+	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
+	if err != nil || file.Claimed.Machine == machine {
+		return id, "", nil
+	}
+	holder := file.Claimed.Machine
+	next, problem := inv.frontierPick(projection)
+	if problem != nil {
+		problem.Summary = fmt.Sprintf("%s was taken by %s; %s", id, holder, problem.Summary)
+		return "", holder, problem
+	}
+	return next, holder, nil
+}
+
+// claimGoal claims id through the claim owner, with the budget box, or the
+// whole arc with --arc.
+func (inv *intentInvocation) claimGoal(id, box string, projection goal.Projection) intentResult {
 	actor, proof, problem := inv.actingAs("claim", id, actorEither)
 	if problem != nil {
-		return inv.render(*problem)
+		return *problem
 	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	if box != "" {
 		budget, problem := inv.completeBox(box, projection.Tree.Live[id])
 		if problem != nil {
-			return inv.render(*problem)
+			return *problem
 		}
 		args = append(args, budgetLongFlags(budget)...)
 	}
-	if inv.input.switched("arc") {
+	arc := inv.input.switched("arc")
+	if arc {
 		args = append(args, "--arc", id)
 	}
-	arc := inv.input.switched("arc")
-	return inv.render(inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		budget, err := f.budgetTuple(false)
 		if err != nil {
 			return goal.PublishResult{}, err
@@ -1165,7 +1238,7 @@ func runIntentClaim(inv *intentInvocation) int {
 			return goal.ClaimArc(req, f.id, budgets...)
 		}
 		return goal.Claim(req, f.id, budgets...)
-	}, "id")))
+	}, "id"))
 }
 
 // acquireClaim claims one named goal for this session exactly as claim G
