@@ -1,15 +1,15 @@
 # metasystem-way-patterns
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 16
 - Intent: What: A short catalog of proven practices for bringing the metasystem into an existing project, for example: use recorded replays as a test suite, freeze known-good outputs, record known issues as accepted risks, and put a cost gate on paid benchmarks. Each entry says what the practice is, which question to ask when a project is adopted, and which sign shows it has become relevant later. Why: These practices were learned during the morpheus adoption but live only in people's memory. The next adoption would have to rediscover them. Pros: Every adoption starts from the same proven practices, and the counselor can raise a practice when it becomes relevant. Cons: Half a day of writing for a catalog nobody uses until the next adoption; it may go stale before then.
 - Origin: human
 - Next step: Next: At the next adoption, write the catalog in docs (one entry per practice with its interview question and its trigger), link it from the inception skill's harvest step, and add one paragraph to the counselor's brief so it checks which practices became relevant. Done when: the inception skill points at the catalog and the next adoption interview asks its questions.
 - OpenedAt: 2026-08-25T06:41:27Z
-- Revision: 100
+- Revision: 101
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-13T08:23:56Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-25; no docs catalog exists and no inception or adoption is in progress to exercise it; half-day deliverable (catalog with harvest question and applicability trigger per pattern, inception harvest step, counselor applicability pass); revive at the next inception or on his word.
+- Abandoned: by=human:Wido at=2026-10-03T09:55:26Z revision=101 opid=N9QXCHAK9HP8A7WY1BF630R7NH-m1e-718ba0eb carried=next-adoption-follow-ups because=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
 
 History:
 - 2026-08-25T06:41:27Z 9S61XQ15VX7CC472WE2ABAQA4F-m1-bf243850 open actor=human:wido targets=metasystem-way-patterns
@@ -112,4 +112,5 @@ History:
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
 - 2026-10-03T09:55:07Z 1F8FMDF98GF84EK0S8TS5DREJW-m1e-718ba0eb abandon actor=human:Wido targets=paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:17 to=3:16
-Integrity: sha256=dba7db694b14912a8c9fc8a6577a2a81a35e36ee4adda1f507e0ecf7589440df
+- 2026-10-03T09:55:26Z N9QXCHAK9HP8A7WY1BF630R7NH-m1e-718ba0eb abandon actor=human:Wido targets=metasystem-way-patterns,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=next-adoption-follow-ups reason=Combined into next-adoption-follow-ups (2026-10-03 parked-list cleanup, in Wido's word): it waits for the next adopted app, like six other parked goals; its text stays in this record and its part is named in the successor.
+Integrity: sha256=beaaee0bf9c294785d3570e952d2dd50b5cc699678e1216c98ed95baf5e5b63f
