@@ -1,6 +1,6 @@
 # token-spend-fence
 
-- State: parked
+- State: queued
 - Priority: 2
 - Sequence: 27
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong fence stops or fails to stop spending, no data loss; novelty 2: enforcement on token spend is new; exposure 3: every seat's sessions; accumulation 1: one fence and its records"
@@ -9,11 +9,10 @@
 - Origin: main
 - Next step: Next: On Wido's word, redesign step 2 so the ceiling is checked where agent work starts today (the launch of a builder or delegate, and batch-lane admission) instead of the retired dispatcher; build; then allow spend.mode=enforce. Done when: work that would cross a ceiling is refused with the spend so far and who can raise it, and replaying a heavy day's usage against a ceiling shows the expected refusals. REWRITTEN 2026-10-03 (parked-list cleanup; step 1, measure and alert, landed with 0acb09738). What remains, now including spend-fence-reports-tokens-per-model-and-cause: (1) step 2: enforce a spend ceiling at today's real launch points (seat, builder and delegate launches, lane admission), then allow spend.mode=enforce (internal/config/spend.go:123 refuses it today); (2) show the per-model and per-cause attribution that internal/spend/attribution.go already computes in health and in the fence's daily report, with a per-model alert line; (3) fill the price ledger, including gpt-5.6-sol, so delegates stop landing in delegate:other. The limits themselves (per launch, per seat per day) and who sets them are decided in goal-budget-follows-its-plan; this goal waits for it.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 246
+- Revision: 247
 - Labels: robustness, spend
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
-- Parked: by=human:Wido at=2026-09-19T15:48:57Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's word on step 2 (R-60-m1). Existing work: on main 0acb09738, step 1, alert mode (metasystem/internal/spend/measure.go, metasystem/internal/spend/transcript.go, metasystem/internal/config/spend.go, metasystem/internal/steward/alert_episode.go). The validator refuses spend.mode=enforce until step 2 lands. Left: step 2, about 500 lines. No origin goal/token-spend-fence branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-03T08:42:26Z XR3P846WY3BC85808G7NY1YZJQ-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
@@ -262,4 +261,5 @@ History:
 - 2026-10-03T09:56:02Z 8GBCA5M89QS8WKQKDR92N4YCND-m1e-718ba0eb abandon actor=human:Wido targets=idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:29 to=2:28
 - 2026-10-03T09:58:01Z Q6GK1VAG280T39729WAM3P943S-m1e-718ba0eb edit actor=human:Wido targets=token-spend-fence
 - 2026-10-03T09:59:10Z RYD9V9YN18QS5P964FN8SYT8PW-m1e-718ba0eb set-priority actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,token-spend-fence,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=machine-concurrency-governor from=2:28 to=2:27 requested-sequence=append
-Integrity: sha256=0c46a49311ffdc10388faaf62015cd5bf19228527bd7a1183e6096bc0a4dec67
+- 2026-10-03T10:01:24Z JB8FEA0H8JBMEPTXZ9CEDZESDM-m1e-718ba0eb unpark actor=human:Wido targets=token-spend-fence
+Integrity: sha256=d8ade26496a0a2d913fcc5f770a578384045d06a8a277cfb955c637a8fa22139
