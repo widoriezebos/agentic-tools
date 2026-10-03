@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "rosters-are-configuration-items",
+  "unit": "store",
+  "subject": {
+    "commit": "8f1a569710f74d326224ed87b9572c29a6d28d9b",
+    "parent": "8496d423c42d92466d553160d29670a49ea0e4d1",
+    "tree": "810b21466b99e6a7c7101b4407d7541d7f74b7a4",
+    "patchDigest": "7871c6f556c8a9edc41a3197d73676e5bee2f06fadc2e499b12c41c1005f16ad",
+    "unitDigest": "07d4d19c060be25cacd523819aa298f777bf36a2107aef17a0853bf0fe15b5b9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-43a75dd9b1fe406d2fcfe07d",
+    "round": 1,
+    "closureSha256": "91b4f970c28e054928061bf09709ee45e490a3ed9c2c184b04fa0fc4296ed1b6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "810b21466b99e6a7c7101b4407d7541d7f74b7a4",
+    "runId": "goal-read-gate-20261003t112446z-53fc340d3c523cf8"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "65b7871eddda8f3432918b6be202c91c96ea10a8c784e5fe9e44f68ad946cc93"
+}
