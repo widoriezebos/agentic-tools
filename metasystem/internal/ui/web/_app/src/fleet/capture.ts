@@ -1,6 +1,7 @@
 import type { Page } from "./api";
-import { copyLine, flagWords, seenWords, workingWords } from "./fleet";
+import { copyLine, flagWords, workingWords } from "./fleet";
 import { failedStep, showsCard } from "./launching";
+import { seenOf } from "./panel";
 import type { FleetCapture } from "../partner/api";
 
 /**
@@ -41,7 +42,8 @@ export function captureOfFleet(page: Page, now: Date, open: Set<string> = new Se
     machines: page.machines.slice(0, CAPTURED_MACHINES).map((machine) => ({
       machine: machine.machine,
       standing: machine.standing,
-      seen: seenWords(machine, now),
+      // The Seen column's own words: an age, or the standing's (FR-06).
+      seen: seenOf(machine, now).words,
       // What the row said the machine is doing, and whether the human had
       // the row open: the sentence alone and the sentence with the goal, the
       // job, the box and the chain under it are two different screens, and

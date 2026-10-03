@@ -310,14 +310,14 @@
     "text": "A machine this seat cannot judge: one that has published no presence at all, one whose record cannot be read, or one dated further ahead than a clock difference explains."
   },
   {
-    "id": "fleet-needs-you",
-    "term": "Needs you",
-    "text": "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each says what to do, or opens the goal, the question or the proof's log; Land now is the one act this page makes."
+    "id": "fleet-verdict",
+    "term": "Verdict",
+    "text": "One line on whether anything on this computer needs you: All good only when Needs you is empty and every section of this page could be read; otherwise how many things need you, or which section could not be read. Checked on this computer: its seats, its landing lane and this checkout's questions. Questions asked on other computers are not checked here."
   },
   {
-    "id": "this-seat",
-    "term": "This seat",
-    "text": "The checkout this interface is serving: what it is called on the fleet, whether supervision is armed on it, what it last published about itself, and what the steward last recorded about its health."
+    "id": "fleet-needs-you",
+    "term": "Needs you",
+    "text": "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each is one line with one thing to do: a button that opens the goal, the question or the proof's log, or the one command to type at a terminal on this computer."
   },
   {
     "id": "machine-holds",
@@ -332,7 +332,7 @@
   {
     "id": "engine",
     "term": "Engine",
-    "text": "The build a machine was running when it last published, by its first seven characters; the whole stamp and the enrolment generation are in the row's opening. Two seats on different builds can read the same ledger by different rules, which is what makes it worth showing."
+    "text": "The build a machine was running when it last published, and its enrolment generation. Two seats on different builds can read the same ledger by different rules, which is what makes it worth showing."
   },
   {
     "id": "rung",
