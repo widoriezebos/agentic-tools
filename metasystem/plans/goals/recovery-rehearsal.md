@@ -3,11 +3,13 @@
 - State: queued
 - Priority: 2
 - Sequence: 14
+- Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="A first crash rehearsal that kills workers, the runner and the steward in an isolated setup; a kill aimed wrong would hit live seats on the same host; a test, not a product change"
+- Tier: 2
 - Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 50
+- Revision: 51
 - BlockedBy: recovery-to-good-state
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
@@ -63,4 +65,5 @@ History:
 - 2026-10-03T10:00:48Z 57P7CA7WH85WRW52NGS3BDS1W0-m1e-718ba0eb block actor=human:Wido targets=recovery-rehearsal reason=blocked by recovery-to-good-state; returns when it is done
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:15 to=2:14
 - 2026-10-03T11:16:57Z NQHY2C14WSEJR4TT3XPVQBV2KZ-m1e-718ba0eb unpark actor=human:Wido targets=recovery-rehearsal
-Integrity: sha256=d0d4e90ce93830e0ec8cc6e541bef5e1974c4c1de31cddf5a07577b48776b621
+- 2026-10-03T11:17:05Z H8HAJ4QNHDAASBS3N4RETB0K3W-m1e-718ba0eb edit actor=human:Wido targets=recovery-rehearsal
+Integrity: sha256=fc37d0993f1ae92974cf414cbf4f2f70d9bbc78eae5f373e9d3b92ff920a1919
