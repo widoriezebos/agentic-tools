@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "goal": "fleet-panel-ux",
+  "unit": "panel",
+  "subject": {
+    "commit": "af40e2b4c0d1dae991c842c063a16bfadb0d7709",
+    "parent": "b450d97124ed86fefba6a3b483ac6546c0ad230a",
+    "tree": "c00757cf0cd175d01624c8c25bddd59849722223",
+    "patchDigest": "4fb2cdd39a23b31cf030cf27a0d0d555ebda13b84a43b96c1725e3a329e8c8d9",
+    "unitDigest": "456d580342e38d7640f46cf13021edd057ba96c86e9f6d971bb71c01ed8424da"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-929e364314ad2a2efcccaa05",
+    "round": 1,
+    "closureSha256": "c66ce4351a2b1fa5bc8e5cde94fdbaaa85a451ee8531e247da46c6a6c5d632d7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "c00757cf0cd175d01624c8c25bddd59849722223",
+    "runId": "goal-read-gate-20261003t082839z-16ffc5e16790bcf4"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/ui/httpd/walkthrough/fleet_test.go",
+      "readerWord": "reviewed by critic root code-critic-929e364314ad2a2efcccaa05"
+    }
+  ],
+  "sha256": "2f432c320e3bcff518b33d9251af0a36648b8816a85a45f94e7f666ace25fdf4"
+}

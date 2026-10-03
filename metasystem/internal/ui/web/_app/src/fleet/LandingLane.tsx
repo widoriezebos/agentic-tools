@@ -5,7 +5,7 @@ import { goalPath } from "../routes";
 import { Button, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Trouble } from "../shell/Trouble";
-import { failureMessage, landNow, ResourceError } from "./api";
+import { failureMessage, landNow, proofLogAddress, ResourceError } from "./api";
 import type { Lane, LaneEntry, LandNowAnswer } from "./api";
 import { laneLists, laneNotRead, laneState, when, type LaneItem, type ProvingItem } from "./panel";
 
@@ -242,7 +242,7 @@ function Proving({ proving, lane, now }: { proving: ProvingItem; lane: Lane; now
               ["Commit", proof.commit ?? ""],
               ["Attempt", proof.attempt],
               ["Since", proof.since === "" ? "" : when(proof.since, now)],
-              ["Log", proof.log ?? ""],
+              ["Log", proof.log ?? "", logAddress(proof.attempt)],
             ]}
           />
         )}
@@ -270,7 +270,7 @@ function LaneDetails({ lane, now }: { lane: Lane; now: Date }) {
         ["Agent", owner.pid === null ? "" : `pid ${String(owner.pid)}${owner.since === null || owner.since === "" ? "" : ` since ${when(owner.since, now)}`}`],
         ["Last exit", owner.last_exit ?? ""],
         ["Last proof", proof === null ? "" : `${proof.result} · ${short(proof.commit)} · ${when(proof.at, now)}${proof.reason === undefined || proof.reason === "" ? "" : ` · ${proof.reason}`}`],
-        ["Proof log", proof === null ? "" : proof.log],
+        ["Proof log", proof === null ? "" : proof.log, logAddress(proof?.attempt)],
         ["Last push", push === null ? "" : `${short(push.old)} → ${short(push.commit)} · ${when(push.at, now)}`],
         ["Summary", lane.summary],
       ]}
@@ -278,11 +278,17 @@ function LaneDetails({ lane, now }: { lane: Lane; now: Date }) {
   );
 }
 
+/** A proof's log as the page opens it, by the attempt its record names; "" for none. */
+function logAddress(attempt: string | undefined): string {
+  return attempt === undefined || attempt === "" ? "" : proofLogAddress(attempt);
+}
+
 /**
  * One Details disclosure: the particulars a person wants only now and then,
- * as name and value, the empty ones left out.
+ * as name and value, the empty ones left out. A value with an address is a
+ * link, opened in a tab of its own: a proof's log.
  */
-function Details({ facts, label = "Details" }: { facts: readonly (readonly [string, string])[]; label?: string }) {
+function Details({ facts, label = "Details" }: { facts: readonly (readonly [string, string, string?])[]; label?: string }) {
   const shown = facts.filter(([, value]) => value !== "");
   if (shown.length === 0) {
     return null;
@@ -291,10 +297,18 @@ function Details({ facts, label = "Details" }: { facts: readonly (readonly [stri
     <details className="ms-fleet-details">
       <summary className="ms-fleet-details-summary">{label}</summary>
       <dl className="ms-fleet-details-list">
-        {shown.map(([name, value]) => (
+        {shown.map(([name, value, href = ""]) => (
           <div key={name} className="ms-fleet-details-row">
             <dt>{name}</dt>
-            <dd className="ms-mono">{value}</dd>
+            <dd className="ms-mono">
+              {href === "" ? (
+                value
+              ) : (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {value}
+                </a>
+              )}
+            </dd>
           </div>
         ))}
       </dl>

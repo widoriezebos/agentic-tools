@@ -314,6 +314,56 @@ describe("the fleet page", () => {
     expect(markup).not.toContain("Pause<");
   });
 
+  it("puts a stuck seat in Needs you, says stalled in its Doing with no live dot, and counts no seat working", () => {
+    const holding = calm({
+      machines: [
+        machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true }),
+        machine({
+          machine: "m1f",
+          standing: "reachable",
+          seen: "2026-09-25T14:36:00Z",
+          holds: [held({ goal: "plain-lane", title: "Plain lane landing.", machine: "m1f", standing: "reachable", flag: "", since: "" })],
+        }),
+      ],
+    });
+    const read = board({
+      seats: [
+        {
+          machine: "m1f",
+          installation: "/w/m1f/metasystem",
+          goals: [{ goal: "plain-lane", stage: "build", since: "2026-09-25T13:30:00Z", lastProgressAt: "2026-09-25T14:02:00Z", unknown: "stalled" }],
+        },
+      ],
+    });
+
+    const markup = rendered(holding, read);
+    const needs = markup.slice(markup.indexOf("Needs you"), markup.indexOf("This seat"));
+
+    // The page reads its own clock, so the day is said before the time.
+    expect(needs).toContain("“Plain lane landing.” on m1f has made no progress since ");
+    expect(needs).toContain(`${minuteTime("2026-09-25T14:02:00Z")} (building).`);
+    expect(needs).toContain("If it is stuck, stop that machine with machine stop m1f at a terminal; its steward will not start it again.");
+    expect(markup).toContain("1 thing needs you");
+    expect(markup).toContain("0 seats working");
+    expect(markup).toMatch(/Doing<\/span><span>stalled · building · [^<]*min<\/span>/);
+    expect(markup).not.toContain("ms-live-dot");
+  });
+
+  it("gives a red proof in Needs you an Open log link that opens the log in a tab of its own", () => {
+    const read = board({
+      lane: lane({
+        last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/p.log", at: "2026-09-25T14:20:00Z", attempt: "a-9", reason: "the proof command exited 1" },
+      }),
+    });
+
+    const markup = rendered(calm(), read);
+    const needs = markup.slice(markup.indexOf("Needs you"), markup.indexOf("This seat"));
+
+    expect(needs).toContain("The landing lane&#x27;s last proof is red: the proof command exited 1.");
+    expect(needs).toMatch(/<a [^>]*href="\/api\/fleet\/proof-logs\/a-9"[^>]*target="_blank"[^>]*>Open log<\/a>/);
+    expect(needs).toContain('rel="noopener noreferrer"');
+  });
+
   it("says in Needs you when this checkout's questions could not be read", () => {
     const markup = rendered(calm(), board({ questionsProblem: "channel folder unreadable" }));
 

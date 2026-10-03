@@ -51,7 +51,10 @@ type Result struct {
 	Log     string `json:"log"`
 	At      string `json:"at"`
 	Attempt string `json:"attempt,omitempty"`
-	// Reason says why a result is red besides the command's exit.
+	// Reason is why the result is what it is, in one sentence: for red,
+	// how the proving command ended ("the proving command exited 1") or why it
+	// could not run; for an inherited green, the tree it inherits from. An
+	// ordinary green has none.
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -66,6 +69,15 @@ type ProveSeams struct {
 	// recorded identity.
 	Alive func(Running) bool
 	NewID func() string
+	// Git runs git in a directory for a proof run (Run); nil is Git.
+	Git func(dir string, args ...string) (string, error)
+}
+
+func (s ProveSeams) git(dir string, args ...string) (string, error) {
+	if s.Git != nil {
+		return s.Git(dir, args...)
+	}
+	return Git(dir, args...)
 }
 
 func (s ProveSeams) now() time.Time {
@@ -136,11 +148,15 @@ func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) 
 
 // Head is the commit and tree of the checkout's HEAD.
 func Head(checkout string) (commit, tree string, err error) {
-	commit, err = Git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
+	return head(Git, checkout)
+}
+
+func head(git func(string, ...string) (string, error), checkout string) (commit, tree string, err error) {
+	commit, err = git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return "", "", fmt.Errorf("read the lane checkout's HEAD: %w", err)
 	}
-	tree, err = Git(checkout, "rev-parse", "--verify", "HEAD^{tree}")
+	tree, err = git(checkout, "rev-parse", "--verify", "HEAD^{tree}")
 	if err != nil {
 		return "", "", err
 	}
@@ -213,7 +229,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			settled, found = result, ok && result.Result == Green
 			return err
 		}
-		from, ok := ledgerOnlySinceGreen(install, checkout, tree)
+		from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, tree)
 		if !ok {
 			return nil
 		}
@@ -243,7 +259,7 @@ func writeRunning(install string, running Running) error {
 // it); empty records this process as the running proof first, refusing
 // while another tree's proof runs. The command's output goes to output.
 func Run(install, checkout, command, attempt string, output io.Writer, seams ProveSeams) (Result, error) {
-	commit, tree, err := Head(checkout)
+	commit, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return Result{}, err
 	}
@@ -274,11 +290,13 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return Result{}, err
 	}
 	outcome, reason := Green, ""
-	if from, ok := ledgerOnlySinceGreen(install, checkout, running.Tree); ok {
+	if from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree); ok {
 		reason = "inherits green from tree " + Short(from) + ": only goal ledger files changed since"
 		fmt.Fprintf(output, "landing prove: %s\n", reason)
-	} else if runErr := proveInWorktree(install, checkout, command, running, output); runErr != nil {
-		outcome = Red
+	} else if runErr := proveInWorktree(seams.git, install, checkout, command, running, output); runErr != nil {
+		// The proof command ran and failed, or could not run: its own
+		// exit is the reason, read from nothing but runErr.
+		outcome, reason = Red, runErr.Error()
 		fmt.Fprintf(output, "\nlanding prove: %v\n", runErr)
 	}
 	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt, Reason: reason}
@@ -316,7 +334,7 @@ func ledgerPath(path string) bool {
 
 // ledgerOnlySinceGreen names a recent green tree from which tree differs
 // only in goal ledger files.
-func ledgerOnlySinceGreen(install, checkout, tree string) (string, bool) {
+func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, checkout, tree string) (string, bool) {
 	results, err := Results(install)
 	if err != nil {
 		return "", false
@@ -328,7 +346,7 @@ func ledgerOnlySinceGreen(install, checkout, tree string) (string, bool) {
 			continue
 		}
 		checked++
-		changed, err := Git(checkout, "diff", "--name-only", "--no-renames", green.Tree, tree)
+		changed, err := git(checkout, "diff", "--name-only", "--no-renames", green.Tree, tree)
 		if err != nil || changed == "" {
 			continue
 		}
@@ -403,18 +421,18 @@ func Git(dir string, args ...string) (string, error) {
 // worktree after. Worktrees a crashed proof left are removed first. Only
 // this process proves (it holds running.json), so every worktree under
 // proofTrees is a leftover.
-func proveInWorktree(install, checkout, command string, running Running, output io.Writer) error {
+func proveInWorktree(git func(string, ...string) (string, error), install, checkout, command string, running Running, output io.Writer) error {
 	trees := proofTrees(install)
-	removeProofTrees(checkout, trees, output)
+	removeProofTrees(git, checkout, trees, output)
 	if err := os.MkdirAll(trees, 0o755); err != nil {
 		return err
 	}
 	tree := filepath.Join(trees, running.Attempt)
-	if _, err := Git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
+	if _, err := git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
 		return fmt.Errorf("the worktree of commit %s could not be made: %w", Short(running.Commit), err)
 	}
 	defer func() {
-		if _, err := Git(checkout, "worktree", "remove", "--force", tree); err != nil {
+		if _, err := git(checkout, "worktree", "remove", "--force", tree); err != nil {
 			fmt.Fprintf(output, "\nlanding prove: the proof's worktree stays until the next prove: %v\n", err)
 		}
 	}()
@@ -427,15 +445,19 @@ func proveInWorktree(install, checkout, command string, running Running, output 
 	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit)
 	shell.Stdin, shell.Stdout, shell.Stderr = nil, output, output
 	if err := shell.Run(); err != nil {
-		return fmt.Errorf("the command ended: %w", err)
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.Exited() {
+			return fmt.Errorf("the proving command exited %d", exit.ExitCode())
+		}
+		return fmt.Errorf("the proving command ended: %w", err)
 	}
 	return nil
 }
 
 // removeProofTrees removes the lane repository's worktrees under trees,
 // each by the path git lists for it, and prunes what is gone.
-func removeProofTrees(checkout, trees string, output io.Writer) {
-	list, err := Git(checkout, "worktree", "list", "--porcelain")
+func removeProofTrees(git func(string, ...string) (string, error), checkout, trees string, output io.Writer) {
+	list, err := git(checkout, "worktree", "list", "--porcelain")
 	if err != nil {
 		return
 	}
@@ -450,15 +472,72 @@ func removeProofTrees(checkout, trees string, output io.Writer) {
 		}
 		for _, parent := range []string{trees, resolved} {
 			if strings.HasPrefix(path, parent+string(filepath.Separator)) {
-				if _, err := Git(checkout, "worktree", "remove", "--force", path); err != nil {
+				if _, err := git(checkout, "worktree", "remove", "--force", path); err != nil {
 					fmt.Fprintf(output, "landing prove: a crashed proof's worktree %s stays: %v\n", path, err)
 				}
 				break
 			}
 		}
 	}
-	_, _ = Git(checkout, "worktree", "prune")
+	_, _ = git(checkout, "worktree", "prune")
 }
 
 // proofTrees holds the proofs' detached worktrees of the lane repository.
 func proofTrees(install string) string { return filepath.Join(Dir(install), "proof-trees") }
+
+// ErrNoProofLog marks a proof log ProofLog does not serve.
+var ErrNoProofLog = errors.New("no landing log is served")
+
+// ProofLog is the log a lane record names for attempt: its result in
+// results.jsonl, else the proof running.json names. It answers only a log
+// that lies directly inside the lane's proofs folder, where Start and a
+// person's landing prove --wait write every log; an attempt no record names,
+// or a record whose log lies anywhere else (a result an older engine wrote),
+// is ErrNoProofLog in words. A record it cannot read is said as such, never
+// as no record.
+func ProofLog(install, attempt string) (string, error) {
+	if attempt == "" {
+		return "", fmt.Errorf("%w: no attempt was named", ErrNoProofLog)
+	}
+	log, err := recordedLog(install, attempt)
+	if err != nil {
+		return "", err
+	}
+	clean := filepath.Clean(log)
+	if log == "" || filepath.Dir(clean) != filepath.Join(Dir(install), "proofs") {
+		return "", fmt.Errorf("%w: the log of attempt %s is not in the lane's own log folder", ErrNoProofLog, attempt)
+	}
+	// A link in the folder is refused, never followed: it could point
+	// anywhere. A log that is gone is the caller's to say.
+	if info, err := os.Lstat(clean); err == nil && !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: the log of attempt %s is not a file in the lane's own log folder", ErrNoProofLog, attempt)
+	}
+	return clean, nil
+}
+
+// recordedLog is the log the newest result of attempt names, else the
+// running proof's when it is that attempt.
+func recordedLog(install, attempt string) (string, error) {
+	results, damaged, err := countedLines[Result](resultsPath(install))
+	if err != nil {
+		return "", fmt.Errorf("the landing results can't be read: %w", err)
+	}
+	for index := len(results) - 1; index >= 0; index-- {
+		if results[index].Attempt == attempt {
+			return results[index].Log, nil
+		}
+	}
+	data, err := os.ReadFile(runningPath(install))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("the running landing check can't be read: %w", err)
+	}
+	// A torn running.json is a proof that died mid-start: it names nothing.
+	var running Running
+	if err == nil && json.Unmarshal(data, &running) == nil && running.Attempt == attempt {
+		return running.Log, nil
+	}
+	if damaged > 0 {
+		return "", fmt.Errorf("the landing results have %d line(s) that can't be read, so whether one names attempt %s is not known", damaged, attempt)
+	}
+	return "", fmt.Errorf("%w: no lane record names attempt %s", ErrNoProofLog, attempt)
+}

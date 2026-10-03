@@ -258,6 +258,10 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	gating := &gateActs{l: state}
+	proofLogs, err := fixtureProofLogs(checkout)
+	if err != nil {
+		return err
+	}
 	presenceWatch := fleet.NewWatch()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	discards := &fixtureDiscards{}
@@ -298,6 +302,9 @@ func run(ctx context.Context, args []string) error {
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
 		Fleet: fixtureFleet(*proven, *launched, discards),
+		// The landing lane's proof logs, over one red proof planted in the
+		// fixture checkout; the board itself is a browser stub's.
+		Board: proofLogs,
 		// Launching, invented: this fixture clones nothing and spawns
 		// nothing, so the act answers with the running record the page
 		// already shows. What it proves in a browser is the sheet, its

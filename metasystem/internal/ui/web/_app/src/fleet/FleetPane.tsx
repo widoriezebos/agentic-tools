@@ -366,7 +366,7 @@ function FleetBlocks({
 /**
  * Needs you: everything that needs the person, from every source, in one
  * list, newest first — each with what to do in plain words, and the goal to
- * open or the question to answer where it has one.
+ * open, the question to answer or the proof's log to read where it has one.
  *
  * Empty, the block is absent rather than a line saying nothing needs you: the
  * verdict on top already says All good, and a standing "all clear" row is a
@@ -396,6 +396,11 @@ function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: 
                 <NavLink className="ms-fleet-needs-act" to="/decisions">
                   Answer
                 </NavLink>
+              )}
+              {one.log !== "" && (
+                <a className="ms-fleet-needs-act" href={one.log} target="_blank" rel="noopener noreferrer">
+                  Open log
+                </a>
               )}
               {one.goals.length > 0 && (
                 <span className="ms-fleet-needs-goals">

@@ -444,7 +444,7 @@
     {
       "id": "fleet-needs-you",
       "term": "Needs you",
-      "text": "Everything on this page that waits for you, newest first: the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each says what to do, or opens the goal or the question; Land now is the one act this page makes."
+      "text": "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each says what to do, or opens the goal, the question or the proof's log; Land now is the one act this page makes."
     },
     {
       "id": "this-seat",
@@ -474,7 +474,7 @@
     {
       "id": "phase",
       "term": "Doing",
-      "text": "What a machine is doing, and for how long: building, reviewing with the round of its limit, proving with the sections done of those planned, waiting to land, or idle. It is read from this computer's board where the board has a card for a goal the machine holds, and otherwise from the job records the machine keeps or published. A dash is a machine this seat has not heard from, so what it is doing is not known here."
+      "text": "What a machine is doing, and for how long: building, reviewing with the round of its limit, proving with the sections done of those planned, waiting to land, or idle. Stalled is a seat whose card stopped moving, with its stage and the time since its last progress: it made no progress past the stall bound, or the process writing it is gone. A stalled seat is not counted as working, and Needs you says what to do about it. It is read from this computer's board where the board has a card for a goal the machine holds, and otherwise from the job records the machine keeps or published. A dash is a machine this seat has not heard from, so what it is doing is not known here."
     },
     {
       "id": "box",

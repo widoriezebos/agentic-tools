@@ -1043,7 +1043,8 @@
 .ms-fleet-lane-goal,
 .ms-fleet-lane-open,
 .ms-fleet-needs-act,
-.ms-fleet-hold-title {
+.ms-fleet-hold-title,
+.ms-fleet-details-row dd a {
   color: var(--ms-text);
   text-decoration: none;
   border-bottom: 1px solid var(--ms-border-strong);
@@ -1052,7 +1053,8 @@
 .ms-fleet-lane-goal:hover,
 .ms-fleet-lane-open:hover,
 .ms-fleet-needs-act:hover,
-.ms-fleet-hold-title:hover {
+.ms-fleet-hold-title:hover,
+.ms-fleet-details-row dd a:hover {
   color: var(--ms-accent);
   border-bottom-color: var(--ms-accent);
 }

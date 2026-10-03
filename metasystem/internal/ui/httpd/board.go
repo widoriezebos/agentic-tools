@@ -49,6 +49,12 @@ type BoardSource struct {
 	// landing status --json carries it (plain.Status); nil serves a lane
 	// with no root.
 	Lane func(now time.Time) plain.Status
+	// ProofLog is the log file the lane's records name for one proof
+	// attempt, lying directly inside the lane's proofs folder
+	// (plain.ProofLog over this computer's lane); an error wrapping
+	// plain.ErrNoProofLog is a log it does not serve, said in words. nil
+	// serves no proof log.
+	ProofLog func(attempt string) (string, error)
 }
 
 // boardPayload is the classified board, and each seat's line as a person
