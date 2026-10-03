@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Build step 1 of the accepted design as twelve works stacked on the goal branch and landed together: root-types (reviewed), root-structs (committed f92a2bc52; review blocked on an engine defect reported to m1e: a refused dispatch binds the unit's frozen brief), root-audit (next: the run-state audit committed as a ratchet with its assigned-sites list), mission-roots, root-readers, goal-store, landing-roots, registers-and-records, contracts-and-discovery, adopted-layout, project-state, adoption, citations. Briefs in plans/one-folder-u*.md of the m1f checkout. LANDING ACCEPTANCE (agreed with m1e, 2026-10-03): the goal does not land while the run-state audit (rootaudit; plans/one-folder-audit/) lists any step-1 site; every work's acceptance is zero audit lines for the sites the assigned-sites list gives it. Handoff: plans/handoff-one-folder-deployed-and-evolved.md.
 - OpenedAt: 2026-10-02T14:27:17Z
-- Revision: 76
+- Revision: 77
 - Pinned: m1f
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -19,6 +19,7 @@
 - AcceptedRisk: finding=RULING-R-9 chain=code-critic-8d2bc71846a84b48933aa511 by=Wido opid=XN85HAKBQZ9W66MRKW5BM3MJAB-m1e-718ba0eb
 - AcceptedRisk: finding=RULING-one-folder-deployed-and-evolved chain=code-critic-85a2f77bb092ccb5ed768fa6 by=Wido opid=C39R5FYX7QGVB57A5RS8VM15WN-m1e-718ba0eb
 - AcceptedRisk: finding=F-USAGE-AUDIT chain=code-critic-85a2f77bb092ccb5ed768fa6 by=Wido opid=37PB7A9BGC1GBY83N0TKNB1BPG-m1e-718ba0eb
+- AcceptedRisk: finding=F-SEAT-SETTINGS chain=code-critic-85a2f77bb092ccb5ed768fa6 by=Wido opid=Y12Q48Y1XKQ7BPMAZ17YQ6XY8M-m1e-718ba0eb
 - Claimed: machine=m1f lineage=steward-seat at=2026-10-03T15:55:56Z revision=53 accountingRevision=46 episodeAt=2026-10-02T20:46:14Z episodeRevision=10 idleSeconds=13
 - StopCapability: generation=53 revision=53 machine=m1f claimEpoch=1 fenceEpoch=0
 
@@ -99,4 +100,5 @@ History:
 - 2026-10-03T16:30:10Z XN85HAKBQZ9W66MRKW5BM3MJAB-m1e-718ba0eb accept-risk actor=human:Wido targets=one-folder-deployed-and-evolved reason=Accepted in Wido word by m1e 2026-10-03 as out-of-scope: mission contracts stay with the state root per the brief; both callers behave as at base; the project-state unit names both callers with a separated-roots test and step 1 cannot land without it (R-142, content only) (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1f-one-folder-deployed-and-evolved/metasystem)
 - 2026-10-03T16:31:03Z C39R5FYX7QGVB57A5RS8VM15WN-m1e-718ba0eb accept-risk actor=human:Wido targets=one-folder-deployed-and-evolved reason=Accepted in Wido word by m1e 2026-10-03 under the standing policy for this goal: the fix belongs to a named later work of the same goal (goal-store, adopted-layout) or the finding is refuted with evidence naming where the behaviour is checked; the run-state ratchet holds step 1 from landing with it open (R-142, content only) (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1f-one-folder-deployed-and-evolved/metasystem)
 - 2026-10-03T16:31:23Z 37PB7A9BGC1GBY83N0TKNB1BPG-m1e-718ba0eb accept-risk actor=human:Wido targets=one-folder-deployed-and-evolved reason=Accepted in Wido word by m1e 2026-10-03 under the standing policy for this goal: the fix belongs to a named later work of the same goal (goal-store, adopted-layout) or the finding is refuted with evidence naming where the behaviour is checked; the run-state ratchet holds step 1 from landing with it open (R-142, content only) (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1f-one-folder-deployed-and-evolved/metasystem)
-Integrity: sha256=91858cc4f13d816d1fb2c9fb0dbd74c4f020256328a03a0ee8f7fd144a47994a
+- 2026-10-03T16:31:46Z Y12Q48Y1XKQ7BPMAZ17YQ6XY8M-m1e-718ba0eb accept-risk actor=human:Wido targets=one-folder-deployed-and-evolved reason=Accepted in Wido word by m1e 2026-10-03 under the standing policy for this goal: the fix belongs to a named later work of the same goal (goal-store, adopted-layout) or the finding is refuted with evidence naming where the behaviour is checked; the run-state ratchet holds step 1 from landing with it open (R-142, content only) (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1f-one-folder-deployed-and-evolved/metasystem)
+Integrity: sha256=aa871c293792f4bc07db45493ae0221b688ea7f23cb106f87b24b74e9fa02838
