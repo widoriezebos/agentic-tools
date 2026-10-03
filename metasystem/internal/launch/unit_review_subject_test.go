@@ -85,6 +85,11 @@ func TestReviewSubjectBindsTheLatestCompletedRound(t *testing.T) {
 		if review.Round.Number != 2 || review.Subject != nil || review.Prior == nil || !reflect.DeepEqual(*review.Prior, committed) {
 			t.Fatalf("second round subject=%+v prior=%+v", review.Subject, review.Prior)
 		}
+		// A corrected attempt is built from its correction brief alone, and
+		// is reviewed against the same brief.
+		if review.BuildBrief != second.Record.Rounds[1].FollowUp || review.BuildBrief == plan.Build.Brief {
+			t.Fatalf("second round brief=%q, want its correction brief %q", review.BuildBrief, second.Record.Rounds[1].FollowUp)
+		}
 		return retain(amend)
 	})
 	if err != nil {

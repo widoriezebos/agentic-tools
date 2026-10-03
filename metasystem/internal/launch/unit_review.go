@@ -128,6 +128,11 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
 	}
 	review.BuildBrief, review.Base = plan.Build.Brief, plan.Base
+	if round.FollowUp != "" {
+		// A corrected attempt was built from its correction brief alone, so
+		// it is reviewed against that brief.
+		review.BuildBrief = round.FollowUp
+	}
 	for index := range record.Subjects {
 		subject := record.Subjects[index]
 		if subject.Round == round.Number {
