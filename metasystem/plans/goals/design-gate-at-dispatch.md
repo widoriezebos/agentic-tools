@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 8
+- Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
 - Tier: 2
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design. RETURNED 2026-10-03: the machinery runs again (stewards start seats unattended since 2026-10-02). First confirm on a live example where a design-bearing build is first dispatched today (the seat's unit build), then build the gate there.
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 43
+- Revision: 44
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -59,4 +59,5 @@ History:
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:9 to=2:8
 - 2026-10-03T11:13:33Z 2D1WY5GFNQEVDE9W4E6WVVXW4J-m1e-718ba0eb edit actor=human:Wido targets=design-gate-at-dispatch
 - 2026-10-03T11:18:24Z D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb approve actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,recovery-to-good-state
-Integrity: sha256=2bd49708690c2cb7d6ae550ed2ec9d2bcdd7f99b301f9d41e0873756b759c5df
+- 2026-10-03T12:28:58Z KZV4ERVBRHNVHQEAZ4AG9FQBZ1-m1e-718ba0eb set-priority actor=human:Wido targets=arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=host-setup-from-scratch from=2:8 to=2:7 requested-sequence=20
+Integrity: sha256=13e18c6727d45b7b8202350c81dc64641f5a19b4630bf0cbdde679e1830f30e2

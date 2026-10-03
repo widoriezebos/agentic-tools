@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 14
+- Sequence: 13
 - Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="A first crash rehearsal that kills workers, the runner and the steward in an isolated setup; a kill aimed wrong would hit live seats on the same host; a test, not a product change"
 - Tier: 2
 - Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 54
+- Revision: 55
 - BlockedBy: recovery-to-good-state
 - Labels: headless-fleet, headless-proof
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
@@ -72,4 +72,5 @@ History:
 - 2026-10-03T11:17:14Z 5MJHRZVFYYJQHT0ZQ5KE46EXW4-m1e-718ba0eb unblock actor=human:Wido targets=recovery-rehearsal,recovery-to-good-state reason=blockedBy drops recovery-to-good-state
 - 2026-10-03T11:17:21Z N0X7H0ZRAEGGD9WQ1VCV6B8WM4-m1e-718ba0eb block actor=human:Wido targets=recovery-rehearsal reason=blocked by recovery-to-good-state; returns when it is done
 - 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
-Integrity: sha256=e9adecd2f23c6873c0c9fdd142f844dbef3539f41fea5d4747d4f5f7007e4b94
+- 2026-10-03T12:28:58Z KZV4ERVBRHNVHQEAZ4AG9FQBZ1-m1e-718ba0eb set-priority actor=human:Wido targets=arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=host-setup-from-scratch from=2:14 to=2:13 requested-sequence=20
+Integrity: sha256=ea213e1354e4b766a1c2ce49ea7bcd14d22da835fe978de69d05d93ff0f51a96

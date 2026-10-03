@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 11
+- Sequence: 10
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="Written records and a sweep that flags an overdue review; nothing refuses; every later gate must carry the record, so its format stays with us"
 - Tier: 1
 - Intent: What: Each new refusal gate comes with a short record: who owns it, when it is reviewed, an example it must refuse, how to appeal, and what happens if the check itself breaks. It also runs in warning-only mode first. Why: A gate without an owner or a review date turns into ceremony nobody owns. Pros: Gates stay honest and can be removed when they stop earning their keep. Cons: Little to govern yet: commit-goal binding has its refusal, the design gate is not built.
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 49
+- Revision: 50
 - BlockedBy: commit-goal-binding, design-gate-at-dispatch
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
@@ -66,4 +66,5 @@ History:
 - 2026-10-03T11:16:36Z P9KVK8AB7VRV1K1J21F05KKGVJ-m1e-718ba0eb unblock actor=human:Wido targets=gate-governance-records,design-gate-at-dispatch reason=blockedBy drops design-gate-at-dispatch
 - 2026-10-03T11:16:43Z 3JS07572TD8ZZM4WDXJAZMV5W8-m1e-718ba0eb block actor=human:Wido targets=gate-governance-records reason=blocked by commit-goal-binding, design-gate-at-dispatch; returns when they are done
 - 2026-10-03T12:25:17Z QDW4XC1TDXA30ERE48NZ4YT939-m1e-718ba0eb approve actor=human:Wido targets=gate-governance-records
-Integrity: sha256=dddadc13fe6ee825aaaa1de978da576b4be509cb56d86410fcc23f9d700fca97
+- 2026-10-03T12:28:58Z KZV4ERVBRHNVHQEAZ4AG9FQBZ1-m1e-718ba0eb set-priority actor=human:Wido targets=arming-binds-the-installed-engine-identity,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,commit-goal-binding,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-setup-from-scratch,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,receipt-writer-follows-the-worktree-it-runs-in,recovery-rehearsal,recovery-to-good-state,role-context-composition,round-proof-feeds-the-next-brief,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,token-spend-fence,transport-remote-absent-refuses-every-landing,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=host-setup-from-scratch from=2:11 to=2:10 requested-sequence=20
+Integrity: sha256=6b92c64d6c3d3c122ca0e9721634399e757880a6d36bc62742db69b8465d6d19
