@@ -1,16 +1,16 @@
 # incident-proposal-drafting
 
-- State: parked
+- State: abandoned
 - Priority: 3
 - Sequence: 14
 - Intent: What: When the system notices a problem you would notice (a dead test suite, lost jobs, repeated refusals), it drafts a proposed fix and brings it to you. Why: Detection alone is not enough; you asked for drafted proposals to reach you. Pros: Problems arrive with a suggested remedy, not only an alert. Cons: It needs a recorded stream of incidents to draft from, which is being designed now in steward-acts-on-behaviour-patterns.
 - Origin: human
 - Next step: Next: When the steward records typed incidents, add one drafting step per incident kind: evidence, suspected cause, candidate remedy, size. Rewrite this step on unpark against what steward-acts-on-behaviour-patterns built. Done when: replaying a known incident produces a drafted proposal waiting for you.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 98
+- Revision: 99
 - Labels: custody
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-09-13T08:23:35Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
+- Abandoned: by=human:Wido at=2026-10-03T09:55:50Z revision=99 opid=X3WG8XZEQCVZZNASC82020Z397-m1e-718ba0eb carried=steward-acts-on-behaviour-patterns because=Folded into steward-acts-on-behaviour-patterns (2026-10-03 parked-list cleanup, in Wido's word): that goal now owns this ground; the remaining ask is recorded on it.
 
 History:
 - 2026-08-24T13:26:02Z XMTWKC4DZHNXCRZ95K08WRDMYS-m2-bc1be9cb open actor=human:wido targets=incident-proposal-drafting
@@ -111,4 +111,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:17 to=3:16
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:16 to=3:15
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:15 to=3:14
-Integrity: sha256=8d91878965e39862dd794d47b04fe38222f67f63f7e8e84b91ff4d9c967e8c80
+- 2026-10-03T09:55:50Z X3WG8XZEQCVZZNASC82020Z397-m1e-718ba0eb abandon actor=human:Wido targets=incident-proposal-drafting,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last carried=steward-acts-on-behaviour-patterns reason=Folded into steward-acts-on-behaviour-patterns (2026-10-03 parked-list cleanup, in Wido's word): that goal now owns this ground; the remaining ask is recorded on it.
+Integrity: sha256=e85d9deeda5e899fad67ede490b355428ee6d510b0d5cf611515a67e62285ee9

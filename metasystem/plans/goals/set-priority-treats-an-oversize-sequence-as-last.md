@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 17
+- Sequence: 16
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused reorder, no wrong ledger state; novelty 1: clamp a bound that already has an append form; exposure 2: every human or seat reorder that names a position; accumulation 1: each refusal is visible and retried"
 - Tier: 1
 - Intent: What: The goal prioritize command accepts a position beyond the end of the queue and puts the goal last, reporting the position it actually used. Why: Asking for position 90 in a queue of 62 is refused today, although the only sensible meaning is "last". It broke a batch of Wido's reorderings on 09-15. Pros: Fewer pointless refusals when reordering the backlog. Cons: A typo in a position moves a goal to the end instead of being caught; reporting the used position keeps that visible.
 - Origin: human
 - Next step: Next: In internal/goal/order.go, turn a position past the end into "last" and report the position used; keep refusing positions below 1; update order_test and the two UI tests that expect the refusal (ui/act/act_test.go:257 and ui/httpd/walkthrough/main.go:1580, so tell the ui seat). Done when: goal prioritize with sequence 999 puts the goal last, says which position it got, and the queue stays numbered 1 to N without gaps.
 - OpenedAt: 2026-09-15T06:06:03Z
-- Revision: 30
+- Revision: 31
 - BudgetExceptions: 0
 
 History:
@@ -43,4 +43,5 @@ History:
 - 2026-10-03T09:55:14Z TXC5ZCD4WSABD7C54CASE6FKDY-m1e-718ba0eb abandon actor=human:Wido targets=cross-repo-guardrails,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
 - 2026-10-03T09:55:20Z 7YVW40QVJA2HF83H5QHJAHK7A2-m1e-718ba0eb abandon actor=human:Wido targets=integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:19 to=3:18
 - 2026-10-03T09:55:26Z N9QXCHAK9HP8A7WY1BF630R7NH-m1e-718ba0eb abandon actor=human:Wido targets=metasystem-way-patterns,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:18 to=3:17
-Integrity: sha256=c685dafd406caee5451ef6b8116ce6d024056932020aaea2e97324d8da5b0814
+- 2026-10-03T09:55:50Z X3WG8XZEQCVZZNASC82020Z397-m1e-718ba0eb abandon actor=human:Wido targets=incident-proposal-drafting,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:17 to=3:16
+Integrity: sha256=03690376ece0db06666581f22bd01f018dc67b42ee4176676238e27a4a054ee7
