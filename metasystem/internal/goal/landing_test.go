@@ -74,10 +74,6 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	if err := validateCommitFor(a, acceptedTipForEndpoint(t, a)); err != nil {
 		t.Fatalf("one landing claim beside one working claim must validate: %v", err)
 	}
-	// One landing slot per machine.
-	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA16", "mac-a", landAt.Add(3*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
-		t.Fatalf("a second landing slot is refused: %+v %v", res, err)
-	}
 	// A third working claim is still over the quota.
 	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA17", "mac-a", landAt.Add(4*time.Minute)), "third-c", budget); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "a machine holds one claim at a time") {
 		t.Fatalf("the working claim still consumes the quota: %+v %v", res, err)
@@ -121,8 +117,13 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 			t.Fatalf("a claim not past its box by the projection printed as overdue: %v", waiting)
 		}
 	}
-	// Release the working claim: the landing goal alone resolves as current
-	// and the frontier offers the ready goal.
+	// The working claim waits to land beside the first: a machine may hold
+	// any number of goals waiting to land, and the published ledger validates.
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA16", "mac-a", landAt.Add(5*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a second goal of the machine was refused the mark: %+v %v", res, err)
+	}
+	// Release the second goal: the first alone resolves as current and the
+	// frontier offers the released goal as ready.
 	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NA18", "mac-a", landAt.Add(6*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
@@ -462,29 +463,27 @@ func TestLandingAndEpisodeRecordsRoundTripAndValidate(t *testing.T) {
 	if _, problems := ParseFile(RenderFile(&backwards)); !problemsContain(problems, "precedes episodeAt") {
 		t.Fatalf("a release before the episode start did not refuse: %v", problems)
 	}
-	// Two landing claims on one machine refuse at the tree.
+	// Two landing claims on one machine beside a working claim are lawful; a
+	// second working claim is still over the quota.
 	one := vGoal("landing-one", StateClaimed)
 	two := vGoal("landing-two", StateClaimed)
 	for _, f := range []*GoalFile{one, two} {
 		f.Landing = &LandingRecord{At: "2026-08-20T10:06:00Z", Opid: "01J5X0000000000000000000B1-mac-a-1a2b3c4d"}
 	}
-	tree := &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{one.Id: one, two.Id: two}, Done: map[string]*GoalFile{}}
+	working, another := vGoal("working", StateClaimed), vGoal("another", StateClaimed)
+	tree := &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{one.Id: one, two.Id: two, working.Id: working}, Done: map[string]*GoalFile{}}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("two landing claims beside a working claim refused: %v", problems)
+	}
+	tree.Live[another.Id] = another
 	found := false
 	for _, problem := range ValidateTree(tree) {
-		if strings.Contains(string(problem), "one landing slot per machine") {
+		if strings.Contains(string(problem), "machine mac-a claims another, working: the quota is one claim per machine") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("two landing slots on one machine did not refuse: %v", ValidateTree(tree))
-	}
-	// One landing claim beside one working claim on one machine is lawful.
-	working := vGoal("working", StateClaimed)
-	tree = &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{one.Id: one, working.Id: working}, Done: map[string]*GoalFile{}}
-	for _, problem := range ValidateTree(tree) {
-		if strings.Contains(string(problem), "quota") || strings.Contains(string(problem), "landing slot") {
-			t.Fatalf("a landing claim beside a working claim refused: %v", problem)
-		}
+		t.Fatalf("a second working claim beside two landing claims did not refuse: %v", ValidateTree(tree))
 	}
 }
 
@@ -797,7 +796,7 @@ func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 	}
 }
 
-func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testing.T) {
+func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimBlocksNoOther(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -843,31 +842,26 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF22", "mac-a", t0.Add(4*time.Minute)), "fenced-a"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "breach-stopped") {
 		t.Fatalf("land-ready of a fenced claim was not refused: %+v %v", res, err)
 	}
-	// A landing claim that is then fenced still holds the machine's one slot.
+	// A landing claim that is then fenced keeps no other goal of its machine
+	// from waiting to land.
 	fence("landing-c", "01J5X00000000000000000NF30", "", t0.Add(5*time.Minute))
 	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF31", "mac-a", t0.Add(6*time.Minute)), "landing-c"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready landing-c: %+v %v", res, err)
 	}
 	stop("landing-c", "01J5X00000000000000000NF32", t0.Add(8*time.Minute))
 	fence("next-d", "01J5X00000000000000000NF40", "", t0.Add(9*time.Minute))
-	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF41", "mac-a", t0.Add(10*time.Minute)), "next-d"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
-		t.Fatalf("a fenced landing claim gave up its slot: %+v %v", res, err)
+	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF41", "mac-a", t0.Add(10*time.Minute)), "next-d"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a fenced landing claim kept next-d from waiting to land: %+v %v", res, err)
 	}
 	// The tree says the same: a fenced landing claim and a landing claim on
-	// one machine are two slots.
+	// one machine are lawful.
 	fenced := breachStoppedGoalForTest("fenced-l", "mac-a")
 	fenced.Landing = &LandingRecord{At: "2026-08-23T01:01:00Z", Opid: "01J5X0000000000000000000B1-mac-a-1a2b3c4d"}
 	landing := vGoal("landing-l", StateClaimed)
 	landing.Landing = &LandingRecord{At: "2026-08-20T10:06:00Z", Opid: "01J5X0000000000000000000B1-mac-a-1a2b3c4d"}
 	tree := &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{fenced.Id: fenced, landing.Id: landing}, Done: map[string]*GoalFile{}}
-	found := false
-	for _, problem := range ValidateTree(tree) {
-		if strings.Contains(string(problem), "one landing slot per machine") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("a fenced landing claim beside a landing claim did not refuse: %v", ValidateTree(tree))
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("a fenced landing claim beside a landing claim refused: %v", problems)
 	}
 }
 
@@ -1111,10 +1105,9 @@ func TestAWaitEndOutsideTheMarkIsRefused(t *testing.T) {
 
 func TestAnArcReleaseCreditsEveryMarkedMember(t *testing.T) {
 	t.Parallel()
-	// Both members of an arc, claimed by one pair, wait to land: handed to
-	// that pair, since one machine otherwise holds one landing slot, and
-	// marked at 23:00 and 23:30. Released or parked through the arc at 01:00,
-	// each keeps its own wait as idle.
+	// Both members of an arc, claimed by one pair, wait to land: marked at
+	// 23:00 and 23:30. Released or parked through the arc at 01:00, each
+	// keeps its own wait as idle.
 	at := time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC)
 	waits := map[string]Wait{
 		"cw-one": {Start: time.Date(2026, 8, 20, 23, 0, 0, 0, time.UTC), End: time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)},
@@ -1125,7 +1118,6 @@ func TestAnArcReleaseCreditsEveryMarkedMember(t *testing.T) {
 		arcBedFor(t, a, "credit-arc", "cw", "CW")
 		for i, id := range []string{"cw-one", "cw-two"} {
 			publishClaimFixtureMutationForEndpoint(t, a, id, "fixture-mark-"+id, func(f *GoalFile) {
-				f.Claimed.HandedOver = HandedOver{FromMachine: "seat-a", FromLineage: "lineage-a", FromEpoch: 7, Batch: "batch-a"}
 				f.Landing = &LandingRecord{At: waits[id].Start.Format(time.RFC3339), Opid: Opid(fmt.Sprintf("01J5X00000000000000000CW7%d", i), "mac-a", "lin-1")}
 			})
 		}

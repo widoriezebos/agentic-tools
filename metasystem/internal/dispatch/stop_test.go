@@ -377,6 +377,44 @@ func TestAWaitDoesNotGrowElapsed(t *testing.T) {
 	}
 }
 
+func TestTwoGoalsOfOneMachineWaitToLand(t *testing.T) {
+	t.Parallel()
+	// One seat claims a goal at 08:00 and marks it waiting to land at 09:00,
+	// then claims a second goal and marks it at 10:00. Both wait on one
+	// machine and the ledger holds them; a day later, each past its breach
+	// limit with no job or proof of its own since its mark, neither is named
+	// for a breach stop.
+	claimAt := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
+	bed := newGCLIBudgetBed(t, claimAt)
+	budget := bed.budget("4h", 4, 240, 2, 3)
+	marks := map[string]time.Time{"first": claimAt.Add(time.Hour), "second": claimAt.Add(2 * time.Hour)}
+	bed.claimApproved("first", "Land it.", budget, claimAt)
+	result, err := goal.LandReady(bed.request(marks["first"], false), "first")
+	bed.confirm("land-ready first", result, err)
+	bed.claimApproved("second", "Land it.", budget, marks["first"])
+	result, err = goal.LandReady(bed.request(marks["second"], false), "second")
+	bed.confirm("land-ready second", result, err)
+	now := claimAt.Add(24 * time.Hour)
+	projection, err := goal.Project(bed.endpoint(), false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems := goal.ValidateTree(projection.Tree); len(problems) != 0 {
+		t.Fatalf("two goals of one machine waiting to land do not validate: %v", problems)
+	}
+	for id, mark := range marks {
+		file := projection.Tree.Live[id]
+		clock := ProjectBudget(bed.root, file, now)
+		if file.Landing == nil || file.Claimed.Machine != "fixture-machine" || clock.Status != BudgetKnown ||
+			now.Sub(mark) <= clock.ElapsedBreachLimit || clock.Elapsed != time.Hour || clock.ElapsedState != "" {
+			t.Fatalf("%s is not waiting past its breach limit with its clock stopped: landing=%+v projection=%+v", id, file.Landing, clock)
+		}
+	}
+	if routes, err := findBreachStopsWithReads(bed.root, now, bed.reads); err != nil || len(routes) != 0 {
+		t.Fatalf("a goal that only waited to land was named for a breach stop: %+v %v", routes, err)
+	}
+}
+
 func TestAJobThatNeverRanDoesNotEndTheWait(t *testing.T) {
 	t.Parallel()
 	// Marked at 09:00, the goal holds a reservation from 08:50 still in setup

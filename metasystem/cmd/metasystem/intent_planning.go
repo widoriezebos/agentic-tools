@@ -1313,38 +1313,12 @@ func runIntentRelease(inv *intentInvocation) int {
 	}, "id")))
 }
 
-// runIntentQueueOnly is land G --queue-only: exactly the land-ready act. A
-// refusal because this machine's landing slot is taken names the public
-// landing of the goal that holds it, read from the goal ledger.
+// runIntentQueueOnly is land G --queue-only: exactly the land-ready act.
 func runIntentQueueOnly(inv *intentInvocation, id string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	result := inv.landReady(id)
-	if result.Outcome != intentRefused || len(result.next) > 0 {
-		return inv.render(result)
-	}
-	projection, _, problem := inv.projection()
-	if problem != nil {
-		return inv.render(result)
-	}
-	mine := goalRecordClaim(projection, id)
-	var waiting []string
-	for _, other := range sortedLiveIDs(projection) {
-		file := projection.Tree.Live[other]
-		if other == id || file.State != goal.StateClaimed || file.Claimed == nil || file.Landing == nil || file.Claimed.HandedOver != (goal.HandedOver{}) {
-			continue
-		}
-		if mine == "" || file.Claimed.Machine == mine {
-			waiting = append(waiting, other)
-		}
-	}
-	if len(waiting) == 1 {
-		result.Summary = fmt.Sprintf("%s; this machine's one landing slot holds goal %s", strings.TrimSpace(result.Summary), waiting[0])
-		result.next, result.nextReason = []string{"metasystem", "work", "land", waiting[0]}, "land the goal waiting in the slot first, then queue this one again"
-		result.Decision = ""
-	}
-	return inv.render(result)
+	return inv.render(inv.landReady(id))
 }
 
 func (inv *intentInvocation) landReady(id string) intentResult {
@@ -1356,23 +1330,6 @@ func (inv *intentInvocation) landReady(id string) intentResult {
 	return inv.goalAct(id, "ready", inv.syncOwner("land-ready", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.LandReady(req, f.id)
 	}, "id"))
-}
-
-// goalRecordClaim is the machine holding a live goal's claim, if any.
-func goalRecordClaim(projection goal.Projection, id string) string {
-	if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
-		return file.Claimed.Machine
-	}
-	return ""
-}
-
-func sortedLiveIDs(projection goal.Projection) []string {
-	ids := make([]string, 0, len(projection.Tree.Live))
-	for id := range projection.Tree.Live {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	return ids
 }
 
 // reviewRoot is the chain root of a named review job, read from its record.

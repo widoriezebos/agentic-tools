@@ -19,9 +19,8 @@ import (
 
 // TestIntentQueueOnly: land G --queue-only is exactly the real land-ready
 // act on the goal ledger, with no proof, collection or publication (the bed
-// gives no delivery owner, so any such call would fail). A machine whose one
-// landing slot is taken is refused with the public landing of the goal that
-// holds it.
+// gives no delivery owner, so any such call would fail). A machine that
+// already holds a goal waiting to land queues a second one beside it.
 func TestIntentQueueOnly(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
@@ -46,9 +45,9 @@ func TestIntentQueueOnly(t *testing.T) {
 	}
 	second.addGoal(earlier)
 	code, result = second.runJSON(second.owners(), "work", "land", bedGoal, "--queue-only")
-	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", "earlier-landing"}) ||
-		second.goalFile(bedGoal).Landing != nil {
-		t.Fatalf("a taken landing slot = %d %+v", code, result)
+	if code != 0 || result.Outcome != intentConfirmed || second.goalFile(bedGoal).Landing == nil ||
+		second.goalFile("earlier-landing").Landing == nil {
+		t.Fatalf("a second goal waiting to land = %d %+v", code, result)
 	}
 }
 

@@ -159,7 +159,7 @@ func intentDeliveryCommands() []intentCommand {
 				"exception past exactly one refusal code (or one group:NAME) is recorded with the enrolled person's proof, and the carried",
 				"landing delivers it from this checkout's main. Repeating the request rejoins the recorded exception; a changed candidate",
 				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
-				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
+				"The claim leaves the one-claim quota until it lands, and its elapsed clock stops while it waits.",
 				"The read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
 				"While this computer has a landing lane (metasystem landing status shows it), work land G hands the goal's branch to the lane instead, after the same reads and gates: one line in the lane's queue, which its landing agent proves and pushes. A repeat shows whether it waits, landed (main contains it; then goal done G) or was returned, with the reason.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",

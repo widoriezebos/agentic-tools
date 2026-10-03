@@ -15,8 +15,7 @@ metasystem work land · land a goal's reviewed work
   Repeating the request rejoins the recorded exception; a changed candidate needs
   --replace-exception. --using-exception ID lands under an exception already recorded, locally or
   through the channel.
-The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one
-  landing slot.
+The claim leaves the one-claim quota until it lands, and its elapsed clock stops while it waits.
 The read-clean goal branch is proved on its landing candidate and pushed from this checkout.
 While this computer has a landing lane (metasystem landing status shows it), work land G hands the
   goal's branch to the lane instead, after the same reads and gates: one line in the lane's queue,

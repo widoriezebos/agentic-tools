@@ -2249,8 +2249,9 @@ func releaseRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 
 // LandReady marks the claim holder's built and verified work as waiting to
 // land. The goal stays claimed, so its receipts still bind to the claim,
-// but the claim leaves the machine's one-claim quota and its elapsed fence
-// while it waits; the landing lifts the record with the claim.
+// but the claim leaves the machine's one-claim quota until it lands, and its
+// elapsed clock stops while it waits; the landing lifts the record with the
+// claim.
 func LandReady(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("land-ready is the claim holder's own act; it takes no --by")
@@ -2289,13 +2290,6 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 			}
 			if f.Landing != nil {
 				return nil, AlreadyHolds{Reason: "goal " + id + " is already queued to land (since " + f.Landing.At + ")"}
-			}
-			for _, other := range t.Live {
-				// A fenced landing claim still holds the slot: the resume
-				// restores it, and two slots would then refuse the resume.
-				if other.Id != id && other.State == StateClaimed && other.Claimed != nil && other.Landing != nil && other.Claimed.Machine == r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s already waits to land on machine %s; one landing slot per machine: land it before entering %s", other.Id, r.Actor.Machine, id)
-				}
 			}
 			touch(f, r, "land-ready", []string{id})
 			f.Landing = &LandingRecord{At: r.stamp(), Opid: r.opid()}

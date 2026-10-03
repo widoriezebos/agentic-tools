@@ -237,10 +237,10 @@ func TestGoalCLILedgerSeatBlocker(t *testing.T) {
 }
 
 // landing-slot (goal 20): built work lands beside the seat's claim. The
-// land-ready act keeps the claim and frees the machine's one claim; a second
-// slot is refused; the frontier continues the working claim and names the
-// landing goal; a person concludes the landing goal; the same pair's release
-// and re-claim keep the accounting episode with the gap as idle seconds.
+// land-ready act keeps the claim and frees the machine's one claim; the
+// frontier continues the working claim, which then waits to land too; a
+// person concludes the first landing goal; the same pair's release and
+// re-claim keep the accounting episode with the wait and the gap as idle seconds.
 func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	t.Parallel()
 	bed := newGoalCLIBed(t, goalCLISeed{})
@@ -266,10 +266,15 @@ func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	gcliLedgerHumanOpen(t, bed, "next-widget")
 	gcliLedgerMust(t, bed, append([]string{"goal", "approve", "next-widget"}, gcliLedgerHuman...)...)
 	gcliLedgerMust(t, bed, "goal", "claim", "next-widget")
-	gcliLedgerRefused(t, bed, "one landing slot per machine", "work", "land", "next-widget", "--queue-only")
 	frontier := gcliLedgerMust(t, bed, "goal", "list", "--ready", "--machine", "fixture-machine")
 	if !strings.Contains(frontier, "continue your claimed goal: next-widget") {
 		t.Fatalf("the frontier does not continue the working claim: %q", frontier)
+	}
+	secondAt := landAt.Add(10 * time.Minute)
+	bed.setNow(secondAt)
+	gcliLedgerMust(t, bed, "work", "land", "next-widget", "--queue-only")
+	if second := bed.goalRecord("next-widget"); !strings.HasPrefix(goalCLILine(second, "- Landing: "), "- Landing: at="+stamp(secondAt)+" opid=") {
+		t.Fatalf("the second goal of the machine does not wait to land:\n%s", second)
 	}
 	code, listing, errOut := bed.public("goal", "list", "--json")
 	if code != 0 || !strings.Contains(listing, stamp(landAt)) {
@@ -316,8 +321,8 @@ func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	gcliLedgerMust(t, bed, "goal", "release", "next-widget", "--reason", "the seat pauses")
 	episode := goalCLILine(bed.goalRecord("next-widget"), "- Episode: ")
 	if !strings.HasPrefix(episode, "- Episode: machine=fixture-machine lineage=fixture-lineage accountingRevision="+accounting+" ") ||
-		!strings.HasSuffix(episode, " idleSeconds=0 released="+stamp(releaseAt)) {
-		t.Fatalf("the own pair's release did not keep the episode: %q", episode)
+		!strings.HasSuffix(episode, " idleSeconds=3000 released="+stamp(releaseAt)) {
+		t.Fatalf("the own pair's release did not keep the episode with the wait idle: %q", episode)
 	}
 	reclaimAt := releaseAt.Add(2 * time.Hour)
 	bed.setNow(reclaimAt)
@@ -325,8 +330,8 @@ func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	reclaimed := bed.goalRecord("next-widget")
 	line := goalCLILine(reclaimed, "- Claimed: ")
 	if !strings.HasPrefix(line, "- Claimed: machine=fixture-machine lineage=fixture-lineage at="+stamp(reclaimAt)+" revision=") ||
-		!strings.Contains(line, " accountingRevision="+accounting+" episodeAt=") || !strings.HasSuffix(line, " idleSeconds=7200") {
-		t.Fatalf("the re-claim did not keep the episode with the gap idle: %q", line)
+		!strings.Contains(line, " accountingRevision="+accounting+" episodeAt=") || !strings.HasSuffix(line, " idleSeconds=10200") {
+		t.Fatalf("the re-claim did not keep the episode with the wait and the gap idle: %q", line)
 	}
 	if goalCLILine(reclaimed, "- Episode:") != "" {
 		t.Fatalf("the re-claim did not consume the kept episode:\n%s", reclaimed)
