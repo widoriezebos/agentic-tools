@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
 // DesignCritiqueChain is one design-critic chain of one design document, as
@@ -32,6 +34,12 @@ func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueC
 	var chains []DesignCritiqueChain
 	for jobID, record := range state.records {
 		if state.chainRoot(jobID) != jobID || asString(record["role"]) != "design-critic" {
+			continue
+		}
+		// A root refused at setup never ran (the setup-refusal-release
+		// rule): it is no critique of the design, so a later review or close
+		// passes it by.
+		if !goalbudget.ReservationConsumesBudget(TerminalStatus(asString(record["status"])), asString(record["phase"]), asString(record["refusalClass"])) {
 			continue
 		}
 		recorded := asString(record["design"])
