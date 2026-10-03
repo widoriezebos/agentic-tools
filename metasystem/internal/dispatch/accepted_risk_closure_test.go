@@ -13,6 +13,7 @@ import (
 // A chain an earlier engine closed without a closure records it when closed
 // again. A refuted finding still closes without a closure.
 func TestAcceptedRiskClosesToALandableRead(t *testing.T) {
+	t.Parallel()
 	setup := func(t *testing.T, class string) (string, ReadSubject) {
 		repo := t.TempDir()
 		writeCriticRound(t, repo, "critic", "critic", 1,

@@ -9,6 +9,7 @@ import "testing"
 // out-of-scope severe or unproven, and an accepted risk with no recorded act
 // are not landable.
 func TestLandableRegister(t *testing.T) {
+	t.Parallel()
 	entry := func(id, status, resolution, class, opid string) map[string]any {
 		value := modernRegisterEntry(status, resolution)
 		value["findingId"], value["rigorClass"], value["decisionOpid"] = id, class, opid
