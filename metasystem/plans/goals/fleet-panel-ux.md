@@ -1,6 +1,6 @@
 # fleet-panel-ux
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=2 exposure=2 accumulation=2 basis="Presentation of existing facts plus three thin endpoints for existing verbs (severity 1); a new layout (novelty 2); the person's main view (exposure 2); read many times a day (accumulation 2)"
@@ -9,14 +9,15 @@
 - Origin: main
 - Next step: Astra critique of the design (tier 2), then build in the ui seat, land; ASKED 9C7D6XANGZ51BV22WVN793E6YH (other): The new fleet panel is built and Sol has read it five times. Its 4-hour time box ran out with two small findings open. Land it as it is, or give it one more round?
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 10
+- Revision: 11
 - Pinned: ui
 - Budget: elapsedLimit=6h attemptLimit=9 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb minutes=1080 reviewRounds=20 goalRevision=8
 - Approved: by=human:Wido at=2026-10-03T03:12:42Z revision=9 opid=HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb authority=proven digest=9bee65a93add12b95e7652e77deb806bb66f5e96716bcd7a8b8b442adc4e787d episode=9
 - Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
-- Episode: machine=ui lineage=steward-seat accountingRevision=9 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=0 released=2026-10-03T03:30:40Z
+- Claimed: machine=ui lineage=steward-seat at=2026-10-03T03:30:45Z revision=11 accountingRevision=9 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=5
+- StopCapability: generation=11 revision=11 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-02T21:18:23Z EM5JJFDXWZ6592RRGHJA018JB8-m1e-9c612d71 open actor=human:Wido targets=fleet-panel-ux
@@ -29,4 +30,5 @@ History:
 - 2026-10-03T03:07:14Z 6S7M7NJE1CAQV0TXJ6ATEZ3S1E-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
 - 2026-10-03T03:12:42Z HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-02T22:59:40Z
 - 2026-10-03T03:30:40Z 6VXGFMDNPESRGPYNDRKBFMHGDA-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim after the budget raise rebound the claim to m1e's checkout; the critic dispatch was refused as bound under another claim
-Integrity: sha256=03cbe8b74cfe6efc970c4afa46eab39af3a4e6a6bbb1d6ba8a91220ef0b404e0
+- 2026-10-03T03:30:45Z EHMZ83NVXTAT5MEJHVDN3CVCKQ-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=329b483052aa7a9d473f62d8da2c2c6c3b0c04ab99684527a1d8df345a45e338
