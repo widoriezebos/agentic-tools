@@ -552,3 +552,45 @@ func TestANewHandInSupersedesTheOlderWaitingLine(t *testing.T) {
 		t.Fatalf("after the return nothing is pending: %+v", pending)
 	}
 }
+
+// Seats publish goal acts on main every few minutes; a lane that re-proved
+// each such tree never finished a proof before main moved again. A tree that
+// differs from a green tree only in goal ledger files inherits that green;
+// any other change runs the command.
+func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.seat("seat-a", "goal-a")
+	b.merge("goal-a")
+	ran := filepath.Join(b.root, "ran.txt")
+	script := "echo ran >> \"" + ran + "\"\n"
+	if result := b.prove(script); result.Result != Green || result.Reason != "" {
+		t.Fatalf("first proof: %+v", result)
+	}
+	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "a goal act\n")
+	b.git(b.checkout, "add", "-A")
+	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
+	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+	result := b.prove(script)
+	if result.Result != Green || result.Tree != ledgerTree || !strings.Contains(result.Reason, "only goal ledger files changed") {
+		t.Fatalf("a ledger-only change did not inherit green: %+v", result)
+	}
+	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 1 {
+		t.Fatalf("the command ran for a ledger-only change: %q", data)
+	}
+	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
+	b.git(b.checkout, "add", "-A")
+	b.git(b.checkout, "commit", "--quiet", "-m", "code")
+	if result := b.prove(script); result.Result != Green || result.Reason != "" {
+		t.Fatalf("a code change: %+v", result)
+	}
+	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 2 {
+		t.Fatalf("the command did not run for a code change: %q", data)
+	}
+	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "another act\n")
+	b.git(b.checkout, "add", "-A")
+	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit again")
+	if result := b.prove("exit 1\n"); result.Result != Green || result.Reason == "" {
+		t.Fatalf("the ledger-only change after a green code proof: %+v", result)
+	}
+}

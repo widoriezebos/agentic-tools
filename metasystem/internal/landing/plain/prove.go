@@ -238,12 +238,15 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil {
 		return Result{}, err
 	}
-	outcome := Green
-	if runErr := proveInWorktree(install, checkout, command, running, output); runErr != nil {
+	outcome, reason := Green, ""
+	if from, ok := ledgerOnlySinceGreen(install, checkout, running.Tree); ok {
+		reason = "inherits green from tree " + Short(from) + ": only goal ledger files changed since"
+		fmt.Fprintf(output, "landing prove: %s\n", reason)
+	} else if runErr := proveInWorktree(install, checkout, command, running, output); runErr != nil {
 		outcome = Red
 		fmt.Fprintf(output, "\nlanding prove: %v\n", runErr)
 	}
-	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt, Reason: reason}
 	err = withLock(install, func() error {
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err
@@ -254,6 +257,58 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return nil
 	})
 	return result, err
+}
+
+// ledgerPaths are the goal ledger paths goal verbs rewrite, which
+// docs/project-rules.md excludes from delivery content: a tree that
+// differs from a green tree only in them needs no new proof. With seats
+// publishing goal acts every few minutes, re-proving each such tree means
+// a proof never finishes before main moves again, and nothing lands.
+var ledgerPaths = []string{
+	"metasystem/plans/goals/", "metasystem/plans/goals.md", "metasystem/plans/goals-accepted.json",
+	"metasystem/records/goals/", "metasystem/records/counselor/",
+	"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log",
+}
+
+func ledgerPath(path string) bool {
+	for _, ledger := range ledgerPaths {
+		if path == ledger || strings.HasSuffix(ledger, "/") && strings.HasPrefix(path, ledger) {
+			return true
+		}
+	}
+	return false
+}
+
+// ledgerOnlySinceGreen names a recent green tree from which tree differs
+// only in goal ledger files.
+func ledgerOnlySinceGreen(install, checkout, tree string) (string, bool) {
+	results, err := Results(install)
+	if err != nil {
+		return "", false
+	}
+	checked := 0
+	for index := len(results) - 1; index >= 0 && checked < 10; index-- {
+		green := results[index]
+		if green.Result != Green || green.Tree == tree {
+			continue
+		}
+		checked++
+		changed, err := Git(checkout, "diff", "--name-only", "--no-renames", green.Tree, tree)
+		if err != nil || changed == "" {
+			continue
+		}
+		ledgerOnly := true
+		for _, path := range strings.Split(changed, "\n") {
+			if !ledgerPath(path) {
+				ledgerOnly = false
+				break
+			}
+		}
+		if ledgerOnly {
+			return green.Tree, true
+		}
+	}
+	return "", false
 }
 
 // Results are every recorded result, oldest first.
