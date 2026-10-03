@@ -42,6 +42,7 @@
   "internal/delegatecustody": 96.7,
   "internal/delegation": 72.1,
   "internal/delegation/fake": 98.4,
+  "internal/deploy": 75.3,
   "internal/digest": 100.0,
   "internal/diskstore": 79.7,
   "internal/dispatch": 75.9,

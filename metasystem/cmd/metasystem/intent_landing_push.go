@@ -50,7 +50,7 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(*refused)
 	}
 	checkout := string(admitted.layout.Checkout)
-	outcome, err := plain.Push(admitted.installation, checkout, admitted.owners.now())
+	outcome, err := admitted.owners.push(admitted.installation, checkout, admitted.owners.now())
 	var told []string
 	if outcome.Changed {
 		// A landing on main is the one piece of news the channel carries
@@ -58,6 +58,11 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 		if problem := postLanded(admitted.installation, landedMessage(admitted.installation, checkout, outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now()); problem != nil {
 			told = []string{"the channel was not told of the landing; the next landing or tick retries once: " + problem.Error()}
 		}
+	}
+	// The project's deploy follows a push that changed main; a failed
+	// deploy is told here and by deploy status, never on the channel.
+	if err == nil || outcome.Changed {
+		told = append(told, inv.deployAfterPush(admitted.installation, checkout, outcome.Changed)...)
 	}
 	var refusal *plain.Refusal
 	switch {
@@ -83,7 +88,7 @@ func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	if !outcome.Changed {
 		summary := "main already is " + shortLandingID(outcome.Commit) + "; nothing was pushed"
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root)})
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root), Details: told})
 	}
 	summary := "pushed " + shortLandingID(outcome.Commit) + " to main (from " + shortLandingID(outcome.Old) + ")"
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root), Details: told})
