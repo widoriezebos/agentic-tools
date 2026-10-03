@@ -44,6 +44,7 @@ func declaredOutputPaths(record Record) ([]string, error) {
 // prepareDeclaredOutputs holds one lock per output path until the child has
 // exited and its outputs have been collected. A prior file is preserved under
 // this launch's state before removal, so a child must create its own result.
+// The returned release may be called more than once.
 func (m *Manager) prepareDeclaredOutputs(record Record, stateDir string) (func(), error) {
 	paths, err := declaredOutputPaths(record)
 	if err != nil || len(paths) == 0 {
@@ -63,6 +64,7 @@ func (m *Manager) prepareDeclaredOutputs(record Record, stateDir string) (func()
 			_ = unix.Flock(int(locks[index].Fd()), unix.LOCK_UN)
 			_ = locks[index].Close()
 		}
+		locks = nil
 	}
 	lockPaths := append([]string(nil), paths...)
 	sort.Strings(lockPaths)
