@@ -281,8 +281,15 @@ func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap ui
 
 func writeConsumedBudgetProof(t *testing.T, root, runID string, goalRevision, obligationRevision uint64, consumedAt time.Time) {
 	t.Helper()
-	if err := obligationstate.RecordTerminal(root, "bounded", goalRevision, obligationRevision, obligationstate.TerminalAttempt{
-		RunID: runID, Status: run.StatusGreen, StartedAt: consumedAt.Add(-30 * time.Minute).Format(time.RFC3339),
+	writeConsumedProof(t, root, "bounded", runID, goalRevision, obligationRevision, consumedAt.Add(-30*time.Minute), consumedAt)
+}
+
+// writeConsumedProof records a green proof of goalID that started at
+// startedAt and whose discharge was consumed at consumedAt.
+func writeConsumedProof(t *testing.T, root, goalID, runID string, goalRevision, obligationRevision uint64, startedAt, consumedAt time.Time) {
+	t.Helper()
+	if err := obligationstate.RecordTerminal(root, goalID, goalRevision, obligationRevision, obligationstate.TerminalAttempt{
+		RunID: runID, Status: run.StatusGreen, StartedAt: startedAt.Format(time.RFC3339),
 		EndedAt: consumedAt.Add(-time.Minute).Format(time.RFC3339), PrunedAt: consumedAt.Add(time.Minute).Format(time.RFC3339),
 		AttemptOrdinal: 1, ExecutionCostMinutes: 30, ObservedCostMinutes: 29, WeightGeneration: 1, Breaker: run.BreakerClosed,
 	}); err != nil {
@@ -291,7 +298,7 @@ func writeConsumedBudgetProof(t *testing.T, root, runID string, goalRevision, ob
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "validation-weight.json"), map[string]any{
 		"schema": 1, "generation": 2,
 		"consumedProofs": []any{map[string]any{
-			"runId": runID, "goalId": "bounded", "goalRevision": goalRevision, "obligationRevision": obligationRevision,
+			"runId": runID, "goalId": goalID, "goalRevision": goalRevision, "obligationRevision": obligationRevision,
 			"weightGeneration": 1, "consumedAt": consumedAt.Format(time.RFC3339),
 			"resetDecision": map[string]any{"apply": true, "wouldRefuse": false}, "dischargeDecision": map[string]any{"apply": true, "wouldRefuse": false},
 		}},
@@ -1415,5 +1422,107 @@ func TestAnUnreadableProjectionMakesNoOverdueClaim(t *testing.T) {
 		if lines := goal.LandingClaimLines([]*goal.GoalFile{file}, now, row.read); len(lines) != 1 || lines[0] != row.want {
 			t.Fatalf("%s: the landing line %v, want %q", name, lines, row.want)
 		}
+	}
+}
+
+// waitedGoal is a seat's goal claimed at 08:00 under a four-hour box and
+// marked as waiting to land at 09:00, with no job or proof of its own since.
+func waitedGoal(t *testing.T) *gcliBudgetBed {
+	t.Helper()
+	claimAt := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
+	bed := newGCLIBudgetBed(t, claimAt)
+	result, err := goal.Open(bed.request(claimAt, false), "waited", "Work that waits to land.", goal.OriginMain, "Land it.")
+	bed.confirm("open", result, err)
+	risk := goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture waits to land."}
+	result, err = goal.Edit(bed.request(claimAt, false), "waited", goal.EditFields{Risk: &risk})
+	bed.confirm("risk", result, err)
+	budget := bed.budget("4h", 4, 240, 2, 3)
+	result, err = goal.Approve(bed.request(claimAt, true), []string{"waited"}, &budget, bed.proof)
+	bed.confirm("approve", result, err)
+	result, err = goal.Claim(bed.request(claimAt, false), "waited")
+	bed.confirm("claim", result, err)
+	result, err = goal.LandReady(bed.request(claimAt.Add(time.Hour), false), "waited")
+	bed.confirm("land-ready", result, err)
+	return bed
+}
+
+// waitedFile is the goal as the accepted ledger holds it.
+func (bed *gcliBudgetBed) waitedFile(at time.Time) *goal.GoalFile {
+	bed.t.Helper()
+	projection, err := goal.Project(bed.endpoint(), false, at)
+	if err != nil {
+		bed.t.Fatal(err)
+	}
+	return projection.Tree.Live["waited"]
+}
+
+// claimAgainKeepsTheWait claims the goal again at 11:30 and checks that the
+// two-hour wait and the half-hour gap are idle and off the clock at noon.
+func (bed *gcliBudgetBed) claimAgainKeepsTheWait() {
+	bed.t.Helper()
+	result, err := goal.Claim(bed.request(time.Date(2026, 8, 28, 11, 30, 0, 0, time.UTC), false), "waited")
+	bed.confirm("claim again", result, err)
+	noon := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	file := bed.waitedFile(noon)
+	if projection := ProjectBudget(bed.root, file, noon); file.Claimed.IdleSeconds != 9000 || projection.Status != BudgetKnown || projection.Elapsed != 90*time.Minute {
+		bed.t.Fatalf("the wait and the gap are not idle: claim=%+v projection=%+v", file.Claimed, projection)
+	}
+}
+
+func TestAReleasedWaitIsCreditedAtTheNextClaim(t *testing.T) {
+	t.Parallel()
+	bed := waitedGoal(t)
+	releaseAt := time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC)
+	release := bed.request(releaseAt, false)
+	release.Waits = map[string]goal.Wait{"waited": OpenWait(bed.root, bed.waitedFile(releaseAt), releaseAt)}
+	result, err := goal.ReleaseWithReason(release, "waited", "the lane is slow")
+	bed.confirm("release", result, err)
+	bed.claimAgainKeepsTheWait()
+}
+
+func TestAParkedWaitIsCreditedAtTheNextClaim(t *testing.T) {
+	t.Parallel()
+	bed := waitedGoal(t)
+	parkAt := time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC)
+	park := bed.request(parkAt, false)
+	park.Waits = map[string]goal.Wait{"waited": OpenWait(bed.root, bed.waitedFile(parkAt), parkAt)}
+	park.ParkBranchCheck = func(string, string) (string, error) { return "", nil }
+	result, err := goal.Park(park, "waited", "the lane is slow")
+	bed.confirm("park", result, err)
+	result, err = goal.Unpark(bed.request(parkAt.Add(10*time.Minute), false), "waited")
+	bed.confirm("unpark", result, err)
+	bed.claimAgainKeepsTheWait()
+}
+
+func TestAReleaseAfterADischargeCreditsOnlyTheSubtractedWait(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00, the goal's own proof started at 10:00 and its discharge
+	// was consumed at 11:00, moving the budget's start past the whole wait, so
+	// the projection takes none of it off. Released at noon and claimed again
+	// by its pair at 12:30, the goal keeps only the unheld half hour as idle
+	// and has the hour of elapsed it had at the release.
+	bed := waitedGoal(t)
+	at := func(hour, minute int) time.Time { return time.Date(2026, 8, 28, hour, minute, 0, 0, time.UTC) }
+	// The projection reads the discharged obligation from the goal it is
+	// handed; the ledger's goal carries none.
+	discharged := func(now time.Time) *goal.GoalFile {
+		file := bed.waitedFile(now)
+		file.Obligation = &goal.GovernedObligation{Revision: 5}
+		return file
+	}
+	writeConsumedProof(t, bed.root, "waited", "green-discharge", bed.waitedFile(at(12, 0)).Claimed.EpisodeRevision, 5, at(10, 0), at(11, 0))
+	before := ProjectBudget(bed.root, discharged(at(12, 0)), at(12, 0))
+	if before.Status != BudgetKnown || !before.StartedAt.Equal(at(11, 0)) || before.Wait != 0 || before.Elapsed != time.Hour {
+		t.Fatalf("the discharge did not move the budget's start past the wait: %+v", before)
+	}
+	release := bed.request(at(12, 0), false)
+	release.Waits = map[string]goal.Wait{"waited": OpenWait(bed.root, discharged(at(12, 0)), at(12, 0))}
+	result, err := goal.ReleaseWithReason(release, "waited", "the lane is slow")
+	bed.confirm("release", result, err)
+	result, err = goal.Claim(bed.request(at(12, 30), false), "waited")
+	bed.confirm("claim again", result, err)
+	after := ProjectBudget(bed.root, discharged(at(12, 30)), at(12, 30))
+	if claim := bed.waitedFile(at(12, 30)).Claimed; claim.IdleSeconds != 1800 || after.Status != BudgetKnown || after.Elapsed != before.Elapsed {
+		t.Fatalf("the release credited a wait the projection never took off: claim=%+v projection=%+v", claim, after)
 	}
 }

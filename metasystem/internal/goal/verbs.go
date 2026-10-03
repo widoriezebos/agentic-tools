@@ -279,7 +279,18 @@ type VerbRequest struct {
 	// blockers; each is recorded as overridden. Only goal done reads it; the
 	// command edge admits it only at the helm, from the person's own proof.
 	ForceBy string
+	// Waits holds, by goal id, the wait to land of each marked goal a release
+	// or park leaves, as the caller's budget projection takes it off elapsed.
+	// The claim's own pair keeps each as idle, so its next claim is not
+	// charged for it. A goal with none keeps none.
+	Waits   map[string]Wait
 	abandon abandonDependencies
+}
+
+// Wait is the span of a marked goal's wait to land that its budget
+// projection takes off elapsed. An empty span starts and ends at once.
+type Wait struct {
+	Start, End time.Time
 }
 
 const EpochAuthorityHolder = "holder"
@@ -506,6 +517,25 @@ func leaveEpisode(f *GoalFile, released string) {
 		AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
 		EpisodeObligationRevision: obligationRevision, IdleSeconds: f.Claimed.IdleSeconds, Released: released,
 	}
+}
+
+// creditWait adds the caller's wait of a goal marked as waiting to land, its
+// end minus its start, to the idle seconds of a claim its own pair is leaving.
+// A person's act or another pair's keeps no episode to add it to, and an
+// unmarked goal has no wait. A wait that starts before the mark, ends before
+// it starts, or ends after the act is refused.
+func creditWait(f *GoalFile, r VerbRequest) error {
+	wait, given := r.Waits[f.Id]
+	if !given || r.Actor.Human != "" || f.Claimed == nil || f.Landing == nil || !ownPair(f.Claimed, r.Actor) {
+		return nil
+	}
+	mark, err := time.Parse(time.RFC3339, f.Landing.At)
+	if err != nil || wait.Start.Before(mark) || wait.End.Before(wait.Start) || wait.End.After(r.Now) {
+		return fmt.Errorf("goal %s has waited to land since %s, so its wait can't run from %s to %s, starting before then, ending before it starts, or ending after this act at %s; nothing was written",
+			f.Id, f.Landing.At, wait.Start.UTC().Format(time.RFC3339), wait.End.UTC().Format(time.RFC3339), r.stamp())
+	}
+	f.Claimed.IdleSeconds += uint64(wait.End.Sub(wait.Start) / time.Second)
+	return nil
 }
 
 // leaveOrDropEpisode is the one rule for a verb that ends or pauses a hold:
@@ -742,9 +772,11 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 
 // intentArgs records the directing human's name in journaled intent as
 // attribution only. Recovery refuses to replay a named entry and never carries
-// the stored name into a reconstructed actor.
+// the stored name into a reconstructed actor. It records the caller's waits
+// too, by goal id, so a replayed release or park keeps the same seconds as
+// idle.
 func intentArgs(r VerbRequest, args map[string]string) map[string]string {
-	if r.Actor.Human == "" && r.ApprovedRef == "" {
+	if r.Actor.Human == "" && r.ApprovedRef == "" && len(r.Waits) == 0 {
 		return args
 	}
 	if args == nil {
@@ -755,6 +787,10 @@ func intentArgs(r VerbRequest, args map[string]string) map[string]string {
 	}
 	if r.ApprovedRef != "" {
 		args["approvedRef"] = r.ApprovedRef
+	}
+	if len(r.Waits) != 0 {
+		waits, _ := json.Marshal(r.Waits)
+		args["waits"] = string(waits)
 	}
 	return args
 }
@@ -2195,6 +2231,9 @@ func releaseRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 			if !ownPair(f.Claimed, r.Actor) {
 				displaced = pairMarker(f.Claimed)
 			}
+			if err := creditWait(f, r); err != nil {
+				return nil, err
+			}
 			f.State = restingState(f)
 			leaveOrDropEpisode(f, r)
 			if err := clearClaimBinding(f); err != nil {
@@ -2963,6 +3002,9 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				if !ownPair(f.Claimed, r.Actor) {
 					displaced = pairMarker(f.Claimed)
 				}
+			}
+			if err := creditWait(f, r); err != nil {
+				return nil, err
 			}
 			f.State = StateParked
 			f.Parked = &ParkRecord{
@@ -4461,6 +4503,9 @@ func releaseArcRequestWithReason(r VerbRequest, id, reason string) PublishReques
 				if !ownPair(m.Claimed, r.Actor) {
 					displaced = pairMarker(m.Claimed)
 				}
+				if err := creditWait(m, r); err != nil {
+					return nil, err
+				}
 				m.State = restingState(m)
 				leaveOrDropEpisode(m, r)
 				if err := clearClaimBinding(m); err != nil {
@@ -4539,6 +4584,9 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 				memberDisplaced := ""
 				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
 					memberDisplaced = pairMarker(m.Claimed)
+				}
+				if err := creditWait(m, r); err != nil {
+					return nil, err
 				}
 				m.State = StateParked
 				m.Parked = &ParkRecord{

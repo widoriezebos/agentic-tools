@@ -1305,6 +1305,7 @@ func runIntentRelease(inv *intentInvocation) int {
 	arc := inv.input.switched("arc")
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	return inv.render(inv.goalAct(id, "release", inv.syncOwner("release", args, proof, true, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		req = withWaits(req, f.root, f.id, arc)
 		if arc {
 			return goal.ReleaseArcWithReason(req, f.id, reason)
 		}

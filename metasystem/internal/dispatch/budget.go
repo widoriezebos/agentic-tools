@@ -59,7 +59,8 @@ type BudgetBreach struct {
 // job records, retained proof-attempt reservations, live governed runs, and
 // durable terminal obligation state. Elapsed time begins at the claim or the
 // latest exact consumed discharge proof. While the goal is marked as waiting
-// to land, Wait is its open wait, already taken off Elapsed.
+// to land, Wait is its open wait, already taken off Elapsed, from WaitStart
+// to WaitEnd.
 type BudgetProjection struct {
 	Status                  BudgetProjectionStatus
 	GoalID                  string
@@ -77,6 +78,8 @@ type BudgetProjection struct {
 	CodeCritiques           uint64
 	Elapsed                 time.Duration
 	Wait                    time.Duration `json:"-"`
+	WaitStart               time.Time     `json:"-"`
+	WaitEnd                 time.Time     `json:"-"`
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
 	ElapsedState            ElapsedBudgetState
@@ -800,7 +803,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
 	if wait != nil {
-		projection.Wait = wait.span(budgetStartedAt, now)
+		projection.WaitStart, projection.WaitEnd = wait.span(budgetStartedAt, now)
+		projection.Wait = projection.WaitEnd.Sub(projection.WaitStart)
 		projection.Elapsed = max(projection.Elapsed-projection.Wait, 0)
 	}
 	if authorityLens {
@@ -845,19 +849,24 @@ func (w *waitClock) bears(startText, endText string, running bool) bool {
 }
 
 // span is the wait from the mark, or from the budget's start when that is
-// later, to where the goal's own work ended it, or to now while none has.
-func (w *waitClock) span(budgetStart, now time.Time) time.Duration {
-	from, to := w.mark, now
+// later, to where the goal's own work ended it, or to now while none has. A
+// wait that ended before it started is empty and ends where it starts; there
+// is none while now is before the mark.
+func (w *waitClock) span(budgetStart, now time.Time) (from, to time.Time) {
+	from, to = w.mark, now
 	if budgetStart.After(from) {
 		from = budgetStart
 	}
 	if !w.end.IsZero() && w.end.Before(to) {
 		to = w.end
 	}
-	if !to.After(from) {
-		return 0
+	if from.After(now) {
+		return time.Time{}, time.Time{}
 	}
-	return to.Sub(from)
+	if to.Before(from) {
+		to = from
+	}
+	return from, to
 }
 
 // WaitSpan is the open wait of a goal marked as waiting to land: the time
@@ -866,6 +875,15 @@ func (w *waitClock) span(budgetStart, now time.Time) time.Duration {
 // zero for an unmarked goal and for one whose budget cannot be projected.
 func WaitSpan(repoRoot string, file *goal.GoalFile, now time.Time) time.Duration {
 	return ProjectBudget(repoRoot, file, now).Wait
+}
+
+// OpenWait is the span WaitSpan measures: its start and its end. The claim's
+// own release or park hands it to the goal ledger, which keeps exactly that
+// span as idle. It is zero for an unmarked goal, for one whose budget cannot
+// be projected, and while now is before the mark.
+func OpenWait(repoRoot string, file *goal.GoalFile, now time.Time) goal.Wait {
+	projection := ProjectBudget(repoRoot, file, now)
+	return goal.Wait{Start: projection.WaitStart, End: projection.WaitEnd}
 }
 
 // LandingOverdue hands the landing lines the budget projection's answer to

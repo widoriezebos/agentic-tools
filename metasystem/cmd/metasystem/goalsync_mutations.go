@@ -1794,6 +1794,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if !need(f.id, "id") || !need(f.because, "because") {
 			return 2, true
 		}
+		req = withWaits(req, f.root, f.id, f.arc != "")
 		if f.arc != "" {
 			res, err := goal.ParkArc(req, f.id, f.because)
 			return dependencies.publish(res, err), true
@@ -1945,6 +1946,34 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	}
 	dependencies.complainf("goal %s has no synced-world route\n", name)
 	return 1, true
+}
+
+// withWaits gives a release or park the wait to land of each marked goal it
+// leaves, the named goal or, for an arc, every live member of its arc, as the
+// budget projection takes it off elapsed, so the claim's own pair keeps each
+// as idle. A person's act, an unmarked goal, or one whose ledger or budget
+// cannot be read gets none.
+func withWaits(req goal.VerbRequest, root, id string, arc bool) goal.VerbRequest {
+	if req.Actor.Human != "" {
+		return req
+	}
+	projection, err := goal.Project(req.Endpoint, false, req.Now)
+	if err != nil || projection.Tree.Live[id] == nil {
+		return req
+	}
+	named := projection.Tree.Live[id]
+	for _, file := range projection.Tree.Live {
+		if file.Landing == nil || file != named && (!arc || named.Arc == "" || file.Arc != named.Arc) {
+			continue
+		}
+		if wait := dispatchcore.OpenWait(root, file, req.Now); !wait.Start.IsZero() {
+			if req.Waits == nil {
+				req.Waits = map[string]goal.Wait{}
+			}
+			req.Waits[file.Id] = wait
+		}
+	}
+	return req
 }
 
 func runSyncOnlyWithDependencies(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies, required ...string) func([]string) int {

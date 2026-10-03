@@ -1037,3 +1037,108 @@ func TestLeaveAndResumeEpisodeCarryTheObligationRevision(t *testing.T) {
 		t.Fatalf("an unvouched episode binding was kept: %+v", unvouched.Episode)
 	}
 }
+
+// markedForCredit claims a seat's goal at 08:00 and marks it as waiting to
+// land at 09:00, in an endpoint of its own.
+func markedForCredit(t *testing.T) Endpoint {
+	t.Helper()
+	a, _ := fakeGoalEndpoint(t)
+	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000WC00", "mac-a", t0), "waited", "Work that waits to land.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000WC01", "mac-a", t0), "waited", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000WC02", "mac-a", t0.Add(time.Hour)), "waited"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("land-ready: %+v %v", res, err)
+	}
+	return a
+}
+
+func TestAReplayedReleaseCreditsTheSameSeconds(t *testing.T) {
+	t.Parallel()
+	// Released at 11:00 with a wait from 09:30 to 10:30: replayed later, the
+	// release keeps the same hour as idle as the live one did.
+	idle := func(e Endpoint) uint64 {
+		t.Helper()
+		p, err := projectFetched(e, time.Now())
+		if err != nil || p.Tree.Live["waited"].Episode == nil {
+			t.Fatalf("the release kept no episode: %+v %v", p.Tree.Live["waited"], err)
+		}
+		return p.Tree.Live["waited"].Episode.IdleSeconds
+	}
+	live, replayed := markedForCredit(t), markedForCredit(t)
+	release := landingReqFor(live, "01J5X00000000000000000WC03", "mac-a", time.Date(2026, 9, 12, 11, 0, 0, 0, time.UTC))
+	release.Waits = map[string]Wait{"waited": {Start: time.Date(2026, 9, 12, 9, 30, 0, 0, time.UTC), End: time.Date(2026, 9, 12, 10, 30, 0, 0, time.UTC)}}
+	if res, err := ReleaseWithReason(release, "waited", "the lane is slow"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", res, err)
+	}
+	release.Endpoint = replayed
+	strandEntry(t, replayed.Root, release.opid(), PhaseCreated, releaseRequestWithReason(release, "waited", "the lane is slow").Intent)
+	if _, err := Recover(replayed); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := idle(replayed), idle(live); got != want || want != 3600 {
+		t.Fatalf("the replayed release kept %d idle seconds, the live one %d", got, want)
+	}
+}
+
+func TestAWaitEndOutsideTheMarkIsRefused(t *testing.T) {
+	t.Parallel()
+	// Marked at 09:00 and left at 11:00: every release and park refuses a
+	// wait that starts before the mark, ends before it starts, or ends after
+	// the act, and writes nothing.
+	a := markedForCredit(t)
+	mark, at := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC), time.Date(2026, 9, 12, 11, 0, 0, 0, time.UTC)
+	for i, act := range []struct {
+		wait Wait
+		run  func(VerbRequest, string, string) (PublishResult, error)
+	}{
+		{Wait{mark.Add(-time.Second), at}, ReleaseWithReason}, {Wait{mark, at.Add(time.Second)}, ReleaseArcWithReason},
+		{Wait{at, at.Add(-time.Second)}, Park}, {Wait{mark.Add(-time.Second), mark}, ParkArc},
+	} {
+		before := acceptedTipForEndpoint(t, a)
+		r := landingReqFor(a, fmt.Sprintf("01J5X00000000000000000WR%02d", i), "mac-a", at)
+		r.Waits = map[string]Wait{"waited": act.wait}
+		res, err := act.run(r, "waited", "the lane is slow")
+		span := act.wait.Start.Format(time.RFC3339) + " to " + act.wait.End.Format(time.RFC3339)
+		if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "so its wait can't run from "+span) || acceptedTipForEndpoint(t, a) != before {
+			t.Fatalf("act %d with a wait from %s: %+v %v", i, span, res, err)
+		}
+	}
+}
+
+func TestAnArcReleaseCreditsEveryMarkedMember(t *testing.T) {
+	t.Parallel()
+	// Both members of an arc, claimed by one pair, wait to land: handed to
+	// that pair, since one machine otherwise holds one landing slot, and
+	// marked at 23:00 and 23:30. Released or parked through the arc at 01:00,
+	// each keeps its own wait as idle.
+	at := time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC)
+	waits := map[string]Wait{
+		"cw-one": {Start: time.Date(2026, 8, 20, 23, 0, 0, 0, time.UTC), End: time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)},
+		"cw-two": {Start: time.Date(2026, 8, 20, 23, 30, 0, 0, time.UTC), End: at},
+	}
+	for name, act := range map[string]func(VerbRequest, string, string) (PublishResult, error){"release": ReleaseArcWithReason, "park": ParkArc} {
+		a, _ := fakeGoalEndpoint(t)
+		arcBedFor(t, a, "credit-arc", "cw", "CW")
+		for i, id := range []string{"cw-one", "cw-two"} {
+			publishClaimFixtureMutationForEndpoint(t, a, id, "fixture-mark-"+id, func(f *GoalFile) {
+				f.Claimed.HandedOver = HandedOver{FromMachine: "seat-a", FromLineage: "lineage-a", FromEpoch: 7, Batch: "batch-a"}
+				f.Landing = &LandingRecord{At: waits[id].Start.Format(time.RFC3339), Opid: Opid(fmt.Sprintf("01J5X00000000000000000CW7%d", i), "mac-a", "lin-1")}
+			})
+		}
+		r := landingReqFor(a, "01J5X00000000000000000CW80", "mac-a", at)
+		r.Waits = waits
+		if res, err := act(r, "cw-one", "the lane is slow"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("%s: %+v %v", name, res, err)
+		}
+		p, err := projectFetched(a, at)
+		for id, want := range map[string]uint64{"cw-one": 3600, "cw-two": 5400} {
+			if f := p.Tree.Live[id]; err != nil || f == nil || f.Episode == nil || f.Episode.IdleSeconds != want {
+				t.Fatalf("%s: %s kept %+v as its episode, want %d idle seconds (%v)", name, id, f, want, err)
+			}
+		}
+	}
+}

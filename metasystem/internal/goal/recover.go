@@ -357,6 +357,11 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		}
 		r.ClaimEpoch = epoch
 	}
+	if raw := entry.Intent.Args["waits"]; raw != "" {
+		if err := json.Unmarshal([]byte(raw), &r.Waits); err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored intent carries invalid waits %q; close it by hand", raw)
+		}
+	}
 	r.CallerClass = entry.Intent.Args["callerClass"]
 	if r.opid() != entry.Opid {
 		return PublishRequest{}, fmt.Errorf("pending ledger write %s doesn't match the session it names; close it by hand", entry.Opid)
