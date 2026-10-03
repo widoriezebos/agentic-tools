@@ -67,11 +67,18 @@ func connectionGit(t *testing.T, dir string, args ...string) string {
 
 func newConnectionBed(t *testing.T) *connectionBed {
 	t.Helper()
+	return newConnectionBedWith(t, workApprovedBox)
+}
+
+// newConnectionBedWith is the connection bed with its goal record shaped by
+// amend.
+func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionBed {
+	t.Helper()
 	empty := filepath.Join(t.TempDir(), "gitconfig")
 	os.WriteFile(empty, nil, 0o600)
 	t.Setenv("GIT_CONFIG_GLOBAL", empty)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	c := &connectionBed{workBed: newWorkBed(t), t: t, edits: map[string]string{}}
+	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{}}
 	root := c.root()
 	connectionGit(t, root, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")

@@ -93,6 +93,30 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	if !strings.Contains(result.Summary, "collected and published") {
 		t.Fatalf("status sees the manual work: code=%d %+v", code, result)
 	}
+
+	// A goal no critic may read (a box of zero review rounds, as tier 1)
+	// ends the hand-in at publication: no critic starts, and the landing
+	// is the next step.
+	waived := newJourneyBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		file.Budget.ReviewRoundLimit = 0
+		if file.Approved != nil {
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		}
+	})
+	waivedRoot := waived.c.root()
+	os.MkdirAll(filepath.Join(waivedRoot, "notes"), 0o700)
+	os.WriteFile(filepath.Join(waivedRoot, "notes", "brief.md"), []byte("Add the manual file.\n"), 0o644)
+	os.WriteFile(filepath.Join(waivedRoot, "manual.txt"), []byte("manual work\n"), 0o644)
+	before := len(waived.c.delegates)
+	code, result = waived.do("work", "review", waived.c.id, "--changes", "--brief", "notes/brief.md")
+	if code != 0 || result.Outcome != intentConfirmed || len(waived.c.delegates) != before || result.Next == nil ||
+		!slices.Equal(result.Next.Argv[1:], []string{"work", "land", waived.c.id}) || !strings.Contains(result.Summary, "lands its work without a read") {
+		t.Fatalf("a read-waived goal's hand-in asks no critic: code=%d %+v", code, result)
+	}
+	if got := connectionGit(t, waivedRoot, "--git-dir", waived.c.origin, "show", "refs/heads/goal/"+waived.c.id+":manual.txt"); got != "manual work" {
+		t.Fatalf("the read-waived hand-in still publishes the work: %q", got)
+	}
 }
 
 // manualDo runs one public command from cwd with the journey bed's owners.
