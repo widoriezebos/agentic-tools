@@ -1,14 +1,17 @@
 import { ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router";
 
 import {
   failureMessage,
   loadBoard,
   loadFleet,
+  resumeLane,
+  stopMachine,
   type BoardPayload,
   type Box,
   type Held,
+  type LandNowAnswer,
   type Launch,
   type Machine,
   type Page as FleetPayload,
@@ -48,17 +51,20 @@ import { LiveDot } from "../shell/LiveLine";
 import { useOffersRefresh } from "../shell/refresh";
 import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
-import { LaneBlock } from "./LandingLane";
+import { ActAnswer, LaneBlock, useAct } from "./LandingLane";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
 import { visibleCard } from "./launching";
 import {
   doingOf,
+  machineStop,
   needsOf,
   queueOf,
   QUESTIONS_SCOPE,
   seatOf,
   seenOf,
+  stopImpact,
+  stopOffer,
   unreadOf,
   verdictOf,
   type BoardReading,
@@ -90,10 +96,14 @@ import { Trouble } from "../shell/Trouble";
  * verdict; the other section still draws.
  *
  * Every Needs you item carries exactly one thing to do: a button (Open goal,
- * Answer, Open log), or the one public verb a person types, in code. The
- * lane's one act of its own is Land now. What a person wants only now and
- * then — a machine's engine and generation, a health check's reasons — is
- * behind a disclosure.
+ * Answer, Open log, Resume, Stop), or the one public verb a person types, in
+ * code. Resume, Pause and Stop run as the signed-in person (fleet-panel-ux
+ * step 2, slice 2b): Pause and Resume beside the lane's state word, Stop on a
+ * stuck seat's item and in a seat's opened row, for a seat of this computer
+ * other than the one serving this page, which a terminal stops. Stop asks
+ * once more, saying what it ends. What a person wants only now and then — a
+ * machine's engine and generation, a health check's reasons — is behind a
+ * disclosure.
  *
  * Both are read when the pane mounts, when a person presses the section's
  * refresh, and when the server says a presence attempt or a board change
@@ -116,6 +126,9 @@ export function FleetPane() {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
   const [board, setBoard] = useState<BoardState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
+  // The last Stop's answer, held here because the item or the row that asked
+  // leaves the page when the stopped seat leaves the board (Sol F-2).
+  const [stopped, setStopped] = useState<StopAnswer | null>(null);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -201,7 +214,7 @@ export function FleetPane() {
 
   return (
     <Pane title="Fleet">
-      <Panel fleet={read} board={board} onRetry={reload} onLanded={again} />
+      <Panel fleet={read} board={board} onRetry={reload} onLanded={again} stopped={stopped} onStopped={setStopped} />
     </Pane>
   );
 }
@@ -218,17 +231,29 @@ export function Blocks({ page, board = UNREAD_BOARD }: { page: FleetPayload; boa
   return <Panel fleet={fleet} board={board} />;
 }
 
+/**
+ * What the last Stop answered, and for which machine: the verb's envelope,
+ * or the press's failure in one line.
+ */
+export type StopAnswer = { machine: string; answer: LandNowAnswer | null; problem: string };
+
 /** The whole panel, top to bottom, from both readings in whatever state each is. */
 export function Panel({
   fleet,
   board,
   onRetry,
   onLanded,
+  stopped = null,
+  onStopped,
 }: {
   fleet: FleetReading;
   board: BoardReading;
   onRetry?: () => void;
   onLanded?: () => void;
+  /** The last Stop's answer, which the page keeps (StopAnswered); null before any. */
+  stopped?: StopAnswer | null;
+  /** Called with a Stop's answer, and with null when a new Stop is sent or the answer is dismissed. */
+  onStopped?: (stopped: StopAnswer | null) => void;
 }) {
   // The instant every age on this page is measured against: one clock, read
   // once as the page renders, so two rows cannot be a second apart.
@@ -242,11 +267,21 @@ export function Panel({
   return (
     <section className="ms-fleet">
       <VerdictStrip verdict={verdict} provenance={fleet.state === "read" ? provenance(fleet.page, now) : ""} />
-      {(needs.length > 0 || unread.questions.length > 0) && <NeedsYou needs={needs} questionsUnread={unread.questions} />}
+      {(needs.length > 0 || unread.questions.length > 0) && (
+        <NeedsYou needs={needs} questionsUnread={unread.questions} onActed={onLanded} onStopped={onStopped} />
+      )}
+      {stopped !== null && (
+        <StopAnswered
+          stopped={stopped}
+          onDismiss={() => {
+            onStopped?.(null);
+          }}
+        />
+      )}
       {fleet.state === "loading" && <Loading />}
       {fleet.state === "failed" && <Failure message={fleet.message} onRetry={onRetry} />}
       {fleet.state === "read" && (
-        <FleetBlocks page={fleet.page} problem={fleet.problem} board={read} needs={needs} now={now} />
+        <FleetBlocks page={fleet.page} problem={fleet.problem} board={read} needs={needs} now={now} onActed={onLanded} onStopped={onStopped} />
       )}
       <LaneBlock
         lane={read === null ? undefined : read.lane}
@@ -321,12 +356,17 @@ function FleetBlocks({
   board,
   needs,
   now,
+  onActed,
+  onStopped,
 }: {
   page: FleetPayload;
   problem: string | undefined;
   board: BoardPayload | null;
   needs: Need[];
   now: Date;
+  /** Called after a Stop answered, so the board is read again. */
+  onActed?: () => void;
+  onStopped?: (stopped: StopAnswer | null) => void;
 }) {
   // Which rows this viewer left open. It is read once, here, because the
   // capture below has to say which rows were open as well: what a human was
@@ -366,7 +406,7 @@ function FleetBlocks({
       {problem !== undefined && (
         <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
       )}
-      <TheFleet page={page} board={board} doing={doing} now={now} open={open} onToggle={toggle} />
+      <TheFleet page={page} board={board} doing={doing} now={now} open={open} onToggle={toggle} onActed={onActed} onStopped={onStopped} />
     </>
   );
 }
@@ -382,7 +422,17 @@ function FleetBlocks({
  * verdict on top already says All good, and a standing "all clear" row is a
  * row a reader learns to skip.
  */
-function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: readonly string[] }) {
+function NeedsYou({
+  needs,
+  questionsUnread,
+  onActed,
+  onStopped,
+}: {
+  needs: Need[];
+  questionsUnread: readonly string[];
+  onActed?: () => void;
+  onStopped?: (stopped: StopAnswer | null) => void;
+}) {
   return (
     <section className="ms-fleet-block ms-fleet-block--needs" aria-label="Needs you">
       <h2 className="ms-fleet-heading">
@@ -395,40 +445,195 @@ function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: 
       {needs.length > 0 && (
         <ul className="ms-fleet-needs">
           {needs.map((one) => (
-            <li key={one.key} className="ms-fleet-needs-row">
-              <div className="ms-fleet-needs-main">
-                <span className="ms-fleet-needs-words">{one.words}</span>
-                {one.note !== "" && <span className="ms-fleet-needs-note">{one.note}</span>}
-                {one.impact !== "" && <span className="ms-fleet-needs-impact">{one.impact}</span>}
-                {one.command !== "" && <Command command={one.command} />}
-                {one.goals.length > 0 && (
-                  <ul className="ms-fleet-needs-goals">
-                    {one.goals.map((goal) => (
-                      <li key={goal.id} className="ms-fleet-needs-goal">
-                        <span className="ms-fleet-needs-title">{goal.title}</span>
-                        <Command command={goal.command} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {one.details.length > 0 && (
-                  <details className="ms-fleet-details">
-                    <summary className="ms-fleet-details-summary">Details</summary>
-                    <ul className="ms-fleet-needs-reasons">
-                      {one.details.map((reason, index) => (
-                        // Two checks may give one reason in the same words.
-                        <li key={`${String(index)}:${reason}`}>{reason}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>
-              {one.act !== null && <NeedAction act={one.act} />}
-            </li>
+            <NeedRow key={one.key} one={one} onActed={onActed} onStopped={onStopped} />
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * One item: its line, what is under it, and its one act at the end. Resume
+ * says its verb's answer under the line. Stop's second press asks there, away
+ * from where the first press was, so a doubled tap does not stop a machine,
+ * and its answer is the page's to keep (StopAnswered).
+ */
+function NeedRow({ one, onActed, onStopped }: { one: Need; onActed?: () => void; onStopped?: (stopped: StopAnswer | null) => void }) {
+  const row = (act: ReactNode, answer: ReactNode) => (
+    <li className="ms-fleet-needs-row">
+      <div className="ms-fleet-needs-main">
+        <span className="ms-fleet-needs-words">{one.words}</span>
+        {one.note !== "" && <span className="ms-fleet-needs-note">{one.note}</span>}
+        {one.impact !== "" && <span className="ms-fleet-needs-impact">{one.impact}</span>}
+        {one.command !== "" && <Command command={one.command} />}
+        {one.goals.length > 0 && (
+          <ul className="ms-fleet-needs-goals">
+            {one.goals.map((goal) => (
+              <li key={goal.id} className="ms-fleet-needs-goal">
+                <span className="ms-fleet-needs-title">{goal.title}</span>
+                <Command command={goal.command} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {one.details.length > 0 && (
+          <details className="ms-fleet-details">
+            <summary className="ms-fleet-details-summary">Details</summary>
+            <ul className="ms-fleet-needs-reasons">
+              {one.details.map((reason, index) => (
+                // Two checks may give one reason in the same words.
+                <li key={`${String(index)}:${reason}`}>{reason}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {answer}
+      </div>
+      {act}
+    </li>
+  );
+  const act = one.act;
+  if (act === null) {
+    return row(null, null);
+  }
+  switch (act.kind) {
+    case "resume":
+      return <Resuming onActed={onActed}>{row}</Resuming>;
+    case "stop":
+      return (
+        <Stopping machine={act.machine} impact={one.impact} className="ms-fleet-needs-act ms-fleet-stop" onActed={onActed} onStopped={onStopped}>
+          {(stopping) => row(stopping.button, stopping.lines)}
+        </Stopping>
+      );
+    default:
+      return row(<NeedAction act={act} />, null);
+  }
+}
+
+/** Resume on the paused lane's item: the server runs landing start as you. */
+function Resuming({ onActed, children }: { onActed?: () => void; children: (act: ReactNode, answer: ReactNode) => ReactNode }) {
+  const acting = useAct(resumeLane, onActed);
+  return children(
+    <button type="button" className="ms-fleet-needs-act ms-fleet-needs-act--primary" disabled={acting.sending} onClick={acting.press}>
+      Resume
+    </button>,
+    <ActAnswer answer={acting.answer} problem={acting.problem} />,
+  );
+}
+
+/**
+ * The rule one Stop follows (R-142-ui): the first press asks, the second
+ * stops. A stop ends a seat and every job on it and its steward does not start
+ * it again, so a stray tap on a phone must not do it.
+ */
+export function stopStep(asking: boolean): "ask" | "send" {
+  return asking ? "send" : "ask";
+}
+
+/**
+ * Stop for one machine of this computer: its button, and under the line the
+ * question its first press asks. While it asks, the button is gone: the one
+ * that stops is the question's own. The verb's answer is handed to the page
+ * (onStopped), which keeps it: a stop takes its seat off this computer's
+ * board, so the item or the row holding this button leaves the page when the
+ * board is read again, and the answer must not leave with it (Sol F-2).
+ */
+function Stopping({
+  machine,
+  impact,
+  className,
+  onActed,
+  onStopped,
+  children,
+}: {
+  machine: string;
+  impact: string;
+  className: string;
+  onActed?: () => void;
+  onStopped?: (stopped: StopAnswer | null) => void;
+  children: (stopping: { button: ReactNode; lines: ReactNode }) => ReactNode;
+}) {
+  const [asking, setAsking] = useState(false);
+  const acting = useAct(
+    () => stopMachine(machine),
+    (answer) => {
+      onStopped?.({ machine, answer, problem: "" });
+      onActed?.();
+    },
+    (problem) => {
+      onStopped?.({ machine, answer: null, problem });
+    },
+  );
+  const press = () => {
+    if (stopStep(asking) === "ask") {
+      setAsking(true);
+      return;
+    }
+    setAsking(false);
+    // A new stop clears the last one's answer; its own replaces it.
+    onStopped?.(null);
+    acting.press();
+  };
+  return children({
+    button: asking ? null : (
+      <button type="button" className={className} disabled={acting.sending} onClick={press}>
+        {`Stop ${machine}`}
+      </button>
+    ),
+    lines: (
+      <>
+        {asking && (
+          <StopConfirm machine={machine} impact={impact} sending={acting.sending} onPress={press} onKeep={() => setAsking(false)} />
+        )}
+      </>
+    ),
+  });
+}
+
+/**
+ * The last Stop's answer, kept by the page under Needs you whether or not
+ * the machine's item and row are still there: a stop that did not finish
+ * keeps its warning and the command that tries again, a refusal its two
+ * lines, and a confirmed stop says what it stopped. The next Stop replaces
+ * it; Dismiss puts it away.
+ */
+export function StopAnswered({ stopped, onDismiss }: { stopped: StopAnswer; onDismiss: () => void }) {
+  return (
+    <section className="ms-fleet-block ms-fleet-stop-answer" aria-label={`Stop ${stopped.machine}`}>
+      <div className="ms-fleet-stop-answer-main">
+        <span className="ms-fleet-stop-answer-head">{`Stop ${stopped.machine}`}</span>
+        <ActAnswer answer={stopped.answer} problem={stopped.problem} />
+      </div>
+      <Button onClick={onDismiss}>Dismiss</Button>
+    </section>
+  );
+}
+
+/** Stop's second press: what the stop ends, said whole, the one button that stops, and a way back out. */
+export function StopConfirm({
+  machine,
+  impact,
+  sending,
+  onPress,
+  onKeep,
+}: {
+  machine: string;
+  impact: string;
+  sending: boolean;
+  onPress: () => void;
+  onKeep: () => void;
+}) {
+  return (
+    <p className="ms-fleet-stop-confirm" role="group" aria-label={`Stop ${machine}?`}>
+      <span className="ms-fleet-stop-ask">{`Stop ${machine}?`}</span> <span>{impact}</span>{" "}
+      <button type="button" className="ms-fleet-stop-yes" disabled={sending} onClick={onPress}>
+        Yes, stop it
+      </button>{" "}
+      <button type="button" className="ms-fleet-stop-keep" disabled={sending} onClick={onKeep}>
+        Keep it running
+      </button>
+    </p>
   );
 }
 
@@ -437,9 +642,13 @@ function Command({ command }: { command: string }) {
   return <code className="ms-mono ms-fleet-needs-command">{command}</code>;
 }
 
-/** The one act at an item's end: open the goal, answer, or open the proof's log. */
+/** The one act at an item's end that opens something: the goal, the question, or the proof's log. */
 function NeedAction({ act }: { act: NeedAct }) {
   switch (act.kind) {
+    case "resume":
+    case "stop":
+      // Acts the server runs as you; NeedRow draws them with their press.
+      return null;
     case "goal":
       return (
         <NavLink className="ms-fleet-needs-act" to={goalPath(act.goal)}>
@@ -479,6 +688,8 @@ function TheFleet({
   now,
   open,
   onToggle,
+  onActed,
+  onStopped,
 }: {
   page: FleetPayload;
   board: BoardPayload | null;
@@ -486,6 +697,8 @@ function TheFleet({
   now: Date;
   open: Set<string>;
   onToggle: (machine: string) => void;
+  onActed?: () => void;
+  onStopped?: (stopped: StopAnswer | null) => void;
 }) {
   const problem = copyProblem(page);
   // This seat's jobs reader's trouble, unless its own row's Doing says it.
@@ -579,9 +792,12 @@ function TheFleet({
                 machine={machine}
                 seat={machine.this ? page.this : null}
                 doing={doing.get(machine.machine) ?? IDLE}
+                stop={stopOffer(machine, board)}
                 now={now}
                 open={open.has(machine.machine)}
                 onToggle={onToggle}
+                onActed={onActed}
+                onStopped={onStopped}
               />
             ))}
           </tbody>
@@ -630,7 +846,9 @@ function TheFleet({
  * The row's cells carry no labels: on a phone the row is a card that reads
  * "m1f · stalled · revising · 68 min", the titles, then when it was seen.
  * The engine and its generation, and for this seat when it last published,
- * are in the opened row.
+ * are in the opened row, and so is Stop for a seat of this computer other
+ * than this one, with what the stop ends; this seat's opened row says a
+ * terminal stops it, with the command.
  */
 /** What a row says before anything was composed for it. */
 const IDLE: Doing = { words: "idle", active: false, source: "none" };
@@ -639,17 +857,24 @@ function MachineRow({
   machine,
   seat,
   doing,
+  stop,
   now,
   open,
   onToggle,
+  onActed,
+  onStopped,
 }: {
   machine: Machine;
   /** This seat's own record, on this seat's row; null on every other. */
   seat: ThisSeat | null;
   doing: Doing;
+  /** How this page stops the machine (stopOffer): Stop, the command for this seat, or nothing. */
+  stop: "button" | "command" | null;
   now: Date;
   open: boolean;
   onToggle: (machine: string) => void;
+  onActed?: () => void;
+  onStopped?: (stopped: StopAnswer | null) => void;
 }) {
   const seen = seenOf(machine, now);
   const disclosed = `ms-fleet-work-${machine.machine}`;
@@ -708,6 +933,34 @@ function MachineRow({
             <p className="ms-fleet-work-line">
               <span className="ms-fleet-work-name">Presence</span>
               <span>{publishedWords(seat, now)}</span>
+            </p>
+          )}
+          {stop === "button" && (
+            <Stopping
+              machine={machine.machine}
+              impact={stopImpact(machine.machine)}
+              className="ms-button ms-fleet-stop"
+              onActed={onActed}
+              onStopped={onStopped}
+            >
+              {(stopping) => (
+                <div className="ms-fleet-row-stop">
+                  {stopping.button !== null && (
+                    <p className="ms-fleet-work-line">
+                      {stopping.button}
+                      <span>{stopImpact(machine.machine)}</span>
+                    </p>
+                  )}
+                  {stopping.lines}
+                </div>
+              )}
+            </Stopping>
+          )}
+          {stop === "command" && (
+            <p className="ms-fleet-work-line">
+              <span>This seat serves this page, so a terminal stops it:</span>
+              <Command command={machineStop(machine.machine)} />
+              <span>{stopImpact(machine.machine)}</span>
             </p>
           )}
           <Work machine={machine} doing={doing} now={now} />

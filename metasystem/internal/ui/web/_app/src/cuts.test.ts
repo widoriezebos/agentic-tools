@@ -192,7 +192,14 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // Land now, from the landing lane card (goal fleet-card-can-land-now), is
   // one more act at the same call site: the same request with a body, and the
   // board read again after it answers, still with no timer.
-  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch", "/api/board", "/api/fleet/land-now"]],
+  // Pause, Resume and Stop (fleet-panel-ux step 2, slice 2b) are three more
+  // acts at that call site, each a press of a human's and the board read
+  // again after it answers, still with no timer.
+  [
+    "fleet/api.ts",
+    1,
+    ["/api/fleet", "/api/fleet/launch", "/api/board", "/api/fleet/land-now", "/api/fleet/lane/pause", "/api/fleet/lane/resume", "/api/fleet/machines/stop"],
+  ],
   // The Project Partner. Three requests through one call site: the
   // conversation, read when the page loads and again on every reconnect of the
   // one stream below; a send, when a human presses Send; and a stop, when they

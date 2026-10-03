@@ -67,6 +67,36 @@
   background: var(--ms-surface);
 }
 
+/*
+ * The last Stop's answer, kept by the page under Needs you after the stopped
+ * seat has left the board (Sol F-2): who it was for, the verb's two lines,
+ * and Dismiss.
+ */
+.ms-fleet-stop-answer {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+}
+
+.ms-fleet-stop-answer-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ms-fleet-stop-answer-head {
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
 .ms-fleet-needs {
   margin: 0;
   padding: 0;
@@ -200,6 +230,110 @@
 
 .ms-fleet-needs-act:hover {
   background: var(--ms-surface-3);
+}
+
+/*
+ * An act the server runs as you (Resume, Stop; fleet-panel-ux step 2, slice
+ * 2b) is a real button drawn as the same act: Resume as the item's call to
+ * act, Stop in the danger colour.
+ */
+button.ms-fleet-needs-act {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.ms-fleet-needs-act:disabled {
+  border-color: var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+.ms-fleet-needs-act--primary {
+  border-color: var(--ms-accent);
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+.ms-fleet-needs-act--primary:hover {
+  background: var(--ms-accent-hover);
+}
+
+.ms-fleet-stop {
+  border-color: var(--ms-danger);
+  color: var(--ms-danger);
+}
+
+/*
+ * Stop's second press (R-142-ui): the question, what the stop ends said whole,
+ * and the one button that stops. It stands under the line, away from where
+ * the first press was, so a doubled tap asks and does not stop.
+ */
+.ms-fleet-stop-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-danger);
+  background: var(--ms-surface);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-fleet-stop-ask {
+  font-weight: 600;
+}
+
+.ms-fleet-stop-yes {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ms-danger);
+  color: var(--ms-accent-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ms-fleet-stop-yes:disabled {
+  background: var(--ms-surface-3);
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+/* The way back out of Stop's question: quiet, beside the one that stops. */
+.ms-fleet-stop-keep {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Stop in an opened row: the button, what it ends, and its question. */
+.ms-fleet-row-stop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 8px;
+}
+
+.ms-fleet-row-stop .ms-fleet-work-line {
+  align-items: center;
 }
 
 /* A goal, as the link that opens it. */
@@ -713,6 +847,9 @@
  */
 
 .ms-fleet-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-left: auto;
   text-transform: none;
   letter-spacing: normal;

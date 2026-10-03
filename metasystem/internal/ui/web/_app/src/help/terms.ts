@@ -69,6 +69,9 @@ export type HelpId =
   | "seat"
   | "fleet-verdict"
   | "fleet-needs-you"
+  | "lane-pause"
+  | "lane-resume"
+  | "machine-stop"
   | "machine-holds"
   | "launch-machine"
   | "engine"
@@ -385,7 +388,19 @@ export const HELP: Record<HelpId, Term> = {
   },
   "fleet-needs-you": {
     term: "Needs you",
-    text: "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each is one line with one thing to do: a button that opens the goal, the question or the proof's log, or the one command to type at a terminal on this computer.",
+    text: "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each is one line with one thing to do: a button that opens the goal, the question or the proof's log, Resume for a paused lane, Stop for a stuck seat's machine, or the one command to type at a terminal on this computer. Resume and Stop act in your name, so they ask you to sign in first, and Stop asks once more before it stops.",
+  },
+  "lane-pause": {
+    term: "Pause",
+    text: "Pauses this computer's landing lane in your name: no landing agent starts and nothing waiting lands until the lane is resumed, and the lane says who paused it and since when. It runs metasystem landing stop as you; Resume undoes it.",
+  },
+  "lane-resume": {
+    term: "Resume",
+    text: "Ends a pause of this computer's landing lane: its landing agent starts again when there is work. It runs metasystem landing start with you as the person it asks for. Resuming a lane that is not paused changes nothing.",
+  },
+  "machine-stop": {
+    term: "Stop",
+    text: "Stops MetaSystem on one machine of this computer: its seat and every job on it end, and its steward does not start it again until metasystem system start is run at that machine's checkout. It runs metasystem machine stop with you as the person it asks for, and asks a second press first. The machine serving this page is stopped at a terminal, never from here.",
   },
   "machine-holds": {
     term: "Holds",

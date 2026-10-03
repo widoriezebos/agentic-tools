@@ -20,6 +20,9 @@ const LAUNCH = "/api/fleet/launch";
 const LAUNCHES = "/api/fleet/launches/";
 const BOARD = "/api/board";
 const LAND_NOW = "/api/fleet/land-now";
+const LANE_PAUSE = "/api/fleet/lane/pause";
+const LANE_RESUME = "/api/fleet/lane/resume";
+const MACHINE_STOP = "/api/fleet/machines/stop";
 const PROOF_LOGS = "/api/fleet/proof-logs/";
 
 /** What this seat concludes about one machine, from its presence record. */
@@ -546,7 +549,8 @@ export type LaneWake = { reasons: string[]; unread: string[] };
 /**
  * What `metasystem landing run` answered, as its one-result envelope says
  * it: the outcome, line 1 (summary) and line 2 (next), null where it names
- * none.
+ * none. Pause, Resume and Stop answer their own verbs' envelopes in the same
+ * shape.
  */
 export type LandNowAnswer = {
   outcome: string;
@@ -582,6 +586,26 @@ export async function launchMachine(asked: LaunchRequest, signal?: AbortSignal):
  */
 export async function landNow(signal?: AbortSignal): Promise<LandNowAnswer> {
   return (await request(LAND_NOW, {}, signal)) as LandNowAnswer;
+}
+
+/**
+ * Pause and Resume, from the landing lane's heading and Needs you, and Stop,
+ * from a stuck seat's item and an opened row (fleet-panel-ux step 2, slice
+ * 2b): the server runs `metasystem landing stop`, `landing start` or `machine
+ * stop` once, as the signed-in person, and answers the verb's envelope as Land
+ * now does. A repeat is the verb's success that changed nothing. Stop is never
+ * run for the machine serving this page: the server refuses it in two lines.
+ */
+export async function pauseLane(signal?: AbortSignal): Promise<LandNowAnswer> {
+  return (await request(LANE_PAUSE, {}, signal)) as LandNowAnswer;
+}
+
+export async function resumeLane(signal?: AbortSignal): Promise<LandNowAnswer> {
+  return (await request(LANE_RESUME, {}, signal)) as LandNowAnswer;
+}
+
+export async function stopMachine(machine: string, signal?: AbortSignal): Promise<LandNowAnswer> {
+  return (await request(MACHINE_STOP, { machine }, signal)) as LandNowAnswer;
 }
 
 /**

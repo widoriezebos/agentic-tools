@@ -228,9 +228,16 @@ export function queueOf(board: BoardPayload | null): LaneEntry[] {
 
 /**
  * The one act a Needs you item offers as a button: open the goal, answer the
- * question, or open the proof's log in a tab of its own.
+ * question, open the proof's log in a tab of its own, resume the lane, or stop
+ * a machine of this computer (the last two run as the signed-in person,
+ * fleet-panel-ux step 2, slice 2b).
  */
-export type NeedAct = { kind: "goal"; goal: string } | { kind: "answer" } | { kind: "log"; href: string };
+export type NeedAct =
+  | { kind: "goal"; goal: string }
+  | { kind: "answer" }
+  | { kind: "log"; href: string }
+  | { kind: "resume" }
+  | { kind: "stop"; machine: string };
 
 /**
  * One thing that needs the person, as one line and one thing to do.
@@ -267,8 +274,44 @@ const LANDING_STATUS = "metasystem landing status";
 const SYSTEM_START = "metasystem system start";
 const SYSTEM_CHECK = "metasystem system check";
 
-function machineStop(machine: string): string {
+export function machineStop(machine: string): string {
   return `metasystem machine stop ${machine}`;
+}
+
+/** What a stop ends, said whole before anyone presses or types it (R-143-m1e). */
+export function stopImpact(machine: string): string {
+  return `Stopping ${machine} ends its seat and every job on it; its steward will not start it again.`;
+}
+
+/**
+ * How this page stops a machine (R-142-ui): the button for a seat of this
+ * computer — one this computer's board reads — other than the seat serving
+ * this page; the command at a terminal for that seat, since a stop run inside
+ * its server would end the server before it could say what it did (the
+ * server refuses it too); and nothing for a machine on another computer,
+ * which only that computer stops.
+ */
+export function stopOffer(machine: Machine, board: BoardPayload | null): "button" | "command" | null {
+  if (seatOf(board, machine.machine) === undefined) {
+    return null;
+  }
+  return machine.this ? "command" : "button";
+}
+
+/**
+ * The one lane act beside its state word: Pause on a running lane, Resume on
+ * a paused one, never both, and neither while the lane cannot run or any part
+ * of it could not be read — Land now's rule, since a press over a lane this
+ * page cannot vouch for acts on a state nobody has seen.
+ */
+export function laneActOf(lane: Lane, unread: readonly string[]): "pause" | "resume" | null {
+  if (unread.length > 0) {
+    return null;
+  }
+  if (paused(lane)) {
+    return "resume";
+  }
+  return laneState(lane).word === "Running" ? "pause" : null;
 }
 
 /** The take-over of one held goal: the public form, which asks the person's reason. */
@@ -331,7 +374,7 @@ export function needsOf(fleet: FleetReading, board: BoardReading, now: Date): Ne
   if (board.state === "read") {
     const read = board.board;
     if (read.lane !== undefined && read.lane !== null && !laneNotRead(read.lane)) {
-      items.push(...laneNeeds(read.lane, read.titles, read.ended, now));
+      items.push(...laneNeeds(read.lane, read.titles, read.ended, unreadOf(fleet, board).lane, now));
     }
     items.push(...questionNeeds(read));
   }
@@ -421,8 +464,9 @@ function stageWords(stage: string | undefined): string {
  * A seat of this computer that is stuck: one item per card the board does
  * not believe because it stopped moving, for a goal its machine holds (the
  * rule Doing applies), dated by its last progress. What to do is the stop of
- * that machine, which its steward does not undo; what the stop ends is said
- * before anyone types it (R-143-m1e).
+ * that machine, which its steward does not undo: Stop, or for the seat serving
+ * this page the command at a terminal (stopOffer). What the stop ends is said
+ * whole before anyone presses or types it (R-143-m1e).
  */
 function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
   return page.machines.flatMap((machine) => {
@@ -439,8 +483,10 @@ function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
           key: `stuck:${machine.machine}:${goal.goal}`,
           at: last,
           words: oneLine("“", title, `” on ${machine.machine} has not moved${since}${why}`),
-          impact: `Stopping ${machine.machine} ends its seat and every job on it; its steward will not start it again.`,
-          command: machineStop(machine.machine),
+          impact: stopImpact(machine.machine),
+          ...(stopOffer(machine, board) === "button"
+            ? { act: { kind: "stop" as const, machine: machine.machine } }
+            : { command: machineStop(machine.machine) }),
         });
       });
   });
@@ -501,11 +547,16 @@ function paused(lane: Lane): boolean {
   return lane.paused === true || lane.owner.state === "stopped";
 }
 
-/** The lane paused or unable to run, the returns and an unanswered red proof. */
+/**
+ * The lane paused or unable to run, the returns and an unanswered red proof.
+ * A paused lane offers Resume, unless part of the lane could not be read
+ * (laneActOf's rule): then the command that resumes it.
+ */
 function laneNeeds(
   lane: Lane,
   titles: Readonly<Record<string, string>> | undefined,
   ended: Readonly<Record<string, string>> | undefined,
+  unread: readonly string[],
   now: Date,
 ): Need[] {
   const items: Need[] = [];
@@ -519,7 +570,7 @@ function laneNeeds(
         key: "lane:paused",
         at: since,
         words: because === "" ? `${head}.` : oneLine(`${head}: `, clause(because), "."),
-        command: LANDING_START,
+        ...(laneActOf(lane, unread) === "resume" ? { act: { kind: "resume" as const } } : { command: LANDING_START }),
       }),
     );
   } else if (lane.owner.state === "unready") {

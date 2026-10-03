@@ -6,8 +6,8 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { minuteTime } from "../backlog/format";
-import type { Lane, LaneEntry, LandNowAnswer, LaneOwner } from "./api";
-import { LandNowView, LaneBlock, landNowLines, landNowOffer } from "./LandingLane";
+import { ResourceError, type Lane, type LaneEntry, type LandNowAnswer, type LaneOwner } from "./api";
+import { LandNowView, LaneBlock, landNowLines, landNowOffer, pressAct } from "./LandingLane";
 import { unreadOf, type BoardReading } from "./panel";
 
 /**
@@ -358,7 +358,8 @@ describe("Land now on the landing lane card", () => {
     const offer = landNowOffer(stopped, []);
     expect(offer.offered).toBe(false);
     expect(offer.reason).toBe("Land now waits until the lane is resumed.");
-    expect(draw(stopped)).not.toContain("<button");
+    // Resume stands beside Paused (slice 2b); Land now does not.
+    expect(draw(stopped)).not.toMatch(LAND_NOW_BUTTON);
   });
 
   it("is not offered while any part of the lane could not be read, and says why in one line", () => {
@@ -490,3 +491,107 @@ describe("Land now on the landing lane card", () => {
 });
 
 const queuedOffer = { offered: true, reason: "" };
+
+/**
+ * Pause and Resume (fleet-panel-ux step 2, slice 2b): beside the lane's state
+ * word, the one that makes sense in that state, under Land now's rule for a
+ * lane the page could not read. Neither asks a second press: both are undone
+ * by the other.
+ */
+describe("Pause and Resume beside the lane's state word", () => {
+  const PAUSE = /<button[^>]*>Pause<\/button>/u;
+  const RESUME = /<button[^>]*>Resume<\/button>/u;
+
+  function heading(markup: string): string {
+    return markup.slice(markup.indexOf("<h2"), markup.indexOf("</h2>"));
+  }
+
+  it("offers Pause beside Running and Resume beside Paused, never both", () => {
+    const running = heading(draw(lane()));
+    expect(running).toMatch(PAUSE);
+    expect(running).not.toMatch(RESUME);
+
+    const paused = heading(draw(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true, agent_alive: false })));
+    expect(paused).toMatch(RESUME);
+    expect(paused).not.toMatch(PAUSE);
+  });
+
+  it("offers neither while the lane needs attention, or while any part of it could not be read", () => {
+    const unready = heading(draw(lane({ owner: owner({ state: "unready", last_exit: "x" }), agent_alive: false })));
+    const unread = heading(draw(lane({ problems: ["the running proof's record could not be read"] })));
+    for (const markup of [unready, unread]) {
+      expect(markup).not.toMatch(PAUSE);
+      expect(markup).not.toMatch(RESUME);
+    }
+  });
+
+  it("stands before Land now when both are offered", () => {
+    const markup = heading(draw(queued()));
+    expect(markup.indexOf(">Pause<")).toBeGreaterThan(-1);
+    expect(markup.indexOf(">Pause<")).toBeLessThan(markup.indexOf(">Land now<"));
+  });
+});
+
+/**
+ * One press of an act the server runs as the signed-in person, as Land now
+ * presses: the verb's answer; where the route found nobody signed in, the
+ * sign-in sheet and the same press once more after it, never a second sheet;
+ * anything else in one line.
+ */
+describe("a press of an act the server runs as you", () => {
+  const answer: LandNowAnswer = { outcome: "confirmed", summary: "resumed the landing lane at /w/landing", next: null };
+  const nobody = () => new ResourceError("/api/fleet/lane/resume", 403, "pausing or resuming the landing lane is a person's act", "session", true);
+
+  function ports(acts: (() => Promise<LandNowAnswer>)[]) {
+    const seen = { asked: 0, answered: [] as LandNowAnswer[], failed: [] as string[], sheets: [] as (() => void)[] };
+    return {
+      seen,
+      ports: {
+        act: () => {
+          seen.asked += 1;
+          return acts[seen.asked - 1]();
+        },
+        answered: (answered: LandNowAnswer) => seen.answered.push(answered),
+        failed: (message: string) => seen.failed.push(message),
+        signIn: (again: () => void) => seen.sheets.push(again),
+      },
+    };
+  }
+
+  it("answers with the verb's envelope", async () => {
+    const { seen, ports: given } = ports([() => Promise.resolve(answer)]);
+    await pressAct(given);
+    expect(seen).toEqual({ asked: 1, answered: [answer], failed: [], sheets: [] });
+  });
+
+  it("opens the sign-in sheet once where nobody is signed in, and presses once more after it", async () => {
+    const { seen, ports: given } = ports([() => Promise.reject(nobody()), () => Promise.resolve(answer)]);
+    await pressAct(given);
+    expect(seen.sheets).toHaveLength(1);
+    expect(seen.failed).toEqual([]);
+
+    seen.sheets[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(seen.asked).toBe(2);
+    expect(seen.answered).toEqual([answer]);
+  });
+
+  it("never opens a second sheet: a press refused again after a sign-in says why in one line", async () => {
+    const { seen, ports: given } = ports([() => Promise.reject(nobody()), () => Promise.reject(nobody())]);
+    await pressAct(given);
+    seen.sheets[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(seen.sheets).toHaveLength(1);
+    expect(seen.failed).toEqual(["pausing or resuming the landing lane is a person's act"]);
+  });
+
+  it("says any other failure in one line and opens no sheet", async () => {
+    const { seen, ports: given } = ports([() => Promise.reject(new ResourceError("/api/fleet/machines/stop", 500, "the host registry cannot be located"))]);
+    await pressAct(given);
+    expect(seen).toEqual({ asked: 1, answered: [], failed: ["the host registry cannot be located"], sheets: [] });
+  });
+});
