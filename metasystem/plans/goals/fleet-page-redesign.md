@@ -1,6 +1,6 @@
 # fleet-page-redesign
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Human-facing UI redesign over existing read paths and existing verbs; acts stay behind the signed-in session; one wrong-fact bug in a health read"
@@ -9,13 +9,14 @@
 - Origin: main
 - Next step: UX step back: use cases and jobs (reuse the accepted fleet-panel-ux Part 1 where it holds), a review of today's page with screenshots (agentic-tools-evidence/fleet-panel-ux/fleet-0925-top.png: ~1,200 words, one stale wrong 'needs you'), then a redesign page with a mock per state (all good, one thing needs you, lane red, seat stuck, phone width); Astra critique tier 2; build; check in a browser with Playwright at 390 and 1440 px.; ASKED 1N0QNKE8BHGK6Z6KZA81DN5P2Q (other): Fleet page redesign: may I build it as drawn? Mocks: ~/metasystem-evidence/agentic-tools-ui/fleet-page-redesign-20261003/mocks/ (one-thing-1440.png shows it best).; ANSWERED 1N0QNKE8BHGK6Z6KZA81DN5P2Q: yes INPUT (Wido 2026-10-03): the page shows, per seat and goal, estimate against actual, and marks a goal or slice that exceeded its estimate (signal owned by goal-budget-follows-its-plan).
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 19
+- Revision: 20
 - Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=17
 - Approved: by=human:Wido at=2026-10-03T10:24:22Z revision=18 opid=28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb authority=proven digest=93c733cb9ebe27b75c137d276b2daec8b381b09306d8f212890e1d90ae096284 episode=18
-- Episode: machine=ui lineage=steward-seat accountingRevision=18 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=0 released=2026-10-03T10:41:26Z
+- Claimed: machine=ui lineage=steward-seat at=2026-10-03T10:41:32Z revision=20 accountingRevision=18 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=6
+- StopCapability: generation=20 revision=20 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -37,4 +38,5 @@ History:
 - 2026-10-03T10:03:30Z 0N8P30YRNHMMRZG9MD1HP7M1CH-m1e-718ba0eb set-priority actor=human:Wido targets=agent-works-as-project-partner,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=agent-works-as-project-partner from=1:6 to=1:7 requested-sequence=1
 - 2026-10-03T10:24:22Z 28RPE3R81XNQXV4VC7A0ST8PDQ-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T07:22:05Z
 - 2026-10-03T10:41:26Z 8CA1K7YJM66QMHYERSRHKTSZ7M-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-page-redesign reason=re-claim under the raised budget (m1e's raise rebinds the claim)
-Integrity: sha256=980387d2cbdb3958d2685a6b16e0f8bb8e182e48f49023d1eb2a753a908d9782
+- 2026-10-03T10:41:32Z 6GQBKCVTQKSSGV7QJB7TE2KQKC-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
+Integrity: sha256=26c1907f9c5691cfa201feb40f8d29ff570647d79c0ee83f3aa2f3d0033b7275
