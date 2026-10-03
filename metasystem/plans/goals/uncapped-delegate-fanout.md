@@ -3,11 +3,13 @@
 - State: queued
 - Priority: 3
 - Sequence: 6
+- Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="A refusal or a catch for nested paid sessions; too strict blocks builders that may start helpers, too loose leaves spend outside the budget; the owner is not chosen and proving it without cost is hard"
+- Tier: 2
 - Intent: What: An agent that can run shell commands cannot start another paid agent session that escapes its budget and supervision. Why: A critique found that a delegate could start a fresh Claude session (for example in background mode) that carries no budget and may escape its job's process group. Whether this really happens is unproven, because testing it costs money. Pros: Closes an unowned path for spending and for runaway processes. Cons: Blocking nested launches might block legitimate tools, and proving the behaviour safely is hard.
 - Origin: main
 - Next step: Next: When it comes back, pick the owner (a deny rule in the agent's permissions, the process census catching escaped children, or a refusal in the runtime adapter), prove the behaviour without spending money if possible, and wire the refusal. Done when: a delegate's attempt to open a nested agent session is refused or caught, shown by a test.
 - OpenedAt: 2026-09-01T17:34:51Z
-- Revision: 49
+- Revision: 50
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +62,5 @@ History:
 - 2026-10-03T10:02:08Z DEEW6GC86FV4G5W1MF94ZZ29CX-m1e-718ba0eb unpark actor=human:Wido targets=uncapped-delegate-fanout
 - 2026-10-03T10:02:14Z VM6W0V7N1NTQ8KAH9VWV930WJ0-m1e-718ba0eb park actor=human:Wido targets=uncapped-delegate-fanout reason=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
 - 2026-10-03T11:17:52Z PXS1J31CD2HA49TYGKJJSFT2CB-m1e-718ba0eb unpark actor=human:Wido targets=uncapped-delegate-fanout
-Integrity: sha256=4212141bb8541bcce2838e63ca1f2f8a2277d101b0f7abb39d5ba5a2f6b46769
+- 2026-10-03T11:18:01Z 5RRA58VRPKP0QCMCRMKGFMK2HW-m1e-718ba0eb edit actor=human:Wido targets=uncapped-delegate-fanout
+Integrity: sha256=43b4f723883ac15518cad93035d9964791859e6baef1b9242d26dffd941e8d0f
