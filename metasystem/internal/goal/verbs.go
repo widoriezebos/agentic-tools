@@ -264,6 +264,11 @@ type VerbRequest struct {
 	// accepted tree and checked again inside the transaction. The act stays
 	// the seat's own: no human actor, no proof.
 	Attorney *PowerOfAttorneyEntry
+	// RearmCapped reports whether a steward has stopped starting seats for a
+	// goal under the approval named: goal approve then writes a fresh
+	// approval instead of its identical-repeat no-op, since the capped
+	// approval no longer starts anything. nil re-arms nothing.
+	RearmCapped func(goalID, approvalOpid string) bool
 	// ParkBranchCheck verifies that branch-backed work is recoverable and
 	// returns the branch state that parking records in Next step.
 	ParkBranchCheck func(goalID, next string) (string, error)

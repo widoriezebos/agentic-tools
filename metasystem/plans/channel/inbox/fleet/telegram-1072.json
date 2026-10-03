@@ -1,0 +1,16 @@
+{
+  "provider": "telegram",
+  "destination": "fleet",
+  "messageId": "1072",
+  "updateId": "896422403",
+  "replyTo": "1071",
+  "userId": "1365582",
+  "sentAt": "2026-10-03T10:30:23Z",
+  "text": "Build as recommended",
+  "step": 1791023423,
+  "outcome": "verified",
+  "question": "unmatched",
+  "opid": "CXMHSBR9SS9B1PWMJG72RMBGKE-m1f-71c5cb39",
+  "receivedBy": "m1f",
+  "receivedAt": "2026-10-03T10:31:58Z"
+}

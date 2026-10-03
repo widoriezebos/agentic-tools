@@ -5,18 +5,19 @@ import { goalPath } from "../routes";
 import { Button, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Trouble } from "../shell/Trouble";
-import { failureMessage, landNow, ResourceError } from "./api";
+import { failureMessage, landNow, proofLogAddress, ResourceError } from "./api";
 import type { Lane, LaneEntry, LandNowAnswer } from "./api";
-import { laneLists, laneNotRead, laneState, when, type LaneItem, type ProvingItem } from "./panel";
+import { laneCounts, laneLists, laneNotRead, laneState, when, type LaneItem, type LaneLists, type ProvingItem } from "./panel";
 
 /**
- * This computer's landing lane on the Fleet page: one state word — Running,
- * Paused or Needs attention — with the one button that makes sense in that
- * state, and then the lane's four lists: what waits, what is being proved,
- * what landed today and what came back. Every item says what it is in plain
- * words; its commit, branch and seat are behind its own Details disclosure,
- * and the lane's root, its agent's pid and its last proof and push behind
- * the block's.
+ * This computer's landing lane on the Fleet page: one heading line — the
+ * state word (Running, Paused or Needs attention), how many hand-ins wait and
+ * what proves — with the one button that makes sense in that state, and then
+ * the lane's lists: what waits, what is being proved, what landed today, and
+ * what came back, closed behind its count. Every item says what it is in
+ * plain words; its commit, branch and seat are behind its own Details
+ * disclosure, and the lane's root, its agent's pid and its last proof and
+ * push behind the block's.
  *
  * It is drawn from the same /api/board response the Doing column and the
  * questions are, so it adds no request. Its one act is Land now (goal
@@ -32,12 +33,13 @@ import { laneLists, laneNotRead, laneState, when, type LaneItem, type ProvingIte
  */
 
 /** The block's own frame, its heading and what stands beside it. */
-function Panel({ children, state, action }: { children: ReactNode; state?: ReactNode; action?: ReactNode }) {
+function Panel({ children, state, counts, action }: { children: ReactNode; state?: ReactNode; counts?: string; action?: ReactNode }) {
   return (
     <section className="ms-fleet-block ms-fleet-lane" aria-label="Landing lane">
       <h2 className="ms-fleet-heading">
         Landing lane
         {state}
+        {counts !== undefined && <span className="ms-fleet-lane-counts">{counts}</span>}
         {action !== undefined && <span className="ms-fleet-actions">{action}</span>}
       </h2>
       {children}
@@ -108,11 +110,13 @@ export function LaneBlock({
     );
   }
   const state = laneState(lane);
+  const lists = laneLists(lane, titles, now);
   return (
     <LandNow lane={lane} unread={unread} onLanded={onLanded}>
       {(landing) => (
         <Panel
           state={<span className={`ms-fleet-pill ms-fleet-lane-state ms-fleet-lane-state--${state.tone}`}>{state.word}</span>}
+          counts={laneCounts(lane, lists)}
           action={landing.button}
         >
           {problem !== "" && (
@@ -122,7 +126,7 @@ export function LaneBlock({
             <Trouble key={one} text={`Part of the landing lane could not be read: ${one}`} variant="small" />
           ))}
           {landing.lines}
-          <Lists lane={lane} titles={titles} now={now} />
+          <Lists lane={lane} lists={lists} now={now} />
           <LaneDetails lane={lane} now={now} />
         </Panel>
       )}
@@ -130,9 +134,13 @@ export function LaneBlock({
   );
 }
 
-/** The four lists, each drawn only when it holds something. */
-function Lists({ lane, titles, now }: { lane: Lane; titles: Readonly<Record<string, string>>; now: Date }) {
-  const lists = laneLists(lane, titles, now);
+/**
+ * The four lists, each drawn only when it holds something. Came back is
+ * closed behind its count: what of it still needs the person is in Needs
+ * you, and the rest — older returns nobody handed in again, and today's that
+ * were — is history (FR-07).
+ */
+function Lists({ lane, lists, now }: { lane: Lane; lists: LaneLists; now: Date }) {
   if (lists.waiting.length === 0 && lists.proving === null && lists.landed.length === 0 && lists.cameBack.length === 0) {
     return <p className="ms-fleet-quiet">Nothing is waiting to land.</p>;
   }
@@ -160,17 +168,20 @@ function Lists({ lane, titles, now }: { lane: Lane; titles: Readonly<Record<stri
         </List>
       )}
       {lists.cameBack.length > 0 && (
-        <List name="Came back">
-          {lists.cameBack.map((item) => (
-            <Item key={key(item.entry)} item={item}>
-              <span>{`${item.title} · ${item.words}`}</span>
-              {item.again && <span className="ms-fleet-quiet">handed in again</span>}
-              <NavLink className="ms-fleet-lane-open" to={goalPath(item.entry.goal)}>
-                Open goal
-              </NavLink>
-            </Item>
-          ))}
-        </List>
+        <details className="ms-fleet-details ms-fleet-lane-cameback">
+          <summary className="ms-fleet-details-summary">{`Came back (${String(lists.cameBack.length)})`}</summary>
+          <ul className="ms-fleet-lane-members">
+            {lists.cameBack.map((item) => (
+              <Item key={key(item.entry)} item={item}>
+                <span>{`${item.title} · ${item.words}`}</span>
+                {item.again && <span className="ms-fleet-quiet">handed in again</span>}
+                <NavLink className="ms-fleet-lane-open" to={goalPath(item.entry.goal)}>
+                  Open goal
+                </NavLink>
+              </Item>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );
@@ -242,7 +253,7 @@ function Proving({ proving, lane, now }: { proving: ProvingItem; lane: Lane; now
               ["Commit", proof.commit ?? ""],
               ["Attempt", proof.attempt],
               ["Since", proof.since === "" ? "" : when(proof.since, now)],
-              ["Log", proof.log ?? ""],
+              ["Log", proof.log ?? "", logAddress(proof.attempt)],
             ]}
           />
         )}
@@ -270,7 +281,7 @@ function LaneDetails({ lane, now }: { lane: Lane; now: Date }) {
         ["Agent", owner.pid === null ? "" : `pid ${String(owner.pid)}${owner.since === null || owner.since === "" ? "" : ` since ${when(owner.since, now)}`}`],
         ["Last exit", owner.last_exit ?? ""],
         ["Last proof", proof === null ? "" : `${proof.result} · ${short(proof.commit)} · ${when(proof.at, now)}${proof.reason === undefined || proof.reason === "" ? "" : ` · ${proof.reason}`}`],
-        ["Proof log", proof === null ? "" : proof.log],
+        ["Proof log", proof === null ? "" : proof.log, logAddress(proof?.attempt)],
         ["Last push", push === null ? "" : `${short(push.old)} → ${short(push.commit)} · ${when(push.at, now)}`],
         ["Summary", lane.summary],
       ]}
@@ -278,11 +289,17 @@ function LaneDetails({ lane, now }: { lane: Lane; now: Date }) {
   );
 }
 
+/** A proof's log as the page opens it, by the attempt its record names; "" for none. */
+function logAddress(attempt: string | undefined): string {
+  return attempt === undefined || attempt === "" ? "" : proofLogAddress(attempt);
+}
+
 /**
  * One Details disclosure: the particulars a person wants only now and then,
- * as name and value, the empty ones left out.
+ * as name and value, the empty ones left out. A value with an address is a
+ * link, opened in a tab of its own: a proof's log.
  */
-function Details({ facts, label = "Details" }: { facts: readonly (readonly [string, string])[]; label?: string }) {
+function Details({ facts, label = "Details" }: { facts: readonly (readonly [string, string, string?])[]; label?: string }) {
   const shown = facts.filter(([, value]) => value !== "");
   if (shown.length === 0) {
     return null;
@@ -291,10 +308,18 @@ function Details({ facts, label = "Details" }: { facts: readonly (readonly [stri
     <details className="ms-fleet-details">
       <summary className="ms-fleet-details-summary">{label}</summary>
       <dl className="ms-fleet-details-list">
-        {shown.map(([name, value]) => (
+        {shown.map(([name, value, href = ""]) => (
           <div key={name} className="ms-fleet-details-row">
             <dt>{name}</dt>
-            <dd className="ms-mono">{value}</dd>
+            <dd className="ms-mono">
+              {href === "" ? (
+                value
+              ) : (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {value}
+                </a>
+              )}
+            </dd>
           </div>
         ))}
       </dl>

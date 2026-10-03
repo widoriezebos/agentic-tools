@@ -1,6 +1,6 @@
-import type { BoardPayload, BoardSeat, Lane, LaneEntry, Machine, Page, Working } from "./api";
-import { dateAndTime, minuteTime } from "../backlog/format";
-import { flagWords, minutesWords, NEEDS_YOU_REMEDY } from "./fleet";
+import { proofLogAddress, type BoardPayload, type BoardSeat, type Health, type Lane, type LaneEntry, type Machine, type Page, type Working } from "./api";
+import { ageBetween, dateAndTime, minuteTime } from "../backlog/format";
+import { flagWords, minutesWords } from "./fleet";
 
 /**
  * The panel's rules, kept apart from the elements that draw them: the one
@@ -28,9 +28,12 @@ export type BoardReading =
   | { state: "failed"; message: string }
   | { state: "read"; board: BoardPayload; problem?: string };
 
-/** What the verdict checks, in the words the strip says under it. */
-export const SCOPE =
-  "Checked on this computer: its seats, its landing lane and this checkout's questions. Questions asked on other computers are not checked here.";
+/**
+ * What the verdict checked, in the words that stay beside its counts: the
+ * seats and the lane are this computer's, and the questions only this
+ * checkout's (R2-8). The whole sentence is the verdict's help.
+ */
+export const QUESTIONS_SCOPE = "questions: this checkout only";
 
 /** An instant a person reads: the clock alone today, the day as well before. */
 export function when(stamp: string, now: Date): string {
@@ -153,8 +156,11 @@ export function unreadSections(fleet: FleetReading, board: BoardReading): string
   return SECTIONS.filter(([section]) => unread[section].length > 0).map(([, name]) => name);
 }
 
-/** The one sentence on top, its tone, and the counts beside it. */
-export type Verdict = { words: string; tone: "ok" | "attention" | "unread" | "reading"; facts: string[] };
+/**
+ * The one sentence on top, its tone, the counts beside it, and when the fleet
+ * was read ("" before it was), whose title says where the reading came from.
+ */
+export type Verdict = { words: string; tone: "ok" | "attention" | "unread" | "reading"; facts: string[]; updated: string };
 
 function plural(count: number, one: string, many: string): string {
   return `${String(count)} ${count === 1 ? one : many}`;
@@ -168,19 +174,20 @@ function plural(count: number, one: string, many: string): string {
  */
 export function verdictOf(fleet: FleetReading, board: BoardReading, needs: readonly unknown[], now: Date): Verdict {
   const facts = factsOf(fleet, board, now);
+  const updated = fleet.state === "read" ? `updated ${minuteTime(fleet.page.readAt)}` : "";
   if (fleet.state === "loading" || board.state === "loading") {
-    return { words: "Reading…", tone: "reading", facts };
+    return { words: "Reading…", tone: "reading", facts, updated };
   }
   const unread = unreadSections(fleet, board);
   const needing = needs.length === 0 ? "" : `${plural(needs.length, "thing needs", "things need")} you`;
   if (unread.length > 0) {
     const words = `Can't read ${joinWords(unread)}`;
-    return { words: needing === "" ? words : `${words} · ${needing}`, tone: "unread", facts };
+    return { words: needing === "" ? words : `${words} · ${needing}`, tone: "unread", facts, updated };
   }
   if (needing !== "") {
-    return { words: needing, tone: "attention", facts };
+    return { words: needing, tone: "attention", facts, updated };
   }
-  return { words: "All good on this computer", tone: "ok", facts };
+  return { words: "All good on this computer", tone: "ok", facts, updated };
 }
 
 /** The counts beside the verdict, from whatever has been read. */
@@ -194,9 +201,6 @@ function factsOf(fleet: FleetReading, board: BoardReading, now: Date): string[] 
   const queue = queueOf(read);
   if (read !== null && read.lane !== undefined && read.lane !== null && !laneNotRead(read.lane)) {
     facts.push(`${String(queue.filter((entry) => entry.state === "waiting").length)} waiting to land`);
-  }
-  if (fleet.state === "read") {
-    facts.push(`updated ${minuteTime(fleet.page.readAt)}`);
   }
   return facts;
 }
@@ -223,36 +227,106 @@ export function queueOf(board: BoardPayload | null): LaneEntry[] {
 /* ------------------------------------------------------------ needs you -- */
 
 /**
- * One thing that needs the person: the sentence, what to do about it in
- * plain words, and the goal to open or the question to answer, where it has
- * one — or the goals, by title, where it is about several. `at` orders the
- * list, newest first.
+ * The one act a Needs you item offers as a button: open the goal, answer the
+ * question, or open the proof's log in a tab of its own.
+ */
+export type NeedAct = { kind: "goal"; goal: string } | { kind: "answer" } | { kind: "log"; href: string };
+
+/**
+ * One thing that needs the person, as one line and one thing to do.
+ *
+ * The line says the subject the person knows by name (the lane, a goal's
+ * title in quotes, a machine), what is wrong and since when; the quiet second
+ * line, where there is one, is a reason the record carries, cut at its first
+ * sentence. What to do is exactly one of three: the act (a button at the
+ * line's end), the command a person types (the public verb, in code), or —
+ * for a silent machine holding several goals — one command per goal, under
+ * its title. Never two of them. A health check's failing reasons stand behind
+ * a Details disclosure, one line each. `at` orders the list, newest first.
  */
 export type Need = {
   key: string;
   at: string;
   words: string;
-  todo: string;
-  goal: string;
-  goals: { id: string; title: string }[];
-  answer: boolean;
+  note: string;
+  /** What an override does, said whole before the person types it (R-143-m1e); "" when the item overrides nothing. */
+  impact: string;
+  act: NeedAct | null;
+  command: string;
+  goals: { id: string; title: string; command: string }[];
+  details: string[];
 };
 
 function need(over: Partial<Need> & Pick<Need, "key" | "words">): Need {
-  return { at: "", todo: "", goal: "", goals: [], answer: false, ...over };
+  return { at: "", note: "", impact: "", act: null, command: "", goals: [], details: [], ...over };
+}
+
+/** The public verbs Needs you offers (R-126-m1e), as a person types them. */
+const LANDING_START = "metasystem landing start";
+const LANDING_STATUS = "metasystem landing status";
+const SYSTEM_START = "metasystem system start";
+const SYSTEM_CHECK = "metasystem system check";
+
+function machineStop(machine: string): string {
+  return `metasystem machine stop ${machine}`;
+}
+
+/** The take-over of one held goal: the public form, which asks the person's reason. */
+function takeOver(goal: string): string {
+  return `metasystem goal claim ${goal} --take-over --reason "<why>"`;
+}
+
+/** What a take-over does, said before the person types it (R-143-m1e). */
+function takeOverImpact(machine: string): string {
+  return `Taking a goal over moves it to the machine you run this on: ${machine} stops holding it, and what ${machine} has not pushed stays on ${machine}. It can be taken back the same way.`;
+}
+
+/** How long a Needs you line may be at 1440 px; on a phone it wraps. */
+const LINE = 110;
+
+/**
+ * A line with free words in it — a title, a reason — cut at a word so the
+ * whole stays under the line's length. What was cut is behind the item's act
+ * or its command; nothing is rewritten, only shortened.
+ */
+function oneLine(before: string, cut: string, after: string): string {
+  const room = LINE - 1 - before.length - after.length;
+  if (cut.length <= room) {
+    return `${before}${cut}${after}`;
+  }
+  const kept = cut.slice(0, Math.max(room - 1, 12));
+  // Cut where a word ends: at the kept part's own end when the next character
+  // starts a new word, else at its last space.
+  const word = cut.charAt(kept.length) === " " ? kept.length : kept.lastIndexOf(" ");
+  return `${before}${(word > 12 ? kept.slice(0, word) : kept).replace(/[\s,;:.]+$/u, "")}…${after}`;
+}
+
+/** A reason as the quiet line carries it: its first sentence, as the record wrote it. */
+function firstSentence(reason: string): string {
+  const end = /[.!?](?=\s)/u.exec(reason);
+  return end === null ? reason.trim() : reason.slice(0, end.index + 1).trim();
+}
+
+/** A reason inside a line, which closes the line with its own full stop. */
+function clause(reason: string): string {
+  return firstSentence(reason).replace(/[.!?]$/u, "");
 }
 
 /**
  * Every source in one list, newest first, the undated last: the goals a
- * silent machine holds, the lane paused or unable to run, a branch that came
- * back and was not handed in again, a red proof nothing has answered yet,
- * this checkout's open questions, and this computer's own health record.
- * Empty, the section is not drawn at all.
+ * silent machine holds, a seat of this computer that is stuck, the lane
+ * paused or unable to run, a branch that came back and was not handed in
+ * again, a red proof nothing has answered yet, this checkout's open
+ * questions, and this computer's own health record. Empty, the section is
+ * not drawn at all.
  */
 export function needsOf(fleet: FleetReading, board: BoardReading, now: Date): Need[] {
   const items: Need[] = [];
   if (fleet.state === "read") {
     items.push(...silentHolds(fleet.page, now), ...healthNeeds(fleet.page, now));
+  }
+  if (fleet.state === "read" && board.state === "read") {
+    items.push(...stuckSeats(fleet.page, board.board, now));
   }
   if (board.state === "read") {
     const read = board.board;
@@ -285,7 +359,9 @@ function newestFirst(items: Need[]): Need[] {
 /**
  * The goals held by a machine this seat has not heard from, one item per
  * machine: a machine that went quiet holding four goals is one thing that
- * needs the person, with its goals listed and the remedy said once.
+ * needs the person, with each goal under it and that goal's own take-over.
+ * The take-over is the public verb with the goal's real id, and it asks the
+ * person's reason (FR-02).
  */
 function silentHolds(page: Page, now: Date): Need[] {
   const machines = new Map<string, Page["needsYou"]>();
@@ -298,17 +374,17 @@ function silentHolds(page: Page, now: Date): Need[] {
       return need({
         key: `held:${machine}:${first.goal}`,
         at: first.since,
-        words: `“${first.title === "" ? first.goal : first.title}” is ${flagWithWhen(first, now)}.`,
-        todo: NEEDS_YOU_REMEDY,
-        goal: first.goal,
+        words: oneLine("“", first.title === "" ? first.goal : first.title, `” is ${flagWithWhen(first, now)}.`),
+        impact: takeOverImpact(machine),
+        command: takeOver(first.goal),
       });
     }
     return need({
       key: `held:${machine}`,
       at: first.since,
       words: `${String(holds.length)} goals are ${flagWithWhen(first, now)}.`,
-      todo: NEEDS_YOU_REMEDY,
-      goals: holds.map((held) => ({ id: held.goal, title: held.title === "" ? held.goal : held.title })),
+      impact: takeOverImpact(machine),
+      goals: holds.map((held) => ({ id: held.goal, title: held.title === "" ? held.goal : held.title, command: takeOver(held.goal) })),
     });
   });
 }
@@ -320,51 +396,104 @@ function flagWithWhen(held: { flag: string; since: string }, now: Date): string 
   return `${held.flag} since ${when(held.since, now)}`;
 }
 
+/** The board's reason for a card whose stage made no progress past the stall bound. */
+const STALLED = "stalled";
+
+/** The start of the board's reason for a card whose writing process is gone. */
+const WRITER_DEAD = "writer dead";
+
+/**
+ * Whether the board does not believe a card because it stopped moving: its
+ * stage made no progress past the stall bound, or the process writing it is
+ * gone. Every other reason (unprobeable, reused, no owner, a claim that
+ * moved) says nothing about the seat being stuck.
+ */
+function stuck(unknown: string | undefined): boolean {
+  return unknown === STALLED || (unknown ?? "").startsWith(WRITER_DEAD);
+}
+
+/** A card's stage, as the Doing column says it. */
+function stageWords(stage: string | undefined): string {
+  return STAGES[stage ?? ""]?.words ?? stage ?? "";
+}
+
+/**
+ * A seat of this computer that is stuck: one item per card the board does
+ * not believe because it stopped moving, for a goal its machine holds (the
+ * rule Doing applies), dated by its last progress. What to do is the stop of
+ * that machine, which its steward does not undo; what the stop ends is said
+ * before anyone types it (R-143-m1e).
+ */
+function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
+  return page.machines.flatMap((machine) => {
+    const held = new Map(machine.holds.map((one) => [one.goal, one.title]));
+    return (seatOf(board, machine.machine)?.goals ?? [])
+      .filter((goal) => held.has(goal.goal) && stuck(goal.unknown))
+      .map((goal) => {
+        const holdTitle = held.get(goal.goal) ?? "";
+        const title = holdTitle === "" ? titleOf(goal.goal, board.titles) : holdTitle;
+        const last = goal.lastProgressAt ?? "";
+        const since = last === "" ? "" : ` since ${when(last, now)}`;
+        const why = goal.unknown === STALLED ? ` (${stageWords(goal.stage)}).` : " (the process writing it is gone).";
+        return need({
+          key: `stuck:${machine.machine}:${goal.goal}`,
+          at: last,
+          words: oneLine("“", title, `” on ${machine.machine} has not moved${since}${why}`),
+          impact: `Stopping ${machine.machine} ends its seat and every job on it; its steward will not start it again.`,
+          command: machineStop(machine.machine),
+        });
+      });
+  });
+}
+
 /** The steward's role whose death means the steward itself is not running. */
 const STEWARD = "steward-runner";
 
+/** What a failing or undecided check says, by its own reason and never its role's name. */
+function reasonsOf(health: Health): string[] {
+  return health.roles
+    .filter((role) => role.status !== "alive")
+    .map((role) => (role.reason === "" ? "a check failed and recorded no reason" : role.reason));
+}
+
 /**
- * This computer's own health record, as the steward last wrote it: a record
- * the steward stopped writing, or one that says a role is not alive. A
- * checkout never armed has no record and needs nothing.
+ * This computer's own health record, as the steward last wrote it, when it
+ * is wrong: a record that could not be read, one the steward stopped
+ * writing, a steward that is not running, a check that failed, and a check
+ * that could not decide. Each says what is wrong in one line, with the
+ * reasons behind Details and the one verb that deals with it; an unreadable
+ * record and an undecided check are items too, so the verdict is never green
+ * over them (FR-01). A checkout never armed has no record and needs nothing.
  */
 function healthNeeds(page: Page, now: Date): Need[] {
   const health = page.this.health;
-  if (health === null || health.problem !== "") {
+  if (health === null) {
     return [];
   }
+  const item = (words: string, command: string, details: string[]) => [need({ key: "health", at: health.observedAt, words, command, details })];
+  if (health.problem !== "") {
+    return item("This computer's health record could not be read.", SYSTEM_CHECK, [health.problem]);
+  }
+  const reasons = reasonsOf(health);
   if (page.this.armed === "stale") {
-    return [
-      need({
-        key: "health",
-        at: health.observedAt,
-        words: `This computer's steward has not recorded its health since ${when(health.observedAt, now)}.`,
-        todo: "If it stopped, it starts again with system start at a terminal on this computer.",
-      }),
-    ];
+    return item(`This computer's steward has not recorded its health since ${when(health.observedAt, now)}.`, SYSTEM_START, reasons);
   }
-  if (health.state !== "unhealthy") {
-    return [];
+  if (health.state === "unhealthy") {
+    if (health.roles.some((role) => role.role === STEWARD && role.status === "dead")) {
+      return item("This computer's steward is not running.", SYSTEM_START, reasons);
+    }
+    const words =
+      reasons.length === 1
+        ? oneLine("This computer's health check failed: ", clause(reasons[0]), ".")
+        : reasons.length === 0
+          ? "This computer's health check failed."
+          : `This computer's health check failed on ${String(reasons.length)} checks.`;
+    return item(words, SYSTEM_CHECK, reasons);
   }
-  const dead = health.roles.filter((role) => role.status === "dead");
-  if (dead.some((role) => role.role === STEWARD)) {
-    return [
-      need({
-        key: "health",
-        at: health.observedAt,
-        words: "This computer's steward is not running.",
-        todo: "It starts again with system start at a terminal on this computer.",
-      }),
-    ];
+  if (health.state === "unknown") {
+    return item("This computer's last health check could not decide.", SYSTEM_CHECK, reasons);
   }
-  const reasons = dead.map((role) => role.reason).filter((reason) => reason !== "");
-  return [
-    need({
-      key: "health",
-      at: health.observedAt,
-      words: reasons.length === 0 ? "This computer's health check failed." : `This computer's health check failed: ${reasons.join("; ")}.`,
-    }),
-  ];
+  return [];
 }
 
 /** Whether the lane is paused: the person's own stop. */
@@ -384,22 +513,26 @@ function laneNeeds(
     const by = lane.owner.stopped_by ?? "";
     const since = lane.owner.since ?? "";
     const because = lane.owner.stopped_because ?? "";
+    const head = `The landing lane is paused${by === "" ? "" : ` by ${by}`}${since === "" ? "" : ` since ${when(since, now)}`}`;
     items.push(
       need({
         key: "lane:paused",
         at: since,
-        words: `The landing lane is paused${by === "" ? "" : ` by ${by}`}${since === "" ? "" : ` since ${when(since, now)}`}${because === "" ? "" : `: ${because}`}.`,
-        todo: "It lands nothing until someone resumes it with landing start at a terminal.",
+        words: because === "" ? `${head}.` : oneLine(`${head}: `, clause(because), "."),
+        command: LANDING_START,
       }),
     );
   } else if (lane.owner.state === "unready") {
+    // The lane's hint is prose, and its one-command fix is not in the
+    // payload: the hint explains, and the lane's own status is what a person
+    // types to read the whole of it (FR-03).
     const why = lane.owner.last_exit ?? "";
-    const fix = lane.owner.retry_hint ?? "";
     items.push(
       need({
         key: "lane:unready",
-        words: `The landing lane can't run${why === "" ? "" : `: ${why}`}.`,
-        todo: fix === "" ? "" : `To fix it: ${fix}`,
+        words: why === "" ? "The landing lane can't run." : oneLine("The landing lane can't run: ", clause(why), "."),
+        note: lane.owner.retry_hint ?? "",
+        command: LANDING_STATUS,
       }),
     );
   }
@@ -414,18 +547,23 @@ function laneNeeds(
       need({
         key: `returned:${entry.goal}:${entry.sha}`,
         at: entry.returned_at ?? "",
-        words: `“${titleOf(entry.goal, titles)}” came back: ${reasonWords(entry.reason)}.`,
-        goal: entry.goal,
+        words: oneLine("“", titleOf(entry.goal, titles), "” came back."),
+        note: firstSentence(reasonWords(entry.reason)),
+        act: { kind: "goal", goal: entry.goal },
       }),
     );
   }
   const proof = lane.last_proof;
   if (proof !== undefined && proof !== null && proof.result === "red" && !answered(lane, proof.at)) {
+    const attempt = proof.attempt ?? "";
     items.push(
       need({
         key: `proof:${proof.attempt ?? proof.at}`,
         at: proof.at,
-        words: `The landing lane's last proof is red: ${proof.reason === undefined || proof.reason === "" ? "the proof command failed" : proof.reason}.`,
+        words: oneLine("The landing lane's last proof is red: ", proof.reason === undefined || proof.reason === "" ? "the proof command failed" : clause(proof.reason), "."),
+        // A record that names no attempt has no log this page can open; the
+        // lane's status names it.
+        ...(attempt === "" ? { command: LANDING_STATUS } : { act: { kind: "log" as const, href: proofLogAddress(attempt) } }),
       }),
     );
   }
@@ -459,7 +597,7 @@ function reasonWords(reason: string | undefined): string {
 /** What a question without a goal is about, in words. */
 const ABOUT: Record<string, string> = { lane: "the landing lane", machine: "its machine" };
 
-/** This checkout's open questions, each with where it is answered. */
+/** This checkout's open questions, each with Answer. */
 function questionNeeds(board: BoardPayload): Need[] {
   return (board.questions ?? []).map((question) => {
     const who = question.machine === "" ? "A seat" : question.machine;
@@ -472,10 +610,48 @@ function questionNeeds(board: BoardPayload): Need[] {
     return need({
       key: `question:${question.id}`,
       at: question.openedAt,
-      words: `${who} asks${about}: ${question.question}`,
-      answer: true,
+      words: oneLine(`${who} asks${about}: `, question.question, ""),
+      act: { kind: "answer" },
     });
   });
+}
+
+/* --------------------------------------------------------------- seen -- */
+
+/**
+ * The Seen column: when a machine was last heard from, in the standing's own
+ * visible words where it is not simply an age (FR-06) — unreachable and for
+ * how long, no presence, presence unreadable, or unknown with the clock that
+ * is too far ahead. The standing's whole reason is the cell's title. The
+ * words come from the standing and the reason the server composed; nothing
+ * here judges either.
+ */
+export type Seen = { words: string; tone: "" | "warn" | "bad"; title: string };
+
+export function seenOf(machine: Machine, now: Date): Seen {
+  const age = machine.seen === "" ? "" : ageBetween(machine.seen, now.toISOString());
+  const title = [
+    machine.reason,
+    machine.standing === "unreachable" && machine.since !== "" ? `unreachable since ${dateAndTime(machine.since)}` : "",
+    machine.seen === "" ? "" : `last published ${dateAndTime(machine.seen)}`,
+  ]
+    .filter((part) => part !== "")
+    .join(" · ");
+  if (machine.standing === "unreachable") {
+    return { words: age === "" ? "unreachable" : `unreachable · ${age}`, tone: "bad", title };
+  }
+  if (machine.standing === "unknown") {
+    const reason = machine.reason;
+    const words = reason.startsWith("presence unreadable")
+      ? "presence unreadable"
+      : reason.startsWith("clock ahead")
+        ? `unknown, ${reason}`
+        : machine.seen === ""
+          ? "no presence"
+          : "unknown";
+    return { words, tone: "warn", title };
+  }
+  return { words: age === "" ? "no presence" : `${age} ago`, tone: "", title };
 }
 
 /* ------------------------------------------------------------- doing -- */
@@ -485,7 +661,13 @@ function questionNeeds(board: BoardPayload): Need[] {
  * is working right now (the live dot, and the verdict's count), and where the
  * words came from, which the opened row says.
  */
-export type Doing = { words: string; active: boolean; source: "jobs" | "board" | "lane" | "none" | "problem" };
+export type Doing = {
+  words: string;
+  active: boolean;
+  source: "jobs" | "board" | "lane" | "none" | "problem";
+  /** A held card that stopped moving: the column says it in the marker colour. */
+  stalled?: boolean;
+};
 
 /** A stage of a goal's card, as the column says it, and whether it is work in hand. */
 const STAGES: Record<string, { words: string; working: boolean }> = {
@@ -541,11 +723,13 @@ function sentence(parts: readonly string[]): string {
  * it records progress no job does (a proof's sections, a review's round of
  * its limit), so a card that is work in hand comes first. A card counts only
  * for a goal the machine holds and only where the board believes it: a card
- * whose claim moved, or whose writer is dead, says nothing about this
- * machine. Then the job records — this seat's own, or what another machine
- * published — then a card that only waits, then the lane's queue, and idle.
- * A machine this seat has not heard from is a dash: what it is doing is not
- * known here.
+ * whose claim moved says nothing about this machine. A held card the board
+ * does not believe because it stopped moving — stalled, or its writer gone —
+ * says the seat is stalled, with no live dot, ahead of the job records, which
+ * a stuck seat's still-running job would otherwise read as work. Then the job
+ * records — this seat's own, or what another machine published — then a
+ * card that only waits, then the lane's queue, and idle. A machine this seat
+ * has not heard from is a dash: what it is doing is not known here.
  */
 export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: readonly LaneEntry[], now: Date): Doing {
   if (machine.workingProblem !== "") {
@@ -555,9 +739,15 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   const cards = (seat?.goals ?? []).filter(
     (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined,
   );
+  // Work that moves wins over a stalled goal beside it (step-2 design 2a.1):
+  // the stalled goal is its own Needs you item.
   const busy = cards.find((goal) => STAGES[goal.stage ?? ""].working);
   if (busy !== undefined) {
     return { words: cardWords(busy, now), active: true, source: "board" };
+  }
+  const stalled = (seat?.goals ?? []).find((goal) => held.has(goal.goal) && stuck(goal.unknown));
+  if (stalled !== undefined) {
+    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now)]), active: false, source: "board", stalled: true };
   }
   const heard = machine.this || machine.standing === "reachable";
   if (heard) {
@@ -698,6 +888,22 @@ export function laneLists(lane: Lane, titles: Readonly<Record<string, string>> |
     landed: landed.sort(newerFirst),
     cameBack: cameBack.sort(newerFirst),
   };
+}
+
+/**
+ * The lane's heading line beside its state word: how many hand-ins wait, and
+ * what proves — or, paused, that it lands nothing until resumed.
+ */
+export function laneCounts(lane: Lane, lists: LaneLists): string {
+  const waiting = `${String(lists.waiting.length)} waiting`;
+  if (paused(lane)) {
+    return `${waiting} · lands nothing until resumed`;
+  }
+  const proving = lists.proving;
+  if (proving === null || proving.died) {
+    return `${waiting} · nothing proving`;
+  }
+  return `${waiting} · ${proving.goals.length === 0 ? "a proof running" : `${String(proving.goals.length)} proving`}`;
 }
 
 function newerFirst(left: LaneItem, right: LaneItem): number {

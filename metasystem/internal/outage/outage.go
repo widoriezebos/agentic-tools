@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +53,9 @@ type Mark struct {
 	Source              string `json:"source"`
 	Since               string `json:"since"`
 	LastAt              string `json:"lastAt"`
+	// ResetAt is when the last failure's limit line says the limit resets;
+	// the mark lapses then when that comes before the horizon.
+	ResetAt string `json:"resetAt,omitempty"`
 }
 
 // Path is the mark's one location under the repository root.
@@ -79,7 +83,8 @@ func Read(repoRoot string) (Mark, bool) {
 // parse lapses too — an unreadable age must not stand forever — and
 // so does one more than Horizon in the FUTURE: a clock correction or
 // a corrupt stamp must not pause the clocks beyond the same bound the
-// horizon promises.
+// horizon promises. A limit whose named reset has come lapses then,
+// even inside the horizon: the provider takes work again.
 func StandingAt(repoRoot string, now time.Time) (Mark, bool) {
 	m, ok := Read(repoRoot)
 	if !ok {
@@ -90,6 +95,9 @@ func StandingAt(repoRoot string, now time.Time) (Mark, bool) {
 		return Mark{}, false
 	}
 	if age := now.Sub(last); age > Horizon || age < -Horizon {
+		return Mark{}, false
+	}
+	if reset, err := time.Parse(time.RFC3339, m.ResetAt); err == nil && !now.Before(reset) {
 		return Mark{}, false
 	}
 	return m, true
@@ -153,6 +161,10 @@ func Record(repoRoot, class, detail, source string, now time.Time) (Mark, error)
 	m.LastClass = class
 	m.LastDetail = clip(detail)
 	m.Source = source
+	m.ResetAt = ""
+	if reset, ok := limitReset(class, detail, now); ok {
+		m.ResetAt = reset.UTC().Format(time.RFC3339)
+	}
 	if stamp := now.UTC().Format(time.RFC3339); !standing || m.LastAt < stamp {
 		m.LastAt = stamp
 	}
@@ -204,6 +216,59 @@ var (
 	limitWordRe = regexp.MustCompile(`(?i)(?:usage|5-hour|weekly|session) limit (?:reached|exceeded)|hit your (?:usage |session |weekly )?limit|(?:^|[^a-z_])rate_limit_error(?:[^a-z_]|$)`)
 	limitCodeRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:status|http|code|error)[^a-z0-9]{1,4}429(?:[^0-9a-z]|$)`)
 )
+
+// The reset a usage-limit line names: the Claude CLI's "resets 3pm" or
+// "resets 3:30am (Europe/Amsterdam)", a clock time in the named zone or
+// this machine's, and the epoch after "limit reached|".
+var (
+	resetClockRe = regexp.MustCompile(`(?i)\bresets (?:at )?(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([^)]+)\))?`)
+	resetEpochRe = regexp.MustCompile(`(?i)limit reached\|(\d{9,11})\b`)
+)
+
+// limitReset is when a provider-limit failure seen at at says the limit
+// resets: a named clock time is its next occurrence after at. A zone that
+// does not load, or an epoch not after at, names no reset, so the mark keeps
+// only its horizon.
+func limitReset(class, detail string, at time.Time) (time.Time, bool) {
+	if class != ProviderLimit {
+		return time.Time{}, false
+	}
+	if match := resetEpochRe.FindStringSubmatch(detail); match != nil {
+		seconds, err := strconv.ParseInt(match[1], 10, 64)
+		reset := time.Unix(seconds, 0)
+		return reset, err == nil && reset.After(at)
+	}
+	match := resetClockRe.FindStringSubmatch(detail)
+	if match == nil {
+		return time.Time{}, false
+	}
+	hour, _ := strconv.Atoi(match[1])
+	minute := 0
+	if match[2] != "" {
+		minute, _ = strconv.Atoi(match[2])
+	}
+	if hour < 1 || hour > 12 || minute > 59 {
+		return time.Time{}, false
+	}
+	hour %= 12
+	if strings.EqualFold(match[3], "pm") {
+		hour += 12
+	}
+	zone := time.Local
+	if match[4] != "" {
+		loaded, err := time.LoadLocation(strings.TrimSpace(match[4]))
+		if err != nil {
+			return time.Time{}, false
+		}
+		zone = loaded
+	}
+	local := at.In(zone)
+	reset := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, zone)
+	if !reset.After(at) {
+		reset = reset.AddDate(0, 0, 1)
+	}
+	return reset, true
+}
 
 // classifyLine names a line of provider-error evidence: an overload, a
 // 5xx, or the provider's usage or rate limit; empty means neither.

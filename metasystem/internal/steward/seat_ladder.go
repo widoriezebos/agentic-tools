@@ -238,8 +238,19 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 
 func seatCapped(verdict Verdict, id string, count int) Decision {
 	return Decision{verdict, ActNotify, fmt.Sprintf(
-		"%d seats ended without progress on %s; `metasystem goal unapprove %s --reason TEXT` then `metasystem goal approve %s` starts again, `metasystem goal pause %s --reason TEXT` parks it",
-		count, id, id, id, id)}
+		"%d seats ended without progress on %s; `metasystem goal approve %s` approves it afresh and seats start again, keeping its claim; `metasystem goal pause %s --reason TEXT` parks it",
+		count, id, id, id)}
+}
+
+// SeatCapped reports whether the steward of the installation at root has
+// stopped starting seats for goal id under the approval approvalOpid: as
+// many seats in a row as its restart limit ended without progress.
+func SeatCapped(root, id, approvalOpid string) (bool, error) {
+	records, err := readSeatRecords(root)
+	if err != nil {
+		return false, err
+	}
+	return SeatNoProgressCount(records, id, approvalOpid) >= TickConfig{}.withDefaults().MaxRevivals, nil
 }
 
 // SeatNoProgressCount is D-retry's count for one goal under one approval: the

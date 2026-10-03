@@ -78,8 +78,14 @@ type supervisorOutcome struct {
 	LongestSilentSeconds  int64
 	LongestZeroCPUSeconds int64
 	Started               bool
-	WaitErr               error
-	RuleSuffix            string
+	// WaitErr is the worker's end joined with its resource custodian's:
+	// either failing fails the run. WorkerErr and CustodyErr are the two
+	// apart, so a verdict reports the worker's own exit and names the
+	// custodian's reason.
+	WaitErr    error
+	WorkerErr  error
+	CustodyErr error
+	RuleSuffix string
 }
 
 type outputActivity struct {
@@ -261,16 +267,17 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 			options.OnReading(reading)
 		}
 	}
-	stopAndWait := func() error {
+	stopAndWait := func() (error, error) {
 		// The still-live pre-birth custodian owns group discovery and exact
 		// signaling. Asking it to finish before waiting lets it close output
 		// held by a descendant without ever adopting a saved numeric group.
 		custodyErr := finishCustody()
-		return errors.Join(<-waited, custodyErr)
+		return <-waited, custodyErr
 	}
 
-	finishWait := func(waitErr error) supervisorOutcome {
-		outcome.WaitErr = waitErr
+	finishWait := func(workerErr, custodyErr error) supervisorOutcome {
+		outcome.WaitErr = errors.Join(workerErr, custodyErr)
+		outcome.WorkerErr, outcome.CustodyErr = workerErr, custodyErr
 		if command.ProcessState != nil {
 			directCPU := command.ProcessState.UserTime().Seconds() + command.ProcessState.SystemTime().Seconds()
 			if directCPU > outcome.CPUSeconds {
@@ -301,7 +308,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				outcome.Verdict = "cancelled"
 				outcome.Reason = options.Context.Err().Error()
 			}
-			return finishWait(errors.Join(waitErr, finishCustody()))
+			return finishWait(waitErr, finishCustody())
 		case sampledAt := <-ticks:
 			// The numeric root is only a lookup key while it still denotes the
 			// exact worker bound to the live custodian. A reaped or uninspectable
@@ -363,19 +370,19 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				if outcome.CPUSeconds-dumpCPU >= riseSeconds {
 					outcome.Dump = "dump: not produced, the process kept computing"
 					custodyErr := finishCustody()
-					return finishWait(errors.Join(<-waited, custodyErr))
+					return finishWait(<-waited, custodyErr)
 				}
 				if options.Limits.ZeroConsumptionWindow <= 0 {
 					outcome.Dump = "dump: killed while writing"
 					custodyErr := finishCustody()
-					return finishWait(errors.Join(<-waited, custodyErr))
+					return finishWait(<-waited, custodyErr)
 				}
 				quietFor := sampledAt.Sub(dumpStarted)
 				if options.Limits.ZeroConsumptionWindow > 0 && outcome.CPUSeconds-dumpCPU < riseSeconds && quietFor >= options.Limits.ZeroConsumptionWindow &&
 					sampledAt.Sub(options.Activity.Last()) >= options.Limits.ZeroConsumptionWindow {
 					outcome.Dump = "dump: killed while writing"
 					custodyErr := finishCustody()
-					return finishWait(errors.Join(<-waited, custodyErr))
+					return finishWait(<-waited, custodyErr)
 				}
 				continue
 			}

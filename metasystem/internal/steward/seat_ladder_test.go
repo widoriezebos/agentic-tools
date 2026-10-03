@@ -372,12 +372,24 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 	})
 	t.Run("a capped named goal notifies naming the reset", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
+		opid := bed.goals["alpha"].Approved.Opid
+		capSeats(t, bed, "alpha", 2)
+		if capped, err := SeatCapped(bed.root, "alpha", opid); err != nil || capped {
+			t.Fatalf("two seats without progress do not cap: %v %v", capped, err)
+		}
 		capSeats(t, bed, "alpha", 3)
 		result := bed.tick(deadWorkers)
 		if result.Decision.Action != ActNotify || result.Seat != nil ||
 			!strings.Contains(result.Decision.Reason, "3 seats ended without progress on alpha") ||
-			!strings.Contains(result.Decision.Reason, "metasystem goal unapprove alpha --reason TEXT") {
+			!strings.Contains(result.Decision.Reason, "`metasystem goal approve alpha` approves it afresh") ||
+			strings.Contains(result.Decision.Reason, "unapprove") {
 			t.Fatalf("a capped goal starts no seat and names the reset: %+v", result.Decision)
+		}
+		if capped, err := SeatCapped(bed.root, "alpha", opid); err != nil || !capped {
+			t.Fatalf("the steward's own records read capped: %v %v", capped, err)
+		}
+		if capped, err := SeatCapped(bed.root, "alpha", "another-approval"); err != nil || capped {
+			t.Fatalf("another approval is not capped: %v %v", capped, err)
 		}
 	})
 	t.Run("the helm holds the start", func(t *testing.T) {

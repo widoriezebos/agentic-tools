@@ -1,5 +1,5 @@
-import type { Box, ChainMember, Health, Machine, Page, Role, Running, ThisSeat, Working, WorkingJob } from "./api";
-import { ageBetween, dateAndTime, minuteTime, shortTip, UNKNOWN } from "../backlog/format";
+import type { Box, ChainMember, Machine, Page, Running, ThisSeat, Working, WorkingJob } from "./api";
+import { ageBetween, minuteTime, shortTip } from "../backlog/format";
 
 /**
  * The words the Fleet page says, kept apart from the elements that show them.
@@ -14,7 +14,11 @@ import { ageBetween, dateAndTime, minuteTime, shortTip, UNKNOWN } from "../backl
  * page rendered, and the next presence attempt is what re-renders it.
  */
 
-/** How the fleet's provenance line reads, under the table. */
+/**
+ * Where the presence copy came from and which reading the holders came from:
+ * the first half of the verdict's "updated" title, and what a question asked
+ * from this page says the page was read from.
+ */
 export function copyLine(page: Page, now: Date): string {
   const copy = page.copy;
   const parts: string[] = [];
@@ -41,41 +45,26 @@ function claimsLine(page: Page): string {
 }
 
 /**
- * Which commit of the ledger the claims were read at, for the provenance
- * line's own title: a maintainer compares it, and the line reads without it.
+ * Which commit of the ledger the claims were read at, for the verdict's
+ * "updated" title: a maintainer compares it, and the page reads without it.
  */
 export function claimsTitle(page: Page): string | undefined {
   return page.claims.tip === "" ? undefined : `The accepted ledger at ${shortTip(page.claims.tip)}`;
 }
 
+/**
+ * Where the reading on this page came from — the presence copy and the
+ * ledger the claims were read at — as one sentence, for the title of the
+ * verdict's "updated": a maintainer reads it, and the page reads without it.
+ */
+export function provenance(page: Page, now: Date): string {
+  const tip = claimsTitle(page);
+  return tip === undefined ? copyLine(page, now) : `${copyLine(page, now)} · ${tip}`;
+}
+
 /** The copy's own trouble, in the server's words, or "". */
 export function copyProblem(page: Page): string {
   return page.copy.problem;
-}
-
-/** How a machine's last sighting reads: an age, or why there is none. */
-export function seenWords(machine: Machine, now: Date): string {
-  if (machine.seen === "") {
-    return "no presence";
-  }
-  return `${ageBetween(machine.seen, now.toISOString())} ago`;
-}
-
-/** The instant behind that age, for the row's own title. */
-export function seenTitle(machine: Machine): string {
-  return machine.seen === "" ? "" : dateAndTime(machine.seen);
-}
-
-/**
- * The line beside an unreachable standing: when the silence began, where this
- * seat has a frozen first observation of it. A machine with no such
- * observation says nothing rather than dating the silence from this instant.
- */
-export function sinceWords(machine: Machine): string {
-  if (machine.standing !== "unreachable" || machine.since === "") {
-    return "";
-  }
-  return `since ${minuteTime(machine.since)}`;
 }
 
 /**
@@ -398,85 +387,29 @@ export function workingSource(machine: Machine, now: Date): string {
   return `as published ${ageBetween(machine.seen, now.toISOString())} ago`;
 }
 
-/** The engine stamp a human compares by eye. */
-export function shortEngine(engine: string): string {
-  return engine.slice(0, 7);
-}
+/** A checkout with no machine nickname has no row on the fleet; this says why. */
+export const NO_NICKNAME = "This checkout has no machine nickname and publishes no presence.";
 
-/** This seat's nickname, or the sentence a checkout without one gets. */
-export function seatName(seat: ThisSeat): string {
-  return seat.noNickname ? "This checkout has no machine nickname and publishes no presence." : seat.machine;
-}
-
-/** Whether supervision is armed here, in the words the design names. */
-export function armedWords(seat: ThisSeat): string {
-  switch (seat.armed) {
-    case "armed":
-      return "supervision is armed here";
-    case "stale":
-      return "the last health verdict is older than the window this seat judges by";
-    case "unreadable":
-      return seat.health?.problem === "" ? "the health verdict could not be read" : (seat.health?.problem ?? "");
-    default:
-      return "supervision is not armed here";
-  }
-}
-
-/** What this seat last published about itself, or why it has not. */
-export function publicationWords(seat: ThisSeat, now: Date): string {
+/**
+ * What this seat last published about itself, for its row's opening: when,
+ * or why it has not. The rung it published on is the steward's business.
+ */
+export function publishedWords(seat: ThisSeat, now: Date): string {
   if (seat.publicationProblem !== "") {
     return seat.publicationProblem;
   }
   const state = seat.publication;
   if (state === null) {
-    return "no presence has been published from this checkout";
+    return "nothing published from this checkout yet";
   }
   if (state.lastOutcome === "published" && state.lastSuccessAt !== "") {
-    return `presence published ${ageBetween(state.lastSuccessAt, now.toISOString())} ago on rung ${String(state.rung)}`;
+    return `published ${ageBetween(state.lastSuccessAt, now.toISOString())} ago`;
   }
   if (state.lastOutcome === "") {
     return "no publish has been attempted";
   }
   // The steward's own words for what happened, which is what a human acts on.
   return state.lastOutcome;
-}
-
-/** When the health verdict was recorded, said as the past observation it is. */
-export function healthWords(health: Health | null, now: Date): string {
-  if (health === null) {
-    return "no health verdict has been recorded on this checkout";
-  }
-  if (health.problem !== "") {
-    return health.problem;
-  }
-  const when = health.observedAt === "" ? UNKNOWN : `${ageBetween(health.observedAt, now.toISOString())} ago`;
-  return `${health.state}, last recorded ${when}`;
-}
-
-/** The roles that are not alive, which are the ones worth reading. */
-export function rolesNeedingAttention(health: Health | null): Role[] {
-  return (health?.roles ?? []).filter((role) => role.status !== "alive");
-}
-
-/** The roles that are, collapsed behind a disclosure. */
-export function rolesAlive(health: Health | null): Role[] {
-  return (health?.roles ?? []).filter((role) => role.status === "alive");
-}
-
-/**
- * What a person does about a goal held by a silent machine.
- *
- * The remedies are named conditionally, because they are not interchangeable:
- * `goal steal` reassigns a claim and refuses a fenced one, and `goal resume`
- * lifts a breach fence and keeps the owner. Neither is an act this page can
- * make, so both are named as the terminal acts they are.
- */
-export const NEEDS_YOU_REMEDY =
-  "At a terminal, goal steal reassigns the claim, and goal resume lifts a breach fence and keeps its owner.";
-
-/** One needs-you line: the goal, and what its holder's standing says. */
-export function needsYouLine(held: { goal: string; flag: string }): string {
-  return `${held.goal} is ${held.flag}`;
 }
 
 /** The empty fleet's own sentence. */

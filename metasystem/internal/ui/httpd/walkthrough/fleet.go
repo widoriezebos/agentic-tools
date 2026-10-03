@@ -15,13 +15,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -404,4 +410,38 @@ func fixtureFleet(proven bool, launched string, discards *fixtureDiscards) func(
 		}
 		return fleet.Compose(in, now), nil
 	}
+}
+
+// fixtureProofAttempt is the attempt of the fixture lane's red proof: the
+// attempt a stubbed /api/board names in its last_proof, so the page's Open
+// log reaches a log this server really serves.
+const fixtureProofAttempt = "20261003T061500.000000000Z"
+
+// fixtureProofLogs plants a landing lane's proof records under the fixture
+// checkout, as if it were the lane's installation: one red result and the
+// log its proof wrote into the lane's proofs folder. The board source it
+// answers serves those logs through the engine's own lookup (plain.ProofLog)
+// and reads nothing else: there are no seats, so /api/board still says this
+// build has no board reader, and no bridge to dial.
+func fixtureProofLogs(checkout string) (*httpd.BoardSource, error) {
+	proofs := filepath.Join(plain.Dir(checkout), "proofs")
+	if err := os.MkdirAll(proofs, 0o755); err != nil {
+		return nil, err
+	}
+	log := filepath.Join(proofs, fixtureProofAttempt+".log")
+	text := "go run -trimpath ./cmd/devgate static\nfast checks passed\ngo test ./...\n" +
+		"--- FAIL: TestLandingStatusSaysWhyTheLaneCannotRun (0.41s)\n    status_test.go:212: the lane said nothing\nFAIL\n\n" +
+		"landing prove: the proving command exited 1\n"
+	if err := os.WriteFile(log, []byte(text), 0o644); err != nil {
+		return nil, err
+	}
+	result := `{"tree":"7ee1f00d7ee1f00d","commit":"c0ffee1234567890","result":"red","log":"` + log +
+		`","at":"2026-10-03T06:25:00Z","attempt":"` + fixtureProofAttempt + `","reason":"the proving command exited 1"}` + "\n"
+	if err := os.WriteFile(filepath.Join(plain.Dir(checkout), "results.jsonl"), []byte(result), 0o644); err != nil {
+		return nil, err
+	}
+	return &httpd.BoardSource{
+		ProofLog: func(attempt string) (string, error) { return plain.ProofLog(checkout, attempt) },
+		Dial:     func() (net.Conn, error) { return nil, errors.New("this fixture has no board bridge") },
+	}, nil
 }

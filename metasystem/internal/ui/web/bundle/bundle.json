@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:e9af9637ae75d637b4dd751eab0e4da35475f5d149a61ac95018f40dc2d8097a",
+  "sourceDigest": "sha256:c65d228d8006aa99bb3203bb16b8e00c39891a42ad972c8577bca4d463e479ff",
   "source": [
     {
       "path": ".npmrc",
@@ -412,19 +412,19 @@
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
-      "sha256": "c9bcc711859edc38c95d041c480171f0c7421362705f76ed061e7081c1e19157"
+      "sha256": "b38aacbcf9071b827eadbb4eb68a7b07cd0c5e51de65f5aec0faaf54846b8890"
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "16d05d77022793855783e313e960456b9c58097da534ad8910925541c90dedc9"
+      "sha256": "476182363adf80c90b47bce12d71abcc1661f243b8eed03adc6a229f906979a8"
     },
     {
       "path": "src/fleet/LandingLane.test.tsx",
-      "sha256": "f5a889b8e7f242d4d79d0958ef90187a2f7e1664a91700a3eea881f5c94ff99d"
+      "sha256": "b37293b193ea218dc500b446fa8ef6614a28a150747eba4ffc4570aa2442e6f6"
     },
     {
       "path": "src/fleet/LandingLane.tsx",
-      "sha256": "e73d5bc584d06f18c0d36c51683bd2e8cdf2a6e57613f7e8ba20ec416a08c2f8"
+      "sha256": "81c1cbefdb481eebf0f1128f03ec362bd993c18c81d04bc1d576fa4c5cea1585"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -448,15 +448,15 @@
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "761e0862a7ac34d33b38c4b194e0c301339204e08267953f7c4716ec28fffdd2"
+      "sha256": "36cacbc3f329776da0572b896f2a6bccf0e592f657d5fcd67eb515b4f46bbea9"
     },
     {
       "path": "src/fleet/breathing.test.tsx",
-      "sha256": "101bdc57de4218f4bde88da849f79ffbeb60811a7ca1c1ed072c76a24b3d9af6"
+      "sha256": "d175f57ebf140a4072b81c4bfe81e2dc040904e7d8df4023d0238a7f7a27126a"
     },
     {
       "path": "src/fleet/capture.ts",
-      "sha256": "d94317b1b7541bcc1e53b6414c43d51943d315dd9c734948b926c8923f6e3469"
+      "sha256": "80cc6fa3bc8709a0d8c0700f747dfabe94fb748f8fa628e14e2038389b85775b"
     },
     {
       "path": "src/fleet/discard.test.ts",
@@ -464,11 +464,11 @@
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "840c3d1eb20d6001ad3d63dfc2bd7f8cd06242a3be0455ab0c694bad28115d70"
+      "sha256": "b873a524172a9b8dafcf24cf40e11f7dce50ab741dfa9c07721e5d9ffe826eec"
     },
     {
       "path": "src/fleet/fleet.ts",
-      "sha256": "4022477b23498b308a5f912bea9b11b6604fe8ab5ad67e5fb8d51f43ce0b2ea5"
+      "sha256": "101d196d08981550000573812eab625e65b7fec034b1a5fbc4c837416fcd6906"
     },
     {
       "path": "src/fleet/launching.test.ts",
@@ -480,15 +480,15 @@
     },
     {
       "path": "src/fleet/panel.test.ts",
-      "sha256": "a56ad7614b01659b1a91303d21693e7a393d6204dcc3b1c09f1e0afea2cc084c"
+      "sha256": "f45c9533263ee1626e3522b62797429add543e349160a34904b6c077fce2559c"
     },
     {
       "path": "src/fleet/panel.ts",
-      "sha256": "07f9417a31a3e33987b87b0a11510283bb184be4fd2a2a08d4b40634436f5a1a"
+      "sha256": "c546107c8dc426fe1b9e960be972da519daddaa080beeb7274421bad647e1fb0"
     },
     {
       "path": "src/fleet/rendering.test.tsx",
-      "sha256": "c5f84c9b54f5625dacc44d9abe3ea5d22eb756049d5587ffdd08b6e7660dd19e"
+      "sha256": "5ddb36f160131a529e39d209326474e86f6aef7f075f47727d9ff619d668373e"
     },
     {
       "path": "src/fleet/working.test.tsx",
@@ -520,7 +520,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "e05e12bfae9cdee503af31ec4e3eb5b992d16048d2d9b9e7e60adf9b1c78ffab"
+      "sha256": "c112239bbab73cec8b14408bd4961de0bfa89ce7ca0dd2d3dfd6907e97a3b1ce"
     },
     {
       "path": "src/index.css",
@@ -1626,11 +1626,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "fb70323b5bcd01d7311eab08a1c81c90b472879ee2b332a03d9ed26bbddc0cf0"
+      "sha256": "40a13e85aaa18be7b47eb7b881b8f49a3acfabb28b476986a1457cc548329b59"
     },
     {
       "path": "assets/index.js",
-      "sha256": "57679b2ce00ca7e9720d2b73c0526dae4506b35e405cee32337373486077ea34"
+      "sha256": "9a13cad88fb8421a88d2057837113b3bb4919d984eb8ea5701d4d8c9e0ff6f8c"
     },
     {
       "path": "assets/info-A6RAGUB7.js",
@@ -1822,7 +1822,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "6e6dc4a9427c5d5a0f39acb28e2b97b7fb86a0fd8f4678ac840b9cc9e3bd5986"
+      "sha256": "98304d8439458588e9f3980cae18787deeba9672c5dbd0f1c41879f7d0cb7a63"
     },
     {
       "path": "theme.js",

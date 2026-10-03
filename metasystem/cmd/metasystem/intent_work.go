@@ -222,7 +222,7 @@ func intentWorkCommands() []intentCommand {
 				{name: "model", value: "MODEL", advanced: true, usage: "the build model for this unit instead of launch.build.model"},
 				{name: "effort", value: "EFFORT", advanced: true, usage: "the build effort for this unit instead of launch.build.effort"},
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
-				{name: "check", value: "COMMAND...", rest: true, usage: "the proof command; it ends the options"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "the proof command, run in the goal worktree's copy of this folder; it ends the options"},
 			},
 			maxArgs: 2,
 			accepts: []string{refGoal, refRun},
@@ -675,6 +675,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
+	checkDir := inv.worktreeFolderHere(worktree)
 	sizeSource, lines, problem := inv.unitSize(unit, briefPath, designs)
 	if problem != nil {
 		return unitRequest{}, problem
@@ -754,7 +755,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
 			Read:  launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel},
-			Proof: []launch.ProofCommand{{Name: "check", Dir: worktree, Argv: append([]string{}, check...), Env: []string{}}}}
+			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
 		encodedPlan, err := json.MarshalIndent(plan, "", "  ")
 		if err != nil {
 			return "", err

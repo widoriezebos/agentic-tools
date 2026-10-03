@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { minuteTime } from "../backlog/format";
-import { NEEDS_YOU_REMEDY } from "./fleet";
+import { dateAndTime, minuteTime } from "../backlog/format";
 import type { BoardPayload, BoardSeat, Held, Lane, LaneEntry, LaneOwner, Machine, Page, ThisSeat, Working } from "./api";
 import {
   doingOf,
+  laneCounts,
   laneLists,
   laneState,
   needsOf,
-  SCOPE,
+  QUESTIONS_SCOPE,
+  seenOf,
   unreadOf,
   unreadSections,
   verdictOf,
   type BoardReading,
   type FleetReading,
+  type Need,
 } from "./panel";
 
 /**
@@ -167,8 +169,8 @@ describe("the verdict", () => {
 
     expect(verdict.words).toBe("All good on this computer");
     expect(verdict.tone).toBe("ok");
-    expect(SCOPE).toContain("on this computer");
-    expect(SCOPE).toContain("Questions asked on other computers are not checked");
+    // What the verdict checked stays beside the counts, in three words (R2-8).
+    expect(QUESTIONS_SCOPE).toBe("questions: this checkout only");
   });
 
   it("counts the seats working, the work waiting to land, and says when it was read", () => {
@@ -177,7 +179,8 @@ describe("the verdict", () => {
 
     const verdict = verdictOf(fleet, read, [], now);
 
-    expect(verdict.facts).toEqual(["1 seat working", "2 waiting to land", `updated ${minuteTime(at(0))}`]);
+    expect(verdict.facts).toEqual(["1 seat working", "2 waiting to land"]);
+    expect(verdict.updated).toBe(`updated ${minuteTime(at(0))}`);
   });
 
   it("says how many things need you when any do", () => {
@@ -286,7 +289,8 @@ describe("the verdict", () => {
     expect(verdictOf(fleetRead(), read, needs(fleetRead(), read), now)).toEqual({
       words: "Can't read the landing lane",
       tone: "unread",
-      facts: ["0 seats working", `updated ${minuteTime(at(0))}`],
+      facts: ["0 seats working"],
+      updated: `updated ${minuteTime(at(0))}`,
     });
     // A lane nobody could read is not a lane that cannot run.
     expect(needs(fleetRead(), read)).toEqual([]);
@@ -299,16 +303,60 @@ describe("the verdict", () => {
   });
 
   it("reads as reading while nothing has answered yet", () => {
-    expect(verdictOf({ state: "loading" }, { state: "loading" }, [], now)).toEqual({ words: "Reading…", tone: "reading", facts: [] });
+    expect(verdictOf({ state: "loading" }, { state: "loading" }, [], now)).toEqual({ words: "Reading…", tone: "reading", facts: [], updated: "" });
   });
 });
+
+/** The one act or the commands an item offers, counted: the rule is exactly one. */
+function offers(item: Need): number {
+  return [item.act !== null, item.command !== "", item.goals.length > 0].filter(Boolean).length;
+}
+
+/** A health record of this computer, with the roles given and alive ones beside them. */
+function health(state: string, roles: { role: string; status: string; reason: string }[], problem = "") {
+  return seat({ health: { state, observedAt: at(-2), problem, roles } });
+}
 
 describe("what needs you", () => {
   it("is nothing on a calm computer", () => {
     expect(needs(fleetRead(), boardRead())).toEqual([]);
   });
 
-  it("names a paused lane, who paused it and since when, and what resumes it", () => {
+  it("offers exactly one act or exactly one command on every item, whatever its source", () => {
+    const silent = [
+      held({ goal: "a", title: "First goal.", machine: "m2a", standing: "unreachable", since: at(-300), flag: "held by m2a, unreachable" }),
+      held({ goal: "b", title: "Second goal.", machine: "m2a", standing: "unreachable", since: at(-300), flag: "held by m2a, unreachable" }),
+      held({ goal: "c", title: "Third goal.", machine: "m0b", standing: "unknown", since: "", flag: "held by m0b, which has published no presence" }),
+    ];
+    const fleet = fleetRead({
+      needsYou: silent,
+      machines: [machine({ machine: "ui", this: true, holds: [] }), machine({ holds: [held()] })],
+      this: health("unhealthy", [{ role: "census-freshness", status: "dead", reason: "no census success is recorded" }]),
+    });
+    const red = { tree: "t1", commit: "c1", result: "red", log: "/l/a-9.log", at: at(-20), attempt: "a-9", reason: "the proving command exited 1" };
+    const read = boardRead({
+      seats: [{ machine: "m1f", installation: "/w/m1f/metasystem", goals: [{ goal: "one-folder", stage: "revise", since: at(-90), lastProgressAt: at(-68), unknown: "stalled" }] }],
+      lane: lane({
+        owner: owner({ state: "stopped", stopped_by: "wido", since: at(-80), stopped_because: "the batch VM is down" }),
+        paused: true,
+        last_proof: red,
+        queue: [entry({ goal: "plain-lane", state: "returned", reason: "red", returned_at: at(-30) })],
+      }),
+      questions: [{ id: "q-1", goal: "", about: "lane", machine: "m1f", question: "Land slice 2 now?", openedAt: at(-7) }],
+    });
+    const unready = boardRead({ lane: lane({ owner: owner({ state: "unready", last_exit: "x", retry_hint: "y" }), last_proof: { ...red, attempt: undefined } }) });
+
+    const items = [...needs(fleet, read), ...needs(fleetRead(), unready)];
+
+    expect(items.map((item) => item.key).sort()).toEqual(
+      ["health", "held:m0b:c", "held:m2a", "lane:paused", "lane:unready", "proof:a-9", `proof:${at(-20)}`, "question:q-1", "returned:plain-lane:1234567890abcdef", "stuck:m1f:one-folder"].sort(),
+    );
+    for (const item of items) {
+      expect({ key: item.key, offers: offers(item) }).toEqual({ key: item.key, offers: 1 });
+    }
+  });
+
+  it("names a paused lane, who paused it and since when, with the command that resumes it", () => {
     const read = boardRead({
       lane: lane({ owner: owner({ state: "stopped", stopped_by: "m1e", since: at(-80), stopped_because: "maintenance" }), paused: true }),
     });
@@ -316,11 +364,11 @@ describe("what needs you", () => {
     const [item] = needs(fleetRead(), read);
 
     expect(item.words).toBe(`The landing lane is paused by m1e since ${minuteTime(at(-80))}: maintenance.`);
-    expect(item.todo).toBe("It lands nothing until someone resumes it with landing start at a terminal.");
-    expect(item.todo).not.toContain("metasystem landing start");
+    expect(item.command).toBe("metasystem landing start");
+    expect(item.act).toBeNull();
   });
 
-  it("names a lane that cannot run and the lane's own fix", () => {
+  it("names a lane that cannot run, with landing status to type and the lane's own hint as the quiet line", () => {
     const read = boardRead({
       lane: lane({ owner: owner({ state: "unready", last_exit: "the landing checkout has local changes", retry_hint: "commit or discard them, then run landing start" }) }),
     });
@@ -328,19 +376,25 @@ describe("what needs you", () => {
     const [item] = needs(fleetRead(), read);
 
     expect(item.words).toBe("The landing lane can't run: the landing checkout has local changes.");
-    expect(item.todo).toBe("To fix it: commit or discard them, then run landing start");
+    expect(item.command).toBe("metasystem landing status");
+    expect(item.note).toBe("commit or discard them, then run landing start");
+    expect(item.act).toBeNull();
   });
 
-  it("names a branch that came back, by its title, with why and the goal to open", () => {
+  it("names a branch that came back by its title, the reason's first sentence under it, and the goal to open", () => {
     const read = boardRead({
       titles: { "plain-lane": "Plain lane landing." },
-      lane: lane({ queue: [entry({ goal: "plain-lane", state: "returned", reason: "the full test run is red", returned_at: at(-10) })] }),
+      lane: lane({
+        queue: [entry({ goal: "plain-lane", state: "returned", reason: "the full test run is red. Rebase onto main and hand it in again.", returned_at: at(-10) })],
+      }),
     });
 
     const [item] = needs(fleetRead(), read);
 
-    expect(item.words).toBe("“Plain lane landing.” came back: the full test run is red.");
-    expect(item.goal).toBe("plain-lane");
+    expect(item.words).toBe("“Plain lane landing.” came back.");
+    expect(item.note).toBe("the full test run is red.");
+    expect(item.act).toEqual({ kind: "goal", goal: "plain-lane" });
+    expect(item.command).toBe("");
   });
 
   it("counts a return as history once its goal was handed in again", () => {
@@ -368,7 +422,7 @@ describe("what needs you", () => {
       }),
     });
 
-    expect(needs(fleetRead(), read).filter((one) => one.words.includes("came back")).map((one) => one.goal)).toEqual(["plain-lane"]);
+    expect(needs(fleetRead(), read).filter((one) => one.words.includes("came back")).map((one) => one.act)).toEqual([{ kind: "goal", goal: "plain-lane" }]);
   });
 
   it("names a red proof with its recorded reason, until a return answers it", () => {
@@ -381,7 +435,7 @@ describe("what needs you", () => {
     const answered = boardRead({
       lane: lane({ last_proof: red, queue: [entry({ state: "returned", reason: "red", returned_at: at(-15) })] }),
     });
-    expect(needs(fleetRead(), answered).map((one) => one.words)).toEqual(["“goal-a” came back: red."]);
+    expect(needs(fleetRead(), answered).map((one) => one.words)).toEqual(["“goal-a” came back."]);
 
     const without = boardRead({ lane: lane({ last_proof: { ...red, reason: undefined } }) });
     expect(needs(fleetRead(), without)[0].words).toBe("The landing lane's last proof is red: the proof command failed.");
@@ -396,7 +450,22 @@ describe("what needs you", () => {
     expect(needs(fleetRead(), proving)).toEqual([]);
   });
 
-  it("names this checkout's open questions, with who asks and where to answer", () => {
+  it("gives a red proof the Open log act, by the attempt the record names, and landing status where it names none", () => {
+    const red = { tree: "t1", commit: "c1", result: "red", log: "/l/a-9.log", at: at(-20), attempt: "a-9", reason: "the proving command exited 1" };
+
+    const [item] = needs(fleetRead(), boardRead({ lane: lane({ last_proof: red }) }));
+    expect(item.words).toBe("The landing lane's last proof is red: the proving command exited 1.");
+    expect(item.act).toEqual({ kind: "log", href: "/api/fleet/proof-logs/a-9" });
+    expect(item.command).toBe("");
+
+    // An older record names no attempt, so there is no log to open; the
+    // lane's status names the log instead.
+    const [older] = needs(fleetRead(), boardRead({ lane: lane({ last_proof: { ...red, attempt: undefined } }) }));
+    expect(older.act).toBeNull();
+    expect(older.command).toBe("metasystem landing status");
+  });
+
+  it("names this checkout's open questions, with who asks and Answer", () => {
     const read = boardRead({
       titles: { "plain-lane": "Plain lane landing." },
       questions: [
@@ -411,10 +480,10 @@ describe("what needs you", () => {
       "A seat asks about the landing lane: Return the conflicting branch?",
       "m1f asks about “Plain lane landing.”: Land slice 2 now?",
     ]);
-    expect(items.every((one) => one.answer)).toBe(true);
+    expect(items.map((one) => one.act)).toEqual([{ kind: "answer" }, { kind: "answer" }]);
   });
 
-  it("names this computer's steward when its health record says it is not running", () => {
+  it("names this computer's steward when its health record says it is not running, with system start", () => {
     const fleet = fleetRead({
       this: seat({
         armed: "not armed",
@@ -433,38 +502,84 @@ describe("what needs you", () => {
     const [item] = needs(fleet, boardRead());
 
     expect(item.words).toBe("This computer's steward is not running.");
-    expect(item.todo).toBe("It starts again with system start at a terminal on this computer.");
+    expect(item.command).toBe("metasystem system start");
+    expect(item.details).toEqual(["runner pid 41 is gone"]);
   });
 
-  it("names any other unhealthy role of this computer by its own reason", () => {
-    const fleet = fleetRead({
-      this: seat({
-        health: {
-          state: "unhealthy",
-          observedAt: at(-2),
-          problem: "",
-          roles: [
-            { role: "steward-runner", status: "alive", reason: "runner alive" },
-            { role: "seat-presence", status: "dead", reason: "presence not published since 09:10" },
-          ],
-        },
-      }),
+  it("gives a failed health check system check, every failing reason behind Details, and none of the alive roles", () => {
+    const one = fleetRead({
+      this: health("unhealthy", [
+        { role: "steward-runner", status: "alive", reason: "runner alive" },
+        { role: "seat-presence", status: "dead", reason: "presence not published since 09:10" },
+      ]),
+    });
+    const several = fleetRead({
+      this: health("unhealthy", [
+        { role: "steward-runner", status: "alive", reason: "runner alive" },
+        { role: "narrator-freshness", status: "dead", reason: "lastSuccess is stale at 153h56m38s" },
+        { role: "session-main", status: "unknown", reason: "no session main is announced" },
+        { role: "capability-snapshots", status: "dead", reason: "" },
+      ]),
     });
 
-    expect(needs(fleet, boardRead())[0].words).toBe("This computer's health check failed: presence not published since 09:10.");
+    const [single] = needs(one, boardRead());
+    const [many] = needs(several, boardRead());
+
+    expect(single.words).toBe("This computer's health check failed: presence not published since 09:10.");
+    expect(single.command).toBe("metasystem system check");
+    expect(single.details).toEqual(["presence not published since 09:10"]);
+    expect(many.words).toBe("This computer's health check failed on 3 checks.");
+    expect(many.command).toBe("metasystem system check");
+    expect(many.details).toEqual(["lastSuccess is stale at 153h56m38s", "no session main is announced", "a check failed and recorded no reason"]);
+    for (const item of [single, many]) {
+      expect(item.details.join(" ")).not.toContain("runner alive");
+      expect(`${item.words} ${item.details.join(" ")}`).not.toMatch(/steward-runner|seat-presence|narrator-freshness|session-main|capability-snapshots/);
+    }
   });
 
-  it("names a health record the steward stopped writing", () => {
+  it("names a health record it could not read, with the reader's reason and system check, and is never All good over it", () => {
+    const torn = fleetRead({ this: seat({ armed: "unreadable", health: { state: "", observedAt: "", problem: "the steward's health record is malformed: unexpected end of JSON input", roles: [] } }) });
+
+    const items = needs(torn, boardRead());
+
+    expect(items).toHaveLength(1);
+    expect(items[0].words).toBe("This computer's health record could not be read.");
+    expect(items[0].details).toEqual(["the steward's health record is malformed: unexpected end of JSON input"]);
+    expect(items[0].command).toBe("metasystem system check");
+    expect(verdictOf(torn, boardRead(), items, now).words).not.toContain("All good");
+  });
+
+  it("names a health check that could not decide, with the undecided checks' reasons and system check, and is never All good over it", () => {
+    const undecided = fleetRead({
+      this: health("unknown", [
+        { role: "steward-runner", status: "alive", reason: "runner alive" },
+        { role: "census-freshness", status: "unknown", reason: "no census success is recorded" },
+      ]),
+    });
+
+    const items = needs(undecided, boardRead());
+
+    expect(items).toHaveLength(1);
+    expect(items[0].words).toBe("This computer's last health check could not decide.");
+    expect(items[0].details).toEqual(["no census success is recorded"]);
+    expect(items[0].command).toBe("metasystem system check");
+    expect(verdictOf(undecided, boardRead(), items, now)).toMatchObject({ words: "1 thing needs you", tone: "attention" });
+  });
+
+  it("names a health record the steward stopped writing, with system start", () => {
     const fleet = fleetRead({ this: seat({ armed: "stale" }) });
 
-    expect(needs(fleet, boardRead())[0].words).toBe(`This computer's steward has not recorded its health since ${minuteTime(at(-3))}.`);
+    const [item] = needs(fleet, boardRead());
+
+    expect(item.words).toBe(`This computer's steward has not recorded its health since ${minuteTime(at(-3))}.`);
+    expect(item.command).toBe("metasystem system start");
   });
 
   it("says nothing about a checkout that was never armed", () => {
     expect(needs(fleetRead({ this: seat({ armed: "not armed", health: null }) }), boardRead())).toEqual([]);
   });
 
-  it("says a silent machine once, with every goal it holds and the remedy once", () => {
+  it("says a silent machine once, with every goal it holds and each goal's own take-over command", () => {
     const one = held({ goal: "a", title: "First goal.", machine: "m2a", standing: "unreachable", since: at(-300), flag: "held by m2a, unreachable" });
     const two = held({ goal: "b", title: "", machine: "m2a", standing: "unreachable", since: at(-300), flag: "held by m2a, unreachable" });
     const other = held({ goal: "c", title: "Third goal.", machine: "m0b", standing: "unknown", since: "", flag: "held by m0b, which has published no presence" });
@@ -476,22 +591,84 @@ describe("what needs you", () => {
       "“Third goal.” is held by m0b, which has published no presence.",
     ]);
     expect(items[0].goals).toEqual([
-      { id: "a", title: "First goal." },
-      { id: "b", title: "b" },
+      { id: "a", title: "First goal.", command: 'metasystem goal claim a --take-over --reason "<why>"' },
+      { id: "b", title: "b", command: 'metasystem goal claim b --take-over --reason "<why>"' },
     ]);
-    expect(items[0].goal).toBe("");
-    expect(items[0].todo).toBe(NEEDS_YOU_REMEDY);
-    expect(items[1].goal).toBe("c");
+    expect(items[0].act).toBeNull();
+    expect(items[0].command).toBe("");
+    // The person reads what a take-over does before they type it (R-143-m1e).
+    expect(items[0].impact).toBe(
+      "Taking a goal over moves it to the machine you run this on: m2a stops holding it, and what m2a has not pushed stays on m2a. It can be taken back the same way.",
+    );
+    expect(items[1].impact).toBe(
+      "Taking a goal over moves it to the machine you run this on: m0b stops holding it, and what m0b has not pushed stays on m0b. It can be taken back the same way.",
+    );
+    expect(items[1].command).toBe('metasystem goal claim c --take-over --reason "<why>"');
+    expect(items[1].act).toBeNull();
+    // The verb that is not one (FR-02) is said nowhere.
+    expect(JSON.stringify(items)).not.toContain("goal steal");
   });
 
-  it("keeps the goals held by a silent machine, with what a terminal does about them", () => {
-    const silent = held({ goal: "tests-parallel", title: "Run the suite in parallel.", machine: "m1c", standing: "unreachable", since: at(-300), flag: "held by m1c, unreachable" });
+  describe("a stuck seat", () => {
+    const holding = fleetRead({ machines: [machine({ machine: "ui", this: true, holds: [] }), machine({ holds: [held()] })] });
 
-    const [item] = needs(fleetRead({ needsYou: [silent] }), boardRead());
+    function stuckSeat(unknown: string, stage = "build"): BoardSeat {
+      return { machine: "m1f", installation: "/w/m1f/metasystem", goals: [{ goal: "one-folder", stage, since: at(-60), lastProgressAt: at(-30), unknown }] };
+    }
 
-    expect(item.words).toBe(`“Run the suite in parallel.” is held by m1c, unreachable since ${minuteTime(at(-300))}.`);
-    expect(item.goal).toBe("tests-parallel");
-    expect(item.todo).toContain("goal steal");
+    function stuck(unknown: string): BoardReading {
+      return boardRead({ seats: [stuckSeat(unknown)] });
+    }
+
+    it("is one thing that needs you when its card stalled on a goal the machine holds, with the stop of its machine to type", () => {
+      const read = stuck("stalled");
+
+      const [item] = needs(holding, read);
+
+      expect(item.words).toBe(`“One folder deployed and evolved.” on m1f has not moved since ${minuteTime(at(-30))} (building).`);
+      expect(item.command).toBe("metasystem machine stop m1f");
+      expect(item.impact).toBe("Stopping m1f ends its seat and every job on it; its steward will not start it again.");
+      expect(item.note).toBe("");
+      expect(item.act).toBeNull();
+      expect(item.at).toBe(at(-30));
+      expect(verdictOf(holding, read, needs(holding, read), now).words).toBe("1 thing needs you");
+    });
+
+    it("is one too when the process writing its card is gone, and names no pid", () => {
+      const [item] = needs(holding, stuck("writer dead (pid 4242)"));
+
+      expect(item.words).toBe(`“One folder deployed and evolved.” on m1f has not moved since ${minuteTime(at(-30))} (the process writing it is gone).`);
+      expect(item.words).not.toContain("4242");
+      expect(item.command).toBe("metasystem machine stop m1f");
+    });
+
+    it("keeps its line under 110 characters, cutting a long title at a word", () => {
+      const long = "An adopted repository has one MetaSystem folder, metasystem/, that separates its own…";
+      const fleet = fleetRead({ machines: [machine({ holds: [held({ title: long })] })] });
+
+      const [item] = needs(fleet, boardRead({ seats: [stuckSeat("stalled", "revise")] }));
+
+      expect(item.words.length).toBeLessThan(110);
+      expect(item.words).toMatch(/^“An adopted repository has one MetaSystem folder[^”]*…” on m1f has not moved since \d\d:\d\d \(revising\)\.$/u);
+    });
+
+    it("is dropped as before for a goal the machine no longer holds, and for every other reason a card is not believed", () => {
+      const released = fleetRead({ machines: [machine({ holds: [] })] });
+
+      expect(needs(released, stuck("stalled"))).toEqual([]);
+      for (const reason of ["owner pid 9 unprobeable", "owner pid 9 reused", "no owner", "claim moved to m1g", "not claimed"]) {
+        expect({ reason, needs: needs(holding, stuck(reason)) }).toEqual({ reason, needs: [] });
+      }
+    });
+
+    it("sorts with the rest by its last progress", () => {
+      const read = boardRead({
+        seats: [stuckSeat("stalled")],
+        lane: lane({ owner: owner({ state: "stopped", stopped_by: "m1e", since: at(-10) }), paused: true }),
+      });
+
+      expect(needs(holding, read).map((one) => one.key)).toEqual(["lane:paused", "stuck:m1f:one-folder"]);
+    });
   });
 
   it("lists every source in one list, newest first, the undated last", () => {
@@ -508,6 +685,34 @@ describe("what needs you", () => {
 
     expect(needs(fleet, read).map((one) => one.key)).toEqual(["returned:goal-a:1234567890abcdef", "question:q", "lane:paused", "health"]);
     expect(needs(fleet, unready).map((one) => one.key)).toEqual(["health", "lane:unready"]);
+  });
+});
+
+describe("the Seen column", () => {
+  it("says how long ago a reachable machine was seen, with the standing's reason as its title", () => {
+    const seen = seenOf(machine({ seen: at(-6), reason: "presence published 6 min ago" }), now);
+
+    expect(seen).toMatchObject({ words: "6 min ago", tone: "" });
+    expect(seen.title).toContain("presence published 6 min ago");
+  });
+
+  it("says unreachable and for how long, in the alarm tone", () => {
+    const silent = machine({ standing: "unreachable", seen: at(-3 * 24 * 60), since: at(-3 * 24 * 60 + 30), reason: "no presence for 3 d, past 30 min" });
+
+    expect(seenOf(silent, now)).toMatchObject({ words: "unreachable · 3 d", tone: "bad" });
+    expect(seenOf(silent, now).title).toContain("no presence for 3 d, past 30 min");
+    // When this seat first saw the silence is kept, in the title.
+    expect(seenOf(silent, now).title).toContain(`unreachable since ${dateAndTime(at(-3 * 24 * 60 + 30))}`);
+  });
+
+  it("says each unknown standing in its own visible words: no presence, presence unreadable, a clock too far ahead", () => {
+    const none = machine({ standing: "unknown", seen: "", ageSeconds: null, reason: "no presence record" });
+    const torn = machine({ standing: "unknown", seen: "", ageSeconds: null, reason: "presence unreadable: invalid character 'x'" });
+    const ahead = machine({ standing: "unknown", seen: at(120), ageSeconds: -7200, reason: "clock ahead by 2 h" });
+
+    expect([none, torn, ahead].map((one) => seenOf(one, now).words)).toEqual(["no presence", "presence unreadable", "unknown, clock ahead by 2 h"]);
+    expect([none, torn, ahead].map((one) => seenOf(one, now).tone)).toEqual(["warn", "warn", "warn"]);
+    expect(seenOf(torn, now).title).toContain("invalid character 'x'");
   });
 });
 
@@ -576,6 +781,32 @@ describe("the Doing column", () => {
     expect(doingOf(machine({ standing: "unreachable", working: [working()] }), undefined, [], now)).toEqual({ words: "—", active: false, source: "none" });
   });
 
+  it("says stalled, the stage and the minutes since its last progress, and does not count it as working", () => {
+    const stalled = seatOf([{ goal: "one-folder", stage: "build", since: at(-60), lastProgressAt: at(-30), unknown: "stalled" }]);
+    const dead = seatOf([{ goal: "one-folder", stage: "review", since: at(-60), lastProgressAt: at(-12), unknown: "writer dead (pid 4242)" }]);
+
+    // The jobs may still say building: a stuck seat's job runs and makes no progress.
+    expect(doingOf(machine({ holds: [held1], working: [working()] }), stalled, [], now)).toEqual({
+      words: "stalled · building · 30 min",
+      active: false,
+      source: "board",
+      stalled: true,
+    });
+    expect(doingOf(machine({ holds: [held1] }), dead, [], now).words).toBe("stalled · reviewing · 12 min");
+    const fleet = fleetRead({ machines: [machine({ holds: [held1], working: [working()] })] });
+    expect(verdictOf(fleet, boardRead({ seats: [stalled] }), [], now).facts[0]).toBe("0 seats working");
+  });
+
+  it("keeps a believed card in hand ahead of a stalled one, and a stalled card of a goal it does not hold says nothing", () => {
+    const both = seatOf([
+      { goal: "two", stage: "build", since: at(-60), lastProgressAt: at(-30), unknown: "stalled" },
+      { goal: "one-folder", stage: "review", round: { n: 2, max: 3 }, since: at(-5) },
+    ]);
+
+    expect(doingOf(machine({ holds: [held1, held({ goal: "two" })] }), both, [], now).words).toBe("reviewing · round 2 of 3 · 5 min");
+    expect(doingOf(machine({ holds: [] }), both, [], now).words).toBe("idle");
+  });
+
   it("carries the jobs reader's own problem rather than idle", () => {
     expect(doingOf(machine({ this: true, workingProblem: "chain unread: torn.json" }), undefined, [], now)).toEqual({
       words: "chain unread: torn.json",
@@ -597,6 +828,21 @@ describe("the landing lane", () => {
     expect(laneState(lane({ owner: owner({ state: "running" }), agent_alive: true })).word).toBe("Running");
     expect(laneState(lane({ owner: owner({ state: "stopped" }), paused: true })).word).toBe("Paused");
     expect(laneState(lane({ owner: owner({ state: "unready" }) })).word).toBe("Needs attention");
+  });
+
+  it("counts what waits and what proves for the heading, in one line", () => {
+    const two = [entry(), entry({ goal: "goal-b" })];
+    const counts = (over: Partial<Lane>) => {
+      const read = lane(over);
+      return laneCounts(read, laneLists(read, {}, now));
+    };
+
+    expect(counts({ queue: two })).toBe("2 waiting · nothing proving");
+    expect(counts({ queue: two, running_proof: { tree: "t", since: at(-6), attempt: "a", state: "running", goals: ["goal-b"] } })).toBe("1 waiting · 1 proving");
+    expect(counts({ queue: two, running_proof: { tree: "t", since: at(-6), attempt: "a", state: "running" } })).toBe("2 waiting · a proof running");
+    expect(counts({ queue: two, running_proof: { tree: "t", since: at(-6), attempt: "a", state: "died" } })).toBe("2 waiting · nothing proving");
+    expect(counts({ queue: two, owner: owner({ state: "stopped" }), paused: true })).toBe("2 waiting · lands nothing until resumed");
+    expect(counts({})).toBe("0 waiting · nothing proving");
   });
 
   it("lists what waits by title, seat and age, and what proves by how long it has run", () => {
@@ -691,7 +937,8 @@ describe("the reading in flight", () => {
     const fleet = fleetRead();
     const loading: BoardReading = { state: "loading" };
 
-    expect(verdictOf(fleet, loading, [], now).facts).toEqual(["0 seats working", `updated ${minuteTime(at(0))}`]);
+    expect(verdictOf(fleet, loading, [], now).facts).toEqual(["0 seats working"]);
+    expect(verdictOf(fleet, loading, [], now).updated).toBe(`updated ${minuteTime(at(0))}`);
     expect(needs(fleet, loading)).toEqual([]);
   });
 });

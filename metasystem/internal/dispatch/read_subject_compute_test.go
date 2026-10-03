@@ -692,7 +692,8 @@ func TestNonCleanFoldClosesWithoutCleanClosure(t *testing.T) {
 		if _, err := advanceWithFacts(t, repo, "critic", "critic"); err != nil {
 			t.Fatal(err)
 		}
-		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticProtocolFindingID("code-critic", "critic"), "decision-op"); err != nil {
+		bindCriticGoal(t, repo, "critic", "goal-a")
+		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticProtocolFindingID("code-critic", "critic"), "decision-op", acceptedSnapshot(t, repo, syntheticProtocolFindingID("code-critic", "critic")).Digest); err != nil {
 			t.Fatal(err)
 		}
 		if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -720,7 +721,8 @@ func TestNonCleanFoldClosesWithoutCleanClosure(t *testing.T) {
 		if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 			t.Fatal(err)
 		}
-		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticUnboundFindingID("code-critic", "critic"), "decision-op"); err != nil {
+		bindCriticGoal(t, repo, "critic", "goal-a")
+		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticUnboundFindingID("code-critic", "critic"), "decision-op", acceptedSnapshot(t, repo, syntheticUnboundFindingID("code-critic", "critic")).Digest); err != nil {
 			t.Fatal(err)
 		}
 		if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {

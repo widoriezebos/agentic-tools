@@ -2,12 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 11
+- Sequence: 8
+- Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A test over the existing concluding path; if it fails, a new end state is added to the run records every governed run uses, where a wrong state resumes a run that should have stopped"
+- Tier: 2
 - Intent: What: When the watchdog kills a governed run for load or time, the run ends in a state it can resume from, not in "assumptions failed", which waits for Wido to choose. Why: on 2026-08-31 such a kill put a run into that state although nothing it assumed had changed. Since 2026-09-11 every run's concluding step checks the assumptions, so the original cause is probably gone, but no test proves it and any small drift still trips the breaker. Also left: explain why one run record showed a 3-day limit while the goal budget said 24 hours. Pros: a load kill costs only time, not a human decision. Cons: if the test shows it is needed, a separate kill state is one more state to handle.
 - Origin: main
 - Next step: Next: write a test that kills a governed run mid-section and concludes it through the normal concluding path. Done when: the test passes on main without "assumptions failed", with a separate non-breaking kill state added first if it fails.
 - OpenedAt: 2026-08-31T11:47:26Z
-- Revision: 82
+- Revision: 86
 - BudgetExceptions: 0
 
 History:
@@ -93,4 +95,8 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:13 to=3:12
 - 2026-10-02T20:59:52Z 9J6ZMR0CCQ7ZRE62XBDBC2W5YJ-m1e-9c612d71 abandon actor=human:Wido targets=standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
-Integrity: sha256=eff1cd5f8e0e27a81fb1c3e5d92c202cae076754fb2680a42a11a4bbaa4e1b86
+- 2026-10-03T09:57:46Z K63HM1BVVNGG0CW66DX5J0FNWT-m1e-718ba0eb abandon actor=human:Wido targets=human-carried-landing,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:11 to=3:10
+- 2026-10-03T11:15:14Z Z3PJ2AQE8WER61A8M7N8178S7T-m1e-718ba0eb edit actor=human:Wido targets=watchdog-kill-observation-gap
+- 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:10 to=3:9
+- 2026-10-03T12:31:20Z 5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb abandon actor=human:Wido targets=seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:9 to=3:8
+Integrity: sha256=3d3ee61a7c238bc6cfe111a6fdaa0df93862a60602aef6ab9e61e00a3aaa958b

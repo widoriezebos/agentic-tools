@@ -327,9 +327,24 @@ func sessionValue(value string, pid int64) string {
 		session = os.Getenv("METASYSTEM_SESSION_ID")
 	}
 	if session == "" {
+		session = claudeSession(pid)
+	}
+	if session == "" {
 		session = fmt.Sprintf("session-%d", pid)
 	}
 	return session
+}
+
+// claudeSession is the session id Claude Code exports to the commands its
+// session runs, so a session start run by hand inside a Claude session names
+// the session as its SessionStart hook does. It counts only when CLAUDE_PID is
+// the session process itself: the variables are inherited, so a process
+// beneath another session process can carry an outer session's values.
+func claudeSession(pid int64) string {
+	if os.Getenv("CLAUDE_PID") != strconv.FormatInt(pid, 10) {
+		return ""
+	}
+	return os.Getenv("CLAUDE_CODE_SESSION_ID")
 }
 
 func runtimeValue(value string) string {
@@ -774,6 +789,11 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	event := "stop"
 	if options.StartSource != "" {
 		event = "start"
+	}
+	if options.RuntimeSession == "" && !options.NoRuntimeSession {
+		// An announcement made under the pid alone gains its runtime session
+		// here; without one the session cannot register a wait.
+		options.RuntimeSession = claudeSession(session.Pid)
 	}
 	if err := associateRuntimeSession(options, view.MainId, event); err != nil {
 		return finish(failure(components, "session-announcement", err, "repair the named announcement and rerun metasystem session start"))

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -94,6 +97,33 @@ describe("the landing lane block", () => {
     expect(draw(lane({ owner: owner({ state: "unready", last_exit: "x" }), agent_alive: false }))).toContain(">Needs attention<");
   });
 
+  it("says in its heading how many wait and what proves, beside the state word", () => {
+    const markup = draw(lane({ owner: owner({ state: "idle", pid: null }), agent_alive: false, queue: [entry(), entry({ goal: "goal-b" })] }));
+    const heading = markup.slice(markup.indexOf("<h2"), markup.indexOf("</h2>"));
+
+    expect(heading).toContain(">Running<");
+    expect(heading).toContain('<span class="ms-fleet-lane-counts">2 waiting · nothing proving</span>');
+  });
+
+  it("closes Came back with a count of what it holds: every return not handed in again, older ones too", () => {
+    const markup = draw(
+      lane({
+        queue: [
+          entry({ goal: "old", state: "returned", reason: "red", returned_at: "2026-09-20T09:00:00Z" }),
+          entry({ goal: "lane-check-red", state: "returned", reason: "the full test run is red", returned_at: local(11) }),
+          entry({ goal: "again", state: "returned", reason: "conflict", returned_at: local(10) }),
+          entry({ goal: "again", sha: "ff", state: "waiting", at: local(11, 30) }),
+          entry({ goal: "landed-old", state: "returned", reason: "red", returned_at: "2026-09-19T09:00:00Z" }),
+          entry({ goal: "landed-old", sha: "ee", state: "landed" }),
+        ],
+      }),
+    );
+
+    expect(markup).toMatch(/<details class="ms-fleet-details ms-fleet-lane-cameback"><summary class="ms-fleet-details-summary">Came back \(3\)<\/summary>/);
+    expect(markup).not.toContain("Came back today");
+    expect(markup).not.toMatch(/<details[^>]* open/);
+  });
+
   it("uses one word per state: never stopped, started again or not paused", () => {
     const paused = draw(lane({ owner: owner({ state: "stopped", stopped_by: "wido" }), paused: true, agent_alive: false, queue: [entry()] }));
     for (const word of ["stopped", "started again", "not paused", "agent alive"]) {
@@ -124,6 +154,30 @@ describe("the landing lane block", () => {
     expect(details).toContain("/l/proof.log");
     expect(details).toContain("0123456 → fedcba9");
     expect(markup.indexOf("c0ffee1")).toBeGreaterThan(markup.indexOf("<details"));
+  });
+
+  it("makes the proof log rows links to the proof's log, by the attempt each record names", () => {
+    const markup = draw(
+      lane({
+        last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/a-9.log", at: "2026-09-29T10:00:00Z", attempt: "a-9" },
+        running_proof: { tree: "abcdef1234567", since: local(11, 54), attempt: "a-10", state: "running", log: "/l/a-10.log" },
+      }),
+    );
+
+    expect(markup).toMatch(/<dt>Proof log<\/dt><dd[^>]*><a [^>]*href="\/api\/fleet\/proof-logs\/a-9"[^>]*target="_blank"[^>]*>\/l\/a-9\.log<\/a>/);
+    expect(markup).toMatch(/<dt>Log<\/dt><dd[^>]*><a [^>]*href="\/api\/fleet\/proof-logs\/a-10"[^>]*target="_blank"[^>]*>\/l\/a-10\.log<\/a>/);
+
+    // A record that names no attempt keeps its path as words.
+    const older = draw(lane({ last_proof: { tree: "t1", commit: "c0ffee1234567", result: "red", log: "/l/p.log", at: "2026-09-29T10:00:00Z" } }));
+    expect(older).toContain("<dt>Proof log</dt><dd class=\"ms-mono\">/l/p.log</dd>");
+  });
+
+  it("draws a log in the Details as the panel draws its other links", () => {
+    const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fleet.css"), "utf8");
+    const links = css.slice(0, css.indexOf("{", css.indexOf(".ms-fleet-hold-title,")));
+
+    expect(links).toContain(".ms-fleet-details-row dd a");
+    expect(css).toContain(".ms-fleet-details-row dd a:hover");
   });
 
   it("lists what waits by title, seat and age, each with its own Details", () => {

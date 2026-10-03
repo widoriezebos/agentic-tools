@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"time"
 )
@@ -134,6 +135,22 @@ func (inv *intentInvocation) registeredWorktreesOf(root string) (map[string]regi
 	return registered, nil
 }
 
+// worktreeFolderHere is the goal worktree's copy of the folder this command
+// runs from, so a command run there finds what it would find here (a Go
+// module below the repository's top); the worktree's top when this folder
+// is the top, lies outside the checkout, or has no copy in the worktree.
+func (inv *intentInvocation) worktreeFolderHere(worktree string) string {
+	relative, err := filepath.Rel(realpath.ResolveExisting(inv.layout.GitRoot), realpath.ResolveExisting(inv.cwd))
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return worktree
+	}
+	folder := filepath.Join(worktree, relative)
+	if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+		return worktree
+	}
+	return folder
+}
+
 // prepareGoalWorktree returns the worktree that has goal/G checked out,
 // creating it at the deterministic sibling <checkout>-<goal> when none
 // exists. Creation happens only after the goal claim and checkout lease are
@@ -164,6 +181,11 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 	// configuration completed; the owner never overwrites existing files.
 	// What the copy places is recorded as the engine's (Round D3 F-1), so
 	// the worktree's release does not count it as work.
+	// A verb run inside the goal worktree has no other checkout to copy
+	// from: the worktree is its own source, and is used as it is.
+	if realpath.ResolveExisting(inv.layout.GitRoot) == realpath.ResolveExisting(path) {
+		return path, nil
+	}
 	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
 	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {

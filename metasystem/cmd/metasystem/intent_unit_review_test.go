@@ -51,6 +51,16 @@ type connectionBed struct {
 	commitReads  int
 	publications int
 	reads        [][]string
+	// dispatcher, when set, replaces the fake critic dispatch; refusal is
+	// what it reports while a cause of refusal is in place, and briefs the
+	// briefs of the critics it started.
+	dispatcher func(c *connectionBed, install string) func(string, string, string, string, string) (string, error)
+	refusal    *delegateOutcome
+	briefs     []string
+	// skipRead stops a review before the read owner is reached.
+	skipRead bool
+	// fromPrimary dispatches the critic from the seat's checkout.
+	fromPrimary bool
 }
 
 func connectionGit(t *testing.T, dir string, args ...string) string {
@@ -67,11 +77,18 @@ func connectionGit(t *testing.T, dir string, args ...string) string {
 
 func newConnectionBed(t *testing.T) *connectionBed {
 	t.Helper()
+	return newConnectionBedWith(t, workApprovedBox)
+}
+
+// newConnectionBedWith is the connection bed with its goal record shaped by
+// amend.
+func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionBed {
+	t.Helper()
 	empty := filepath.Join(t.TempDir(), "gitconfig")
 	os.WriteFile(empty, nil, 0o600)
 	t.Setenv("GIT_CONFIG_GLOBAL", empty)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	c := &connectionBed{workBed: newWorkBed(t), t: t, edits: map[string]string{}}
+	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{}}
 	root := c.root()
 	connectionGit(t, root, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")
@@ -227,7 +244,14 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		},
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			c.reads = append(c.reads, args)
+			if c.skipRead {
+				return branch.BranchReadResult{}, 1, &branch.ReadNeverLaunchedError{Err: errors.New("fixture: the read owner is not reached")}
+			}
 			install, goalID := flagValue(args, "--root"), flagValue(args, "--goal")
+			delegate := c.criticDispatch(install)
+			if c.dispatcher != nil {
+				delegate = c.dispatcher(c, install)
+			}
 			retry, _ := strconv.ParseInt(flagValue(args, "--retry"), 10, 64)
 			tip, present, err := branch.GitPushTransport{}.RemoteTip(install, "origin", "refs/heads/goal/"+goalID)
 			if err != nil || !present {
@@ -235,10 +259,10 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			}
 			result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: install, Remote: "origin",
 				EndpointTip: c.endpointTip(), BranchTip: tip, GoalID: goalID, UnitCommit: flagValue(args, "--unit"),
-				Collect: slices.Contains(args, "--collect"), BriefPath: flagValue(args, "--brief"),
+				Collect: slices.Contains(args, "--collect"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
 				CheckClaim: func() error { return nil },
 				Gate:       func(string) (string, error) { return "gate-run-1", nil },
-				Delegate:   c.criticDispatch(install),
+				Delegate:   delegate,
 				Retry:      retry,
 				// The follow-up transport is the fixture's: it records the next
 				// round of the same chain, as dispatch's follow-up would.

@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -919,16 +920,25 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if lineCount == 0 {
 		lineCount = 1
 	}
+	// The critic reviews the design as the seat has it now: the page and the
+	// uncommitted drafts it cites are frozen into the review's inputs, and
+	// the admission checks the brief against HEAD plus those copies.
+	drafts := freezeDesignDrafts(git, dir, gitRel, data, data)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself (where it states none: our own agents and operators make mistakes, nobody attacks), and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),
-		filepath.Join(git, filepath.FromSlash(gitRel)),
+		drafts.pageCopy,
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
-		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)})
+		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
+		drafts.section()
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
+	inputs := map[string]string{brief: briefText, outputs: gitRel + "\n"}
+	for path, content := range drafts.files {
+		inputs[path] = content
+	}
 	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
-		inputs: map[string]string{brief: briefText, outputs: gitRel + "\n"}}
+		inputs: inputs}
 	// An existing chain is decided before anything is written: a Send that
 	// rejoins a running examination writes nothing, so the brief it admitted,
 	// which states its reader budget, keeps its bytes.
@@ -965,6 +975,9 @@ func writeIntentInputs(dir string, files map[string]string) error {
 	for path, content := range files {
 		if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
 		}
 		temporary, err := os.CreateTemp(dir, ".input-*")
 		if err != nil {
@@ -1121,9 +1134,14 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 		return intentResult{Targets: targets, Outcome: intentInProgress, Summary: "the dispatch named job " + job + " but its record is not readable yet",
 			Data: map[string]any{"delegate": outcome}, next: inv.sameCommand(), nextReason: "collects the same review"}
 	}
+	// A round's return lies under its chain's root, which is the parent only
+	// for round 2: round N's parent is round N-1.
 	root := job
 	if parent := recordText(record, "parentJob"); parent != "" {
 		root = parent
+		if chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot, job); err == nil && chainRoot != "" {
+			root = chainRoot
+		}
 	}
 	status := recordText(record, "status")
 	data := map[string]any{"delegate": outcome, "job": job, "status": status}
@@ -1491,13 +1509,31 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 			return joinRefusal(targets, job, violations, inv.sameCommand())
 		}
 		decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
-		refuted := map[string]string{}
-		for id, decision := range decisions {
-			if decision == "refuted" {
-				refuted[id] = decision
+		// Every earlier answered round's decisions reach the register as the
+		// design close carries them (each round's own decisions file): an
+		// earlier round's accepted finding the later rounds did not raise
+		// again is resolved as accepted, its fix having been examined, and a
+		// refutation stands. A finding the terminal round carries is decided
+		// by these decisions only; an earlier finding nobody decided stays
+		// open.
+		terminal := map[string]bool{}
+		if findings, _, err := readIntentFindings(inv.returnPath(job, recordRound(round))); err == nil {
+			for _, finding := range findings {
+				terminal[finding.ID] = true
 			}
 		}
-		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, refuted); err != nil {
+		applied := map[string]string{}
+		for id, decision := range inv.registerDecisions(job, recordRound(round)) {
+			if !terminal[id] {
+				applied[id] = decision
+			}
+		}
+		for id, decision := range decisions {
+			if decision == "refuted" {
+				applied[id] = decision
+			}
+		}
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, applied); err != nil {
 			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 				Summary: "the decisions can't be recorded, so nothing was closed",
 				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("review %s: %v", job, err)}})
@@ -2157,6 +2193,13 @@ func (inv *intentInvocation) closeJobReview(job string, reviewed intentResult) i
 // guards will; it proves permission to start, not that the close completes.
 func recordWriterPreflight(root, job string) (string, error) {
 	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+	return recordWriterAdmits(caller, err, job)
+}
+
+// recordWriterAdmits is the record-writer owner's answer for a classified
+// caller: a test names the caller it means, never the person or agent whose
+// shell runs it.
+func recordWriterAdmits(caller lease.ClassifyResult, err error, job string) (string, error) {
 	if err != nil {
 		return "authority-unestablished", err
 	}

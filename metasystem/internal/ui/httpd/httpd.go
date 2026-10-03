@@ -521,6 +521,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.board(w)
 		return
 	}
+	if attempt, beneath := strings.CutPrefix(r.URL.Path, proofLogPrefix); beneath {
+		h.proofLog(w, r, attempt)
+		return
+	}
 	if r.URL.Path == applicationPath {
 		h.application(w, r)
 		return

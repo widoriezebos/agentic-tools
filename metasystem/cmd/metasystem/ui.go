@@ -18,6 +18,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -474,7 +476,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				Watch: presenceWatch,
 				// The board panel: every seat of this host and how far its
 				// work is, read and classified on request (D14-r2).
-				Board: batchowner.HostBoardSource(roots.Installation),
+				Board: withProofLogs(batchowner.HostBoardSource(roots.Installation)),
 				// One machine of this fleet joining on this host. It is
 				// the signed-in human's act and nothing weaker, which the
 				// route checks for itself: a launch spends disk, a build
@@ -1355,5 +1357,41 @@ func uiAsks(roots lifecycle.Roots) func() ([]channel.Question, error) {
 			return open, &httpd.UnreadQuestions{Records: unreadable}
 		}
 		return open, nil
+	}
+}
+
+// withProofLogs gives the board panel's source this computer's proof logs
+// (fleet-panel-ux step 2, 2a.3); a build with no board reader stays one.
+func withProofLogs(source *httpd.BoardSource) *httpd.BoardSource {
+	if source != nil {
+		source.ProofLog = uiProofLogs(batchowner.LandingLaneHome)
+	}
+	return source
+}
+
+// uiProofLogs is the proof-log seam: plain.ProofLog over the installation
+// the lane record of this computer names, read on every request. No lane
+// registered is no log served; a lane home it cannot find, or a record it
+// cannot place, is said as such.
+func uiProofLogs(home func() (string, error)) func(string) (string, error) {
+	return func(attempt string) (string, error) {
+		laneHome, err := home()
+		if err != nil {
+			return "", fmt.Errorf("this computer's landing lane can't be found: %w", err)
+		}
+		record, registered, err := lane.Read(laneHome)
+		if err != nil {
+			// A record that does not read is said, even when its paths would
+			// still place a lane.
+			return "", fmt.Errorf("this computer's landing lane record can't be read: %w", err)
+		}
+		if !registered {
+			return "", fmt.Errorf("%w: no landing lane is registered on this computer", plain.ErrNoProofLog)
+		}
+		layout, err := record.Layout()
+		if err != nil {
+			return "", fmt.Errorf("this computer's landing lane record can't be read: %w", err)
+		}
+		return plain.ProofLog(string(layout.Install), attempt)
 	}
 }

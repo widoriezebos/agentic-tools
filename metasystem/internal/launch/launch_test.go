@@ -763,6 +763,42 @@ func TestBusyDeclaredOutputRefusesAndCancelDoesNotStrandSupervisor(t *testing.T)
 	}
 }
 
+// TestDeclaredOutputIsFreeOnceItsLaunchIsRecordedEnded: a round's serial
+// reads share one report file and start the next read as soon as the
+// previous one is recorded as ended, so by then the path is free.
+func TestDeclaredOutputIsFreeOnceItsLaunchIsRecordedEnded(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	path := filepath.Join(t.TempDir(), "read-findings.md")
+	first := seed(t, m, "first-read", Starting)
+	setStrings(first.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(first.ID, func(r *Record) error { r.AdapterData = first.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	next := Record{ID: "next-read", Kind: "read", AdapterData: map[string]json.RawMessage{}}
+	setStrings(next.AdapterData, "declaredOutputs", []string{path})
+	if err := m.Store.Create(next); err != nil {
+		t.Fatal(err)
+	}
+	nextState, err := m.Store.StateDir(next.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextErr := errors.New("the first read's end was never recorded")
+	m.recordedEnd = func(Record) {
+		var release func()
+		if release, nextErr = m.prepareDeclaredOutputs(next, nextState); nextErr == nil {
+			release()
+		}
+	}
+	if got, err := m.Supervise(first.ID); err != nil || !got.State.Terminal() {
+		t.Fatalf("first read = %+v, %v", got, err)
+	}
+	if nextErr != nil {
+		t.Fatalf("the next read could not take the report file once the first read was recorded ended: %v", nextErr)
+	}
+}
+
 func TestCancelDuringChildHandoffReachesRecordedGroup(t *testing.T) {
 	t.Parallel()
 	m, processes, _, _ := manager(t)

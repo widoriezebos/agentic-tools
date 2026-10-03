@@ -12,38 +12,26 @@ import {
   type Launch,
   type Machine,
   type Page as FleetPayload,
-  type Role,
   type ThisSeat,
   type Working,
 } from "./api";
 import "./fleet.css";
 import {
-  armedWords,
   attemptsLeftWords,
   attemptWords,
   barShare,
   capWords,
   chainWhen,
   chainWords,
-  claimsTitle,
-  copyLine,
   copyProblem,
   emptyFleetWords,
-  flagWords,
-  healthWords,
   jobWords,
   NO_BOX,
-  publicationWords,
+  NO_NICKNAME,
+  provenance,
+  publishedWords,
   reservedWords,
   RESERVED_MEANING,
-  rolesAlive,
-  rolesNeedingAttention,
-  runningWords,
-  seatName,
-  seenTitle,
-  seenWords,
-  shortEngine,
-  sinceWords,
   workingByGoal,
   workingSource,
   type WorkingGroup,
@@ -68,14 +56,16 @@ import {
   doingOf,
   needsOf,
   queueOf,
-  SCOPE,
+  QUESTIONS_SCOPE,
   seatOf,
+  seenOf,
   unreadOf,
   verdictOf,
   type BoardReading,
   type Doing,
   type FleetReading,
   type Need,
+  type NeedAct,
   type Verdict,
 } from "./panel";
 import { Trouble } from "../shell/Trouble";
@@ -84,11 +74,12 @@ import { Trouble } from "../shell/Trouble";
  * Fleet: what the machine is doing, and whether it needs the person.
  *
  * Read top to bottom it answers the questions a person brings to it, in the
- * order they bring them: one verdict on top, in words, with what it checked;
- * Needs you, collected from every source in one list and absent when empty;
- * this seat; the fleet's table, one row per machine, with what each is doing;
- * and this computer's landing lane with what waits, proves, landed and came
- * back.
+ * order they bring them: one verdict on top, in one line, with its counts and
+ * what it checked; Needs you, collected from every source in one list and
+ * absent when empty, one line and one thing to do per item; the fleet's
+ * table, one row per machine — what it does, what it holds, when it was seen
+ * — with this seat named on its own row; and this computer's landing lane
+ * with what waits, proves, landed and came back.
  *
  * It is two reads, made together: the fleet (presence and the ledger's
  * claims, composed on the server) and this computer's board, which carries
@@ -98,10 +89,11 @@ import { Trouble } from "../shell/Trouble";
  * A read that fails says so in its own section and names that section in the
  * verdict; the other section still draws.
  *
- * The one act is Land now. Every other fix is said as the plain sentence of
- * what to do. A goal held by a machine that has gone quiet is flagged, and
- * the words name the acts a person makes at a terminal: `goal steal`
- * reassigns a claim, `goal resume` lifts a breach fence.
+ * Every Needs you item carries exactly one thing to do: a button (Open goal,
+ * Answer, Open log), or the one public verb a person types, in code. The
+ * lane's one act of its own is Land now. What a person wants only now and
+ * then — a machine's engine and generation, a health check's reasons — is
+ * behind a disclosure.
  *
  * Both are read when the pane mounts, when a person presses the section's
  * refresh, and when the server says a presence attempt or a board change
@@ -249,7 +241,7 @@ export function Panel({
   const read = board.state === "read" ? board.board : null;
   return (
     <section className="ms-fleet">
-      <VerdictStrip verdict={verdict} />
+      <VerdictStrip verdict={verdict} provenance={fleet.state === "read" ? provenance(fleet.page, now) : ""} />
       {(needs.length > 0 || unread.questions.length > 0) && <NeedsYou needs={needs} questionsUnread={unread.questions} />}
       {fleet.state === "loading" && <Loading />}
       {fleet.state === "failed" && <Failure message={fleet.message} onRetry={onRetry} />}
@@ -269,15 +261,32 @@ export function Panel({
   );
 }
 
-/** The one sentence on top, the counts beside it, and what it checked. */
-function VerdictStrip({ verdict }: { verdict: Verdict }) {
+/**
+ * The one line on top: the verdict, its help, and beside it the counts, when
+ * the page was read — whose title says where the reading came from — and
+ * what the verdict checked, which stays visible (R2-8).
+ */
+function VerdictStrip({ verdict, provenance: from }: { verdict: Verdict; provenance: string }) {
   return (
     <section className={`ms-fleet-verdict ms-fleet-verdict--${verdict.tone}`} aria-label="Verdict" role="status">
       <p className="ms-fleet-verdict-line">
-        <span className="ms-fleet-verdict-words">{verdict.words}</span>
-        {verdict.facts.length > 0 && <span className="ms-fleet-verdict-facts">{verdict.facts.join(" · ")}</span>}
+        <span className="ms-fleet-verdict-words">
+          {verdict.words}
+          <Help id="fleet-verdict" />
+        </span>
+        <span className="ms-fleet-verdict-facts">
+          {[...verdict.facts, ...(verdict.updated === "" ? [] : [verdict.updated])].map((fact, index) => (
+            <span key={fact}>
+              {index > 0 && " · "}
+              {fact === verdict.updated ? <span title={from === "" ? undefined : from}>{fact}</span> : fact}
+            </span>
+          ))}
+          <span className="ms-fleet-verdict-scope">
+            {verdict.facts.length > 0 || verdict.updated !== "" ? " · " : ""}
+            {QUESTIONS_SCOPE}
+          </span>
+        </span>
       </p>
-      <p className="ms-fleet-quiet">{SCOPE}</p>
     </section>
   );
 }
@@ -305,7 +314,7 @@ function Failure({ message, onRetry }: { message: string; onRetry?: () => void }
   );
 }
 
-/** This seat and the table, from one fleet reading and the board beside it. */
+/** The table, from one fleet reading and the board beside it. */
 function FleetBlocks({
   page,
   problem,
@@ -357,7 +366,6 @@ function FleetBlocks({
       {problem !== undefined && (
         <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${problem}`} role="status" />
       )}
-      <ThisSeatBlock seat={page.this} doing={page.this.machine === "" ? undefined : doing.get(page.this.machine)} now={now} />
       <TheFleet page={page} board={board} doing={doing} now={now} open={open} onToggle={toggle} />
     </>
   );
@@ -365,8 +373,10 @@ function FleetBlocks({
 
 /**
  * Needs you: everything that needs the person, from every source, in one
- * list, newest first — each with what to do in plain words, and the goal to
- * open or the question to answer where it has one.
+ * list, newest first — each as one line, a quiet second line where the record
+ * carries a reason, and exactly one thing to do: the act at the line's end,
+ * or the command to type, in code. A silent machine's goals each carry their
+ * own command under their title; a health check's reasons are behind Details.
  *
  * Empty, the block is absent rather than a line saying nothing needs you: the
  * verdict on top already says All good, and a standing "all clear" row is a
@@ -386,27 +396,34 @@ function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: 
         <ul className="ms-fleet-needs">
           {needs.map((one) => (
             <li key={one.key} className="ms-fleet-needs-row">
-              <span className="ms-fleet-needs-words">{one.words}</span>
-              {one.goal !== "" && (
-                <NavLink className="ms-fleet-needs-act" to={goalPath(one.goal)}>
-                  Open goal
-                </NavLink>
-              )}
-              {one.answer && (
-                <NavLink className="ms-fleet-needs-act" to="/decisions">
-                  Answer
-                </NavLink>
-              )}
-              {one.goals.length > 0 && (
-                <span className="ms-fleet-needs-goals">
-                  {one.goals.map((goal) => (
-                    <NavLink key={goal.id} className="ms-fleet-hold-title" to={goalPath(goal.id)}>
-                      {goal.title}
-                    </NavLink>
-                  ))}
-                </span>
-              )}
-              {one.todo !== "" && <span className="ms-fleet-needs-todo">{one.todo}</span>}
+              <div className="ms-fleet-needs-main">
+                <span className="ms-fleet-needs-words">{one.words}</span>
+                {one.note !== "" && <span className="ms-fleet-needs-note">{one.note}</span>}
+                {one.impact !== "" && <span className="ms-fleet-needs-impact">{one.impact}</span>}
+                {one.command !== "" && <Command command={one.command} />}
+                {one.goals.length > 0 && (
+                  <ul className="ms-fleet-needs-goals">
+                    {one.goals.map((goal) => (
+                      <li key={goal.id} className="ms-fleet-needs-goal">
+                        <span className="ms-fleet-needs-title">{goal.title}</span>
+                        <Command command={goal.command} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {one.details.length > 0 && (
+                  <details className="ms-fleet-details">
+                    <summary className="ms-fleet-details-summary">Details</summary>
+                    <ul className="ms-fleet-needs-reasons">
+                      {one.details.map((reason, index) => (
+                        // Two checks may give one reason in the same words.
+                        <li key={`${String(index)}:${reason}`}>{reason}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+              {one.act !== null && <NeedAction act={one.act} />}
             </li>
           ))}
         </ul>
@@ -415,67 +432,45 @@ function NeedsYou({ needs, questionsUnread }: { needs: Need[]; questionsUnread: 
   );
 }
 
-/**
- * This seat: what it is called, whether it is armed, and what it is doing —
- * in its own row's Doing words where the table has a row for it, so the two
- * never disagree.
- */
-function ThisSeatBlock({ seat, doing, now }: { seat: ThisSeat; doing: Doing | undefined; now: Date }) {
-  const attention = rolesNeedingAttention(seat.health);
-  const alive = rolesAlive(seat.health);
-  return (
-    <section className="ms-fleet-block">
-      <h2 className="ms-fleet-heading">
-        This seat
-        <Help id="this-seat" />
-      </h2>
-      <p className="ms-fleet-seat-name">{seatName(seat)}</p>
-      <ul className="ms-fleet-facts">
-        <li className="ms-fleet-fact">{armedWords(seat)}</li>
-        <li className="ms-fleet-fact">
-          {publicationWords(seat, now)}
-          {/* The rung is a word only this line shows, so its explanation
-              belongs on this line and nowhere else. */}
-          {seat.publication !== null && seat.publication.rung > 0 && <Help id="rung" />}
-        </li>
-        <li className="ms-fleet-fact">{doing === undefined ? runningWords(seat.running, seat.runningProblem) : doing.words}</li>
-        <li className="ms-fleet-fact">{healthWords(seat.health, now)}</li>
-      </ul>
-      {attention.length > 0 && (
-        <ul className="ms-fleet-roles">
-          {attention.map((role) => (
-            <RoleRow key={role.role} role={role} />
-          ))}
-        </ul>
-      )}
-      {alive.length > 0 && (
-        <details className="ms-fleet-alive">
-          <summary className="ms-fleet-alive-summary">{alive.length} roles alive</summary>
-          <ul className="ms-fleet-roles">
-            {alive.map((role) => (
-              <RoleRow key={role.role} role={role} />
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
-  );
+/** The one public verb a person types, in code: one press selects it. */
+function Command({ command }: { command: string }) {
+  return <code className="ms-mono ms-fleet-needs-command">{command}</code>;
 }
 
-function RoleRow({ role }: { role: Role }) {
-  return (
-    <li className="ms-fleet-role">
-      <span className={`ms-fleet-dot ms-fleet-dot--${role.status}`} aria-hidden="true" />
-      <span className="ms-mono ms-fleet-role-name">{role.role}</span>
-      <span className="ms-fleet-role-reason">{role.reason}</span>
-    </li>
-  );
+/** The one act at an item's end: open the goal, answer, or open the proof's log. */
+function NeedAction({ act }: { act: NeedAct }) {
+  switch (act.kind) {
+    case "goal":
+      return (
+        <NavLink className="ms-fleet-needs-act" to={goalPath(act.goal)}>
+          Open goal
+        </NavLink>
+      );
+    case "answer":
+      return (
+        <NavLink className="ms-fleet-needs-act" to="/decisions">
+          Answer
+        </NavLink>
+      );
+    case "log":
+      return (
+        <a className="ms-fleet-needs-act" href={act.href} target="_blank" rel="noopener noreferrer">
+          Open log
+        </a>
+      );
+  }
 }
 
 /**
  * The fleet: one row per machine, this seat first, then the machines holding
  * a flagged goal, then the reachable, then the silent, then the unknown. The
- * server decided that order; the table draws it.
+ * server decided that order; the table draws it, in four columns: the
+ * machine, what it is doing, what it holds and when it was seen.
+ *
+ * Every read behind this section that failed is said here, under the table,
+ * so the verdict that names the fleet always has its reason on screen: the
+ * presence copy, the ledger's claims, what this seat last published, and its
+ * own jobs where it has no row to say them in.
  */
 function TheFleet({
   page,
@@ -493,6 +488,9 @@ function TheFleet({
   onToggle: (machine: string) => void;
 }) {
   const problem = copyProblem(page);
+  // This seat's jobs reader's trouble, unless its own row's Doing says it.
+  const running = page.this.runningProblem;
+  const runningSaid = page.machines.some((machine) => machine.this && machine.workingProblem === running);
   // The launch this block shows, if any: the newest one still worth a card.
   // It is state rather than a derived value because two things change it —
   // the act's own answer, which arrives before the next read does, and a
@@ -561,14 +559,6 @@ function TheFleet({
             <tr>
               <th scope="col">Machine</th>
               <th scope="col">
-                Standing
-                <Help id="standing" />
-              </th>
-              <th scope="col">
-                Seen
-                <Help id="presence" />
-              </th>
-              <th scope="col">
                 Doing
                 <Help id="phase" />
               </th>
@@ -576,9 +566,9 @@ function TheFleet({
                 Holds
                 <Help id="machine-holds" />
               </th>
-              <th scope="col">
-                Engine
-                <Help id="engine" />
+              <th scope="col" className="ms-fleet-head--seen">
+                Seen
+                <Help id="presence" />
               </th>
             </tr>
           </thead>
@@ -587,6 +577,7 @@ function TheFleet({
               <MachineRow
                 key={machine.machine}
                 machine={machine}
+                seat={machine.this ? page.this : null}
                 doing={doing.get(machine.machine) ?? IDLE}
                 now={now}
                 open={open.has(machine.machine)}
@@ -608,10 +599,15 @@ function TheFleet({
           variant="small"
         />
       )}
-      <p className="ms-fleet-provenance" title={claimsTitle(page)}>
-        {copyLine(page, now)}
-      </p>
+      {page.this.noNickname && <p className="ms-fleet-quiet">{NO_NICKNAME}</p>}
       {problem !== "" && <Trouble text={problem} />}
+      {page.claims.unavailable !== "" && (
+        <Trouble text={`The goals each machine holds could not be read: ${page.claims.unavailable}`} variant="small" />
+      )}
+      {page.this.publicationProblem !== "" && (
+        <Trouble text={`What this seat last published could not be read: ${page.this.publicationProblem}`} variant="small" />
+      )}
+      {running !== "" && !runningSaid && <Trouble text={`What this seat is running could not be read: ${running}`} variant="small" />}
       {/* The Partner's own file, where this server could not write it. The
           page is fine and the tool's reading of it is not, which is a
           different fact and says so quietly rather than as a failure. */}
@@ -626,36 +622,41 @@ function TheFleet({
  * The disclosure is a second row rather than a `<details>`, which is what the
  * rest of this build uses. A table row cannot contain another row, and the
  * block has to open in the row's own width — under the machine and across all
- * six columns — rather than inside one cell. So the control is a button that
+ * four columns — rather than inside one cell. So the control is a button that
  * says whether it is expanded and what it controls, and the block is a row
  * the table draws beneath this one. Its open state is remembered per viewer
  * either way, which a native disclosure would have had to be told anyway.
+ *
+ * The row's cells carry no labels: on a phone the row is a card that reads
+ * "m1f · stalled · revising · 68 min", the titles, then when it was seen.
+ * The engine and its generation, and for this seat when it last published,
+ * are in the opened row.
  */
 /** What a row says before anything was composed for it. */
 const IDLE: Doing = { words: "idle", active: false, source: "none" };
 
 function MachineRow({
   machine,
+  seat,
   doing,
   now,
   open,
   onToggle,
 }: {
   machine: Machine;
+  /** This seat's own record, on this seat's row; null on every other. */
+  seat: ThisSeat | null;
   doing: Doing;
   now: Date;
   open: boolean;
   onToggle: (machine: string) => void;
 }) {
-  const seen = seenWords(machine, now);
-  const title = seenTitle(machine);
-  const since = sinceWords(machine);
+  const seen = seenOf(machine, now);
   const disclosed = `ms-fleet-work-${machine.machine}`;
   return (
     <>
       <tr className={open ? "ms-fleet-row ms-fleet-row--open" : "ms-fleet-row"}>
         <td className="ms-fleet-cell ms-fleet-cell--machine">
-          <span className="ms-fleet-label">Machine</span>
           <button
             type="button"
             className="ms-fleet-disclose"
@@ -671,26 +672,13 @@ function MachineRow({
           <span className="ms-mono">{machine.machine}</span>
           {machine.this && <span className="ms-fleet-here">this seat</span>}
         </td>
-        <td className="ms-fleet-cell ms-fleet-cell--standing">
-          <span className="ms-fleet-label">Standing</span>
-          <Hint label={machine.reason}>
-            <span className={`ms-fleet-pill ms-fleet-pill--${machine.standing}`}>{machine.standing}</span>
-          </Hint>
-        </td>
-        <td className="ms-fleet-cell">
-          <span className="ms-fleet-label">Seen</span>
-          {title === "" ? <span>{seen}</span> : <Hint label={title}>{<span>{seen}</span>}</Hint>}
-          {since !== "" && <span className="ms-fleet-since">{since}</span>}
-        </td>
-        <td className="ms-fleet-cell ms-fleet-cell--doing">
-          <span className="ms-fleet-label">Doing</span>
+        <td className={doing.stalled === true ? "ms-fleet-cell ms-fleet-cell--doing ms-fleet-doing--stalled" : "ms-fleet-cell ms-fleet-cell--doing"}>
           {/* The rail's dot, before the words of a machine that is working;
               the words themselves are the table's own. */}
           {doing.active && <LiveDot />}
           <span>{doing.words}</span>
         </td>
         <td className="ms-fleet-cell ms-fleet-cell--holds">
-          <span className="ms-fleet-label">Holds</span>
           {machine.holds.length === 0 ? (
             <span className="ms-fleet-quiet">nothing</span>
           ) : (
@@ -701,25 +689,27 @@ function MachineRow({
             </span>
           )}
         </td>
-        <td className="ms-fleet-cell ms-fleet-cell--engine">
-          <span className="ms-fleet-label">Engine</span>
-          {machine.engine === "" ? (
-            <span className="ms-fleet-quiet">unknown</span>
-          ) : (
-            <Hint label={machine.engine}>
-              <span className="ms-mono">{shortEngine(machine.engine)}</span>
-            </Hint>
-          )}
+        <td className="ms-fleet-cell ms-fleet-cell--seen" title={seen.title === "" ? undefined : seen.title}>
+          <span className={seen.tone === "" ? undefined : `ms-fleet-seen--${seen.tone}`}>{seen.words}</span>
         </td>
       </tr>
       <tr className="ms-fleet-opened" id={disclosed} hidden={!open}>
-        <td className="ms-fleet-open-cell" colSpan={6}>
+        <td className="ms-fleet-open-cell" colSpan={4}>
           <p className="ms-fleet-work-line">
-            <span className="ms-fleet-work-name">Engine</span>
+            <span className="ms-fleet-work-name">
+              Engine
+              <Help id="engine" />
+            </span>
             <span className="ms-mono">
               {machine.engine === "" ? "unknown" : machine.engine} · generation {machine.generation}
             </span>
           </p>
+          {seat !== null && (
+            <p className="ms-fleet-work-line">
+              <span className="ms-fleet-work-name">Presence</span>
+              <span>{publishedWords(seat, now)}</span>
+            </p>
+          )}
           <Work machine={machine} doing={doing} now={now} />
         </td>
       </tr>
@@ -906,8 +896,8 @@ function Bar({ share }: { share: number }) {
 }
 
 /**
- * One goal a machine holds, by its title, as the link that opens it: the id
- * is in the link and in its hint, with the goal's lane.
+ * One goal a machine holds, by its title on one line, as the link that opens
+ * it: the id is in the link and in its hint, with the goal's lane.
  */
 function HoldChip({ held }: { held: Held }) {
   const chip = (
@@ -915,10 +905,11 @@ function HoldChip({ held }: { held: Held }) {
       {held.title === "" ? held.goal : held.title}
     </NavLink>
   );
+  // A held goal's flag is not repeated here: Seen says the machine is silent
+  // and Needs you carries the goal with its take-over.
   return (
     <span className="ms-fleet-hold">
       <Hint label={`${laneTitle(held.lane)} · ${held.goal}`}>{chip}</Hint>
-      {held.flag !== "" && <Chip marker>{flagWords(held)}</Chip>}
     </span>
   );
 }

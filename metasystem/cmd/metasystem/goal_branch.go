@@ -290,7 +290,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	}
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
-		BriefPath: brief.value, Runtime: runtime.value, Model: model.value,
+		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
 			environment, err := criticDelegateEnvironment(*selected, *root, brief)

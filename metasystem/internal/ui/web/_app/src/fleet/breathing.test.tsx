@@ -175,7 +175,7 @@ describe("the Fleet table's Doing column", () => {
     const markup = table([machine()]);
     // The minutes are counted against the page's own clock, which is the
     // wall's here; the words before them are the column's.
-    expect(markup).toMatch(/Doing<\/span><span class="ms-live-dot" aria-hidden="true"><\/span><span>building · round 2 · /);
+    expect(markup).toMatch(/ms-fleet-cell--doing"><span class="ms-live-dot" aria-hidden="true"><\/span><span>building · round 2 · /);
   });
 
   it("has no dot for a machine that is not working", () => {

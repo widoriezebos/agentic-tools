@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func TestPreserveEvidenceCapsBytesAndNotesDroppedContent(t *testing.T) {
@@ -50,7 +51,7 @@ func TestPreserveEvidenceHandlesDirectFilesSymlinksAndMissingSources(t *testing.
 	if result.CopiedBytes != int64(len("content")+len("direct file")) || len(result.Errors) != 1 {
 		t.Fatalf("result = %+v", result)
 	}
-	target, err := os.Readlink(filepath.Join(destination, "source-002-link"))
+	target, err := os.Readlink(filepath.Join(destination, "_source-002-link"))
 	if err != nil || target != "direct file" {
 		t.Fatalf("copied symlink = %q, %v", target, err)
 	}
@@ -82,7 +83,7 @@ func TestPreserveEvidenceKeepsGenericSymlinksGitAndLargeFiles(t *testing.T) {
 	if err != nil || len(result.Dropped) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("generic preservation result=%+v err=%v", result, err)
 	}
-	copied := filepath.Join(destination, "source-001-"+safeEvidenceName(filepath.Base(source)))
+	copied := filepath.Join(destination, "_source-001-"+safeEvidenceName(filepath.Base(source)))
 	if data, err := os.ReadFile(filepath.Join(copied, "large.bin")); err != nil || len(data) != len(large) {
 		t.Fatalf("generic large file copy len=%d err=%v", len(data), err)
 	}
@@ -220,5 +221,27 @@ func TestPreserveDetachedSuiteFailuresWritesTheOwnerFirst(t *testing.T) {
 	}
 	if _, err := diskstore.ReadBundleOwner(bundle); err != nil {
 		t.Fatalf("the detached bundle carries its owner file: %v", err)
+	}
+}
+
+// A preserved source tree under the installation's artifacts/ stays out of
+// the module: go list ./..., which go vet and the static gate walk, lists the
+// module's own package only, never the copied one.
+func TestPreservedSourceStaysOutOfTheModule(t *testing.T) {
+	t.Parallel()
+	module := t.TempDir()
+	writeEvidenceFixture(t, filepath.Join(module, "go.mod"), "module example.invalid/evidence\n\ngo 1.22\n")
+	writeEvidenceFixture(t, filepath.Join(module, "main.go"), "package main\n\nfunc main() {}\n")
+	source := filepath.Join(t.TempDir(), "suite-failures")
+	writeEvidenceFixture(t, filepath.Join(source, "fixture", "broken.go"), "package fixture\n\nimport _ \"example.invalid/missing\"\n")
+	destination := filepath.Join(module, "artifacts", "agents", "suite-failures", "bundle")
+	if _, err := PreserveEvidence(destination, []string{source}, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	command := testenv.Go("list", "./...")
+	command.Dir = module
+	command.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off")
+	if out, err := command.CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "example.invalid/evidence" {
+		t.Fatalf("go list ./... over a module holding a preserved bundle = %q, %v", out, err)
 	}
 }

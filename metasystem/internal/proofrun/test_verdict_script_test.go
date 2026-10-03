@@ -139,3 +139,24 @@ exit %d
 		})
 	}
 }
+
+// A bed that exits 0 but leaves a process behind fails by its resource
+// custodian: the group reports the bed's own exit 0 and names the
+// custodian's reason, never "process exit 1" with no failing scenario.
+func TestCustodyFailureAfterAPassingBedIsNamed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	tree := verdictFixtureTree(t, "survivor")
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/bed.sh": testSnapshotFile("#!/usr/bin/env bash\nsleep 30 >/dev/null 2>&1 &\nexit 0\n", 0o755),
+	}, 1)
+	group := testpolicy.Group{ID: "survivor-verdict", Kind: "integration", Adapter: "section", CWD: ".",
+		Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "fixture", Argv: []string{"bash", "scripts/bed.sh"}}
+	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
+		LogRoot: filepath.Join(root, "logs")}, group)
+	if result.Status != "failed" || result.NativeExitStatus == nil || *result.NativeExitStatus != 0 ||
+		!strings.Contains(result.NotRunReason, "the test process exited 0, then its resource custodian failed") ||
+		!strings.Contains(result.NotRunReason, "native descendants survived direct worker completion") {
+		t.Fatalf("a passing bed that left a process behind: status=%q exit=%v reason=%q", result.Status, result.NativeExitStatus, result.NotRunReason)
+	}
+}
