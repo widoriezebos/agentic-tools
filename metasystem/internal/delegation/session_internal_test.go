@@ -105,7 +105,7 @@ func TestWaitReapsOnlyThroughTheLeaseHeldEntry(t *testing.T) {
 // ceiling refuses by name, whatever the configuration raised.
 func TestJobCapMustStayBelowTheAttestedWatcherCeiling(t *testing.T) {
 	t.Parallel()
-	s, stderr := internalSession(t, Ports{Clock: &stubClock{now: time.Now()}})
+	s, stderr := internalSession(t, Ports{Clock: &stubClock{now: time.Now()}, Git: ownerGit{}})
 	conf := "dispatch.cap-min=120\ndispatch.cap-max=900\ncap.min.implementer.fake.fake-model=500\n"
 	if err := os.WriteFile(filepath.Join(s.root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)

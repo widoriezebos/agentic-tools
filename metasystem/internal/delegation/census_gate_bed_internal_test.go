@@ -17,11 +17,13 @@ func TestSupCCensusGateAbsentVerdictRefuses(t *testing.T) {
 	t.Parallel()
 	const repo = "/fixture/census-gate-repo"
 	var stderr bytes.Buffer
+	root := t.TempDir()
 	s := &session{
-		l:         &Lifecycle{},
+		l:         &Lifecycle{ports: Ports{Git: ownerGit{}}},
 		ctx:       context.Background(),
 		stderr:    &stderr,
-		agents:    filepath.Join(t.TempDir(), "artifacts", "agents"),
+		root:      root,
+		agents:    filepath.Join(root, "artifacts", "agents"),
 		repoScope: repo,
 	}
 	err := s.requireFreshCensus()

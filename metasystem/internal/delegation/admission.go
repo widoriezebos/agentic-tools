@@ -375,7 +375,10 @@ func (s *session) authorizeJobCap(job, role, runtime, modelKey, aliasSource, mis
 		return s.die(1, "dispatch cap authority returned an invalid capMin")
 	}
 	capMin, _ := strconv.ParseInt(capValue, 10, 64)
-	watchCap, err := dispatch.WatcherCeiling(filepath.Join(s.agents, "supervision", "state.json"), s.l.ports.Clock.Now())
+	// The watcher is the running system's: a goal worktree's is its
+	// primary checkout's (supervisedInstallation).
+	supervised, _ := s.supervisedInstallation()
+	watchCap, err := dispatch.WatcherCeiling(filepath.Join(supervised, "artifacts", "agents", "supervision", "state.json"), s.l.ports.Clock.Now())
 	if err != nil {
 		return s.verbFailure(err)
 	}

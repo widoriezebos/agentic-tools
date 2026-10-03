@@ -247,6 +247,31 @@ func PrimaryCheckout(git func(args ...string) GitResult, workTree string) (strin
 	return dirs[0], true
 }
 
+// PrimaryInstallation maps the installation at root to the same
+// installation in its primary checkout: a linked worktree belongs to its
+// primary checkout, the work tree whose .git is the common dir. It names
+// that checkout and the installation in it; for a primary checkout they are
+// root's own. Both are "" when the common dir is not a checkout's .git (a
+// bare repository's worktree). problem says, in plain words, why the
+// repository's directories could not be mapped. git runs in root.
+func PrimaryInstallation(git func(args ...string) GitResult, root string) (checkout, installation, problem string) {
+	common := git("rev-parse", "--path-format=absolute", "--git-common-dir")
+	top := git("rev-parse", "--show-toplevel")
+	if common.Code != 0 || top.Code != 0 {
+		return "", "", "the repository's directories cannot be read"
+	}
+	commonDir := strings.TrimRight(string(common.Stdout), "\n")
+	if filepath.Base(commonDir) != ".git" {
+		return "", "", ""
+	}
+	prefix, err := filepath.Rel(strings.TrimRight(string(top.Stdout), "\n"), root)
+	if err != nil || !filepath.IsLocal(prefix) && prefix != "." {
+		return "", "", "the installation lies outside its work tree"
+	}
+	checkout = filepath.Dir(commonDir)
+	return checkout, filepath.Join(checkout, prefix), ""
+}
+
 // helmSubject names what a helm yield admitted: the branch HEAD names, the
 // index tree and the caller's class.
 func helmSubject(git func(args ...string) GitResult, class string, classErr error) string {
@@ -297,18 +322,12 @@ func wrapperFenced(git func(args ...string) GitResult, root string) string {
 	installations := []string{root}
 	// A linked worktree belongs to its primary checkout: a seat holding
 	// that checkout holds its worktrees too.
-	common := git("rev-parse", "--path-format=absolute", "--git-common-dir")
-	top := git("rev-parse", "--show-toplevel")
-	if common.Code != 0 || top.Code != 0 {
-		return "the repository's directories cannot be read"
+	_, primary, problem := PrimaryInstallation(git, root)
+	if problem != "" {
+		return problem
 	}
-	commonDir := strings.TrimRight(string(common.Stdout), "\n")
-	if filepath.Base(commonDir) == ".git" {
-		prefix, err := filepath.Rel(strings.TrimRight(string(top.Stdout), "\n"), root)
-		if err != nil || !filepath.IsLocal(prefix) && prefix != "." {
-			return "the installation lies outside its work tree"
-		}
-		installations = append(installations, filepath.Join(filepath.Dir(commonDir), prefix))
+	if primary != "" {
+		installations = append(installations, primary)
 	}
 	for _, installation := range installations {
 		// artifacts/agents/mains is where a seat's sessions announce and

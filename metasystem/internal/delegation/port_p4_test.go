@@ -80,7 +80,15 @@ func TestP4FollowUpAfterACapRefusesWhenTheWorktreeIsGone(t *testing.T) {
 	if !strings.Contains(b.stderr.String(), want) {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
-	if b.exists("artifacts/agents/jobs/capped-gone-r2.json") || len(b.doubles.Git.Calls) != 0 {
+	// The census gate's read-only rev-parse (which installation runs the
+	// system) is the only Git a refusal may reach.
+	changing := 0
+	for _, call := range b.doubles.Git.Calls {
+		if !strings.Contains(call, "|rev-parse ") {
+			changing++
+		}
+	}
+	if b.exists("artifacts/agents/jobs/capped-gone-r2.json") || changing != 0 {
 		t.Fatalf("the refusal published a round or reached Git: %v", b.doubles.Git.Calls)
 	}
 }
