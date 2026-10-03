@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -620,6 +621,16 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // the seat ladder's to decide.
 func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
 	cfg = cfg.withDefaults()
+	if _, err := os.Stat(brain.Path(repoRoot)); !os.IsNotExist(err) {
+		ledger := dependencies.LedgerIdentity
+		if ledger == nil {
+			ledger = goal.ExistingLedgerIdentity
+		}
+		coordinator := brain.Read(repoRoot, ledger(repoRoot))
+		if coordinator.State == brain.Declared {
+			return Decision{VerdictHealthy, ActNone, "this is the coordinator's checkout; no seat work is asked here"}, nil, "coordinator checkout", nil
+		}
+	}
 	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, nil, "", err

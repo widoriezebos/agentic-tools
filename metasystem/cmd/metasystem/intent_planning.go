@@ -475,6 +475,11 @@ const (
 // is never proof.
 func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([]string, *humanauthority.Proof, *intentResult) {
 	args := inv.forward("lineage", "fixture-human-authority", "temporary-human-word", "review-by")
+	if grant, problem := inv.partnerActor(target); problem != nil {
+		return nil, nil, problem
+	} else if grant != nil {
+		return []string{"--by", grant.Helm.By}, grant, nil
+	}
 	typed := strings.TrimPrefix(inv.input.text("by"), "human:")
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if typed != "" && actor == actorAgent {

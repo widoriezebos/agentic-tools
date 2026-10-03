@@ -439,7 +439,7 @@ type AbandonRecord struct {
 // HistoryLine is one entry of the append-only History block, exactly
 // the design's grammar:
 //
-//   - <iso8601> <opid> <verb> actor=<...> [targets=<ids>]
+//   - <iso8601> <opid> <verb> actor=<...> [through=<grant>] [targets=<ids>]
 //     [displaced=<machine>+<lineage>@<at>] [resumed=<stop-id>] [ack] [keep=<n>]
 //     [authorityOutcome=<...> authorityReviewBy=<date>
 //     authorityRuling=<id> temporaryHumanWord=<quoted words>]
@@ -449,6 +449,7 @@ type HistoryLine struct {
 	Opid                string
 	Verb                string
 	Actor               string // machine+lineage or human:<name>
+	Through             string // general grant that answered a human act
 	Targets             []string
 	Displaced           string
 	StopID              string
@@ -1991,6 +1992,11 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.Actor = strings.TrimPrefix(tok, "actor=")
+		case strings.HasPrefix(tok, "through="):
+			if err := dup("through"); err != nil {
+				return h, err
+			}
+			h.Through = strings.TrimPrefix(tok, "through=")
 		case strings.HasPrefix(tok, "targets="):
 			if err := dup("targets"); err != nil {
 				return h, err
@@ -2106,6 +2112,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if h.Actor == "" {
 		return h, fmt.Errorf("missing actor= in %q", line)
 	}
+	if seenKeys["through"] && (!strings.HasPrefix(h.Actor, "human:") || !validOpidShape(h.Through)) {
+		return h, errors.New("through= names a grant and is valid only beside a human: actor")
+	}
 	if !validStamp(h.At) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
@@ -2218,6 +2227,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 func RenderHistoryLine(h HistoryLine) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "- %s %s %s actor=%s", h.At, h.Opid, h.Verb, h.Actor)
+	if h.Through != "" {
+		b.WriteString(" through=" + h.Through)
+	}
 	if len(h.Targets) > 0 {
 		b.WriteString(" targets=" + strings.Join(h.Targets, ","))
 	}

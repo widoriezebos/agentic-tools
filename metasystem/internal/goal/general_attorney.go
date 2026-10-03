@@ -155,7 +155,7 @@ func (e Endpoint) AttorneyEffect() string {
 }
 
 // guardAttorneyEffect wraps a mutation with the bound grant's re-check.
-func guardAttorneyEffect(e Endpoint, mutate func(string) ([]Change, error)) func(string) ([]Change, error) {
+func guardAttorneyEffect(e Endpoint, opid string, mutate func(string) ([]Change, error)) func(string) ([]Change, error) {
 	if e.attorney == nil {
 		return mutate
 	}
@@ -181,6 +181,38 @@ func guardAttorneyEffect(e Endpoint, mutate func(string) ([]Change, error)) func
 		if live, why := entry.LiveAt(now); !live {
 			return nil, fmt.Errorf("power of attorney %s is not live at the act: %s", binding.id, why)
 		}
-		return mutate(tip)
+		changes, err := mutate(tip)
+		if err != nil {
+			return nil, err
+		}
+		stamp := func(history []HistoryLine) {
+			for i := range history {
+				if history[i].Opid == opid && strings.HasPrefix(history[i].Actor, "human:") {
+					history[i].Through = binding.id
+				}
+			}
+		}
+		for i := range changes {
+			change := &changes[i]
+			if change.Delete || !strings.HasSuffix(change.Path, ".md") {
+				continue
+			}
+			if change.Path == goalsPrefix+"backlog.md" {
+				root, problems := ParseRoot(change.Content)
+				if len(problems) != 0 {
+					return nil, fmt.Errorf("grant history: %s", problems[0])
+				}
+				stamp(root.History)
+				change.Content = RenderRoot(root)
+			} else if strings.HasPrefix(change.Path, goalsPrefix) || strings.HasPrefix(change.Path, recordsGoalsPrefix) {
+				file, problems := ParseFile(change.Content)
+				if len(problems) != 0 {
+					return nil, fmt.Errorf("grant history: %s", problems[0])
+				}
+				stamp(file.History)
+				change.Content = RenderFile(file)
+			}
+		}
+		return changes, nil
 	}
 }

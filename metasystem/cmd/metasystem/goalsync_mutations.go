@@ -497,6 +497,8 @@ type syncRequestDependencies struct {
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
+	// partnerGrantAdmitted records admission through the partner's actor guard.
+	partnerGrantAdmitted bool
 	// helm reads whether the act's seat is at the helm; nil is helm.Active.
 	helm func(root string) helm.State
 	// seatCapped reads whether a steward has stopped starting seats for a
@@ -1967,14 +1969,19 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			writeJSONLine(dependencies.outStream(), dependencies.errStream(), map[string]any{"outcome": "confirmed", "skipped": skipped})
 			return 0, true
 		}
-		// Reconcile is the hand-edit path and always names its human, but
-		// most of what it republishes needs no proof: an intent reworded, a
-		// next step rewritten. So the proof is taken where it can be taken
-		// and the session runs either way; the edits that do need one — a
-		// blocker removed before it is done — ask for it themselves and name
-		// the edge when it is missing.
-		if proven, _, proofErr := provenGoalRequestWithInputs("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, dependencies); proofErr == nil {
+		// Ordinary hand edits may proceed without proof; edits that need
+		// authority enforce it themselves. A partner-granted act must retain
+		// proven authority through publication.
+		prove := humanauthority.ProveOrTemporaryGoalAuthority
+		if dependencies.partnerGrantAdmitted {
+			prove = func(root string, pid int64, reader humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
+				return dependencies.proveHuman(root, pid, reader, now)
+			}
+		}
+		if proven, _, proofErr := provenGoalRequestWithInputs("reconcile", f, prove, commandNow, dependencies); proofErr == nil {
 			req = proven
+		} else if dependencies.partnerGrantAdmitted {
+			return dependencies.fail(1, proofErr), true
 		}
 		req.ReconcileScope = f.ids
 		res, err := goal.Reconcile(req)

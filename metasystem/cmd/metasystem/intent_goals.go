@@ -176,6 +176,11 @@ func (inv *intentInvocation) ownerCall(targets []intentTarget, run func(syncRequ
 // enrolled terminal, and the owner proves it again when it acts.
 func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *intentResult) {
 	forwarded := inv.forward(names...)
+	if grant, problem := inv.partnerActor(id); problem != nil {
+		return nil, problem
+	} else if grant != nil {
+		return append(withoutOption(forwarded, "lineage"), "--by", grant.Helm.By), nil
+	}
 	dependencies := inv.owners.dependencies
 	if inv.input.has("by") || inv.input.has("lineage") || inv.input.switched("fixture-human-authority") {
 		return forwarded, nil
@@ -362,11 +367,12 @@ func runIntentGoals(inv *intentInvocation) int {
 		// Every listed record, archived ones included when --all lists them.
 		for _, list := range [][]*goal.GoalFile{open, grouped[goal.StateDone], grouped[goal.StateAbandoned]} {
 			for _, file := range list {
-				text = append(text, goalHistoryLines(file.Id+" ", file)...)
+				text = append(text, goalHistoryLines(file.Id+" ", file, projection.Tree.Root.PowerOfAttorney)...)
 			}
 		}
 	}
 	listing := goalListing{grouped: grouped, open: len(open), archived: includeArchived, filtered: len(labels) > 0, history: history,
+		grants:  projection.Tree.Root.PowerOfAttorney,
 		banners: projection.Banners, trunkRed: projection.Tree.TrunkRed, horizon: projection.Horizon, tip: projection.Tip}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: data, text: text,
 		Summary: fmt.Sprintf("%d open goal(s) at %s", len(open), projection.Tip), view: listing.view})
@@ -374,10 +380,13 @@ func runIntentGoals(inv *intentInvocation) int {
 
 // goalHistoryLines reads a goal's ledger history as one line per act: when,
 // what, who, and the act's recorded reason where it has one.
-func goalHistoryLines(prefix string, file *goal.GoalFile) []string {
+func goalHistoryLines(prefix string, file *goal.GoalFile, grants ...[]goal.PowerOfAttorneyEntry) []string {
 	lines := make([]string, 0, len(file.History))
 	for _, entry := range file.History {
 		line := fmt.Sprintf("%shistory: %s %s by %s", prefix, entry.At, entry.Verb, entry.Actor)
+		if len(grants) > 0 && entry.Through != "" {
+			line = fmt.Sprintf("%shistory: %s %s by %s", prefix, entry.At, entry.Verb, goalHistoryActor(entry, grants[0]))
+		}
 		if len(entry.Targets) > 0 {
 			line += " on " + strings.Join(entry.Targets, ",")
 		}
@@ -394,6 +403,19 @@ func goalHistoryLines(prefix string, file *goal.GoalFile) []string {
 		lines = append(lines, prefix+"conclusion: "+file.Conclude)
 	}
 	return lines
+}
+
+func goalHistoryActor(entry goal.HistoryLine, grants []goal.PowerOfAttorneyEntry) string {
+	person := strings.TrimPrefix(entry.Actor, "human:")
+	if entry.Through == "" {
+		return person
+	}
+	for _, grant := range grants {
+		if grant.ID == entry.Through && grant.Lineage == "project-partner" {
+			return person + ", through the partner (grant " + entry.Through + ")"
+		}
+	}
+	return person + " (grant " + entry.Through + ")"
 }
 
 func runIntentShow(inv *intentInvocation) int {
@@ -437,9 +459,10 @@ func runIntentShow(inv *intentInvocation) int {
 		text = append(text, "design: unreadable: "+designProblem)
 	}
 	if inv.input.switched("history") {
-		text = append(text, goalHistoryLines("", file)...)
+		text = append(text, goalHistoryLines("", file, projection.Tree.Root.PowerOfAttorney)...)
 	}
 	shown := goalShown{file: file, where: where, tip: projection.Tip, budget: view, designs: designs, designProblem: designProblem,
+		grants:  projection.Tree.Root.PowerOfAttorney,
 		allowed: goal.AllowedWords(file), history: inv.input.switched("history")}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), Data: data, text: text,
 		Summary: fmt.Sprintf("%s  %s  tier %d", id, file.State, file.Tier), view: shown.view}
@@ -494,6 +517,9 @@ func runIntentBudget(inv *intentInvocation) int {
 		view := budgetView(inv.stateRoot, file, now)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: view.lines()[1:],
 			Summary: view.lines()[0], Data: map[string]any{"where": where, "state": file.State, "budget": view}})
+	}
+	if _, problem := inv.partnerActor(id); problem != nil {
+		return inv.render(*problem)
 	}
 	if where != "live" {
 		// The owner refuses an archived goal with its own remedy.

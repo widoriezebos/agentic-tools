@@ -18,6 +18,7 @@ type goalListing struct {
 	open               int
 	archived, filtered bool
 	history            bool
+	grants             []goal.PowerOfAttorneyEntry
 	banners            []string
 	trunkRed           []goal.TrunkRedEntry
 	horizon            goal.ApprovalHorizon
@@ -140,7 +141,7 @@ func (listing goalListing) view(page *textui.Page) {
 				}
 				history := page.Section(file.Id, "history")
 				for _, entry := range file.History {
-					line := entry.Verb + " by " + strings.TrimPrefix(entry.Actor, "human:")
+					line := entry.Verb + " by " + goalHistoryActor(entry, listing.grants)
 					if at, err := time.Parse(time.RFC3339, entry.At); err == nil {
 						line = env.Time(at) + "  " + line
 					}

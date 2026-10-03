@@ -62,8 +62,41 @@ func passthroughAction(object, action, audience, summary string, usage []string,
 // receipt action also takes the ledger it writes). What the owner answers
 // is its own.
 func runPassthrough(command intentCommand, run command, args []string, stdout, stderr io.Writer) int {
+	cwd, _ := os.Getwd()
+	return runPassthroughIn(command, run, args, stdout, stderr, cwd, defaultIntentOwners())
+}
+
+func runPassthroughIn(command intentCommand, run command, args []string, stdout, stderr io.Writer, cwd string, owners intentOwners) int {
 	label := "metasystem " + command.object + " " + command.action
-	repo, repoGiven, rest := takeIntentFlag(args, "repo", true)
+	impact, impactGiven, rest := takeIntentFlag(args, "impact", true)
+	if os.Getenv("METASYSTEM_OWNER_LINEAGE") == "project-partner" {
+		command.name = command.object + " " + command.action
+		inv := &intentInvocation{command: command, raw: args, cwd: cwd, stdout: stdout, stderr: stderr, owners: owners,
+			input: intentInput{args: rest, values: map[string][]string{}}}
+		if impactGiven {
+			inv.input.values["impact"] = []string{impact}
+		}
+		for _, name := range []string{"repo", "root", "by", "status", "show-context", "check"} {
+			value, given, _ := takeIntentFlag(rest, name, name == "repo" || name == "root" || name == "by")
+			if given {
+				if name == "root" {
+					name = "repo"
+				}
+				inv.input.values[name] = []string{value}
+			}
+		}
+		if inv.partnerMutation() {
+			if problem := inv.selectRoot(); problem != nil {
+				return inv.render(*problem)
+			}
+			forwarded, problem := inv.handoffPartnerActor(rest)
+			if problem != nil {
+				return inv.render(*problem)
+			}
+			rest = forwarded
+		}
+	}
+	repo, repoGiven, rest := takeIntentFlag(rest, "repo", true)
 	if repoGiven && repo == "" {
 		retry := append(strings.Fields(label), args...)
 		if cwd, err := os.Getwd(); err == nil {
@@ -85,12 +118,14 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 	}
 	path := repo
 	if path == "" {
-		path = "."
+		path = cwd
+	} else if !filepath.IsAbs(path) {
+		path = filepath.Join(cwd, path)
 	}
 	if absolute, err := filepath.Abs(path); err == nil {
 		path = absolute
 	}
-	resolver := stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
+	resolver := owners.resolver
 	layout, err := resolver.ResolveLayout(path)
 	if err != nil {
 		if repoGiven {

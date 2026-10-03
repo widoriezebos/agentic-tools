@@ -35,9 +35,9 @@ func AppendAttorneyLog(root, line string) error {
 }
 
 // RecordAttorneyRefusal logs that an act a general power of attorney
-// answered was refused by one of its hard limits, so the log never reads it
-// as admitted. A proof no grant answered records nothing.
-func RecordAttorneyRefusal(root string, proof Proof, act, reason string, now time.Time) error {
+// answered was refused by one of its hard limits or the partner's actor
+// selection. A proof no grant answered records nothing.
+func RecordAttorneyRefusal(root string, proof Proof, act, reason string, now time.Time, impact ...string) error {
 	if proof.Helm == nil || proof.Helm.Grant == "" {
 		return nil
 	}
@@ -48,5 +48,9 @@ func RecordAttorneyRefusal(root string, proof Proof, act, reason string, now tim
 	if resolved, resolveErr := filepath.EvalSymlinks(checkout); resolveErr == nil {
 		checkout = resolved
 	}
-	return AppendAttorneyLog(checkout, fmt.Sprintf("%s refused grant=%s by=%s act=%q reason=%q", now.UTC().Format(time.RFC3339), proof.Helm.Grant, proof.Helm.By, act, reason))
+	line := fmt.Sprintf("%s refused grant=%s by=%s act=%q reason=%q", now.UTC().Format(time.RFC3339), proof.Helm.Grant, proof.Helm.By, act, reason)
+	if len(impact) > 0 {
+		line += fmt.Sprintf(" impact=%q", impact[0])
+	}
+	return AppendAttorneyLog(checkout, line)
 }

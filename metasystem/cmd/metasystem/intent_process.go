@@ -562,6 +562,11 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}}
 	}
 	inv.stateRoot = stateRoot.Path()
+	if inv.command.action == "start" || inv.command.action == "stop" || inv.command.action == "restart" {
+		if _, problem := inv.partnerActor(""); problem != nil {
+			return processScope{}, 0, problem
+		}
+	}
 	scale := upWaitScale()
 	if scale < 1 {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 2, Summary: "a test setting in the environment scales waits by a number that is not positive, so nothing was done",

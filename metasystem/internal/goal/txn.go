@@ -663,7 +663,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if req.Opid == "" || req.Mutate == nil {
 		return PublishResult{}, errors.New("a ledger write needs an id and a change")
 	}
-	req.Mutate = guardAttorneyEffect(e, req.Mutate)
+	req.Mutate = guardAttorneyEffect(e, req.Opid, req.Mutate)
 	if err := clearDeadBlocker(e, req.Opid); err != nil {
 		return PublishResult{}, err
 	}

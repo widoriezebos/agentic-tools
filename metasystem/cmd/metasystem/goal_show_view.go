@@ -22,6 +22,7 @@ type goalShown struct {
 	designProblem string
 	allowed       []string
 	history       bool
+	grants        []goal.PowerOfAttorneyEntry
 }
 
 // goalShowProse is how much of the intent and the next step the default
@@ -105,7 +106,7 @@ func (shown goalShown) view(page *textui.Page) {
 	if shown.history {
 		history := page.Section("History", "")
 		for _, entry := range file.History {
-			line := entry.Verb + " by " + strings.TrimPrefix(entry.Actor, "human:")
+			line := entry.Verb + " by " + goalHistoryActor(entry, shown.grants)
 			if at, err := time.Parse(time.RFC3339, entry.At); err == nil {
 				line = env.Time(at) + "  " + line
 			}

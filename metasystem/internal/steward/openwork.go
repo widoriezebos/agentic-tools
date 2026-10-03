@@ -18,6 +18,7 @@ import (
 
 type openWorkDependencies struct {
 	NewWorld                  func(string) bool
+	LedgerIdentity            func(string) string
 	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)
 	// Seat is the seat ladder's wiring (g1-s77); nil keeps the ladder
 	// without seat starts.

@@ -44,6 +44,7 @@ type attorneyAdmitOwners struct {
 	holder   func(root string) (lease.CurrentHolderView, error)
 	fixture  func(root string) bool
 	verb     func() string
+	impact   func() string
 	stderr   io.Writer
 	// notice tells the person what the grant admitted; nil holds it on the
 	// process's admission board until the act's outcome is known.
@@ -70,6 +71,9 @@ func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
 	}
 	if o.verb == nil {
 		o.verb = func() string { return publicVerb(os.Args[1:]) }
+	}
+	if o.impact == nil {
+		o.impact = func() string { return publicImpact(os.Args[1:]) }
 	}
 	if o.stderr == nil {
 		o.stderr = os.Stderr
@@ -162,6 +166,11 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	}
 	person := strings.TrimPrefix(entry.By, "human:")
 	verb := o.verb()
+	impact := o.impact()
+	if entry.Lineage == "project-partner" && strings.TrimSpace(impact) == "" {
+		_ = o.appendLog(checkout, fmt.Sprintf("%s refused grant=%s by=%s act=%q reason=%q", now.UTC().Format(time.RFC3339), entry.ID, person, verb, "--impact is missing"))
+		return humanauthority.HelmGrant{}, false
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	key := entry.ID + "\x00" + verb
@@ -169,11 +178,18 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 		// "answered": the grant answered this act's person check; the act's
 		// own checks may still refuse it, and a hard limit logs "refused".
 		line := fmt.Sprintf("%s answered grant=%s by=%s act=%q class=%s main=%s pid=%d", now.UTC().Format(time.RFC3339), entry.ID, person, verb, class.Class, class.MainId, pid)
+		if impact != "" {
+			line += fmt.Sprintf(" impact=%q", impact)
+		}
 		if err := o.appendLog(checkout, line); err != nil {
 			return humanauthority.HelmGrant{}, false
 		}
+		notice := fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as %s's act", person, entry.ID, verb, person)
+		if impact != "" {
+			notice = "IMPACT: " + impact + "\n" + notice
+		}
 		o.notice(admissionNotice{w: o.stderr,
-			line:   fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as %s's act", person, entry.ID, verb, person),
+			line:   notice,
 			detail: "the grant stood in for the enrolled-terminal check of this seat's main session; logged in " + attorneyLogPath(checkout)})
 		if a.logged == nil {
 			a.logged = map[string]bool{}
@@ -181,6 +197,22 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 		a.logged[key] = true
 	}
 	return humanauthority.HelmGrant{By: person, Since: entry.Since, Class: class.Class, Checkout: entry.Checkout, Grant: entry.ID, Until: entry.Until}, true
+}
+
+// publicImpact reads the shared option without interpreting the act's text.
+func publicImpact(args []string) string {
+	for i, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if strings.HasPrefix(arg, "--impact=") {
+			return strings.TrimPrefix(arg, "--impact=")
+		}
+		if arg == "--impact" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // attorneyLogPath is the local, append-only record of every answered act.

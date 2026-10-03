@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -289,4 +291,186 @@ func (inv *intentInvocation) attorneyActor() (string, bool) {
 		return "", false
 	}
 	return grant.By, true
+}
+
+// handoffPartnerActor carries the grant's person to owners that take --by
+// when the caller left it out.
+func (inv *intentInvocation) handoffPartnerActor(args []string) ([]string, *intentResult) {
+	grant, problem := inv.partnerActor("")
+	if problem != nil || grant == nil || inv.input.has("by") {
+		return args, problem
+	}
+	for _, flag := range inv.command.flags {
+		if flag.name == "by" {
+			inv.input.values["by"] = []string{grant.Helm.By}
+			return append(args, "--by", grant.Helm.By), nil
+		}
+	}
+	return args, nil
+}
+
+// partnerActor is the partner's actor selection: the partner's session
+// lineage has no ordinary agent route, whatever checkout an act targets.
+// The grant remains the only source of the person's authority.
+func (inv *intentInvocation) partnerActor(target string) (*humanauthority.Proof, *intentResult) {
+	lineage := inv.input.text("lineage")
+	if owner := inv.owners.dependencies.ownerLineage; owner != nil && owner() == "project-partner" {
+		lineage = owner()
+	}
+	guarded, drivesWork := inv.partnerForm()
+	if lineage != "project-partner" || !guarded {
+		return nil, nil
+	}
+	for _, name := range []string{"root", "installation", "repo"} {
+		if value, given, _ := takeIntentFlag(inv.raw, name, true); given && value == "" {
+			return nil, &intentResult{Outcome: intentRefused, code: 1,
+				Summary: "an empty --" + name + " names no checkout; nothing was done"}
+		}
+	}
+	if drivesWork {
+		return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+			Summary: "the project partner never drives a build; a seat does; nothing was done"}
+	}
+	if inv.command.name == "work wait" && len(inv.input.args) == 1 && !inv.input.has("for") && !inv.input.has("path") && !inv.input.switched("list") && !inv.input.switched("exit-code") {
+		if strings.HasPrefix(inv.input.args[0], "run:") {
+			refused := inv.waitUnit("", 0, inv.targets(inv.input.args[0]), nil)
+			return nil, &refused
+		}
+		if !strings.Contains(inv.input.args[0], ":") {
+			work, _ := inv.goalWork(inv.input.args[0])
+			work, _ = inv.namedWorkOnly(inv.input.args[0], work)
+			for _, one := range work {
+				if one.Running() || inv.input.has("work") {
+					refused := inv.waitUnit("", 0, workTargets(inv.input.args[0], one), nil)
+					return nil, &refused
+				}
+			}
+		}
+	}
+	homeRefusal := &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+		Summary: inv.command.name + " is the person's act through the partner; the partner acts only from its own checkout in this step (requested checkout: " + inv.stateRoot + "); nothing was done"}
+	home, err := inv.owners.resolver.ResolveLayout(inv.cwd)
+	if err != nil {
+		return nil, homeRefusal
+	}
+	homeRoot := home.GitRoot
+	if home.Template {
+		homeRoot = home.InstallationRoot.Path()
+	}
+	homeCheckout, homeErr := canonicalCheckout(homeRoot)
+	checkout, checkoutErr := canonicalCheckout(inv.stateRoot)
+	if homeErr != nil || checkoutErr != nil || homeCheckout != checkout {
+		return nil, homeRefusal
+	}
+	ledger := inv.owners.dependencies.authorityFacts.ledgerIdentity
+	if ledger == nil {
+		ledger = goal.ExistingLedgerIdentity
+	}
+	state := brain.Read(inv.stateRoot, ledger(inv.stateRoot))
+	if state.State != brain.Declared || state.Record.Role != brain.Partner {
+		return nil, homeRefusal
+	}
+	owners := inv.owners.attorney.withDefaults()
+	now, clockErr := inv.owners.commandNow(inv.stateRoot)
+	entries, readErr := owners.entries(inv.stateRoot)
+	var entry goal.PowerOfAttorneyEntry
+	for _, candidate := range entries {
+		if candidate.General() && candidate.Checkout == checkout && candidate.For == state.Record.Machine && candidate.Lineage == lineage {
+			entry = candidate
+		}
+	}
+	reason := "the grant does not admit this session"
+	if readErr != nil || clockErr != nil {
+		reason += " (the grant or clock cannot be read)"
+	} else if live, why := entry.LiveAt(now); entry.ID != "" && !live {
+		if entry.Revoked != "" {
+			at, _ := time.Parse(time.RFC3339, entry.Revoked)
+			why = "revoked " + at.In(inv.owners.helm.withDefaults().zone).Format("15:04") + " by " + strings.TrimPrefix(entry.RevokedBy, "human:")
+		}
+		reason += " (" + why + ")"
+	} else if strings.TrimSpace(inv.input.text("impact")) == "" {
+		reason = "--impact is missing"
+	} else if grant, admitted := owners.admit(inv.stateRoot, int64(os.Getppid()), now); admitted && grant.Grant != "" && grant.By != "" {
+		if typed := strings.TrimPrefix(inv.input.text("by"), "human:"); typed == "" || typed == grant.By {
+			if proof, err := humanauthority.HelmProof(inv.stateRoot, grant, now); err == nil {
+				inv.owners.dependencies.partnerGrantAdmitted = true
+				return &proof, nil
+			}
+		} else {
+			reason = "the named person differs from the grant's person"
+		}
+	}
+	logGrant := entry.ID
+	if logGrant == "" {
+		logGrant = "none"
+	}
+	if err := humanauthority.RecordAttorneyRefusal(inv.stateRoot, humanauthority.Proof{Helm: &humanauthority.HelmGrant{Grant: logGrant, By: strings.TrimPrefix(entry.By, "human:")}}, inv.command.name, reason, now, inv.input.text("impact")); err != nil {
+		reason += "; the refusal could not be logged: " + err.Error()
+	}
+	result := &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+		Summary: inv.command.name + " is the person's act through the partner; " + reason + "; nothing was done",
+		next:    []string{"metasystem", "partner", "start"}, nextReason: "at the person's own terminal"}
+	if reason == "--impact is missing" {
+		result.next = inv.retryWith([]string{"impact"}, "--impact", "WHY; undo: HOW")
+		result.nextReason = "state the impact first"
+	}
+	return nil, result
+}
+
+func (inv *intentInvocation) partnerCaller() bool {
+	return inv.input.text("lineage") == "project-partner" || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() == "project-partner"
+}
+
+// partnerMutation selects acts before their owners run, including those
+// whose owner chooses its actor outside actingAs. Read forms need no grant.
+func (inv *intentInvocation) partnerMutation() bool {
+	guarded, _ := inv.partnerForm()
+	return guarded
+}
+
+// partnerForm keeps observation, guarded acts and forbidden work together.
+func (inv *intentInvocation) partnerForm() (guarded, drivesWork bool) {
+	owner := inv.owners.dependencies.ownerLineage
+	if inv.input.text("lineage") != "project-partner" && (owner == nil || owner() != "project-partner") {
+		return false, false
+	}
+	observedWait := inv.input.has("path") || inv.input.switched("list") || inv.input.text("for") == "landing" || inv.input.text("for") == "human-act"
+	if inv.command.name == "work wait" && len(inv.input.args) == 1 {
+		ref := inv.input.args[0]
+		observedWait = observedWait || strings.HasPrefix(ref, "j1:") || strings.HasPrefix(ref, "j2:")
+		if id, resume := strings.CutPrefix(ref, "wait:"); resume && inv.selectRoot() == nil {
+			row, _, err := metarun.FindWaiterByID(inv.stateRoot, id)
+			s := row.Selector
+			observedWait = err == nil && (s.Kind == "path" || s.Kind == "job" || s.Kind == "goal" && (s.Event == "landing" || s.Event == "human-act"))
+		}
+	}
+	// Only these forms may bypass actor selection. A new command is guarded
+	// until its observation or session-bookkeeping form is listed here.
+	forms := []struct {
+		names      string
+		read       bool
+		drivesWork bool
+	}{
+		{"status, goal list, goal show, grant list, decision list, decision show, design show, design list", true, false},
+		{"work status, test plan, test list, test status, question show, question list, agent inbox, incident list", true, false},
+		{"helm status, mission status, system status, system completion, landing status, alert list, machine list", true, false},
+		{"disk show, evidence show, app status, app log, ui status, settings show, settings keys, receipt status, experiment status", true, false},
+		{"design check, system check, settings check, experiment check", true, false},
+		{"goal notes", !inv.input.has("add") && !inv.input.has("add-file") && !inv.input.has("close"), false},
+		{"goal budget", !inv.input.has("budget") && len(inv.input.args) <= 1, false},
+		{"goal sync", !inv.input.has("publish") && !inv.input.has("recover") && !inv.input.has("refresh") && !inv.input.has("upgrade") && !inv.input.has("accept-remote-history"), false},
+		{"test baseline", inv.input.switched("check"), false},
+		{"settings coordinator", !inv.input.has("declare") && !inv.input.has("withdraw"), false},
+		{"session start, session stop, session status, session wait, session handoff, question wait", true, false},
+		{"work wait", observedWait, false},
+		{"work build, work revise, work review, work land, work finish", false, true},
+	}
+	for _, form := range forms {
+		for _, name := range strings.Split(form.names, ", ") {
+			if inv.command.name == name {
+				return !form.read, form.drivesWork
+			}
+		}
+	}
+	return true, false
 }

@@ -96,7 +96,8 @@ type intentCommand struct {
 var (
 	intentRepoFlag = intentFlag{name: "repo", aliases: []string{"root"}, value: "PATH",
 		usage: "the repository, or any directory or file inside it (default: the current directory)"}
-	intentJSONFlag = intentFlag{name: "json", usage: "print one JSON result instead of text"}
+	intentJSONFlag   = intentFlag{name: "json", usage: "print one JSON result instead of text"}
+	intentImpactFlag = intentFlag{name: "impact", value: "TEXT", usage: "the act's impact, stated first; required when acting through the project partner"}
 	// intentVerboseFlag is the one spelling of "every item, one line each"
 	// for a command whose text groups repeated findings; a command opts in
 	// by listing it.
@@ -291,10 +292,10 @@ func (c intentCommand) words() []string {
 }
 
 // allFlags is the command's own options plus those every command takes:
-// --repo, --json, and --verbose, which shows a result's details ("Messages a
+// --repo, --impact, --json, and --verbose, which shows a result's details ("Messages a
 // Person Reads"); a command that groups findings documents its own --verbose.
 func (c intentCommand) allFlags() []intentFlag {
-	flags := append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag)
+	flags := append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag, intentImpactFlag)
 	if !slices.ContainsFunc(c.flags, func(flag intentFlag) bool { return flag.name == intentVerboseFlag.name }) {
 		details := intentVerboseFlag
 		details.hidden, details.usage = true, "also print the details behind the result"
@@ -674,6 +675,14 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 		return inv.render(*problem)
 	}
 	defer inv.leaveStores()
+	if inv.partnerMutation() {
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		if _, problem := inv.handoffPartnerActor(nil); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	return command.run(inv)
 }
 
@@ -693,9 +702,15 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	path := inv.cwd
 	if inv.input.has("repo") {
 		path = inv.input.text("repo")
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(inv.cwd, path)
+	}
+	for _, name := range []string{"root", "installation"} {
+		if value, given, _ := takeIntentFlag(inv.raw, name, true); inv.partnerCaller() && given {
+			path = value
+			break
 		}
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(inv.cwd, path)
 	}
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err == nil {
@@ -1739,7 +1754,7 @@ func helpParagraphs(details []string) []string {
 // --repo and --json; a passthrough action's documented options only.
 func (command intentCommand) helpFlags() []intentFlag {
 	if command.passthrough != nil {
-		return command.flags
+		return append(slices.Clone(command.flags), intentImpactFlag)
 	}
 	return command.allFlags()
 }

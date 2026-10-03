@@ -1518,9 +1518,13 @@ func (inv *intentInvocation) waitTimeout() (time.Duration, *intentResult) {
 	return value, nil
 }
 
-// waitUnit continues one unit run's recorded steps for at most timeout; it
-// starts no new build.
+// waitUnit continues one unit run's recorded steps for at most timeout.
 func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets []intentTarget, again []string) intentResult {
+	owner := inv.owners.dependencies.ownerLineage
+	if inv.input.text("lineage") == "project-partner" || (owner != nil && owner() == "project-partner") {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "the project partner never drives a build; a seat does; nothing was done"}
+	}
 	runner := inv.unitRunner()
 	if timeout > 0 && runner.Manager != nil {
 		settings := runner.Manager.Settings

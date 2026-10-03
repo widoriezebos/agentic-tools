@@ -30,9 +30,12 @@ func (p waitRegisterFixtureProber) Probe(pid int64) (identity.Exact, identity.Li
 	return p.exact, p.state, p.err
 }
 
-func waitRegisterCommandFixture(t *testing.T) (string, int64, string, time.Time) {
+func waitRegisterCommandFixture(t *testing.T, roots ...string) (string, int64, string, time.Time) {
 	t.Helper()
 	root := t.TempDir()
+	if len(roots) > 0 {
+		root = roots[0]
+	}
 	now := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
