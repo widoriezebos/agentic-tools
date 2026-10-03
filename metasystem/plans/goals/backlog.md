@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 128
+- Revision: 129
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -165,4 +165,5 @@ History:
 - 2026-10-03T04:59:05Z TWT3002RGN00M3RQM776GQ76DA-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z ack
 - 2026-10-03T06:22:44Z 8P3NNSA5H4V8YJJN5TFKVP9RGA-m1h-71c5cb39 ack actor=m1h+steward-seat targets=ui-shows-true-facts displaced=m1h+steward-seat@2026-10-03T04:30:18Z ack
 - 2026-10-03T07:51:12Z 4GYAQTS292434CMP21X2WRK6Y7-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T04:14:53Z ack
-Integrity: sha256=8a9729036fbbb0e96912ea6a1ca76007cb6471cde5d9330bbf25fbc00e252da7
+- 2026-10-03T09:56:18Z WBRNW9RTCN4QZMW81A9R7PPRFN-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T07:51:18Z ack
+Integrity: sha256=cf42901121dc5bd3b670dd7a43746beeb759f6e8a6598686f9c9ba129dae9755
