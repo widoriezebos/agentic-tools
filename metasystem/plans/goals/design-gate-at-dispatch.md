@@ -9,14 +9,15 @@
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design. RETURNED 2026-10-03: the machinery runs again (stewards start seats unattended since 2026-10-02). First confirm on a live example where a design-bearing build is first dispatched today (the seat's unit build), then build the gate there. FOLDED IN 2026-10-03 at Wido's word (drain the waiting lane): step 2, from landing-design-provenance: the landing half of the gate, added to the existing landing evaluator from the design record the dispatch gate produces (tests refuse a landing with a missing or changed design, pass one with a matching accepted design). Step 3, from gate-governance-records: a governance record for this gate and for commit-goal-binding's refusal (owner, review date, an example it must refuse, how to appeal, what happens if the check itself breaks), warning-only first, and a test that the ruling sweep flags an overdue review.; ASKED G6WDYS7C09GW8GYVHBHZ485TMR (other): May the new design gate and the existing goal-holder refusal each get a governance row in your rulings register (memory/rulings.md), owned by you, first review on 2026-11-03?; ASKED CQBVRZE4MNYZ1BSV851S21D62P (budget-above-norm): May design-gate-at-dispatch run under 8 hours, 10 attempts and 1200 job-minutes instead of the tier-2 box of 4 hours, 6 attempts and 720 job-minutes?
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 53
+- Revision: 54
 - Labels: headless-fleet, headless-process
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T11:18:24Z revision=43 opid=D5TMVX3VZ43J8Y018Q4049FJG2-m1e-718ba0eb authority=proven digest=41efdcd4f4d0d5a433f8977e8a23b06ac67b49b998550651b3ccc4a6be969b60 episode=43
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=53
+- Approved: by=human:Wido at=2026-10-03T17:56:51Z revision=54 opid=9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb authority=proven digest=16d0e7418ca60e9c92b80969e972b86ff0911f0100839d9216ac3e4132b56d31 episode=54
 - Sliced: machine=m1k lineage=steward-seat revision=50 at=2026-10-03T16:24:27Z
-- Claimed: machine=m1k lineage=steward-seat at=2026-10-03T16:01:55Z revision=50 accountingRevision=50 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
-- StopCapability: generation=50 revision=50 machine=m1k claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1k lineage=steward-seat at=2026-10-03T17:56:51Z revision=54 accountingRevision=54 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
+- StopCapability: generation=54 revision=54 machine=m1k claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -72,4 +73,5 @@ History:
 - 2026-10-03T16:24:27Z 0HD3M36YHE782F932D5XDAVH71-m1k-71c5cb39 slice-start actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T17:08:45Z VHZ72E8PN610ACB6FKV4CVR8B9-m1k-71c5cb39 ask actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-03T17:55:43Z 5A6PT221VK704C6A3PQKQGST65-m1k-71c5cb39 ask actor=m1k+steward-seat targets=design-gate-at-dispatch
-Integrity: sha256=3ef5600db96e3d408db8f946de6f19b60d787dc32e417bffe8519f53b6e7e522
+- 2026-10-03T17:56:51Z 9G5DTN7ZWEABSK17RPE2NFXXDJ-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T16:01:55Z
+Integrity: sha256=19206d983d2e1ab44b61929ef8e8686dec98233373a5b7195c0bbb455cefd884
