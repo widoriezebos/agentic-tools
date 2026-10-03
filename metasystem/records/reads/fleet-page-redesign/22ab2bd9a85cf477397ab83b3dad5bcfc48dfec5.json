@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "fleet-page-redesign",
+  "unit": "page",
+  "subject": {
+    "commit": "22ab2bd9a85cf477397ab83b3dad5bcfc48dfec5",
+    "parent": "7179437bea4612b7912fc0d4067bd6aa0b905b6b",
+    "tree": "bff08cafb0c7a057a8f9eaaea67a2653fb6be8b5",
+    "patchDigest": "8c955b6dd790187531ae764d8c3b46b6649eaef221262c70c1853fda4c894c15",
+    "unitDigest": "1bb96f4a5ef256dee915a66392454c753dcb785bae2a52b6d03e9d02ae529783"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-73260c57455f7f70f45431f1",
+    "round": 1,
+    "closureSha256": "ee2c4ad53ee23da01506c1d440aaece91c0f97be05226ad2ef04fc6aaaf15d43"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "bff08cafb0c7a057a8f9eaaea67a2653fb6be8b5",
+    "runId": "goal-read-gate-20261003t120159z-3ecf392072dcdcca"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "3a96a52b54a49c8ce882b4fa5813d15e4954c09994b22ecaab109183a7aeea6c"
+}
