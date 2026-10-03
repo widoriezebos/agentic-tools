@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The fleet panel answers, at a glance and on a phone, what the person wants there (Wido 2026-10-02: 'the UX of the bottom half of the fleet panel is a mess... first think what I want to be able to do in that screen, use cases, and then design an elegant, intuitive UX and build it'): one verdict, what needs him with its one action, what each seat is doing and how far (the fleet table he likes, its Running column made a true Doing column), the landing lane as waiting/proving/landed today/came back in plain words with Pause/Resume/Land now buttons, technical details behind a disclosure. Spec: plans/designs/fleet-panel-ux.md.
 - Origin: main
-- Next step: Astra critique of the design (tier 2), then build in the ui seat, land; ASKED 9C7D6XANGZ51BV22WVN793E6YH (other): The new fleet panel is built and Sol has read it five times. Its 4-hour time box ran out with two small findings open. Land it as it is, or give it one more round?; ASKED 3X03ZNP80A1QQQ530204B4HPXN (other): Fleet panel: your extra round is done. Sol's sixth read found one thing only you can accept. Accept it and land, or fix it first? Step 2 must include: a seat whose progress card stalls while its machine is reachable goes into Needs you (Sol F-2 on 3b57cf840, accepted as risk for step 1 by m1e in Wido's word 2026-10-03 05:45).
+- Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 14
+- Revision: 15
 - Pinned: ui
 - Budget: elapsedLimit=6h attemptLimit=9 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -35,4 +35,5 @@ History:
 - 2026-10-03T03:42:47Z PDE259AWBC9VKPX1SYQB52N1NP-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
 - 2026-10-03T03:43:11Z 86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-panel-ux reason=Accepted by m1e in Wido word: the accepted design puts stuck seats in Needs you with Stop in step 2; step 1 is read-only plus Land now. Fix in step 2.
 - 2026-10-03T03:43:27Z XDJ5NR037DY9MQ3NMD61TDZ952-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
-Integrity: sha256=a42e41dea12dc8fd8f9fdc22f38de21fea322ca1de756236d6d6308d0bea5b27
+- 2026-10-03T04:22:05Z ZJ5MWTM6G5J5M45TG2AQQTWSVX-m1e-718ba0eb edit actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z
+Integrity: sha256=081e465b101b98465c28eab13f8c335f746c487a1ea935c7805e782ad3c74175
