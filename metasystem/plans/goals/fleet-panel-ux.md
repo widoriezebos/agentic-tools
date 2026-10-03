@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The fleet panel answers, at a glance and on a phone, what the person wants there (Wido 2026-10-02: 'the UX of the bottom half of the fleet panel is a mess... first think what I want to be able to do in that screen, use cases, and then design an elegant, intuitive UX and build it'): one verdict, what needs him with its one action, what each seat is doing and how far (the fleet table he likes, its Running column made a true Doing column), the landing lane as waiting/proving/landed today/came back in plain words with Pause/Resume/Land now buttons, technical details behind a disclosure. Spec: plans/designs/fleet-panel-ux.md.
 - Origin: main
-- Next step: Astra critique of the design (tier 2), then build in the ui seat, land; ASKED 9C7D6XANGZ51BV22WVN793E6YH (other): The new fleet panel is built and Sol has read it five times. Its 4-hour time box ran out with two small findings open. Land it as it is, or give it one more round?
+- Next step: Astra critique of the design (tier 2), then build in the ui seat, land; ASKED 9C7D6XANGZ51BV22WVN793E6YH (other): The new fleet panel is built and Sol has read it five times. Its 4-hour time box ran out with two small findings open. Land it as it is, or give it one more round?; ASKED 3X03ZNP80A1QQQ530204B4HPXN (other): Fleet panel: your extra round is done. Sol's sixth read found one thing only you can accept. Accept it and land, or fix it first?
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 11
+- Revision: 12
 - Pinned: ui
 - Budget: elapsedLimit=6h attemptLimit=9 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -31,4 +31,5 @@ History:
 - 2026-10-03T03:12:42Z HF2WNFAAJ1HZAB4K3005BV0KGG-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-02T22:59:40Z
 - 2026-10-03T03:30:40Z 6VXGFMDNPESRGPYNDRKBFMHGDA-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-panel-ux reason=re-claim after the budget raise rebound the claim to m1e's checkout; the critic dispatch was refused as bound under another claim
 - 2026-10-03T03:30:45Z EHMZ83NVXTAT5MEJHVDN3CVCKQ-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-panel-ux
-Integrity: sha256=329b483052aa7a9d473f62d8da2c2c6c3b0c04ab99684527a1d8df345a45e338
+- 2026-10-03T03:42:47Z PDE259AWBC9VKPX1SYQB52N1NP-ui-71c5cb39 ask actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=a22c21879c19a287ae391c7ef54967e31c9f10bf73c9dcaaf2fb1a44b040c76c
