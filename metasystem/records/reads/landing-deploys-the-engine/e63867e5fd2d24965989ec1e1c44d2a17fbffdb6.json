@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "landing-deploys-the-engine",
+  "unit": "engine-adapter",
+  "subject": {
+    "commit": "e63867e5fd2d24965989ec1e1c44d2a17fbffdb6",
+    "parent": "49a9bde7d639b194d74b339f219f08b3de60ba88",
+    "tree": "5a43cd122af99c37cd1f542ae3e10e8f4259861c",
+    "patchDigest": "8774da8b07467398781ce85af5d17f161947557a569172db31af0267979a2a8c",
+    "unitDigest": "1a8837ce0643db4bad9188c09d396251ad326a4685d52b0f7d7baa1d8f0b7bad"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3f7cafef37776cdf502bc693",
+    "round": 1,
+    "closureSha256": "72244fd29ccb602cac9d766fd764d65433f83eb4ab10dcc3f9f58eb836466951"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5a43cd122af99c37cd1f542ae3e10e8f4259861c",
+    "runId": "goal-read-gate-20261003t132440z-30f1eff3ab74a440"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "22f4fe33815605f15fd375d12fb62cc2f3547f2834fcb23fb0147120d294190a"
+}
