@@ -915,11 +915,14 @@ type syncFlags struct {
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test, implementationChain, artifact, result, critic string
-	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
-	tier                                                                     uint
-	labels, unlabels, ids, blocks, blockedBy                                 repeatedStrings
-	claim, refreshOnly, sweep, fixtureHumanAuthority, force                  bool
-	keep                                                                     int
+	// store is the installation whose records hold the reviewed chain when
+	// the act is proven at another (accept-risk); empty reads at root.
+	store                                                                   string
+	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit int64
+	tier                                                                    uint
+	labels, unlabels, ids, blocks, blockedBy                                repeatedStrings
+	claim, refreshOnly, sweep, fixtureHumanAuthority, force                 bool
+	keep                                                                    int
 }
 
 type repeatedStrings []string
@@ -972,6 +975,7 @@ func parseSyncFlagValuesWithOutput(name string, args []string, stdout, output io
 	fs := newFlagSet("goal "+name, stdout, output)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
+	pathFlagVar(fs, &f.store, "store", "", "the installation whose records hold the reviewed chain (accept-risk)")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
 	switch name {
 	case "approve":
@@ -1137,9 +1141,16 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if err != nil {
 		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "name an open severe or unproven finding of that critique"})
 	}
+	// The chain's register is read and stamped where its records are; the
+	// person is proven, and the act recorded, at f.root.
+	store := f.root
+	if f.store != "" {
+		store = f.store
+	}
+	store = goalbranch.CriticStore(store, f.chain)
 	var finding dispatchcore.CritiqueDecisionFinding
 	if f.chain != goal.HumanCarriedChain {
-		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(goalbranch.CriticStore(f.root, f.chain), f.chain, f.finding, f.id)
+		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(store, f.chain, f.finding, f.id)
 		if err != nil {
 			dependencies.complain(err)
 			return 1
@@ -1193,7 +1204,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 			}
 			// The repeated decision covers only the finding as this run
 			// showed it; one that changed since stays open (F4).
-			stamped, err := dispatchcore.CritiqueRegisterStampAcceptedRisk(f.root, f.chain, f.finding, heldOpid, finding.Digest)
+			stamped, err := dispatchcore.CritiqueRegisterStampAcceptedRisk(store, f.chain, f.finding, heldOpid, finding.Digest)
 			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
 				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
 			}
@@ -1229,7 +1240,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 		}
 		// The acceptance covers only the finding as shown above: a finding
 		// that changed since stays open in the register (F4).
-		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid, finding.Digest); err != nil {
+		if err := dispatchcore.CritiqueRegisterAcceptRisk(store, f.chain, f.finding, opid, finding.Digest); err != nil {
 			if errors.Is(err, dispatchcore.ErrAcceptedFindingChanged) {
 				return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "the finding changed after it was shown; it stays open, so read the critique again before deciding"})
 			}

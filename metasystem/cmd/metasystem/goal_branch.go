@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -515,6 +516,35 @@ func (inv *intentInvocation) heldElsewhere(goalID string, err error) (holder str
 	}
 	return held.holder, inv.publicArgv("goal", "claim", goalID, "--take-over", "--reason", "TEXT"),
 		"takes the goal over as a person; or ask seat " + held.holder + " to close it", true
+}
+
+// goalBranchSameRepository says whether installations a and b belong to one
+// repository: a checkout and its worktrees share a Git common dir; clones
+// share the URL of the goal ledger's remote.
+func goalBranchSameRepository(a, b string) bool {
+	common := func(root string) string {
+		out, err := goalBranchGit(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+		if err != nil {
+			return ""
+		}
+		return realpath.ResolveExisting(strings.TrimSpace(out))
+	}
+	if left := common(a); left != "" && left == common(b) {
+		return true
+	}
+	url := func(root string) string {
+		endpoint, err := branch.MainEndpoint(root)
+		if err != nil || endpoint.Remote == "" || endpoint.Remote == "local" {
+			return ""
+		}
+		out, err := goalBranchGit(root, "remote", "get-url", endpoint.Remote)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(out)
+	}
+	left := url(a)
+	return left != "" && left == url(b)
 }
 
 func goalBranchHolderRoot(root string) string {

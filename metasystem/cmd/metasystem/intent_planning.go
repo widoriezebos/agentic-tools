@@ -1389,6 +1389,32 @@ func (inv *intentInvocation) reviewRoot(id, review string) (string, *intentResul
 	return root, nil
 }
 
+// standWhereTheCallerIs moves an act given --repo to the installation the
+// caller's working folder belongs to, when that is another checkout or goal
+// worktree of the same repository: --repo then only locates records. A
+// caller outside any installation, or in --repo's own, acts at --repo as
+// before; one in another repository is refused.
+func (inv *intentInvocation) standWhereTheCallerIs(id string) *intentResult {
+	if !inv.input.has("repo") {
+		return nil
+	}
+	layout, err := inv.owners.resolver.ResolveLayout(inv.cwd)
+	if err != nil {
+		return nil
+	}
+	standing, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+	if err != nil || standing == inv.stateRoot {
+		return nil
+	}
+	if !inv.connection().sameRepository(standing, inv.stateRoot) {
+		return &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: fmt.Sprintf("--repo %s is not a checkout of this repository, so nothing was done", shellCommand([]string{inv.input.text("repo")})),
+			next:    append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "a checkout or goal worktree of this repository"}
+	}
+	inv.layout, inv.stateRoot = layout, standing
+	return nil
+}
+
 // runIntentAcceptRisk is the accept-risk act: the review is inferred only
 // when the goal's work records exactly one examination.
 func runIntentAcceptRisk(inv *intentInvocation) int {
@@ -1440,11 +1466,25 @@ func runIntentDecide(inv *intentInvocation) int {
 			return inv.render(*problem)
 		}
 	}
+	// --repo locates the review's records; the person is proven, and the act
+	// recorded, where they stand when that is another checkout of this
+	// repository. The reason records both places.
+	store := inv.stateRoot
+	if problem := inv.standWhereTheCallerIs(id); problem != nil {
+		return inv.render(*problem)
+	}
+	if inv.stateRoot != store {
+		reason += fmt.Sprintf(" (proven at %s, read at %s)", inv.stateRoot, store)
+	}
 	actor, _, problem := inv.actingAs("accept-risk", id, actorHuman)
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	args := append([]string{"--root", inv.stateRoot, "--id", id, "--finding", inv.input.text("finding"), "--chain", chain, "--why", reason}, actor...)
+	args := []string{"--root", inv.stateRoot, "--id", id, "--finding", inv.input.text("finding"), "--chain", chain, "--why", reason}
+	if inv.stateRoot != store {
+		args = append(args, "--store", store)
+	}
+	args = append(args, actor...)
 	result := inv.goalAct(id, "decide", func(dependencies syncRequestDependencies) int {
 		return runGoalAcceptRiskWithFacts(args, inv.owners.prove, inv.owners.commandNow, dependencies, nil)
 	})
