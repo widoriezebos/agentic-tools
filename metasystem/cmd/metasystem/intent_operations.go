@@ -299,7 +299,7 @@ func runIntentGoalSync(inv *intentInvocation) int {
 	scope := map[string]any{"scope": "installation", "stateRoot": inv.stateRoot}
 	switch choice {
 	case "recover":
-		reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
+		reports, err := recoverGoalJournal(inv.layout.InstallationRoot, inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: scope,
 				Summary: "the goal changes left unfinished here could not be finished: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose what stops recovery"})

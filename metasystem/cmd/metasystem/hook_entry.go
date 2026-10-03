@@ -95,12 +95,12 @@ func runHookEntry(args []string, stdout, stderr io.Writer) int {
 // fixture owner is the exact live process may use it.
 const stopDeadlineFixtureEventEnvironment = "METASYSTEM_STOP_DEADLINE_EVENT"
 
-func stopDeadlineFixtureEvent(ctx context.Context, installation string) (<-chan time.Time, error) {
+func stopDeadlineFixtureEvent(ctx context.Context, installation stateroot.Installation) (<-chan time.Time, error) {
 	eventPath := os.Getenv(stopDeadlineFixtureEventEnvironment)
 	if eventPath == "" {
 		return nil, nil
 	}
-	if installation == "" || !fixtureauth.FixtureModeRoot(installation) {
+	if installation == "" || !fixtureauth.FixtureModeRoot(installation.Path()) {
 		return nil, fmt.Errorf("fixture deadline event requires a fake-runtime root")
 	}
 	if err := validateFixtureOwner(os.Getenv(identity.FixtureOwnerEnv), identity.KernelProber{}); err != nil {
@@ -156,8 +156,8 @@ func (o hookOwners) RuntimeNames() (string, int) {
 	return out.String(), 0
 }
 
-func (o hookOwners) StateRoot(installation string) (string, int) {
-	root, err := stateroot.RootForCandidate(installation)
+func (o hookOwners) StateRoot(installation stateroot.Installation) (string, int) {
+	root, err := stateroot.RootForCandidate(installation.Path())
 	if err != nil {
 		o.diagnose("%v", err)
 		return "", 1
@@ -165,12 +165,12 @@ func (o hookOwners) StateRoot(installation string) (string, int) {
 	return root.Path() + "\n", 0
 }
 
-func (o hookOwners) HookDelegate(root, metasystemRoot, job string, callerPid int) (string, int) {
+func (o hookOwners) HookDelegate(root string, metasystemRoot stateroot.Installation, job string, callerPid int) (string, int) {
 	if root == "" || metasystemRoot == "" || callerPid < 1 {
 		o.diagnose("hook delegate custody: a root, an installation and a caller are required")
 		return "", 2
 	}
-	result, err := lease.HookDelegate(root, metasystemRoot, job, int64(callerPid))
+	result, err := lease.HookDelegate(root, metasystemRoot.Path(), job, int64(callerPid))
 	if err != nil {
 		o.diagnose("%v", err)
 		return "", 1
@@ -181,13 +181,13 @@ func (o hookOwners) HookDelegate(root, metasystemRoot, job string, callerPid int
 	return jsonLine(result), 0
 }
 
-func (o hookOwners) FindAncestor(repo string, pid int, runtime string, allHosts bool) (string, int) {
+func (o hookOwners) FindAncestor(installation stateroot.Installation, pid int, runtime string, allHosts bool) (string, int) {
 	var ancestor census.AgentAncestor
 	var err error
 	if allHosts {
-		ancestor, err = census.FindAncestorAllHosts(repo, int64(pid))
+		ancestor, err = census.FindAncestorAllHosts(installation.Path(), int64(pid))
 	} else {
-		ancestor, err = census.FindAncestorProduction(repo, int64(pid), runtime)
+		ancestor, err = census.FindAncestorProduction(installation.Path(), int64(pid), runtime)
 	}
 	if err != nil {
 		o.diagnose("%v", err)
@@ -196,11 +196,12 @@ func (o hookOwners) FindAncestor(repo string, pid int, runtime string, allHosts 
 	return jsonLine(ancestor), 0
 }
 
-func (o hookOwners) Classify(root, metasystemRoot string, callerPid int) (string, int) {
-	if metasystemRoot == "" {
-		metasystemRoot = root
+func (o hookOwners) Classify(root string, metasystemRoot stateroot.Installation, callerPid int) (string, int) {
+	installation := metasystemRoot.Path()
+	if installation == "" {
+		installation = root
 	}
-	out, err := lease.ClassifyVerbAt(root, metasystemRoot, int64(callerPid))
+	out, err := lease.ClassifyVerbAt(root, installation, int64(callerPid))
 	if err != nil {
 		o.diagnose("%v", err)
 		return "", 1
@@ -319,7 +320,7 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 			return 2
 		}
 	}
-	root, err := upMetasystemRoot(request.MetasystemRoot)
+	root, err := upMetasystemRoot(request.MetasystemRoot.Path())
 	if err != nil {
 		fmt.Fprintln(stderr, "up:", err)
 		return 2
@@ -405,9 +406,9 @@ func (o hookOwners) HookExpire(repo string, elapsedSec int64) int {
 	return 0
 }
 
-func (o hookOwners) HealthPreview(repo, metasystemRoot string) (string, int) {
+func (o hookOwners) HealthPreview(repo string, metasystemRoot stateroot.Installation) (string, int) {
 	var out bytes.Buffer
-	status := writeHookHealthPreview(repo, metasystemRoot, true, &out, io.Discard)
+	status := writeHookHealthPreview(repo, metasystemRoot.Path(), true, &out, io.Discard)
 	return out.String(), status
 }
 
@@ -543,8 +544,8 @@ func (o hookOwners) StopOutput(runtime, inputFile, outputFile string, stderr io.
 	return 0
 }
 
-func (o hookOwners) EvidenceGC(installation string, output io.Writer) int {
-	return evidenceGC(installation, "", evidenceGCDefaultGrace(), output, output)
+func (o hookOwners) EvidenceGC(installation stateroot.Installation, output io.Writer) int {
+	return evidenceGC(installation.Path(), "", evidenceGCDefaultGrace(), output, output)
 }
 
 func (o hookOwners) Slug(value string) string { return lease.Slug(value) }
@@ -592,7 +593,8 @@ func (o hookOwners) Git(args ...string) (string, error) {
 // EngineBehind is the hook side of a generation cutover: the enrolled
 // engine no longer owns the ENGINE projection at the checkout's HEAD, the
 // checkout is clean in engine inputs, and no proof attempt is live.
-func (o hookOwners) EngineBehind(installation, repo string) (bool, error) {
+func (o hookOwners) EngineBehind(enrolled stateroot.Installation, repo string) (bool, error) {
+	installation := enrolled.Path()
 	pinned, err := steward.OpenEnrolledBinary(installation)
 	if err != nil {
 		return false, nil
@@ -643,14 +645,14 @@ func (o hookOwners) UnmigratableRetainedPlans(string) ([]string, error) { return
 // `go run ./cmd/devgate build`; an installation without cmd/devgate cannot
 // rebuild and is refused. A live fence means a rebuild already runs; a held
 // proof lock refuses without waiting.
-func (o hookOwners) StartEngineRebuild(installation string) error {
+func (o hookOwners) StartEngineRebuild(installation stateroot.Installation) error {
 	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
 		return nil
 	}
-	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err != nil || !info.IsDir() {
+	if info, err := os.Stat(installation.Path("cmd", "devgate")); err != nil || !info.IsDir() {
 		return errors.New("the engine cannot be rebuilt here: this installation has no cmd/devgate\nfrom a complete metasystem tree, run: go run ./cmd/devgate build")
 	}
-	lock, err := proofrun.TryAcquireMutation(installation)
+	lock, err := proofrun.TryAcquireMutation(installation.Path())
 	if err != nil {
 		return fmt.Errorf("another engine build or check run holds the installation: %w", err)
 	}
@@ -659,7 +661,7 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 	if err != nil || !claimed {
 		return err
 	}
-	logFile, err := os.OpenFile(filepath.Join(installation, filepath.FromSlash(hooks.BootstrapLogPath)), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(installation.Path(filepath.FromSlash(hooks.BootstrapLogPath)), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
@@ -669,10 +671,10 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 	if o.engineBuild != nil {
 		command = o.engineBuild()
 	}
-	command.Dir = installation
+	command.Dir = installation.Path()
 	// The engine cache is set explicitly from the authenticated domain,
 	// never guessed by a nested go.
-	environment, err := cachedomain.Carry(os.Environ(), installation)
+	environment, err := cachedomain.Carry(os.Environ(), installation.Path())
 	if err != nil {
 		fmt.Fprintf(logFile, "hook bootstrap: %v\n", err)
 		return err

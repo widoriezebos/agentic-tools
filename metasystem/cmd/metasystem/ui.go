@@ -112,7 +112,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 	if nowErr != nil {
 		return refuse(nowErr.Error())
 	}
-	authority := act.Prove(roots.StateRoot.Path(), roots.Installation.Path(), act.ParentPID(), authorityNow)
+	authority := act.Prove(roots.StateRoot.Path(), roots.Installation, act.ParentPID(), authorityNow)
 	fmt.Fprintln(stderr, "interface authority: "+authority.Line())
 
 	// The second way a human's acts reach the ledger: the seat's one-time
@@ -439,7 +439,7 @@ func runUIServe(args []string, stdout, stderr io.Writer) int {
 				if signed == nil {
 					return authority, nil
 				}
-				return act.SignedIn(roots.StateRoot.Path(), signed.Human, signed.Reference, signed.Proof)
+				return act.SignedIn(roots.StateRoot.Path(), roots.Installation, signed.Human, signed.Reference, signed.Proof)
 			}
 			return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 				Describe: func() (workspace.Workspace, error) {

@@ -113,7 +113,7 @@ func TestHookWorldInstallationMapsLinkedWorktrees(t *testing.T) {
 		return "", errors.New("unexpected")
 	}
 	world, ok := worldInstallation(ops, harness)
-	if !ok || world != primary.root+"/metasystem" {
+	if !ok || world.Path() != primary.root+"/metasystem" {
 		t.Fatalf("linked worktree mapped to %q (%t)", world, ok)
 	}
 	ops.git = func(args ...string) (string, error) {

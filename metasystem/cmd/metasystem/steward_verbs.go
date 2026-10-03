@@ -162,7 +162,7 @@ func completeHookAttempt(request hooks.HookCompletion, stderr io.Writer) int {
 		stopElapsedSec = &elapsed
 	}
 	_, err := steward.CompleteHookAttemptWithDelivery(request.Repo, generation, attempt, steward.ComponentResult(request.Result),
-		request.Outcome, request.HealthLine, string(payload), steward.HookDeliveryReference{Installation: request.Installation, ID: request.ReportID, Alias: request.ReportAlias, Path: request.ReportPath, SHA256: request.ReportSHA256}, stopElapsedSec, time.Now())
+		request.Outcome, request.HealthLine, string(payload), steward.HookDeliveryReference{Installation: request.Installation.Path(), ID: request.ReportID, Alias: request.ReportAlias, Path: request.ReportPath, SHA256: request.ReportSHA256}, stopElapsedSec, time.Now())
 	if err != nil {
 		fmt.Fprintf(stderr, "steward hook-complete: %v\n", err)
 		return 1

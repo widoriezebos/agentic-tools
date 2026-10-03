@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -1221,11 +1222,13 @@ type pendingWaitHookOwners struct {
 
 // EngineBehind keeps the generation cutover out of these runs: the fixture
 // installation's engine is the one under test, never behind its sources.
-func (pendingWaitHookOwners) EngineBehind(string, string) (bool, error) { return false, nil }
+func (pendingWaitHookOwners) EngineBehind(roots.Installation, string) (bool, error) {
+	return false, nil
+}
 
 // EvidenceGC keeps the fixture installation's evidence collection inert, as
 // its stub evidence-gc.sh did: the test process is not an authenticated main.
-func (pendingWaitHookOwners) EvidenceGC(string, io.Writer) int { return 0 }
+func (pendingWaitHookOwners) EvidenceGC(roots.Installation, io.Writer) int { return 0 }
 
 func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	o.upRequests = append(o.upRequests, request)
@@ -1235,7 +1238,7 @@ func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Wr
 	}
 	// The installed engine arms, as the wrapper's pass-through did: this
 	// test binary is not the enrolled engine.
-	arguments := []string{"up", "--metasystem-root", request.MetasystemRoot, "--repo", request.Repo,
+	arguments := []string{"up", "--metasystem-root", request.MetasystemRoot.Path(), "--repo", request.Repo,
 		"--session", request.Session, "--pid", request.Pid, "--start-time", request.StartTime, "--tag", request.Tag}
 	if request.NoRuntimeSession {
 		arguments = append(arguments, "--no-runtime-session")
@@ -1259,7 +1262,7 @@ func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Wr
 	return 0
 }
 
-func (o *pendingWaitHookOwners) HealthPreview(string, string) (string, int) {
+func (o *pendingWaitHookOwners) HealthPreview(string, roots.Installation) (string, int) {
 	return pendingWaitHealthyPreview + "\n", 0
 }
 

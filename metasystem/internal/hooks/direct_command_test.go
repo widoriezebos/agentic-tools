@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -317,7 +318,7 @@ func TestDirectCommandLinkedWorktreeRunsThePrimaryEngine(t *testing.T) {
 		t.Fatalf("stop with a local engine = %q, want the primary's", stdout)
 	}
 	// The Go selection the switch validates is the command's.
-	engine, err := DirectEngine(linkedInstallation, func(args ...string) (string, error) {
+	engine, err := DirectEngine(stateroottest.Installation(t, linkedInstallation), func(args ...string) (string, error) {
 		command := exec.Command("git", args...)
 		command.Env = []string{"PATH=" + bed.path, "HOME=" + parent}
 		out, err := command.Output()
@@ -394,6 +395,9 @@ func newDirectEngineBed(t *testing.T) directBed {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(bed.installation, "artifacts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return bed

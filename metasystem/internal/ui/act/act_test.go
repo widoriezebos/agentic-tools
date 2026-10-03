@@ -12,6 +12,8 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -366,7 +368,7 @@ func TestTheDefaultReadingsAreTheCheckoutsOwn(t *testing.T) {
 	plain := reads{}
 	root := t.TempDir()
 
-	if err := plain.ensureFence(root); err == nil {
+	if err := plain.ensureFence(stateroottest.Installation(t, root)); err == nil {
 		t.Error("a directory shipping no executable guard passed the ledger fence")
 	}
 	// The endpoint it answers is the checkout's own, and it owns no committed
@@ -446,7 +448,7 @@ func (bed *ledgerBed) acting(t *testing.T, authority Authority) Authority {
 	authority.reads = reads{
 		// That the fence refuses a checkout shipping no executable guard is
 		// internal/ledgerfence's own test; its probe is a Git command.
-		fence: func(root string) error { return bed.mine(root) },
+		fence: func(installation stateroot.Installation) error { return bed.mine(installation.Path()) },
 		endpoint: func(root string) (goal.Endpoint, error) {
 			if err := bed.mine(root); err != nil {
 				return goal.Endpoint{}, err

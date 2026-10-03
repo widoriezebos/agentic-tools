@@ -31,6 +31,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -65,9 +66,9 @@ func TestASecondPressOnAnActAlreadyRunningIsRefusedBeforeItReadsAnything(t *test
 	// through, so the first press still runs the whole publication path.
 	var readings atomic.Int64
 	taken := authority.reads
-	authority.reads.fence = func(root string) error {
+	authority.reads.fence = func(installation stateroot.Installation) error {
 		readings.Add(1)
-		return taken.fence(root)
+		return taken.fence(installation)
 	}
 	seam := scripting(bed)
 	// The first press is held before its push, where the journal carries

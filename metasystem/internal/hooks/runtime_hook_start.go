@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // SessionStart owns its outcome before it asks the filesystem, Git or an
@@ -147,9 +148,9 @@ type startRun struct {
 	brainWait           time.Duration
 
 	harnessRoot     string
-	world           string
+	world           stateroot.Installation
 	engine          string
-	repo            string
+	repo            stateroot.Installation
 	session         string
 	sessionAbsent   bool
 	startSource     string
@@ -399,7 +400,7 @@ func (s *startRun) finish(family, key string) {
 		if s.brainDigestEmitted == "true" {
 			cursor, prefix = s.brainDigestCursor, s.brainDigestPrefix
 		}
-		if s.ops.BrainStartDelivered(s.repo, s.repo, s.brainDeclarationSHA, cursor, prefix) != 0 {
+		if s.ops.BrainStartDelivered(s.repo.Path(), s.repo.Path(), s.brainDeclarationSHA, cursor, prefix) != 0 {
 			_ = writeLine(s.inv.Stderr, startBookkeepingNotice)
 			status = 1
 		}
@@ -476,7 +477,8 @@ func (s *startRun) main() {
 		if stateHint == "" || installationHint == "" || jobHint == "" || !inv.IsExecutable(installationHint+"/bin/metasystem") {
 			s.finish("notice", "custody-unreadable")
 		}
-		if s.delegateCustody(stateHint, installationHint, jobHint) {
+		hinted, err := stateroot.ParseInstallation(installationHint)
+		if err == nil && s.delegateCustody(stateHint, hinted, jobHint) {
 			s.finish("intentional", "authenticated-delegate")
 		}
 		s.finish("notice", "custody-unreadable")
@@ -487,7 +489,7 @@ func (s *startRun) main() {
 	if !ok || s.world == "" {
 		s.finish("notice", "checkout-identification")
 	}
-	canonical := s.world + "/bin/metasystem"
+	canonical := s.world.Path() + "/bin/metasystem"
 	s.engine = inv.env("METASYSTEM_BIN")
 	if s.engine == "" {
 		s.engine = canonical
@@ -524,7 +526,7 @@ func (s *startRun) main() {
 	} else if status != 0 || !oneLine(repoResult) {
 		s.finish("notice", "engine-skew")
 	}
-	s.repo, ok = physicalDirectory(repoResult)
+	s.repo, ok = physicalInstallation(repoResult)
 	if !ok || s.repo == "" {
 		s.finish("notice", "resolved-directory")
 	}
@@ -554,7 +556,7 @@ func (s *startRun) main() {
 	}
 	s.session = session
 
-	if s.delegateCustody(s.repo, s.world, "") {
+	if s.delegateCustody(s.repo.Path(), s.world, "") {
 		s.finish("intentional", "authenticated-delegate")
 	}
 
@@ -585,7 +587,7 @@ func (s *startRun) main() {
 		s.contextField, s.contextEvent, s.contextBytes = field, event, parsedBytes
 	}
 
-	pending, status := ops.StewardPending(s.repo)
+	pending, status := ops.StewardPending(s.repo.Path())
 	s.checkpoint()
 	if status != 0 {
 		s.finish("notice", "pending-read")
@@ -611,7 +613,7 @@ func (s *startRun) main() {
 		s.armingStarted = true
 		var output capturedOutput
 		request := UpRequest{
-			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo, Session: s.session,
+			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo.Path(), Session: s.session,
 			Pid: s.identityPid, StartTime: s.identityStarted, Tag: inv.Runtime + ":" + s.identityPid,
 			StartSource: s.startSource, CallerPid: inv.Pid,
 		}
@@ -640,7 +642,7 @@ func (s *startRun) main() {
 	// or arming is unavailable. The session-start owner matches this session
 	// against the holder's announced session before returning wait rows.
 	var waiting capturedOutput
-	s.waitRecoveryStatus = ops.SessionStart(s.repo, s.session, &waiting, &waiting)
+	s.waitRecoveryStatus = ops.SessionStart(s.repo.Path(), s.session, &waiting, &waiting)
 	s.checkpoint()
 	lines := trimNewlines(waiting.String())
 	switch {
@@ -673,7 +675,7 @@ func sha256Text(value string) string {
 
 // delegateCustody asks the custody owner whether this hook's caller descends
 // from exact delegate-job custody. Unreadable custody ends the start.
-func (s *startRun) delegateCustody(root, metasystemRoot, job string) bool {
+func (s *startRun) delegateCustody(root string, metasystemRoot stateroot.Installation, job string) bool {
 	result, status := s.ops.HookDelegate(root, metasystemRoot, job, s.inv.Ppid)
 	s.checkpoint()
 	if status == 3 {
@@ -725,7 +727,7 @@ func (s *startRun) resolveIdentity() {
 	}
 	processIdentityFailed := s.deferredIdentityRead
 	s.deferredIdentityRead = false
-	view, status := ops.Classify(s.repo, s.world, inv.Ppid)
+	view, status := ops.Classify(s.repo.Path(), s.world, inv.Ppid)
 	s.checkpoint()
 	view = trimNewlines(view)
 	if status != 0 || view == "" {
@@ -780,7 +782,7 @@ func (s *startRun) writeEngineCache() {
 	if os.MkdirAll(directory, 0o755) != nil {
 		return
 	}
-	_ = atomicfile.WriteVolatileFile(filepath.Join(directory, "engine-path"), []byte(s.engine+"\n"+s.world+"\n"), 0o600)
+	_ = atomicfile.WriteVolatileFile(filepath.Join(directory, "engine-path"), []byte(s.engine+"\n"+s.world.Path()+"\n"), 0o600)
 }
 
 // bootstrapEngine is the hook side of a generation cutover: when the
@@ -792,12 +794,12 @@ func (s *startRun) writeEngineCache() {
 // that plan finishes, and a rebuild that cannot start leaves this start on
 // the enrolled engine.
 func (s *startRun) bootstrapEngine() {
-	behind, err := s.ops.EngineBehind(s.world, s.repo)
+	behind, err := s.ops.EngineBehind(s.world, s.repo.Path())
 	s.checkpoint()
 	if err != nil || !behind {
 		return
 	}
-	held, err := s.ops.UnmigratableRetainedPlans(s.repo)
+	held, err := s.ops.UnmigratableRetainedPlans(s.repo.Path())
 	s.checkpoint()
 	if err != nil {
 		s.collectNotice("Metasystem could not check retained plans before rebuilding the engine behind this checkout's sources: " + err.Error())
@@ -849,7 +851,7 @@ func (s *startRun) prepareBrain() {
 	defer cancel()
 	done := make(chan bootResult, 1)
 	go func() {
-		stdout, stderr, status := s.ops.BrainBoot(ctx, s.repo, s.repo, s.contextBytes, s.brainDeadlineMS)
+		stdout, stderr, status := s.ops.BrainBoot(ctx, s.repo.Path(), s.repo.Path(), s.contextBytes, s.brainDeadlineMS)
 		done <- bootResult{stdout, stderr, status}
 	}()
 	after := s.inv.After

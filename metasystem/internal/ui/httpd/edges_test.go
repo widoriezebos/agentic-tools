@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
@@ -133,7 +134,7 @@ func actingHand(t *testing.T, root string, signed *session.Session) act.Authorit
 	if err != nil {
 		t.Fatal(err)
 	}
-	hand, err := act.SignedIn(root, signed.Human, "sess-01J5XROUTE", proof)
+	hand, err := act.SignedIn(root, stateroottest.Installation(t, root), signed.Human, "sess-01J5XROUTE", proof)
 	if err != nil {
 		t.Fatal(err)
 	}

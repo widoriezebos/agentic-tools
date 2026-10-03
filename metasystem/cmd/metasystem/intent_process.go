@@ -1852,7 +1852,7 @@ func setupDrift(layout stateroot.Layout) []string {
 			drift = append(drift, "hooks do not run the engine: "+err.Error()+repair)
 		}
 	}
-	engine, err := hooks.DirectEngine(layout.InstallationRoot.Path(), hookswitch.Git)
+	engine, err := hooks.DirectEngine(layout.InstallationRoot, hookswitch.Git)
 	if err != nil {
 		return append(drift, "the engine the hooks would run cannot be found: "+err.Error())
 	}

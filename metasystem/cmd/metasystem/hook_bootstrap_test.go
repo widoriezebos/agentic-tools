@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -24,6 +25,7 @@ import (
 func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	t.Parallel()
 	installation := t.TempDir()
+	enrolled := stateroottest.Installation(t, installation)
 	fifo := func(name string) string {
 		path := filepath.Join(t.TempDir(), name)
 		if err := syscall.Mkfifo(path, 0o600); err != nil {
@@ -52,7 +54,7 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	// The bootstrap build is cmd/devgate's; the fixture stands in for the Go
 	// toolchain through the owner's own injection point.
 	owners := hookOwners{diagnostics: io.Discard, engineBuild: func() *exec.Cmd { return exec.Command(build) }}
-	if err := owners.StartEngineRebuild(installation); err != nil {
+	if err := owners.StartEngineRebuild(enrolled); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(installation, filepath.FromSlash(hooks.BootstrapFencePath)))
@@ -69,7 +71,7 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	if _, err := proofrun.TryAcquireMutation(installation); !errors.Is(err, proofrun.ErrMutationHeld) {
 		t.Fatalf("the running build does not hold the proof mutation lock: %v", err)
 	}
-	if err := owners.StartEngineRebuild(installation); err != nil {
+	if err := owners.StartEngineRebuild(enrolled); err != nil {
 		t.Fatalf("a second start while the build runs = %v", err)
 	}
 
@@ -102,7 +104,7 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	if _, err := syscall.Wait4(builder, &status, 0, nil); err != nil || status.ExitStatus() != 0 {
 		t.Fatalf("reap the builder: %v status %d", err, status.ExitStatus())
 	}
-	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
+	if hooks.BootstrapFenceHeld(enrolled, hookProcessAlive) {
 		t.Fatal("a finished build still holds the fence")
 	}
 }
@@ -113,16 +115,17 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 func TestStartEngineRebuildRefusesAnInstallationWithoutDevgate(t *testing.T) {
 	t.Parallel()
 	installation := t.TempDir()
+	enrolled := stateroottest.Installation(t, installation)
 	started := false
 	owners := hookOwners{diagnostics: io.Discard, engineBuild: func() *exec.Cmd {
 		started = true
 		return exec.Command("true")
 	}}
-	err := owners.StartEngineRebuild(installation)
+	err := owners.StartEngineRebuild(enrolled)
 	if err == nil || !strings.Contains(err.Error(), "cmd/devgate") || started {
 		t.Fatalf("rebuild without cmd/devgate = %v, started %t", err, started)
 	}
-	if hooks.BootstrapFenceHeld(installation, hookProcessAlive) {
+	if hooks.BootstrapFenceHeld(enrolled, hookProcessAlive) {
 		t.Fatal("a refused rebuild left the bootstrap fence held")
 	}
 }

@@ -42,7 +42,7 @@ func (inv *intentInvocation) helmCatchUp(seat helm.Seat, record helm.Record, sin
 	commits, readback := helmReadback(owners, seat, since, yields)
 	lines = append(lines, readback...)
 
-	root := inv.helmRoot()
+	installation, root := inv.helmRoot()
 	candidate := helmGoalCandidate(inv, owners, root, yields)
 	conclusion := fmt.Sprintf("landed at the helm by %s", record.By)
 	if len(commits) > 0 {
@@ -82,7 +82,7 @@ func (inv *intentInvocation) helmCatchUp(seat helm.Seat, record helm.Record, sin
 
 	if root == "" {
 		lines = append(lines, "the ledger hook: the installation cannot be found")
-	} else if err := owners.fence(root); err != nil {
+	} else if err := owners.fence(installation); err != nil {
 		lines = append(lines, "the ledger hook: "+err.Error())
 	} else {
 		lines = append(lines, "the ledger hook is enrolled")
@@ -175,17 +175,19 @@ func helmActLine(act string, result intentResult) string {
 	return act + ": " + result.Outcome + ": " + summary
 }
 
-// helmRoot is the installation's state root, or "" when it cannot be found.
-func (inv *intentInvocation) helmRoot() string {
+// helmRoot is the installation and its state root, or two empty values when
+// they cannot be found. The ledger fence runs the installation's engine; the
+// state root serves everything else return reads.
+func (inv *intentInvocation) helmRoot() (stateroot.Installation, string) {
 	layout, err := inv.owners.resolver.ResolveLayout(inv.helmPath())
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	root, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return root.Path()
+	return layout.InstallationRoot, root.Path()
 }
 
 // helmYieldsSince are the yields recorded since the take, as helmYieldCount

@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -44,7 +45,7 @@ type helmOwners struct {
 	done          func(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof, force bool) intentResult
 	read          func(inv *intentInvocation, patch, brief string) intentResult
 	recover       func(scope processScope) string
-	fence         func(root string) error
+	fence         func(installation stateroot.Installation) error
 }
 
 func (o helmOwners) withDefaults() helmOwners {
@@ -101,7 +102,7 @@ func (o helmOwners) withDefaults() helmOwners {
 		o.recover = helmRecover
 	}
 	if o.fence == nil {
-		o.fence = ensureGuardEnrolled
+		o.fence = ledgerfence.Ensure
 	}
 	return o
 }

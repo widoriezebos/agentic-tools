@@ -137,7 +137,7 @@ type Deps struct {
 	// Accepts runs engine `internal hook --accepts`.
 	Accepts func(engine string) error
 	// EnsureFence enrolls or upgrades the pre-commit fence.
-	EnsureFence func(installation string) error
+	EnsureFence func(installation stateroot.Installation) error
 }
 
 // Production is the switch's production seams.
@@ -152,7 +152,7 @@ func run(path string, options *Options, deps Deps) (Report, error) {
 			Remedy: "run this inside the checkout, or name its installation with --installation DIR"}
 	}
 	report := Report{Installation: layout.InstallationRoot.Path()}
-	engine, err := hooks.DirectEngine(layout.InstallationRoot.Path(), deps.Git)
+	engine, err := hooks.DirectEngine(layout.InstallationRoot, deps.Git)
 	if err != nil {
 		return report, &RefusalError{Reason: "the engine this checkout's hooks would run cannot be found: " + err.Error(),
 			Remedy: "check the checkout with: metasystem system check"}
@@ -185,7 +185,7 @@ func run(path string, options *Options, deps Deps) (Report, error) {
 		}
 		report.Changed = append(report.Changed, result.Changed...)
 	}
-	report.Fence, report.FenceHook, err = ensureFence(layout.InstallationRoot.Path(), deps)
+	report.Fence, report.FenceHook, err = ensureFence(layout.InstallationRoot, deps)
 	if err != nil || options == nil {
 		return report, err
 	}
@@ -215,10 +215,10 @@ func registeredRuntimes(repository string) []string {
 	return selected
 }
 
-func ensureFence(installation string, deps Deps) (string, string, error) {
-	hookPath, err := ledgerfence.HookPath(installation)
+func ensureFence(installation stateroot.Installation, deps Deps) (string, string, error) {
+	hookPath, err := ledgerfence.HookPath(installation.Path())
 	if err != nil {
-		if _, probe := deps.Git("-C", installation, "rev-parse", "--git-dir"); probe != nil {
+		if _, probe := deps.Git("-C", installation.Path(), "rev-parse", "--git-dir"); probe != nil {
 			return FenceNoGit, "", nil
 		}
 		return "", "", err

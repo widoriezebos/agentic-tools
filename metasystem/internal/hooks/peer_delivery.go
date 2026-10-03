@@ -139,7 +139,7 @@ func (s *startRun) preparePeer() {
 	if err != nil || !board.HasMessages(home) {
 		return
 	}
-	seat, status := s.ops.PeerSeat(s.repo)
+	seat, status := s.ops.PeerSeat(s.repo.Path())
 	s.checkpoint()
 	if seat = trimNewlines(seat); status != 0 || !board.SafeName(seat) {
 		return
@@ -148,7 +148,7 @@ func (s *startRun) preparePeer() {
 	if s.inv.Now != nil {
 		now = s.inv.Now()
 	}
-	offer, ok := OfferPeerMessage(home, seat, s.session, peerClaims(s.ops, s.repo), "start", s.contextBytes-len(s.contextPayload)-len(peerSeparator), now)
+	offer, ok := OfferPeerMessage(home, seat, s.session, peerClaims(s.ops, s.repo.Path()), "start", s.contextBytes-len(s.contextPayload)-len(peerSeparator), now)
 	s.peer = offer
 	if offer.Waiting != "" {
 		_ = writeLine(s.inv.Stderr, "Metasystem peer messages: "+offer.Waiting)
