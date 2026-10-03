@@ -686,7 +686,7 @@ func (rules DistillRules) recover(ctx context.Context, bundle string, header Dis
 		result.Finished = append(result.Finished, line)
 	}
 	// The manifest's and owner file's own stages at the bundle's top
-	// level are this engine's; captured content lives in source-* members
+	// level are this engine's; captured content lives in _source-* members
 	// and is never one of them.
 	top, _ := os.ReadDir(bundle)
 	for _, entry := range top {

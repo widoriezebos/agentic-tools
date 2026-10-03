@@ -27,7 +27,7 @@ func (b *appBed) withEvidenceRoot() string {
 }
 
 func evidenceCopies(evidence, goal, ref string) []string {
-	copies, _ := filepath.Glob(filepath.Join(evidence, "goals", goal, "app", applaunch.KeyFor(ref), "*", "source-*-run.txt"))
+	copies, _ := filepath.Glob(filepath.Join(evidence, "goals", goal, "app", applaunch.KeyFor(ref), "*", "_source-*-run.txt"))
 	return copies
 }
 
