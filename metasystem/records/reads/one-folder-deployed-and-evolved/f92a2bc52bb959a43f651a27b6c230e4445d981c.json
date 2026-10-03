@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "goal": "one-folder-deployed-and-evolved",
+  "unit": "root-structs",
+  "subject": {
+    "commit": "f92a2bc52bb959a43f651a27b6c230e4445d981c",
+    "parent": "dbd7a656c884fc025eb2cbf20f9d9b906839b516",
+    "tree": "3affb79649f477a5402fcbf40c69f2697af575fe",
+    "patchDigest": "30b22d790df8df47c7eb6a90570a589fa8fe524473184c9d5afb22f2d8911bfc",
+    "unitDigest": "da689dd4997f582d376d102f7d3d4d7448c56dcc4f9ea9a6d9c7965b34dbfd07"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0a807f90df0e00ed3aab6de6",
+    "round": 1,
+    "closureSha256": "04c0b8c604103ee3b04b281da0f5d3cb6ff707b331039fab7629bbb757c7a20c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "3affb79649f477a5402fcbf40c69f2697af575fe",
+    "runId": "goal-read-gate-20261003t092115z-edb6fa2da606f20a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "dbd7a656c884fc025eb2cbf20f9d9b906839b516",
+      "digest": "f09ee46c90043b4dfa821d13048e76a289cf0172cb3031854d5820587a0bb9ad"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/adapter_runtime_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/app_evidence_root_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/completion_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/covenant_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/goal_cli_authority_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_machine_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_mission_owner_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/missionrunner_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/owner_calls_helpers_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/process_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/signed_in_launch_e2e_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/supervision_bed_a_wait_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/supervision_bed_b_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_candidate_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_design_loop_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_launch_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_register_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ui_seats_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/wait_verb_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/adapter/toolgate_helm_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/adapter/toolgate_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/landing/receiptline_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/launch/seat_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/missionrunner/stop_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/stateroot/roots_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/stateroot/stateroot_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/steward/health_cost_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/steward/health_ledger_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/steward/stop_fence_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/lifecycle/roots_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/lifecycle/serve_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/manifest/manifest_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/partner/context_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/project/fixture_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/project/pane_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/project/review_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/uitools/uitools_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    },
+    {
+      "path": "metasystem/internal/ui/workspace/workspace_test.go",
+      "readerWord": "reviewed by critic root code-critic-0a807f90df0e00ed3aab6de6"
+    }
+  ],
+  "sha256": "f108dd0cd52f3dd4cffe8f8628d67b44ccc82eca020aecd1c9e97540ca0e820f"
+}
