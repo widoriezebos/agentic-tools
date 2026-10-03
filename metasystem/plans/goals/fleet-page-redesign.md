@@ -1,6 +1,6 @@
 # fleet-page-redesign
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 28
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Human-facing UI redesign over existing read paths and existing verbs; acts stay behind the signed-in session; one wrong-fact bug in a health read"
@@ -9,16 +9,14 @@
 - Origin: main
 - Next step: Steps 1 (a5d4d6895) and 2 (235a2412a: Pause, Resume and Stop as the signed-in person) are on main. Step 3, next: a steward role's health reason shows on the Fleet page only as one plain line with the act it implies, or not at all (Wido 17:50: 'no mere mortal will know what to do with this'); test corpus: the five lines he saw (retro debt, the slow last Stop, the token line, the ledger unexamined past 30m, deep validation overdue); and Doing shows 'round 1' alone, the cap only within two of it (Wido 20:14). Desktop only. Estimate 2 h, 3 attempts: Fable design note, Opus build, Sol read, lane.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 70
+- Revision: 71
 - Pinned: ui
 - Budget: elapsedLimit=2d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
 - NormApproval: approvedRef=JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=69
 - Approved: by=human:Wido at=2026-10-03T23:29:30Z revision=70 opid=JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb authority=proven digest=c58ec2dc1ca7f6b98d82ac3d1d56522ffa3bbb0831baa4f16b3c19524bb8e194 episode=70
 - Sliced: machine=ui lineage=steward-seat revision=20 at=2026-10-03T11:43:38Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T23:29:30Z revision=70 accountingRevision=70 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=11
-- Landing: at=2026-10-03T14:49:23Z opid=SD2S91KMQPGVGYQWSV230V1AQ4-ui-71c5cb39
-- StopCapability: generation=70 revision=70 machine=ui claimEpoch=3 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=70 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=11 released=2026-10-03T23:30:28Z
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -91,4 +89,5 @@ History:
 - 2026-10-03T20:57:15Z 9ERN9VC5CTJTE2RSH8ZHSV0C0N-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=lane-records-flakes-and-routes-their-fix from=1:26 to=1:27 requested-sequence=7
 - 2026-10-03T21:24:30Z FRBAFB8M9997C8KGB32ZNDES3J-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=goal-worktree-dispatch-uses-the-primary from=1:27 to=1:28 requested-sequence=8
 - 2026-10-03T23:29:30Z JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T14:31:48Z
-Integrity: sha256=94c005d67947bf00bfaaaf0b00a391a306169f5dce9a1a609a869930464db750
+- 2026-10-03T23:30:28Z 8AM99PCVHP7RC48D0222N9F18D-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-page-redesign reason=re-claim under the box m1e raised in Wido's word at 01:30 (2d4h/10/1200m/1/20) before step 3
+Integrity: sha256=645ba2387830084475ad70b1301b2e26a23452dad006add2b0b5a4d227510a43
