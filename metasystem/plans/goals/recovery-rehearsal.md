@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 53
+- Revision: 54
 - BlockedBy: recovery-to-good-state
 - Labels: headless-fleet, headless-proof
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=54 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=abee856837f095b7db19b9a49b5dadd7679695f369094685cdc4c646af0028de episode=54
 - Parked: by=human:Wido at=2026-10-03T11:17:21Z blocker=recovery-to-good-state because=blocked by recovery-to-good-state; returns when it is done
 
 History:
@@ -69,4 +71,5 @@ History:
 - 2026-10-03T11:17:05Z H8HAJ4QNHDAASBS3N4RETB0K3W-m1e-718ba0eb edit actor=human:Wido targets=recovery-rehearsal
 - 2026-10-03T11:17:14Z 5MJHRZVFYYJQHT0ZQ5KE46EXW4-m1e-718ba0eb unblock actor=human:Wido targets=recovery-rehearsal,recovery-to-good-state reason=blockedBy drops recovery-to-good-state
 - 2026-10-03T11:17:21Z N0X7H0ZRAEGGD9WQ1VCV6B8WM4-m1e-718ba0eb block actor=human:Wido targets=recovery-rehearsal reason=blocked by recovery-to-good-state; returns when it is done
-Integrity: sha256=0fff2830d444404cf66e3602d8eaab36e54ec974838d5debdee542e788651f7f
+- 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
+Integrity: sha256=e9adecd2f23c6873c0c9fdd142f844dbef3539f41fea5d4747d4f5f7007e4b94

@@ -9,8 +9,10 @@
 - Origin: main
 - Next step: Next: When it comes back, first make the reading function (internal/acp/driver.go, Next) return different results for "stream ended" and "time ran out", tested on both implementations; then add the missing capability field to the runtime registry and check the declaration against the driver. Done when: the capability check and the driver agree for every runtime, and the two end cases can be told apart.
 - OpenedAt: 2026-08-25T06:07:07Z
-- Revision: 56
+- Revision: 57
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=57 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=f114d360f06f4183666da35442f0a08a60880d9bb3274efd2e9b40d22dcc3c79 episode=57
 - Parked: by=human:Wido at=2026-10-03T11:17:44Z because=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 
 History:
@@ -70,4 +72,5 @@ History:
 - 2026-10-03T11:17:29Z D170YFK2T4WAFC1746392ZK5JK-m1e-718ba0eb unpark actor=human:Wido targets=seam-declaration-convergence
 - 2026-10-03T11:17:37Z A1E47QXNMZ89MWCZCJ6XBN08HD-m1e-718ba0eb edit actor=human:Wido targets=seam-declaration-convergence
 - 2026-10-03T11:17:44Z HSCD21B86T7E9E5KBT0592F9MT-m1e-718ba0eb park actor=human:Wido targets=seam-declaration-convergence reason=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
-Integrity: sha256=dd6ce89724a3b41f56fdc93510bc18ae526d774a88a4cf3110bb5bc869cef9ec
+- 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
+Integrity: sha256=91e5458f34b16ecda1efac2ef7690e7411089b216ee592a84618cf8752585369

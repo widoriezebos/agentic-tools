@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: Parked until the next inception or adoption starts. Then split this goal into one goal per part that the adopted app actually needs, each with its own design; conclude the parts it does not need.
 - OpenedAt: 2026-10-03T09:54:23Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=3 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=7a5d59e3eda5a4b7a30aecfa867d8e1c1d87bc9b3ac7820b8700679b900948a9 episode=3
 - Parked: by=human:Wido at=2026-10-03T09:54:32Z because=Parked until the next inception or adoption of an app other than this repository starts; then split into the parts that app needs.
 
 History:
 - 2026-10-03T09:54:23Z 2R213X6MR3MQM96VC4ARTNHFPY-m1e-718ba0eb open actor=human:Wido targets=next-adoption-follow-ups
 - 2026-10-03T09:54:32Z MT8Q5XSGPDBAD51PGXMM9GPNYK-m1e-718ba0eb park actor=human:Wido targets=next-adoption-follow-ups reason=Parked until the next inception or adoption of an app other than this repository starts; then split into the parts that app needs.
-Integrity: sha256=51468aa067c35d28c023ddc14c6b8c6b6af90f2c4e423ceaa54674f88d1b293d
+- 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
+Integrity: sha256=59908a2edd2b7ddbe38f8cc63d13a6bd88d2c047c610377341a84301af6f8aee

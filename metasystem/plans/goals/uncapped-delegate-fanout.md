@@ -9,8 +9,10 @@
 - Origin: main
 - Next step: Next: When it comes back, pick the owner (a deny rule in the agent's permissions, the process census catching escaped children, or a refusal in the runtime adapter), prove the behaviour without spending money if possible, and wire the refusal. Done when: a delegate's attempt to open a nested agent session is refused or caught, shown by a test.
 - OpenedAt: 2026-09-01T17:34:51Z
-- Revision: 51
+- Revision: 52
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=52 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=806ac511ddb32df40b1e6125705be76a1f252db48eefc43df62465138299e5e8 episode=52
 - Parked: by=human:Wido at=2026-10-03T11:18:10Z because=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
 
 History:
@@ -65,4 +67,5 @@ History:
 - 2026-10-03T11:17:52Z PXS1J31CD2HA49TYGKJJSFT2CB-m1e-718ba0eb unpark actor=human:Wido targets=uncapped-delegate-fanout
 - 2026-10-03T11:18:01Z 5RRA58VRPKP0QCMCRMKGFMK2HW-m1e-718ba0eb edit actor=human:Wido targets=uncapped-delegate-fanout
 - 2026-10-03T11:18:10Z F31N9GE0205J129WTMSVJKQ99V-m1e-718ba0eb park actor=human:Wido targets=uncapped-delegate-fanout reason=Parked until a zero-spend proof shows that an agent can start a nested paid session outside its budget, or a census shows an escaped child process; neither has been seen (checked 2026-10-03).
-Integrity: sha256=7ce92f5aa29f6b390b66edbc6817343df567cf8c22a6c0cdcee7c2a896c2b846
+- 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
+Integrity: sha256=8dcf5fe6ce67d89fa7ffbb6f8b0a4548fe53902895ffdbcfd6e6d031b7be4e72

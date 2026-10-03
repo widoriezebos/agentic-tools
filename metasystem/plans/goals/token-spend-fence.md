@@ -9,10 +9,12 @@
 - Origin: main
 - Next step: Next: On Wido's word, redesign step 2 so the ceiling is checked where agent work starts today (the launch of a builder or delegate, and batch-lane admission) instead of the retired dispatcher; build; then allow spend.mode=enforce. Done when: work that would cross a ceiling is refused with the spend so far and who can raise it, and replaying a heavy day's usage against a ceiling shows the expected refusals. REWRITTEN 2026-10-03 (parked-list cleanup; step 1, measure and alert, landed with 0acb09738). What remains, now including spend-fence-reports-tokens-per-model-and-cause: (1) step 2: enforce a spend ceiling at today's real launch points (seat, builder and delegate launches, lane admission), then allow spend.mode=enforce (internal/config/spend.go:123 refuses it today); (2) show the per-model and per-cause attribution that internal/spend/attribution.go already computes in health and in the fence's daily report, with a per-model alert line; (3) fill the price ledger, including gpt-5.6-sol, so delegates stop landing in delegate:other. The limits themselves (per launch, per seat per day) and who sets them are decided in goal-budget-follows-its-plan; this goal waits for it.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 249
+- Revision: 250
 - BlockedBy: goal-budget-follows-its-plan
 - Labels: robustness, spend
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-03T12:25:38Z revision=250 opid=XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb authority=proven digest=a6f1f38b4ff45153010afa0d26ad0d4de91b7055e24e690f4c6d860eae128c2e episode=250
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
 - Parked: by=human:Wido at=2026-10-03T10:01:29Z blocker=goal-budget-follows-its-plan because=blocked by goal-budget-follows-its-plan; returns when it is done
 
@@ -266,4 +268,5 @@ History:
 - 2026-10-03T10:01:24Z JB8FEA0H8JBMEPTXZ9CEDZESDM-m1e-718ba0eb unpark actor=human:Wido targets=token-spend-fence
 - 2026-10-03T10:01:29Z 4JZTA2Y85AN9MN7WGPJHX5STB0-m1e-718ba0eb block actor=human:Wido targets=token-spend-fence reason=blocked by goal-budget-follows-its-plan; returns when it is done
 - 2026-10-03T11:04:30Z Q6J4FEGYXMESYA0XNJ652BWQT8-m1e-718ba0eb abandon actor=human:Wido targets=one-approval-gate,hook-enrollment-per-checkout,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,recovery-to-good-state,recovery-rehearsal,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,watcher-repair-request-never-names-current,lease-sweep-death-evidence,winddown-census-handoff-leak,token-spend-fence,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:27 to=2:26
-Integrity: sha256=8ecff9d91036ef8695a616ddfd3b755cbafca678575c7a7801da0d5f597e5660
+- 2026-10-03T12:25:38Z XY8E711TK25DGQC71WCX5E6FXT-m1e-718ba0eb approve actor=human:Wido targets=headless-fleet-coordination-proof,landing-design-provenance,landing-exception-gets-a-successor,live-proof-needs-a-dispatchable-verifier,next-adoption-follow-ups,recovery-rehearsal,seam-declaration-convergence,terminal-enrollment-per-computer,token-spend-fence,trunk-versus-candidate-is-a-verification-step,uncapped-delegate-fanout
+Integrity: sha256=d4a207a881f30f16313dcb5efec7c3d783002536ba8b98423b88c845a44abfd6
