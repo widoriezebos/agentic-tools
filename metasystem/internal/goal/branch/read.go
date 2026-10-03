@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
@@ -304,6 +305,40 @@ func branchReadInput(path string) ([]byte, string, error) {
 	return data, hex.EncodeToString(sum[:]), nil
 }
 
+// CriticStore names the installation whose artifacts/agents holds the
+// records of critic root job, for a review run at installation repo. A
+// critic's records stay in the installation that dispatched it. A review
+// run in a goal worktree may have dispatched its critic there; one run in
+// the primary checkout recorded it in the primary's. So repo keeps its own
+// store when it holds the critic's record (or no critic is named), and
+// otherwise reads the store of the system that serves it
+// (landpath.SystemInstallation): its primary checkout's installation when
+// repo is an unarmed linked worktree, else its own.
+func CriticStore(repo, job string) string {
+	if job == "" {
+		return repo
+	}
+	if _, err := os.Lstat(filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")); !os.IsNotExist(err) {
+		return repo
+	}
+	root := repo
+	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
+		root = resolved
+	}
+	git := func(args ...string) landpath.GitResult {
+		out, err := gitOutput(root, args...)
+		if err != nil {
+			return landpath.GitResult{Code: 1}
+		}
+		return landpath.GitResult{Stdout: out}
+	}
+	installation, checkout := landpath.SystemInstallation(git, root)
+	if checkout == "" {
+		return repo
+	}
+	return installation
+}
+
 func branchReadJobState(repo, job string) (string, error) {
 	record, err := dispatch.ReadRecordObject(filepath.Join(repo, "artifacts", "agents", "jobs", job+".json"))
 	if err != nil {
@@ -464,7 +499,8 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, nil
 	}
 	if record.RootJob != "" {
-		status, stateErr := branchReadJobState(request.Repo, record.RootJob)
+		store := CriticStore(request.Repo, record.RootJob)
+		status, stateErr := branchReadJobState(store, record.RootJob)
 		if stateErr != nil {
 			return result, stateErr
 		}
@@ -498,9 +534,13 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		if commit == nil {
 			commit = CommitRead
 		}
-		attestationCommit, _, commitErr := commit(CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
+		collect := CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
 			EndpointTip: request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
-			CheckClaim: request.CheckClaim, RootJob: record.RootJob, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests})
+			CheckClaim: request.CheckClaim, RootJob: record.RootJob, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests}
+		if store != request.Repo {
+			collect.CriticStore = store
+		}
+		attestationCommit, _, commitErr := commit(collect)
 		if commitErr != nil {
 			return result, commitErr
 		}

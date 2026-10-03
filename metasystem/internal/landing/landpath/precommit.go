@@ -272,6 +272,36 @@ func PrimaryInstallation(git func(args ...string) GitResult, root string) (check
 	return checkout, filepath.Join(checkout, prefix), ""
 }
 
+// SystemInstallation names the installation whose running system serves
+// the installation at root, and that installation's checkout. An
+// installation armed itself (its own arming record or census exists) runs
+// its own system, and checkout is "". Otherwise a linked worktree's (a goal
+// worktree's) is the same installation in its primary checkout
+// (PrimaryInstallation), with symbolic links resolved. A root git cannot
+// map keeps its own, and checkout is "". git runs in root.
+func SystemInstallation(git func(args ...string) GitResult, root string) (installation, checkout string) {
+	own := filepath.Join(root, "artifacts", "agents", "supervision")
+	for _, name := range []string{"state.json", "last-census.json"} {
+		if _, err := os.Lstat(filepath.Join(own, name)); err == nil {
+			return root, ""
+		}
+	}
+	checkout, installation, problem := PrimaryInstallation(git, root)
+	if problem != "" || installation == "" {
+		return root, ""
+	}
+	if resolved, err := filepath.EvalSymlinks(installation); err == nil {
+		installation = resolved
+	}
+	if installation == root {
+		return root, ""
+	}
+	if resolved, err := filepath.EvalSymlinks(checkout); err == nil {
+		checkout = resolved
+	}
+	return installation, checkout
+}
+
 // helmSubject names what a helm yield admitted: the branch HEAD names, the
 // index tree and the caller's class.
 func helmSubject(git func(args ...string) GitResult, class string, classErr error) string {
