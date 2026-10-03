@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1i",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1i/metasystem",
+  "generation": 13,
+  "engine": "f5ea9783f8dc8922361cf628471bbfe493917f47",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "20261003t185321-ff94912a84-r2-s2",
+    "job": "20261003t185321-ff94912a84-r2-s2",
+    "role": "unit proof",
+    "round": 2,
+    "goal": "rosters-are-configuration-items",
+    "startedAt": "2026-10-03T19:44:41Z"
+  },
+  "working": {
+    "goal": "rosters-are-configuration-items",
+    "phase": {
+      "role": "unit proof",
+      "round": 2,
+      "roundLimit": 20
+    },
+    "job": {
+      "id": "20261003t185321-ff94912a84-r2-s2",
+      "role": "unit proof",
+      "status": "running",
+      "startedAt": "2026-10-03T19:44:41Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 0,
+      "attemptLimit": 14,
+      "reservedMinutes": 0,
+      "reservedMinutesLimit": 1800,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "20261003t185321-ff94912a84-r2-s2",
+        "role": "unit proof",
+        "round": 2,
+        "status": "running",
+        "startedAt": "2026-10-03T19:44:41Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-10-03T19:47:22Z",
+  "diskFreeBytes": 186294304768
+}
