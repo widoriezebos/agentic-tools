@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Step 1 LANDED on main as bb738c1f6 (2026-10-03 06:18, hand-landed by m1e in Wido's word). Next: step 2 of the accepted design: (1) a seat whose progress card stalls goes into Needs you (Sol F-2, risk accepted ad54ad134); (2) the prover records a reason for a red proof so Needs you says why (F-1); (3) the proof-log endpoint; (4) Pause/Resume/Stop carrying the signed-in session; plus Talk and Forget when their goals land.; ASKED X3B4QE1J1WF37WSZQWFK0EXT1X (other): Fleet panel step 2: may the signed-in browser resume the landing lane and stop a machine (on this computer), as you can at the terminal?; ANSWERED X3B4QE1J1WF37WSZQWFK0EXT1X: Yes
 - OpenedAt: 2026-10-02T21:18:23Z
-- Revision: 29
+- Revision: 30
 - Pinned: ui
 - Budget: elapsedLimit=1d6h attemptLimit=18 reservedJobMinutesLimit=2160 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
@@ -18,6 +18,7 @@
 - Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-03T00:05:30Z
 - AcceptedRisk: finding=F-2 chain=code-critic-1eb6d6383985e27d682ddcc4 by=Wido opid=86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9
 - Claimed: machine=ui lineage=steward-seat at=2026-10-03T04:34:54Z revision=20 accountingRevision=18 episodeAt=2026-10-02T22:59:40Z episodeRevision=6 idleSeconds=15
+- Landing: at=2026-10-03T07:21:56Z opid=A9AXJSKABVZMXRV4D7CXXJS97K-ui-71c5cb39
 - StopCapability: generation=20 revision=20 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
@@ -50,4 +51,5 @@ History:
 - 2026-10-03T07:13:47Z STHVD54NNXR779Q0CAHZCP782W-m1e-718ba0eb set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,converging-reviews-never-ask-the-person,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,receipt-writer-follows-the-worktree-it-runs-in,rosters-are-configuration-items,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-works-without-a-person,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,switch-on-trial,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent reason=priority-order subject=converging-reviews-never-ask-the-person from=1:5 to=1:6 requested-sequence=1
 - 2026-10-03T07:14:09Z 272J1QRJBXZQ652XC9300MWNTP-m1e-718ba0eb abandon actor=human:Wido targets=converging-reviews-never-ask-the-person,partner-runtime-defaults-to-an-available-one,fleet-page-redesign,channel-questions-stand-alone,questions-carry-what-they-ask-about,fleet-panel-ux,one-folder-deployed-and-evolved,machinery-blocks-of-2026-10-02,seat-path-lands-without-help,critique-stops-on-convergence,ui-connects-to-a-running-agent,rosters-are-configuration-items,fleet-forgets-an-unreachable-seat,seat-works-without-a-person,switch-on-trial,terminal-enrollment-per-computer,spend-fence-reports-tokens-per-model-and-cause,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,fleet-doctor-repairs-what-stops-other-seats,stop-hook-never-forces-an-empty-turn,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,evidence-and-build-output-have-retention-and-stay-unindexed,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror,cross-cutting-change-inventories-its-readers,overrides-state-their-impact reason=priority-order from=1:6 to=1:5
 - 2026-10-03T07:14:38Z D4PA40PMH72WZN5A0WGE7TTZYG-m1e-718ba0eb set-priority actor=human:Wido targets=channel-questions-stand-alone,critique-stops-on-convergence,fleet-page-redesign,fleet-panel-ux,machinery-blocks-of-2026-10-02,one-folder-deployed-and-evolved,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,seat-path-lands-without-help reason=priority-order subject=critique-stops-on-convergence from=1:5 to=1:6 requested-sequence=1
-Integrity: sha256=ce774fba1b97a2c2ed0d66b1e840400bbd83d8ece5e607d6ca2a700d89ff4a00
+- 2026-10-03T07:21:56Z A9AXJSKABVZMXRV4D7CXXJS97K-ui-71c5cb39 land-ready actor=ui+steward-seat targets=fleet-panel-ux
+Integrity: sha256=690fbebb3d5da9d76bbf773e8679f33d2c02df9fdd20828e1c3d76cb1d9aa27a
