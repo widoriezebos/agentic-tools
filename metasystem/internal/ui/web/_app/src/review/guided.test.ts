@@ -4,6 +4,7 @@ import {
   pillOf,
   recordedLine,
   retippedAfresh,
+  reviewCurrentWrite,
   reviewedOf,
   roomFindingsOf,
   verdictToPerform,
@@ -25,7 +26,7 @@ import {
   type VerdictAsked,
 } from "./room";
 import type { Deposit } from "../partner/api";
-import { CONFLICT } from "../partner/recording";
+import { CONFLICT, recorder } from "../partner/recording";
 import { ACCEPTED, cardsIn, decidedSource, EARLIER, entriesIn, entryOf, FIX, followUp, lineOf, NOT_A_PROBLEM, recordedIn } from "../partner/sitting";
 
 /**
@@ -204,20 +205,20 @@ describe("a verdict over a finding written by hand, with no mark (RULING-R-142-m
 
   it("lands with the person's reason: the write is not refused, and the Outcome lists it as their accepted risk", () => {
     const findings = read(handWritten);
-    expect(findings.map((one) => one.id)).toEqual([""]);
+    expect(findings.map((one) => one.id)).toEqual(["Findings|The owner reads the wrong tree."]);
     const plan = nodPlan(findings);
     expect(plan.risks).toEqual(findings);
     const decisions = verdictDecisions("land", plan, "the tree is read once", {});
-    const written = answeredSource(handWritten, verdictAnswers(verdictDecisions("land", plan, "the tree is read once", {})), nothingByCard);
-    expect(written).toBe(handWritten);
+    const written = answeredSource(handWritten, verdictAnswers(verdictDecisions("land", plan, "the tree is read once", {})), nothingByCard, "local-test");
+    expect(entriesIn(written ?? "")[0]?.answer).toBe(ACCEPTED("the tree is read once"));
     expect(outcomeBody(decidedAfter(plan.all, decisions), "Examined: the reviewer's report"))
       .toContain(`- The owner reads the wrong tree. — ${ACCEPTED("the tree is read once")}`);
   });
 
   it("sends back too: the write is not refused, and the Outcome lists it as not decided, as the ask said", () => {
     const plan = nodPlan(read(handWritten));
-    const written = answeredSource(handWritten, verdictAnswers(verdictDecisions("send back", plan, "", {})), nothingByCard);
-    expect(written).toBe(handWritten);
+    const written = answeredSource(handWritten, verdictAnswers(verdictDecisions("send back", plan, "", {})), nothingByCard, "local-test");
+    expect(entriesIn(written ?? "")[0]?.answer).toBe("not decided — the reviewer recommended nothing");
     expect(outcomeBody(decidedAfter(plan.all, verdictDecisions("send back", plan, "", {})), "Examined: the reviewer's report"))
       .toContain("- The owner reads the wrong tree. — not decided — the reviewer recommended nothing");
   });
@@ -227,16 +228,16 @@ describe("a verdict over a finding written by hand, with no mark (RULING-R-142-m
       `- The design still describes two locks.\n  - Answer: ${NOT_A_PROBLEM("it is history")}\n- The owner reads the wrong tree.\n` +
       "- 2026-10-03 · Wido · The log says nothing. [d:deposit:t1#4]\n  - Recommends: must-fix\n  - Answer: unanswered\n");
     const findings = read(two);
-    expect(findings.map((one) => one.id)).toEqual(["", "", "deposit:t1#4"]);
+    expect(findings.map((one) => one.id)).toEqual(["Findings|The design still describes two locks.", "Findings|The owner reads the wrong tree.", "deposit:t1#4"]);
     const plan = nodPlan(findings);
     for (const way of ["land", "send back"] as const) {
       const after = decidedAfter(plan.all, verdictDecisions(way, plan, "the tree is read once", {}));
       expect(after[0].answer).toBe(NOT_A_PROBLEM("it is history"));
       expect(after[1].answer).toBe(way === "land" ? ACCEPTED("the tree is read once") : "not decided — the reviewer recommended nothing");
-      const written = answeredSource(two, verdictAnswers(verdictDecisions(way, plan, "the tree is read once", {})), nothingByCard) ?? "";
+      const written = answeredSource(two, verdictAnswers(verdictDecisions(way, plan, "the tree is read once", {})), nothingByCard, "local-test") ?? "";
       expect(entriesIn(written).find((one) => one.mark === "deposit:t1#4")?.answer)
         .toBe(way === "land" ? ACCEPTED("the tree is read once") : `${FIX} (as the reviewer recommended)`);
-      expect(entriesIn(written).filter((one) => one.mark === "").map((one) => one.answer)).toEqual([NOT_A_PROBLEM("it is history"), undefined]);
+      expect(entriesIn(written).filter((one) => one.mark !== "deposit:t1#4").map((one) => one.answer)).toEqual([NOT_A_PROBLEM("it is history"), after[1].answer]);
     }
   });
 });
@@ -341,25 +342,33 @@ describe("a verdict refused because a newer version exists (fix round 1, F-3)", 
 });
 
 describe("a verdict refused because the review changed (RF-02; RULING-R-143-m1e of read 0096f159)", () => {
-  it("says in one line that it changed in another room, that nothing was recorded, and what changed", () => {
+  it("says in one line that it changed after you decided, that nothing was recorded, and what changed", () => {
     const before = head(TIP);
     expect(changedSince(before, head(NOW))).toBe(
-      "Your verdict was not recorded: in another room, this review moved on to another version after you decided. It shows that version now; decide again.",
+      "Your verdict was not recorded: this review moved on to another version after you decided. It shows that version now; decide again.",
     );
     const added = before.replace("## Findings\n", "## Findings\n\n- 2026-10-03 · Ann · The log says nothing. [d:local-9]\n  - Answer: unanswered\n");
     expect(changedSince(before, added)).toBe(
-      "Your verdict was not recorded: this review changed in another room after you decided. What changed: 1 new finding, " +
+      "Your verdict was not recorded: this review changed after you decided. What changed: 1 new finding, " +
         "\"The log says nothing.\" It shows the review as it stands now; decide again under Your verdict.",
     );
     const two = added.replace("## Outcome", "- 2026-10-03 · Ann · The retry has no ceiling. [d:local-10]\n  - Answer: unanswered\n\n## Outcome");
     const decided = two.replace("The log says nothing. [d:local-9]\n  - Answer: unanswered", `The log says nothing. [d:local-9]\n  - Answer: ${FIX}`);
     expect(changedSince(added, decided)).toBe(
-      "Your verdict was not recorded: this review changed in another room after you decided. What changed: 1 new finding, " +
+      "Your verdict was not recorded: this review changed after you decided. What changed: 1 new finding, " +
         "\"The retry has no ceiling.\"; 1 decision, on \"The log says nothing.\" It shows the review as it stands now; decide again under Your verdict.",
     );
     expect(changedSince(before, two)).toContain("What changed: 2 new findings, \"The log says nothing.\" and \"The retry has no ceiling.\" It shows");
+    // A line written by hand that a decision gave its mark is one decision, not
+    // a new finding and a removed one (read of unit whole-record, observation 1).
+    const hand = before.replace("## Findings\n", "## Findings\n\n- The log says nothing.\n");
+    const handDecided = hand.replace("- The log says nothing.\n", `- The log says nothing. [d:local-7]\n  - Answer: ${FIX}\n`);
+    expect(changedSince(hand, handDecided)).toBe(
+      "Your verdict was not recorded: this review changed after you decided. What changed: 1 decision, on " +
+        "\"The log says nothing.\" It shows the review as it stands now; decide again under Your verdict.",
+    );
     expect(changedSince(before, `${before}\nmore words\n`)).toBe(
-      "Your verdict was not recorded: this review changed in another room after you decided. It shows the review as it stands now; decide again under Your verdict.",
+      "Your verdict was not recorded: this review changed after you decided. It shows the review as it stands now; decide again under Your verdict.",
     );
   });
 });
@@ -375,5 +384,121 @@ describe("a write the record moved under (fix round 2, N-2)", () => {
     );
     expect(writeRefused({ kind: "failed", reason: "the disk is full" }, "verdict")).toBe("the disk is full");
     expect(writeRefused(conflict, "verdict")).not.toContain("Record it");
+  });
+});
+
+const WRITING = { who: "Wido", when: "2026-10-04", mark: "verdict-1", ownMark: "local-1", entryFor: () => undefined };
+const SHOWN = head(TIP).replace("## Findings\n", "## Findings\n\n- The log says nothing. [d:local-log]\n  - Answer: unanswered\n");
+const ASKED: VerdictAsked = { verdict: "clear to land", answers: [{ id: "local-log", answer: ACCEPTED("I checked it") }],
+  own: "", outcome: "I checked the version.", tip: TIP, followUps: [], brief: "", shown: SHOWN, planned: ["local-log"] };
+const CHANGED = "Your verdict was not recorded: this review changed after you decided. What changed: ";
+const AGAIN = " It shows the review as it stands now; decide again under Your verdict.";
+
+describe("the whole review as shown at the verdict", () => {
+  it.each([
+    ["another version", SHOWN.replace(TIP, NOW), "Your verdict was not recorded: this review moved on to another version after you decided. It shows that version now; decide again."],
+    ["an added finding", SHOWN.replace("## Outcome", "- The retry never stops. [d:local-retry]\n  - Answer: unanswered\n\n## Outcome"), CHANGED + '1 new finding, "The retry never stops."' + AGAIN],
+    ["a changed answer", SHOWN.replace("Answer: unanswered", `Answer: ${FIX}`), CHANGED + '1 decision, on "The log says nothing."' + AGAIN],
+    ["a removed finding", head(TIP), CHANGED + '1 removed finding, "The log says nothing."' + AGAIN],
+    ["an earlier finding", SHOWN.replace("## Outcome", `## Earlier findings\n\n- An older issue. [d:local-old]\n  - Answer: ${FIX}\n\n## Outcome`), CHANGED + '1 new finding, "An older issue."' + AGAIN],
+  ])("records nothing over %s and says what changed", async (_kind, source, line) => {
+    const saved: string[] = [];
+    const held = recorder({ id: RECORD, revision: "r1", source }, async (_id, next) => {
+      saved.push(next); return { revision: "r2", source: next };
+    }, async () => ({ revision: "r1", source }), () => false);
+    const outcome = await held.rewrite(RECORD, (now) => verdictSource(now, ASKED, WRITING), "changed");
+    expect(saved).toEqual([]);
+    expect(verdictWriteRefused(outcome, ASKED, source, held.reading().source)).toEqual({ changed: line });
+  });
+
+  it("records nothing over this room's decision still saving, without naming another room", async () => {
+    const saved: string[] = [];
+    let release!: () => void;
+    const waiting = new Promise<void>((done) => { release = done; });
+    let started!: () => void;
+    const saving = new Promise<void>((done) => { started = done; });
+    const held = recorder({ id: RECORD, revision: "r1", source: SHOWN }, async (_id, source) => {
+      saved.push(source); started(); await waiting; return { revision: "r2", source };
+    }, async () => ({ revision: "r1", source: SHOWN }), () => false);
+    const decision = held.answer("local-log", FIX, RECORD);
+    await saving;
+    const verdict = held.rewrite(RECORD, (source) => verdictSource(source, ASKED, WRITING), "changed");
+    release(); await decision;
+    const outcome = await verdict;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).not.toContain("Verdict:");
+    expect(verdictWriteRefused(outcome, ASKED, SHOWN, held.reading().source)).toEqual({
+      changed: CHANGED + '1 decision, on "The log says nothing."' + AGAIN,
+    });
+  });
+});
+
+describe("two rooms moving to the current version", () => {
+  const offered = entryOf(cardsIn([{ turn: "t2", deposits: [deposit()] }], {}, RECORD, new Map())[0], "Wido", "2026-10-04");
+  it("carries an offered finding once when the record is already current, leaving current findings in place", () => {
+    const current = SHOWN.replace(TIP, NOW);
+    const once = retippedAfresh(current, NOW, [offered]) ?? "";
+    expect(entriesIn(once).filter((one) => one.section === EARLIER).map((one) => [one.mark, one.answer]))
+      .toEqual([[offered.mark, OFFERED_NEVER_DECIDED]]);
+    expect(entriesIn(once).find((one) => one.mark === "local-log")?.section).toBe("Findings");
+    expect(retippedAfresh(once, NOW, [offered])).toBe(once);
+  });
+
+  it("recomposes once after a conflict rereads the already-current record and saves the second room's finding", async () => {
+    const current = retippedAfresh(SHOWN, NOW) ?? "";
+    const attempts: { source: string; revision: string }[] = [];
+    const held = recorder({ id: RECORD, revision: "r1", source: SHOWN }, async (_id, source, revision) => {
+      attempts.push({ source, revision });
+      if (revision === "r1") { throw new Error("stale"); }
+      return { revision: "r3", source };
+    }, async () => ({ revision: "r2", source: current }), () => true);
+    const looked: string[] = [];
+    const again = async () => { looked.push(held.reading().source); };
+    expect((await reviewCurrentWrite(held, RECORD, NOW, [offered], again)).kind).toBe("recorded");
+    expect(attempts.map((one) => one.revision)).toEqual(["r1", "r2"]);
+    expect(entriesIn(held.reading().source).find((one) => one.mark === offered.mark))
+      .toMatchObject({ section: EARLIER, answer: OFFERED_NEVER_DECIDED });
+    expect(looked).toEqual([held.reading().source]);
+    await reviewCurrentWrite(held, RECORD, NOW, [offered], again);
+    expect(looked).toHaveLength(1);
+  });
+});
+
+describe("deciding findings written by hand", () => {
+  const source = head(TIP).replace("## Findings\n", "## Findings\n\n- The log says nothing.\n  - Why: Readers cannot tell what happened.\n- The retry never stops.\n");
+  it("gives only the selected line a local mark and Answer in the same write", () => {
+    const once = decidedSource(source, "local-log", FIX, undefined, "The log says nothing.");
+    expect(once).toBe(source.replace("- The log says nothing.\n", "- The log says nothing. [d:local-log]\n")
+      .replace("  - Why: Readers cannot tell what happened.\n", `  - Why: Readers cannot tell what happened.\n  - Answer: ${FIX}\n`));
+    expect(decidedSource(source, "local-gone", FIX, undefined, "A removed finding.")).toBeNull();
+  });
+  it("rewrites the second decision through the line's new identity", () => {
+    const once = decidedSource(source, "local-log", FIX, undefined, "The log says nothing.") ?? "";
+    const card = roomFindingsOf([], entriesIn(once), []).current[0];
+    expect(card?.id).toBe("local-log");
+    expect(decidedSource(once, card?.id ?? "", NOT_A_PROBLEM("I can read it"), undefined))
+      .toBe(once.replace(`Answer: ${FIX}`, `Answer: ${NOT_A_PROBLEM("I can read it")}`));
+  });
+  it("writes a verdict's Answer on an unmarked finding's line", () => {
+    const findings = roomFindingsOf([], entriesIn(source), []).current;
+    const answers = verdictAnswers(verdictDecisions("land", nodPlan(findings), "I checked both", {}));
+    const written = verdictSource(source, { ...ASKED, shown: source, planned: [""], answers }, WRITING) ?? "";
+    expect(entriesIn(written).filter((one) => one.section === "Findings").map((one) => one.answer))
+      .toEqual([ACCEPTED("I checked both"), ACCEPTED("I checked both")]);
+    expect(new Set(entriesIn(written).map((one) => one.mark)).size).toBe(2);
+  });
+  it("allows its own follow-up to mark an unmarked finding before the verdict", () => {
+    const finding = roomFindingsOf([], entriesIn(source), []).current[0];
+    const opened = decidedSource(source, "local-follow", followUp("logs"), undefined, finding.title) ?? "";
+    const answers = [{ id: finding.id, answer: followUp("logs") }];
+    const written = verdictSource(opened, { ...ASKED, shown: source, planned: [finding.id], answers }, WRITING) ?? "";
+    expect(written).toContain("Verdict: clear to land");
+    expect(entriesIn(written).find((one) => one.mark === "local-follow")?.answer).toBe(followUp("logs"));
+  });
+  it("keeps two different unmarked findings' answers their own", () => {
+    const once = decidedSource(source, "local-log", FIX, undefined, "The log says nothing.") ?? "";
+    const twice = decidedSource(once, "local-retry", NOT_A_PROBLEM("The caller stops it"), undefined, "The retry never stops.") ?? "";
+    expect(entriesIn(twice).filter((one) => one.section === "Findings").map((one) => [one.text, one.answer]))
+      .toEqual([["The log says nothing.", FIX], ["The retry never stops.", NOT_A_PROBLEM("The caller stops it")]]);
   });
 });

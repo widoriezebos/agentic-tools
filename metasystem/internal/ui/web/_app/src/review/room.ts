@@ -7,7 +7,7 @@ import {
 import { goalSentence } from "../goalTitle";
 import type { Recorded, Verdict as RowVerdict } from "../backlog/api";
 import type { Candidate } from "./candidate";
-import type { Outcome as WriteOutcome } from "../partner/recording";
+import type { Outcome as WriteOutcome, Recorder } from "../partner/recording";
 import type { About } from "../stickies/api";
 
 /**
@@ -1496,7 +1496,7 @@ export const LANDED_UNFINISHED =
  * goal opened for it, and nothing where none was opened (R-4). A decision the
  * person made stands as it is.
  */
-/** One finding's decision as a verdict records it: the finding itself, which an unmarked finding has no id to name, and its answer. */
+/** One finding's decision as a verdict records it, matched to the finding itself. */
 export type VerdictDecision = { finding: RoomFinding; answer: string };
 
 export function verdictDecisions(
@@ -1538,7 +1538,7 @@ export function verdictDecisions(
   return answers;
 }
 
-/** The answers a verdict's write records, each by its finding's id: "" for a finding written by hand. */
+/** The answers a verdict records, by mark or by section and title until the first decision. */
 export function verdictAnswers(decisions: readonly VerdictDecision[]): { id: string; answer: string }[] {
   return decisions.map(({ finding, answer }) => ({ id: finding.id, answer }));
 }
@@ -1546,7 +1546,7 @@ export function verdictAnswers(decisions: readonly VerdictDecision[]): { id: str
 /**
  * The findings as a verdict leaves them, for its Outcome: each with the
  * decision the verdict records for it, matched by the finding itself, so two
- * findings written by hand, which carry no mark and share the empty id, never
+ * findings written by hand, which carry no mark, never
  * take each other's answer (read 9ac7cf0f). The findings are the plan's own.
  */
 export function decidedAfter(findings: readonly RoomFinding[], decisions: readonly VerdictDecision[]): RoomFinding[] {
@@ -1559,20 +1559,19 @@ export function decidedAfter(findings: readonly RoomFinding[], decisions: readon
 /**
  * The record with every answer a verdict records written on its finding's
  * Answer line, in the verdict's one write; null where a finding the record or
- * a card names cannot be written. A finding written by hand carries no mark,
- * so it has no identity to write an Answer line to: its decision is recorded
- * in the Outcome only, and the person's verdict is never refused for it
- * (RULING-R-142-m1e of read 9ac7cf0f).
+ * a card names cannot be written. A finding written by hand gets a local mark
+ * and its Answer in the same write, found by its section and title.
  */
 export function answeredSource(
-  source: string, answers: readonly { id: string; answer: string }[], entryFor: (id: string) => Entry | undefined,
+  source: string, answers: readonly { id: string; answer: string }[], entryFor: (id: string) => Entry | undefined, ownMark: string,
 ): string | null {
   let next = source;
   for (const one of answers) {
-    if (one.id === "") {
-      continue;
-    }
-    const composed = decidedSource(next, one.id, one.answer, entryFor(one.id));
+    const text = one.id.startsWith("Findings|") ? one.id.slice("Findings|".length) : "";
+    const matching = text === "" ? [] : entriesIn(next).filter((entry) => entry.section === "Findings" && entry.text === text);
+    const existing = matching.find((entry) => entry.mark === "") ?? matching.find((entry) => entry.answer === one.answer);
+    const mark = text === "" ? one.id : existing?.mark || `${ownMark}-${answers.indexOf(one)}`;
+    const composed = decidedSource(next, mark, one.answer, entryFor(one.id), text);
     if (composed === null) {
       return null;
     }
@@ -1750,13 +1749,14 @@ export function goalHeading(goal: string, intent: string): string {
  * saved go there too, each answered as offered and never decided (F-1 of read
  * 530a7c87): the new look reads earlier findings from that section alone, and
  * would otherwise be told nothing was raised. One the record already carries
- * is not written again, and a record that already names the current version
- * is answered as it is (R-129-ui). Null where the record names no branch tip
+ * is not written again, including when another room already moved the record.
+ * Null where the record names no branch tip
  * to move.
  */
 export function retippedAfresh(source: string, current: string, offered: readonly Entry[] = []): string | null {
   if (reviewedOf(source).tip === current && current !== "") {
-    return source;
+    return offered.reduce((next, one) => one.mark === "" || recordedIn(next).has(one.mark) ? next
+      : appended(next, { ...one, section: EARLIER, answer: OFFERED_NEVER_DECIDED }, "finding"), source);
   }
   const moved = retipped(source, current);
   if (moved === null) {
@@ -1788,6 +1788,21 @@ export function retippedAfresh(source: string, current: string, offered: readonl
   }
   const opened = last === earlier.at + 1 ? [""] : [];
   return [...emptied.slice(0, last), ...opened, ...raised, "", ...emptied.slice(earlier.end)].join("\n");
+}
+
+/** Move the review through the recorder, preserving its revision check. */
+export async function reviewCurrentWrite(held: Recorder, into: string, current: string, offered: readonly Entry[], again: () => Promise<void>): Promise<WriteOutcome> {
+  let changed = false;
+  const compose = () => held.rewrite(into, (source) => {
+    const next = retippedAfresh(source, current, offered);
+    changed = next !== null && next !== source;
+    return next;
+  },
+    "This review names no version of a goal waiting to land, so there is no current version to move to.");
+  let outcome = await compose();
+  if (outcome.kind === "conflict" && reviewedOf(outcome.reading.source).tip === current) { outcome = await compose(); }
+  if (outcome.kind === "recorded" && changed) { await again(); }
+  return outcome;
 }
 
 /**
@@ -1895,8 +1910,7 @@ export function roomFindingsOf(
  * with its own decision. Where only the later one is recorded, it stands.
  */
 function once(list: RoomFinding[], finding: RoomFinding): void {
-  // An empty id is no identity: findings written by hand carry none, and two
-  // of them are one finding only where they say the same (F-2 of read fcc372ec).
+  // Unmarked findings are identified by section and text until a decision writes a mark.
   const at = list.findIndex((one) => (one.id !== "" && one.id === finding.id) || sameFinding(one, finding));
   if (at < 0) {
     list.push(finding);
@@ -1917,7 +1931,7 @@ function sameFinding(one: RoomFinding, other: RoomFinding): boolean {
 /** A finding as the record alone carries it: its title, its layers and its answer. */
 export function findingOfEntry(entry: Entry): RoomFinding {
   return {
-    id: entry.mark, title: entry.text, why: entry.why ?? "", severity: entry.severity ?? "",
+    id: findingKey(entry), title: entry.text, why: entry.why ?? "", severity: entry.severity ?? "",
     recommend: entry.recommends ?? "", reason: entry.reason ?? "", evidence: "", anchor: entry.clause,
     consequence: entry.consequence ?? "", answer: entry.answer ?? "", recorded: true,
   };
@@ -1926,30 +1940,36 @@ export function findingOfEntry(entry: Entry): RoomFinding {
 /**
  * What a verdict refused because the review changed under it says, in one line
  * (RF-02; RULING-R-143-m1e of read 0096f159): that nothing was recorded, that
- * the review changed in another room after the person decided, what changed —
- * another version, or the findings and decisions another room wrote — and that
+ * the review changed after the person decided, what changed —
+ * another version, or its findings and decisions — and that
  * the room now shows the review as it stands for the person to decide again.
  * The verdict refused is dropped: it is never sent again by itself.
  */
 export function changedSince(before: string, after: string): string {
   if (reviewedOf(before).tip !== reviewedOf(after).tip) {
-    return "Your verdict was not recorded: in another room, this review moved on to another version after you decided. It shows that version now; decide again.";
+    return "Your verdict was not recorded: this review moved on to another version after you decided. It shows that version now; decide again.";
   }
   const what = whatChanged(entriesIn(before), entriesIn(after));
-  return "Your verdict was not recorded: this review changed in another room after you decided." +
+  return "Your verdict was not recorded: this review changed after you decided." +
     (what === "" ? "" : ` What changed: ${what}`) +
     " It shows the review as it stands now; decide again under Your verdict.";
 }
 
-/** The findings another room added, and the decisions it changed, said by their titles. */
+/** The findings and decisions that changed, said by their titles. */
 function whatChanged(before: readonly Entry[], after: readonly Entry[]): string {
-  const finding = (one: Entry) => one.section === "Findings" || one.section === EARLIER;
-  const key = (one: Entry) => (one.mark !== "" ? one.mark : `${one.section}|${one.text}`);
-  const was = new Map(before.filter(finding).map((one) => [key(one), one]));
-  const now = after.filter(finding);
+  const was = new Map(before.filter(isReviewFinding).map((one) => [findingKey(one), one]));
+  const now = after.filter(isReviewFinding);
+  // A line written by hand that a decision gave its mark is the same finding,
+  // decided, not a new finding and a removed one.
+  const keyOf = (one: Entry) => {
+    const unmarked = `${one.section}|${one.text}`;
+    return one.mark !== "" && !was.has(one.mark) && was.has(unmarked) && !now.some((each) => findingKey(each) === unmarked)
+      ? unmarked : findingKey(one);
+  };
   const quoted = (list: readonly Entry[]) => joinedAnd(list.map((one) => `"${one.text}"`)).replace(", and ", " and ");
-  const added = now.filter((one) => !was.has(key(one)));
-  const decided = now.filter((one) => was.has(key(one)) && (was.get(key(one))?.answer ?? "") !== (one.answer ?? ""));
+  const added = now.filter((one) => !was.has(keyOf(one)));
+  const removed = [...was.values()].filter((one) => !now.some((each) => keyOf(each) === findingKey(one)));
+  const decided = now.filter((one) => was.has(keyOf(one)) && (was.get(keyOf(one))?.answer ?? "") !== (one.answer ?? ""));
   const parts: string[] = [];
   if (added.length > 0) {
     parts.push(`${numbered(added.length, "new finding", "new findings")}, ${quoted(added)}`);
@@ -1957,43 +1977,48 @@ function whatChanged(before: readonly Entry[], after: readonly Entry[]): string 
   if (decided.length > 0) {
     parts.push(`${numbered(decided.length, "decision", "decisions")}, on ${quoted(decided)}`);
   }
+  if (removed.length > 0) {
+    parts.push(`${numbered(removed.length, "removed finding", "removed findings")}, ${quoted(removed)}`);
+  }
   const said = parts.join("; ");
   return said === "" || /[.!?]"?$/u.test(said) ? said : `${said}.`;
 }
 
 /**
- * What the verdict's write says when nothing was written (fix round 2 of the
- * follow-up, read fcc372ec): where the record changed under it — the save met
- * another room's write, or the record now names another version or carries a
- * finding the plan was not built from — the verdict is dropped, the ask closes,
- * and the one line of fix (a) says that nothing was recorded and what changed,
- * so the next press is planned over the record as it is then shown. `before`
- * is the record the write was composed on, `now` the record as it stands.
- * Otherwise the write's own words.
+ * A changed record drops the verdict and asks for a new decision over the
+ * record as it stands. Other failures keep the write's own words.
  */
 export function verdictWriteRefused(
-  outcome: WriteOutcome, asked: VerdictAsked, before: string, now: string,
+  outcome: WriteOutcome, asked: VerdictAsked, _before: string, now: string,
 ): { changed: string } | { refused: string } {
-  if (outcome.kind === "conflict") {
-    return { changed: changedSince(before, outcome.reading.source) };
-  }
-  if (reviewedOf(now).tip !== asked.tip || unplannedIn(asked, now).length > 0) {
-    return { changed: changedSince(asked.shown, now) };
+  const current = outcome.kind === "conflict" ? outcome.reading.source : now;
+  if (!verdictRecordMatches(asked, current) || outcome.kind === "conflict") {
+    return { changed: changedSince(asked.shown, current) };
   }
   return { refused: writeRefused(outcome, "verdict") };
 }
 
-/**
- * The findings a record carries that the verdict's plan was not built from:
- * in its Findings section now, not in the record as it was shown, and not a
- * finding the plan listed — which this press's own decisions may have written,
- * as a fix after landing does before the verdict (read fcc372ec).
- */
-function unplannedIn(asked: VerdictAsked, now: string): Entry[] {
-  const key = (one: Entry) => `${one.mark}|${one.text}`;
-  const findings = (source: string) => entriesIn(source).filter((one) => one.section === "Findings");
-  const seen = new Set(findings(asked.shown).map(key));
-  return findings(now).filter((one) => !seen.has(key(one)) && (one.mark === "" || !asked.planned.includes(one.mark)));
+const isReviewFinding = (one: Entry) => one.section === "Findings" || one.section === EARLIER;
+const findingKey = (one: Entry) => one.mark || `${one.section}|${one.text}`;
+
+/** The verdict compares the version, findings and answers shown, allowing only its own planned writes. */
+export function verdictRecordMatches(asked: VerdictAsked, source: string): boolean {
+  if (reviewedOf(source).tip !== asked.tip || reviewedOf(asked.shown).tip !== asked.tip) {
+    return false;
+  }
+  const was = new Map(entriesIn(asked.shown).filter(isReviewFinding).map((one) => [findingKey(one), one]));
+  const actual = entriesIn(source).filter(isReviewFinding);
+  const now = new Map(actual.map((one) => {
+    const unmarked = `${one.section}|${one.text}`;
+    const ownAnswer = asked.answers.some((answer) => answer.id === unmarked && answer.answer === one.answer);
+    const key = !was.has(findingKey(one)) && was.has(unmarked) && asked.planned.includes(unmarked) && ownAnswer ? unmarked : findingKey(one);
+    return [key, one];
+  }));
+  return now.size === new Set(actual.map(findingKey)).size && [...was.keys()].every((key) => now.has(key)) && [...now].every(([key, one]) => {
+    const before = was.get(key);
+    return (before !== undefined && (before.answer ?? "") === (one.answer ?? "")) ||
+      (one.section === "Findings" && asked.planned.includes(key) && asked.answers.some((answer) => answer.id === key && answer.answer === one.answer));
+  });
 }
 
 /** The refusal code the verdict is answered with when the review changed under it (RF-02). */
@@ -2062,16 +2087,16 @@ export type VerdictWriting = {
  * decision on its finding's Answer line, the person's own must-fix words as a
  * finding of theirs, and the Outcome composed from what they were shown. Null
  * — nothing is written — where the record no longer names the version they
- * decided on (RF-02), or carries a finding their plan was not built from.
+ * decided on, or its findings or answers differ beyond this press's own writes.
  */
 export function verdictSource(source: string, asked: VerdictAsked, writing: VerdictWriting): string | null {
   // Nothing is written over a version or a finding the person was not shown
   // when they decided (RF-02; read fcc372ec): the verdict is dropped, and the
   // next press is planned over the record as it then stands.
-  if (reviewedOf(source).tip !== asked.tip || unplannedIn(asked, source).length > 0) {
+  if (!verdictRecordMatches(asked, source)) {
     return null;
   }
-  let next = answeredSource(source, asked.answers, writing.entryFor);
+  let next = answeredSource(source, asked.answers, writing.entryFor, writing.ownMark);
   if (next === null) {
     return null;
   }
