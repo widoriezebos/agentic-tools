@@ -104,15 +104,27 @@ type SeatView struct {
 // GoalView is one goal on a seat: its card's identifiers, numbers and times,
 // or the reason it is Unknown.
 type GoalView struct {
-	Goal           string    `json:"goal"`
-	Stage          Stage     `json:"stage,omitempty"`
-	Round          *Round    `json:"round,omitempty"`
-	Proof          *Proof    `json:"proof,omitempty"`
-	Batch          string    `json:"batch,omitempty"`
-	Landed         int       `json:"landed,omitempty"`
-	Since          time.Time `json:"since,omitzero"`
-	LastProgressAt time.Time `json:"lastProgressAt,omitzero"`
-	Unknown        string    `json:"unknown,omitempty"`
+	Stuck          *StuckUnit `json:"stuck,omitempty"`
+	Goal           string     `json:"goal"`
+	Stage          Stage      `json:"stage,omitempty"`
+	Round          *Round     `json:"round,omitempty"`
+	Proof          *Proof     `json:"proof,omitempty"`
+	Batch          string     `json:"batch,omitempty"`
+	Landed         int        `json:"landed,omitempty"`
+	Since          time.Time  `json:"since,omitzero"`
+	LastProgressAt time.Time  `json:"lastProgressAt,omitzero"`
+	Unknown        string     `json:"unknown,omitempty"`
+}
+
+// StuckUnit is the reader's stuck launch or round bound on a goal's card.
+// An empty step names a round finding rather than an overdue launch.
+type StuckUnit struct {
+	Step    string `json:"step"`
+	Kind    string `json:"kind"`
+	Launch  string `json:"launch"`
+	Minutes int    `json:"minutes"`
+	Rounds  int    `json:"rounds"`
+	Limit   int    `json:"limit"`
 }
 
 // NewView groups a classified picture by the armed seats it was read for.

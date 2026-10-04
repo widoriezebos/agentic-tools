@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -145,5 +146,72 @@ func TestTheInterfaceFollowsTheBridgeWhileAStreamIsOpen(t *testing.T) {
 	case <-dials:
 		t.Fatal("the subscription was dialled twice")
 	default:
+	}
+}
+
+func TestBoardRouteStampsStuckUnits(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	seats := []board.Seat{{Machine: "m1c", Installation: "/c"}, {Machine: "m1f", Installation: "/f"}}
+	for _, seat := range seats {
+		if err := board.WriteAt(home, board.Card{Seat: seat, Goal: "tests-parallel-and-deterministic", Stage: board.StageBuild, Owner: &board.Owner{Pid: 41, PidStartedAt: 1000}, Writer: board.Writer{At: fleetNow}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, mode := range []string{"stuck", "rounds", "clean", "record unreadable", "root unreadable", "no ledger"} {
+		t.Run(mode, func(t *testing.T) {
+			source := &BoardSource{Home: home, Seats: func() ([]board.Seat, error) { return seats, nil }, Prober: boardProber{}, Stall: time.Hour,
+				Stuck: func(now time.Time) ([]launch.UnitStanding, error) {
+					if !now.Equal(fleetNow) {
+						t.Error("wrong reader clock")
+					}
+					if mode == "root unreadable" {
+						return nil, errors.New("cannot list units")
+					}
+					one := launch.UnitStanding{Goal: "tests-parallel-and-deterministic", Unit: "2", Step: "r2-s1", Kind: "build", Launch: "run-r2-s1", Minutes: 52, Rounds: 2, Limit: 45, Stuck: mode != "clean"}
+					if mode == "rounds" {
+						one.Step = ""
+						one.Launch = ""
+						one.Rounds = 3
+						one.Limit = 3
+					}
+					if mode == "record unreadable" {
+						one.Unreadable = "broken run"
+					}
+					return []launch.UnitStanding{one}, nil
+				}}
+			info := Info{Board: source, Observe: silentHolder, Now: func() time.Time { return fleetNow }}
+			if mode == "no ledger" {
+				info.Observe = nil
+			}
+			response := request(t, New(info, loopback(), testBundle()), http.MethodGet, boardPath, "127.0.0.1:7878", nil)
+			var payload boardPayload
+			if response.Code != http.StatusOK {
+				t.Fatalf("status: %d", response.Code)
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Seats) != 2 {
+				t.Fatalf("seats: %+v", payload.Seats)
+			}
+			for _, seat := range payload.Seats {
+				for _, card := range seat.Goals {
+					want := seat.Machine == "m1c" && (mode == "stuck" || mode == "rounds")
+					if (card.Stuck != nil) != want {
+						t.Fatalf("wrong stamp: %s %+v", seat.Machine, card)
+					}
+					if want && mode == "stuck" && (card.Stuck.Launch != "run-r2-s1" || card.Stuck.Minutes != 52 || card.Stuck.Kind != "build" || card.Stuck.Step != "r2-s1") {
+						t.Fatalf("stamp lost fields: %+v", card.Stuck)
+					}
+					if want && mode == "rounds" && (card.Stuck.Rounds != 3 || card.Stuck.Limit != 3 || card.Stuck.Step != "") {
+						t.Fatalf("round stamp: %+v", card.Stuck)
+					}
+				}
+			}
+			if (mode == "record unreadable" || mode == "root unreadable" || mode == "no ledger") && len(payload.Unreadable) == 0 {
+				t.Fatal("read failure hidden")
+			}
+		})
 	}
 }
