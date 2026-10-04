@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "goal": "rosters-are-configuration-items",
+  "unit": "roster-audits",
+  "subject": {
+    "commit": "3c8de2fece0a37957506195ff0c5ad0fca80e0a8",
+    "parent": "9ab223b878040a6ab0f1ae7d212b5424be96f7a1",
+    "tree": "8a7197780eac455826427bce4897a750f7e1e77a",
+    "patchDigest": "93cf2975cb63d2381fef178dc8f9b8b00502506c36685df43e4b588f5ed29c4e",
+    "unitDigest": "5b1174022b2d4889128f78bc6ad83af6a576b44c99b2525fd93f03c95f0ae1cf"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-1c566a51babd3db1b0605001",
+    "round": 1,
+    "closureSha256": "032bf60d956bfdad348248a49121d787500e465e14e2c1afde01d4567a63bacc"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "8a7197780eac455826427bce4897a750f7e1e77a",
+    "runId": "goal-read-gate-20261004t033833z-d32d859b3ea576e0"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "11a0aeffca40167a181387f04ba7fc8724f8c107",
+      "digest": "76233ec6b645ead8c11fba91cc6e50bd613d399022a9b9cb134e87dbf296a141"
+    },
+    {
+      "kind": "read",
+      "commit": "2da278792705051feca3f5702eac1fba36ec8fd9",
+      "digest": "068eb7b5c1e2f464d74c51956f25f49a137b411c34b3adb7cf9d40f0d38d166f"
+    },
+    {
+      "kind": "read",
+      "commit": "202de1c9e1af8b03eefeae26d510099860f00852",
+      "digest": "4de46c543bd739b81e9ba008d8e59ef409bf446f2e03591a9e95a9d1129cc056"
+    },
+    {
+      "kind": "read",
+      "commit": "b7d922d3f791870d10e9838131cd4efa94489c10",
+      "digest": "5b946361b3d1cef1fbe862e4539547a38a2416d4be5c1691dde8c3b7c995dffc"
+    },
+    {
+      "kind": "read",
+      "commit": "9ab223b878040a6ab0f1ae7d212b5424be96f7a1",
+      "digest": "170440a30b37b4b0a95aef5b48f30386d857a85050031b0e2d9c58b8afbb28ec"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_modes_test.go",
+      "readerWord": "reviewed by critic root code-critic-1c566a51babd3db1b0605001"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help.txt",
+      "readerWord": "reviewed by critic root code-critic-1c566a51babd3db1b0605001"
+    },
+    {
+      "path": "metasystem/internal/config/roster_write_test.go",
+      "readerWord": "reviewed by critic root code-critic-1c566a51babd3db1b0605001"
+    }
+  ],
+  "sha256": "2119d49bf480d8ca9ff2683bd15d517398cad15e96639d11f6def6b3fb9b9951"
+}
