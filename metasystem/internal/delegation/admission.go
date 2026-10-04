@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -607,13 +608,24 @@ func isReviewRole(role string) bool {
 }
 
 // briefAuthority is brief_authority. A brief that reviews a commit is also
-// read against that commit's tree, which the critic reads.
-func (s *session) briefAuthority(brief, baseTree, reviews string) error {
+// read against that commit's tree, which the critic reads. A code critic's
+// brief that a goal read composed around the unit's build brief has its
+// headers and bounds checked but not its cited paths: the build ran with it.
+func (s *session) briefAuthority(brief, baseTree, role, reviews string) error {
+	if buildBriefAdmitted(brief, role, reviews) {
+		baseTree = ""
+	}
 	_, err := dispatch.ReadReviewBriefAdmission(brief, s.root, baseTree, s.repoScope, reviews)
 	if err != nil {
 		s.noteRefusal(err)
 	}
 	return err
+}
+
+// buildBriefAdmitted: a code critic of a commit whose brief is a goal read's,
+// recorded as carrying the unit's build brief.
+func buildBriefAdmitted(brief, role, reviews string) bool {
+	return role == "code-critic" && strings.HasPrefix(reviews, "commit:") && branch.BuildBriefAdmitted(brief)
 }
 
 // appendReturnPathForm is append_return_path_form.
