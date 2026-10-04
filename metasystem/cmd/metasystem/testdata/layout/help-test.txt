@@ -1,0 +1,21 @@
+metasystem test · risk-selected tests and their proof
+
+Read
+  plan            preview the risk-selected tests and their reasons without running them
+  list            every group in the committed testing contract
+  status          whether an exact tree is already proven, and what its tests cost; nothing is run
+  wait            wait for a proof attempt's recorded end
+
+Work
+  run             run the risk-selected tests for this checkout
+  groups          run named contract groups and their prerequisites for the proof command, without
+                  recording proof
+  declare-moves   record that this change moves or removes Stop test assertions on purpose
+  baseline        record or check the trusted baseline a refactor proceeds from
+
+Shape
+  add             add verified Go tests, group inputs or surface paths to the testing contract
+  remove          take deleted Go tests, group inputs, surface paths, a group or a surface out of
+                  the testing contract
+
+→ metasystem test ACTION --help  one action's forms, options and examples

@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
@@ -47,6 +48,92 @@ func runTestWorkerCapabilities(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+func runTestGroups(args []string, stdout, stderr io.Writer) int {
+	return runTestGroupsWithEnvironment(args, os.Environ(), stdout, stderr)
+}
+
+func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("test groups", stdout, stderr)
+	root := pathFlag(flags, "root", ".", "MetaSystem installation root")
+	environmentOnly := flags.Bool("environment", false, "describe the landing environment without running groups when no ids are supplied")
+	// Public options may follow the ids, as the command's usage promises.
+	rootValue, rootGiven, rest := takeIntentFlag(args, "root", true)
+	envValue, envGiven, ids := takeIntentFlag(rest, "environment", false)
+	var options []string
+	if rootGiven {
+		options = append(options, "--root", rootValue)
+	}
+	if envGiven {
+		options = append(options, "--environment="+envValue)
+	}
+	if flags.Parse(append(options, ids...)) != nil {
+		return 2
+	}
+	ids = flags.Args()
+	for _, id := range ids {
+		if strings.HasPrefix(id, "-") {
+			fmt.Fprintf(stderr, "test groups: unknown option %s\n", id)
+			return 2
+		}
+	}
+	if len(ids) == 0 && !*environmentOnly {
+		fmt.Fprintln(stderr, "test groups: no testing group ids supplied")
+		return 2
+	}
+	installation, err := filepath.Abs(*root)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	// Configuration locates the installation without Git or a goal ledger.
+	for {
+		if _, err := os.Stat(filepath.Join(installation, "metasystem.conf")); err == nil {
+			break
+		}
+		if config.TemplateMode(filepath.Join(installation, "metasystem")) {
+			installation = filepath.Join(installation, "metasystem")
+			break
+		}
+		parent := filepath.Dir(installation)
+		if parent == installation {
+			break
+		}
+		installation = parent
+	}
+	ctx := context.Background()
+	description, err := proofrun.LandingEnvironment(ctx, installation, environment)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "landing environment "+description)
+	if len(ids) == 0 {
+		return 0
+	}
+	installation, contract, _, err := testrun.LoadContract(installation)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	results, runErr := proofrun.RunNamedGroups(ctx, installation, contract, ids, environment)
+	exit := 0
+	for _, result := range results {
+		fmt.Fprintf(stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)
+		for _, reason := range result.Reasons {
+			fmt.Fprintf(stdout, "landing group %s reason %s\n", result.ID, strings.Join(strings.Fields(reason), " "))
+		}
+		fmt.Fprint(stderr, result.Output)
+		if result.Status != "green" {
+			exit = 1
+		}
+	}
+	if runErr != nil {
+		fmt.Fprintln(stderr, runErr)
+		return 1
+	}
+	return exit
 }
 
 func runTestList(args []string, stdout, stderr io.Writer) int {
