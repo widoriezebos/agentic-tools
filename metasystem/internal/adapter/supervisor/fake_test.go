@@ -1030,8 +1030,8 @@ func TestFakeSelftest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		designed := strings.Replace(string(template), "Working Mode: <working mode>", "Working Mode: design", 1)
-		if !strings.HasPrefix(string(template), "Working Mode: <working mode>\n") || strings.Count(designed, "Working Mode:") != 1 {
+		designed := strings.Replace(string(template), "Working Mode: <working mode, lower case, e.g. implement>", "Working Mode: design", 1)
+		if !strings.HasPrefix(string(template), "Working Mode: <working mode, lower case, e.g. implement>\n") || strings.Count(designed, "Working Mode:") != 1 {
 			t.Fatalf("the engine's brief template changed its working-mode header: %q", template[:min(len(template), 80)])
 		}
 		if got := readText(t, filepath.Join(dir, "brief.md")); got != designed {
