@@ -81,9 +81,15 @@ func TestContinueNamedRunIsBoundToItsReservation(t *testing.T) {
 	if err := os.WriteFile(plan.Read.Brief, []byte("read it\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	fixture.manager.Settings.BuildModel = "another-model"
+	fixture.manager.Settings.BuildEffort = "high"
 	second, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: follow})
 	if err != nil || second.Record.ID != first.Record.ID || len(second.Record.Rounds) != 2 || second.Record.Rounds[1].Outcome != "green" {
 		t.Fatalf("result=%+v err=%v", second, err)
+	}
+	build, err := fixture.manager.Store.Read(stepNamed(t, second.Record.Rounds[1], "build").LaunchID)
+	if err != nil || readString(build.AdapterData, "model") != "another-model" || readString(build.AdapterData, "effort") != "high" {
+		t.Fatalf("build=%+v err=%v", build, err)
 	}
 	requireLaunchedOnce(t, fixture, 6)
 }
@@ -182,6 +188,7 @@ func TestAdvancePreparedBindsTheRequestAndItsOptions(t *testing.T) {
 	}
 	requireLaunchedOnce(t, fixture, 3)
 
+	fixture.manager.Settings.BuildModel, fixture.manager.Settings.BuildEffort = "seat-model", "low"
 	second, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)})
 	if err != nil || len(second.Record.Rounds) != 2 || second.Record.Rounds[1].Outcome != "green" || stepNamed(t, second.Record.Rounds[1], "build").Model != "unit-model" {
 		t.Fatalf("follow-up=%+v err=%v", second, err)

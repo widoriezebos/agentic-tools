@@ -158,15 +158,21 @@ func TestNamedUnitChangedInputRefusesWithThePriorRun(t *testing.T) {
 		{"base", func(t *testing.T, fixture unitFixture) {
 			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Base = "other" })
 		}},
-		{"build-model", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildModel = "another-model" }},
-		{"build-runtime", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildRuntime = "codex" }},
-		{"read-runtime", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadRuntime = "codex" }},
-		{"build-window", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildWindow = 400000 }},
-		{"read-window", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadWindow = 400000 }},
+		{"units-page", func(t *testing.T, fixture unitFixture) {
+			plan, _ := ReadUnitPlan(fixture.plan)
+			os.WriteFile(plan.Build.UnitsPage, []byte("different units\n"), 0o600)
+		}},
+		{"outputs", func(t *testing.T, fixture unitFixture) {
+			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Build.Outputs = []string{"other-output"} })
+		}},
+		{"read-model-in-plan", func(t *testing.T, fixture unitFixture) {
+			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Read.Model = "another-model" })
+		}},
 		{"build-lines-cap", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildLinesCap = 3 }},
 		{"read-split-lines", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadSplitLines = 7 }},
 	} {
 		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
 			fixture := newUnitFixture(t, "", "branch", "branch", "round")
 			input := filepath.Join(filepath.Dir(fixture.plan), "input.md")
 			os.WriteFile(input, []byte("input\n"), 0o600)
@@ -180,6 +186,99 @@ func TestNamedUnitChangedInputRefusesWithThePriorRun(t *testing.T) {
 			if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) ||
 				!strings.Contains(err.Error(), "already runs with other inputs") {
 				t.Fatalf("err=%v", err)
+			}
+			requireLaunchedOnce(t, fixture, 3)
+		})
+	}
+}
+
+func TestNamedUnitRosterChangeContinues(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, kind, key, want string
+		change                func(*Settings)
+	}{
+		{"build-model", "build", "model", `"another-model"`, func(s *Settings) { s.BuildModel = "another-model" }},
+		{"build-effort", "build", "effort", `"high"`, func(s *Settings) { s.BuildEffort = "high" }},
+		{"read-model", "read", "model", `"another-model"`, func(s *Settings) { s.ReadModel = "another-model" }},
+		{"build-runtime", "build", "", "codex-exec", func(s *Settings) { s.BuildRuntime = "codex" }},
+		{"read-runtime", "read", "", "codex-exec", func(s *Settings) { s.ReadRuntime = "codex" }},
+		{"build-window", "build", "window", "400000", func(s *Settings) { s.BuildWindow = 400000 }},
+		{"read-window", "read", "window", "400000", func(s *Settings) { s.ReadWindow = 400000 }},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "", "branch", "branch", "round")
+			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Read.Model = "" })
+			fixture.runner.AfterWrite = func(UnitRunRecord) error { return errors.New("interrupted") }
+			if _, err := fixture.runner.AdvanceNamed(fixture.plan); err == nil || err.Error() != "interrupted" {
+				t.Fatalf("err=%v", err)
+			}
+			runs := unitRunDirectories(t, fixture.runner.Root)
+			if len(runs) != 1 {
+				t.Fatalf("runs=%v", runs)
+			}
+			fixture.runner.AfterWrite = nil
+			row.change(&fixture.manager.Settings)
+			result, err := fixture.runner.AdvanceNamed(fixture.plan)
+			if err != nil || result.Record.ID != runs[0] || result.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			launch, err := fixture.manager.Store.Read(stepNamed(t, result.Record.Rounds[0], row.kind).LaunchID)
+			got := launch.Adapter
+			if row.key != "" {
+				got = string(launch.AdapterData[row.key])
+			}
+			if err != nil || got != row.want {
+				t.Fatalf("launch=%+v err=%v, want %s=%s", launch, err, row.key, row.want)
+			}
+			again, err := fixture.runner.AdvanceNamed(fixture.plan)
+			if err != nil || again.Record.ID != runs[0] {
+				t.Fatalf("repeat=%+v err=%v", again, err)
+			}
+			requireLaunchedOnce(t, fixture, 3)
+		})
+	}
+}
+
+func TestNamedUnitReservedWithRosterContinues(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{namedRecorded, namedReserved} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			events := []string{"branch", "branch", "round"}
+			if state == namedReserved {
+				events = []string{"branch", "branch", "branch", "round"}
+			}
+			fixture := newUnitFixture(t, "", events...)
+			fixture.runner.AfterWrite = func(UnitRunRecord) error { return errors.New("interrupted") }
+			if _, err := fixture.runner.AdvanceNamed(fixture.plan); err == nil || err.Error() != "interrupted" {
+				t.Fatalf("err=%v", err)
+			}
+			fixture.runner.AfterWrite = nil
+			plan, _ := ReadUnitPlan(fixture.plan)
+			worktree, key, _ := namedUnitIdentity(plan)
+			entry, _, _ := fixture.runner.readNamed(key)
+			entry.State = state
+			var err error
+			entry.Digest, err = legacyNamedUnitDigest(plan, worktree, fixture.manager.Settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture.runner.writeNamed(key, entry); err != nil {
+				t.Fatal(err)
+			}
+			if state == namedReserved {
+				if err := os.RemoveAll(fixture.runner.runDir(entry.Run)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := fixture.runner.AdvanceNamed(fixture.plan)
+			if err != nil || result.Record.ID != entry.Run || result.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if again, err := fixture.runner.Continue(UnitRequest{Resume: entry.Run}); err != nil || again.Record.ID != entry.Run {
+				t.Fatalf("continue=%+v err=%v", again, err)
 			}
 			requireLaunchedOnce(t, fixture, 3)
 		})
@@ -477,14 +576,30 @@ func TestNamedUnitChangeBeforeAPendingLaunchLaunchesNothingUntilRestored(t *test
 		}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch")
+			t.Parallel()
+			events := []string{"branch", "branch", "round", "branch"}
+			if row.name == "read-runtime" {
+				events = events[:3]
+			}
+			fixture := newUnitFixture(t, "", events...)
 			fixture.starter.onStart = func(record Record) error {
 				if record.Kind == "proof" {
 					row.change(fixture)
 				}
 				return nil
 			}
-			_, err := fixture.runner.AdvanceNamed(fixture.plan)
+			first, err := fixture.runner.AdvanceNamed(fixture.plan)
+			if row.name == "read-runtime" {
+				if err != nil || first.Record.Rounds[0].Outcome != "green" {
+					t.Fatalf("result=%+v err=%v", first, err)
+				}
+				launch, err := fixture.manager.Store.Read(stepNamed(t, first.Record.Rounds[0], "read").LaunchID)
+				if err != nil || launch.Adapter != "codex-exec" {
+					t.Fatalf("launch=%+v err=%v", launch, err)
+				}
+				requireLaunchedOnce(t, fixture, 3)
+				return
+			}
 			if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "nothing more was launched") {
 				t.Fatalf("err=%v", err)
 			}
