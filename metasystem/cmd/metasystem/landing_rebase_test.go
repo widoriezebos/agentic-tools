@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -305,7 +307,7 @@ func TestWorkRebaseRecordsItsReasonAfterPublishing(t *testing.T) {
 				}
 				return err
 			}
-			rebase := branch.RebaseResult{State: state, OldTip: strings.Repeat("1", 40), NewTip: strings.Repeat("2", 40), MainTip: strings.Repeat("3", 40), Carried: []string{"u1"}, NeedsReview: []string{"u2"}}
+			rebase := branch.RebaseResult{State: state, OldTip: strings.Repeat("1", 40), NewTip: strings.Repeat("2", 40), MainTip: strings.Repeat("3", 40), Carried: []string{"u1"}, NeedsReview: []string{"u2"}, Regenerated: []string{"gen/out"}}
 			owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) { return rebase, nil }
 			code, stdout, stderr := b.run(owners, "work", "rebase", b.id)
 			if code != 0 || stderr != "" || strings.Contains(stdout, "history line was not written") {
@@ -317,10 +319,29 @@ func TestWorkRebaseRecordsItsReasonAfterPublishing(t *testing.T) {
 			if state == "rebased" {
 				reason = "rebased 111111111111 onto main 333333333333"
 			}
-			reason += "; reviews carried: u1; needs review: u2"
+			reason += "; reviews carried: u1; needs review: u2; regenerated: gen/out"
 			if line.Verb != "rebase" || line.Reason != reason {
 				t.Fatalf("history: %+v", line)
 			}
 		})
+	}
+}
+
+func TestWorkLandRebaseJudgementAsksAndHandsNothingIn(t *testing.T) {
+	t.Parallel()
+	b := newLandRebaseBed(t)
+	b.rebaseErr = rebaseJudgementFixture(t)
+	asked := 0
+	b.owners.connection.askRebase = func(_ string, in channelAskInput) (channel.Question, []string, int, error) {
+		asked++
+		if in.Goal != "standing-validation" || in.Kind != "other" {
+			t.Fatalf("question %+v", in)
+		}
+		return channel.Question{ID: fmt.Sprintf("q%d", asked)}, nil, 0, nil
+	}
+	code, result := b.land()
+	entries, err := plain.Entries(b.lane)
+	if code == 0 || err != nil || len(entries) != 0 || asked != 2 || b.records != 0 || result.Data.(map[string]any)["code"] != branch.RebaseJudgementCode || !strings.Contains(strings.Join(result.text, "\n"), "metasystem question wait q2") {
+		t.Fatalf("refusal %d %+v queue %v questions %d", code, result, entries, asked)
 	}
 }

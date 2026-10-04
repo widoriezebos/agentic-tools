@@ -56,6 +56,11 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []string, *intentResult) {
 	targets := []intentTarget{{Kind: "goal", ID: id}}
 	refused := func(err error) (branch.RebaseResult, []string, *intentResult) {
+		var conflict *branch.RebaseConflict
+		if errors.As(err, &conflict) {
+			result := inv.rebaseJudgementQuestions(id, conflict)
+			return branch.RebaseResult{}, nil, &result
+		}
 		result := intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: err.Error(), next: inv.publicArgv("work", "status", id), nextReason: "shows the goal's branch"}
 		if first, paths, hint, ok := ownerRemedy(err.Error()); ok {
@@ -152,6 +157,9 @@ func productionRecordRebase(inv *intentInvocation, id string, rebase branch.Reba
 	if len(rebase.NeedsReview) != 0 {
 		reason += "; needs review: " + strings.Join(rebase.NeedsReview, ", ")
 	}
+	if len(rebase.Regenerated) != 0 {
+		reason += "; regenerated: " + strings.Join(rebase.Regenerated, ", ")
+	}
 	args := []string{"--root", inv.stateRoot, "--id", id, "--reason", reason}
 	result := inv.goalAct(id, "rebase", func(dependencies syncRequestDependencies) int {
 		return runGoalRecordRebase(args, inv.owners.commandNow, dependencies)
@@ -160,4 +168,42 @@ func productionRecordRebase(inv *intentInvocation, id string, rebase branch.Reba
 		return fmt.Errorf("%s", result.Summary)
 	}
 	return nil
+}
+
+func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branch.RebaseConflict) intentResult {
+	result := intentResult{Targets: []intentTarget{{Kind: "goal", ID: id}}, Outcome: intentRefused, code: 1,
+		Summary: fmt.Sprintf("rebase needs your choice; main is at %s; nothing was changed", shortCommit(conflict.MainTip)),
+		Data:    map[string]any{"code": conflict.Code}, next: inv.publicArgv("work", "status", id),
+		nextReason: "shows the goal's branch"}
+	for _, path := range conflict.Paths {
+		question := fmt.Sprintf("Goal %s and main both changed lines %d to %d of %s.\nKeep main's, keep the goal's, or write a third.", id, path.FirstLine, path.LastLine, path.Path)
+		if path.FirstLine == 0 {
+			question = fmt.Sprintf("Goal %s and main both changed %s where no common version exists.\nKeep main's, keep the goal's, or write a third.", id, path.Path)
+		}
+		mainChange := path.MainGoal
+		if mainChange == "" {
+			mainChange = path.MainCommit
+		}
+		mainImpact := fmt.Sprintf("main's drops what %s did there and unit %s loses its read", id, conflict.Unit)
+		goalImpact := fmt.Sprintf("the goal's undoes main's change there (%s)", mainChange)
+		thirdImpact := "a third is read again"
+		in := channelAskInput{Goal: id, Kind: "other", Facts: []string{question,
+			"Impact: " + mainImpact + ";\n" + goalImpact + "; a third is read again.\nNothing lands until you answer.",
+			fmt.Sprintf("Blobs: original %s, main %s, goal %s.", path.Original, path.Main, path.Goal)},
+			Options: []string{"keep main's: " + mainImpact, "keep the goal's: " + goalImpact, "write a third: " + thirdImpact}}
+		asked, warnings, code, err := inv.connection().askRebase(inv.layout.InstallationRoot.Path(), in)
+		result.text = append(result.text, warnings...)
+		if asked.ID != "" {
+			result.text = append(result.text, "question "+asked.ID+": "+path.Path,
+				"run: "+shellCommand(inv.publicArgv("question", "wait", asked.ID)))
+			if len(result.next) > 2 && result.next[1] == "work" {
+				result.next = inv.publicArgv("question", "wait", asked.ID)
+				result.nextReason = "waits for your choice"
+			}
+		}
+		if err != nil || code != 0 || asked.ID == "" {
+			result.text = append(result.text, "the question could not be sent:", question)
+		}
+	}
+	return result
 }
