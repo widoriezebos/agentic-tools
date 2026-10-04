@@ -15,6 +15,9 @@ Open read items (fix unit code-critic-28f5a4b94e6049c76cdedc2c): 3
 - ReadItem: id=code-critic-28f5a4b94e6049c76cdedc2c-1 read=code-critic-28f5a4b94e6049c76cdedc2c state=open addedAt=2026-10-04T16:01:55Z changedAt=- closingReference="" text="u1c: TestProcessDepsTakesTheServingInstallationsEngine's 'primary' and 'inside primary checkout' rows overlap; fold them."
 - ReadItem: id=code-critic-28f5a4b94e6049c76cdedc2c-2 read=code-critic-28f5a4b94e6049c76cdedc2c state=open addedAt=2026-10-04T16:01:55Z changedAt=- closingReference="" text="u1c: the Git pre-check (ask Git only when the nearest .git above the root is a file) lives only in supervisor processDeps; newOwnerPorts and delegationEngine still ask Git for every root. Moving the walk into landpath.SystemInstallation would cover every caller; it treats an unreadable .git entry as absent."
 - ReadItem: id=code-critic-28f5a4b94e6049c76cdedc2c-3 read=code-critic-28f5a4b94e6049c76cdedc2c state=open addedAt=2026-10-04T16:01:55Z changedAt=- closingReference="" text="u1c: the 'outside repository' test rows assume TMPDIR is outside any checkout, true under testenv."
+Open read items (fix unit code-critic-5167ee34da7c55d5c4928196): 2
+- ReadItem: id=code-critic-5167ee34da7c55d5c4928196-1 read=code-critic-5167ee34da7c55d5c4928196 state=open addedAt=2026-10-04T19:52:26Z changedAt=- closingReference="" text="u2: the review-close hazard proofs (validateIndependentCritiqueReference, validateClosureProvingCritic via dispatchSettingsPath(repoRoot)) still read the dispatch root's maximal-models; a builder chain closed at a goal worktree is judged by the branch's tracked settings. The goal intent names a review close: move it in a later unit."
+- ReadItem: id=code-critic-5167ee34da7c55d5c4928196-2 read=code-critic-5167ee34da7c55d5c4928196 state=open addedAt=2026-10-04T19:52:26Z changedAt=- closingReference="" text="u2: a critic started by the primary engine inherits per-key settings variables (METASYSTEM_METASYSTEM_RUNTIMES, role and maximal-models keys), so about 70 fixture tests fail inside a critic; the critic's environment should drop them."
 Open read items (fix unit code-critic-53498693cac978f76ba9e0f3): 4
 - ReadItem: id=code-critic-53498693cac978f76ba9e0f3-1 read=code-critic-53498693cac978f76ba9e0f3 state=open addedAt=2026-10-04T14:34:41Z changedAt=- closingReference="" text="u1: two launch tests that call the production newLaunchManager (launch_claude_config_test.go, launch_verbs_compress_test.go) now run one real git query through delegationToolInstallation; harmless today, but they could build the manager through newLaunchManagerFrom with a stubbed serving function."
 - ReadItem: id=code-critic-53498693cac978f76ba9e0f3-2 read=code-critic-53498693cac978f76ba9e0f3 state=open addedAt=2026-10-04T14:34:41Z changedAt=- closingReference="" text="u1: docs/architecture.md line 13 still gives the engine as METASYSTEM_BIN or ROOT/bin/metasystem; it should say the serving installation's bin/metasystem."
@@ -26,7 +29,7 @@ Open read items (fix unit u2-preliminary-reads): 4
 - ReadItem: id=u2-preliminary-reads-3 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: dispatch.InLinkedWorktree walks the path lexically (no symbolic-link resolution); an installation reached through a link from outside its worktree serves itself."
 - ReadItem: id=u2-preliminary-reads-4 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: a mutation reader's scratch copy briefly held a copy of the repository's metasystem.conf.local (deleted unread); readers that copy the tree should exclude the local layer."
 - OpenedAt: 2026-10-03T21:24:10Z
-- Revision: 25
+- Revision: 26
 - Pinned: m1g
 - Budget: elapsedLimit=2d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
@@ -62,4 +65,5 @@ History:
 - 2026-10-04T17:45:40Z TTZG6YQTXD4X5GJTM6B7GZN99N-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-04T18:02:19Z 5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb set-budget actor=human:Wido targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T14:28:12Z
 - 2026-10-04T19:37:27Z PAV4JZB4EBEWJRCH3A9YJM6T95-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
-Integrity: sha256=76e5d62c215c6f4f3b03226fac525cbea3df796eeef886fe2433a4a23ae0dfd4
+- 2026-10-04T19:52:26Z 8GMW4V7JKQBFQBY8FFHNFXJ701-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
+Integrity: sha256=6306d94ce5d9a19c609e8626ed15f9eabd936ee6f09fba53848b0c427c781eac
