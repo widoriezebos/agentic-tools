@@ -79,6 +79,12 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 		fmt.Fprintf(stderr, "%s: works on the files it names and takes no --repo; nothing was done\n", label)
 		return 2
 	}
+	if command.object == "test" && command.action == "groups" {
+		if repoGiven {
+			rest = append([]string{"--root", repo}, rest...)
+		}
+		return run(rest, stdout, stderr)
+	}
 	receipts := command.object == "receipt" && !fileGiven
 	if !documentsRoot || rootGiven && !receipts {
 		return run(rest, stdout, stderr)
@@ -405,6 +411,10 @@ func practiceIntentCommands() []intentCommand {
 				documented("end", "WAIT-ID", "the wait is over"), documented("root", "PATH", "the checkout (default: the current directory)"),
 				{name: "json", usage: "print the recorded wait as JSON"}},
 			[]string{"metasystem session wait --pid 4242 --label 'release build'", "metasystem session wait --question 'Ship it?' --timeout 2h", "metasystem session wait --end 0123456789abcdef0123456789abcdef"}, runSessionWait),
+		passthroughAction("test", "groups", "both", "run named contract groups and their prerequisites for the proof command, without recording proof",
+			[]string{"metasystem test groups ID... [--environment] [--root INSTALLATION]", "metasystem test groups --environment [--root INSTALLATION]"},
+			[]intentFlag{documented("root", "INSTALLATION", "the installation"), {name: "environment", usage: "with no ids, print only the landing environment"}},
+			[]string{"metasystem test groups fast-static-build", "metasystem test groups --environment"}, runTestGroups),
 		passthroughAction("test", "list", "both", "every group in the committed testing contract",
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
