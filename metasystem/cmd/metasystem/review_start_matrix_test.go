@@ -28,6 +28,10 @@ type reviewStartRow struct {
 	corrected bool
 	// admitted: nothing refuses; the first request goes through.
 	admitted bool
+	// workAdmitted: the review of the work starts. Its critic's brief carries
+	// the build brief, which the build ran with, so the paths it cites are
+	// not checked again. A person's brief to the review of a commit still is.
+	workAdmitted bool
 	// fromPrimary: the critic is dispatched from the seat's checkout, whose
 	// HEAD is main, not from the goal worktree.
 	fromPrimary bool
@@ -41,7 +45,9 @@ type reviewStartRow struct {
 // if any is in place, as the delegate reports it; otherwise it starts one
 // critic. It goes through readDelegate, so outcomes are classified as in
 // production. The admission is the delegate's own call: the brief is read
-// against the commit under review and the dispatching checkout's HEAD.
+// against the commit under review and the dispatching checkout's HEAD,
+// except a goal read's brief recorded as carrying the build brief, whose
+// headers and bounds alone are checked.
 func reviewStartDelegate(c *connectionBed, install string) func(string, string, string, string, string) (string, error) {
 	return func(brief, goalID, commit, runtime, model string) (string, error) {
 		caller := func(_ delegateRequest, stdout, _ io.Writer) int {
@@ -53,7 +59,11 @@ func reviewStartDelegate(c *connectionBed, install string) func(string, string, 
 			if c.fromPrimary {
 				base = c.root()
 			}
-			if _, err := dispatchcore.ReadReviewBriefAdmission(brief, base, base, base, "commit:"+commit); err != nil {
+			tree := base
+			if branch.BuildBriefAdmitted(brief) {
+				tree = ""
+			}
+			if _, err := dispatchcore.ReadReviewBriefAdmission(brief, base, tree, base, "commit:"+commit); err != nil {
 				emit(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: "brief authority admission refused: " + err.Error()})
 				return 1
 			}
@@ -85,7 +95,9 @@ func reviewStartRows() []reviewStartRow {
 		GoalID: "standing-validation", GoalRevision: 1, Breaches: []dispatchcore.BudgetBreach{{Field: "activeJobLimit", Used: "1", Limit: "1"}}}}}), "\n")
 	unblock := func(c *connectionBed) { c.mu.Lock(); c.refusal = nil; c.mu.Unlock() }
 	return []reviewStartRow{
-		{name: "ignored-path", cite: "plans/scratch/notes.md", cause: "plans/scratch/notes.md",
+		// The review of the work starts: the cited file is the build brief's,
+		// written by the feature at runtime.
+		{name: "ignored-path", cite: "plans/scratch/notes.md", cause: "plans/scratch/notes.md", workAdmitted: true,
 			setup: func(c *connectionBed) {
 				c.commitToMain(map[string]string{".gitignore": "artifacts/\n.claude/settings.local.json\nmetasystem.conf.local\nplans/scratch/\n", "plans/README.md": "plans\n"})
 			},
@@ -94,14 +106,17 @@ func reviewStartRows() []reviewStartRow {
 			clear: func(c *connectionBed) {
 				c.writeFile(filepath.Join(c.worktree, "plans", "scratch", "notes.md"), "runtime notes\n")
 			}},
-		{name: "untracked-seat-file", cite: "plans/trace.md", cause: "plans/trace.md",
+		// The review of the work starts: the cited file is the build brief's.
+		{name: "untracked-seat-file", cite: "plans/trace.md", cause: "plans/trace.md", workAdmitted: true,
 			setup: func(c *connectionBed) { c.commitToMain(map[string]string{"plans/README.md": "plans\n"}) },
 			// The seat writes the file in its own checkout and does not
 			// commit it.
 			clear: func(c *connectionBed) {
 				c.writeFile(filepath.Join(c.root(), "plans", "trace.md"), "the seat's trace\n")
 			}},
-		{name: "corrected-brief", cite: "plans/never.md", cause: "plans/never.md", corrected: true,
+		// The review of the work starts: the cited file is the build brief's,
+		// so only the review of a commit needs a corrected brief.
+		{name: "corrected-brief", cite: "plans/never.md", cause: "plans/never.md", corrected: true, workAdmitted: true,
 			setup: func(c *connectionBed) { c.commitToMain(map[string]string{"plans/README.md": "plans\n"}) },
 			clear: func(c *connectionBed) {}},
 		// A file new in the unit under review, absent from main, cited by a
@@ -183,9 +198,10 @@ func runReviewStartRow(t *testing.T, row reviewStartRow, via string) {
 	c.refusal = row.block
 	code, result := c.do(request...)
 	first, _, _ := strings.Cut(result.Summary, "\n")
-	if row.admitted {
+	admitted := row.admitted || via == "work" && row.workAdmitted
+	if admitted {
 		if result.Outcome != intentInProgress || len(c.delegates) != 1 || strings.Contains(c.briefs[0], "Frozen input: ") {
-			t.Fatalf("a path the reviewed tree holds is admitted outright, never frozen: code=%d %+v delegates=%d", code, result, len(c.delegates))
+			t.Fatalf("an admitted brief starts the review outright, never frozen: code=%d %+v delegates=%d", code, result, len(c.delegates))
 		}
 	} else if code == 0 || result.Outcome != intentRefused || !strings.Contains(first, row.cause) || result.Next == nil || len(c.delegates) != 0 {
 		t.Errorf("(a) the refusal names its cause %q on its first line and a next step: code=%d outcome=%s first=%q next=%v delegates=%d",
@@ -195,7 +211,7 @@ func runReviewStartRow(t *testing.T, row reviewStartRow, via string) {
 		row.clear(c)
 	}
 	again := request
-	if row.corrected {
+	if row.corrected && !admitted {
 		corrected := c.brief("corrected.md", "Working Mode: implement\n\nReview the connection against its result.\n")
 		again = []string{"work", "review", "--commit", c.unitCommit(t), "--goal", c.id, "--brief", filepath.Join(c.root(), corrected)}
 	}
@@ -204,7 +220,7 @@ func runReviewStartRow(t *testing.T, row reviewStartRow, via string) {
 		t.Fatalf("(b) nothing is bound by a refused admission: after the cause is removed the request goes through: code=%d %+v delegates=%d",
 			code, result, len(c.delegates))
 	}
-	if row.name == "untracked-seat-file" && !strings.Contains(c.briefs[0], "Frozen input: plans/trace.md ") {
+	if row.name == "untracked-seat-file" && !admitted && !strings.Contains(c.briefs[0], "Frozen input: plans/trace.md ") {
 		t.Fatalf("the seat's untracked file reaches the critic only as a frozen copy:\n%s", c.briefs[0])
 	}
 	other := c.brief("other.md", "Working Mode: implement\n\nAnother brief.\n")
