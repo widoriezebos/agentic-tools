@@ -13,8 +13,8 @@ import (
 // TestRebaseGitAdapter observes replay, checkout installation, atomic publication and abort cleanup.
 func TestRebaseGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, conflicts := range []bool{false, true} {
-		t.Run(map[bool]string{false: "replay", true: "conflict"}[conflicts], func(t *testing.T) {
+	for _, mode := range []string{"replay", "conflict", "generated"} {
+		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			remote := filepath.Join(dir, "origin.git")
 			primary := filepath.Join(dir, "primary")
@@ -48,17 +48,28 @@ func TestRebaseGitAdapter(t *testing.T) {
 			git(dir, "clone", "-q", remote, primary)
 			git(primary, "config", "user.name", "fixture")
 			git(primary, "config", "user.email", "fixture@example.invalid")
-			commit(primary, "metasystem/code.txt", "base\n", "base")
+			write(primary, "metasystem/metasystem.conf", "testing.contract=testing.json\n")
+			write(primary, "metasystem/testing.json", rebaseTestContract(t, `[{"paths":["gen/**"],"command":["cp","src.txt","gen/out.txt"]}]`))
+			write(primary, "metasystem/src.txt", "base\n")
+			write(primary, "metasystem/gen/out.txt", "base\n")
+			base := commit(primary, "metasystem/code.txt", "base\n", "base")
 			git(primary, "push", "-qu", "origin", "main")
 			git(primary, "worktree", "add", "-qb", "goal/goal-a", work)
 			plan := commit(work, "metasystem/plans/design.md", "a plan\n", "plan\n\nGoal-Plan: goal-a")
+			if mode == "generated" {
+				write(work, "metasystem/gen/out.txt", "goal\n")
+			}
 			unit := commit(work, "metasystem/code.txt", "unit\n", "unit\n\nGoal-Unit: goal-a/u1")
 			record := "metasystem/records/reads/goal-a/" + unit + ".json"
 			old := commit(work, record, `{"testsChanged":[]}`+"\n", "read\n\nGoal-Read: goal-a/u1 "+unit)
 			git(work, "push", "-q", "origin", "goal/goal-a")
 			path, body := "metasystem/other.txt", "main\n"
-			if conflicts {
+			if mode == "conflict" {
 				path, body = "metasystem/code.txt", "main\n"
+			}
+			if mode == "generated" {
+				write(primary, "metasystem/gen/out.txt", "main\n")
+				write(primary, "metasystem/src.txt", "merged sources\n")
 			}
 			main := commit(primary, path, body, "main moved")
 			git(primary, "push", "-q", "origin", "main")
@@ -80,10 +91,14 @@ func TestRebaseGitAdapter(t *testing.T) {
 			}
 			req := RebaseRequest{Repo: filepath.Join(work, "metasystem"), Remote: "origin", GoalID: "goal-a", EndpointTip: main, CheckClaim: func() error { return nil }}
 			got, err := rebaseWith(req, d)
-			if conflicts {
-				var refusal *OpError
-				if !errors.As(err, &refusal) || refusal.Code != RebaseConflictCode || !strings.Contains(err.Error(), "metasystem/code.txt") {
+			if mode == "conflict" {
+				var refusal *RebaseConflict
+				if !errors.As(err, &refusal) || refusal.Code != RebaseJudgementCode || !strings.Contains(err.Error(), "metasystem/code.txt") {
 					t.Fatalf("conflict %v", err)
+				}
+				versions := refusal.Paths[0]
+				if versions.FirstLine != 1 || versions.LastLine != 1 || versions.Original != git(work, "rev-parse", base+":metasystem/code.txt") || versions.Main != git(work, "rev-parse", main+":metasystem/code.txt") || versions.Goal != git(work, "rev-parse", unit+":metasystem/code.txt") || versions.MainCommit != main {
+					t.Fatalf("versions %+v", versions)
 				}
 				after := []string{git(work, "rev-parse", "HEAD"), git(work, "status", "--porcelain"), git(work, "diff"), git(work, "worktree", "list", "--porcelain"), git(work, "for-each-ref", "--format=%(refname) %(objectname)", "refs/metasystem/goals/before/"), git(remote, "show-ref")}
 				if !reflect.DeepEqual(before, after) {
@@ -97,6 +112,14 @@ func TestRebaseGitAdapter(t *testing.T) {
 			}
 			if err != nil || got.State != "rebased" || got.OldTip != old {
 				t.Fatalf("rebase %+v %v", got, err)
+			}
+			if mode == "generated" {
+				if data, err := os.ReadFile(filepath.Join(work, "metasystem/gen/out.txt")); err != nil || string(data) != "merged sources\n" {
+					t.Fatalf("generated content %s %v", data, err)
+				}
+				if !reflect.DeepEqual(got.Carried, []string{"u1"}) || !reflect.DeepEqual(got.Regenerated, []string{"metasystem/gen/out.txt"}) {
+					t.Fatalf("review or regeneration %+v", got)
+				}
 			}
 			commits, err := ValidateRange(req.Repo, main, got.NewTip, "goal-a")
 			if err != nil || len(commits) != 3 {
