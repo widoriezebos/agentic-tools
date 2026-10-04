@@ -4,6 +4,7 @@
 - Id: 01M42XE4V9XAAD3W0E7YR0AX55
 - Status: accepted
 - Goals: lane-records-flakes-and-routes-their-fix
+- Critique: ruled at round 2 (Astra round 1, six material, all folded; the confirmation read's LF-01 residual accepted by Wido via m1e, option a)
 
 Accepted 2026-10-04 10:30 by the ui seat for the build: tier 2, one Astra round and one confirmation read (m1e's order); LF-01's residual accepted by Wido (below); his two answers are in the rulings section.
 
