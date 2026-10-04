@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 type designGateOwners struct {
@@ -141,7 +142,7 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 	o := inv.designGate()
 	now := time.Now().UTC()
 	r := designGateRecord{Schema: 1, Goal: f.Goal, Unit: unit, Worktree: worktree, Tier: f.Tier, Mode: result.Mode,
-		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, Time: now, Designs: []landing.DesignRecord{}}
+		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, GovernedBy: refusal.GovernedBy["BUILD_DESIGN_NOT_ACCEPTED"], Time: now, Designs: []landing.DesignRecord{}}
 	var bodyErr error
 	for _, d := range f.Designs {
 		if d.Status == "accepted" {

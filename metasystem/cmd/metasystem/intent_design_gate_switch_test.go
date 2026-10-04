@@ -75,7 +75,7 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 				}
 				verboseArgs := append(append([]string(nil), args[:len(args)-len(workCheck)]...), "--verbose")
 				code, _, text := bed.run(bed.workOwners(), append(verboseArgs, workCheck...)...)
-				if code != 1 || !strings.Contains(text, want) || !strings.Contains(text, "BUILD_DESIGN_NOT_ACCEPTED goal="+bed.id+" verdict=") || !strings.Contains(text, "governed-by=") {
+				if code != 1 || !strings.Contains(text, want) || !strings.Contains(text, "BUILD_DESIGN_NOT_ACCEPTED goal="+bed.id+" verdict=") || !strings.Contains(text, "governed-by=R-146-m1k") {
 					t.Fatalf("verbose refusal: code=%d text=%q", code, text)
 				}
 				return
@@ -85,7 +85,7 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 			}
 			identity, _ := bed.designGate.identity(bed.stateRoot())
 			_, record := designGateRead(t, bed, identity, "u")
-			if record.Mode != mode || record.Person != (scenario == "person") {
+			if record.Mode != mode || record.Person != (scenario == "person") || record.GovernedBy != "R-146-m1k" {
 				t.Fatalf("dispatch record: %+v", record)
 			}
 			if scenario == "allowed" && (record.Verdict != "allowed" || record.WouldRefuse || output != "") {

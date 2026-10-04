@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -602,10 +603,14 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if gateResult.Mode == "refuse" && gateResult.WouldRefuse {
 		reason := strings.TrimPrefix(strings.SplitN(gateResult.Warning[0], ";", 2)[0], "warning: ")
 		if !person {
+			detail := fmt.Sprintf("BUILD_DESIGN_NOT_ACCEPTED goal=%s verdict=%s", id, gateResult.Verdict)
+			if ruling := refusal.GovernedBy["BUILD_DESIGN_NOT_ACCEPTED"]; ruling != "" {
+				detail += " governed-by=" + ruling
+			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 				Summary: reason + "; nothing was built", Data: map[string]any{"designGate": gateResult},
 				next:    inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"),
-				Details: []string{fmt.Sprintf("BUILD_DESIGN_NOT_ACCEPTED goal=%s verdict=%s governed-by=", id, gateResult.Verdict)}})
+				Details: []string{detail}})
 		}
 		gateResult.Warning[0] = "warning: " + reason + "; it goes on at your word"
 	}

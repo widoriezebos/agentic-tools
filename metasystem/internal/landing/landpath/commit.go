@@ -476,6 +476,7 @@ func (b *boundary) proveAndCommit() int {
 // decision is the deciding observation as the boundary reads it.
 type decision struct {
 	provenance, verdict, code, mode, refusal string
+	detail                                   string
 	refusesAgent                             bool
 	goalRevision                             string
 	carried                                  *landing.CarriedBinding
@@ -489,7 +490,7 @@ func decisionOf(observed observationView) (decision, bool) {
 		return decision{}, false
 	}
 	out := decision{provenance: observed.Provenance, verdict: observed.VerdictTrailer, code: observed.Code,
-		mode: observed.Mode, refusal: observed.Refusal, refusesAgent: refuses, carried: observed.Carried, design: observed.Design}
+		mode: observed.Mode, refusal: observed.Refusal, detail: observed.Detail, refusesAgent: refuses, carried: observed.Carried, design: observed.Design}
 	if observed.GoalRevision > 0 {
 		out.goalRevision = strconv.FormatUint(observed.GoalRevision, 10)
 	}
@@ -504,6 +505,7 @@ type observationView struct {
 	Provenance     string
 	VerdictTrailer string
 	Refusal        string
+	Detail         string
 	GoalRevision   uint64
 	Carried        *landing.CarriedBinding
 	Design         *landing.DesignObservation
@@ -597,7 +599,11 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 		fmt.Fprintln(b.stderr, decided.design.Pair[0]+"\n"+decided.design.Pair[1])
 	}
 	if b.agent && decided.code == "LANDING_DESIGN_NOT_STANDING" && decided.design != nil {
-		return b.stop(3, decided.design.Pair[0], []string{"metasystem", "goal", "allow", request.Goal, "build-without-design", "--reason", "TEXT"}, "")
+		detail := "refused because: LANDING_DESIGN_NOT_STANDING"
+		if decided.detail != "" {
+			detail += " " + decided.detail
+		}
+		return b.stop(3, decided.design.Pair[0], []string{"metasystem", "goal", "allow", request.Goal, "build-without-design", "--reason", "TEXT"}, "", detail)
 	}
 	if request.Carried != "" && decided.mode == "refuse" {
 		details := []string{"verdict: " + decided.verdict}
@@ -627,6 +633,6 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 
 func view(observed landing.Observation) observationView {
 	return observationView{Mode: observed.Mode, RefusesAgent: observed.RefusesAgent, Code: observed.Code,
-		Provenance: observed.Provenance, VerdictTrailer: observed.VerdictTrailer, Refusal: observed.Refusal,
+		Provenance: observed.Provenance, VerdictTrailer: observed.VerdictTrailer, Refusal: observed.Refusal, Detail: observed.Detail,
 		GoalRevision: observed.GoalRevision, Carried: observed.Carried, Design: observed.Design}
 }

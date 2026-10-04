@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func TestLandingDesignCheckHandRoute(t *testing.T) {
@@ -36,6 +38,65 @@ func TestLandingDesignCheckHandRoute(t *testing.T) {
 				t.Fatalf("commits=%d stderr=%q pair=%q", b.git.commits, b.stderr.String(), design.Pair)
 			}
 		})
+	}
+}
+
+func TestLandingDesignCheckHandObserveGoverned(t *testing.T) {
+	t.Parallel()
+	// Observe reads Git through PATH. A child keeps the two canned tree
+	// answers local to this test while other landing tests run in parallel.
+	if os.Getenv("LANDPATH_DESIGN_GOVERNED_CHILD") != "1" {
+		scratch := t.TempDir()
+		source := filepath.Join(scratch, "git.go")
+		if err := os.WriteFile(source, []byte(`package main
+import ("fmt"; "os")
+func main() {
+    args := os.Args[1:]
+    for len(args) >= 2 && (args[0] == "-C" || args[0] == "-c") { args = args[2:] }
+    if len(args) > 0 {
+        switch args[0] {
+        case "rev-parse": fmt.Println("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); return
+        case "diff": return
+        }
+    }
+    fmt.Fprintln(os.Stderr, "unexpected Git request:", args)
+    os.Exit(1)
+}
+`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		build := testenv.Go("build", "-o", filepath.Join(scratch, "git"), source)
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build Git stub: %v\n%s", err, out)
+		}
+		child := exec.Command(os.Args[0], "-test.run=^TestLandingDesignCheckHandObserveGoverned$", "-test.count=1", "-test.v")
+		child.Env = append(os.Environ(), "PATH="+scratch, "LANDPATH_DESIGN_GOVERNED_CHILD=1")
+		if out, err := child.CombinedOutput(); err != nil {
+			t.Fatalf("hand landing fixture: %v\n%s", err, out)
+		}
+		return
+	}
+	b := newBed(t)
+	b.epoch = epochOf(4)
+	b.git.tree = strings.Repeat("a", 40)
+	jobs := filepath.Join(b.root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "j1.json"), []byte(`{"jobId":"j1","role":"implementer"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b.owners.Live = func() Judge {
+		return Judge{Observe: func(request ObserveRequest) (landing.Observation, int) {
+			return landing.Observe(landing.ObserveParams{RepoRoot: request.Root, CandidateTree: request.Tree,
+				Goal: request.Goal, Actor: request.Actor, Chain: request.Chain, DesignFacts: func() landing.DesignFacts {
+					return landing.DesignFacts{Facts: designgate.Facts{Goal: request.Goal, Tier: 2, Mode: "refuse"}}
+				}}), 0
+		}}
+	}
+	b.expect(b.commit(CommitRequest{Goal: "g1", GoalSet: true, Chain: "j1", OwnerLineage: "L"}), 3)
+	if b.git.commits != 0 || !strings.Contains(b.stdout.String(), "refused because: LANDING_DESIGN_NOT_STANDING governed-by=R-146-m1k\n") {
+		t.Fatalf("hand landing: commits=%d details=%q stderr=%q", b.git.commits, b.stdout.String(), b.stderr.String())
 	}
 }
 

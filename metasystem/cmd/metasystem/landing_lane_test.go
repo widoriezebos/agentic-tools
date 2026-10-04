@@ -109,6 +109,9 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				}
 				refuses := mode == "refuse" && (failure == "" || failure == "record-changed")
 				if refuses {
+					if !strings.Contains(strings.Join(result.Details, " "), "refused because: LANDING_DESIGN_NOT_STANDING governed-by=R-146-m1k") {
+						t.Fatalf("refusal has no governing ruling: %+v", result)
+					}
 					if code != 1 || pushes != 0 || !strings.HasSuffix(result.Summary, "; nothing was pushed") || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem landing return "+bed.id+" --reason TEXT" || result.Next.Reason != "gives the goal back to its seat to restore its accepted design" {
 						t.Fatalf("refusal: code=%d pushes=%d result=%+v", code, pushes, result)
 					}

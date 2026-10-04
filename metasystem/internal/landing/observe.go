@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -240,6 +241,9 @@ func observeWithFacts(params ObserveParams, facts observationFacts) (observation
 			if design.RefusesAgent && !observation.RefusesAgent {
 				observation = refuse("LANDING_DESIGN_NOT_STANDING", observation.Provenance)
 				observation.Refusal = design.Pair[0]
+				if ruling := refusal.GovernedBy[observation.Code]; ruling != "" {
+					observation.Detail = "governed-by=" + ruling
+				}
 			}
 			observation.Design = &design
 		}

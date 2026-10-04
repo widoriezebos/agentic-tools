@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -81,10 +82,14 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
 			design.Pair[1] = "metasystem landing return " + entry.Goal + " --reason TEXT"
 			if refused == nil {
+				detail := "refused because: LANDING_DESIGN_NOT_STANDING"
+				if ruling := refusal.GovernedBy["LANDING_DESIGN_NOT_STANDING"]; ruling != "" {
+					detail += " governed-by=" + ruling
+				}
 				refused = &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root), Data: design,
 					Summary: design.Pair[0], next: inv.publicArgv("landing", "return", entry.Goal, "--reason", "TEXT"),
 					nextReason: "gives the goal back to its seat to restore its accepted design",
-					Details:    []string{"refused because: LANDING_DESIGN_NOT_STANDING"}}
+					Details:    []string{detail}}
 			} else {
 				inv.laneDesignPair(design.Pair)
 			}
