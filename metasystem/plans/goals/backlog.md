@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 173
+- Revision: 174
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -230,4 +230,6 @@ History:
 - 2026-10-04T19:37:27Z PAV4JZB4EBEWJRCH3A9YJM6T95-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T14:28:12Z ack
 - 2026-10-04T21:10:52Z A8J9T0DYJ0T6B5CBH02RXQWHYW-m1f-71c5cb39 ack actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T15:37:28Z ack
 - 2026-10-04T21:11:52Z BFW272P4H50MTYFKGSWTW9RB3W-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T18:02:19Z ack
-Integrity: sha256=ce8c3e514cdfb9be77d91eb019c84bd60c9eb4bc864cffbb63643871f9df4b75
+- 2026-10-04T21:12:08Z RWS9NVG0Y9MTE00G5FSXDHSK9X-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T13:00:29Z ack
+- 2026-10-04T21:12:08Z RWS9NVG0Y9MTE00G5FSXDHSK9X-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T20:12:57Z ack
+Integrity: sha256=ecd4be3a23c11ed82b2bd87b13daf868b9821430a98bca84f499bdcd04c80291
