@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 10
+- Sequence: 9
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="a register and a bounded re-proof in the lane plus an auto-opened fix item: it records and routes, it does not decide what lands; a wrong record costs a misrouted item, not a bad landing; every adopter's lane runs it"
 - Tier: 2
 - Intent: The lane never buys a green by repeating a proof: when a test fails in a proof and the same test passes on the re-proof of the same tree, or passes repeatedly on its own, the lane records a flake (test, package, tree, proof log, load at the time) in a register, opens the fix as a priority-1 item on the goal that owns the test's surface (or a new tier-1 goal when none owns it), and re-proves a red that is not the branch's fault at most once per tree. Language-generic: the test identity and the owning surface come from the testing contract; nothing in the mechanism knows Go. Smallest thing that works: the register, the one bounded re-proof, the auto-opened item; no classification cleverness beyond "failed, then passed on the same tree".
@@ -18,7 +18,7 @@ Open read items (fix unit code-critic-6bd135b1b27c060f3dae00b3): 2
 Open read items (fix unit code-critic-6bd82e9caf9d73d29783303e): 1
 - ReadItem: id=code-critic-6bd82e9caf9d73d29783303e-1 read=code-critic-6bd82e9caf9d73d29783303e state=open addedAt=2026-10-04T12:06:38Z changedAt=- closingReference="" text="stall-wait N-1: a pause's SIGKILL skips the fixture adapter's deferred removal of <fifo>.held (internal/deploy/testdata/fixtureadapter/main.go hold), so the marker outlives a killed call; harmless while each bed awaits one hold before its only pause, but a test that awaits a second hold on one bed must clear or key the marker first. (moved from landing-deploys-the-engine)"
 - OpenedAt: 2026-10-03T20:56:55Z
-- Revision: 22
+- Revision: 23
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -51,4 +51,5 @@ History:
 - 2026-10-04T14:40:45Z 0ZX3BG9T1820JFZ3CE0DN7VZ3J-m1e-718ba0eb set-budget actor=human:Wido targets=lane-records-flakes-and-routes-their-fix displaced=ui+steward-seat@2026-10-04T07:24:09Z
 - 2026-10-04T15:44:46Z ZK5ZSWGRNV22QMETM11CC1G39Z-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix
 - 2026-10-04T16:49:05Z YJKFPZQ4B2XG9VD3SC6JV0R7HQ-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix
-Integrity: sha256=a8f1334f9f4308acb341f8d7df85409546bcee8be1697200671934029853e59e
+- 2026-10-04T17:09:56Z J98JMBWCWEAZXS1KJMRJE24AGX-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:10 to=1:9
+Integrity: sha256=a9000a5ecce61637f987331e8ed6c78a0154a262911220e01fd2db7475888c0a
