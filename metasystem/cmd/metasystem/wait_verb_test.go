@@ -650,6 +650,7 @@ func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
 
 type pendingWaitVerdictCommandOptions struct {
 	jobStatus            string
+	engineInstallation   string
 	writeWaiter          bool
 	requireHook          bool
 	requireChildShellGit bool
@@ -657,8 +658,8 @@ type pendingWaitVerdictCommandOptions struct {
 
 // installPendingWaitGit provides only the Git answers used by an ordinary
 // checkout before its accepted goal reference exists. Every other command is
-// recorded and refused, including commands from a different working directory.
-func installPendingWaitGit(t *testing.T, root string, requireHook, requireChildShellGit bool) {
+// recorded and refused. The engine's installation serves its own checkout.
+func installPendingWaitGit(t *testing.T, root, engineInstallation string, requireHook, requireChildShellGit bool) {
 	t.Helper()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -685,6 +686,7 @@ func installPendingWaitGit(t *testing.T, root string, requireHook, requireChildS
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_WAIT_GIT_ROOT", canonicalRoot)
+	t.Setenv("METASYSTEM_WAIT_GIT_ENGINE_ROOT", engineInstallation)
 	t.Setenv("METASYSTEM_WAIT_GIT_HELPER", os.Args[0])
 	t.Setenv("METASYSTEM_WAIT_GIT_HOOK_CWD", hookCwd)
 	t.Setenv("METASYSTEM_WAIT_GIT_SUPPORTED", supported)
@@ -751,7 +753,7 @@ func TestPendingWaitGitHelper(t *testing.T) {
 	root := os.Getenv("METASYSTEM_WAIT_GIT_ROOT")
 	hookCwd := os.Getenv("METASYSTEM_WAIT_GIT_HOOK_CWD")
 	childShell := os.Getenv("METASYSTEM_WAIT_GIT_CHILD_SHELL") == "1"
-	reply, supported := pendingWaitGitAnswer(root, hookCwd, cwd, childShell, argv)
+	reply, supported := pendingWaitGitAnswer(root, hookCwd, os.Getenv("METASYSTEM_WAIT_GIT_ENGINE_ROOT"), cwd, childShell, argv)
 	if cwdErr != nil || len(argv) == 0 || root == "" || hookCwd == "" {
 		supported = false
 	}
@@ -779,9 +781,17 @@ func TestPendingWaitGitHelper(t *testing.T) {
 	os.Exit(reply.status)
 }
 
-func pendingWaitGitAnswer(root, hookCwd, cwd string, childShell bool, argv []string) (pendingWaitGitReply, bool) {
+func pendingWaitGitAnswer(root, hookCwd, engineRoot, cwd string, childShell bool, argv []string) (pendingWaitGitReply, bool) {
 	answer := func(stdout, stderr string, status int) (pendingWaitGitReply, bool) {
 		return pendingWaitGitReply{stdout: stdout, stderr: stderr, status: status}, true
+	}
+	if engineRoot != "" && cwd == engineRoot {
+		switch {
+		case slices.Equal(argv, []string{"rev-parse", "--path-format=absolute", "--git-common-dir"}):
+			return answer(filepath.Join(engineRoot, ".git")+"\n", "", 0)
+		case slices.Equal(argv, []string{"rev-parse", "--show-toplevel"}):
+			return answer(engineRoot+"\n", "", 0)
+		}
 	}
 	if cwd == hookCwd && len(argv) >= 3 && argv[0] == "-C" {
 		commandRoot, err := filepath.EvalSymlinks(argv[1])
@@ -851,6 +861,28 @@ func pendingWaitGitAnswer(root, hookCwd, cwd string, childShell bool, argv []str
 	return pendingWaitGitReply{}, false
 }
 
+func TestPendingWaitGitRejectsUnexpectedEngineReads(t *testing.T) {
+	t.Parallel()
+	root, hookCwd, engineRoot := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, tc := range []struct {
+		cwd, output string
+		args        []string
+		supported   bool
+	}{
+		{engineRoot, filepath.Join(engineRoot, ".git") + "\n", []string{"rev-parse", "--path-format=absolute", "--git-common-dir"}, true},
+		{engineRoot, engineRoot + "\n", []string{"rev-parse", "--show-toplevel"}, true},
+		{engineRoot, "", []string{"status"}, false},
+		{engineRoot, "", []string{"rev-parse", "--git-dir"}, false},
+		{engineRoot, "", []string{"rev-parse", "--show-toplevel", "extra"}, false},
+		{hookCwd, "", []string{"rev-parse", "--show-toplevel"}, false},
+	} {
+		reply, supported := pendingWaitGitAnswer(root, hookCwd, engineRoot, tc.cwd, true, tc.args)
+		if supported != tc.supported || reply.stdout != tc.output || reply.stderr != "" || reply.status != 0 {
+			t.Fatalf("cwd=%q args=%q reply=%+v supported=%t", tc.cwd, tc.args, reply, supported)
+		}
+	}
+}
+
 type pendingWaitCommandFixture struct {
 	session      string
 	mainID       string
@@ -867,7 +899,7 @@ func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (s
 
 func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName string, options pendingWaitVerdictCommandOptions) pendingWaitCommandFixture {
 	t.Helper()
-	installPendingWaitGit(t, root, options.requireHook, options.requireChildShellGit)
+	installPendingWaitGit(t, root, options.engineInstallation, options.requireHook, options.requireChildShellGit)
 	if options.requireChildShellGit {
 		if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
 			t.Fatal(err)
@@ -1651,6 +1683,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	root := t.TempDir()
 	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{
 		jobStatus: "pending", writeWaiter: false, requireHook: true, requireChildShellGit: true,
+		engineInstallation: launchSeatInstallation(binary),
 	})
 	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
 	mainID := commandFixture.mainID

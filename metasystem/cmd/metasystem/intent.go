@@ -568,6 +568,8 @@ type intentOwners struct {
 	attorney attorneyIntentOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
+	// ownEngine checks whether this engine may run the public verb; zero is production.
+	ownEngine ownEngineOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
 	// sentBackRevise runs the one work revise a sent-back goal's holder
@@ -673,6 +675,9 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 		return inv.render(*problem)
 	}
 	defer inv.leaveStores()
+	if problem := inv.checkOwnEngine(); problem != nil {
+		return inv.render(*problem)
+	}
 	return command.run(inv)
 }
 
