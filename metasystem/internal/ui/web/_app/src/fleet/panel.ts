@@ -1,6 +1,6 @@
-import { proofLogAddress, type BoardPayload, type BoardSeat, type Health, type Lane, type LaneEntry, type Machine, type Page, type Working } from "./api";
+import { proofLogAddress, type BoardPayload, type BoardSeat, type Lane, type LaneEntry, type Machine, type Page, type Working } from "./api";
 import { ageBetween, dateAndTime, minuteTime } from "../backlog/format";
-import { flagWords, minutesWords } from "./fleet";
+import { flagWords, minutesWords, roundWords } from "./fleet";
 
 /**
  * The panel's rules, kept apart from the elements that draw them: the one
@@ -248,8 +248,9 @@ export type NeedAct =
  * sentence. What to do is exactly one of three: the act (a button at the
  * line's end), the command a person types (the public verb, in code), or —
  * for a silent machine holding several goals — one command per goal, under
- * its title. Never two of them. A health check's failing reasons stand behind
- * a Details disclosure, one line each. `at` orders the list, newest first.
+ * its title. Never two of them. Only an unreadable health record keeps its
+ * reader's message behind a Details disclosure. `at` orders the list, newest
+ * first.
  */
 export type Need = {
   key: string;
@@ -492,52 +493,34 @@ function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
   });
 }
 
-/** The steward's role whose death means the steward itself is not running. */
+/** The one role whose check has a person's command on this page. */
 const STEWARD = "steward-runner";
 
-/** What a failing or undecided check says, by its own reason and never its role's name. */
-function reasonsOf(health: Health): string[] {
-  return health.roles
-    .filter((role) => role.status !== "alive")
-    .map((role) => (role.reason === "" ? "a check failed and recorded no reason" : role.reason));
-}
-
 /**
- * This computer's own health record, as the steward last wrote it, when it
- * is wrong: a record that could not be read, one the steward stopped
- * writing, a steward that is not running, a check that failed, and a check
- * that could not decide. Each says what is wrong in one line, with the
- * reasons behind Details and the one verb that deals with it; an unreadable
- * record and an undecided check are items too, so the verdict is never green
- * over them (FR-01). A checkout never armed has no record and needs nothing.
+ * The steward and its record, with one command for each problem a person
+ * can act on here. Other roles and the aggregate state belong to the
+ * steward's own checks. An unreadable record, a stale record or an undecided
+ * steward check keeps the verdict from vouching for this computer. Only the
+ * unreadable record keeps its reader's message behind Details.
  */
 function healthNeeds(page: Page, now: Date): Need[] {
   const health = page.this.health;
   if (health === null) {
     return [];
   }
-  const item = (words: string, command: string, details: string[]) => [need({ key: "health", at: health.observedAt, words, command, details })];
+  const item = (words: string, command: string, details: string[] = []) => [need({ key: "health", at: health.observedAt, words, command, details })];
   if (health.problem !== "") {
     return item("This computer's health record could not be read.", SYSTEM_CHECK, [health.problem]);
   }
-  const reasons = reasonsOf(health);
   if (page.this.armed === "stale") {
-    return item(`This computer's steward has not recorded its health since ${when(health.observedAt, now)}.`, SYSTEM_START, reasons);
+    return item(`This computer's steward has not recorded its health since ${when(health.observedAt, now)}.`, SYSTEM_START);
   }
-  if (health.state === "unhealthy") {
-    if (health.roles.some((role) => role.role === STEWARD && role.status === "dead")) {
-      return item("This computer's steward is not running.", SYSTEM_START, reasons);
-    }
-    const words =
-      reasons.length === 1
-        ? oneLine("This computer's health check failed: ", clause(reasons[0]), ".")
-        : reasons.length === 0
-          ? "This computer's health check failed."
-          : `This computer's health check failed on ${String(reasons.length)} checks.`;
-    return item(words, SYSTEM_CHECK, reasons);
+  const steward = health.roles.find((role) => role.role === STEWARD);
+  if (steward?.status === "dead") {
+    return item("This computer's steward is not running.", SYSTEM_START);
   }
-  if (health.state === "unknown") {
-    return item("This computer's last health check could not decide.", SYSTEM_CHECK, reasons);
+  if (steward?.status === "unknown") {
+    return item("This computer's steward could not be checked.", SYSTEM_CHECK);
   }
   return [];
 }
@@ -756,11 +739,11 @@ function roleWords(role: string): string {
   return ROLES[role] ?? role;
 }
 
-function roundWords(verb: string, round: number, limit: number | null): string {
+function jobRoundWords(verb: string, round: number, limit: number | null): string {
   if (round <= 0 || (verb !== "reviewing" && round <= 1 && limit === null)) {
     return "";
   }
-  return limit === null ? `round ${String(round)}` : `round ${String(round)} of ${String(limit)}`;
+  return roundWords(round, limit);
 }
 
 function sentence(parts: readonly string[]): string {
@@ -824,7 +807,7 @@ function cardWords(goal: BoardSeat["goals"][number], now: Date): string {
   if (stage === "unit-proof" && goal.proof !== undefined && goal.proof.planned > 0) {
     progress = `${String(goal.proof.done)} of ${String(goal.proof.planned)}`;
   } else if ((stage === "review" || stage === "revise") && goal.round !== undefined) {
-    progress = goal.round.max === null ? `round ${String(goal.round.n)}` : `round ${String(goal.round.n)} of ${String(goal.round.max)}`;
+    progress = roundWords(goal.round.n, goal.round.max);
   }
   return sentence([words, progress, elapsed(goal.since, now)]);
 }
@@ -850,14 +833,14 @@ function jobsDoing(machine: Machine, now: Date): Doing | null {
   const chain = machine.running;
   if (machine.working.length === 0 && chain !== null && chain.startedAt !== null) {
     const verb = roleWords(chain.role);
-    return { words: sentence([verb, roundWords(verb, chain.round, null), elapsed(chain.startedAt, now)]), active: true, source: "jobs" };
+    return { words: sentence([verb, jobRoundWords(verb, chain.round, null), elapsed(chain.startedAt, now)]), active: true, source: "jobs" };
   }
   return null;
 }
 
 function workingWords(working: Working): string {
   const verb = roleWords(working.phase.role);
-  return sentence([verb, roundWords(verb, working.phase.round, working.phase.roundLimit)]);
+  return sentence([verb, jobRoundWords(verb, working.phase.round, working.phase.roundLimit)]);
 }
 
 /* ------------------------------------------------------ the landing lane -- */

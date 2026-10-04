@@ -110,6 +110,12 @@ describe("the sections' help", () => {
 });
 
 describe("a term read as a sentence", () => {
+  it("explains which steward checks the verdict counts and where to read the others", () => {
+    expect(helpText("fleet-verdict")).toContain("The steward's own checks are not counted here; metasystem system check lists them.");
+    expect(helpText("fleet-needs-you")).toContain("this computer's steward not running");
+    expect(helpText("fleet-needs-you")).not.toContain("this computer's own health");
+  });
+
   it("is the register's own words, and nothing for no term", () => {
     expect(helpText("lane-ready")).toBe(HELP["lane-ready"].text);
     expect(helpText(null)).toBe("");
