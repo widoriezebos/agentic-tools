@@ -1,6 +1,6 @@
 # goal-worktree-dispatch-uses-the-primary
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="changes how every critic and builder is dispatched from a goal worktree, a path every seat uses many times a day; a wrong rule blocks reviews fleet-wide, a right one removes four of tonight's six person-needing refusals"
@@ -29,14 +29,15 @@ Open read items (fix unit u2-preliminary-reads): 4
 - ReadItem: id=u2-preliminary-reads-3 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: dispatch.InLinkedWorktree walks the path lexically (no symbolic-link resolution); an installation reached through a link from outside its worktree serves itself."
 - ReadItem: id=u2-preliminary-reads-4 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: a mutation reader's scratch copy briefly held a copy of the repository's metasystem.conf.local (deleted unread); readers that copy the tree should exclude the local layer."
 - OpenedAt: 2026-10-03T21:24:10Z
-- Revision: 28
+- Revision: 29
 - Pinned: m1g
 - Budget: elapsedLimit=2d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
 - NormApproval: approvedRef=5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb minutes=1500 reviewRounds=20 goalRevision=23
 - Approved: by=human:Wido at=2026-10-04T18:02:19Z revision=24 opid=5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb authority=proven digest=9ed1e6b7b28a0b68e523d61a7f88606fedd51f2f822a30f4172d3c86e5eafa9b episode=24
 - Sliced: machine=m1g lineage=steward-seat revision=14 at=2026-10-04T07:25:06Z
-- Episode: machine=m1g lineage=main-1790454088-93948-21671b accountingRevision=27 episodeAt=2026-10-04T20:54:13Z episodeRevision=27 idleSeconds=0 released=2026-10-04T21:11:41Z
+- Claimed: machine=m1g lineage=steward-seat at=2026-10-04T21:11:52Z revision=29 accountingRevision=29 episodeAt=2026-10-04T21:11:52Z episodeRevision=29
+- StopCapability: generation=29 revision=29 machine=m1g claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T21:24:10Z 2S0NGTRKDFA87BXSDEEMXHYNZ6-m1e-718ba0eb open actor=human:Wido targets=goal-worktree-dispatch-uses-the-primary
@@ -67,4 +68,5 @@ History:
 - 2026-10-04T19:52:26Z 8GMW4V7JKQBFQBY8FFHNFXJ701-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-04T20:54:13Z Z9R1VVY39JJ12RZJYHT8DNCJAY-m1g-f456f182 steal actor=human:wido targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T18:02:19Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the m1g checkout
 - 2026-10-04T21:11:41Z R5J0SAZQK7WZN8F79K2PRFGRQR-m1g-f456f182 release actor=m1g+main-1790454088-93948-21671b targets=goal-worktree-dispatch-uses-the-primary reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
-Integrity: sha256=20a7c8ecc5b88c55568d9a1695cdf14b19920708a67cbccbc64249fff3b9f757
+- 2026-10-04T21:11:52Z BFW272P4H50MTYFKGSWTW9RB3W-m1g-71c5cb39 claim actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
+Integrity: sha256=b3dd8eb1469ebf6b9f326176914b08236a92b8896b4cdd83a93d53336c74c2d2
