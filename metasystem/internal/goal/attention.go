@@ -790,7 +790,7 @@ var (
 	landingProvenanceRe         = regexp.MustCompile(`^chain=([^ ]+) change=([0-9a-f]{64})(?: .*)?$`)
 	directFixProvenanceRe       = regexp.MustCompile(`^direct-fix [^\n]*\bchange=([0-9a-f]{64})(?: |$)`)
 	carriedLandingProvenanceRe  = regexp.MustCompile(`^carried opid=[^ ]+(?: .*)?$`)
-	attestedLandingProvenanceRe = regexp.MustCompile(`^attested=[0-9a-f]{40} goal=[^ ]+ unit=[^ ]+ critic=[^ /]+/[1-9][0-9]* change=[0-9a-f]{64}$`)
+	attestedLandingProvenanceRe = regexp.MustCompile(`^attested=[0-9a-f]{40} goal=[^ ]+ unit=[^ ]+ (?:critic=[^ /]+/[1-9][0-9]*|reader=[^ /]+/[^ ]+) change=[0-9a-f]{64}$`)
 )
 
 // ObserveLedger validates a private canonical tip from the original cursor

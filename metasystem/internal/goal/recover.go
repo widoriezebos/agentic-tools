@@ -368,6 +368,17 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 	}
 	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
+	case "record-flake":
+		var args FlakeRecordArgs
+		if err := json.Unmarshal([]byte(in.Args["flake"]), &args); err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored flaky test sighting is malformed; close it by hand: %v", err)
+		}
+		at, err := time.Parse(time.RFC3339, in.Args["at"])
+		if err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored flaky test sighting has an invalid time; close it by hand")
+		}
+		r.Now = at
+		return flakeRecordRequest(r, args)
 	case "trunk-red-record":
 		var args TrunkRedRecordArgs
 		if err := json.Unmarshal([]byte(in.Args["red"]), &args); err != nil {

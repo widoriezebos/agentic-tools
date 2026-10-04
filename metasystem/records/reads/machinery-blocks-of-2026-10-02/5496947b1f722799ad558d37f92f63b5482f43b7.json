@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-02",
+  "unit": "retry-proves-death",
+  "subject": {
+    "commit": "5496947b1f722799ad558d37f92f63b5482f43b7",
+    "parent": "ae65623d593a177905e46cf9a54c857684f6add5",
+    "tree": "c33eebcea3d049ed1f857c45af7c22d27ed861e7",
+    "patchDigest": "26808f5bfdd31d9ae5004c2df0d6264650666ab643402afc47f44dbc04f8215a",
+    "unitDigest": "18d91c1c7b5a25bcbccfa1ecf8643e7852ac68f2f0331f3f290021ba77c4b60e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f124c98fbdb91a58e7eb4dee",
+    "round": 1,
+    "closureSha256": "3b4d2d58e63b54af9acdc881ea5392c0758ffb5d798c977cc843c22b20c35a3d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "c33eebcea3d049ed1f857c45af7c22d27ed861e7",
+    "runId": "goal-read-gate-20261004t182533z-1618cdf89ae2d760"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "407e745c178685c414c61ece0de48624dc7bc1bf",
+    "fromTree": "3bdacfcaffdbe3217487a06f3a10a775746db48b",
+    "toCommit": "5496947b1f722799ad558d37f92f63b5482f43b7",
+    "toTree": "c33eebcea3d049ed1f857c45af7c22d27ed861e7"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/goal/branch/read_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-f124c98fbdb91a58e7eb4dee"
+    }
+  ],
+  "sha256": "c147742b3fabe5c37d3cd8ea730fb6f9f58b1f24ace6010026e31bebf115c69a"
+}

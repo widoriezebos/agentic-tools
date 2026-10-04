@@ -372,7 +372,7 @@ func (s *session) followUp(args []string) error {
 			return err
 		}
 	}
-	if err := s.briefAuthority(authorityMessage, workspace, subj.reviews); err != nil {
+	if err := s.briefAuthority(authorityMessage, workspace, role, subj.reviews); err != nil {
 		return s.die(1, "follow-up brief authority admission refused: "+err.Error())
 	}
 	// The completed critic attempt is folded and the cap is checked while no

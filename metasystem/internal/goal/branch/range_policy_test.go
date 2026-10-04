@@ -255,17 +255,6 @@ func TestValidateRangeInjectedReaderErrorsAndUnexpectedCalls(t *testing.T) {
 		})
 	}
 
-	hexUnit := strings.Repeat("a", 40)
-	t.Run("out-of-range read subject", func(t *testing.T) {
-		calls := append(singleCommitTranscript(), rangeOutput("Goal-Read: goal-a/u "+hexUnit+"\n", "show", "-s", "--format=%(trailers:only,unfold=true)", "tip"))
-		calls = append(calls, treeCalls("tip", "base", rawTree("metasystem/records/reads/goal-a/"+hexUnit+".json"))...)
-		calls = append(calls, rangeOutput("Goal-Unit: goal-a/u\n", "show", "-s", "--format=%(trailers:only,unfold=true)", hexUnit))
-		_, err := validateWithTranscript(t, "base", "tip", calls...)
-		var refusal *RangeError
-		if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "no earlier build of the same work") {
-			t.Fatalf("out-of-range read subject: %v", err)
-		}
-	})
 	t.Run("unexpected call is rejected", func(t *testing.T) {
 		reporter := &rangeStubReporter{t: t}
 		stub := testgit.New(reporter)
@@ -274,4 +263,42 @@ func TestValidateRangeInjectedReaderErrorsAndUnexpectedCalls(t *testing.T) {
 			t.Fatalf("unexpected call was not rejected: result=%+v messages=%q", result, reporter.messages)
 		}
 	})
+}
+
+func TestValidateRangeAdmitsReadOfLandedUnit(t *testing.T) {
+	t.Parallel()
+	hexUnit := strings.Repeat("a", 40)
+	readOf := func(subject string) []testgit.Expectation {
+		calls := append(singleCommitTranscript(), rangeOutput("Goal-Read: goal-a/u "+hexUnit+"\n", "show", "-s", "--format=%(trailers:only,unfold=true)", "tip"))
+		calls = append(calls, treeCalls("tip", "base", rawTree("metasystem/records/reads/goal-a/"+hexUnit+".json"))...)
+		return append(calls, rangeOutput(subject, "show", "-s", "--format=%(trailers:only,unfold=true)", hexUnit))
+	}
+	ancestry := []string{"merge-base", "--is-ancestor", hexUnit, "base"}
+	tests := []struct {
+		name     string
+		calls    []testgit.Expectation
+		admitted bool
+	}{
+		{"unit in main", append(readOf("Goal-Unit: goal-a/u\n"), rangeOutput("", ancestry...)), true},
+		{"unit outside main", append(readOf("Goal-Unit: goal-a/u\n"), rangeFailure(errors.New("exit status 1"), ancestry...)), false},
+		{"other units in main", readOf("Goal-Unit: goal-a/v\n"), false},
+		{"plan in main", readOf("Goal-Plan: goal-a\n"), false},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			commits, err := validateWithTranscript(t, "base", "tip", test.calls...)
+			if test.admitted {
+				if err != nil || len(commits) != 1 || commits[0].ID != "tip" || commits[0].Kind != Read || commits[0].Unit != "u" {
+					t.Fatalf("commits=%+v err=%v", commits, err)
+				}
+				return
+			}
+			var refusal *RangeError
+			if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "names no earlier build of the same work") {
+				t.Fatalf("read was not refused: commits=%+v err=%v", commits, err)
+			}
+		})
+	}
 }

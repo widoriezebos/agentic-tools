@@ -224,7 +224,7 @@ func TestPushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T) {
 		}
 	}
 	refused(CodeUnproven)
-	b.prove(b.redScript)
+	b.prove("printf 'LANDING-NOT-RUN\\tbuild stopped\\n'; exit 1")
 	refused(CodeRed)
 	// A green result of this tree, then HEAD moves to another tree.
 	b.prove(b.greenScript)
@@ -669,7 +669,8 @@ func TestAKnownGreenSettlesWithoutABackgroundProof(t *testing.T) {
 	if red := b.prove("exit 1\n"); red.Result != Red {
 		t.Fatalf("the red proof: %+v", red)
 	}
-	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
-		t.Fatalf("a tree whose own last result is red settled: %v %v", ok, err)
+	var noRepeat *NoRepeat
+	if _, ok, err := Settled(b.install, b.checkout, seams); !errors.As(err, &noRepeat) || ok {
+		t.Fatalf("a tree whose own last result is red did not refuse: %v %v", ok, err)
 	}
 }

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-records-flakes-and-routes-their-fix",
+  "unit": "lane-wiring",
+  "subject": {
+    "commit": "a4e5bf2ffdd0f9fba9987461a20e274d8f8ec309",
+    "parent": "fb655c04f9b30cae4986f4fae0856c8f1218e9f1",
+    "tree": "e66da2a0ef958c516dc89c3580225437f000c37d",
+    "patchDigest": "e7651b475ff919abe410604c0fb70e15dabd239d360e8c09251c3589c13cb7a2",
+    "unitDigest": "04b3566fe0f232b38599845d4221beb841c78f91cad28b6ea0f3f9fb069a30fa"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-1d90a072a5927216c028b09a",
+    "round": 1,
+    "closureSha256": "adc59dd816ac14c0ed617db37f65808bbb0afe9c37618bd33443073c6314fa3c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e66da2a0ef958c516dc89c3580225437f000c37d",
+    "runId": "goal-read-gate-20261004t163851z-1b4a4167adbf2dd3"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "de1d1ddcc38d2fae2219a1569ea97d08fce7485c",
+      "digest": "aa4a852199212bfc123e443d15323208ad1401b4fc2bc0143ae12615ae26d372"
+    },
+    {
+      "kind": "read",
+      "commit": "fb655c04f9b30cae4986f4fae0856c8f1218e9f1",
+      "digest": "61f58d0cee2cd572585902f4d1de07a347b8f8f50c3a3d65c426fb8cec9b777e"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-1d90a072a5927216c028b09a"
+    }
+  ],
+  "sha256": "a54264f566e1388f3b2d83c7e3f8b45dab71a5511d0658fea74b02a98c1fa503"
+}

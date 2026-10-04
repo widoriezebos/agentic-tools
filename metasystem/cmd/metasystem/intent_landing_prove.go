@@ -77,7 +77,7 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 
 // proveSeams are landing prove's effects: the test's, else this engine
 // started detached.
-func (owners laneVerbOwners) proveSeams() plain.ProveSeams {
+func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 	seams := owners.plainProve
 	if seams.Executable == nil {
 		seams.Executable = os.Executable
@@ -86,6 +86,15 @@ func (owners laneVerbOwners) proveSeams() plain.ProveSeams {
 		seams.Launch = func(argv []string, dir, log string) (int64, error) {
 			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log})
 		}
+	}
+	if seams.Git == nil {
+		seams.Git = plain.Git
+	}
+	if seams.Judge == nil {
+		seams.Judge = landingFlakeJudge(installation, seams.Git)
+	}
+	if seams.RecordFlake == nil {
+		seams.RecordFlake = owners.landingFlakeRecorder(installation)
 	}
 	return seams
 }
@@ -121,7 +130,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		}
 		return inv.render(result)
 	}
-	seams := admitted.owners.proveSeams()
+	seams := admitted.owners.proveSeams(admitted.installation)
 	checkout := string(admitted.layout.Checkout)
 	if !inv.input.switched("wait") {
 		settled, ok, err := plain.Settled(admitted.installation, checkout, seams)
@@ -170,7 +179,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Green {
-		summary := words + " is proven green; landing push may put it on main"
+		summary := words + " is proven green" + landingRedReason(result.Reason) + "; landing push may put it on main"
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: result,
@@ -180,6 +189,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 
 // landingProveRefusal renders a prove that could not start or run.
 func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
+	var noRepeat *plain.NoRepeat
+	if errors.As(err, &noRepeat) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
+			next: inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), nextReason: "gives the goal that broke it back to its seat"}
+	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: busy.Error(),
