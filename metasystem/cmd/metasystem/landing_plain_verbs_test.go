@@ -258,11 +258,16 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 		t.Fatalf("a red prove = %d\n%s", code, text)
 	}
 	refused("red", "not green")
+	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.git(t, bed.checkout, "add", "-A")
+	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "fix red tree")
 	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("a green prove = %d\n%s", code, text)
 	}
-	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("fix\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("another fix\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bed.git(t, bed.checkout, "add", "-A")

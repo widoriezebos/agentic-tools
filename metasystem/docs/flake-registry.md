@@ -1,22 +1,20 @@
 # The flake protocol
 
-When a fixture leg fails:
+The landing lane enforces one repeat per tree in code. When tests fail,
+it allows a repeat only when the batch cannot have caused the red, using
+main's testing contract and register. An incomplete test report gets no repeat.
+A check that stopped or ran no test gets one more whole check.
 
-1. **Check the registry** (memory/flake-registry.md). A listed leg
-   earns exactly ONE solo rerun of its suite. Green rerun → record
-   the sighting (count and date) and continue; the failure gates
-   nothing further. Red rerun → it is real: stop and fix.
-2. **An unlisted leg gets no rerun benefit of the doubt** on its
-   first failure — diagnose it. If diagnosis lands on "transient,
-   unreproducible, standalone-green", add it to the registry with
-   its first sighting and continue.
-3. **Three sightings inside thirty days** promote the leg to a fix
-   goal on the backlog. Its complete structured budget is supplied
-   if and when the goal is claimed. The registry entry links the goal
-   until it closes.
-4. Sightings are recorded in the SAME landing as the work that hit
-   them — a flake nobody wrote down is a flake the next agent pays
-   for again.
+When every failed test is on its unit's open pending flake entry, the
+known flake's unit runs once more alone. Otherwise, an unaffected batch
+gets one more whole check. A second red gets no further check of that tree.
 
-The registry is data, the protocol is this page, and neither lives
-in any agent's memory.
+A test that passes after failing is recorded in `plans/goals/trunk-red.json`
+and routed to `fix-flaky-UNIT` at the first sighting. The record names the
+tests, both attempts, tree, logs, load and holding surfaces. The unit's fix
+goal owns the repair; another sighting extends that goal or reopens it.
+Without a confirmed record, the lane stays red.
+
+This puts R-19's working model in code and follows R-103-m1e: a flaky test
+is fixed. The repeat decides whose fault the red is and routes the repair.
+`memory/flake-registry.md` is the old hand register.

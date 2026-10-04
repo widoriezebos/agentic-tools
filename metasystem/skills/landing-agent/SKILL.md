@@ -34,7 +34,9 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 1. **One waiting, green:** merge it, prove, push.
 2. **Several waiting:** merge them all, prove once, push once.
-3. **Red:** find the culprit. Read the log in `last_proof`; when it doesn't settle it, prove
+3. **Red:** when `last_proof.repeat` is `allowed`, run `metasystem landing prove` once more
+   and end your turn before searching for the culprit. A red without that allowance gets
+   no other check of that tree. Find the culprit: read the log in `last_proof`; when it doesn't settle it, prove
    smaller merges (latest main plus one waiting sha), one proof per turn. Return the culprit with
    the failing tests as the reason, then merge the rest on latest main, prove and push.
 4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve`. When it
@@ -44,12 +46,15 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
    check out the new main, merge the same shas the green proof covered, in the same order, and
    `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
-   the same turn. Lines that began waiting meanwhile are not added: proven work is pushed first, and
+   the same turn. A recorded flake moves main by its record; merging the new main inherits the
+   green and its reason, naming the flaky unit and its fix goal.
+   Lines that began waiting meanwhile are not added: proven work is pushed first, and
    they are the next batch.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
-7. **The proof won't run** (`running_proof.state` is `died`, or the command fails before testing
-   anything): prove once more; if it fails again, return the waiting goals with what you saw as
-   the reason, and say it in your final message.
+7. **The check stopped or ran no test** (`running_proof.state` is `died`, or `last_proof` is
+   red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
+   `metasystem landing prove` once more and end your turn. A refusal or a second red returns
+   the waiting goals with what you saw as the reason; say it in your final message.
 8. **Blocked outside cases 1-7:** ask with `--about lane`, then end your turn; the keeper holds you
    until it is answered.
 

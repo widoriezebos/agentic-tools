@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-records-flakes-and-routes-their-fix",
+  "unit": "lane-static-scans",
+  "subject": {
+    "commit": "5be43efa545f63dac229381ba57ade6de4301c17",
+    "parent": "bc7cdfe4918a3fb3ac1cd30e94216a5da0e2d407",
+    "tree": "0c22a9fe432a069b7e5fdb2f5747b47e65a4f750",
+    "patchDigest": "b48c1e2e423948993d1950c804b2d5f798eb4dddebbbed146b2be1d422731b25",
+    "unitDigest": "02cf4b071b47b2b531994e9e2d7d981e282f13d1929a47c6ca1914b45946c135"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-aa1ceb89c128d43fdc9a1e3b",
+    "round": 1,
+    "closureSha256": "c5253ec5f7b94fc11add97837e4713bec140799c010f01a1bf55707ff1c4652a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0c22a9fe432a069b7e5fdb2f5747b47e65a4f750",
+    "runId": "goal-read-gate-20261004t181744z-507821be07b6f848"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "de1d1ddcc38d2fae2219a1569ea97d08fce7485c",
+      "digest": "aa4a852199212bfc123e443d15323208ad1401b4fc2bc0143ae12615ae26d372"
+    },
+    {
+      "kind": "read",
+      "commit": "fb655c04f9b30cae4986f4fae0856c8f1218e9f1",
+      "digest": "61f58d0cee2cd572585902f4d1de07a347b8f8f50c3a3d65c426fb8cec9b777e"
+    },
+    {
+      "kind": "read",
+      "commit": "bc7cdfe4918a3fb3ac1cd30e94216a5da0e2d407",
+      "digest": "7aeec99adad569bbf0d0dcbe08e28a5b57d5af3820e9e7e89b5100a56d3b1a28"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/brain_actor_seam_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa1ceb89c128d43fdc9a1e3b"
+    }
+  ],
+  "sha256": "81dccbfc5e393d8ba566e01e525fb8e1fa540c62e1bb6825285bb9698f754e75"
+}
