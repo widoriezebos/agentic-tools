@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-reproves-only-what-a-change-can-affect",
+  "unit": "scoped-decision",
+  "subject": {
+    "commit": "e9f78720a75457e871e6b4e12d2eabfb710a413c",
+    "parent": "4c62f0bee59cdc00bfe4c6c0c05e8a9c38714751",
+    "tree": "a93d06390dd04db187177d23a9a34317e5c35cad",
+    "patchDigest": "194d5653dd73539560166a566ae5570b61988707408670900f2b9055954454a8",
+    "unitDigest": "0cefc181daad160dda582859ccc75b64011a76084faaffaf91cd645aa2d1e354"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-33cb44e872899c0c0d123159",
+    "round": 1,
+    "closureSha256": "b4bef0c26cbc035ae5da6259e9cc4c7651dd19dfa9a95b28abd96af3daf018cf"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a93d06390dd04db187177d23a9a34317e5c35cad",
+    "runId": "goal-read-gate-20261004t230919z-26b0b6fe0bfd3d52"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "dc8373f0d0388e5a6a743225659404b382330488",
+      "digest": "386f7137b438c7b934959ac61f3fef43fcd5ddf3a9c07cbb62671b0a80f2034a"
+    },
+    {
+      "kind": "read",
+      "commit": "4c62f0bee59cdc00bfe4c6c0c05e8a9c38714751",
+      "digest": "5e83ab9c086fa5fe516974b6ebb686c306b83df96d0a2f966028cadf9bf37681"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/person_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-33cb44e872899c0c0d123159"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-33cb44e872899c0c0d123159"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/prove_test.go",
+      "readerWord": "reviewed by critic root code-critic-33cb44e872899c0c0d123159"
+    }
+  ],
+  "sha256": "e6044cbfae7adba73dd152b4a57e774910fbec6788403d3a363e10b88c7e5222"
+}
