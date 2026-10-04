@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-records-flakes-and-routes-their-fix",
+  "unit": "record-flake",
+  "subject": {
+    "commit": "ff0113842984485bbbf7ccb6a797403b2a49aee6",
+    "parent": "4dd073b6ba9356fc57182ea4891124f3bb024d08",
+    "tree": "a792cde54ae3c2ef2decc7a940d46b289446e800",
+    "patchDigest": "de2e607736e66239b0b89cfd13b5cda451b8123d2ec6d92d2bd8d8d2cd7e72c0",
+    "unitDigest": "2cc4d0bd011912eb13193ba7b4ae49a0810d757151cad366d3194430f314af04"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a04beebaa8781f871b282155",
+    "round": 1,
+    "closureSha256": "011937931e43ab681a0c315991168fe438ee3ca5d536d1bbfed4798c73ef1841"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a792cde54ae3c2ef2decc7a940d46b289446e800",
+    "runId": "goal-read-gate-20261004t122010z-92234520a2e8f05e"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "fbaad7f49c4e7a6773d9bed6c3b0f0b93c287b84c975109d4d120d2bb3496e4c"
+}
