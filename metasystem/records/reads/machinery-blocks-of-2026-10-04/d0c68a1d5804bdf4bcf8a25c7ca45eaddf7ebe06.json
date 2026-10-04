@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "roster-not-digested",
+  "subject": {
+    "commit": "d0c68a1d5804bdf4bcf8a25c7ca45eaddf7ebe06",
+    "parent": "3ee8224574b950a2367fad37a1dc39246723b5bf",
+    "tree": "01038898dbde5049e3d25aef39a585faad1459c8",
+    "patchDigest": "84ca53320e85987bacdfdc77721a35b5da064669ea172962c01e3acdf466b657",
+    "unitDigest": "2b4b0ac89a472f84726ca63e504b41f1123b8eea563397d012fe104903458f80"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-faf062c3887d1c0e1cf26ab4",
+    "round": 1,
+    "closureSha256": "d91dd2132babb2c349182deeeca9d339ceb3d15932c9b16ca3478bf2cf94bce8"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "01038898dbde5049e3d25aef39a585faad1459c8",
+    "runId": "goal-read-gate-20261004t232108z-6ee2a101a8a2240a"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "4becf2a64dc658cf70788c779b0bb647e8119832",
+    "fromTree": "e7060d24c364f3f1e22161104748257f1e365fdd",
+    "toCommit": "d0c68a1d5804bdf4bcf8a25c7ca45eaddf7ebe06",
+    "toTree": "01038898dbde5049e3d25aef39a585faad1459c8"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_named_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    }
+  ],
+  "sha256": "9ecc9fadb94b5005705671846a7beaf8f9b1557912807cf872cd92c7ee984e18"
+}

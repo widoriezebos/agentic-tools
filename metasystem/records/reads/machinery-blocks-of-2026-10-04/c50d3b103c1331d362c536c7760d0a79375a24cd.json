@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "limit-probe-clears",
+  "subject": {
+    "commit": "c50d3b103c1331d362c536c7760d0a79375a24cd",
+    "parent": "393ec02768b3601f5506686f6a6fcf7366bab8ce",
+    "tree": "29439e214110baa68c409396655e648622f844e5",
+    "patchDigest": "43d093f4e837c21fc7f2a205be79a9efc03ab99108e39b142cae86074861b3f4",
+    "unitDigest": "00c8f37994fea9a0707a98b9949a1ca3bf669275d6b7ec9d4b1fa61dc6ef51ee"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c7cb5ce8df13483167ac4a9c",
+    "round": 1,
+    "closureSha256": "488ea6cfd6e2e3c0e005beda8ba50a8c5ea6f1382b46b1d48ad2662d60426bda"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "29439e214110baa68c409396655e648622f844e5",
+    "runId": "goal-read-gate-20261004t195308z-4bc94162da30a1b6"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "7e6c37bd57489bae4d75226a836eb32770d30294",
+    "fromTree": "7ab0fa4e32bc1e5f48bb3f6004491f722bf3b96e",
+    "toCommit": "c50d3b103c1331d362c536c7760d0a79375a24cd",
+    "toTree": "29439e214110baa68c409396655e648622f844e5"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/steward_seat_test.go",
+      "readerWord": "reviewed by critic root code-critic-c7cb5ce8df13483167ac4a9c"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-c7cb5ce8df13483167ac4a9c"
+    }
+  ],
+  "sha256": "7197095a04272f40dedcc802720dfed2cc8ee4be17925a3aad227cb0ed7a4ba1"
+}

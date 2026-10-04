@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "probe-lawful",
+  "subject": {
+    "commit": "4055f035b9138564b343d6049d1a7b1e0303e9e1",
+    "parent": "12e8183a8feae1a13c02ca973f67daec4aa6bb50",
+    "tree": "11d543347596ea6333d0fd5f0ac6998d328de58c",
+    "patchDigest": "736817e80eaa914a76d831ac4232a56bac175f7e215b98152666a73349b12b99",
+    "unitDigest": "b3c6bbdb580370d7276e1928c41425b9c4983c8ba7b1bf19153fc5e2fc27a474"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c2a3249ed2b3eb692c8ce711",
+    "round": 1,
+    "closureSha256": "df01bb0b03b19539ea8ce0b64e46f5819808cd4e6da661856ae34ee0264d630f"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "11d543347596ea6333d0fd5f0ac6998d328de58c",
+    "runId": "goal-read-gate-20261004t230344z-32fb8f49eab27033"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e0ff0e1658394b9aa69319aafc45e72c9bc1a825",
+      "digest": "bc625615d64f79ecff67dd62eeecd46fe075c5713047680ff465f30d922a3bf2"
+    },
+    {
+      "kind": "read",
+      "commit": "dd5bc10dce4948ecbde16770ae290e5dc0d05a4b",
+      "digest": "c969693b9e478820401ad3577188cbc0c53f72340e0d838636588d4d7300d29e"
+    },
+    {
+      "kind": "read",
+      "commit": "dd755de76f2945c679381531ecfd233542063f98",
+      "digest": "b3c255e605deb556ac3054ef3a2f02fd2e6aaaa70baac0a52f66038114dbe6e1"
+    },
+    {
+      "kind": "read",
+      "commit": "2ecc8367fc45f67a3163d08c0e886912ed6e030d",
+      "digest": "718127345e17d6d1885b04271bfc74eda0cf3387c7790762ff103504262bedfd"
+    },
+    {
+      "kind": "read",
+      "commit": "0cec26a85681a4e6c9a5e70d67027ad7ab8bda8f",
+      "digest": "566dea9b058b9ebb71514e6555c7267d9c3e624f1c7f46c6777ab5a98ae9ed8c"
+    },
+    {
+      "kind": "read",
+      "commit": "12e8183a8feae1a13c02ca973f67daec4aa6bb50",
+      "digest": "715a16665375aa34b0299c592ffdeeaf113912b66503963fe55b7887cbdd9255"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/person_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2a3249ed2b3eb692c8ce711"
+    },
+    {
+      "path": "metasystem/internal/layering/nativeexec_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2a3249ed2b3eb692c8ce711"
+    }
+  ],
+  "sha256": "9a0955987e308f7f0e5fb7f1940a3a38b4e36acbbe4ffd9ce0e4f3a96d4e5f36"
+}

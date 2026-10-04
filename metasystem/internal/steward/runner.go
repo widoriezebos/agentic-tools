@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -299,7 +300,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if helm.Active(top).Active {
-			if stopped := runnerWait(top, interval, deps, drain, nil); stopped {
+			if stopped := runnerWait(top, interval, deps, drain, nil, cfg.ProbeProvider); stopped {
 				return nil
 			}
 			continue
@@ -368,7 +369,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
 			}
 		}
-		if stopped := runnerWait(top, interval, deps, drain, keeping); stopped {
+		if stopped := runnerWait(top, interval, deps, drain, keeping, cfg.ProbeProvider); stopped {
 			return nil
 		}
 	}
@@ -379,6 +380,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 // itself or on a hand-in: the agent wakes within it of a proof's end or of
 // a hand-in to an idle lane, not at the next cycle.
 const laneRecheck = 15 * time.Second
+
+// limitProbe is the cadence for checking whether a provider limit ended.
+const limitProbe = 2 * time.Minute
 
 // laneKeeping is the runner's side of the landing lane's keeper: its step,
 // the line last printed, and whether the lane waits on a proof, a running
@@ -411,19 +415,50 @@ func (k *laneKeeping) run() {
 // runnerWait sleeps one interval in 200 ms steps, watching the stop marker
 // and the stop signal; it reports whether either arrived. While the landing
 // lane waits, idle included, it steps the lane's keeper every laneRecheck
-// outside the helm.
-func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping) bool {
-	deadline := deps.Now().Add(interval)
-	recheck := deps.Now().Add(laneRecheck)
+// outside the helm. A watched provider limit ending starts the next cycle.
+func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
+	start := deps.Now()
+	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
+	mark, standing := outage.StandingAt(top, start)
+	watching := probe != nil && standing && mark.LastClass == outage.ProviderLimit
+	probeLine := ""
 	for deps.Now().Before(deadline) {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return true
 		}
-		if keeping != nil && keeping.waiting && !deps.Now().Before(recheck) {
+		if !deps.Now().Before(recheck) {
 			if !helm.Active(top).Active {
-				keeping.run()
+				if keeping != nil && keeping.waiting {
+					keeping.run()
+				}
+				if watching {
+					mark, standing = outage.StandingAt(top, deps.Now())
+					if !standing || mark.LastClass != outage.ProviderLimit {
+						return false
+					}
+				}
 			}
 			recheck = deps.Now().Add(laneRecheck)
+		}
+		if watching && !deps.Now().Before(probeAt) && !helm.Active(top).Active {
+			answered, err := probe(top)
+			if answered {
+				if err := outage.Clear(top); err != nil {
+					fmt.Fprintf(os.Stderr, "the provider answered, but its outage mark could not be cleared\n%v\n", err)
+				} else {
+					fmt.Fprintln(os.Stderr, "the provider answered; its outage mark is cleared")
+				}
+				return false
+			}
+			line := "the provider has not answered; its outage mark remains"
+			if err != nil {
+				line = fmt.Sprintf("the provider probe failed: %.74s", strings.Join(strings.Fields(err.Error()), " "))
+			}
+			if line != probeLine {
+				fmt.Fprintln(os.Stderr, line)
+				probeLine = line
+			}
+			probeAt = probeAt.Add(limitProbe)
 		}
 		deps.Sleep(200 * time.Millisecond)
 	}

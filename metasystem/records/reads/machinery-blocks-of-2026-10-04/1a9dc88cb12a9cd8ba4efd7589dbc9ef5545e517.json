@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "probe-lawful",
+  "subject": {
+    "commit": "1a9dc88cb12a9cd8ba4efd7589dbc9ef5545e517",
+    "parent": "fcbf48f448dbb3a26a8d5098d1c39e089621f4bd",
+    "tree": "b5e7d97cf50899188329a878ff3bcfb39a04cf66",
+    "patchDigest": "736817e80eaa914a76d831ac4232a56bac175f7e215b98152666a73349b12b99",
+    "unitDigest": "b3c6bbdb580370d7276e1928c41425b9c4983c8ba7b1bf19153fc5e2fc27a474"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c2a3249ed2b3eb692c8ce711",
+    "round": 1,
+    "closureSha256": "df01bb0b03b19539ea8ce0b64e46f5819808cd4e6da661856ae34ee0264d630f"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b5e7d97cf50899188329a878ff3bcfb39a04cf66",
+    "runId": "goal-read-gate-20261004t233521z-b210749b72323257"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "5c5d389f1295fe7816f9de4ef00f3ca891e66f9f",
+      "digest": "bc625615d64f79ecff67dd62eeecd46fe075c5713047680ff465f30d922a3bf2"
+    },
+    {
+      "kind": "read",
+      "commit": "0452c23fb73678a872d53480b7f5484f03288611",
+      "digest": "c969693b9e478820401ad3577188cbc0c53f72340e0d838636588d4d7300d29e"
+    },
+    {
+      "kind": "read",
+      "commit": "9f50fb73882f971626166d53a21b5fb4afa26814",
+      "digest": "b3c255e605deb556ac3054ef3a2f02fd2e6aaaa70baac0a52f66038114dbe6e1"
+    },
+    {
+      "kind": "read",
+      "commit": "1e27b4f595b5569c5c2f857e073ce6e07d199eb5",
+      "digest": "718127345e17d6d1885b04271bfc74eda0cf3387c7790762ff103504262bedfd"
+    },
+    {
+      "kind": "read",
+      "commit": "e4fa0c202997cfe5733da88472506b2fa587b3cf",
+      "digest": "566dea9b058b9ebb71514e6555c7267d9c3e624f1c7f46c6777ab5a98ae9ed8c"
+    },
+    {
+      "kind": "read",
+      "commit": "fcbf48f448dbb3a26a8d5098d1c39e089621f4bd",
+      "digest": "715a16665375aa34b0299c592ffdeeaf113912b66503963fe55b7887cbdd9255"
+    }
+  ],
+  "carry": {
+    "fromCommit": "4055f035b9138564b343d6049d1a7b1e0303e9e1",
+    "fromTree": "11d543347596ea6333d0fd5f0ac6998d328de58c",
+    "toCommit": "1a9dc88cb12a9cd8ba4efd7589dbc9ef5545e517",
+    "toTree": "b5e7d97cf50899188329a878ff3bcfb39a04cf66"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/person_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2a3249ed2b3eb692c8ce711"
+    },
+    {
+      "path": "metasystem/internal/layering/nativeexec_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2a3249ed2b3eb692c8ce711"
+    }
+  ],
+  "sha256": "947697eac28050152b9b4acbc22ca70a2c06bcf214ff0bcf7c1805d598686371"
+}

@@ -317,6 +317,9 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run
 	wireStewardSeat(&tickConfig)
+	tickConfig.ProbeProvider = func(top string) (bool, error) {
+		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
+	}
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)

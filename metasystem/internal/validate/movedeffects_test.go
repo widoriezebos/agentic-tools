@@ -89,6 +89,7 @@ func TestMovesOwnerFixtureCarriesNoInventory(t *testing.T) {
 }
 
 func TestDesignCriticPacketCarriesMovedEffectsCheck(t *testing.T) {
+	t.Parallel()
 	metasystem, _ := filepath.Abs("../..")
 	data := protocol.RolePackets()
 	var recipe struct {
@@ -116,7 +117,7 @@ func TestDesignCriticPacketCarriesMovedEffectsCheck(t *testing.T) {
 		}
 		packet.Write(content)
 	}
-	for _, required := range []string{"design review <design path> --check-only", "Moved effects", "MOVED-EFFECTS-"} {
+	for _, required := range []string{"design review <design path> --check-only", "Moved effects", "MOVED-EFFECTS-", "CLOSED-RULE-", "closed rule"} {
 		if !strings.Contains(packet.String(), required) {
 			t.Errorf("design-critic packet does not contain %q", required)
 		}

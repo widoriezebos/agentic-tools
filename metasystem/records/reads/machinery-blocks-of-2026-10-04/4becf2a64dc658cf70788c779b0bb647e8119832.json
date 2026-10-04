@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "roster-not-digested",
+  "subject": {
+    "commit": "4becf2a64dc658cf70788c779b0bb647e8119832",
+    "parent": "c50d3b103c1331d362c536c7760d0a79375a24cd",
+    "tree": "e7060d24c364f3f1e22161104748257f1e365fdd",
+    "patchDigest": "84ca53320e85987bacdfdc77721a35b5da064669ea172962c01e3acdf466b657",
+    "unitDigest": "2b4b0ac89a472f84726ca63e504b41f1123b8eea563397d012fe104903458f80"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-faf062c3887d1c0e1cf26ab4",
+    "round": 1,
+    "closureSha256": "d91dd2132babb2c349182deeeca9d339ceb3d15932c9b16ca3478bf2cf94bce8"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e7060d24c364f3f1e22161104748257f1e365fdd",
+    "runId": "goal-read-gate-20261004t195955z-5d329e83c2b380d1"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "050b680a26b04a0c9f31cd39c47332f191bae04a",
+    "fromTree": "42df5fbf8b598eeae8c18addfccf82340fbc172f",
+    "toCommit": "4becf2a64dc658cf70788c779b0bb647e8119832",
+    "toTree": "e7060d24c364f3f1e22161104748257f1e365fdd"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_named_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    }
+  ],
+  "sha256": "8933332515a7f2c7c296b7c6d1945f7783ce87540d0514084d553a1d036d7a29"
+}
