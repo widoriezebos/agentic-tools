@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
@@ -48,6 +49,10 @@ type BranchReadRequest struct {
 	Commit     func(CommitReadRequest) (string, Attestation, error)
 	NewID      func(string) (string, error)
 	Repository BranchReadRepository
+	// CustodyDeath is the custody owner's death-proof dependencies for a
+	// retry of a round with a recorded process; zero means the
+	// installation's own process-tag matcher.
+	CustodyDeath dispatch.CustodyDeathDependencies
 }
 
 type BranchReadResult struct {
@@ -89,6 +94,10 @@ type branchReadRecord struct {
 	DispatchPending   bool   `json:"dispatchPending,omitempty"`
 	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
 	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
+	// BriefFromBuild: the composed brief carries the unit's build brief,
+	// which the build ran with, so the critic's dispatch does not re-check
+	// its cited paths.
+	BriefFromBuild bool `json:"briefFromBuild,omitempty"`
 	// Retries maps a failed examination round to the round its retry
 	// admitted ("pending" before the follow-up reported it).
 	Retries           map[string]string `json:"retries,omitempty"`
@@ -134,6 +143,27 @@ func loadBranchReadRecord(path string) (branchReadRecord, error) {
 		return branchReadRecord{}, fmt.Errorf("goal branch read record is malformed")
 	}
 	return record, nil
+}
+
+// BuildBriefAdmitted reports whether briefPath is a goal read's composed
+// brief whose record marks it as carrying the unit's build brief and whose
+// bytes are the ones recorded. Any read or parse failure answers false.
+func BuildBriefAdmitted(briefPath string) bool {
+	commit, found := strings.CutSuffix(filepath.Base(briefPath), ".md")
+	dir := filepath.Dir(briefPath)
+	if !found || commit == "" || filepath.Base(filepath.Dir(dir)) != "goal-reads" || filepath.Base(filepath.Dir(filepath.Dir(dir))) != "metasystem" {
+		return false
+	}
+	record, err := loadBranchReadRecord(filepath.Join(dir, commit+".json"))
+	if err != nil || !record.BriefFromBuild || record.Brief != briefPath {
+		return false
+	}
+	data, err := os.ReadFile(briefPath)
+	if err != nil {
+		return false
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]) == record.FrozenBriefSHA256
 }
 
 func saveBranchReadRecord(common, path string, record branchReadRecord) error {
@@ -688,6 +718,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		record.Runtime, record.Model = effectiveRuntime, effectiveModel
 		sum := sha256.Sum256([]byte(brief))
 		record.FrozenBriefSHA256 = hex.EncodeToString(sum[:])
+		record.BriefFromBuild = request.Join && supplied != nil
 	}
 	record.DispatchPending, record.DispatchRetryable = true, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
@@ -812,7 +843,11 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 	if newest == nil || newestRound != request.Retry {
 		return result, operationRefusal(ReadInvalidCode, "round %d is not the newest round of this review; the newest is %d\nrun: metasystem work review %s --retry %d", request.Retry, newestRound, request.GoalID, newestRound)
 	}
-	if err := dispatch.ExaminationRetryAdmissible(request.Repo, newest); err != nil {
+	deps := request.CustodyDeath
+	if deps.MatchesTag == nil {
+		deps.MatchesTag = dispatchproc.PositionedJobTagAt(request.Repo)
+	}
+	if err := dispatch.ExaminationRetryAdmissibleWith(request.Repo, newest, deps); err != nil {
 		return result, operationRefusal(ReadInvalidCode, "%v", err)
 	}
 	if request.FollowUp == nil || record.Brief == "" {
