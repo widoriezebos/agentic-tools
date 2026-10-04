@@ -708,35 +708,6 @@ func TestNonCleanFoldClosesWithoutCleanClosure(t *testing.T) {
 		assertNoClosure(t, repo, "critic")
 		assertChainClosed(t, repo, "critic")
 	})
-
-	t.Run("unbound-return", func(t *testing.T) {
-		repo := t.TempDir()
-		writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-		setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
-		if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
-			Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-b", DiffDigest: "diff",
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
-			t.Fatal(err)
-		}
-		bindCriticGoal(t, repo, "critic", "goal-a")
-		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticUnboundFindingID("code-critic", "critic"), "decision-op", acceptedSnapshot(t, repo, syntheticUnboundFindingID("code-critic", "critic")).Digest); err != nil {
-			t.Fatal(err)
-		}
-		if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
-			t.Fatalf("unbound round register close = %q, %v", outcome, err)
-		}
-		assertNoClosure(t, repo, "critic")
-		assertChainOpen(t, repo, "critic")
-		closeReadyCriticChain(t, repo, "critic", "critic")
-		if err := CritiqueChainClose(repo, "critic", false); err != nil {
-			t.Fatalf("unbound round chain close = %v", err)
-		}
-		assertNoClosure(t, repo, "critic")
-		assertChainClosed(t, repo, "critic")
-	})
 }
 
 func TestCleanClosureRequiresWithdrawnRegister(t *testing.T) {

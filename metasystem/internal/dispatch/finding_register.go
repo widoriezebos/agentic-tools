@@ -430,8 +430,7 @@ func foldUnboundReturn(register []registerFinding, role, roundJob string, subjec
 }
 
 func syntheticUnboundFindingID(role, roundJob string) string {
-	sum := sha256.Sum256(canonicalJSON([]any{"unbound_return", role, roundJob}))
-	return "synthetic-" + hex.EncodeToString(sum[:])
+	return readsubject.UnboundReturnFindingID(role, roundJob)
 }
 
 func openRegisterFindingIDs(register []registerFinding) []string {
@@ -583,7 +582,10 @@ func CritiqueRegisterAcceptRisk(repoRoot, rootJob, findingID, opid, acceptedDige
 // entry already carries that decision over that content. The acceptance is
 // bound to acceptedDigest, the CritiqueDecisionFinding.Digest of the snapshot
 // the person decided on; a finding whose content changed since that snapshot is refused with ErrAcceptedFindingChanged and stays
-// open (F4).
+// open (F4). A chain that closed before its register earned a closure records
+// the clean closure the acceptance earns in the same write, also when the
+// acceptance is repeated; when that closure cannot be computed the acceptance
+// is still recorded and the chain stays without a closure.
 func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid, acceptedDigest string) (bool, error) {
 	stamped := false
 	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
@@ -626,8 +628,22 @@ func CritiqueRegisterStampAcceptedRisk(repoRoot, rootJob, findingID, opid, accep
 			if !found {
 				return fmt.Errorf("finding %s is absent", findingID)
 			}
-			if changed || bound {
+			// An open chain records its closure when it closes. A closure
+			// that cannot be computed stays absent; the person's acceptance
+			// is written all the same.
+			writeClosure := false
+			var closure Closure
+			_, hasClosure := root[closureField]
+			if closed, _ := root["chainClosed"].(bool); closed && !hasClosure {
+				if computed, earned, closureErr := cleanClosure(loadCritiqueState(repoRoot), rootJob, root, register); closureErr == nil {
+					closure, writeClosure = computed, earned
+				}
+			}
+			if changed || bound || writeClosure {
 				root[findingRegisterField] = encodeFindingRegister(register)
+				if writeClosure {
+					root[closureField] = encodeClosure(closure)
+				}
 				if err := writeRecord(path, root); err != nil {
 					return err
 				}
@@ -1050,7 +1066,9 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	if asString(result["jobId"]) != roundJob || !roundOK || returnedRound != foldedRound {
 		return Closure{}, false, nil
 	}
-	if !readsubject.ReturnBindsSubject(subject, result) {
+	// A round whose return names other work closes on its persisted subject
+	// only when a person accepted the round's unbound-return finding.
+	if !readsubject.ReturnBindsSubject(subject, result) && !readsubject.AcceptsUnboundReturn(risks, asString(root["role"]), roundJob) {
 		return Closure{}, false, nil
 	}
 	foldedSubjectDigest := asString(root[findingRegisterSubjectDigestField])
