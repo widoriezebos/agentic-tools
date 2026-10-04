@@ -10,6 +10,29 @@ type fixtureAttestationError struct{ code string }
 func (e fixtureAttestationError) Error() string                  { return "fixture " + e.code }
 func (e fixtureAttestationError) LandingAttestationCode() string { return e.code }
 
+func TestLaneAdmitsAUnitRead(t *testing.T) {
+	t.Parallel()
+	f := newRepositoryObservationFixture(t)
+	f.base("internal/pathclass/path-classes.txt", string(f.baseFiles["internal/pathclass/path-classes.txt"])+"install:product.txt behavior\n")
+	f.base("plans/goals/goal-a.md", string(observationHeldGoal("goal-a", "m1", "lineage")))
+	c := f.comparison(observeTreeB, string(chainDiff(chainReplacement("product.txt", "before\n", "candidate\n"))), "product.txt")
+	c.declare("product.txt", observationText("before\n"), observationText("candidate\n"))
+	params := ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Goal: "goal-a", Actor: "m1+lineage",
+		Attested: strings.Repeat("a", 40), AttestedSnapshot: strings.Repeat("b", 40), AttestedBase: strings.Repeat("c", 40), TestReceipt: c.bindCommandReceipt("true")}
+	bound := AttestedUnit{Goal: "goal-a", Unit: "u1", Digest: strings.Repeat("d", 64), ReadLaunch: "read-a", ReadModel: "reader-model",
+		GoalRevision: 1, ChangedPaths: []string{"product.txt"}}
+	params.BindAttested = func(string, string, string, string, string, string) (AttestedUnit, error) { return bound, nil }
+	got := c.observe(params)
+	if got.Mode != "observe" || got.Bar != BarAttested || got.VerdictTrailer != "pass bar=e" || got.GoalRevision != 1 ||
+		!strings.Contains(got.Provenance, "reader=read-a/reader-model") || strings.Contains(got.Provenance, "critic=") {
+		t.Fatalf("unit read = %+v", got)
+	}
+	bound.ReadLaunch = ""
+	if got := c.observe(params); got.Code != "attested-not-critic" || got.Mode != "refuse" {
+		t.Fatalf("without a critic or read launch = %+v", got)
+	}
+}
+
 func TestObserveAttestedBranchDeclarationEnforcesBoundary(t *testing.T) {
 	f := newRepositoryObservationFixture(t)
 	f.base("internal/pathclass/path-classes.txt", string(f.baseFiles["internal/pathclass/path-classes.txt"])+"install:product.txt behavior\n")

@@ -151,6 +151,7 @@ func ObserveDesign(f DesignFacts, person bool) DesignObservation {
 
 type AttestedUnit struct {
 	Goal, Unit, Digest, CriticRoot, GateRunID string
+	ReadLaunch, ReadModel                     string
 	Round                                     int64
 	GoalRevision                              uint64
 	FoldPaths, ChangedPaths                   []string
