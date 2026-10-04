@@ -96,3 +96,37 @@ func TestACriticFromAGoalWorktreeIsAuthorizedByThePrimary(t *testing.T) {
 		t.Fatalf("a primary checkout must read its own local setting: %q, %v", got, err)
 	}
 }
+
+func TestASelectedInstallationSuppliesAnArmedWorktreesDispatchSettings(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	git := toolPrimaryGit{primary: filepath.Join(base, "primary"), linked: filepath.Join(base, "goal")}
+	root := filepath.Join(git.linked, "tools", "install")
+	selected := filepath.Join(base, "selected")
+	state := filepath.Join(root, "artifacts", "agents", "supervision")
+	for _, dir := range []string{state, selected} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, body := range map[string]string{
+		filepath.Join(git.linked, ".git"):                "gitdir: synthetic-linked-worktree\n",
+		filepath.Join(state, "state.json"):               "{}\n",
+		filepath.Join(root, "metasystem.conf"):           "metasystem.runtimes=fake\nrole.verifier.runtime=fake\nrole.verifier.model.fake=worktree-model\n",
+		filepath.Join(selected, "metasystem.conf"):       "metasystem.runtimes=fake\nrole.verifier.runtime=fake\nrole.verifier.model.fake=selected-base\n",
+		filepath.Join(selected, "metasystem.conf.local"): "role.verifier.model.fake=selected-model\n",
+		filepath.Join(base, "brief.md"):                  "Working Mode: verify\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	life := &Lifecycle{root: root, repoScope: git.linked, lookupEnv: func(string) (string, bool) { return "", false }, ports: Ports{Git: git, Lease: &stubLease{}, Goal: stubGoal{}, Guard: ownerGuard{}}}
+	var stderr bytes.Buffer
+	result := life.Run(context.Background(), Request{Env: Env{DelegateInternal: true}, Stderr: &stderr,
+		ConfigEnv: []string{dispatch.SelectedInstallationEnv + "=" + selected}},
+		[]string{"dispatch", "--role", "verifier", "--brief", filepath.Join(base, "brief.md"), "--model", "explicit-model", "--destructive-reach", "MECHANICAL"})
+	if result.ExitCode != 1 || !strings.Contains(stderr.String(), "the roster gives fake:selected-model") {
+		t.Fatalf("dispatch must resolve the selected local roster before refusing the override: exit %d, %s", result.ExitCode, stderr.String())
+	}
+}

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// SelectedInstallationEnv carries the caller's registry and settings source
+// to the delegate lifecycle and its adapter processes.
+const SelectedInstallationEnv = "METASYSTEM_DISPATCH_INSTALLATION"
+
 // ResolveTool names the installation serving root, its checkout, and the
 // engine to run. The installation resolver owns the worktree mapping;
 // METASYSTEM_BIN explicitly overrides that installation's engine.

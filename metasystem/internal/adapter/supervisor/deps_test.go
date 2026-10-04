@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
 func TestTheSupervisorLoadsTheServingInstallationsRegistry(t *testing.T) {
@@ -88,6 +90,31 @@ func TestTheSupervisorLoadsTheServingInstallationsRegistry(t *testing.T) {
 			}
 			if deps.Engine != want || deps.Dispatch.(EngineDispatcher).Engine != want || deps.Root != root || deps.ServingInstallation != filepath.Join(row.serving, row.name, "install") {
 				t.Fatalf("engine %q, installation %q, root %q; want engine %q and root %q", deps.Engine, deps.ServingInstallation, deps.Root, want, root)
+			}
+			if row.name == "armed worktree" {
+				selected := t.TempDir()
+				mustWrite(t, filepath.Join(selected, "metasystem.conf"), "watch.cap-min=270\n")
+				mustWrite(t, filepath.Join(selected, "metasystem.conf.local"), "watch.cap-min=280\n")
+				_, selectedLog := installExternalAdapter(t, selected, "newagent", "newagent", 0o700, true)
+				chosen := processDeps(root, query, func(key string) (string, bool) {
+					if key == dispatch.SelectedInstallationEnv {
+						return selected, true
+					}
+					return "", false
+				})
+				chosen.Environ = nil
+				if _, err := OperationsAt(chosen, "newagent"); err != nil {
+					t.Fatalf("selected registry: %v", err)
+				}
+				if _, err := os.Stat(selectedLog); err != nil {
+					t.Fatalf("selected adapter was not called: %v", err)
+				}
+				if value, err := chosen.configValue("watch.cap-min", "1"); err != nil || value != "280" {
+					t.Fatalf("selected local setting = %q, %v", value, err)
+				}
+				if chosen.Engine != want || chosen.Root != root {
+					t.Fatalf("selection changed engine or record root: %q, %q", chosen.Engine, chosen.Root)
+				}
 			}
 		})
 	}

@@ -133,10 +133,15 @@ func (s *session) supervisedInstallation() (root, repo string) {
 	return installation, checkout
 }
 
-// settingsPath binds this session's settings to the installation serving it.
+// settingsPath uses the caller's selection, else the installation serving the root.
 func (s *session) settingsPath() string {
 	if s.settingsFile == "" {
-		installation, _ := s.supervisedInstallation()
+		var installation string
+		if selected, ok := s.configLookup()(dispatch.SelectedInstallationEnv); ok && selected != "" {
+			installation, _ = landpath.SystemInstallation(nil, s.root, selected)
+		} else {
+			installation, _ = s.supervisedInstallation()
+		}
 		s.settingsFile = filepath.Join(installation, "metasystem.conf")
 	}
 	return s.settingsFile
