@@ -64,6 +64,7 @@ type UnitRound struct {
 	Directory  string     `json:"directory"`
 	FollowUp   string     `json:"followUp"`
 	Outcome    string     `json:"outcome"`
+	Cause      string     `json:"cause,omitempty"`
 	BuildModel string     `json:"buildModel"`
 	ReadModel  string     `json:"readModel"`
 	Steps      []UnitStep `json:"steps"`
@@ -74,6 +75,7 @@ type UnitStep struct {
 	LaunchID      string        `json:"launchId"`
 	State         UnitStepState `json:"state"`
 	Reason        string        `json:"reason"`
+	Cause         string        `json:"cause,omitempty"`
 	StartedAt     string        `json:"startedAt"`
 	FinishedAt    string        `json:"finishedAt"`
 	Model         string        `json:"model"`
@@ -584,11 +586,26 @@ func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, fro
 
 func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcome string) (UnitResult, error) {
 	round.Outcome, record.State = outcome, "awaiting-judgement"
+	round.Cause = roundCause(round.Steps)
 	if err := runner.save(*record); err != nil {
 		return UnitResult{}, err
 	}
 	runner.publishJudgement(*record, round.Number)
 	return UnitResult{Record: *record, Round: round.Number}, nil
+}
+
+// A red proof or a counting read judges the code, even if a launch was lost.
+func roundCause(steps []UnitStep) string {
+	cause := ""
+	for _, step := range steps {
+		if strings.HasPrefix(step.Name, "proof:") && step.State == StepFailed || strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
+			return ""
+		}
+		if cause == "" {
+			cause = step.Cause
+		}
+	}
+	return cause
 }
 
 // publishJudgement puts the finished round on the board as judgement: the
