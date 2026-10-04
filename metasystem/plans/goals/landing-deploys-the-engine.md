@@ -1,6 +1,6 @@
 # landing-deploys-the-engine
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 21
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
@@ -9,8 +9,11 @@
 - Origin: human
 - Next step: Fix unit (reopened 2026-10-04 06:33 by m1e in Wido word): internal/deploy TestEveryEndOfARunOrAnActIsOneLine hangs: its stalled helper (ends_test.go:151-154) runs a Runner whose call blocks on a pipe from a helper process with no deadline (runner.go:160); it held the lane proof of rosters-are-configuration-items 46 minutes until aborted by pid. Give the helper read a deadline from the test clock (or an injected seam) and make the proof-side wait bounded; one unit, one critic (Claude Opus 5.5), hand in from the primary. Steps 2 and 3 stay deferred.
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 56
+- Revision: 57
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
+- NormApproval: approvedRef=317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=56
+- Approved: by=human:Wido at=2026-10-04T04:34:45Z revision=57 opid=317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb authority=proven digest=d099bf693da6151d598f145280797e1e2ad317a86fe65a6f8ca5708150e88837 episode=57
 - Sliced: machine=m1h lineage=steward-seat revision=34 at=2026-10-03T06:28:20Z
 - AcceptedRisk: finding=F-2 chain=code-critic-7f310906bee9baf0f3132b61 by=Wido opid=G97ZV4KF6E6TX8CNY872MNKTRD-m1e-718ba0eb
 - AcceptedRisk: finding=F-ADAPTER-EXIT-64 chain=code-critic-3f7cafef37776cdf502bc693 by=Wido opid=NT3QSVTAFFK50ESW21FKVTC7A7-m1e-718ba0eb
@@ -74,4 +77,5 @@ History:
 - 2026-10-03T23:27:18Z 9XM2DN8JGW1XSZXXMR19YVHEH8-m1e-718ba0eb done actor=human:Wido targets=arming-binds-the-installed-engine-identity,hook-enrollment-per-checkout,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,landing-deploys-the-engine,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,mechanical-chains-at-tier-two-and-three-close-and-land,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,role-context-composition,runtime-limit-is-not-a-protocol-error,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,system-start-launches-your-agent,transport-remote-absent-refuses-every-landing,watcher-repair-request-never-names-current,winddown-census-handoff-leak
 - 2026-10-04T04:33:25Z JGGCAQ15SHHCFWKY7Y6FQ1JD83-m1e-718ba0eb reopen actor=human:Wido targets=landing-deploys-the-engine reason=priority-order from=2:1 to=2:21
 - 2026-10-04T04:33:41Z YXVWXD83P27TDH42K0A89Q7ZBF-m1e-718ba0eb edit actor=human:Wido targets=landing-deploys-the-engine
-Integrity: sha256=06965b2357022c9fe2d3f0881d3749e16aa73041c4c1eddc3a1d508b9f95dd04
+- 2026-10-04T04:34:45Z 317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb approve actor=human:Wido targets=landing-deploys-the-engine
+Integrity: sha256=8d28f9d1459afae721e7a9872fefcfd5d3683545c90d1296578cb60b67b077ac
