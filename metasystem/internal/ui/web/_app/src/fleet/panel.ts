@@ -473,10 +473,18 @@ function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
   return page.machines.flatMap((machine) => {
     const held = new Map(machine.holds.map((one) => [one.goal, one.title]));
     return (seatOf(board, machine.machine)?.goals ?? [])
-      .filter((goal) => held.has(goal.goal) && stuck(goal.unknown))
+      .filter((goal) => held.has(goal.goal) && (goal.stuck !== undefined || stuck(goal.unknown)))
       .map((goal) => {
         const holdTitle = held.get(goal.goal) ?? "";
         const title = holdTitle === "" ? titleOf(goal.goal, board.titles) : holdTitle;
+        if (goal.stuck !== undefined) {
+          return need({
+            key: `stuck:${machine.machine}:${goal.goal}`,
+            at: goal.lastProgressAt ?? "",
+            words: oneLine("“", title, `” on ${machine.machine}: ${stuckUnitWords(goal.stuck)}.`),
+            command: goal.stuck.launch === "" ? "metasystem work land --message" : `metasystem work stop j1:${goal.stuck.launch}`,
+          });
+        }
         const last = goal.lastProgressAt ?? "";
         const since = last === "" ? "" : ` since ${when(last, now)}`;
         const why = goal.unknown === STALLED ? ` (${stageWords(goal.stage)}).` : " (the process writing it is gone).";
@@ -782,7 +790,7 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   }
   const stalled = (seat?.goals ?? []).find((goal) => held.has(goal.goal) && stuck(goal.unknown));
   if (stalled !== undefined) {
-    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now)]), active: false, source: "board", stalled: true };
+    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now), stuckUnitWords(stalled.stuck)]), active: false, source: "board", stalled: true };
   }
   const heard = machine.this || machine.standing === "reachable";
   if (heard) {
@@ -810,7 +818,12 @@ function cardWords(goal: BoardSeat["goals"][number], now: Date): string {
   } else if ((stage === "review" || stage === "revise") && goal.round !== undefined) {
     progress = roundWords(goal.round.n, goal.round.max);
   }
-  return sentence([words, progress, elapsed(goal.since, now)]);
+  return sentence([words, progress, elapsed(goal.since, now), stuckUnitWords(goal.stuck)]);
+}
+
+function stuckUnitWords(stuck: BoardSeat["goals"][number]["stuck"]): string {
+  if (stuck === undefined) return "";
+  return stuck.step === "" ? `round ${String(stuck.rounds)} of ${String(stuck.limit)}` : `${stuck.kind} step ${String(stuck.minutes)} min`;
 }
 
 /** What the job records say: the work in hand, a reservation, or nothing. */

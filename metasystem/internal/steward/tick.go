@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -78,7 +79,10 @@ type TickConfig struct {
 	// steward-acts-on-behaviour-patterns): it reports and decides nothing.
 	// It runs after the tick's health pass and, as a report, under the helm
 	// too (D2). The command layer supplies it; nil runs no pattern.
-	Patterns          func(repoRoot string, now time.Time) error
+	Patterns func(repoRoot string, now time.Time) error
+	// StuckUnits reports this seat's stuck units after health, including
+	// under the helm. It never stops a launch.
+	StuckUnits        func(repoRoot string, now time.Time) error
 	narrationLocation *time.Location
 }
 
@@ -228,13 +232,14 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}
 	tickCompleted := false
 	defer func() {
-		if result.Health.Schema == 0 {
-			if healthErr := completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now); healthErr != nil && returnErr == nil {
-				returnErr = healthErr
+		reportErr := runTickReports(repoRoot, cfg, func() error {
+			if result.Health.Schema == 0 {
+				return completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now)
 			}
-		}
-		if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && returnErr == nil {
-			returnErr = patternErr
+			return nil
+		})
+		if reportErr != nil && returnErr == nil {
+			returnErr = reportErr
 		}
 		if tickCompleted {
 			return
@@ -297,15 +302,31 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	return result, presenceErr
 }
 
-// runPatterns is the tick's report-only behaviour-pattern pass.
+// runTickReports observes health before running either report-only pass.
+// A failed health observation does not prevent a detector from reporting.
+func runTickReports(repoRoot string, cfg TickConfig, health func() error) error {
+	healthErr := health()
+	patternErr := runPatterns(repoRoot, cfg)
+	if healthErr != nil {
+		return healthErr
+	}
+	return patternErr
+}
+
+// runPatterns runs both report-only passes, even when one fails.
 func runPatterns(repoRoot string, cfg TickConfig) error {
-	if cfg.Patterns == nil {
-		return nil
+	var result error
+	if cfg.Patterns != nil {
+		if err := cfg.Patterns(repoRoot, cfg.now()); err != nil {
+			result = fmt.Errorf("behaviour patterns: %w", err)
+		}
 	}
-	if err := cfg.Patterns(repoRoot, cfg.now()); err != nil {
-		return fmt.Errorf("behaviour patterns: %w", err)
+	if cfg.StuckUnits != nil {
+		if err := cfg.StuckUnits(repoRoot, cfg.now()); err != nil {
+			result = errors.Join(result, fmt.Errorf("stuck units: %w", err))
+		}
 	}
-	return nil
+	return result
 }
 
 // seatPresenceComponent runs the seat-presence component with its own
