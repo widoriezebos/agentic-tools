@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "board-follows-the-lane",
+  "subject": {
+    "commit": "eeafcc151af77bf7252c8a084e056362cdefd39e",
+    "parent": "e277d7da80cc7c3beb861d4870fc9f8d9c8d389d",
+    "tree": "3f00dff7f8ce3301f1a3bcc6cd29f3a1bce98f28",
+    "patchDigest": "4e1e919b8eef2f00acee0d25692f903ebd05646a966c91cb3efb62637ca2b3c6",
+    "unitDigest": "9b0c46f6a5d4140de38723aaf531c7bf74765b6f4a2421c46eefea7792a62a8b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b64e33e1c1245ace83bbf1a4",
+    "round": 1,
+    "closureSha256": "0b661400ca4bfedd65ef834bbd684dad2a4d5f95de10e280ec32f31577e769b0"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "3f00dff7f8ce3301f1a3bcc6cd29f3a1bce98f28",
+    "runId": "goal-read-gate-20261004t163426z-d2e5fd7e96598123"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-b64e33e1c1245ace83bbf1a4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_deploy_test.go",
+      "readerWord": "reviewed by critic root code-critic-b64e33e1c1245ace83bbf1a4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_handin_test.go",
+      "readerWord": "reviewed by critic root code-critic-b64e33e1c1245ace83bbf1a4"
+    },
+    {
+      "path": "metasystem/internal/board/card_test.go",
+      "readerWord": "reviewed by critic root code-critic-b64e33e1c1245ace83bbf1a4"
+    },
+    {
+      "path": "metasystem/internal/board/view_test.go",
+      "readerWord": "reviewed by critic root code-critic-b64e33e1c1245ace83bbf1a4"
+    }
+  ],
+  "sha256": "d8d6dbbd05f77159fd46c4e8851aa94c1444eb2f7d66ed23c27706bc52e74ac9"
+}
