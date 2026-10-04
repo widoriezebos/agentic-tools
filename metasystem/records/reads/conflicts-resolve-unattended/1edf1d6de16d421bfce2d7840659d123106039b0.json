@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "goal": "conflicts-resolve-unattended",
+  "unit": "rebase-conflicts",
+  "subject": {
+    "commit": "1edf1d6de16d421bfce2d7840659d123106039b0",
+    "parent": "24d478f56726e7b24a8d6d57cda09e60aa0f18be",
+    "tree": "2d57d18b311fe2188649eed48e5f9c922d43bd2a",
+    "patchDigest": "9fc2e66d09cbcd53ccfde4da14ef37573c8d9b590cf48d8bd1ec0e55ddefc484",
+    "unitDigest": "a550ab2af81b4b8676be599de241a6a8c161978b8c573d8dc82fcd7baa68633a"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-6fde44715eda11a6b3e617b7",
+    "round": 1,
+    "closureSha256": "ec0d5e5231621f14965bd9c4aefeb9bc8226ae49a82518424a8c4ca65d3f63a0"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2d57d18b311fe2188649eed48e5f9c922d43bd2a",
+    "runId": "goal-read-gate-20261004t220004z-7a8b4bdb8e31ef26"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "51866902d22fea04d3f4887b37935cde63eca2d1",
+      "digest": "523b0a7d555707d8e2ecf59c17b33f8ecb52a13682c9cd38bbf9dc97eb3d5d8f"
+    },
+    {
+      "kind": "read",
+      "commit": "24d478f56726e7b24a8d6d57cda09e60aa0f18be",
+      "digest": "a26ae68542e6a3af237335f43d6474d889e2d1bf05366ae503d1a71d23ae1534"
+    }
+  ],
+  "carry": {
+    "fromCommit": "294c3c9434c68cbb4362c5524a9039fbd11500a6",
+    "fromTree": "b30d25c70d251929fa72caf8cc8ea2e04fbd80f7",
+    "toCommit": "1edf1d6de16d421bfce2d7840659d123106039b0",
+    "toTree": "2d57d18b311fe2188649eed48e5f9c922d43bd2a"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_rebase_test.go",
+      "readerWord": "reviewed by critic root code-critic-6fde44715eda11a6b3e617b7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_rebase_test.go",
+      "readerWord": "reviewed by critic root code-critic-6fde44715eda11a6b3e617b7"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/rebase_adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-6fde44715eda11a6b3e617b7"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/rebase_test.go",
+      "readerWord": "reviewed by critic root code-critic-6fde44715eda11a6b3e617b7"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/resolve_test.go",
+      "readerWord": "reviewed by critic root code-critic-6fde44715eda11a6b3e617b7"
+    }
+  ],
+  "sha256": "db06f4cf389457e0b97c02e78df526445592dfc2e2ab3ea748218db055e6d298"
+}
