@@ -24,7 +24,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
@@ -37,7 +39,7 @@ type Deps struct {
 	// artifacts/ (the adapter scripts' `root`).
 	Root string
 	// Engine is the engine binary children run (the claude SessionStart
-	// hook, the fixture holds): METASYSTEM_BIN, else ROOT/bin/metasystem.
+	// hook, the fixture holds): METASYSTEM_BIN, else the serving installation's.
 	Engine string
 	// Self is the running executable, the binary a self-test's delegate
 	// children run (the front door admits --adapter-selftest only from a
@@ -100,10 +102,20 @@ func (d EngineDispatcher) Run(stdout, stderr io.Writer, args ...string) int {
 
 // ProcessDeps builds the production seams for an installation root.
 func ProcessDeps(root string) Deps {
-	engine := os.Getenv("METASYSTEM_BIN")
-	if engine == "" {
-		engine = filepath.Join(root, "bin", "metasystem")
-	}
+	return processDeps(root, runGit, os.LookupEnv)
+}
+
+func processDeps(root string, git GitQuery, lookupEnv func(string) (string, bool)) Deps {
+	_, _, engine := dispatch.ResolveTool(root, func(root string) (string, string) {
+		return landpath.SystemInstallation(func(args ...string) landpath.GitResult {
+			out, ok := git(root, args...)
+			code := 0
+			if !ok {
+				code = 1
+			}
+			return landpath.GitResult{Stdout: []byte(out), Code: code}
+		}, root)
+	}, lookupEnv)
 	self, err := os.Executable()
 	if err != nil {
 		self = ""
@@ -116,7 +128,7 @@ func ProcessDeps(root string) Deps {
 		Dispatch:     EngineDispatcher{Root: root, Engine: engine, Environ: environ},
 		GroupMembers: groupMembers,
 		LookPath:     exec.LookPath,
-		Git:          runGit,
+		Git:          git,
 	}
 }
 

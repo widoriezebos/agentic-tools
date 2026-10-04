@@ -37,7 +37,7 @@ import (
 type OwnerConfig struct {
 	Root string
 	// Engine is the engine binary the delegate-supervisor entry and the
-	// guard member wrapper run; empty is Root/bin/metasystem.
+	// guard member wrapper run; empty resolves the serving installation's engine.
 	Engine string
 	// Now is the clock goal binding judges against; nil means the wall
 	// clock. A caller that resolved fixture clock authority passes it here.
@@ -52,6 +52,10 @@ type OwnerConfig struct {
 
 // NewOwnerPorts wires every port to its real owner.
 func NewOwnerPorts(config OwnerConfig) (Ports, error) {
+	return newOwnerPorts(config, ownerGit{}, os.LookupEnv)
+}
+
+func newOwnerPorts(config OwnerConfig, git GitOps, lookupEnv func(string) (string, bool)) (Ports, error) {
 	if config.Root == "" {
 		return Ports{}, fmt.Errorf("delegation owner ports need the metasystem root")
 	}
@@ -62,9 +66,12 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	if err != nil {
 		return Ports{}, err
 	}
+	leaseRoot, _, defaultEngine := dispatch.ResolveTool(root, func(root string) (string, string) {
+		return systemInstallation(context.Background(), git, root)
+	}, lookupEnv)
 	engine := config.Engine
 	if engine == "" {
-		engine = filepath.Join(root, "bin", "metasystem")
+		engine = defaultEngine
 	}
 	now := config.Now
 	if now == nil {
@@ -81,7 +88,6 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	// The lease is the seat's: an unarmed goal worktree's caller is
 	// announced, and holds the lease, at its primary checkout
 	// (landpath.SystemInstallation); any other root keeps its own.
-	leaseRoot, _ := systemInstallation(context.Background(), ownerGit{}, root)
 	return Ports{
 		Lease:   ownerLease{root: leaseRoot, custody: root},
 		Steward: ownerSteward{root: root},
@@ -90,7 +96,7 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 		Records: ownerRecords{root: root},
 		Events:  ownerEvents{root: eventRoot, emitter: emitter},
 		Process: ownerProcess{root: root},
-		Git:     ownerGit{},
+		Git:     git,
 		Clock:   wallclock.System(),
 		Host:    config.Host,
 		Guard:   ownerGuard{},

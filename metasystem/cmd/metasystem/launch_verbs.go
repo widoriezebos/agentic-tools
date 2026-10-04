@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -26,14 +27,27 @@ var launchLookupEnv = os.LookupEnv
 var shippedClaudeSettings = func() ([]byte, error) { return runtimes.ShippedEnforcement("claude") }
 
 func newLaunchManager() *launch.Manager {
+	executable, err := launchExecutable()
+	return newLaunchManagerFrom(executable, err, delegationToolInstallation, launchLookupEnv)
+}
+
+func newLaunchManagerFrom(executable string, executableErr error, serving func(string) (string, string), lookupEnv func(string) (string, bool)) *launch.Manager {
 	prober := identity.KernelProber{}
 	processes := launch.OSProcesses{Prober: prober}
 	home, _ := os.UserHomeDir()
-	executable, executableErr := launchExecutable()
+	var engine string
+	if executableErr == nil {
+		installation := launchSeatInstallation(executable)
+		servingInstallation, _, resolvedEngine := dispatchcore.ResolveTool(installation, serving, lookupEnv)
+		// An installation serving itself keeps the running engine, including a steward pin.
+		if override, _ := lookupEnv("METASYSTEM_BIN"); override != "" || servingInstallation != installation {
+			engine = resolvedEngine
+		}
+	}
 	confPath := filepath.Join(filepath.Dir(executable), "..", "metasystem.conf")
-	settings, settingsErr := launch.ResolveSettings(confPath, launchLookupEnv)
+	settings, settingsErr := launch.ResolveSettings(confPath, lookupEnv)
 	// An unreadable disk setting reads as its compiled default.
-	disk, _ := diskstore.LoadSettings(confPath, launchLookupEnv)
+	disk, _ := diskstore.LoadSettings(confPath, lookupEnv)
 	if executableErr != nil {
 		settingsErr = executableErr
 	}
@@ -49,7 +63,7 @@ func newLaunchManager() *launch.Manager {
 	stateRoot, _ := launch.DefaultRoot()
 	devin := launch.DevinPrint{Binary: "devin", StateRoot: stateRoot, Scanner: scanner}
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
-		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
+		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Executable: engine, Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
 		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, goal.ResolveMachine),
 		// The launcher's lane guard reads the host's lane: a seat never

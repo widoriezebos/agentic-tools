@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -310,12 +311,16 @@ func newDelegationLifecycle(root string, configEnv ...string) (*delegation.Lifec
 }
 
 // delegationEngine is the installation's engine the lifecycle launches and
-// records: METASYSTEM_BIN when set, else the installation's own.
+// records: METASYSTEM_BIN when set, else the serving installation's.
 func delegationEngine(root string) string {
-	if engine := os.Getenv("METASYSTEM_BIN"); engine != "" {
-		return engine
-	}
-	return filepath.Join(root, "bin", "metasystem")
+	_, _, engine := dispatchcore.ResolveTool(root, delegationToolInstallation, os.LookupEnv)
+	return engine
+}
+
+func delegationToolInstallation(root string) (string, string) {
+	return landpath.SystemInstallation(func(args ...string) landpath.GitResult {
+		return landingPathGit(landpath.GitCall{Dir: root, Args: args})
+	}, root)
 }
 
 // absoluteDelegatePaths resolves the file arguments of a normalized request
