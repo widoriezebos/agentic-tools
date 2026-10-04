@@ -346,6 +346,17 @@ func (f *landingFacts) SnapshotFile(repo, snapshot, path string) ([]byte, error)
 	return append([]byte(nil), data...), nil
 }
 
+func (f *landingFacts) IsAncestor(repo, commit, ancestorOf string) (bool, error) {
+	f.requireRepo(repo, "goal-a")
+	f.call("ancestor:" + commit + ":" + ancestorOf)
+	for id := ancestorOf; id != ""; id = f.nodes[id].parent {
+		if id == commit {
+			return true, nil
+		}
+	}
+	return false, f.ancestorError
+}
+
 func (f *landingFacts) unsupported(name string)           { f.t.Fatalf("unexpected attestation method %s", name) }
 func (f *landingFacts) TopLevel(string) (string, error)   { f.unsupported("TopLevel"); return "", nil }
 func (f *landingFacts) CommitExists(string, string) error { f.unsupported("CommitExists"); return nil }
