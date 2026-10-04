@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,6 +69,16 @@ func StopAtSeam(code int) { exitLanding(code) }
 // every other background line go to details, which a command shows only with
 // --verbose.
 func Land(owners Owners, request LandRequest, details, stderr io.Writer) (status int) {
+	// The driver still rebases and proves after its commit boundary returns.
+	// Retain the warning until the whole landing has finished so its digest
+	// cannot change the files being proved or pushed.
+	recordDesign := owners.RecordDesign
+	var design *landing.DesignObservation
+	if recordDesign != nil {
+		owners.RecordDesign = func(_, _ string, observed *landing.DesignObservation, _ io.Writer) {
+			design = observed
+		}
+	}
 	stop := request.Stop
 	if stop == nil {
 		stop = &Stop{}
@@ -82,6 +93,9 @@ func Land(owners Owners, request LandRequest, details, stderr io.Writer) (status
 			status = exit.code
 		}
 		d.cleanup(status)
+		if status == 0 && design != nil {
+			recordDesign(request.Root, request.Goal, design, stderr)
+		}
 	}()
 	return d.run()
 }

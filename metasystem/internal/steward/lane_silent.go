@@ -11,14 +11,17 @@ package steward
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
 
 // laneSilentAfter is how long the lane may be without progress while work
@@ -46,7 +49,34 @@ func hostLaneSilence(self string, now time.Time) LaneSilence {
 	if err != nil {
 		return LaneSilence{}
 	}
+	return readLaneSilenceWithDesignChecks(home, self, now, narratordigest.Append, os.Stderr)
+}
+
+func readLaneSilenceWithDesignChecks(home, self string, now time.Time, appendDigest func(string, []narratordigest.Entry, time.Time) error, output io.Writer) LaneSilence {
+	carryLaneDesignChecks(home, self, now, appendDigest, output)
 	return readLaneSilence(home, self, now)
+}
+
+// carryLaneDesignChecks offers the lane's warnings on every tick. The digest
+// keeps exact retries once, so a checkout reset needs no separate cursor.
+func carryLaneDesignChecks(home, self string, now time.Time, appendDigest func(string, []narratordigest.Entry, time.Time) error, output io.Writer) {
+	record, registered, err := lane.Read(home)
+	if err != nil || !registered || !lane.OwnsLane(self, record) {
+		return
+	}
+	checks, err := plain.DesignChecks(record.Install)
+	var entries []narratordigest.Entry
+	for _, check := range checks {
+		if check.Goal != "" && check.Commit != "" && check.Reason != "" {
+			entries = append(entries, narratordigest.Entry{Kind: "lowlight", Text: check.Reason, SourceType: "design-gate-landing", SourceID: check.Goal + "@" + check.Commit})
+		}
+	}
+	if err == nil {
+		err = appendDigest(self, entries, now)
+	}
+	if err != nil {
+		fmt.Fprintf(output, "warning: the lane's design warnings could not reach the narrator (%s); the tick goes on\nnothing to do: the next tick retries\n", strings.Join(strings.Fields(err.Error()), " "))
+	}
 }
 
 // readLaneSilence reads the lane registered under home, for the steward of

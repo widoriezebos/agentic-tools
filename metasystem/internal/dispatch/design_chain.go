@@ -25,6 +25,18 @@ type DesignCritiqueChain struct {
 // nothing.
 func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueChain {
 	state := loadCritiqueState(repoRoot)
+	return designCritiqueChains(state, repoRoot, goalID, designPath)
+}
+
+// ReadDesignCritiqueChains returns the readable chains and reports the first job
+// record that could not be read or parsed, naming the file so a gate can distinguish
+// absent critique evidence from a broken check.
+func ReadDesignCritiqueChains(repoRoot, goalID, designPath string) ([]DesignCritiqueChain, error) {
+	state, err := readCritiqueStateAt(filepath.Join(repoRoot, "artifacts", "agents"))
+	return designCritiqueChains(state, repoRoot, goalID, designPath), err
+}
+
+func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath string) []DesignCritiqueChain {
 	canonical := designPath
 	if resolved, err := filepath.EvalSymlinks(designPath); err == nil {
 		canonical = resolved

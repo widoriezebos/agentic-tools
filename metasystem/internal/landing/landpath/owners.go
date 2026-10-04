@@ -138,6 +138,9 @@ type Owners struct {
 	SelectCode func(paths []string, prefix string) ([]string, error)
 	// Live is the live judge (this engine).
 	Live func() Judge
+	// RecordDesign appends a warning's digest only after a successful
+	// landing finishes. It reports write failures without stopping the act.
+	RecordDesign func(root, goal string, design *landing.DesignObservation, stderr io.Writer)
 	// BuildBaseJudge builds the engine at HEAD in a scratch worktree of
 	// toplevel (prefix names the metasystem directory inside it) and returns
 	// it as a judge with its cleanup; build output goes to stderr.

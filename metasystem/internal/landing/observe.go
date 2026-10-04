@@ -21,11 +21,13 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -75,6 +77,76 @@ type ObserveParams struct {
 	Now              time.Time
 	VerifyTesting    func() (proofrun.TestResult, error)
 	BindAttested     func(commit, snapshot, base, goal, beforeTree, afterTree string) (AttestedUnit, error)
+	DesignFacts      func() DesignFacts
+}
+
+// DesignRecord keeps the file digest and the content digest separately: head
+// declarations can change without changing the approach the build followed.
+type DesignRecord struct {
+	designgate.Design
+	BodySHA256 string `json:"bodySHA256"`
+}
+
+type DesignFacts struct {
+	designgate.Facts
+	Recorded    []DesignRecord
+	Digests     map[string]string
+	RecordError error
+}
+
+type DesignObservation struct {
+	designgate.Result
+	Compared     bool      `json:"compared"`
+	Person       bool      `json:"person"`
+	RefusesAgent bool      `json:"refusesAgent"`
+	Pair         [2]string `json:"pair"`
+}
+
+// ObserveDesign checks current acceptance and critique before comparing the
+// content with designs retained by established builds.
+func ObserveDesign(f DesignFacts, person bool) DesignObservation {
+	r := DesignObservation{Result: designgate.Check(f.Facts), Person: person}
+	if r.Verdict == "ok" && f.RecordError != nil {
+		f.Facts.Error = f.RecordError
+		r.Result = designgate.Check(f.Facts)
+	}
+	if r.Verdict == "ok" {
+		for _, recorded := range f.Recorded {
+			r.Compared = true
+			var current *designgate.Design
+			for i := range f.Designs {
+				if f.Designs[i].ID == recorded.ID && f.Designs[i].Status == "accepted" {
+					current = &f.Designs[i]
+					break
+				}
+			}
+			if current == nil {
+				r.Verdict, r.WouldRefuse = "design-missing", true
+				r.Warning = [2]string{fmt.Sprintf("warning: goal %s was built against %s, which is no longer an accepted design of %s", f.Goal, recorded.Path, f.Goal), "metasystem design list --goal " + f.Goal}
+			} else if f.Digests[current.ID] != recorded.BodySHA256 {
+				r.Verdict, r.WouldRefuse = "design-changed", true
+				r.Warning = [2]string{fmt.Sprintf("warning: goal %s was built against %s, which changed after the build started", f.Goal, current.Name), "metasystem design review " + current.Path}
+			}
+			if r.WouldRefuse {
+				break
+			}
+		}
+	}
+	r.Pair = r.Warning
+	if r.Pair[0] != "" {
+		line := strings.ReplaceAll(r.Pair[0], "\n", " ")
+		for _, suffix := range []string{"; the build goes on", "; this build runs on its brief alone", "; this build was not checked"} {
+			line = strings.TrimSuffix(line, suffix)
+		}
+		r.Pair[0] = line + "; the landing goes on"
+		if person && r.WouldRefuse {
+			r.Pair[0] = line + "; it goes on at your word"
+		} else if r.Mode == "refuse" && r.WouldRefuse {
+			r.RefusesAgent = true
+			r.Pair = [2]string{strings.TrimPrefix(line, "warning: ") + "; nothing was landed", "metasystem goal allow " + f.Goal + " build-without-design --reason TEXT"}
+		}
+	}
+	return r
 }
 
 type AttestedUnit struct {
@@ -103,7 +175,8 @@ type Observation struct {
 	// Carried is what a carried landing's observation binds, as typed
 	// facts: the word, the refusal it carries, the seat, the ledger tip and
 	// the judge. A caller checks the binding here, never in Provenance.
-	Carried      *CarriedBinding `json:"carried,omitempty"`
+	Carried      *CarriedBinding    `json:"carried,omitempty"`
+	Design       *DesignObservation `json:"design,omitempty"`
 	frozenTarget string
 }
 
@@ -161,11 +234,24 @@ func Observe(params ObserveParams) Observation {
 	return observeWithFacts(params, defaultObservationFacts(params.RepoRoot))
 }
 
-func observeWithFacts(params ObserveParams, facts observationFacts) Observation {
+func observeWithFacts(params ObserveParams, facts observationFacts) (observation Observation) {
+	defer func() {
+		if params.Goal != "" && params.DesignFacts != nil {
+			design := ObserveDesign(params.DesignFacts(), params.Carried != "" || strings.HasSuffix(params.Actor, "+human"))
+			if design.RefusesAgent && !observation.RefusesAgent {
+				observation = refuse("LANDING_DESIGN_NOT_STANDING", observation.Provenance)
+				observation.Refusal = design.Pair[0]
+				if ruling := refusal.GovernedBy[observation.Code]; ruling != "" {
+					observation.Detail = "governed-by=" + ruling
+				}
+			}
+			observation.Design = &design
+		}
+	}()
 	if params.Carried != "" {
 		return observeCarried(params)
 	}
-	observation := observeWithReader(params, facts)
+	observation = observeWithReader(params, facts)
 	if observation.frozenTarget != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, observation.frozenTarget) {
 		moved := refuse("chain-recertification-target-moved", observation.Provenance)
 		moved.Detail = "target-commit"
@@ -1744,6 +1830,7 @@ func refuse(code, provenance string) Observation {
 func knownRefusalCode(code string) bool {
 	switch code {
 	case "evaluator-unavailable",
+		"LANDING_DESIGN_NOT_STANDING",
 		"malformed-candidate-tree",
 		"candidate-tree-unreadable",
 		"attested-malformed-id",

@@ -48,6 +48,12 @@ type PushOutcome struct {
 
 // Push runs landing push in the lane checkout.
 func Push(install, checkout string, now time.Time) (PushOutcome, error) {
+	return PushChecked(install, checkout, now, nil)
+}
+
+// PushChecked runs before with fetched main and HEAD after the push's own
+// checks pass. An error from before prevents publication and its push record.
+func PushChecked(install, checkout string, now time.Time, before func(old, head string) error) (PushOutcome, error) {
 	head, tree, err := Head(checkout)
 	if err != nil {
 		return PushOutcome{}, err
@@ -80,6 +86,11 @@ func Push(install, checkout string, now time.Time) (PushOutcome, error) {
 		return outcome, &Refusal{Code: CodeNotFastForward,
 			Reason: "HEAD does not contain origin's main " + Short(old) + ", so pushing it would rewrite main; nothing was pushed",
 			Next:   "merge origin/main into the lane checkout, prove it and push again"}
+	}
+	if before != nil {
+		if err := before(old, head); err != nil {
+			return outcome, err
+		}
 	}
 	if _, err := Git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
 		return outcome, fmt.Errorf("push %s to main: %w", Short(head), err)

@@ -55,6 +55,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "BUILD_DESIGN_NOT_ACCEPTED", Owner: "cmd/metasystem", Site: "intent_work.go#runIntentBuildUnit", Shape: Warning, Override: "goal allow G build-without-design --reason TEXT", Commands: 1, H1: StandingAgent},
 	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "internal/testrun", Site: "worker.go#ErrWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go#Manager.Supervise", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go#resolveSettings", Shape: Question, H1: StandingInput},
@@ -102,7 +103,7 @@ var Rows = []Row{
 	{Code: "LANDING_LANE_UNREACHABLE", Owner: "internal/landing/lane", Site: "unset.go#unreachableRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},
 	{Code: "LANE_PUSH_UNPROVEN", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_RED", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
-	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/plain", Site: "push.go#Push", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/plain", Site: "push.go#PushChecked", Shape: Question, H1: StandingAgent},
 	{Code: "LANDING_LANE_UNSETTING", Owner: "internal/landing/lane", Site: "unset.go#unsettingRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},
 	{Code: "MACHINE_ON_ANOTHER_COMPUTER", Owner: "cmd/metasystem", Site: "intent_machine.go#intentInvocation.matchMachine", Shape: Question, H1: StandingGuide, Forward: "system stop"},
 	{Code: "BRIDGE_SOCKET_PATH_OCCUPIED", Owner: "internal/board", Site: "bridge.go#Listen", Shape: Question, H1: StandingInput},
@@ -267,6 +268,7 @@ var Rows = []Row{
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Question, H1: StandingInput},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Question, H1: StandingInput},
 	{Code: "evaluator-unavailable", Owner: "internal/landing/landpath", Site: "commit.go#boundary.decideAndCommit", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "LANDING_DESIGN_NOT_STANDING", Owner: "internal/landing", Site: "observe.go#observeWithFacts", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go#nonBehaviorClassError", Shape: Agent, Override: CarriedLanding, Commands: 1},

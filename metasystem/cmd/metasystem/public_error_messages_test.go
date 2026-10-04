@@ -71,7 +71,7 @@ func TestGoalRefusalsDoNotRepeatThemselves(t *testing.T) {
 		t.Fatalf("goal show = %d %q", code, stderr)
 	}
 	code, _, stderr = bed.run(owners, "goal", "allow", "standing-validation", "something", "--reason", "x")
-	if code != 2 || !strings.Contains(stderr, `"something" is not a goal permission; the permissions are: stop-test-changes; nothing was done`) || strings.Contains(stderr, "needed first") {
+	if code != 2 || !strings.Contains(stderr, `"something" is not a goal permission; the permissions are: stop-test-changes, build-without-design; nothing was done`) || strings.Contains(stderr, "needed first") {
 		t.Fatalf("goal allow = %d %q", code, stderr)
 	}
 }

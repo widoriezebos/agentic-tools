@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "design-gate-at-dispatch",
+  "unit": "switch",
+  "subject": {
+    "commit": "edbd1f3b59792dd713caccd8bca9b81109a57f4d",
+    "parent": "abacb5d72a91c354a2742ae56aa9dfbc191b7435",
+    "tree": "ffacd3564fc8a336408ce8f6fde7cfe779e914e1",
+    "patchDigest": "be0e71d49e58a006c88efdc6f64fb7c32e54e55c926e934754ae026c2ec77bf9",
+    "unitDigest": "3f06b705ac3bd6029dd1769214e80c9645f635f02a99a16b1efd7715156241a9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d5c8fb46ace9f796cc6914d6",
+    "round": 1,
+    "closureSha256": "89ca7ce7c6e3ba0ee7364d89bc85291ab96d4e11a64a5f8e4edcfc8101ddad96"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ffacd3564fc8a336408ce8f6fde7cfe779e914e1",
+    "runId": "goal-read-gate-20261004t115828z-b78179e9eaab8ecc"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-d5c8fb46ace9f796cc6914d6"
+    },
+    {
+      "path": "metasystem/internal/dispatch/design_chain_test.go",
+      "readerWord": "reviewed by critic root code-critic-d5c8fb46ace9f796cc6914d6"
+    }
+  ],
+  "sha256": "2d00d9d534faa34b686e0f9f0d596d93d8cdb28eae973ddbb3a873209fb9fb2d"
+}

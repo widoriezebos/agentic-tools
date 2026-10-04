@@ -575,7 +575,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		}
 		touchDisplaced(f, r, "edit", []string{row.Id}, permissionDisplaced)
 		recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
-		f.History[len(f.History)-1].Reason = permissionReason(*change, "")
+		f.History[len(f.History)-1].Reason = permissionReason(f.Id, *change, "")
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 
 	case "detach":

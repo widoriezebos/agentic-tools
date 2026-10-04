@@ -393,7 +393,7 @@ func (b *deployVerbBed) pushOwners() intentOwners {
 		probe:  func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
 		ready:  func(string) error { return nil },
 		person: func(string) (string, error) { return "", errors.New("the lane is not a person") },
-		push: func(string, string, time.Time) (plain.PushOutcome, error) {
+		push: func(string, string, time.Time, func(old, head string) error) (plain.PushOutcome, error) {
 			return b.pushed, nil
 		},
 	}
