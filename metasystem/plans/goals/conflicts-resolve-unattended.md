@@ -1,6 +1,6 @@
 # conflicts-resolve-unattended
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="Decides how every seat's work reaches main when main moved; a wrong rule either stalls the fleet or lands unreviewed merges; it compounds across every future goal"
@@ -27,14 +27,13 @@ Open read items (fix unit seat-verify-3b-i): 2
 - ReadItem: id=seat-verify-3b-i-1 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="work rebase prints 'review: metasystem work review G --work U' under each carried unit, which reads as if a carried unit still needs a review; only units in needsReview should print a review command"
 - ReadItem: id=seat-verify-3b-i-2 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="each rebase replays the earlier Read commits as they are, so a goal rebased N times carries N stale Read commits per unit (seen live: one per rebase); harmless to the range rules, but the branch grows"
 - OpenedAt: 2026-10-03T07:50:15Z
-- Revision: 64
+- Revision: 65
 - Pinned: m1h
 - Budget: elapsedLimit=5d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-10-04T20:12:57Z revision=63 opid=WBWE5Y7QR3C0RR241HDM845VT5-m1e-718ba0eb authority=proven digest=e146973e1e4b7ada4998e8000de8f3aba232993520c7783e1c32fdfd0fd8a329 episode=63
 - Sliced: machine=m1h lineage=steward-seat revision=48 at=2026-10-03T21:06:09Z
-- Claimed: machine=m1h lineage=main-1790454088-93948-21671b at=2026-10-04T20:54:18Z revision=64 accountingRevision=64 episodeAt=2026-10-04T20:54:18Z episodeRevision=64
-- StopCapability: generation=64 revision=64 machine=m1h claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1h lineage=main-1790454088-93948-21671b accountingRevision=64 episodeAt=2026-10-04T20:54:18Z episodeRevision=64 idleSeconds=0 released=2026-10-04T21:11:56Z
 
 History:
 - 2026-10-03T07:50:15Z VCKGVG2T8BVYFDGSX7F3AB9RN3-m1e-718ba0eb open actor=human:Wido targets=conflicts-resolve-unattended
@@ -101,4 +100,5 @@ History:
 - 2026-10-04T20:00:25Z MEQ56K5SP2BNHVGT9GC11YP8X1-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
 - 2026-10-04T20:12:57Z WBWE5Y7QR3C0RR241HDM845VT5-m1e-718ba0eb set-budget actor=human:Wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T13:00:29Z
 - 2026-10-04T20:54:18Z 0VPN7DQZCYK7B5ZYTX38PXHY5E-m1h-f456f182 steal actor=human:wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T20:12:57Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the m1h checkout
-Integrity: sha256=60b3eae2c92463548d398a9cb461d5dadc240b12b195d7ef29e1214ca4e809f4
+- 2026-10-04T21:11:56Z RP40CCGHH4ZFQQY7NBDK8JQXN1-m1h-f456f182 release actor=m1h+main-1790454088-93948-21671b targets=conflicts-resolve-unattended reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
+Integrity: sha256=bf1a7b7e763bf0cd94c80e6bb29aae8b758873097c7c5781418478ce1db0577b
