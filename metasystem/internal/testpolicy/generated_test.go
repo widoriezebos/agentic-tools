@@ -2,10 +2,44 @@ package testpolicy
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestRepositoryGeneratedDeclarationLoadsExactRecipe(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Generated{{
+		Paths:   []string{"internal/ui/web/bundle/bundle.json", "internal/ui/web/bundle/dist/**"},
+		Command: []string{"npm", "ci", "--ignore-scripts"},
+		Then:    []string{"npx", "-y", "--ignore-scripts=false", "-p", "node@24.21.0", "--", "npm", "run", "bundle"},
+		Cwd:     "internal/ui/web/_app",
+	}}
+	if !reflect.DeepEqual(contract.Generated, want) {
+		t.Fatalf("generated declaration = %#v; want %#v", contract.Generated, want)
+	}
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{"internal/ui/web/bundle/bundle.json", true},
+		{"internal/ui/web/bundle/dist/assets/index.js", true},
+		{"internal/ui/web/bundle/README.txt", false},
+	} {
+		if got := contract.Generated[0].Generates(test.path); got != test.want {
+			t.Errorf("Generates(%q) = %v; want %v", test.path, got, test.want)
+		}
+	}
+}
 
 func TestGeneratedContractDeclaration(t *testing.T) {
 	t.Parallel()
