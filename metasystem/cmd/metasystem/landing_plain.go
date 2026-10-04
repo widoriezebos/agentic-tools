@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
@@ -68,7 +68,7 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 // pushed. A repeat at the same sha appends nothing.
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
 	now := inv.delivery().now()
-	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
+	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: inv.landing().by(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	_, added, err := plain.HandIn(install, line)
 	if err != nil {
@@ -83,6 +83,30 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	entry, _, _ := plain.Latest(install, goalID)
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
+		Details: inv.writeJoinedCard(goalID),
 		Summary: fmt.Sprintf("goal %s at %s handed to the lane; its landing agent proves and pushes it", goalID, plain.Short(sha)),
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
+}
+
+func (inv *intentInvocation) writeJoinedCard(goal string) []string {
+	home, err := inv.boardHome()
+	if err == nil {
+		card, live := board.LiveCard(home, goal)
+		if !live {
+			return []string{"the hand-in card for " + goal + " was not written: no single live card holds the goal"}
+		}
+		err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
+			if current.Goal == "" || current.Stage.Terminal() || current.Stage.ProcessBound() {
+				return current, false
+			}
+			current.Stage, current.Owner, current.Job, current.Proof, current.Batch = board.StageJoined, nil, nil, nil, ""
+			current.Since = time.Time{}
+			current.Writer = board.Writer{Component: "hand-in", At: inv.delivery().now()}
+			return current, true
+		})
+	}
+	if err != nil {
+		return []string{"the hand-in card for " + goal + " was not written: " + err.Error()}
+	}
+	return nil
 }
