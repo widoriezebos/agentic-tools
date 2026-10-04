@@ -49,6 +49,7 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
+	Again    bool             `json:"-"`
 	Goal     string           `json:"goal"`
 	Branch   string           `json:"branch,omitempty"`
 	SHA      string           `json:"sha"`
@@ -165,13 +166,15 @@ func entriesOf(lines []Line) []Entry {
 	for _, line := range lines {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
-			if at, seen := index[key]; seen && line.Delivered != "" {
+			if at, seen := index[key]; seen && entries[at].State != StateReturned {
 				// A repeat hand-in that says what it delivers adds its
 				// sentence to the line.
-				entries[at].Delivered = line.Delivered
+				if line.Delivered != "" {
+					entries[at].Delivered = line.Delivered
+				}
 				continue
 			}
-			if _, seen := index[key]; !seen && line.Goal != "" && line.SHA != "" {
+			if line.Goal != "" && line.SHA != "" {
 				// A new hand-in of a goal supersedes its older waiting line.
 				for at := range entries {
 					if entries[at].Goal == line.Goal && entries[at].State == StateWaiting {
@@ -222,21 +225,26 @@ func Latest(install, goal string) (Entry, bool, error) {
 // HandIn appends a seat's hand-in. A hand-in of the same goal at the same
 // sha is a repeat: the existing entry is returned with added false, and
 // nothing is appended unless the repeat brings a new sentence of what a
-// waiting line delivers, which is kept with it.
+// waiting line delivers, which is kept with it. Again re-queues a returned
+// line; on a waiting line it holds without writing.
 func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
-	line.Outcome, line.Reason = "", ""
+	line.Outcome, line.Reason, line.Conflict = "", "", nil
 	err = withLock(install, func() error {
 		entries, err := Entries(install)
 		if err != nil {
 			return err
 		}
-		for _, existing := range entries {
+		for index := len(entries) - 1; index >= 0; index-- {
+			existing := entries[index]
 			if existing.Goal == line.Goal && existing.SHA == line.SHA {
+				if line.Again && existing.State == StateReturned {
+					break
+				}
 				entry = existing
-				if line.Delivered == "" || line.Delivered == existing.Delivered || existing.State != StateWaiting {
+				if line.Again || line.Delivered == "" || line.Delivered == existing.Delivered || existing.State != StateWaiting {
 					return nil
 				}
 				// The repeat brings the sentence of what it delivers: it is
