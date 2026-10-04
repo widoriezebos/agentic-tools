@@ -1,0 +1,4 @@
+goal standing-validation's records at bbbbbbbbbbbb handed to the lane; its landing agent proves and
+  pushes it
+→ metasystem work land standing-validation --records metasystem/records/a.md --delivered Accepted
+  shows whether it waits, landed or was returned

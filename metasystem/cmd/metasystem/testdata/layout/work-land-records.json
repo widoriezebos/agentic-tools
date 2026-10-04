@@ -1,0 +1,43 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work land",
+  "targets": [
+    {
+      "kind": "goal",
+      "id": "standing-validation"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "goal standing-validation's records at bbbbbbbbbbbb handed to the lane; its landing agent proves and pushes it",
+  "data": {
+    "queue": {
+      "goal": "standing-validation",
+      "branch": "goal/standing-validation",
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "seat": "/Users/wido/GitHub/agentic-tools-m1e/metasystem",
+      "records": true,
+      "at": "2026-10-04T12:00:00Z",
+      "state": "waiting",
+      "delivered": "Accepted"
+    },
+    "route": "lane"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "land",
+      "standing-validation",
+      "--records",
+      "metasystem/records/a.md",
+      "--delivered",
+      "Accepted",
+      "--json"
+    ],
+    "reason": "shows whether it waits, landed or was returned"
+  }
+}
+
+--

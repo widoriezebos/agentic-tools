@@ -38,6 +38,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-status-verbose", args: []string{"landing", "status", "--verbose"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-status-stopped", args: []string{"landing", "status"}, bed: landingLayoutBed(landingLayoutPaused)},
 		{name: "landing-status-none", args: []string{"landing", "status"}, bed: landingLayoutBed(landingLayoutNone)},
+		{name: "work-land-records", args: []string{"work", "land", "standing-validation", "--records", "metasystem/records/a.md", "--delivered", "Accepted"}, bed: recordsHandInLayoutBed},
 		{name: "landing-set", args: []string{"landing", "set", "../agentic-tools-landing"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
@@ -51,6 +52,15 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-push-stopped", args: []string{"landing", "push"}, bed: landingLayoutBed(landingLayoutPaused)},
 		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
 	}
+}
+
+func recordsHandInLayoutBed(t *testing.T) layoutBed {
+	b := newRecordsBed(t)
+	if err := os.WriteFile(filepath.Join(b.top, "metasystem", "records", "a.md"), []byte("record"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return layoutBed{owners: b.owners, cwd: b.top,
+		replace: layoutPaths(b.top, b.top, "/Users/wido/GitHub/agentic-tools-m1e")}
 }
 
 func landingResolveLayoutBed(t *testing.T) layoutBed {

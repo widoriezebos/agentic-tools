@@ -325,7 +325,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 			if entry.State == plain.StateReturned {
 				state += ": " + entry.Reason
 			}
-			rows = append(rows, [2]string{entry.Goal, entry.Branch + " at " + shortLandingID(entry.SHA) + " from " + entry.Seat + " · " + state})
+			branch := entry.Branch
+			if entry.Records {
+				branch += " records"
+			}
+			rows = append(rows, [2]string{entry.Goal, branch + " at " + shortLandingID(entry.SHA) + " from " + entry.Seat + " · " + state})
 		}
 		if len(rows) > 0 {
 			table := page.Section("Queue", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})

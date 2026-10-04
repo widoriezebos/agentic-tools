@@ -305,7 +305,7 @@ func TestRecordsLandAsOnePlanCommitOnTheGoalBranch(t *testing.T) {
 		t.Fatal(result.Summary)
 	}
 	entries, err := plain.Entries(b.lane)
-	if err != nil || len(entries) != 1 || entries[0].SHA != b.published || entries[0].Delivered != "The design is accepted" {
+	if err != nil || len(entries) != 1 || entries[0].SHA != b.published || entries[0].Delivered != "The design is accepted" || !entries[0].Records {
 		t.Fatalf("published tip handed in: %+v %v", entries, err)
 	}
 	for _, paths := range b.captures {
@@ -345,8 +345,15 @@ func TestRecordsAlreadyOnTheBranchMakeNoSecondCommit(t *testing.T) {
 	}
 	code, result = b.land(recordsPath)
 	entries, err := plain.Entries(b.lane)
-	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "waiting") || len(b.requests) != 0 || err != nil || len(entries) != 1 {
+	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "goal standing-validation's records at bbbbbbbbbbbb is waiting") || len(b.requests) != 0 || err != nil || len(entries) != 1 {
 		t.Fatalf("queued repeat stays one hand-in: %d %+v entries=%v %v", code, result, entries, err)
+	}
+	if _, _, err := plain.Return(b.lane, "standing-validation", "records check failed", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	code, result = b.runJSON(b.owners, "work", "land", "standing-validation")
+	if code == 0 || result.Outcome != intentRefused || result.Summary != "goal standing-validation's records at bbbbbbbbbbbb was returned: records check failed" || result.Next == nil {
+		t.Fatalf("ordinary repeat preserves the records subject: %d %+v", code, result)
 	}
 }
 
