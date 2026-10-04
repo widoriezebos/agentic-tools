@@ -222,6 +222,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	unit := flags.String("unit", "", "Goal-Unit commit")
+	unitRead := flags.String("unit-read", "", "bundle of the build's clean read to record as the unit's read")
 	brief, runtime, model := &goalBranchReadOption{name: "brief"}, &goalBranchReadOption{name: "runtime"}, &goalBranchReadOption{name: "model"}
 	flags.Var(brief, "brief", "accepted implementation brief to freeze into the critic dispatch")
 	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
@@ -290,9 +291,16 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 			return branch.CommitRead(request)
 		}
 	}
+	var bundle []byte
+	if *unitRead != "" {
+		bundle, err = os.ReadFile(*unitRead)
+		if err != nil {
+			return branch.BranchReadResult{}, 1, err
+		}
+	}
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
-		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected,
+		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
 			environment, err := criticDelegateEnvironment(*selected, *root, brief)
