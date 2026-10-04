@@ -86,9 +86,14 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	if len(bed.starter.launched()) != launched {
 		t.Fatalf("a refused continuation launched: %v", bed.starter.launched())
 	}
+	bed.manager.Settings.ReadWindow = 400000
 	code, result, _ = bed.work("work", "wait", "run:"+run)
 	if code != 0 || resultData(t, result)["outcome"] != "green" || !slices.Equal(bed.starter.launched()[launched:], []string{"proof", "read"}) {
 		t.Fatalf("restored continuation: code=%d %+v launches=%v", code, result, bed.starter.launched())
+	}
+	readLaunch := resultData(t, result)["steps"].([]any)[2].(map[string]any)["launchId"].(string)
+	if record, err := bed.manager.Store.Read(readLaunch); err != nil || string(record.AdapterData["window"]) != "400000" {
+		t.Fatalf("read=%+v err=%v", record, err)
 	}
 
 	launched = len(bed.starter.launched())
