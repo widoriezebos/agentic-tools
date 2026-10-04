@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -39,6 +40,8 @@ type BoardSource struct {
 	Seats  func() ([]board.Seat, error)
 	Prober identity.Prober
 	Stall  time.Duration
+	// Stuck reads the host's unit runs with the serving seat's bounds.
+	Stuck func(now time.Time) ([]launch.UnitStanding, error)
 	// Dial connects to the bridge; nil dials its socket under Home. Retry is
 	// the cadence a lost bridge is tried again at, and Silent the clock of
 	// the two-heartbeat silence bound; nil for either is the wall clock.
@@ -165,6 +168,42 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	bridge := view.Bridge
 	view = board.NewView(seats, picture)
 	view.Readable, view.Bridge = true, bridge
+	if source.Stuck != nil {
+		standings, stuckErr := source.Stuck(now)
+		if stuckErr != nil {
+			payload.Unreadable = append(payload.Unreadable, "stuck units: "+stuckErr.Error())
+		} else {
+			readable := observable
+			claims := map[string]string{}
+			if observable {
+				claims = claimsOf(observed)
+			}
+			for _, standing := range standings {
+				if standing.Unreadable != "" {
+					payload.Unreadable = append(payload.Unreadable, "stuck units: "+standing.Unreadable)
+					readable = false
+				}
+			}
+			for _, standing := range standings {
+				if !readable || !standing.Stuck {
+					continue
+				}
+				for seatIndex := range view.Seats {
+					seat := &view.Seats[seatIndex]
+					if seat.Machine != claims[standing.Goal] {
+						continue
+					}
+					for goalIndex := range seat.Goals {
+						card := &seat.Goals[goalIndex]
+						if card.Goal == standing.Goal && card.Stuck == nil {
+							card.Stuck = &board.StuckUnit{Step: standing.Step, Kind: standing.Kind, Launch: standing.Launch,
+								Minutes: standing.Minutes, Rounds: standing.Rounds, Limit: standing.Limit}
+						}
+					}
+				}
+			}
+		}
+	}
 	for _, seat := range view.Seats {
 		payload.Lines = append(payload.Lines, boardLine{Machine: seat.Machine, Text: seat.Text(now, time.Local)})
 	}

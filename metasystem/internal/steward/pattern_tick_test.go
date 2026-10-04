@@ -56,3 +56,33 @@ func TestHelmTickCompletesBeforePatterns(t *testing.T) {
 		t.Fatalf("the pattern pass ran %d times, each after the helm attempt completed: %v", len(seen), seen)
 	}
 }
+
+func TestTickRunsStuckUnitsAfterHealth(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, EnrollmentFixture, "")
+	now := bed.base.Add(time.Second)
+	calls := 0
+	healthComplete := false
+	cfg := TickConfig{Now: now, StuckUnits: func(repo string, at time.Time) error {
+		calls++
+		if !healthComplete {
+			t.Error("stuck pass ran before health")
+		}
+		if _, err := os.Stat(ComponentEvidencePath(bed.root, "narrator")); err != nil {
+			t.Error("health narration missing")
+		}
+		if repo != bed.root || !at.Equal(now) {
+			t.Errorf("wrong tick: %s %s", repo, at)
+		}
+		return errors.New("stuck store full")
+	}}
+	err := runTickReports(bed.root, cfg, func() error { bed.tick(now); healthComplete = true; return nil })
+	if calls != 1 || err == nil || !strings.Contains(err.Error(), "stuck units: stuck store full") {
+		t.Fatalf("calls=%d error=%v", calls, err)
+	}
+	cfg.Patterns = func(string, time.Time) error { return errors.New("pattern failed") }
+	err = runTickReports(bed.root, cfg, func() error { return errors.New("health failed") })
+	if calls != 2 || err == nil || err.Error() != "health failed" {
+		t.Fatalf("failed passes calls=%d error=%v", calls, err)
+	}
+}
