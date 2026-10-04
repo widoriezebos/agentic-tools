@@ -82,7 +82,11 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		}
 	}
 	entry, _, _ := plain.Latest(install, goalID)
+	subject := "goal " + goalID
+	if inv.input.has("records") {
+		subject += "'s records"
+	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
-		Summary: fmt.Sprintf("goal %s at %s handed to the lane; its landing agent proves and pushes it", goalID, plain.Short(sha)),
+		Summary: fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha)),
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
 }

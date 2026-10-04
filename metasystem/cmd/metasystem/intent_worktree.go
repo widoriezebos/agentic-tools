@@ -23,12 +23,15 @@ import (
 // own owners; tests give each invocation its own claim, token and
 // transport while keeping the real commit and push owners.
 type intentConnectionOwners struct {
-	rebase      func(branch.RebaseRequest) (branch.RebaseResult, error)
-	rebaseGate  func(string) (string, error)
-	endpoint    func(root string) (goal.Endpoint, error)
-	endpointTip func(root string, endpoint goal.Endpoint) (string, error)
-	claimCheck  func(root, goalID string, endpoint goal.Endpoint) func() error
-	commitToken func(root string, commit func() error) error
+	captureChanges func(top, head, brief string, paths ...string) (manualCapture, error)
+	recordsCheck   func(installation string) error
+	applyIndex     func(dir string, patch []byte, reverse bool) error
+	rebase         func(branch.RebaseRequest) (branch.RebaseResult, error)
+	rebaseGate     func(string) (string, error)
+	endpoint       func(root string) (goal.Endpoint, error)
+	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)
+	claimCheck     func(root, goalID string, endpoint goal.Endpoint) func() error
+	commitToken    func(root string, commit func() error) error
 	// section is the checkout mutation section a manual submission stages
 	// and commits in; its withToken mints the commit token without another
 	// lock.
