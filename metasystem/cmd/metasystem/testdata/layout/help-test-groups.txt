@@ -1,0 +1,14 @@
+metasystem test groups · run named contract groups and their prerequisites for the proof command,
+  without recording proof
+
+  usage   metasystem test groups ID... [--environment] [--repo PATH]
+          metasystem test groups --environment [--repo PATH]
+
+Options
+  --repo PATH     the repository, or any directory or file inside it (default: the current
+                  directory) (also --root)
+  --environment   with no ids, print only the landing environment
+
+Examples
+  metasystem test groups fast-static-build
+  metasystem test groups --environment
