@@ -321,6 +321,9 @@ func TestAttestationCarryRefusesChangedUnitOrFold(t *testing.T) {
 			c := newReadCarryFixture(t, false)
 			c.rebase(changed)
 			c.expectRead(false)
+			if changed == "metasystem/plans/goal-a.md" {
+				c.f.expect("IsAncestor", c.f.root, c.f.plan, c.endpoint)
+			}
 			_, _, err := commitRead(c.request("carry-refuse"), c.f, c.f.effects())
 			var refusal *OpError
 			if !errors.As(err, &refusal) || refusal.Code != ReadStaleCode {
@@ -348,6 +351,10 @@ func TestAttestationCarryChecksEveryEarlierFold(t *testing.T) {
 			c := newReadCarryFixture(t, true)
 			c.rebase(test.changedPath)
 			c.expectRead(!test.wantStale)
+			if test.wantStale {
+				c.f.expect("IsAncestor", c.f.root, c.f.plan, c.endpoint)
+				c.f.expect("IsAncestor", c.f.root, policyID("2"), c.endpoint)
+			}
 			_, att, err := commitRead(c.request("carry-all-folds"), c.f, c.f.effects())
 			var refusal *OpError
 			if test.wantStale {

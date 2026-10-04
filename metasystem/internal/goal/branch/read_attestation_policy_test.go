@@ -32,6 +32,8 @@ type attestationPolicyFixture struct {
 	subjects                                                           map[string]readsubject.ReadSubject
 	raw                                                                map[string][]byte
 	ranges                                                             map[string][]Commit
+	ancestors                                                          map[string]bool
+	ancestorErr                                                        error
 	snapshots                                                          map[string]map[string][]byte
 	transitions                                                        map[string][]byte
 	treeEntries                                                        map[string]string
@@ -135,6 +137,10 @@ func (f *attestationPolicyFixture) TopLevel(repo string) (string, error) {
 func (f *attestationPolicyFixture) CommitExists(repo, commit string) error {
 	f.next("CommitExists", repo, commit)
 	return nil
+}
+func (f *attestationPolicyFixture) IsAncestor(repo, commit, ancestorOf string) (bool, error) {
+	f.next("IsAncestor", repo, commit, ancestorOf)
+	return f.ancestors[commit+":"+ancestorOf], f.ancestorErr
 }
 func (f *attestationPolicyFixture) Kind(repo, commit, goal string) (KindInfo, error) {
 	f.next("Kind", repo, commit, goal)
