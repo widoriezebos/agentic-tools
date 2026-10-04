@@ -1,6 +1,6 @@
 # landing-deploys-the-engine
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
@@ -12,7 +12,7 @@ Open read items (fix unit code-critic-6bd82e9caf9d73d29783303e): 2
 - ReadItem: id=code-critic-6bd82e9caf9d73d29783303e-1 read=code-critic-6bd82e9caf9d73d29783303e state=open addedAt=2026-10-04T07:53:45Z changedAt=- closingReference="" text="stall-wait N-1: a pause's SIGKILL skips the fixture adapter's deferred removal of <fifo>.held (internal/deploy/testdata/fixtureadapter/main.go hold), so the marker outlives a killed call; harmless while each bed awaits one hold before its only pause, but a test that awaits a second hold on one bed must clear or key the marker first."
 - ReadItem: id=code-critic-6bd82e9caf9d73d29783303e-2 read=code-critic-6bd82e9caf9d73d29783303e state=open addedAt=2026-10-04T07:53:45Z changedAt=- closingReference="" text="stall-wait (preliminary read): the comment on the table's stall field (internal/deploy/ends_test.go, the rows struct) still says the pause ends the call once its process started; it now ends it once the call holds its FIFO. The fixture's step comment does not mention the <fifo>.held marker."
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 64
+- Revision: 65
 - Pinned: m1h
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -24,8 +24,7 @@ Open read items (fix unit code-critic-6bd82e9caf9d73d29783303e): 2
 - AcceptedRisk: finding=F-1 chain=code-critic-c37dcad364f65af4e4054b9b by=Wido opid=AS9GNCBKN8PH1PQCM3W8FF9TG4-m1e-718ba0eb
 - AcceptedRisk: finding=F-1 chain=code-critic-7f310906bee9baf0f3132b61 by=Wido opid=EADM8HG11EKR06H0F21K495K6K-m1e-718ba0eb
 - AcceptedRisk: finding=synthetic-14a994b7282580db53aa64eea98eb89f0adde960121e11b7118c95f55ec23508 chain=code-critic-6bd82e9caf9d73d29783303e by=Wido opid=TXX4BKCWT0QMGFNQEPF0VA9REH-m1e-718ba0eb
-- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T06:27:22Z revision=60 accountingRevision=60 episodeAt=2026-10-04T06:27:22Z episodeRevision=60
-- StopCapability: generation=60 revision=60 machine=m1h claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1h lineage=steward-seat accountingRevision=60 episodeAt=2026-10-04T06:27:22Z episodeRevision=60 idleSeconds=0 released=2026-10-04T07:57:14Z
 
 History:
 - 2026-10-01T15:20:49Z VFWZW80FZ53PQW3JTWNRYTDB40-m1e-528c72bf open actor=human:Wido targets=landing-deploys-the-engine
@@ -92,4 +91,5 @@ History:
 - 2026-10-04T07:28:43Z 0VD0ENC1TY80E9ED5VBA3HMJE2-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,codex-jobs-run-unsandboxed-on-a-trusted-host,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order subject=codex-jobs-run-unsandboxed-on-a-trusted-host from=1:5 to=1:6 requested-sequence=1
 - 2026-10-04T07:53:45Z A8SPGH1KV0NAM0HX865T6PVHAN-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=landing-deploys-the-engine
 - 2026-10-04T07:54:22Z TXX4BKCWT0QMGFNQEPF0VA9REH-m1e-718ba0eb accept-risk actor=human:Wido targets=landing-deploys-the-engine reason=Placeholder for a critic round the engine lost (items P, U2b); the retried Opus round read the same commit 212b48f52 in full: 0 material findings. Recorded by m1e in Wido's word. (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h-landing-deploys-the-engine/metasystem)
-Integrity: sha256=dce661a9ac543be91b3c57c3e08f8ca78e4ec1d5d6675836befd6a57ed91d188
+- 2026-10-04T07:57:14Z 1KEAVDPCSEE22W22ASX5VH1PNV-m1h-71c5cb39 release actor=m1h+steward-seat targets=landing-deploys-the-engine reason=fix unit stall-wait handed to the lane at e3a3147ed4ea; m1e routes this seat to conflicts-resolve-unattended unit 2
+Integrity: sha256=57d3fdbee47a712ab3760744058d583c15bc59711776877ead32b17d1b9596f9
