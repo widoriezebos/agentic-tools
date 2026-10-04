@@ -40,6 +40,7 @@ type deliveryBed struct {
 	owners  *intentDeliveryOwners
 	// connection is the goal-branch publication owners' per-test seam.
 	connection intentConnectionOwners
+	work       intentWorkOwners
 }
 
 func newDeliveryBed(t *testing.T) *deliveryBed {
@@ -51,6 +52,11 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 func newDeliveryBedAmended(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
 	t.Helper()
 	bed := newDeliveryBedWith(t, amend)
+	// The project's design homes and the close owner resolve the checkout
+	// through Git itself.
+	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
 	// The landing gate is not what these beds prove: its own beds run the
 	// production gate over the ledger (intent_landing_gate_test.go).
 	bed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
@@ -106,6 +112,7 @@ func (b *deliveryBed) do(args ...string) (int, intentResult) {
 	owners := b.intentBed.owners()
 	owners.delivery = b.owners
 	owners.connection = b.connection
+	owners.work = b.work
 	return b.runJSON(owners, args...)
 }
 

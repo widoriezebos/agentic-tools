@@ -35,12 +35,7 @@ func (inv *intentInvocation) laneInstallOf(root string) (string, error) {
 // its reason, or landed when main (the seat's endpoint tip) contains it.
 // nil when it has none, or one at another sha, so the hand-in goes on.
 func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goalID, sha, main string) *intentResult {
-	entry, ok, err := plain.Latest(install, goalID)
-	if err == nil && ok && main != "" {
-		var derived []plain.Entry
-		derived, err = plain.Landed([]plain.Entry{entry}, plain.ContainedIn(inv.layout.InstallationRoot.Path(), main))
-		entry = derived[0]
-	}
+	entry, ok, err := inv.latestLaneEntry(install, goalID, main)
 	if err != nil {
 		return &intentResult{Targets: targets, Outcome: intentFailed, code: 1,
 			Summary: "the landing lane's queue can't be read, so nothing was handed in",
@@ -118,4 +113,18 @@ func (inv *intentInvocation) writeJoinedCard(goal string) []string {
 		return []string{"the hand-in card for " + goal + " was not written: " + err.Error()}
 	}
 	return nil
+}
+
+// latestLaneEntry reads the same derived landing state for hand-in and rebase.
+func (inv *intentInvocation) latestLaneEntry(install, goalID, main string) (plain.Entry, bool, error) {
+	if read := inv.delivery().laneLatest; read != nil {
+		return read(install, goalID, main)
+	}
+	entry, ok, err := plain.Latest(install, goalID)
+	if err == nil && ok && main != "" {
+		var derived []plain.Entry
+		derived, err = plain.Landed([]plain.Entry{entry}, plain.ContainedIn(inv.layout.InstallationRoot.Path(), main))
+		entry = derived[0]
+	}
+	return entry, ok, err
 }

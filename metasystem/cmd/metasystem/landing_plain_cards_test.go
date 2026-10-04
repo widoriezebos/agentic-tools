@@ -133,6 +133,7 @@ func TestWorkLandHandInWritesJoined(t *testing.T) {
 			}
 			owners := b.intentBed.owners()
 			owners.delivery, owners.connection = b.owners, b.connection
+			owners.work = b.work
 			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
 			owners.landing.by = func(string) string { return "seat" }
 			code, result := b.runJSON(owners, "work", "land", card.Goal)
@@ -190,6 +191,7 @@ func TestWorkLandHandInCardDetails(t *testing.T) {
 			}
 			owners := b.intentBed.owners()
 			owners.delivery, owners.connection = b.owners, b.connection
+			owners.work = b.work
 			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
 			owners.landing.by = func(string) string { return "seat" }
 			code, result := b.runJSON(owners, "work", "land", card.Goal)

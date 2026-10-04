@@ -202,8 +202,12 @@ func witnessWorkFinishRepeat(t *testing.T) {
 }
 
 func witnessWorkLandRepeat(t *testing.T) {
-	b := newWorkIdemDeliveryBed(t)
-	owners := &landingOwners{status: readBranch(2, "reader-record", "reader-record")}
+	bed := newLandRebaseBed(t)
+	bed.rebase.State, bed.rebase.NewTip = "held", bed.rebase.OldTip
+	b := bed.deliveryBed
+	b.connection, b.work = bed.owners.connection, bed.owners.work
+	owners := bed.landing
+	owners.status = readBranch(2, "reader-record", "reader-record")
 	owners.install(b)
 	code, first := b.do("work", "land", "standing-validation")
 	if code != 0 || first.Outcome != intentConfirmed || len(owners.pushes) != 1 {

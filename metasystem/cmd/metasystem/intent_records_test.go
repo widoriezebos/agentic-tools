@@ -280,6 +280,50 @@ func TestRecordsSingleFileHandsIn(t *testing.T) {
 	}
 }
 
+func TestRecordsHandInSkipsRebase(t *testing.T) {
+	t.Parallel()
+	b := newRecordsBed(t)
+	code, result := b.land(recordsPath)
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("records hand-in without a rebase owner: %d %+v", code, result)
+	}
+	if data := result.Data.(map[string]any); data["rebase"] != nil {
+		t.Fatalf("records hand-in adds rebase metadata: %+v", data)
+	}
+	entries, err := plain.Entries(b.lane)
+	if err != nil || len(entries) != 1 || entries[0].SHA != b.published || !entries[0].Records {
+		t.Fatalf("records keep the published tip: %+v %v", entries, err)
+	}
+}
+
+func TestRecordsQueueKeepsTheThroughSelection(t *testing.T) {
+	t.Parallel()
+	b := newLandRebaseBed(t)
+	if _, _, err := plain.HandIn(b.lane, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.landing.status.BranchTip, Records: true}); err != nil {
+		t.Fatal(err)
+	}
+	through := b.landing.status.Status.Units[0].Commit
+	code, result := b.land("--through", through)
+	entries, err := plain.Entries(b.lane)
+	if code != 0 || result.Outcome != intentConfirmed || b.calls != 0 || err != nil || len(entries) != 2 || entries[1].SHA != through || entries[1].Records {
+		t.Fatalf("selected code commit handed in: %d %+v entries=%+v %v", code, result, entries, err)
+	}
+}
+
+func TestRecordsHandInSummaryKeepsItsSubject(t *testing.T) {
+	t.Parallel()
+	b := newRecordsBed(t)
+	code, result := b.land(recordsPath)
+	want := "goal standing-validation's records at " + plain.Short(b.published)
+	if code != 0 || !strings.HasPrefix(result.Summary, want+" handed to the lane;") {
+		t.Fatalf("records hand-in summary: %d %+v", code, result)
+	}
+	code, result = b.land(recordsPath)
+	if code != 0 || result.Outcome != intentUnchanged || !strings.HasPrefix(result.Summary, want+" is waiting in the landing lane;") {
+		t.Fatalf("records repeat summary: %d %+v", code, result)
+	}
+}
+
 func TestRecordsRefuseANonRegularCapturedFile(t *testing.T) {
 	t.Parallel()
 	b := newRecordsBed(t)

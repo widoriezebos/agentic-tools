@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -69,6 +71,24 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 	owners := &landingOwners{status: readBranch(2, sources...)}
 	owners.install(b)
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/landing", true, nil }
+	// work land rebases the goal branch before a hand-in (land-rebases); the
+	// bed's goal has a worktree at its root and a rebase that holds.
+	root := b.root()
+	b.work.git = func(_ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") == "worktree list --porcelain" {
+			return []byte("worktree " + root + "\nbranch refs/heads/goal/standing-validation\n"), nil
+		}
+		return nil, nil
+	}
+	tip := owners.status.BranchTip
+	b.connection.endpoint = func(string) (goal.Endpoint, error) { return goal.Endpoint{Remote: "origin"}, nil }
+	b.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return owners.status.EndpointTip, nil }
+	b.connection.claimCheck = func(string, string, goal.Endpoint) func() error { return func() error { return nil } }
+	b.connection.section = func(_ string, body func(func(func() error) error) error) error { return body(nil) }
+	b.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+		return branch.RebaseResult{State: "held", OldTip: tip, NewTip: tip, MainTip: owners.status.EndpointTip, Carried: []string{}, NeedsReview: []string{}}, nil
+	}
+	b.connection.recordRebase = func(*intentInvocation, string, branch.RebaseResult) error { return nil }
 	install := filepath.Join(t.TempDir(), "lane", "metasystem")
 	b.owners.laneInstall = func(root string) (string, error) {
 		if root != "/landing" {

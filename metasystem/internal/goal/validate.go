@@ -72,6 +72,12 @@ var (
 	legacyDonePrefix   = goalsPrefix + "done/"
 )
 
+// IsLedgerFile reports whether an installation-relative file belongs to the
+// live or recorded goal ledger.
+func IsLedgerFile(name string) bool {
+	return strings.HasPrefix(name, goalsPrefix) || strings.HasPrefix(name, recordsGoalsPrefix)
+}
+
 func protectedGoalDirectories() []string {
 	return []string{
 		path.Dir(goalsRoot), goalsRoot, strings.TrimSuffix(legacyDonePrefix, "/"),

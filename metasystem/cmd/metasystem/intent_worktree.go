@@ -26,6 +26,7 @@ type intentConnectionOwners struct {
 	captureChanges func(top, head, brief string, paths ...string) (manualCapture, error)
 	recordsCheck   func(installation string) error
 	applyIndex     func(dir string, patch []byte, reverse bool) error
+	recordRebase   func(*intentInvocation, string, branch.RebaseResult) error
 	rebase         func(branch.RebaseRequest) (branch.RebaseResult, error)
 	rebaseGate     func(string) (string, error)
 	endpoint       func(root string) (goal.Endpoint, error)
