@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "goal": "design-gate-at-dispatch",
+  "unit": "typed-roots-fix",
+  "subject": {
+    "commit": "feefda237e74bd76d53f9160849fd65e21dc76a8",
+    "parent": "55ebdd8b714e69ec9e001062affbd432d7adf5a9",
+    "tree": "6e343a168fa90c786a9b3e7e885886abb3e82427",
+    "patchDigest": "aefe0e4702817375d714f409c8c055a884c4e3026415962a61cdedf4dd7d5383",
+    "unitDigest": "170e247a9dd0ed895b744619f9bb52a25deb8549cb1028338ce246ec88339a66"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-34b1eb872458fafedf5a48d8",
+    "round": 1,
+    "closureSha256": "49a4c4227f3c7e6b760c6aa60fc8ea7ef4857b9676be3e615324b0659e70a721"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6e343a168fa90c786a9b3e7e885886abb3e82427",
+    "runId": "goal-read-gate-20261004t151315z-d73a6d1a0c8d4dfd"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "44cb2aa6a44dce28800356a86b09efb1d60bfb49",
+      "digest": "25c661fbc7741f53d45b940293eddc1c8247930679a0115e627060c917779c5b"
+    },
+    {
+      "kind": "read",
+      "commit": "7a69fcbb67379181e4c3c966ef1f4ea35bfbd068",
+      "digest": "29080d649b1bf39479a5142b1fb5144e86df40e9728f0a76f709ac4f5665e732"
+    },
+    {
+      "kind": "read",
+      "commit": "ffa3e06fc62991ebb5806528d125a3a7385467dd",
+      "digest": "3b6235bc1aeb6b23a724b6e8b5576fd005e3c0bc7044c22a926bbc0a804808ef"
+    },
+    {
+      "kind": "read",
+      "commit": "81ea2b693879a1243319305f114cdd0a0fd89546",
+      "digest": "1b4e9863d25cc919f470c5e7a64019604ab53aad88109e61d6e9790c0d065617"
+    },
+    {
+      "kind": "read",
+      "commit": "ba088c621ef0e41ea0a8f85f3b085616eb9347d0",
+      "digest": "550a75e757b28428886be8e43a174624e3d168237f823330f1ba09f9435d3c70"
+    },
+    {
+      "kind": "read",
+      "commit": "fcffba51d650e1e8da52de57bd72861a6d2d0af8",
+      "digest": "7d9db257980df311c492a25374562ef38299e47f6a4fdf03f5f6b6c26f40b7af"
+    },
+    {
+      "kind": "read",
+      "commit": "55ebdd8b714e69ec9e001062affbd432d7adf5a9",
+      "digest": "3b1bcc2cdf28540a70b8b10bd4c6c1f896977ea250905357a9e78e132c500eac"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-34b1eb872458fafedf5a48d8"
+    },
+    {
+      "path": "metasystem/internal/steward/lane_silent_test.go",
+      "readerWord": "reviewed by critic root code-critic-34b1eb872458fafedf5a48d8"
+    }
+  ],
+  "sha256": "8daf8f666fcb9b2470d3cb4638d672f06784bef03c955019a92b650393bfa4c4"
+}
