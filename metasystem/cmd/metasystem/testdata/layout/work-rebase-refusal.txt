@@ -1,0 +1,2 @@
+✗ work rebase needs the goal to rebase; nothing was done
+  → metasystem work status --all  lists the goals with work

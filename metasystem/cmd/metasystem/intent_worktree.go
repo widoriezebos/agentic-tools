@@ -23,6 +23,8 @@ import (
 // own owners; tests give each invocation its own claim, token and
 // transport while keeping the real commit and push owners.
 type intentConnectionOwners struct {
+	rebase      func(branch.RebaseRequest) (branch.RebaseResult, error)
+	rebaseGate  func(string) (string, error)
 	endpoint    func(root string) (goal.Endpoint, error)
 	endpointTip func(root string, endpoint goal.Endpoint) (string, error)
 	claimCheck  func(root, goalID string, endpoint goal.Endpoint) func() error
@@ -55,6 +57,12 @@ func goalWorktreeLockReason(goalID string) string {
 
 func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
+	if owners.rebase == nil {
+		owners.rebase = branch.Rebase
+	}
+	if owners.rebaseGate == nil {
+		owners.rebaseGate = readGate
+	}
 	if owners.endpoint == nil {
 		owners.endpoint = branch.MainEndpoint
 	}

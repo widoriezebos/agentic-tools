@@ -37,6 +37,7 @@ func init() {
 	registerIdempotency("work brief", idemStateful, "the same scaffold already at --out is unchanged; different content there is refused and kept", witnessWorkBriefRepeat)
 	registerIdempotency("work build", idemStateful, "the same goal, work and request reach the same attempt again and launch nothing", witnessWorkBuildRepeat)
 	registerIdempotency("work stop", idemStateful, "a job that already ended is already stopped; a goal's stop that already completed is left as it is (TestWorkStopGoalCompletesItsRecordedStop)", witnessWorkStopRepeat)
+	registerIdempotency("work rebase", idemStateful, "a branch already on main carries nothing twice and writes nothing", witnessWorkRebaseRepeat)
 	registerIdempotency("work finish", idemStateful, "an already closed chain is unchanged", witnessWorkFinishRepeat)
 	registerIdempotency("work land", idemStateful, "an already landed goal names its landing and pushes nothing", witnessWorkLandRepeat)
 	registerIdempotency("design stop", idemStateful, "an attempt that already ended is already stopped", witnessDesignStopRepeat)
