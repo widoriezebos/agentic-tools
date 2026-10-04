@@ -14,13 +14,13 @@ Open read items (fix unit code-critic-259abd17350236dafadd587e): 4
 - ReadItem: id=code-critic-259abd17350236dafadd587e-3 read=code-critic-259abd17350236dafadd587e state=open addedAt=2026-10-04T04:23:11Z changedAt=- closingReference="" text="The partner-acts proof selector 'Partner|Through|...' also matches TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker, a heavy engine-build test that took the whole 10-minute go test budget under host load average 30 (round 16) and passed on rerun. Future plans should anchor selectors to the unit's own test names."
 - ReadItem: id=code-critic-259abd17350236dafadd587e-4 read=code-critic-259abd17350236dafadd587e state=open addedAt=2026-10-04T04:23:11Z changedAt=- closingReference="" text="The committed review from the primary checkout refused 'runtime adapter is not installed: codex' because the goal worktree has no bin/metasystem; exporting METASYSTEM_BIN=<primary>/metasystem/bin/metasystem let it start (R-145 hot-fix class, goal goal-worktree-dispatch-uses-the-primary)."
 - OpenedAt: 2026-10-03T10:03:15Z
-- Revision: 41
-- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 3
-- Approved: by=human:Wido at=2026-10-04T03:12:51Z revision=39 opid=TX6NYGSAZNNA9NQCPKP96QEGZ1-m1e-718ba0eb authority=proven digest=8b5e7b4d873118782c4fbbfdad996b19dbc28d564327589c0990aefde6a7aee5 episode=39
+- Revision: 42
+- Budget: elapsedLimit=2d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 4
+- Approved: by=human:Wido at=2026-10-04T05:41:54Z revision=42 opid=K70AA41DFFR57Q1HW4YPSKSY7P-m1e-718ba0eb authority=proven digest=672d21196ad17f8b77aa99453a49cf6902503d602e37f0c582179da4e8746b1d episode=42
 - Sliced: machine=m1l lineage=steward-seat revision=5 at=2026-10-03T16:18:11Z
-- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T03:12:51Z revision=39 accountingRevision=39 episodeAt=2026-10-03T15:51:37Z episodeRevision=5
-- StopCapability: generation=39 revision=39 machine=m1l claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T05:41:54Z revision=42 accountingRevision=42 episodeAt=2026-10-03T15:51:37Z episodeRevision=5
+- StopCapability: generation=42 revision=42 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T10:03:15Z MPVK1FAH5SGPAVB3J4T7YA775Y-m1e-718ba0eb open actor=human:Wido targets=agent-works-as-project-partner
@@ -64,4 +64,5 @@ History:
 - 2026-10-04T03:12:51Z TX6NYGSAZNNA9NQCPKP96QEGZ1-m1e-718ba0eb set-budget actor=human:Wido targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T00:53:35Z
 - 2026-10-04T04:23:11Z RZ8YG3ED1SZD68Y8KWHQBY0E49-m1l-71c5cb39 read-items-add actor=m1l+steward-seat targets=agent-works-as-project-partner
 - 2026-10-04T04:34:59Z F2S98KHZABD7846154QRRM262V-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=landing-deploys-the-engine from=1:13 to=1:14 requested-sequence=4
-Integrity: sha256=6718401f63f8e5489f21afbcf24cf25fafe4b517db35590a73ff06ee7905c9f9
+- 2026-10-04T05:41:54Z K70AA41DFFR57Q1HW4YPSKSY7P-m1e-718ba0eb set-budget actor=human:Wido targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T03:12:51Z
+Integrity: sha256=1a44f69d94ed523746b76fc62620e4224997146eb8408627a9a395667ff79364
