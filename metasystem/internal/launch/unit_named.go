@@ -45,9 +45,8 @@ const (
 // The plan is read once, under the unit's lock, into the named store; the
 // digest and the run's retained plan both come from that one copy. Before
 // the run is continued and before every launch it starts, the retained
-// plan, the files it names and the launch settings are checked against the
-// reserved digest, so a changed plan, brief, input or setting is refused
-// before anything is launched with it.
+// plan, the files it names and the split settings are checked against the
+// reserved digest, so changed work is refused before anything is launched.
 func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if runner.Manager == nil {
 		return UnitResult{}, errors.New("unit launch manager is unavailable")
@@ -71,7 +70,7 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 // Continue advances a recorded run by its id, with an optional follow-up
 // brief. A run a named unit reserved is continued as that unit: under its
 // named lock, then the run lock, with the reserved digest of the retained
-// plan, its files and the launch settings verified before the run goes on and
+// plan, its files and the split settings verified before the run goes on and
 // before every launch it starts. The named entry is found from the run's own
 // worktree, goal and unit, the same key that reserved it. A run no named
 // entry claims (a legacy plan) continues exactly as Advance. A follow-up
@@ -222,7 +221,10 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 			return UnitResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(plan.Unit, plan.Goal, "entry="+runner.namedPath(key, ".json")), fmt.Errorf("the saved record of unit %s is damaged and cannot be read", plan.Unit))
 		}
 		if entry.Digest != digest {
-			return UnitResult{}, coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("unit %s already runs with other inputs than this request", plan.Unit))
+			legacy, legacyErr := legacyNamedUnitDigest(plan, worktree, runner.options.apply(settings))
+			if legacyErr != nil || entry.Digest != legacy {
+				return UnitResult{}, coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("unit %s already runs with other inputs than this request", plan.Unit))
+			}
 		}
 	} else {
 		if err := runner.requireGoalBranch(plan); err != nil {
@@ -277,7 +279,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 }
 
 // apply puts the unit's own build model and effort over the configured
-// ones, so the digest names what the build actually runs with.
+// ones when checking a reservation that includes those choices.
 func (options UnitOptions) apply(settings Settings) Settings {
 	settings.BuildModel = choose(options.BuildModel, settings.BuildModel)
 	settings.BuildEffort = choose(options.BuildEffort, settings.BuildEffort)
@@ -298,6 +300,9 @@ func (binding *namedBinding) verify(runner *UnitRunner) error {
 		return err
 	}
 	digest, err := namedUnitDigest(binding.plan, binding.worktree, binding.options.apply(settings))
+	if err == nil && digest != binding.digest {
+		digest, err = legacyNamedUnitDigest(binding.plan, binding.worktree, binding.options.apply(settings))
+	}
 	if err != nil || digest != binding.digest {
 		return coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(binding.unit, binding.goal, "run="+binding.run),
 			fmt.Errorf("the plan, inputs or settings of unit %s changed since it started, so nothing more was launched", binding.unit))
@@ -324,12 +329,19 @@ type namedFile struct {
 
 // namedUnitDigest covers what the run is asked to do: the resolved plan,
 // the bytes of every brief, units page and input it hands a model, the
-// proof commands, and the launch settings that change what a build or read
-// asks for or how the unit is split into launches: runtime, model, effort,
-// window, the build line cap and the read split threshold. The plan's own
-// file name and the wait cap are left out; moving an unchanged plan or
-// waiting longer is the same unit.
+// outputs, base, proof commands, build line cap and read split threshold.
+// The roster is left out because each launch reads it when it starts.
+// The plan's own read model stays part of the work. Moving an unchanged
+// plan or waiting longer is the same unit.
 func namedUnitDigest(plan UnitPlan, worktree string, settings Settings) (string, error) {
+	return namedUnitDigestContent(plan, worktree, settings, false)
+}
+
+func legacyNamedUnitDigest(plan UnitPlan, worktree string, settings Settings) (string, error) {
+	return namedUnitDigestContent(plan, worktree, settings, true)
+}
+
+func namedUnitDigestContent(plan UnitPlan, worktree string, settings Settings, roster bool) (string, error) {
 	file := func(path string) (namedFile, error) {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -349,15 +361,16 @@ func namedUnitDigest(plan UnitPlan, worktree string, settings Settings) (string,
 		return result, nil
 	}
 	var content struct {
-		Unit, Goal, Worktree, Base         string
-		BuildBrief, UnitsPage, ReadBrief   namedFile
-		BuildInputs, ReadInputs            []namedFile
-		BuildOutputs, ReadOutputs, Units   []string
-		BuildModel, BuildEffort, ReadModel string
-		BuildRuntime, ReadRuntime          string
-		BuildWindow, ReadWindow            int64
-		BuildLinesCap, ReadSplitLines      int64
-		Proof                              []ProofCommand
+		Unit, Goal, Worktree, Base       string
+		BuildBrief, UnitsPage, ReadBrief namedFile
+		BuildInputs, ReadInputs          []namedFile
+		BuildOutputs, ReadOutputs, Units []string
+		BuildModel, BuildEffort          *string `json:",omitempty"`
+		ReadModel                        string
+		BuildRuntime, ReadRuntime        *string `json:",omitempty"`
+		BuildWindow, ReadWindow          *int64  `json:",omitempty"`
+		BuildLinesCap, ReadSplitLines    int64
+		Proof                            []ProofCommand
 	}
 	content.Unit, content.Goal, content.Worktree, content.Base = plan.Unit, plan.Goal, worktree, plan.Base
 	var err error
@@ -377,9 +390,12 @@ func namedUnitDigest(plan UnitPlan, worktree string, settings Settings) (string,
 		return "", err
 	}
 	content.BuildOutputs, content.ReadOutputs, content.Units = plan.Build.Outputs, plan.Read.Outputs, plan.Build.Units
-	content.BuildModel, content.BuildEffort, content.ReadModel = settings.BuildModel, settings.BuildEffort, choose(plan.Read.Model, settings.ReadModel)
-	content.BuildRuntime, content.ReadRuntime = settings.BuildRuntime, settings.ReadRuntime
-	content.BuildWindow, content.ReadWindow = settings.BuildWindow, settings.ReadWindow
+	content.ReadModel = plan.Read.Model
+	if roster {
+		content.BuildModel, content.BuildEffort, content.ReadModel = &settings.BuildModel, &settings.BuildEffort, choose(plan.Read.Model, settings.ReadModel)
+		content.BuildRuntime, content.ReadRuntime = &settings.BuildRuntime, &settings.ReadRuntime
+		content.BuildWindow, content.ReadWindow = &settings.BuildWindow, &settings.ReadWindow
+	}
 	content.BuildLinesCap, content.ReadSplitLines = settings.BuildLinesCap, settings.ReadSplitLines
 	content.Proof = plan.Proof
 	data, err := json.Marshal(content)

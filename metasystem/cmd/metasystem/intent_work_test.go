@@ -589,9 +589,14 @@ func TestIntentBuildResume(t *testing.T) {
 		record.State, record.ExitCode = launch.Completed, &exit
 		return nil
 	})
+	bed.manager.Settings.ReadRuntime = "codex"
 	code, result, _ = bed.work("work", "wait", "run:"+heldRun)
 	if code != 0 || result.Outcome != intentConfirmed || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("continued wait: code=%d %+v", code, result)
+	}
+	readLaunch := resultData(t, result)["steps"].([]any)[2].(map[string]any)["launchId"].(string)
+	if record, err := bed.manager.Store.Read(readLaunch); err != nil || record.Adapter != "codex-exec" {
+		t.Fatalf("read=%+v err=%v", record, err)
 	}
 	if launched := bed.starter.launched(); len(launched) != 8 || launched[5] != "build" || launched[6] != "proof" || launched[7] != "read" {
 		t.Fatalf("the continued wait started another build: %v", launched)

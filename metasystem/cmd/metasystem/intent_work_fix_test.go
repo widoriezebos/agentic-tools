@@ -285,8 +285,12 @@ func TestIntentBuildModelOverride(t *testing.T) {
 		t.Fatalf("build launch model=%s effort=%s err=%v", record.AdapterData["model"], record.AdapterData["effort"], err)
 	}
 	run := data["run"].(string)
+	bed.manager.Settings.BuildModel, bed.manager.Settings.BuildEffort = "seat-model", "low"
 	if code, result, _ = bed.work("work", "build", "run:"+run); code != 0 || resultData(t, result)["buildModel"] != "claude-sonnet-5" {
 		t.Fatalf("resume: code=%d %+v", code, result)
+	}
+	if code, result, _ = bed.work(args("claude-sonnet-5")...); code != 0 || resultData(t, result)["run"] != run {
+		t.Fatalf("repeat after seat settings changed: code=%d %+v", code, result)
 	}
 	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("another model for the same unit: code=%d %+v", code, result)
