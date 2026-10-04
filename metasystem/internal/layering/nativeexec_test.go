@@ -40,6 +40,10 @@ var lawfulExecPrograms = map[string]execAllowance{
 		files:  []string{"internal/landing/receipt.go", "internal/contract/measure.go", "internal/testutil/"},
 		reason: "runs a command the adopter declared (a proof or measurement command, an extension point) or drives a fixture from test support",
 	},
+	"claude": {
+		files:  []string{"cmd/metasystem/steward_seat.go"},
+		reason: "the steward's provider probe: a supervised two-minute launch of the provider CLI that only asks whether the provider answers; the result is classified, never trusted as work",
+	},
 	"/usr/bin/getconf": {
 		files: []string{"internal/diskstore/host_darwin.go"},
 		reason: "the adapter to confstr(_CS_DARWIN_USER_TEMP_DIR): the per-user temporary root Darwin assigns, which ignores TMPDIR; " +
