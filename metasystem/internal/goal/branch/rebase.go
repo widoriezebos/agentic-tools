@@ -33,6 +33,7 @@ type RebaseResult struct {
 	Carried     []string `json:"carried"`
 	NeedsReview []string `json:"needsReview"`
 	Regenerated []string `json:"regenerated,omitempty"`
+	Resolved    []string `json:"resolved,omitempty"`
 }
 
 type rebaseDependencies struct {
