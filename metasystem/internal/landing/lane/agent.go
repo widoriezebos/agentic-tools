@@ -189,7 +189,7 @@ func (k AgentKeeper) Run() AgentRun {
 		}
 		current.StartingAt = k.Now().UTC().Format(time.RFC3339)
 		claimed = true
-		return writeJSON(k.Home, agentStatePath(k.Home), current)
+		return written(writeJSON(k.Home, agentStatePath(k.Home), current))
 	}); err != nil {
 		return agentRun(AgentFailed, root, "the landing agent's keeper can't claim the start: "+err.Error())
 	}
@@ -209,7 +209,7 @@ func (k AgentKeeper) Run() AgentRun {
 		current.StartingAt = ""
 		if startErr != nil {
 			result = agentRun(AgentFailed, root, fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr))
-			return writeJSON(k.Home, agentStatePath(k.Home), current)
+			return written(writeJSON(k.Home, agentStatePath(k.Home), current))
 		}
 		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Fingerprint: fingerprint,
 			Barren: current.Barren, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
@@ -225,7 +225,7 @@ func (k AgentKeeper) Run() AgentRun {
 				result.Line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and was stopped again", id, root, by)
 			}
 		}
-		return writeJSON(k.Home, agentStatePath(k.Home), current)
+		return written(writeJSON(k.Home, agentStatePath(k.Home), current))
 	}); err != nil {
 		return AgentRun{Outcome: AgentFailed, Launch: id, Root: root, Line: fmt.Sprintf("the landing agent at %s: its keeper record could not be written: %v", root, err)}
 	}
@@ -282,7 +282,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 		}
 		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
 		k.countBarren(&state, root)
-		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
+		if err := written(writeJSON(k.Home, agentStatePath(k.Home), state)); err != nil {
 			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 		}
 	}
@@ -334,7 +334,7 @@ func (k AgentKeeper) barrenHold(root string) (string, bool, error) {
 	}
 	if clear {
 		state.Barren, state.BarrenLaunches, state.BarrenFingerprint = 0, nil, ""
-		return "", false, writeJSON(k.Home, agentStatePath(k.Home), state)
+		return "", false, written(writeJSON(k.Home, agentStatePath(k.Home), state))
 	}
 	if state.Barren < barrenLimit {
 		return "", false, nil
@@ -385,7 +385,7 @@ func UnreadableAgentRecord(home string) string {
 func RepairAgentRecord(home string) error {
 	return withLock(home, func() error {
 		if _, err := ReadAgentState(home); err != nil {
-			return writeJSON(home, agentStatePath(home), AgentState{})
+			return written(writeJSON(home, agentStatePath(home), AgentState{}))
 		}
 		return nil
 	})
