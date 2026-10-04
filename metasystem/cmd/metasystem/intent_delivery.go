@@ -245,6 +245,7 @@ type intentDeliveryOwners struct {
 	executable  func() (string, error)
 	branchRead  func([]string) (branch.BranchReadResult, int, error)
 	branchState func(root, goalID string) (intentBranchState, error)
+	laneLatest  func(install, goalID, main string) (plain.Entry, bool, error)
 	// trailerWorktree is the goal worktree a missing kind trailer may be
 	// amended in (productionTrailerWorktree); nil offers no amend.
 	trailerWorktree func(root, goalID, commit, endpointTip string) string
@@ -1860,7 +1861,7 @@ func (inv *intentInvocation) deliveredHint(goalID string, result intentResult) i
 	return result
 }
 
-func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
+func (inv *intentInvocation) landGoalRoute(goalID, through string) (result intentResult) {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id; nothing was landed", goalID),
@@ -1877,6 +1878,16 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	if problem != nil {
 		return *problem
 	}
+	laneInstall := ""
+	if configured {
+		var err error
+		laneInstall, err = inv.laneInstallOf(landingRoot)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+				Summary: "the landing lane's installation can't be found, so nothing was handed in",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's checkout", Details: []string{err.Error()}}
+		}
+	}
 	state, err := owners.branchState(root.Path(), goalID)
 	if err != nil {
 		refused := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
@@ -1886,17 +1897,56 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		}
 		return refused
 	}
-	laneInstall := ""
-	if configured {
-		// The plain lane: the goal's newest hand-in at this selection
-		// answers first, including once the branch is gone.
-		install, err := inv.laneInstallOf(landingRoot)
-		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
-				Summary: "the landing lane's installation can't be found, so nothing was handed in",
-				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's checkout", Details: []string{err.Error()}}
+	skip, refusal := inv.landRebaseSkip(goalID, through, laneInstall, state)
+	if refusal != nil {
+		return *refusal
+	}
+	var rebase branch.RebaseResult
+	var warning []string
+	if skip == "" {
+		rebase, warning, refusal = inv.rebaseGoal(goalID)
+		if refusal != nil {
+			return *refusal
 		}
-		laneInstall = install
+	}
+	defer func() {
+		data, ok := result.Data.(map[string]any)
+		if !ok {
+			data = map[string]any{}
+			result.Data = data
+		}
+		if skip != "" {
+			data["rebase"] = map[string]string{"state": "skipped", "reason": skip}
+			result.text = append([]string{"not rebased: " + skip}, result.text...)
+			return
+		}
+		data["rebase"] = rebase
+		line := "on main " + shortCommit(rebase.MainTip)
+		if rebase.State == "rebased" {
+			line = "rebased onto main " + shortCommit(rebase.MainTip)
+		}
+		lines := inv.rebaseReviewLines(goalID, rebase)
+		if configured && result.Outcome == intentConfirmed {
+			result.Summary = fmt.Sprintf("goal %s at %s handed to the lane, on main %s; its landing agent proves and pushes it", goalID, plain.Short(state.BranchTip), shortCommit(rebase.MainTip))
+			if rebase.State == "rebased" {
+				result.Summary = fmt.Sprintf("goal %s at %s handed to the lane, rebased onto main %s; its landing agent proves and pushes it", goalID, plain.Short(state.BranchTip), shortCommit(rebase.MainTip))
+			}
+		} else {
+			lines = append([]string{line}, lines...)
+		}
+		lines = append(lines, warning...)
+		result.text = append(lines, result.text...)
+	}()
+	if skip == "" && rebase.State != "held" {
+		state, err = owners.branchState(root.Path(), goalID)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: "the rebased goal branch can't be read, so nothing was handed in",
+				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		}
+	}
+	if configured {
+		install := laneInstall
 		selected := state.BranchTip
 		if through != "" && selected != "" {
 			selected = through
@@ -1924,6 +1974,10 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	subject, _, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
+		if len(rebase.NeedsReview) != 0 {
+			refusal.next = inv.publicArgv("work", "review", goalID, "--work", rebase.NeedsReview[0])
+			refusal.nextReason = "reads the changed unit"
+		}
 		return *refusal
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
