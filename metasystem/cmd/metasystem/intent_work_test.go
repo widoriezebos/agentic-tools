@@ -558,6 +558,7 @@ func TestBriefLineAsksForTheRead(t *testing.T) {
 		if err != nil || plan.HasRead() != wantsRead || (len(plan.Read.Outputs) > 0) != wantsRead {
 			t.Fatalf("%q: plan=%+v err=%v", line, plan, err)
 		}
+		retainedInputs(t, data["inputs"].(string))
 		registryPath, _ := registry.DefaultPath()
 		stores, _ := diskstore.MachineRegistry(filepath.Dir(registryPath)).Inventory()
 		registered := false
