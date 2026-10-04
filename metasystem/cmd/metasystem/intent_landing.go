@@ -59,8 +59,10 @@ type laneVerbOwners struct {
 	plainProve       plain.ProveSeams
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error
-	// push is landing push's push of the lane checkout's HEAD to main.
-	push func(install, checkout string, now time.Time) (plain.PushOutcome, error)
+	// push is landing push's push of the lane checkout's HEAD to main;
+	// before runs once the push's own checks pass, and its error stops the
+	// publication.
+	push func(install, checkout string, now time.Time, before func(old, head string) error) (plain.PushOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -112,7 +114,7 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.stopRegeneration = plain.StopRegeneration
 	}
 	if owners.push == nil {
-		owners.push = plain.Push
+		owners.push = plain.PushChecked
 	}
 	return owners
 }

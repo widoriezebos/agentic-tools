@@ -8,10 +8,96 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+type landingPushOwners struct {
+	contains func(string, string) func(string) (bool, error)
+	facts    func(string) landing.DesignFacts
+	record   func(string, plain.DesignCheck) error
+	notify   func(plain.PushOutcome) error
+}
+
+func (inv *intentInvocation) laneDesignPair(pair [2]string) {
+	page := textui.NewLegacy(inv.textEnv(inv.stderr))
+	page.Legacy(pair[0], pair[1])
+	_, _ = io.WriteString(inv.stderr, page.String())
+}
+
+func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmitted) landingPushOwners {
+	if o.contains == nil {
+		o.contains = plain.ContainedIn
+	}
+	if o.facts == nil {
+		o.facts = func(id string) landing.DesignFacts {
+			reader, err := landingDesignInvocation(admitted.installation, inv.stderr)
+			if err != nil {
+				return landing.DesignFacts{Facts: designgate.Facts{Goal: id, Error: err}}
+			}
+			return reader.landingDesignFacts(reader.stateRoot, id)
+		}
+	}
+	if o.record == nil {
+		o.record = plain.RecordDesignCheck
+	}
+	if o.notify == nil {
+		o.notify = func(outcome plain.PushOutcome) error {
+			return postLanded(admitted.installation, landedMessage(admitted.installation, string(admitted.layout.Checkout), outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now())
+		}
+	}
+	return o
+}
+
+func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
+	waiting, err := plain.Waiting(admitted.installation)
+	checkout := string(admitted.layout.Checkout)
+	if err != nil {
+		inv.laneDesignPair([2]string{fmt.Sprintf("warning: the lane's design check could not run (%s); the push goes on", oneLine(err.Error())), "metasystem landing status --verbose"})
+		return nil
+	}
+	inHead, inOld := owners.contains(checkout, head), owners.contains(checkout, old)
+	var refused *intentResult
+	for _, entry := range waiting {
+		now, headErr := inHead(entry.SHA)
+		before, oldErr := inOld(entry.SHA)
+		var facts landing.DesignFacts
+		if err := errors.Join(headErr, oldErr); err != nil {
+			facts = landing.DesignFacts{Facts: designgate.Facts{Goal: entry.Goal, Error: err}}
+		} else if !now || before {
+			continue
+		} else {
+			facts = owners.facts(entry.Goal)
+		}
+		design := landing.ObserveDesign(facts, false)
+		if design.RefusesAgent {
+			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
+			design.Pair[1] = "metasystem landing return " + entry.Goal + " --reason TEXT"
+			if refused == nil {
+				refused = &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root), Data: design,
+					Summary: design.Pair[0], next: inv.publicArgv("landing", "return", entry.Goal, "--reason", "TEXT"),
+					nextReason: "gives the goal back to its seat to restore its accepted design",
+					Details:    []string{"refused because: LANDING_DESIGN_NOT_STANDING"}}
+			} else {
+				inv.laneDesignPair(design.Pair)
+			}
+		} else if design.Pair[0] != "" {
+			inv.laneDesignPair(design.Pair)
+		}
+		check := plain.DesignCheck{Goal: entry.Goal, Commit: entry.SHA, Verdict: design.Verdict, Reason: design.Pair[0], At: admitted.owners.now().UTC().Format(time.RFC3339)}
+		if err := owners.record(admitted.installation, check); err != nil {
+			inv.laneDesignPair([2]string{fmt.Sprintf("warning: the lane's design check record could not be written (%s); the check still stands", oneLine(err.Error())), "nothing to do: the next push checks the design again"})
+		}
+	}
+	return refused
+}
 
 // landedMessage is the message of a push from old to head: the plain
 // sentences of what the waiting hand-ins it put on main (head contains
@@ -44,18 +130,33 @@ func landingPushCommand() intentCommand {
 }
 
 func runIntentLandingPush(inv *intentInvocation, admitted laneAdmitted) int {
+	return runIntentLandingPushWithOwners(inv, admitted, landingPushOwners{})
+}
+
+func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted, owners landingPushOwners) int {
 	root := admitted.record.Root
 	targets := laneTargets(root)
 	if refused := inv.lanePaused(admitted, "pushed"); refused != nil {
 		return inv.render(*refused)
 	}
+	owners = owners.withDefaults(inv, admitted)
 	checkout := string(admitted.layout.Checkout)
-	outcome, err := admitted.owners.push(admitted.installation, checkout, admitted.owners.now())
+	var designRefusal *intentResult
+	outcome, err := admitted.owners.push(admitted.installation, checkout, admitted.owners.now(), func(old, head string) error {
+		designRefusal = inv.checkLaneDesigns(admitted, owners, old, head)
+		if designRefusal != nil {
+			return errors.New(designRefusal.Summary)
+		}
+		return nil
+	})
+	if designRefusal != nil {
+		return inv.render(*designRefusal)
+	}
 	var told []string
 	if outcome.Changed {
 		// A landing on main is the one piece of news the channel carries
 		// (Decision 7); a failed post is kept for a retry and fails nothing.
-		if problem := postLanded(admitted.installation, landedMessage(admitted.installation, checkout, outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now()); problem != nil {
+		if problem := owners.notify(outcome); problem != nil {
 			told = []string{"the channel was not told of the landing; the next landing or tick retries once: " + problem.Error()}
 		}
 	}

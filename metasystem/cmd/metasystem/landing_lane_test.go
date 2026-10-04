@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,11 +10,157 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func TestLandingPushChecksDesign(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"warn", "refuse"} {
+		failures := []string{"", "chain", "record", "record-changed", "refs", "containment"}
+		if mode == "warn" {
+			failures = append(failures, "unproven")
+		}
+		for _, failure := range failures {
+			t.Run(mode+"/"+failure, func(t *testing.T) {
+				t.Parallel()
+				bed := newDesignGateBed(t, 2)
+				setDesignGateMode(t, bed, mode)
+				page, data := designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)\n")
+				designGateBuild(t, bed, "u")
+				if failure != "record" {
+					if err := os.WriteFile(page, append(data, []byte("A changed approach.\n")...), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if failure == "chain" {
+					bed.designGate.chains = func(string, string, string) ([]designgate.Chain, error) { return nil, errors.New("chain unavailable") }
+				}
+				laneHome := t.TempDir()
+				owners := bed.workOwners()
+				layout, err := owners.resolver.ResolveLayout(bed.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				install := layout.InstallationRoot
+				for _, goal := range []string{bed.id, "already-on-main", "not-in-head"} {
+					if _, _, err := plain.HandIn(install, plain.Line{Goal: goal, SHA: goal, At: laneTestNow.Format(time.RFC3339)}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var stdout, stderr bytes.Buffer
+				inv := &intentInvocation{command: landingPushCommand(), input: intentInput{values: map[string][]string{"json": {"true"}}},
+					owners: owners, layout: layout, stateRoot: bed.stateRoot(), stdout: &stdout, stderr: &stderr}
+				record := lane.Record{Root: layout.GitRoot, Install: install}
+				laneLayout, err := record.Layout()
+				if err != nil {
+					t.Fatal(err)
+				}
+				pushes, reads := 0, 0
+				push := func(_ string, _ string, _ time.Time, before func(old, head string) error) (plain.PushOutcome, error) {
+					outcome := plain.PushOutcome{Old: "main", Commit: "head"}
+					if failure == "refs" {
+						return outcome, errors.New("refs unavailable")
+					}
+					if failure == "unproven" {
+						return outcome, &plain.Refusal{Code: plain.CodeUnproven, Reason: "HEAD's tree was never proven, so nothing was pushed"}
+					}
+					if err := before(outcome.Old, outcome.Commit); err != nil {
+						return outcome, err
+					}
+					pushes++
+					outcome.Changed = true
+					return outcome, nil
+				}
+				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, push: push}}
+				effects := landingPushOwners{
+					contains: func(_, ref string) func(string) (bool, error) {
+						if ref != "head" && ref != "main" {
+							t.Fatalf("checked a ref other than the push's fetched commits: %q", ref)
+						}
+						return func(sha string) (bool, error) {
+							if failure == "containment" && sha == bed.id {
+								return false, errors.New("containment unavailable")
+							}
+							return sha == "already-on-main" || ref == "head" && sha == bed.id, nil
+						}
+					},
+					facts: func(id string) landing.DesignFacts {
+						reads++
+						if id != bed.id {
+							t.Fatalf("checked an excluded hand-in: %s", id)
+						}
+						return inv.landingDesignFacts(inv.stateRoot, id)
+					},
+					notify: func(plain.PushOutcome) error { return nil },
+				}
+				if strings.HasPrefix(failure, "record") {
+					effects.record = func(string, plain.DesignCheck) error { return errors.New("record unavailable") }
+				}
+				code := runIntentLandingPushWithOwners(inv, admitted, effects)
+				var result intentResult
+				if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				refuses := mode == "refuse" && (failure == "" || failure == "record-changed")
+				if refuses {
+					if code != 1 || pushes != 0 || !strings.HasSuffix(result.Summary, "; nothing was pushed") || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem landing return "+bed.id+" --reason TEXT" || result.Next.Reason != "gives the goal back to its seat to restore its accepted design" {
+						t.Fatalf("refusal: code=%d pushes=%d result=%+v", code, pushes, result)
+					}
+				} else if failure == "refs" || failure == "unproven" {
+					if code != 1 || pushes != 0 || stderr.Len() != 0 || reads != 0 {
+						t.Fatalf("push checked designs before its own checks passed: code=%d pushes=%d reads=%d output=%q", code, pushes, reads, stderr.String())
+					}
+				} else if code != 0 || pushes != 1 {
+					t.Fatalf("push did not continue: code=%d pushes=%d output=%s", code, pushes, stderr.String())
+				}
+				checks, err := plain.DesignChecks(install)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if failure == "refs" || failure == "unproven" {
+					if len(checks) != 0 {
+						t.Fatalf("recorded designs for a push that failed its own checks: %+v", checks)
+					}
+					if _, err := os.Stat(filepath.Join(plain.Dir(install), "design-gate.jsonl")); !os.IsNotExist(err) {
+						t.Fatalf("created a design check file for a refused push: %v", err)
+					}
+				} else if strings.HasPrefix(failure, "record") {
+					lines := 2
+					if failure == "record-changed" && !refuses {
+						lines = 4
+					}
+					if len(checks) != 0 || !strings.Contains(stderr.String(), strings.TrimSuffix(failure, "-changed")+" unavailable") || strings.Count(stderr.String(), "\n") != lines {
+						t.Fatalf("failure pair or record: checks=%+v output=%q", checks, stderr.String())
+					}
+				} else {
+					want := "design-changed"
+					if failure != "" {
+						want = "unchecked"
+					}
+					if len(checks) != 1 || checks[0].Goal != bed.id || checks[0].Commit != bed.id || checks[0].Verdict != want || checks[0].At != laneTestNow.Format(time.RFC3339) {
+						t.Fatalf("lane record: %+v", checks)
+					}
+					if !refuses && (!strings.Contains(stderr.String(), checks[0].Reason+"\nmetasystem design ") || strings.Count(stderr.String(), "\n") != 2) {
+						t.Fatalf("warning pair: %q", stderr.String())
+					}
+				}
+				wantReads := 1
+				if failure == "refs" || failure == "containment" || failure == "unproven" {
+					wantReads = 0
+				}
+				if reads != wantReads {
+					t.Fatalf("facts read %d times; want %d", reads, wantReads)
+				}
+			})
+		}
+	}
+}
 
 var laneTestNow = time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
 

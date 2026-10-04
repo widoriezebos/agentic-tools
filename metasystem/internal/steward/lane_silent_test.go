@@ -2,6 +2,7 @@ package steward
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,90 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func TestLandingDesignCheckDigestOnce(t *testing.T) {
+	t.Parallel()
+	fixture := laneFixture{channelFixture: newUnservedChannelFixture(t), home: t.TempDir()}
+	writeLaneRecord(t, fixture.home, fixture.root)
+	check := plain.DesignCheck{Goal: "g", Commit: "commit", Verdict: "design-changed", Reason: "warning: goal g was built against a design that changed; the landing goes on", At: laneSilentT0.Format(time.RFC3339)}
+	if err := plain.RecordDesignCheck(fixture.root, check); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(string) (stateroot.Layout, error) {
+		return stateroot.Layout{InstallationRoot: fixture.root, GitRoot: fixture.root}, nil
+	}
+	appendDigest := func(root string, entries []narratordigest.Entry, now time.Time) error {
+		return narratordigest.AppendWithLayoutReader(root, entries, now, resolve)
+	}
+	var output strings.Builder
+	ledger := fixtureSpendLedger()
+	dependencies := tickHealthDependencies{
+		evaluate: tickHealthRoles(t, fixture.root, ledger.Machine, func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil }),
+		now:      time.Now, deliver: func(string, string) error { return nil },
+		lane: func(self string, now time.Time) LaneSilence {
+			return readLaneSilenceWithDesignChecks(fixture.home, self, now, appendDigest, &output)
+		},
+	}
+	for _, now := range []time.Time{laneSilentT0, laneSilentT0.Add(time.Minute)} {
+		result := TickResult{}
+		if err := completeTickHealthWithDependencies(fixture.root, &result, 1, identity.Ref{Pid: 1, StartedAtSec: 1}, now, dependencies); err != nil {
+			t.Fatal(err)
+		}
+	}
+	digest, err := os.ReadFile(filepath.Join(fixture.root, "records", "narrator-digest.log"))
+	if err != nil || strings.Count(string(digest), check.Reason) != 1 || !strings.Contains(string(digest), "design-gate-landing g@commit") || output.Len() != 0 {
+		t.Fatalf("digest=%q output=%q err=%v", digest, output.String(), err)
+	}
+	reads := 0
+	carryLaneDesignChecks(fixture.home, t.TempDir(), laneSilentT0, func(string, []narratordigest.Entry, time.Time) error { reads++; return nil }, &output)
+	if reads != 0 {
+		t.Fatal("another checkout carried the lane's warning")
+	}
+	carryLaneDesignChecks(fixture.home, fixture.root, laneSilentT0, func(string, []narratordigest.Entry, time.Time) error { return errors.New("digest unavailable") }, &output)
+	if !strings.Contains(output.String(), "digest unavailable") || strings.Count(output.String(), "\n") != 2 || !strings.Contains(output.String(), "the tick goes on") {
+		t.Fatalf("digest failure pair: %q", output.String())
+	}
+}
+
+func TestLandingDesignCheckCarryReadFailures(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"lane", "checks"} {
+		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
+			fixture := laneFixture{channelFixture: newUnservedChannelFixture(t), home: t.TempDir()}
+			writeLaneRecord(t, fixture.home, fixture.root)
+			if failure == "lane" {
+				if err := os.WriteFile(lane.RecordPath(fixture.home), []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.MkdirAll(filepath.Join(plain.Dir(fixture.root), "design-gate.jsonl"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			appends := 0
+			appendDigest := func(string, []narratordigest.Entry, time.Time) error { appends++; return nil }
+			for _, self := range []string{fixture.root, t.TempDir()} {
+				var output strings.Builder
+				carryLaneDesignChecks(fixture.home, self, laneSilentT0, appendDigest, &output)
+				if failure == "checks" && self == fixture.root {
+					if !strings.Contains(output.String(), "could not reach the narrator") || strings.Count(output.String(), "\n") != 2 {
+						t.Fatalf("check read failure pair: %q", output.String())
+					}
+				} else if output.Len() != 0 {
+					t.Fatalf("unowned lane read printed a warning: %q", output.String())
+				}
+			}
+			if appends != 0 {
+				t.Fatalf("carried unreadable design checks %d times", appends)
+			}
+		})
+	}
+}
 
 var laneSilentT0 = time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
 
