@@ -9,15 +9,15 @@
 - Origin: main
 - Next step: Steps 1 (a5d4d6895) and 2 (235a2412a: Pause, Resume and Stop as the signed-in person) are on main. Step 3, next: a steward role's health reason shows on the Fleet page only as one plain line with the act it implies, or not at all (Wido 17:50: 'no mere mortal will know what to do with this'); test corpus: the five lines he saw (retro debt, the slow last Stop, the token line, the ledger unexamined past 30m, deep validation overdue); and Doing shows 'round 1' alone, the cap only within two of it (Wido 20:14). Desktop only. Estimate 2 h, 3 attempts: Fable design note, Opus build, Sol read, lane.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 72
+- Revision: 73
 - Pinned: ui
-- Budget: elapsedLimit=2d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 3
-- NormApproval: approvedRef=JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=69
-- Approved: by=human:Wido at=2026-10-03T23:29:30Z revision=70 opid=JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb authority=proven digest=c58ec2dc1ca7f6b98d82ac3d1d56522ffa3bbb0831baa4f16b3c19524bb8e194 episode=70
+- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 4
+- NormApproval: approvedRef=JW7DP49PHA53EGBA4B1EFNJKXH-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=72
+- Approved: by=human:Wido at=2026-10-04T00:37:57Z revision=73 opid=JW7DP49PHA53EGBA4B1EFNJKXH-m1e-718ba0eb authority=proven digest=68aab1cbdfe931ca178b38c5ce13ad4a058f245ca30bd5d68b09ad2ea9d380f0 episode=73
 - Sliced: machine=ui lineage=steward-seat revision=20 at=2026-10-03T11:43:38Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-03T23:31:14Z revision=72 accountingRevision=70 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=57
-- StopCapability: generation=72 revision=72 machine=ui claimEpoch=3 fenceEpoch=0
+- Claimed: machine=ui lineage=steward-seat at=2026-10-04T00:37:57Z revision=73 accountingRevision=73 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=57
+- StopCapability: generation=73 revision=73 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -92,4 +92,5 @@ History:
 - 2026-10-03T23:29:30Z JGSVJ3XBWQ7YZ74ZF4DXBS8EJQ-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T14:31:48Z
 - 2026-10-03T23:30:28Z 8AM99PCVHP7RC48D0222N9F18D-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-page-redesign reason=re-claim under the box m1e raised in Wido's word at 01:30 (2d4h/10/1200m/1/20) before step 3
 - 2026-10-03T23:31:14Z SW0M34165G49MDT0G9YKFK301N-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
-Integrity: sha256=d9cc04ebf6025828844932e3e01a54b31d207befba2d46c444dbf16b7e4f89ac
+- 2026-10-04T00:37:57Z JW7DP49PHA53EGBA4B1EFNJKXH-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T23:31:14Z
+Integrity: sha256=730d7fd425b87f574cf75acacfe8842eb11ae51e1ba1530f935516466588e0b8
