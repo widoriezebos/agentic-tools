@@ -21,6 +21,24 @@ func ResolveTool(root string, serving func(string) (string, string), lookupEnv f
 	return
 }
 
+// InLinkedWorktree reports whether the nearest .git entry is a file.
+// Only linked worktrees need Git to locate a serving installation.
+func InLinkedWorktree(root string) bool {
+	dir, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	for {
+		if entry, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return entry.Mode().IsRegular()
+		}
+		if filepath.Dir(dir) == dir {
+			return false
+		}
+		dir = filepath.Dir(dir)
+	}
+}
+
 // Filesystem-path facts the dispatch decisions rest on: where a path really
 // is once symlinks resolve, whether it sits inside a boundary, the record
 // timestamp grammar, and the content digest that proves a mirrored file is

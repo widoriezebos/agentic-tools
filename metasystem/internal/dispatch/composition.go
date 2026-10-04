@@ -129,6 +129,7 @@ type ComposeRolePacketParams struct {
 	// process environment.
 	LookupEnv         func(string) (string, bool)
 	Root              string
+	SettingsFile      string // empty uses Root/metasystem.conf
 	Role              string
 	Brief             string
 	JobID             string
@@ -253,10 +254,10 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: string(p.DestructiveReach), Detail: err.Error()}
 	}
-	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
+	if err := validateRuntimeHazardConfigurationWith(p.LookupEnv, dispatchSettingsPath(p.Root, p.SettingsFile), p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: p.Runtime, Detail: err.Error()}
 	}
-	inlineLimit, err := InlineInputLimitBytes(filepath.Join(p.Root, "metasystem.conf"))
+	inlineLimit, err := InlineInputLimitBytes(dispatchSettingsPath(p.Root, p.SettingsFile))
 	if err != nil {
 		return CompositionRecord{}, err
 	}
