@@ -57,7 +57,7 @@ func tamper(t *testing.T, path string) func() {
 func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("brief.md", "Build the unit.\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	bed.starter.hold = "build"
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "guarded", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	if code != 3 || result.Outcome != intentInProgress {
@@ -186,7 +186,7 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	}
 	bed.manager.Processes = sandboxReader{mu: &mu, commands: &commands, findings: &findings}
 	bed.manager.Supervisor = superviseReads{bed.starter}
-	brief := bed.brief("brief.md", "Build the unit.\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "sandboxed", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)
 	if code != 0 || data["outcome"] != "green" || data["readClean"] != true {

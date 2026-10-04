@@ -291,7 +291,10 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
 		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds}
-	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel)}
+	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel)}
+	if plan.HasRead() {
+		round.ReadModel = choose(plan.Read.Model, settings.ReadModel)
+	}
 	if err := os.MkdirAll(round.Directory, 0o700); err != nil {
 		return UnitRunRecord{}, err
 	}
@@ -312,8 +315,12 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 	}
 	settings, _ := runner.Manager.resolvedSettings()
 	record.State = "running"
-	record.Rounds = append(record.Rounds, UnitRound{Number: number, Directory: directory, FollowUp: target,
-		BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: choose(record.BuildModel, settings.BuildModel)}}})
+	round := UnitRound{Number: number, Directory: directory, FollowUp: target,
+		BuildModel: choose(record.BuildModel, settings.BuildModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: choose(record.BuildModel, settings.BuildModel)}}}
+	if plan.HasRead() {
+		round.ReadModel = choose(plan.Read.Model, settings.ReadModel)
+	}
+	record.Rounds = append(record.Rounds, round)
 	return runner.save(*record)
 }
 
@@ -351,7 +358,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			for _, command := range proofCommands(plan) {
 				round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "build-failed"})
 			}
-			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
+			if plan.HasRead() {
+				round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
+			}
 			return runner.finish(record, round, "build-failed")
 		}
 	}
@@ -403,9 +412,12 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		readInputs = readInputs[:len(readInputs)-1]
 	}
 	sequence := runner.readSequence(record, round, plan, readInputs, diffPath)
-	readStart, err := sequence.plan()
-	if err != nil {
-		return UnitResult{}, err
+	readStart := len(round.Steps)
+	if plan.HasRead() {
+		readStart, err = sequence.plan()
+		if err != nil {
+			return UnitResult{}, err
+		}
 	}
 	if len(moved) != 0 {
 		if err := runner.skipAfter(record, round, readStart, "proof-wrote:"+strings.Join(moved, ",")); err != nil {
@@ -418,6 +430,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		return runner.finish(record, round, "proof-red")
+	}
+	if !plan.HasRead() {
+		return runner.finish(record, round, "green")
 	}
 	outcome, stop, capped, err := sequence.advance(readStart, deadline)
 	if err != nil || capped {

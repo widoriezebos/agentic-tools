@@ -37,8 +37,8 @@ func retainedInputs(t *testing.T, directory string) map[string][]byte {
 func TestIntentBuildRetainedRequest(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	first := bed.brief("first.md", "Build the first way.\n")
-	second := bed.brief("second.md", "Build the second way.\n")
+	first := bed.brief("first.md", "Read each round: yes\nBuild the first way.\n")
+	second := bed.brief("second.md", "Read each round: yes\nBuild the second way.\n")
 	argsFor := func(brief string) []string {
 		return append([]string{"work", "build", bed.id, "shared", "--brief", brief, "--lines", "10"}, workCheck...)
 	}
@@ -72,7 +72,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 	run, directory := data["run"].(string), data["inputs"].(string)
 	winnerBrief, loserBrief := []string{first, second}[winner], []string{first, second}[1-winner]
 	buildBrief, _ := os.ReadFile(filepath.Join(directory, "build-brief.md"))
-	if !strings.HasSuffix(string(buildBrief), map[string]string{first: "Build the first way.\n", second: "Build the second way.\n"}[winnerBrief]) {
+	if !strings.HasSuffix(string(buildBrief), map[string]string{first: "Read each round: yes\nBuild the first way.\n", second: "Read each round: yes\nBuild the second way.\n"}[winnerBrief]) {
 		t.Fatalf("the run's build brief is not its own request's:\n%s", buildBrief)
 	}
 	retained := retainedInputs(t, directory)
@@ -175,7 +175,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	}
 	bed.manager.Processes = readProcesses{}
 	bed.manager.Supervisor = superviseReads{bed.starter}
-	brief := bed.brief("brief.md", "Build the unit.\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "read", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)
 	if code != 0 || data["outcome"] != "green" || data["readClean"] != false || !strings.Contains(result.Summary, "read verdict: fix first (1 material findings)") {
@@ -218,7 +218,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	plain := bed.brief("plain.md", "Build the unit.\n")
+	plain := bed.brief("plain.md", "Read each round: yes\nBuild the unit.\n")
 	check := append([]string{"--check"}, workArgv...)
 	// A brief that names no read budget uses the configured allowance.
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "plain", "--brief", plain, "--lines", "5"}, check...)...)
@@ -230,7 +230,7 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	} else if readBrief, _ := os.ReadFile(plan.Read.Brief); !strings.Contains(string(readBrief), "Maximum reader tool calls: 48") {
 		t.Fatalf("the configured allowance is not the read's budget:\n%s", readBrief)
 	}
-	budgeted := bed.brief("budgeted.md", "Build the unit.\n\nMaximum reader tool calls: 25\n")
+	budgeted := bed.brief("budgeted.md", "Read each round: yes\nBuild the unit.\n\nMaximum reader tool calls: 25\n")
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "25") {
 		t.Fatalf("conflicting read budget: code=%d %+v", code, result)
