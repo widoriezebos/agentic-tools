@@ -35,6 +35,7 @@ func g4aLayoutCases() []layoutCase {
 		{name: "work-review-refusal", args: []string{"work", "review"}, bed: workLayoutBed},
 		{name: "work-revise-refusal", args: []string{"work", "revise"}, bed: workLayoutBed},
 		{name: "work-land-refusal", args: []string{"work", "land"}, bed: workLayoutBed},
+		{name: "work-rebase-refusal", args: []string{"work", "rebase"}, bed: workLayoutBed},
 		{name: "work-finish-refusal", args: []string{"work", "finish"}, bed: workLayoutBed},
 		{name: "test-run-refusal", args: []string{"test", "run"}, bed: outsideLayoutBed},
 		{name: "test-declare-moves-refusal", args: []string{"test", "declare-moves"}, bed: workLayoutBed},
