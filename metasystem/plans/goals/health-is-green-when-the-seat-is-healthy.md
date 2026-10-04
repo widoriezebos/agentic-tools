@@ -1,6 +1,6 @@
 # health-is-green-when-the-seat-is-healthy
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 51
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="Health verdicts every seat, the steward and the Fleet page read; a wrongly retired check hides a real failure, a permanently red one hides all of them"
@@ -21,14 +21,15 @@ Open read items (fix unit stuck-detector-review-r1): 3
 - ReadItem: id=stuck-detector-review-r1-2 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-2-ONE-BAD-RUN-FREEZES-ALL (review code-critic-fa0262e1ba7a51f5b35d447b, not material): one unparsable run.json anywhere in the host-wide unit store makes every stuck-unit observation Unknown and removes every stuck stamp from /api/board until the file is repaired; scope an unreadable run to its own goal and unit when its name can be read."
 - ReadItem: id=stuck-detector-review-r1-3 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-3-SECOND-LEDGER-READ (review code-critic-fa0262e1ba7a51f5b35d447b, not material): the stuck-unit pass reads the claimed-goal ledger a second time each tick and reads Unknown on a seat whose ledger is not yet the new world; share the delivery role's read."
 - OpenedAt: 2026-10-03T09:22:09Z
-- Revision: 58
+- Revision: 59
 - Pinned: m1l
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=50
 - Approved: by=human:Wido at=2026-10-04T15:00:09Z revision=51 opid=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb authority=proven digest=6a4d004a6d67338ab0e0855b5a4cec42fa1e435472ccde6af5b359901f9c038d episode=51
 - Sliced: machine=m1l lineage=steward-seat revision=48 at=2026-10-04T14:54:42Z
-- Episode: machine=m1l lineage=main-1790454088-93948-21671b accountingRevision=57 episodeAt=2026-10-04T20:54:25Z episodeRevision=57 idleSeconds=0 released=2026-10-04T21:12:29Z
+- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T21:12:40Z revision=59 accountingRevision=59 episodeAt=2026-10-04T21:12:40Z episodeRevision=59
+- StopCapability: generation=59 revision=59 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T09:22:09Z YF6TX22AGCF2X3HD0MT1F7VVPN-m1e-718ba0eb open actor=human:Wido targets=health-is-green-when-the-seat-is-healthy
@@ -89,4 +90,5 @@ History:
 - 2026-10-04T19:25:33Z ZXVGSJNET61KPF751XEHKCREVP-m1l-71c5cb39 read-items-add actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
 - 2026-10-04T20:54:25Z NRM1YDTQC6RG8G7R1BM8PB5TCA-m1l-f456f182 steal actor=human:wido targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T15:00:09Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the m1l checkout
 - 2026-10-04T21:12:29Z ZTS4VBANDN3BEDSPG7MXCPE5GY-m1l-f456f182 release actor=m1l+main-1790454088-93948-21671b targets=health-is-green-when-the-seat-is-healthy reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
-Integrity: sha256=cd7715f922d625029e5e93565483884594ae0cd66998b6bf22bb11d1219057ad
+- 2026-10-04T21:12:40Z 908Q5E3FCRE22MM2XZERZ7QR1Z-m1l-71c5cb39 claim actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
+Integrity: sha256=2e239c0482bb01ef4e2349e89ea0f43e859af385bae03653764e308c885a915b

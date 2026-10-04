@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 175
+- Revision: 176
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -234,4 +234,5 @@ History:
 - 2026-10-04T21:12:08Z RWS9NVG0Y9MTE00G5FSXDHSK9X-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T20:12:57Z ack
 - 2026-10-04T21:12:24Z 7QVW2QBQ79PYQ86NYP7ERY43CJ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T13:04:45Z ack
 - 2026-10-04T21:12:24Z 7QVW2QBQ79PYQ86NYP7ERY43CJ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T18:39:55Z ack
-Integrity: sha256=31fda825dbeeadf3e8e290bad8ae0388e3277cac7a69093e851b88b6f60ae71b
+- 2026-10-04T21:12:40Z 908Q5E3FCRE22MM2XZERZ7QR1Z-m1l-71c5cb39 ack actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T15:00:09Z ack
+Integrity: sha256=44220d1e165bb33bee0a5d2b5feccdc1e65b39debd8ec0f58e62abc8694fd5f7
