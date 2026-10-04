@@ -61,13 +61,30 @@ func (t GitPushTransport) RemoteTip(repo, remote, ref string) (string, bool, err
 }
 
 func (t GitPushTransport) Fetch(repo, remote, ref, destination string) error {
-	_, err := gitOutputContext(t.context(), repo, "fetch", "--no-tags", "--refmap=", remote, "+"+ref+":"+destination)
+	args := []string{"fetch", "--no-tags", "--refmap=", remote, "+" + ref + ":" + destination}
+	if kept := keptTipRefspec(ref); kept != "" {
+		args = append(args, kept)
+	}
+	_, err := gitOutputContext(t.context(), repo, args...)
 	return err
 }
 
+// keptTipRefspec moves the old builds needed to validate carried reviews.
+func keptTipRefspec(ref string) string {
+	goalID, ok := strings.CutPrefix(ref, goalBranchRef(""))
+	if !ok || goalID == "" || strings.Contains(goalID, "/") {
+		return ""
+	}
+	pattern := "refs/metasystem/goals/before/" + goalID + "/*"
+	return "+" + pattern + ":" + pattern
+}
+
 func (t GitPushTransport) Push(repo, remote, ref, expected, tip string) (CASOutcome, error) {
-	cmd := exec.CommandContext(t.context(), "git", "-C", repo, "push", remote,
-		"--force-with-lease="+ref+":"+expected, tip+":"+ref)
+	args := []string{"-C", repo, "push", remote, "--force-with-lease=" + ref + ":" + expected, tip + ":" + ref}
+	if kept := keptTipRefspec(ref); kept != "" {
+		args = append(args, "--atomic", kept)
+	}
+	cmd := exec.CommandContext(t.context(), "git", args...)
 	cmd.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

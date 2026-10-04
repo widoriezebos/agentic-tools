@@ -314,6 +314,16 @@ func sameFoldDigests(a, b []Fold) bool {
 	return true
 }
 
+func withoutReadFolds(folds []Fold) []Fold {
+	var kept []Fold
+	for _, fold := range folds {
+		if fold.Kind != Read {
+			kept = append(kept, fold)
+		}
+	}
+	return kept
+}
+
 func readAttestationAt(r attestationReads, repo, snapshot, goalID, commit string) (Attestation, error) {
 	rel := attestationPath(goalID, commit)
 	data, err := attestationFileAt(r, repo, snapshot, rel)
@@ -426,12 +436,24 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		return Attestation{}, err
 	}
 	if att.Carry != nil {
+		if err := r.CommitExists(repo, att.Carry.FromCommit); err != nil {
+			return Attestation{}, operationRefusal(ReadInvalidCode,
+				"the build the review carries over from is not in this repository\nrun: metasystem work status %s", goalID)
+		}
 		prior, err := validateAttestation(r, repo, snapshot, endpointTip, goalID, unit, att.Carry.FromCommit, seen)
 		if err != nil {
 			return Attestation{}, err
 		}
+		priorChange, err := changeDigestWithReads(r, repo, att.Carry.FromCommit)
+		if err != nil {
+			return Attestation{}, err
+		}
+		change, err := changeDigestWithReads(r, repo, commit)
+		if err != nil {
+			return Attestation{}, err
+		}
 		if att.Carry.FromTree != prior.Subject.Tree || att.Carry.ToCommit != commit || att.Carry.ToTree != subject.Tree ||
-			prior.Subject.UnitDigest != subject.UnitDigest || !sameFoldDigests(prior.Folds, folds) || prior.Source != att.Source {
+			priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) || prior.Source != att.Source {
 			return Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", att.Carry.FromCommit, goalID)
 		}
 		return att, nil
@@ -747,7 +769,15 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		if err != nil {
 			return "", Attestation{}, err
 		}
-		if prior.Subject.UnitDigest != subject.UnitDigest || !sameFoldDigests(prior.Folds, folds) {
+		priorChange, err := changeDigestWithReads(r, req.Repo, req.Carry)
+		if err != nil {
+			return "", Attestation{}, err
+		}
+		change, err := changeDigestWithReads(r, req.Repo, unitCommit)
+		if err != nil {
+			return "", Attestation{}, err
+		}
+		if priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) {
 			return "", Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", req.Carry, req.GoalID)
 		}
 		att.Source = prior.Source

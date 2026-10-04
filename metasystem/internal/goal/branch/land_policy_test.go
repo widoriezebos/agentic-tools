@@ -331,6 +331,11 @@ func (f *landingFacts) RawEntries(repo, commit string) ([]byte, error) {
 	return append([]byte(nil), f.nodes[commit].raw...), nil
 }
 
+func (f *landingFacts) ChangePatch(string, string) ([]byte, error) {
+	f.unsupported("ChangePatch")
+	return nil, nil
+}
+
 func (f *landingFacts) SnapshotFile(repo, snapshot, path string) ([]byte, error) {
 	f.requireRepo(repo, "goal-a")
 	f.call("file:" + snapshot + ":" + path)

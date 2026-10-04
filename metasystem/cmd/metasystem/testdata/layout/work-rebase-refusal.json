@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work rebase",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work rebase needs the goal to rebase; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "status",
+      "--all"
+    ],
+    "reason": "lists the goals with work"
+  }
+}
+
+--

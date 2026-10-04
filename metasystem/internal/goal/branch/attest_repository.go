@@ -14,6 +14,7 @@ import (
 type attestationReads interface {
 	ReadSubject(repo, commit string) (readsubject.ReadSubject, error)
 	RawEntries(repo, commit string) ([]byte, error)
+	ChangePatch(repo, commit string) ([]byte, error)
 	Range(repo, endpoint, tip, goal string) ([]Commit, error)
 	SnapshotFile(repo, snapshot, path string) ([]byte, error)
 	TopLevel(repo string) (string, error)
@@ -76,6 +77,21 @@ func (gitAttestationReads) ReadSubject(repo, commit string) (readsubject.ReadSub
 }
 func (gitAttestationReads) RawEntries(repo, commit string) ([]byte, error) {
 	return rawEntries(repo, commit)
+}
+func (gitAttestationReads) ChangePatch(repo, commit string) ([]byte, error) {
+	parents, err := gitOutput(repo, "rev-list", "--parents", "-n", "1", commit)
+	if err != nil {
+		return nil, err
+	}
+	if len(strings.Fields(string(parents))) < 2 {
+		return nil, rangeRefusal("", commit, "a build commit needs a parent to compare against, and this one has none")
+	}
+	// Review carry needs the same path quoting, blank context prefixes, matching
+	// algorithm, indentation heuristic, hunk spacing and file order on every machine.
+	return gitOutput(repo, "-c", "core.quotePath=true", "-c", "diff.suppressBlankEmpty=false",
+		"-c", "diff.algorithm=myers", "-c", "diff.indentHeuristic=true", "-c", "diff.interHunkContext=0",
+		"diff", "-O/dev/null", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+		"--binary", "--full-index", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/", "-U3", commit+"^", commit)
 }
 func (gitAttestationReads) Range(repo, endpoint, tip, goal string) ([]Commit, error) {
 	return ValidateRange(repo, endpoint, tip, goal)

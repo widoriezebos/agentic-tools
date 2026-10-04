@@ -52,6 +52,7 @@ import (
 func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "with --commit, or feedback on changes: the goal the subject serves"}
 	return []intentCommand{
+		intentWorkRebaseCommand(),
 		{
 			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,

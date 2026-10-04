@@ -31,6 +31,9 @@ type attestationPolicyFixture struct {
 	subject                                                            readsubject.ReadSubject
 	subjects                                                           map[string]readsubject.ReadSubject
 	raw                                                                map[string][]byte
+	patches                                                            map[string][]byte
+	patchErrors                                                        map[string]error
+	missingCommit                                                      string
 	ranges                                                             map[string][]Commit
 	snapshots                                                          map[string]map[string][]byte
 	transitions                                                        map[string][]byte
@@ -51,7 +54,7 @@ func newAttestationPolicyFixture(t *testing.T, testPath string, plan bool) *atte
 	f := &attestationPolicyFixture{t: t, root: root, base: policyID("a"), unit: policyID("b"),
 		tree: policyID("c"), tip: policyID("d"), index: policyID("e"), path: testPath,
 		record: "metasystem/records/misc/goal-a-u1-read.md", job: "critic-policy",
-		raw: map[string][]byte{}, snapshots: map[string]map[string][]byte{}, transitions: map[string][]byte{}, treeEntries: map[string]string{},
+		raw: map[string][]byte{}, patches: map[string][]byte{}, patchErrors: map[string]error{}, snapshots: map[string]map[string][]byte{}, transitions: map[string][]byte{}, treeEntries: map[string]string{},
 		subjects: map[string]readsubject.ReadSubject{}, ranges: map[string][]Commit{}, unitName: "u1"}
 	f.write("metasystem.conf", []byte("testing.contract=testing.json\n"))
 	if plan {
@@ -104,6 +107,17 @@ func (f *attestationPolicyFixture) RawEntries(repo, commit string) ([]byte, erro
 	}
 	return raw, nil
 }
+func (f *attestationPolicyFixture) ChangePatch(repo, commit string) ([]byte, error) {
+	f.next("ChangePatch", repo, commit)
+	if err := f.patchErrors[commit]; err != nil {
+		return nil, err
+	}
+	patch, ok := f.patches[commit]
+	if !ok {
+		f.t.Fatalf("missing change patch for %s", commit)
+	}
+	return append([]byte(nil), patch...), nil
+}
 func (f *attestationPolicyFixture) Range(repo, endpoint, tip, goal string) ([]Commit, error) {
 	f.next("Range", repo, endpoint, tip, goal)
 	if commits, ok := f.ranges[endpoint+":"+tip]; ok {
@@ -134,6 +148,9 @@ func (f *attestationPolicyFixture) TopLevel(repo string) (string, error) {
 }
 func (f *attestationPolicyFixture) CommitExists(repo, commit string) error {
 	f.next("CommitExists", repo, commit)
+	if commit == f.missingCommit {
+		return os.ErrNotExist
+	}
 	return nil
 }
 func (f *attestationPolicyFixture) Kind(repo, commit, goal string) (KindInfo, error) {

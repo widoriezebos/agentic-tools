@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 161
+- Revision: 166
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -215,4 +215,12 @@ History:
 - 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T11:38:01Z ack
 - 2026-10-04T13:02:08Z 39425ZKJYYF0NSFP83SXSMJ5E2-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T07:57:20Z ack
 - 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z ack
-Integrity: sha256=ce2d201eede6f1db3c46f3c72d52241ff568bda7803414f04be572e26ce090b7
+- 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:01:26Z ack
+- 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:23:38Z ack
+- 2026-10-04T14:35:15Z 4HX85XR2SHM71K72AHWGTGCVEB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=codex-jobs-run-unsandboxed-on-a-trusted-host displaced=m1e+main-1790454088-93948-21671b@2026-10-04T07:32:41Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T19:21:01Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T23:11:23Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-04T03:25:15Z ack
+- 2026-10-04T15:44:46Z ZK5ZSWGRNV22QMETM11CC1G39Z-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix displaced=ui+steward-seat@2026-10-04T07:24:09Z ack
+- 2026-10-04T16:43:29Z 0MF6KB6V2T9CP3TEPN2FQ132R8-m1l-71c5cb39 ack actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T14:33:15Z ack
+Integrity: sha256=66d319fbe1cace4f9ab5f637a7236b2ec85ab56c936de46a4c2ef710b9df2034
