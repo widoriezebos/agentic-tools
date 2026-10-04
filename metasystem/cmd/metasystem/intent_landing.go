@@ -60,7 +60,9 @@ type laneVerbOwners struct {
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main.
-	push func(install, checkout string, now time.Time) (plain.PushOutcome, error)
+	push        func(install, checkout string, now time.Time) (plain.PushOutcome, error)
+	contained   func(checkout, main string) func(string) (bool, error)
+	unitsOnMain func(checkout, main, goal string) (int, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -113,6 +115,12 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.push == nil {
 		owners.push = plain.Push
+	}
+	if owners.contained == nil {
+		owners.contained = plain.ContainedIn
+	}
+	if owners.unitsOnMain == nil {
+		owners.unitsOnMain = plain.UnitsOnMain
 	}
 	return owners
 }

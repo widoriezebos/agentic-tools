@@ -400,7 +400,7 @@ func (b *deployVerbBed) pushOwners() intentOwners {
 	return owners
 }
 
-func (b *deployVerbBed) push() (int, intentResult) {
+func (b *deployVerbBed) push(overrides ...intentOwners) (int, intentResult) {
 	b.t.Helper()
 	record, err := json.Marshal(lane.Record{Root: b.root, Install: b.root, CustodyEpoch: 1, RegisteredBy: "Wido", At: "2026-10-03T09:00:00Z"})
 	if err != nil {
@@ -414,7 +414,11 @@ func (b *deployVerbBed) push() (int, intentResult) {
 	}
 	command, _ := findIntentAction("landing", "push")
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, []string{"--json"}, &stdout, &stderr, b.root, b.pushOwners())
+	owners := b.pushOwners()
+	if len(overrides) > 0 {
+		owners = overrides[0]
+	}
+	code := runIntentIn(command, []string{"--json"}, &stdout, &stderr, b.root, owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		b.t.Fatalf("landing push --json: %v\n%s%s", err, stdout.String(), stderr.String())

@@ -3,12 +3,119 @@ package board
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 var t0 = time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+
+func TestUpdateDecidesOnTheCardUnderTheLock(t *testing.T) {
+	t.Parallel()
+	home, seat := fixtureHome(t), seatOf("m1b")
+	card := Card{Seat: seat, Goal: "goal-x", Stage: StageLandReady, Writer: Writer{At: t0}}
+	if err := WriteAt(home, card); err != nil {
+		t.Fatal(err)
+	}
+	found, ok := LiveCard(home, card.Goal)
+	if !ok || found.Stage != StageLandReady {
+		t.Fatalf("live card: %+v %v", found, ok)
+	}
+	locked, resume, first := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		first <- Update(home, seat, card.Goal, func(current Card) (Card, bool) {
+			close(locked)
+			<-resume
+			current.Stage, current.Owner, current.Job = StageBuild, Self(), &Job{ID: "build"}
+			current.Writer.At = t0.Add(time.Minute)
+			return current, true
+		})
+	}()
+	<-locked
+	second := make(chan error, 1)
+	go func() {
+		second <- Update(home, found.Seat, card.Goal, func(current Card) (Card, bool) {
+			if current.Stage.Terminal() {
+				return current, false
+			}
+			if !current.Stage.ProcessBound() {
+				current.Stage = StageClaimedIdle
+			}
+			current.Landed = 3
+			current.Writer.At = t0.Add(2 * time.Minute)
+			return current, true
+		})
+	}()
+	// Wait for the second writer to reach the held file lock, without timing
+	// the filesystem or allowing the first write to race ahead of its read.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		stack := make([]byte, 1<<20)
+		n := runtime.Stack(stack, true)
+		waiting := false
+		for _, goroutine := range strings.Split(string(stack[:n]), "\n\n") {
+			waiting = waiting || strings.Contains(goroutine, "TestUpdateDecidesOnTheCardUnderTheLock.func") && strings.Contains(goroutine, "syscall.Flock")
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			close(resume)
+			t.Fatal("the second writer never reached the seat lock")
+		}
+		runtime.Gosched()
+	}
+	close(resume)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	current, _ := LiveCard(home, card.Goal)
+	if current.Stage != StageBuild || current.Job == nil || current.Job.ID != "build" || current.Owner == nil || current.Landed != 3 {
+		t.Fatalf("update overwrote the current build: %+v", current)
+	}
+	current.Stage = StageReleased
+	if err := WriteAt(home, current); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(Dir(home), seat.Machine, card.Goal+".json")
+	before, _ := os.ReadFile(path)
+	if err := Update(home, seat, card.Goal, func(current Card) (Card, bool) { return current, !current.Stage.Terminal() }); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a released card was written")
+	}
+}
+
+func TestBuildWriteKeepsTheLandedCount(t *testing.T) {
+	t.Parallel()
+	home, seat := fixtureHome(t), seatOf("m1b")
+	write := func(stage Stage, count int, at time.Time) Card {
+		t.Helper()
+		card := Card{Seat: seat, Goal: "goal-x", Stage: stage, Landed: count, Writer: Writer{At: at}}
+		if err := WriteAt(home, card); err != nil {
+			t.Fatal(err)
+		}
+		stored, _ := readCardFile(filepath.Join(Dir(home), seat.Machine, card.Goal+".json"))
+		return stored
+	}
+	write(StageClaimedIdle, 3, t0)
+	if got := write(StageBuild, 0, t0.Add(time.Minute)); got.Landed != 3 {
+		t.Fatalf("build lost the count: %+v", got)
+	}
+	if got := write(StageBuild, 4, t0.Add(2*time.Minute)); !got.LastProgressAt.Equal(t0.Add(2 * time.Minute)) {
+		t.Fatalf("a changed count is not progress: %+v", got)
+	}
+	write(StageReleased, 0, t0.Add(3*time.Minute))
+	if got := write(StageClaimedIdle, 0, t0.Add(4*time.Minute)); got.Landed != 0 {
+		t.Fatalf("a new claim kept the old count: %+v", got)
+	}
+}
 
 func fixtureHome(t *testing.T) string {
 	t.Helper()
