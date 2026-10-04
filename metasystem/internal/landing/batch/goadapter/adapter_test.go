@@ -3,6 +3,8 @@ package goadapter
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -27,6 +29,84 @@ func TestGoAdapterIsBoundToTheGoGroups(t *testing.T) {
 	}
 	if _, err := adapter.Detect(t.TempDir()); err == nil {
 		t.Fatal("a root without a module was detected as Go")
+	}
+}
+
+func TestClosureNamesUnownedPaths(t *testing.T) {
+	t.Parallel()
+	root, base := dependencyModuleTree(t)
+	base["plans/x.md"] = "base plan\n"
+	for _, tc := range []struct {
+		name    string
+		edit    map[string]string
+		changed []string
+		full    bool
+	}{
+		{"code and plan", map[string]string{"base/base.go": "package base\nconst Changed = true\n", "plans/x.md": "changed plan\n"}, []string{"./base"}, false},
+		{"plan only", map[string]string{"plans/x.md": "changed plan\n"}, nil, false},
+		{"go.mod", map[string]string{"go.mod": base["go.mod"] + "// changed\n", "plans/x.md": "changed plan\n"}, []string{"./..."}, true},
+		{"go.sum", map[string]string{"go.sum": "new checksum\n", "plans/x.md": "changed plan\n"}, []string{"./..."}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := clonePackageFiles(base)
+			for path, content := range tc.edit {
+				candidate[path] = content
+			}
+			fixture := newPackageTreeFixture(t, root, base, candidate, "")
+			closure, err := closureWithWorkspaceSnapshot(fixture.workspace(), fixture.baseTree, fixture.candidateTree, fixture.openSnapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closure.Tree != fixture.candidateTree || closure.Module != "example.invalid/unitgate" || !slices.Equal(closure.Changed, tc.changed) || !slices.Equal(closure.Unowned, []string{"plans/x.md"}) {
+				t.Fatalf("closure = %+v", closure)
+			}
+			var dependents []string
+			if tc.name == "code and plan" {
+				dependents = gateConsumerPackages().Dependents
+			}
+			if !slices.Equal(closure.Dependents, dependents) || closure.Contains("plans/x.md") || slices.Contains(closure.Units(), "plans/x.md") {
+				t.Fatalf("dependents or unit membership = %+v; units=%v", closure, closure.Units())
+			}
+			if tc.full && !closure.Contains("./...") {
+				t.Fatalf("manifest did not select every package: %+v", closure)
+			}
+		})
+	}
+}
+
+func TestClosureFindsANestedModule(t *testing.T) {
+	t.Parallel()
+	top := t.TempDir()
+	moduleRoot := filepath.Join(top, "metasystem")
+	if err := os.MkdirAll(moduleRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base := map[string]string{
+		"go.mod":           "module example.invalid/nested\n\ngo 1.27\n",
+		"base/base.go":     "package base\n",
+		"direct/direct.go": "package direct\nimport _ \"example.invalid/nested/base\"\n",
+		"none/none.go":     "package none\n",
+		"plans/x.md":       "base plan\n",
+	}
+	if err := os.WriteFile(filepath.Join(moduleRoot, "go.mod"), []byte(base["go.mod"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := clonePackageFiles(base)
+	candidate["base/base.go"] += "const Changed = true\n"
+	candidate["plans/x.md"] = "changed plan\n"
+	fixture := newPackageTreeFixture(t, moduleRoot, base, candidate, "metasystem/")
+	workspace := fixture.workspace()
+	workspace.Dir = top
+	closure, err := closureWithWorkspaceSnapshot(workspace, fixture.topTree, fixture.candidateTopTree, fixture.openSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closure.Tree != fixture.candidateTree || closure.Module != "example.invalid/nested" || !slices.Equal(closure.Changed, []string{"./base"}) || !slices.Equal(closure.Dependents, []string{"./direct"}) || !slices.Equal(closure.Unowned, []string{"metasystem/plans/x.md"}) {
+		t.Fatalf("nested closure = %+v", closure)
+	}
+	missing := t.TempDir()
+	if _, err := (Adapter{}).Closure(missing, "base", "candidate"); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("root without module returned %v", err)
 	}
 }
 

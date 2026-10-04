@@ -149,13 +149,32 @@ func clonePackageFiles(files map[string]string) map[string]string {
 }
 
 type packageTreeFixture struct {
-	t                                              *testing.T
-	root, prefix, baseTree, candidateTree, topTree string
-	base, candidate                                map[string]string
+	t                                                                *testing.T
+	root, prefix, baseTree, candidateTree, topTree, candidateTopTree string
+	base, candidate                                                  map[string]string
 }
 
 func newPackageTreeFixture(t *testing.T, root string, base, candidate map[string]string, prefix string) *packageTreeFixture {
-	return &packageTreeFixture{t: t, root: root, prefix: prefix, baseTree: strings.Repeat("a", 40), candidateTree: strings.Repeat("b", 40), topTree: strings.Repeat("c", 40), base: clonePackageFiles(base), candidate: candidate}
+	return &packageTreeFixture{t: t, root: root, prefix: prefix, baseTree: strings.Repeat("a", 40), candidateTree: strings.Repeat("b", 40), topTree: strings.Repeat("c", 40), candidateTopTree: strings.Repeat("d", 40), base: clonePackageFiles(base), candidate: candidate}
+}
+
+func (f *packageTreeFixture) openSnapshot(tree string) (string, func() error, error) {
+	f.t.Helper()
+	files, ok := f.treeFiles(tree)
+	if !ok {
+		f.t.Fatalf("unknown snapshot tree %q", tree)
+	}
+	root := f.t.TempDir()
+	for path, content := range files {
+		absolute := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			f.t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	return root, func() error { return nil }, nil
 }
 
 func (f *packageTreeFixture) workspace() gittree.Workspace {
@@ -170,6 +189,12 @@ func (f *packageTreeFixture) treeFiles(tree string) (map[string]string, bool) {
 		if f.candidate != nil {
 			return f.candidate, true
 		}
+	case f.candidateTopTree:
+		files := map[string]string{"outside.txt": "changed outside\n"}
+		for path, content := range f.candidate {
+			files[f.prefix+path] = content
+		}
+		return files, true
 	case "HEAD", f.topTree:
 		if f.prefix == "" {
 			return f.base, true
@@ -193,7 +218,7 @@ func (f *packageTreeFixture) raw(request gittree.RawRequest) gittree.RawResult {
 	pins := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 	bound := append([]string{"-C", f.root}, pins...)
 	if request.Dir != f.root || len(request.Args) < len(bound) || !slices.Equal(request.Args[:len(bound)], bound) || !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) || request.Stdin != nil {
-		f.t.Fatalf("unexpected raw Git binding: dir=%q args=%q env=%q stdin=%q", request.Dir, request.Args, request.Env, request.Stdin)
+		f.t.Fatalf("unexpected raw Git binding: dir=%q args=%q environment matches=%t stdin present=%t", request.Dir, request.Args, reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()), request.Stdin != nil)
 	}
 	args := request.Args[len(bound):]
 	if request.Operation != "git "+strings.Join(args, " ") {
@@ -207,8 +232,14 @@ func (f *packageTreeFixture) raw(request gittree.RawRequest) gittree.RawResult {
 			return gittree.RawResult{Stdout: []byte(f.topTree + "\n")}
 		}
 		return gittree.RawResult{Stdout: []byte(f.baseTree + "\n")}
+	case slices.Equal(args, []string{"rev-parse", f.topTree + "^{tree}"}):
+		return gittree.RawResult{Stdout: []byte(f.topTree + "\n")}
+	case slices.Equal(args, []string{"rev-parse", f.candidateTopTree + "^{tree}"}):
+		return gittree.RawResult{Stdout: []byte(f.candidateTopTree + "\n")}
 	case slices.Equal(args, []string{"rev-parse", f.topTree + ":" + strings.TrimSuffix(f.prefix, "/")}) && f.prefix != "":
 		return gittree.RawResult{Stdout: []byte(f.baseTree + "\n")}
+	case slices.Equal(args, []string{"rev-parse", f.candidateTopTree + ":" + strings.TrimSuffix(f.prefix, "/")}) && f.prefix != "":
+		return gittree.RawResult{Stdout: []byte(f.candidateTree + "\n")}
 	case len(args) >= 7 && slices.Equal(args[:5], []string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff"}):
 		want := []string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none"}
 		if len(args) != 10 || !slices.Equal(args[:7], want) || args[9] != "--" {
