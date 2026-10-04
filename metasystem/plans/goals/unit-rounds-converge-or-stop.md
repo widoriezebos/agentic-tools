@@ -1,16 +1,19 @@
 # unit-rounds-converge-or-stop
 
-- State: queued
+- State: approved
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="changes when every seat's unit loop stops; a wrong cap blocks delivery, the right one removes the night's largest time sink (about 25 seat-hours of rounds)"
 - Tier: 2
 - Intent: A unit's build, read and revise loop converges or stops: the unit runner counts rounds per unit, excludes rounds the environment caused (a sandbox refusal, a lost process, a provider limit, a registered flake), stops at a small cap with one of two outcomes (land with the remaining non-breaking findings as follow-ups, or split the unit), and the reader reports a whole class of findings at once so the builder fixes the class, not one instance per round. Generic for any adopter and language: the loop and the cap live in the runner, the class rule in the reader's brief.
 - Origin: main
 - Next step: Opened 2026-10-04 08:50 by m1e in Wido's word after his question about the round counts. Facts: the critic side is sane (m1j: 16 critic jobs over about ten units, one read per unit, plus three forced re-reads from item AE and one lost to the provider limit). The waste is in the unit runner's build-read-revise loop: internal/launch/unit_run.go:191 admits every follow-up round until the box's MaxRounds (20, counted per goal); there is no convergence rule, no class-repeat rule and no distinction between a round caused by code and one caused by the environment. Measured: m1h's conflicts unit 1 took 9 rounds of about 9 steps each (73 launch steps; in rounds 3 to 6 five of seven fan-out reads failed every time with declared-output-busy, item Y), m1l's partner-acts took 18 rounds (the reader found one more guard bypass per round until the builder switched to deny-by-default at round 10), m1f's root-transport 6 rounds (86 steps), ui-shows-true-facts 59 steps the day before. Each round costs 20 to 30 minutes. Design, 1,000 words, one Astra round: (1) a per-unit cap of 6 rounds by default, configurable, enforced by the runner; (2) a round whose stop reason is an environment refusal (sandbox denial, declared-output-busy, lost process, provider limit, a flake in the register) is recorded as machinery and not counted; (3) at the cap the runner refuses another round and names the two outcomes: land with follow-ups (the lane lands, the findings go on the goal) or split; (4) the reader's brief asks for every instance of a finding's class in one return, and a class seen in two consecutive rounds is reported as a design problem that ends the loop (critique-stops-on-convergence's rule, applied to this loop); (5) the hand-in sentence carries the round count and the causes. Generic by requirement (Wido 2026-10-03): nothing names Go or this repository; adapters supply only how a stop reason is classified. Tier 2.
 - OpenedAt: 2026-10-04T06:44:19Z
-- Revision: 1
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=XEV3PMVP91SW7A3GWBV8RVZVD2-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=1
+- Approved: by=human:Wido at=2026-10-04T06:44:26Z revision=2 opid=XEV3PMVP91SW7A3GWBV8RVZVD2-m1e-718ba0eb authority=proven digest=ed1d6c598afe0a45929d9500591be234faed378394933959962e72e1c602605f episode=2
 
 History:
 - 2026-10-04T06:44:19Z 1TZH9Z8P5641GKYWKV5MMHCKE3-m1e-718ba0eb open actor=human:Wido targets=unit-rounds-converge-or-stop
-Integrity: sha256=6c223da5a6627f5a7001be541b188973a4670149237abb4b8c347ba740b69152
+- 2026-10-04T06:44:26Z XEV3PMVP91SW7A3GWBV8RVZVD2-m1e-718ba0eb approve actor=human:Wido targets=unit-rounds-converge-or-stop
+Integrity: sha256=b4e9de09a8a40ab5535e1ddac37477f9d8b7da631d668f1b9282ce6854aead47
