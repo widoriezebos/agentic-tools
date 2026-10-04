@@ -1020,3 +1020,24 @@ describe("the reading in flight", () => {
     expect(needs(fleet, loading)).toEqual([]);
   });
 });
+
+
+describe("a stuck unit", () => {
+  const stuck = { step: "r2-s1", kind: "build", launch: "run-r2-s1", minutes: 52, rounds: 2, limit: 45 };
+  const unitSeat: BoardSeat = { machine: "m1f", installation: "/f", goals: [{ goal: "one-folder", stage: "build", stuck }] };
+  it("a stuck unit is a Needs-you item with its stop command", () => {
+    const fleet = fleetRead({ machines: [machine({ holds: [held()] })] });
+    const [item] = needs(fleet, boardRead({ seats: [unitSeat] }));
+    expect(item.key).toBe("stuck:m1f:one-folder");
+    expect(item.words).toContain("build step 52 min");
+    expect(item.command).toBe("metasystem work stop j1:run-r2-s1");
+    expect(item.act).toBeNull();
+    expect(needs(fleetRead({ machines: [machine({ holds: [] })] }), boardRead({ seats: [unitSeat] }))).toEqual([]);
+  });
+  it("the card says the step and age", () => {
+    expect(doingOf(machine({ holds: [held()] }), unitSeat, [], now).words).toBe("building · build step 52 min");
+    const rounds = { ...unitSeat, goals: [{ goal: "one-folder", stage: "build", stuck: { ...stuck, step: "", launch: "", rounds: 3, limit: 3 } }] };
+    expect(doingOf(machine({ holds: [held()] }), rounds, [], now).words).toBe("building · round 3 of 3");
+    expect(needs(fleetRead({ machines: [machine({ holds: [held()] })] }), boardRead({ seats: [rounds] }))[0].command).toBe("metasystem work land --message");
+  });
+});

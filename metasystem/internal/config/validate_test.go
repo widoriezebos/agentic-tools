@@ -608,3 +608,29 @@ func TestValidateRefusesRetiredGoalNormFromEverySource(t *testing.T) {
 		})
 	}
 }
+
+func TestStuckLimitsMustBePositive(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"steward.stuck.build-min", "steward.stuck.proof-min", "steward.stuck.read-min", "steward.stuck.rounds"} {
+		for _, value := range []string{"0", "-1", "bad", "1"} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				problems := validateRepo(t, validConf+key+"="+value+"\n")
+				if hasProblem(problems, key+" must be a positive integer") != (value != "1") {
+					t.Fatalf("wrong validation: %v", problems)
+				}
+			})
+		}
+		found := false
+		for _, setting := range CompiledSettings() {
+			if setting.Key == key {
+				found = true
+				if setting.Meaning == "" || setting.ProofInput {
+					t.Fatalf("invalid setting: %+v", setting)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing default: %s", key)
+		}
+	}
+}
