@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "limit-probe-clears",
+  "subject": {
+    "commit": "7e6c37bd57489bae4d75226a836eb32770d30294",
+    "parent": "59233375c547d955130b542795b2dc5089143a44",
+    "tree": "7ab0fa4e32bc1e5f48bb3f6004491f722bf3b96e",
+    "patchDigest": "43d093f4e837c21fc7f2a205be79a9efc03ab99108e39b142cae86074861b3f4",
+    "unitDigest": "00c8f37994fea9a0707a98b9949a1ca3bf669275d6b7ec9d4b1fa61dc6ef51ee"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c7cb5ce8df13483167ac4a9c",
+    "round": 1,
+    "closureSha256": "488ea6cfd6e2e3c0e005beda8ba50a8c5ea6f1382b46b1d48ad2662d60426bda"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7ab0fa4e32bc1e5f48bb3f6004491f722bf3b96e",
+    "runId": "goal-read-gate-20261004t163816z-5cc5e0460ae416a6"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/steward_seat_test.go",
+      "readerWord": "reviewed by critic root code-critic-c7cb5ce8df13483167ac4a9c"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-c7cb5ce8df13483167ac4a9c"
+    }
+  ],
+  "sha256": "3a0999ca4b70f024280ca6435c080c5cd1284ed33111e76aa476d45d471ae915"
+}
