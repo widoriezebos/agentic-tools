@@ -1,6 +1,8 @@
 package gopackages
 
 import (
+	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"go/build"
 	"os"
@@ -9,6 +11,51 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestSnapshotSelectionStillWidensUnownedPaths(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mod := "module example.invalid/selection\n\ngo 1.27\n"
+	writeSelectionFile(t, root, "go.mod", mod)
+	writeSelectionFile(t, root, "a/a.go", "package a\n")
+	writeSelectionFile(t, root, "b/b.go", "package b\n")
+	base, candidate, modID := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("e", 40)
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		op := request.Operation
+		switch {
+		case strings.HasPrefix(op, "git --literal-pathspecs ls-tree -r -z --full-tree "):
+			fields := strings.Fields(op)
+			if len(fields) != 9 || fields[7] != "--" || fields[6] != base && fields[6] != candidate {
+				t.Fatalf("unexpected tree query %q", op)
+			}
+			path, oid := fields[8], modID
+			if path == "docs/x.md" {
+				oid = fields[6]
+			} else if path != "go.mod" {
+				t.Fatalf("unexpected entry path %q", path)
+			}
+			return gittree.RawResult{Stdout: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))}
+		case op == "git cat-file blob "+modID:
+			return gittree.RawResult{Stdout: []byte(mod)}
+		case op == "git diff --name-only -z --no-renames --no-ext-diff --no-textconv --ignore-submodules=none "+base+" "+candidate+" --":
+			return gittree.RawResult{Stdout: []byte("docs/x.md\x00")}
+		default:
+			t.Fatalf("unexpected Git operation %q", op)
+			return gittree.RawResult{}
+		}
+	}}
+	var opened, closed []string
+	selected, err := SelectWithWorkspaceSnapshot(workspace, base, candidate, nil, nil, func(tree string) (string, func() error, error) {
+		opened = append(opened, tree)
+		return root, func() error { closed = append(closed, tree); return nil }, nil
+	})
+	if err != nil || !slices.Equal(selected.Changed, []string{"./..."}) || !slices.Equal(selected.Packages, []string{"./a", "./b"}) {
+		t.Fatalf("unowned path selection = %+v, %v", selected, err)
+	}
+	if !slices.Equal(opened, []string{candidate, base}) || !slices.Equal(closed, []string{base, candidate}) {
+		t.Fatalf("snapshot lifecycle opened=%v closed=%v", opened, closed)
+	}
+}
 
 func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T) {
 	t.Parallel()
