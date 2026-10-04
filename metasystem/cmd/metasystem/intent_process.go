@@ -1221,7 +1221,11 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		}
 		lines := []string{}
 		for _, round := range record.Rounds {
-			lines = append(lines, fmt.Sprintf("round %d: %s", round.Number, round.Outcome))
+			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
+			if round.Cause != "" {
+				line += " cause=" + round.Cause
+			}
+			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
 			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})

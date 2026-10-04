@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -90,12 +91,33 @@ func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {
 func (driver stepDriver) endStep(index int, launchRecord Record) {
 	step := &driver.round.Steps[index]
 	step.State, step.Reason, step.FinishedAt = StepFailed, launchRecord.Reason, driver.manager.Now().UTC().Format(time.RFC3339Nano)
+	step.Cause = launchRecord.Cause
 	if launchRecord.State == Completed {
 		step.State = StepPassed
 	}
 	if strings.HasPrefix(step.Name, "read") {
 		step.Verdict, step.VerdictCounts = launchRecord.Measurement.Verdict, launchRecord.VerdictCounts
+		if step.State == StepFailed && step.Cause == "" && readFindingsMissing(launchRecord) {
+			step.Cause = "read-no-findings"
+		}
 	}
+}
+
+// A report can remain at its declared path even if collecting it failed.
+func readFindingsMissing(record Record) bool {
+	if len(record.Outputs) != 0 {
+		return false
+	}
+	paths, err := declaredOutputPaths(record)
+	if err != nil {
+		return false
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
 }
 
 // readSequence is the one read partition policy builds and standalone reads

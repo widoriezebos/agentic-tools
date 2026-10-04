@@ -416,6 +416,54 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 	}
 }
 
+func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
+	t.Parallel()
+	t.Run("uncopied-findings", func(t *testing.T) {
+		t.Parallel()
+		m, _, _, _ := manager(t)
+		read := Record{State: Failed, AdapterData: map[string]json.RawMessage{}}
+		setStrings(read.AdapterData, "declaredOutputs", []string{brief(t)})
+		round := UnitRound{Steps: []UnitStep{{Name: "read"}}}
+		stepDriver{manager: m, round: &round}.endStep(0, read)
+		require(t, round.Steps[0].Cause != "", "existing findings were classified as missing: %+v", round.Steps[0])
+	})
+	for _, row := range []struct {
+		name, fail, hold, output, cause, stepCause string
+		counts                                     bool
+	}{
+		{"lost-build", "build", "build", "", "process-lost", "process-lost", false},
+		{"red-proof", "proof", "proof", "", "", "process-lost", false},
+		{"no-findings", "read", "", "", "read-no-findings", "read-no-findings", false},
+		{"findings", "read", "", "report", "", "", false},
+		{"counted-read", "read", "", "", "", "read-no-findings", true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "")
+			fixture.starter.failKind, fixture.starter.holdKind = row.fail, row.hold
+			fixture.starter.readCounts = []bool{row.counts}
+			if row.output != "" {
+				fixture.starter.readOutput = brief(t)
+			}
+			if row.hold != "" {
+				probe := fixture.manager.Prober.(*fakeProber)
+				probe.states[10], probe.states[20] = identity.Dead, identity.Dead
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			require(t, err != nil, "advance: %v", err)
+			round := result.Record.Rounds[0]
+			require(t, round.Cause != row.cause || result.Record.State != "awaiting-judgement", "round=%+v", round)
+			for _, step := range round.Steps {
+				if step.State == StepFailed {
+					require(t, step.Cause != row.stepCause, "step=%+v", step)
+				}
+			}
+			stored, err := fixture.runner.Status(result.Record.ID)
+			require(t, err != nil || stored.Rounds[0].Cause != row.cause, "stored=%+v err=%v", stored, err)
+		})
+	}
+}
+
 func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
 	fixture := newUnitFixture(t, "", "branch")
 	fixture.manager.Settings.BuildLinesCap = 1
