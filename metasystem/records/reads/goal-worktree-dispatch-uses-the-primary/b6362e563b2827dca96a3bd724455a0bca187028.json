@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "goal": "goal-worktree-dispatch-uses-the-primary",
+  "unit": "u3",
+  "subject": {
+    "commit": "b6362e563b2827dca96a3bd724455a0bca187028",
+    "parent": "545f172f6acac756868341412b0eb5fc2301a81d",
+    "tree": "1e1c77846420fb2d74b99c8f66ee31db2a49731b",
+    "patchDigest": "70d05fc7a314dd6e312d450a33cb4cf157d591df2d870f62a566b2963c156f64",
+    "unitDigest": "6bb352a4935591f817c0cf3f21a02f67397cbcfc758d0efe16e3e95e9d0b11e8"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261004t195249-54557535fc-r1-s3",
+    "closureSha256": "22fd9e41cef041a372914971debfb743565a86a746235271450f4245ae488024"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "1e1c77846420fb2d74b99c8f66ee31db2a49731b",
+    "runId": "goal-read-gate-20261004t204933z-66475ebbbe694b7a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "545f172f6acac756868341412b0eb5fc2301a81d",
+      "digest": "d94b61dd7592a05aa3e72cbac745a0af028eb9aa0d5f926a5d71b364a8df0e7a"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/test_test.go",
+      "readerWord": "reviewed by unit read 20261004t195249-54557535fc-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p2_test.go",
+      "readerWord": "reviewed by unit read 20261004t195249-54557535fc-r1-s3"
+    }
+  ],
+  "sha256": "f34b03304577a79d75e0d8d37d04f05160eb41b58e513c14b8718139dbbfa2e3"
+}
