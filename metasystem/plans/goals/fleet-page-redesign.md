@@ -1,6 +1,6 @@
 # fleet-page-redesign
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 28
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Human-facing UI redesign over existing read paths and existing verbs; acts stay behind the signed-in session; one wrong-fact bug in a health read"
@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Steps 1 (a5d4d6895), 2 (235a2412a: Pause, Resume and Stop as the signed-in person) and 3 (952037b6e, 2026-10-04 05:40: a steward check reaches the page only with a person's act, as one plain line; Doing says 'round N' and the cap only within two of it) are on main. Left: the two-hour guard m1e asked for in Wido's line of work (2026-10-04 01:40), its own small unit after review-findings-read-as-decisions' lines d-f: a hidden check dead longer than two hours shows as one plain sentence naming the seat, with 'ask the partner'. It needs a small design first (fleet-page-redesign-step3.md section 7): which roles count (retro-debt, trunk-red and capability-snapshots are dead with no lawful remedy today and must not return), a failing-since time per role written by the steward and carried by the fleet payload, and the words. With it, fix the stale comment at fleet.css:201 (N-1 of step 3's read). Estimate 2 h, 3 attempts.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 76
+- Revision: 77
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -18,8 +18,7 @@
 - Sliced: machine=ui lineage=steward-seat revision=20 at=2026-10-03T11:43:38Z
 - AcceptedRisk: finding=synthetic-16c0b3ac9bc88ba2ff736e7473c8e75c88a8cbeb8236d216c9a7db38960859e2 chain=code-critic-0a479e2a27d9f131087a09e8 by=Wido opid=T348YM2TY02GW6FHABYRYVFJRR-ui-31a738e9
 - AcceptedRisk: finding=synthetic-e49433942369293a9e93963e7ae6b63e00ac660b761238e8cce4ba8545925a00 chain=code-critic-0a479e2a27d9f131087a09e8 by=Wido opid=68A34DWYRWWP4P9CE97QF57FCK-ui-31a738e9
-- Claimed: machine=ui lineage=steward-seat at=2026-10-04T00:37:57Z revision=73 accountingRevision=73 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=57
-- StopCapability: generation=73 revision=73 machine=ui claimEpoch=3 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=73 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=57 released=2026-10-04T03:42:10Z
 
 History:
 - 2026-10-03T06:25:15Z XAYSKY425H0C7DTK3BKJ7WJKTZ-m1e-718ba0eb open actor=human:Wido targets=fleet-page-redesign
@@ -98,4 +97,5 @@ History:
 - 2026-10-04T01:53:26Z T348YM2TY02GW6FHABYRYVFJRR-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-page-redesign reason=Accepted by m1e in Wido word: runner artifact, round 1 finished clean but was marked process-lost on a stale goal-worktree engine (item P class); round 3 on a current engine confirmed 0 material (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-page-redesign/metasystem)
 - 2026-10-04T01:53:33Z 68A34DWYRWWP4P9CE97QF57FCK-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-page-redesign reason=Accepted by m1e in Wido word: runner artifact, round 2 finished clean but was marked process-lost on a stale goal-worktree engine (item P class); round 3 on a current engine confirmed 0 material (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-page-redesign/metasystem)
 - 2026-10-04T03:41:58Z G1HQWRKP4T1X0K2RQRK9FJ2RCT-ui-71c5cb39 edit actor=ui+steward-seat targets=fleet-page-redesign
-Integrity: sha256=739d9147778bc228659e33eb786a1b870bed7982eca717978e373f4bdafbfc3c
+- 2026-10-04T03:42:10Z XG2EYQ842ZKD7H3WKQ58X59ZS0-ui-71c5cb39 release actor=ui+steward-seat targets=fleet-page-redesign reason=step 3 landed on main as 952037b6e; the two-hour guard left on the next step comes after review-findings-read-as-decisions' lines d-f, so the ui seat's one claim goes there first
+Integrity: sha256=f488cc3a475cda551c61527015c9dd07fc3a466c242050505478d24e3b693b60
