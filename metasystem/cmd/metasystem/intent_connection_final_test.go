@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,25 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-// TestIntentCriticDelegateSelectedRoster (CONN-R2-F1): a critic dispatched
-// from a generated goal worktree resolves the selected installation's
-// configured code-critic, although the worktree's tracked roster is the
-// template and it has no local overlay. The real delegate entrypoint
-// (readDelegate) runs a fake delegate executable that records the process
-// environment it receives; the real roster owner that dispatch's
-// `job resolve-roster` calls then resolves the worktree's configuration
-// under exactly that environment. The selected pair is the roster default,
-// not an override (no escalation); an explicit model still escalates by the
-// unchanged policy; without the selected installation the worktree refuses.
-// Declared fakes: the delegate executable (no delegate lifecycle, lease, brain or
-// model), and the synthetic configuration files.
+// A critic resolves the serving installation's roster as its default, while
+// its delegate request keeps the worktree as the workspace and record root.
 func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 	selected, worktree := t.TempDir(), t.TempDir()
 	tracked := "metasystem.runtimes=claude,codex\nrole.default.runtime=codex\nrole.code-critic.runtime=<runtime>\nrole.code-critic.model.<runtime>=<model>\n"
@@ -40,107 +30,66 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Synthetic local overlay of the selected checkout only.
-	os.WriteFile(filepath.Join(selected, "metasystem.conf.local"), []byte("role.code-critic.runtime=claude\nrole.code-critic.model.claude=fixture-critic-model\nmode.review.role.code-critic.model.claude=review-mode-critic\n"), 0o600)
+	local := filepath.Join(selected, "metasystem.conf.local")
+	if err := os.WriteFile(local, []byte("role.code-critic.runtime=claude\nrole.code-critic.model.claude=fixture-critic-model\nmode.review.role.code-critic.model.claude=review-mode-critic\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	brief := filepath.Join(worktree, "brief.md")
 	os.WriteFile(brief, []byte("# Read\n\nWorking Mode: review\n"), 0o600)
-	other := filepath.Join(worktree, "other-brief.md")
-	os.WriteFile(other, []byte("# Read\n\nWorking Mode: implementation\n"), 0o600)
 	modeless := filepath.Join(worktree, "modeless-brief.md")
 	os.WriteFile(modeless, []byte("# Read\n"), 0o600)
-	if _, err := criticDelegateEnvironment(selected, worktree, modeless); err == nil {
-		t.Fatal("a brief without a working mode must be refused, not resolved as the base mode")
+	if _, err := dispatchcore.BriefModeOnly(modeless); err == nil {
+		t.Fatal("a brief without a working mode must be refused")
 	}
-	if base, err := criticDelegateEnvironment(selected, worktree, other); err != nil || !slices.Contains(base, "METASYSTEM_ROLE_CODE_CRITIC_MODEL_CLAUDE=fixture-critic-model") {
-		t.Fatalf("a mode without its own critic carries the base critic: %v %v", base, err)
-	}
-
 	if _, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: filepath.Join(worktree, "metasystem.conf"), Role: "code-critic"}); err == nil {
 		t.Fatal("the generated worktree's template roster must not resolve on its own")
 	}
-	environment, err := criticDelegateEnvironment(selected, worktree, brief)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record := filepath.Join(t.TempDir(), "delegate-environment")
-	binary := filepath.Join(t.TempDir(), "metasystem")
-	script := "#!/usr/bin/env bash\nset -euo pipefail\nenv >\"$DELEGATE_RECORD\"\nprintf '%s\\n' \"$*\" >>\"$DELEGATE_RECORD.args\"\nprintf '{\"outcome\":\"WON\",\"headline\":\"started\",\"jobId\":\"critic-fixture\"}\\n'\n"
-	if err := testexec.WriteFile(binary, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("DELEGATE_RECORD", record)
-	if job, err := readDelegate(scriptDelegator(binary), worktree, brief, "goal-a", strings.Repeat("a", 40), "", "", environment...); err != nil || job != "critic-fixture" {
-		t.Fatalf("delegate: job=%q err=%v", job, err)
-	}
-	args, _ := os.ReadFile(record + ".args")
-	if strings.Contains(string(args), "--runtime") || strings.Contains(string(args), "--model") {
-		t.Fatalf("the selected critic must not be passed as an override: %s", args)
-	}
-	seen, err := os.ReadFile(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(string(seen), "\n")
-	// The selected installation names no maximal model, so the compiled
-	// default's is carried (C4: every default lives in the engine).
-	if len(environment) != 4 || !slices.Contains(environment, "METASYSTEM_RUNTIME_CLAUDE_MAXIMAL_MODELS="+config.MustDefault("runtime.claude.maximal-models")) {
-		t.Fatalf("exactly the resolved roster values are carried: %v", environment)
-	}
-	for _, entry := range environment {
-		if !slices.Contains(lines, entry) {
-			t.Fatalf("the delegate process did not receive %s", entry)
+	conf := filepath.Join(selected, "metasystem.conf")
+	for mode, want := range map[string]string{"review": "review-mode-critic", "implementation": "fixture-critic-model"} {
+		resolution, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: mode})
+		if err != nil || resolution.Runtime != "claude" || resolution.Model != want || resolution.EscalationRequired || resolution.Overridden {
+			t.Fatalf("the serving critic is the default in %s: %+v %v", mode, resolution, err)
 		}
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
-	// The selected installation's maximal models (the compiled default) do
-	// not include its critic, so it is refused for a design-bearing read
-	// even where the worktree would admit it.
-	os.WriteFile(filepath.Join(worktree, "metasystem.conf.local"), []byte("runtime.claude.maximal-models=review-mode-critic\n"), 0o600)
-	if err := dispatchcore.ValidateRuntimeHazardConfiguration(worktree, "claude", "review-mode-critic", dispatchcore.HazardDesignBearing); err == nil {
-		t.Fatal("a selected critic the selected installation does not authorize as maximal must be refused")
-	}
-	os.Remove(filepath.Join(worktree, "metasystem.conf.local"))
-	if !slices.Contains(lines, "METASYSTEM_DELEGATE_ROOT="+worktree) {
-		t.Fatal("records and workspace stay the worktree's")
-	}
-	conf := filepath.Join(worktree, "metasystem.conf")
-	resolution, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: "review"})
-	if err != nil || resolution.Runtime != "claude" || resolution.Model != "review-mode-critic" || resolution.EscalationRequired || resolution.Overridden {
-		t.Fatalf("the delegate must resolve the selected critic as its default: %+v %v", resolution, err)
 	}
 	explicit, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: "review", ModelOverride: "another-model"})
 	if err == nil && !explicit.EscalationRequired {
 		t.Fatalf("an explicit model must still escalate: %+v", explicit)
 	}
-	// A selected installation whose roster does not resolve is refused.
-	for _, entry := range environment {
-		name, _, _ := strings.Cut(entry, "=")
-		os.Unsetenv(name) // t.Setenv above restores the test's environment
+	delegate := func(request delegateRequest, stdout, stderr io.Writer) int {
+		if request.rootOverride != worktree || len(request.environment) != 0 || slices.Contains(request.args, "--runtime") || slices.Contains(request.args, "--model") {
+			t.Fatalf("critic request must keep its root and resolve its own default: %+v", request)
+		}
+		fmt.Fprintln(stdout, `{"outcome":"WON","headline":"started","jobId":"critic-fixture"}`)
+		return 0
 	}
-	os.Remove(filepath.Join(selected, "metasystem.conf.local"))
-	if _, err := criticDelegateEnvironment(selected, worktree, brief); err == nil {
-		t.Fatal("an unresolvable selected roster must be refused, not dropped")
+	if job, err := readDelegate(delegate, worktree, brief, "goal-a", strings.Repeat("a", 40), "", ""); err != nil || job != "critic-fixture" {
+		t.Fatalf("delegate: job=%q err=%v", job, err)
+	}
+	if job, err := readFollowUp(delegate, worktree, "critic-fixture", brief); err != nil || job != "critic-fixture" {
+		t.Fatalf("follow-up: job=%q err=%v", job, err)
+	}
+	os.Remove(local)
+	if _, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: "review"}); err == nil {
+		t.Fatal("an unresolvable serving roster must be refused")
 	}
 }
 
-// TestCriticDelegateEnvironmentBriefModeCase: a brief whose Working Mode is
-// written with a capital letter resolves the selected installation's critic
-// under that mode's lower-case settings keys rather than being refused.
-func TestCriticDelegateEnvironmentBriefModeCase(t *testing.T) {
+func TestCriticRosterBriefModeCase(t *testing.T) {
 	t.Parallel()
-	selected, worktree := t.TempDir(), t.TempDir()
-	conf := "metasystem.runtimes=claude,codex\nrole.default.runtime=codex\nrole.code-critic.runtime=claude\nrole.code-critic.model.claude=fixture-critic-model\nmode.implement.role.code-critic.model.claude=implement-mode-critic\n"
-	if err := os.WriteFile(filepath.Join(selected, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+	selected := t.TempDir()
+	conf := filepath.Join(selected, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\nrole.code-critic.runtime=claude\nrole.code-critic.model.claude=fixture-critic-model\nmode.implement.role.code-critic.model.claude=implement-mode-critic\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	brief := filepath.Join(worktree, "brief.md")
-	if err := os.WriteFile(brief, []byte("# Read\n\nWorking Mode: Implement\n"), 0o600); err != nil {
+	brief := filepath.Join(selected, "brief.md")
+	os.WriteFile(brief, []byte("# Read\n\nWorking Mode: Implement\n"), 0o600)
+	mode, err := dispatchcore.BriefModeOnly(brief)
+	if err != nil {
 		t.Fatal(err)
 	}
-	environment, err := criticDelegateEnvironment(selected, worktree, brief)
-	if err != nil || !slices.Contains(environment, "METASYSTEM_ROLE_CODE_CRITIC_MODEL_CLAUDE=implement-mode-critic") {
-		t.Fatalf("the implement-mode critic must resolve for Working Mode: Implement: %v %v", environment, err)
+	roster, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: mode})
+	if err != nil || roster.Model != "implement-mode-critic" {
+		t.Fatalf("the capitalized brief mode must resolve its critic: %+v %v", roster, err)
 	}
 }
 

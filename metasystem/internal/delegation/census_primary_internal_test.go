@@ -154,7 +154,7 @@ func TestJobCapLinkedWorktreeReadsPrimaryWatcherCeiling(t *testing.T) {
 	t.Parallel()
 	b := newCensusPrimaryBed(t)
 	conf := "dispatch.cap-min=120\ndispatch.cap-max=900\ncap.min.implementer.fake.fake-model=500\n"
-	if err := os.WriteFile(filepath.Join(b.linkedInstall, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.primaryInstall, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	supervision := filepath.Join(b.primaryInstall, "artifacts", "agents", "supervision")

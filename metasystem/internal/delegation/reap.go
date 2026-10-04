@@ -463,7 +463,7 @@ func (s *session) mirrorRecordLocked(job string) error {
 		return nil
 	}
 	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
-		ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.configLookup()})
+		ConfPath: s.settingsPath(), LookupEnv: s.configLookup()})
 	if err != nil {
 		s.mirrorFail(job, err.Error())
 		return exitWith(1)

@@ -51,6 +51,7 @@ type ClaimLaunchParams struct {
 	// process environment.
 	LookupEnv            func(string) (string, bool)
 	Root                 string
+	SettingsFile         string // empty uses Root/metasystem.conf
 	OpID                 string
 	OperationID          string
 	Request              LaunchFingerprintRequest
@@ -88,7 +89,7 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	if err := validateClaimReviews(params.Request.Role, params.Reviews); err != nil {
 		return ClaimResult{}, err
 	}
-	if err := ValidateRuntimeHazardConfigurationWith(params.LookupEnv, params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
+	if err := validateRuntimeHazardConfigurationWith(params.LookupEnv, dispatchSettingsPath(params.Root, params.SettingsFile), params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
@@ -254,7 +255,7 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	if err := ValidateRuntimeHazardConfigurationWith(params.LookupEnv, params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
+	if err := validateRuntimeHazardConfigurationWith(params.LookupEnv, dispatchSettingsPath(params.Root, params.SettingsFile), params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
