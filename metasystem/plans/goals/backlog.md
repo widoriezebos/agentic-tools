@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 169
+- Revision: 170
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -226,4 +226,5 @@ History:
 - 2026-10-04T17:00:10Z 7ZJKMPXMCMJJZ729STYCEBCRH5-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-04 displaced=m1j+steward-seat@2026-10-04T14:38:51Z ack
 - 2026-10-04T18:16:29Z FFYBZBPSN5S5A07TQN8SB0149G-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-04 displaced=m1j+steward-seat@2026-10-04T17:34:58Z ack
 - 2026-10-04T19:00:41Z KVBM907F0994CBZG8MV7F0CN1K-m1f-71c5cb39 ack actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T08:22:27Z ack
-Integrity: sha256=a408b78e9a183e1198471d9d4944c22420d3d9d3888e1be71c2a738f9574dc2a
+- 2026-10-04T19:21:34Z CMJKRPJQYVGH09QC4NBSPQMW57-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix displaced=ui+steward-seat@2026-10-04T14:40:45Z ack
+Integrity: sha256=afcb9e20b19544d197a1f665b7aedcbc015980bbc6f3c5347bd69bbde1809b34
