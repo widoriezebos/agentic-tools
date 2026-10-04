@@ -9,10 +9,11 @@
 - Origin: human
 - Next step: Design first, tier 2: a records hand-in (the seat names the goal and the record files; the engine makes the commit on the goal branch with a token, as it does for scratch commits) and its lane proof (only the record audits, not the full suite, since no code changed: the lane's ledger-only inheritance generalised to records-only trees); the plan-class rule becomes two rules (a build commit touches no plan files; a records commit touches only them); accepted design pages and rulings land this way, with the status change in the same hand-in. Done when: a seat hands in an accepted design page or a ruling and it is on main through the lane without any person's push, and the record audits ran on it.
 - OpenedAt: 2026-10-03T15:40:34Z
-- Revision: 49
+- Revision: 50
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T15:40:42Z revision=2 opid=NJS36AW1ER3YVT8BSA92RQPSEB-m1e-718ba0eb authority=proven digest=c40c08b0845fb352da6d4ce17f90b7dc8cc611a48f875e8dd552e71226e97756 episode=2
+- Sliced: machine=ui lineage=steward-seat revision=49 at=2026-10-04T21:33:12Z
 - Claimed: machine=ui lineage=steward-seat at=2026-10-04T21:13:12Z revision=49 accountingRevision=49 episodeAt=2026-10-04T21:13:12Z episodeRevision=49
 - StopCapability: generation=49 revision=49 machine=ui claimEpoch=3 fenceEpoch=0
 
@@ -66,4 +67,5 @@ History:
 - 2026-10-04T20:54:30Z 1FQ7HXFT1KRPVHZVA2YH326DD4-ui-f456f182 steal actor=human:Wido targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T19:21:34Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the ui checkout
 - 2026-10-04T21:13:01Z 4JE3DC2VJJ7M6VDDEE3R24M30J-ui-f456f182 release actor=ui+main-1790454088-93948-21671b targets=records-land-through-the-lane reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
 - 2026-10-04T21:13:12Z 19SCN56KZ6VW0QM0G6X9G40802-ui-71c5cb39 claim actor=ui+steward-seat targets=records-land-through-the-lane
-Integrity: sha256=20840c34e23507ea5e3ed2531243d2a4460fe0d4b89bcf7f1a23e2a9ab02f1b4
+- 2026-10-04T21:33:12Z EZG12FYJVAJ269081SSM2RVRRS-ui-71c5cb39 slice-start actor=ui+steward-seat targets=records-land-through-the-lane
+Integrity: sha256=f77ef7cd432a355567f7cf6c7afb15f0277ac8ac62ce7d85b55e45c744cb9f41
