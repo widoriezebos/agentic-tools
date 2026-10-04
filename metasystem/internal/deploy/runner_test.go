@@ -193,6 +193,7 @@ func TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused(t *testing.T) {
 	building := b.inFlight("build", "")
 	b.crash(child, building, false)
 	t.Cleanup(func() { _ = syscall.Kill(-building.PID, syscall.SIGKILL) })
+	b.awaitHeld()
 	if status, err := ReadStatus(b.dir, 0); err != nil || status.Adapter == nil || status.Adapter.PID != building.PID {
 		t.Fatalf("status with the adapter left running = %+v %v", status, err)
 	}

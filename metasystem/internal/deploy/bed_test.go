@@ -49,6 +49,7 @@ type bed struct {
 	dir     string
 	state   string
 	adapter string
+	fifos   []string
 	// adapters names, per commit, the adapter its tree holds and its
 	// deploy.json calls; any other commit's names the fixture by its path.
 	adapters map[string]string
@@ -290,7 +291,23 @@ func (b *bed) fifo(name string) string {
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
 		b.t.Fatal(err)
 	}
+	b.fifos = append(b.fifos, path)
 	return path
+}
+
+// awaitHeld waits until a call has taken its scripted step and holds one
+// of the FIFOs the bed made, so a pause cannot leave that step for the
+// next call.
+func (b *bed) awaitHeld() {
+	b.t.Helper()
+	testenv.Await(b.t, "an adapter call to hold a FIFO the bed made", func() bool {
+		for _, fifo := range b.fifos {
+			if _, err := os.Stat(fifo + ".held"); err == nil {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // release lets a call held on fifo go on: it opens the FIFO for writing,
