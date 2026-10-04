@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -48,13 +49,14 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
-	Goal    string `json:"goal"`
-	Branch  string `json:"branch,omitempty"`
-	SHA     string `json:"sha"`
-	Seat    string `json:"seat,omitempty"`
-	At      string `json:"at"`
-	Outcome string `json:"outcome,omitempty"`
-	Reason  string `json:"reason,omitempty"`
+	Goal     string           `json:"goal"`
+	Branch   string           `json:"branch,omitempty"`
+	SHA      string           `json:"sha"`
+	Seat     string           `json:"seat,omitempty"`
+	At       string           `json:"at"`
+	Outcome  string           `json:"outcome,omitempty"`
+	Reason   string           `json:"reason,omitempty"`
+	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
 	// the work reaches main.
@@ -63,13 +65,14 @@ type Line struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
-	Goal   string `json:"goal"`
-	Branch string `json:"branch"`
-	SHA    string `json:"sha"`
-	Seat   string `json:"seat"`
-	At     string `json:"at"`
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	Goal     string           `json:"goal"`
+	Branch   string           `json:"branch"`
+	SHA      string           `json:"sha"`
+	Seat     string           `json:"seat"`
+	At       string           `json:"at"`
+	State    string           `json:"state"`
+	Reason   string           `json:"reason,omitempty"`
+	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
 	Delivered string `json:"delivered,omitempty"`
 	// ReturnedAt is when it was returned.
@@ -183,6 +186,7 @@ func entriesOf(lines []Line) []Entry {
 			continue
 		}
 		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
+		entries[at].Conflict = line.Conflict
 	}
 	return entries
 }
@@ -289,27 +293,30 @@ var ErrNotWaiting = errors.New("no hand-in of this goal waits in the lane")
 // false); a goal with nothing waiting is ErrNotWaiting.
 func Return(install, goal, reason string, now time.Time) (entry Entry, changed bool, err error) {
 	err = withLock(install, func() error {
-		latest, ok, err := Latest(install, goal)
-		switch {
-		case err != nil:
-			return err
-		case !ok:
-			return fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
-		case latest.State == StateReturned:
-			entry = latest
-			return nil
-		case latest.State != StateWaiting:
-			return fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
-		}
-		at := now.UTC().Format(time.RFC3339)
-		if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason}); err != nil {
-			return err
-		}
-		latest.State, latest.Reason, latest.ReturnedAt = StateReturned, reason, at
-		entry, changed = latest, true
-		return nil
+		entry, changed, err = returnLocked(install, goal, reason, nil, now)
+		return err
 	})
 	return entry, changed, err
+}
+
+func returnLocked(install, goal, reason string, detail *conflict.Return, now time.Time) (Entry, bool, error) {
+	latest, ok, err := Latest(install, goal)
+	switch {
+	case err != nil:
+		return Entry{}, false, err
+	case !ok:
+		return Entry{}, false, fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
+	case latest.State == StateReturned:
+		return latest, false, nil
+	case latest.State != StateWaiting:
+		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
+	}
+	at := now.UTC().Format(time.RFC3339)
+	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Conflict: detail}); err != nil {
+		return latest, false, err
+	}
+	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict = StateReturned, reason, at, detail
+	return latest, true, nil
 }
 
 // Landed derives each waiting entry's landing: one whose sha main

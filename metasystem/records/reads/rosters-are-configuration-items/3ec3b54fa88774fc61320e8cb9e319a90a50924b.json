@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "goal": "rosters-are-configuration-items",
+  "unit": "roster-read-and-set",
+  "subject": {
+    "commit": "3ec3b54fa88774fc61320e8cb9e319a90a50924b",
+    "parent": "51de2eebcd89cb666573bd5e9d4959e668d81fd9",
+    "tree": "08c8cfa7e95facb1ea6ac68bbc71abd725d518bf",
+    "patchDigest": "319b602a935f44119da01243b2c8a92f6c118d31f11c59207cf504d34f239909",
+    "unitDigest": "d2b744525ec1319fe0969d5c74813620d41e191e4ab99cd2d75f2c52911b2e29"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-adeec44aeb4656dc7da24c82",
+    "round": 1,
+    "closureSha256": "8965bf8c17385f9ea7c8d47d381a63ea66780f7bae95a3ffa4579f1a6d08a12d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "08c8cfa7e95facb1ea6ac68bbc71abd725d518bf",
+    "runId": "goal-read-gate-20261003t205545z-82c319462c703ecf"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_coverage_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_discovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_help_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_router_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/person_class_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/internal/config/defaults_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    },
+    {
+      "path": "metasystem/internal/config/roster_test.go",
+      "readerWord": "reviewed by critic root code-critic-adeec44aeb4656dc7da24c82"
+    }
+  ],
+  "sha256": "2c1757970e354538aad4f8835e3af1853abdccae706ca986258ab16fe2422248"
+}

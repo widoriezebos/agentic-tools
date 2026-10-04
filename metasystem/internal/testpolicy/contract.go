@@ -42,12 +42,13 @@ type Contract struct {
 	TailoringRequired bool        `json:"tailoringRequired,omitempty"`
 	ProjectRisk       ProjectRisk `json:"projectRisk"`
 	// Fallback names the surface that owns a changed path by exclusion when no surface path pattern matches.
-	Fallback string    `json:"fallback,omitempty"`
-	Surfaces []Surface `json:"surfaces"`
-	Groups   []Group   `json:"groups"`
-	Always   Always    `json:"always"`
-	Unknown  []string  `json:"unknown"`
-	Cadence  []string  `json:"cadence"`
+	Fallback  string      `json:"fallback,omitempty"`
+	Surfaces  []Surface   `json:"surfaces"`
+	Groups    []Group     `json:"groups"`
+	Always    Always      `json:"always"`
+	Unknown   []string    `json:"unknown"`
+	Cadence   []string    `json:"cadence"`
+	Generated []Generated `json:"generated,omitempty"`
 }
 
 type ProjectRisk struct {
@@ -247,6 +248,9 @@ func Load(path string) (Contract, error) {
 }
 
 func (contract Contract) Validate() error {
+	if err := validateGenerated(contract.Generated); err != nil {
+		return err
+	}
 	if contract.SchemaVersion != SchemaVersion && contract.SchemaVersion != ExecutionContractSchemaVersion {
 		return fmt.Errorf("testing contract schemaVersion must be %d or %d", SchemaVersion, ExecutionContractSchemaVersion)
 	}

@@ -141,6 +141,10 @@ func TestIntentHelpSurfacesArePublicForms(t *testing.T) {
 
 func TestIntentAdministrationHelp(t *testing.T) {
 	t.Parallel()
+	_, roster := readHelpJSON(t, "roster", "set", "--json")
+	if roster.Command.Scope != "administration" || !slices.Contains(roster.Command.Usage, "metasystem roster set ROSTER ROW RUNTIME:MODEL:EFFORT") {
+		t.Errorf("roster set help = %+v", roster.Command)
+	}
 	for _, command := range publicIntentCommands() {
 		administration := slices.Contains(intentAdministrationObjects, command.object)
 		if administration && command.helpScope() != "administration" || !administration && command.helpScope() == "administration" {

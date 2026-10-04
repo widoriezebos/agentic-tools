@@ -124,6 +124,26 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 	}
 }
 
+// TestCriticDelegateEnvironmentBriefModeCase: a brief whose Working Mode is
+// written with a capital letter resolves the selected installation's critic
+// under that mode's lower-case settings keys rather than being refused.
+func TestCriticDelegateEnvironmentBriefModeCase(t *testing.T) {
+	t.Parallel()
+	selected, worktree := t.TempDir(), t.TempDir()
+	conf := "metasystem.runtimes=claude,codex\nrole.default.runtime=codex\nrole.code-critic.runtime=claude\nrole.code-critic.model.claude=fixture-critic-model\nmode.implement.role.code-critic.model.claude=implement-mode-critic\n"
+	if err := os.WriteFile(filepath.Join(selected, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	brief := filepath.Join(worktree, "brief.md")
+	if err := os.WriteFile(brief, []byte("# Read\n\nWorking Mode: Implement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	environment, err := criticDelegateEnvironment(selected, worktree, brief)
+	if err != nil || !slices.Contains(environment, "METASYSTEM_ROLE_CODE_CRITIC_MODEL_CLAUDE=implement-mode-critic") {
+		t.Fatalf("the implement-mode critic must resolve for Working Mode: Implement: %v %v", environment, err)
+	}
+}
+
 // TestIntentGoalWorktreeIsolationRetry (CONN-R2-F2): the adapters' declared
 // local settings are completed on every worktree handed to a build. A
 // preparation whose isolation fails once keeps the worktree and the repeat

@@ -97,6 +97,10 @@ func Merge(base, ours, theirs testpolicy.Contract) (testpolicy.Contract, error) 
 			value, err := mergeGroups(base.Groups, ours.Groups, theirs.Groups)
 			return reflect.ValueOf(value), err
 		},
+		"Generated": func() (reflect.Value, error) {
+			value, err := mergeGenerated(base.Generated, ours.Generated, theirs.Generated)
+			return reflect.ValueOf(value), err
+		},
 	})
 	if err != nil {
 		return testpolicy.Contract{}, err
@@ -142,6 +146,43 @@ func mergeSurfaces(base, ours, theirs []testpolicy.Surface) ([]testpolicy.Surfac
 
 func mergeGroups(base, ours, theirs []testpolicy.Group) ([]testpolicy.Group, error) {
 	return mergeEntities(base, ours, theirs, "group", false, func(value testpolicy.Group) string { return value.ID })
+}
+
+// A recipe is atomic: argv order and cwd together describe one command.
+func mergeGenerated(base, ours, theirs []testpolicy.Generated) ([]testpolicy.Generated, error) {
+	id := func(set testpolicy.Generated) string { return set.Identity() }
+	bm, om, tm := entityMap(base, id), entityMap(ours, id), entityMap(theirs, id)
+	seen := map[string]bool{}
+	var result []testpolicy.Generated
+	equal := func(a, b testpolicy.Generated, presentA, presentB bool) bool {
+		a.Paths, b.Paths = nil, nil
+		return presentA == presentB && reflect.DeepEqual(a, b)
+	}
+	for _, side := range [][]testpolicy.Generated{ours, theirs} {
+		for _, set := range side {
+			key := id(set)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			b, bp := bm[key]
+			o, op := om[key]
+			t, tp := tm[key]
+			switch {
+			case equal(o, t, op, tp), equal(b, t, bp, tp):
+				if op {
+					result = append(result, o)
+				}
+			case equal(b, o, bp, op):
+				if tp {
+					result = append(result, t)
+				}
+			default:
+				return nil, conflict("generated "+key, "recipe", "both sides changed the same generated set differently")
+			}
+		}
+	}
+	return result, nil
 }
 
 func mergeEntities[T any](base, ours, theirs []T, kind string, mergeNew bool, id func(T) string) ([]T, error) {

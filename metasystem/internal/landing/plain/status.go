@@ -24,8 +24,9 @@ type Status struct {
 	// landed when origin's main (as the lane checkout last fetched it)
 	// contains its sha. A landed hand-in a push of the last day brought
 	// carries that push's time.
-	Queue        []Entry       `json:"queue"`
-	RunningProof *RunningProof `json:"running_proof"`
+	Queue               []Entry              `json:"queue"`
+	RunningProof        *RunningProof        `json:"running_proof"`
+	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
 	LastProof *Result `json:"last_proof"`
 	// LastPush is the newest push landing push made.
@@ -166,6 +167,9 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		}
 		unread("whether main holds the queued work", err)
 	}
+	regenerating, err := ReadRunningRegeneration(install, seams)
+	unread("the running regeneration", err)
+	status.RunningRegeneration = regenerating
 	running, err := readRunningProof(install, seams)
 	unread("the running proof", err)
 	status.RunningProof = running

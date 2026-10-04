@@ -104,6 +104,17 @@ func TestBriefModeOnly(t *testing.T) {
 		})
 	}
 }
+func TestBriefModeLowerCase(t *testing.T) {
+	t.Parallel()
+	brief := t.TempDir() + "/brief"
+	require(t, os.WriteFile(brief, []byte("# Brief\n\nWorking Mode: Implement\n"), 0o600) == nil, "write brief")
+	mode, err := BriefModeOnly(brief)
+	require(t, err == nil && mode == "implement", "BriefModeOnly = %q, %v", mode, err)
+	mode, declared, err := BriefTextMode([]byte("Working Mode:  DESIGN \n"))
+	require(t, err == nil && declared == 1 && mode == "design", "BriefTextMode = %q, %d, %v", mode, declared, err)
+	_, _, err = BriefTextMode([]byte("Working Mode: <Working Mode>\n"))
+	require(t, err != nil, "an unfilled placeholder must still be refused")
+}
 func TestBriefBoundsErrorPrecedence(t *testing.T) {
 	runBriefBoundsCases(t, precedenceCases)
 	t.Run("mode-first-without-authority", func(t *testing.T) {

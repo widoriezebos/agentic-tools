@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,11 +45,29 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutPaused))},
 		{name: "landing-run-no-engine", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-stop", args: []string{"landing", "stop", "--by", "Wido"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-resolve", args: []string{"landing", "resolve"}, bed: landingResolveLayoutBed},
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-prove-unset", args: []string{"landing", "prove"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-push-stopped", args: []string{"landing", "push"}, bed: landingLayoutBed(landingLayoutPaused)},
 		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
 	}
+}
+
+func landingResolveLayoutBed(t *testing.T) layoutBed {
+	b := newResolveVerbFixture(t)
+	b.owners.landing.plainResolve.Git = func(_ string, args ...string) (string, error) {
+		switch strings.Join(args, " ") {
+		case "show HEAD:metasystem/testing.json":
+			return b.contract, nil
+		case "diff --name-only --diff-filter=U -z":
+			return "", nil
+		default:
+			t.Fatalf("layout queried Git %v", args)
+			return "", nil
+		}
+	}
+	return layoutBed{owners: b.owners, cwd: b.root, now: layoutNow,
+		replace: layoutPaths(b.root, b.root, "/Users/wido/GitHub/agentic-tools-landing", b.home, "/Users/wido/.metasystem-home")}
 }
 
 // machineLayoutBed is the machine verbs' bed (newMachineBed): this checkout

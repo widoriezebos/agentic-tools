@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:75eaeec66f29b240b81ecc0c56ffc627a652838a04d6e573645aab6cb6788105",
+  "sourceDigest": "sha256:897b75ef6ac0dfb1cf87e5ed09636e755de30455bc9145956b75a2cff4f76c3f",
   "source": [
     {
       "path": ".npmrc",
@@ -868,7 +868,7 @@
     },
     {
       "path": "src/partner/sitting.ts",
-      "sha256": "ab7c61e45de1abdac578fe58c5a238676491bd8bd729b35008ea3b5e1b50e415"
+      "sha256": "1ff17ab9c6998def2c82757d8190d5062501ff11bcba7d77bfaabde540ddb6e8"
     },
     {
       "path": "src/partner/store.test.ts",
@@ -876,7 +876,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "67086c938dc98a3eb0ce439a269fec06eaf0edddcb4fdfdd5d8e47ce7768855e"
+      "sha256": "ad749e085031c867c46307ccb35601441a59ae01e301fd477f74b78b2d0d396f"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -1116,11 +1116,11 @@
     },
     {
       "path": "src/review/guided.screens.test.tsx",
-      "sha256": "9cc0882da9f80ef7291bd18d031d00cb9379730f996d72fe01ba8c3dc49c5fe1"
+      "sha256": "06c55fde301675bb382168e7e9ef0e55064649f63fadbf2176a4d51847629232"
     },
     {
       "path": "src/review/guided.test.ts",
-      "sha256": "f7c7cdf2779337976a9d3eb36b164bf752029af99b74cd101f97d7adf08a5aae"
+      "sha256": "aa5aff1b03cac776d12078e3c6d620d05adc29131ef1b6d166c2c261cf49725e"
     },
     {
       "path": "src/review/remarks.test.ts",
@@ -1140,7 +1140,7 @@
     },
     {
       "path": "src/review/room.ts",
-      "sha256": "b0ff0f76c77a780297395e18cfaad586155e59e25c3bf61b97d86976ab2fac34"
+      "sha256": "822028423f8a095ae771c0912bd792963803db4c74764783d3ad2c81a1d922e9"
     },
     {
       "path": "src/review/screens.test.tsx",
@@ -1654,11 +1654,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "6012cc14d3cc58de93cc0130bf0276eaf2a94e81188d89b38110c565db674780"
+      "sha256": "ad1d91aa23ae7b5686214391498bd662919691f30bfb115bcc47a9e6a7a181ee"
     },
     {
       "path": "assets/index.js",
-      "sha256": "4205dee40fc02b628066a215ab735a3afcc591075fad6fe40504c4c4e6d9096c"
+      "sha256": "bd4281aed818c01fae9393bc92a3fb1bb947b5386f444f2407acc3a6cdd6055a"
     },
     {
       "path": "assets/info-A6RAGUB7.js",

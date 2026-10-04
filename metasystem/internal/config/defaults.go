@@ -498,6 +498,17 @@ func ProofInput(key string) bool {
 	return !ok || setting.ProofInput
 }
 
+// RuntimeNames reads comma-separated metasystem.runtimes entries, trimming whitespace and dropping empty entries.
+func RuntimeNames(value string) []string {
+	var names []string
+	for _, item := range strings.Split(value, ",") {
+		if name := strings.TrimSpace(item); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // selectedRuntimes reports whether runtime is in a metasystem.runtimes value.
 func runtimeSelected(runtimes, runtime string) bool {
 	for _, item := range strings.Split(runtimes, ",") {

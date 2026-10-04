@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-02",
+  "unit": "brief-mode-lowercase",
+  "subject": {
+    "commit": "8110ca7ba96d17eff0f8a9ecdfa6ec597a002c4d",
+    "parent": "3f16d3ef46351f98eb0b4c6a27262fe3a4336d3e",
+    "tree": "75626949f444b26a1f62638bae03311a8a01bb0f",
+    "patchDigest": "45f6b9913db33f2b1e4bf34860b1c1956be37f61ec18c268e805a942cd995054",
+    "unitDigest": "bda14ebee1abaf613f867651f12cae15601fe7b29191711a2a2b88df9bc55f09"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b1e3cb94a4ba645e2e62a818",
+    "round": 1,
+    "closureSha256": "df9488c5f9740a0905f0c711c853c8a1048992d63f7f635c20989e55614abb66"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "75626949f444b26a1f62638bae03311a8a01bb0f",
+    "runId": "goal-read-gate-20261004t004725z-2cd93b3facbb9301"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_connection_final_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1e3cb94a4ba645e2e62a818"
+    },
+    {
+      "path": "metasystem/internal/adapter/supervisor/fake_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1e3cb94a4ba645e2e62a818"
+    },
+    {
+      "path": "metasystem/internal/dispatch/brief_bounds_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1e3cb94a4ba645e2e62a818"
+    }
+  ],
+  "sha256": "51ac2a446cc16b85d1f336f5588bb71be51aad7c5167e5a16deee59d76b9c829"
+}

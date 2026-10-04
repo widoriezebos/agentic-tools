@@ -97,7 +97,8 @@ func briefModeFromHeaders(headers briefHeaders) (string, error) {
 	if len(headers.mode) != 1 || headers.mode[0] == "" || strings.HasPrefix(headers.mode[0], "<") {
 		return "", silentRefusal(1)
 	}
-	return headers.mode[0], nil
+	// Settings keys name modes in lower case, so the header is read that way.
+	return strings.ToLower(headers.mode[0]), nil
 }
 
 // BriefTextMode applies BriefModeOnly's rules to brief text a caller is

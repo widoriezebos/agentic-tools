@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -736,17 +737,20 @@ func (m *Manager) Census(reapValues ...bool) ([]string, error) {
 	return lines, nil
 }
 
+// AgentKinds are the launch kinds that start an agent, each from its own
+// roster row; proof runs a command and starts none.
+var AgentKinds = []string{"build", "critique", "design", "read", "seat", LandingKind}
+
 // adapterForLane names the adapter a lane runs on. The lane's runtime setting
 // decides, never the model: a model name is not an agent, since more than one
 // agent can serve the same model (Wido, 2026-09-24, R-123). A lane with no
 // runtime, or on an agent this engine cannot launch, names no adapter, and
 // Start refuses it.
 func adapterForLane(kind, runtime string) string {
-	switch kind {
-	case "build", "critique", "design", "read", "seat", LandingKind:
-	case "proof":
+	if kind == "proof" {
 		return "plain-exec"
-	default:
+	}
+	if !slices.Contains(AgentKinds, kind) {
 		return ""
 	}
 	switch runtime {
