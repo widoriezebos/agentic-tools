@@ -236,3 +236,74 @@ func TestPushCommitFollowonGitAdapter(t *testing.T) {
 		}
 	})
 }
+
+// TestPushCarriesKeptRefsGitAdapter checks that old builds travel with the goal
+// branch and remain unchanged on the remote when the branch lease is refused.
+func TestPushCarriesKeptRefsGitAdapter(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	ref := "refs/heads/goal/goal-a"
+	prefix := "refs/metasystem/goals/before/goal-a/"
+	old := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "old build")
+	oldTip := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", old, "-m", "old review")
+	for _, tip := range []string{old, oldTip} {
+		git(t, f.root, "update-ref", prefix+tip, tip)
+	}
+	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	transport := branch.GitPushTransport{}
+	if outcome, err := transport.Push(f.root, "origin", ref, "", tip); err != nil || outcome != branch.CASLanded {
+		t.Fatalf("push = %s, %v", outcome, err)
+	}
+	for _, kept := range []string{old, oldTip} {
+		if got := git(t, f.origin, "rev-parse", prefix+kept); got != kept {
+			t.Fatalf("remote kept tip = %s, want %s", got, kept)
+		}
+	}
+	if outcome, err := transport.Push(f.root, "origin", ref, tip, tip); err != nil || outcome != branch.CASLanded {
+		t.Fatalf("repeat push = %s, %v", outcome, err)
+	}
+	other := cloneBranchFixture(t, f)
+	if err := transport.Fetch(other.root, "origin", ref, "refs/metasystem/goals/fetch/kept-test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{old, oldTip} {
+		if got := git(t, other.root, "rev-parse", prefix+kept); got != kept {
+			t.Fatalf("fetched kept tip = %s, want %s", got, kept)
+		}
+		git(t, other.root, "cat-file", "-e", kept+"^{commit}")
+	}
+	newTip := git(t, f.root, "commit-tree", tip+"^{tree}", "-p", tip, "-m", "new build")
+	newOld := git(t, f.root, "commit-tree", oldTip+"^{tree}", "-p", oldTip, "-m", "another old review")
+	git(t, f.root, "update-ref", prefix+newOld, newOld)
+	if outcome, err := transport.Push(f.root, "origin", ref, f.base, newTip); err == nil || outcome != branch.CASRefused {
+		t.Fatalf("stale push = %s, %v", outcome, err)
+	}
+	if got := git(t, f.origin, "rev-parse", ref); got != tip {
+		t.Fatalf("refused push moved branch to %s", got)
+	}
+	for _, kept := range []string{old, oldTip} {
+		if got := git(t, f.origin, "rev-parse", prefix+kept); got != kept {
+			t.Fatalf("refused push moved kept tip to %s", got)
+		}
+	}
+	if got := goalRef(t, f.origin, prefix+newOld); got != "" {
+		t.Fatalf("refused push published a kept tip: %s", got)
+	}
+	plain := "refs/heads/plain"
+	if outcome, err := transport.Push(f.root, "origin", plain, "", newTip); err != nil || outcome != branch.CASLanded {
+		t.Fatalf("plain push = %s, %v", outcome, err)
+	}
+	if got := goalRef(t, f.origin, prefix+newOld); got != "" {
+		t.Fatalf("plain push published a kept tip: %s", got)
+	}
+	plainClone := cloneBranchFixture(t, f)
+	if err := transport.Fetch(plainClone.root, "origin", plain, "refs/metasystem/goals/fetch/plain-test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := goalRef(t, plainClone.root, prefix); got != "" {
+		t.Fatalf("plain fetch received kept tips: %s", got)
+	}
+	if got := git(t, plainClone.root, "rev-parse", "refs/metasystem/goals/fetch/plain-test"); got != newTip {
+		t.Fatalf("plain fetch tip = %s, want %s", got, newTip)
+	}
+}

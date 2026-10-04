@@ -185,6 +185,10 @@ func (f *branchRawFixture) ReadSubject(r, c string) (readsubject.ReadSubject, er
 func (f *branchRawFixture) RawEntries(r, c string) ([]byte, error) {
 	return f.raw(r, "diff-tree", "-r", "-z", "--no-renames", "--full-index", c+"^", c)
 }
+func (f *branchRawFixture) ChangePatch(r, c string) ([]byte, error) {
+	return f.raw(r, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+		"--binary", "--full-index", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/", "-U3", c+"^", c)
+}
 func (f *branchRawFixture) SnapshotFile(string, string, string) ([]byte, error) {
 	f.t.Fatal("unexpected snapshot file")
 	return nil, nil
