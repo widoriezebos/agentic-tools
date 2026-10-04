@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -58,10 +59,14 @@ var fixedNow = func() time.Time { return time.Date(2026, 9, 27, 12, 0, 0, 0, tim
 // non-holder machine session admitted under the genesis mode: adoption must
 // work from agent ancestry, and the store re-judges the adoption shape.
 func testGenesis(target string) error {
-	if err := ledgerfence.Ensure(target); err != nil {
+	installation, err := stateroot.ParseInstallation(target)
+	if err != nil {
 		return err
 	}
-	_, err := (&goal.Store{Root: target}).Reconcile(goal.Caller{Class: "MAIN", Holder: false, Genesis: true})
+	if err := ledgerfence.Ensure(installation); err != nil {
+		return err
+	}
+	_, err = (&goal.Store{Root: target}).Reconcile(goal.Caller{Class: "MAIN", Holder: false, Genesis: true})
 	return err
 }
 

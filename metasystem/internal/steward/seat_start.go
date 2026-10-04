@@ -31,8 +31,11 @@ import (
 type SeatLaunchSpec struct {
 	ID        string
 	StateRoot string
-	Brief     string
-	Tag       string
+	// Installation is the root whose metasystem.conf holds the seat's
+	// launch settings; the state root keeps the checkout and the fence.
+	Installation string
+	Brief        string
+	Tag          string
 }
 
 // SeatLaunchState is one seat launch as its launch record says.
@@ -527,7 +530,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err := writeSeatRecord(repoRoot, record); err != nil {
 		return SeatRecord{}, err
 	}
-	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
+	// The steward's own root holds both its run state and the installation's
+	// settings, so it names that root as the seat's installation too.
+	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
 		if writeErr := writeSeatRecord(repoRoot, record); writeErr != nil {

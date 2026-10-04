@@ -32,21 +32,21 @@ type CallRegistration struct {
 // CallSessions discovers persisted call stores without reading a sample body.
 // Cursor identity is authoritative because a filename may contain a hashed
 // session or a hyphenated runtime and therefore cannot be reversed safely.
-func CallSessions(stateRoot string) ([]CallSession, error) {
-	if !filepath.IsAbs(stateRoot) {
-		return nil, fmt.Errorf("state root must be absolute: %s", stateRoot)
+func CallSessions(installationRoot string) ([]CallSession, error) {
+	if !filepath.IsAbs(installationRoot) {
+		return nil, fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	maintenance, err := lockCallMaintenance(installationRoot, false, false)
 	if err != nil {
 		return nil, err
 	}
 	defer unlockCallFile(maintenance)
-	return callSessionsUnderMaintenance(stateRoot)
+	return callSessionsUnderMaintenance(installationRoot)
 }
 
-func callSessionsUnderMaintenance(stateRoot string) ([]CallSession, error) {
-	cursorDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors")
-	samplesDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "samples")
+func callSessionsUnderMaintenance(installationRoot string) ([]CallSession, error) {
+	cursorDir := filepath.Join(installationRoot, "artifacts", "agents", "context", "cursors")
+	samplesDir := filepath.Join(installationRoot, "artifacts", "agents", "context", "samples")
 	stems := map[string]bool{}
 	if err := collectCallStoreStems(cursorDir, ".json", stems); err != nil {
 		return nil, err
@@ -69,12 +69,12 @@ func callSessionsUnderMaintenance(stateRoot string) ([]CallSession, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot lock call session pair cursor=%s samples=%s: %w", cursorPath, samplesPath, err)
 		}
-		recoverErr := recoverCallRetirement(stateRoot, cursorPath)
+		recoverErr := recoverCallRetirement(installationRoot, cursorPath)
 		if recoverErr != nil {
 			unlockCallFile(lock)
 			return nil, recoverErr
 		}
-		session, present, inspectErr := inspectCallSessionPair(stateRoot, cursorPath, samplesPath)
+		session, present, inspectErr := inspectCallSessionPair(installationRoot, cursorPath, samplesPath)
 		unlockCallFile(lock)
 		if inspectErr != nil {
 			return nil, inspectErr
@@ -124,7 +124,7 @@ func collectCallStoreStems(directory, extension string, stems map[string]bool) e
 	return nil
 }
 
-func inspectCallSessionPair(stateRoot, cursorPath, samplesPath string) (CallSession, bool, error) {
+func inspectCallSessionPair(installationRoot, cursorPath, samplesPath string) (CallSession, bool, error) {
 	cursorInfo, cursorExists, err := callStoreMember(cursorPath)
 	if err != nil {
 		return CallSession{}, false, pairError(cursorPath, samplesPath, err)
@@ -149,11 +149,11 @@ func inspectCallSessionPair(stateRoot, cursorPath, samplesPath string) (CallSess
 	if err != nil {
 		return CallSession{}, false, pairError(cursorPath, samplesPath, err)
 	}
-	if err := validateCallLocation(stateRoot, cursor.Runtime); err != nil {
+	if err := validateCallLocation(installationRoot, cursor.Runtime); err != nil {
 		return CallSession{}, false, pairError(cursorPath, samplesPath, err)
 	}
-	if CursorPath(stateRoot, cursor.Runtime, cursor.Session) != cursorPath ||
-		SamplesPath(stateRoot, cursor.Runtime, cursor.Session) != samplesPath {
+	if CursorPath(installationRoot, cursor.Runtime, cursor.Session) != cursorPath ||
+		SamplesPath(installationRoot, cursor.Runtime, cursor.Session) != samplesPath {
 		return CallSession{}, false, pairError(cursorPath, samplesPath,
 			fmt.Errorf("cursor identity %s/%s does not map to both store basenames", cursor.Runtime, cursor.Session))
 	}
@@ -206,20 +206,20 @@ func pairError(cursorPath, samplesPath string, err error) error {
 // CallRegistrations reads a strict, complete registry snapshot while holding
 // its sibling lock. The lock is released before this function returns, so a
 // caller can acquire per-session cursor locks without reversing lock order.
-func CallRegistrations(stateRoot string) (rows []CallRegistration, present bool, err error) {
-	if !filepath.IsAbs(stateRoot) {
-		return nil, false, fmt.Errorf("state root must be absolute: %s", stateRoot)
+func CallRegistrations(installationRoot string) (rows []CallRegistration, present bool, err error) {
+	if !filepath.IsAbs(installationRoot) {
+		return nil, false, fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	maintenance, err := lockCallMaintenance(installationRoot, false, false)
 	if err != nil {
 		return nil, false, err
 	}
 	defer unlockCallFile(maintenance)
-	return callRegistrationsUnderMaintenance(stateRoot)
+	return callRegistrationsUnderMaintenance(installationRoot)
 }
 
-func callRegistrationsUnderMaintenance(stateRoot string) (rows []CallRegistration, present bool, err error) {
-	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
+func callRegistrationsUnderMaintenance(installationRoot string) (rows []CallRegistration, present bool, err error) {
+	path := filepath.Join(installationRoot, "artifacts", "agents", "context", "sessions.jsonl")
 	lock, err := lockCallFile(path + ".lock")
 	if err != nil {
 		return nil, false, err

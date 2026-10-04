@@ -1,8 +1,6 @@
 package main
 
 import (
-	"path/filepath"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
@@ -29,7 +27,7 @@ import (
 
 // confPathFor is where this installation keeps its configuration.
 func confPathFor(roots lifecycle.Roots) string {
-	return filepath.Join(roots.Installation, "metasystem.conf")
+	return roots.Installation.Path("metasystem.conf")
 }
 
 // describeInterface composes the manifest for one checkout, reading the

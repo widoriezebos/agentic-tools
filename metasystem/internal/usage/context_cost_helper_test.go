@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 type contextCostReaderWork struct {
@@ -82,7 +84,7 @@ func TestContextCostColdReaderHelper(t *testing.T) {
 		writeCallCursor = priorCursorWriter
 	}()
 
-	reading, err := LatestCall(root, runtimeName, session, ReadOptions{
+	reading, err := LatestCall(stateroottest.Installation(t, root), runtimeName, session, ReadOptions{
 		Capability: PerCall, Transcript: transcript, Home: home, Toplevel: toplevel,
 		Now: time.Now().UTC(), NonBlocking: true,
 	})

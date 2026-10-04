@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 )
@@ -30,8 +31,8 @@ func serveOptions(t *testing.T) Options {
 	home := t.TempDir()
 	roots := Roots{
 		Checkout:     filepath.Join(home, "checkout"),
-		Installation: filepath.Join(home, "checkout", "metasystem"),
-		StateRoot:    filepath.Join(home, "state"),
+		Installation: stateroottest.Installation(t, filepath.Join(home, "checkout", "metasystem")),
+		StateRoot:    stateroottest.State(t, filepath.Join(home, "state")),
 	}
 	return Options{
 		Roots: roots, Listen: "127.0.0.1:0", EngineBuild: "dev-test",
@@ -80,14 +81,14 @@ func TestServePublishesBoundRecordAndShutsDown(t *testing.T) {
 	t.Parallel()
 	o := serveOptions(t)
 	address, stop := runTestServer(t, o)
-	rec, err := readRecord(o.Roots.StateRoot)
+	rec, err := readRecord(o.Roots.Installation.Path())
 	testutil.Require(t, "published record read", err, nil)
 	testutil.Expect(t, "record bound address", rec.Address, address)
 	_, port, err := net.SplitHostPort(address)
 	testutil.Require(t, "bound address shape", err, nil)
 	testutil.Expect(t, "kernel assigned a port", port != "0", true)
 	testutil.Expect(t, "record checkout", rec.Checkout, o.Roots.Checkout)
-	testutil.Expect(t, "record installation", rec.Installation, o.Roots.Installation)
+	testutil.Expect(t, "record installation", rec.Installation, o.Roots.Installation.Path())
 	testutil.Expect(t, "record time is UTC", rec.StartedAt, "2026-09-21T09:30:00Z")
 	testutil.Expect(t, "record build", rec.EngineBuild, o.EngineBuild)
 	testutil.Expect(t, "record digest", rec.ExecutableDigest, "sha256:serving")
@@ -128,9 +129,9 @@ func TestServePublishesBoundRecordAndShutsDown(t *testing.T) {
 	_ = refused.Body.Close()
 	testutil.Expect(t, "foreign Host status", refused.StatusCode, http.StatusForbidden)
 	stop()
-	_, err = os.Stat(recordPath(o.Roots.StateRoot))
+	_, err = os.Stat(recordPath(o.Roots.Installation.Path()))
 	testutil.Expect(t, "record removed after shutdown", errors.Is(err, os.ErrNotExist), true)
-	f, won, err := probeLock(o.Roots.StateRoot)
+	f, won, err := probeLock(o.Roots.Installation.Path())
 	testutil.Require(t, "post-shutdown lock probe", err, nil)
 	testutil.Require(t, "post-shutdown lock available", won, true)
 	releaseLock(f)
@@ -139,9 +140,9 @@ func TestServePublishesBoundRecordAndShutsDown(t *testing.T) {
 func TestServeRemovesLeftoverRecordAndRotatesLog(t *testing.T) {
 	t.Parallel()
 	o := serveOptions(t)
-	testutil.Require(t, "create leftover state directory", os.MkdirAll(Dir(o.Roots.StateRoot), 0o755), nil)
-	testutil.Require(t, "write unreadable leftover", os.WriteFile(recordPath(o.Roots.StateRoot), []byte("truncated"), 0o644), nil)
-	logPath := filepath.Join(Dir(o.Roots.StateRoot), "server.log")
+	testutil.Require(t, "create leftover state directory", os.MkdirAll(Dir(o.Roots.Installation.Path()), 0o755), nil)
+	testutil.Require(t, "write unreadable leftover", os.WriteFile(recordPath(o.Roots.Installation.Path()), []byte("truncated"), 0o644), nil)
+	logPath := filepath.Join(Dir(o.Roots.Installation.Path()), "server.log")
 	oldLog := strings.Repeat("x", (1<<20)+1)
 	testutil.Require(t, "write oversized log", os.WriteFile(logPath, []byte(oldLog), 0o644), nil)
 	appendLog, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0)
@@ -149,7 +150,7 @@ func TestServeRemovesLeftoverRecordAndRotatesLog(t *testing.T) {
 	defer appendLog.Close()
 	digest := o.DigestFunc
 	o.DigestFunc = func() (string, error) {
-		if _, err := os.Stat(recordPath(o.Roots.StateRoot)); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(recordPath(o.Roots.Installation.Path())); !errors.Is(err, os.ErrNotExist) {
 			return "", errors.New("leftover record was not removed before hashing")
 		}
 		return digest()
@@ -170,7 +171,7 @@ func TestServeRefusesSecondServerWithoutChangingLog(t *testing.T) {
 	t.Parallel()
 	o := serveOptions(t)
 	address, _ := runTestServer(t, o)
-	logPath := filepath.Join(Dir(o.Roots.StateRoot), "server.log")
+	logPath := filepath.Join(Dir(o.Roots.Installation.Path()), "server.log")
 	content := strings.Repeat("x", (1<<20)+1)
 	testutil.Require(t, "write active log", os.WriteFile(logPath, []byte(content), 0o644), nil)
 	o.After = func(time.Duration) <-chan time.Time { panic("fast refusal must not wait for the lock") }
@@ -188,8 +189,8 @@ func TestServeRefusesSecondServerWithoutChangingLog(t *testing.T) {
 func TestServeLockTimeoutHasUnknownAddress(t *testing.T) {
 	t.Parallel()
 	o := serveOptions(t)
-	testutil.Require(t, "create locked directory", os.MkdirAll(Dir(o.Roots.StateRoot), 0o755), nil)
-	f, won, done, err := waitLock(o.Roots.StateRoot, true, time.Second, o.After)
+	testutil.Require(t, "create locked directory", os.MkdirAll(Dir(o.Roots.Installation.Path()), 0o755), nil)
+	f, won, done, err := waitLock(o.Roots.Installation.Path(), true, time.Second, o.After)
 	testutil.Require(t, "hold server lock", err, nil)
 	testutil.Require(t, "server lock acquired", won, true)
 	<-done
@@ -206,7 +207,7 @@ func TestServeLockTimeoutHasUnknownAddress(t *testing.T) {
 	testutil.Require(t, "timeout refusal type", errors.As(err, &running), true)
 	testutil.Expect(t, "timeout address unknown", running.Address, "")
 	testutil.Expect(t, "default lock wait", wait, 5*time.Second)
-	_, err = os.Stat(recordPath(o.Roots.StateRoot))
+	_, err = os.Stat(recordPath(o.Roots.Installation.Path()))
 	testutil.Expect(t, "timeout publishes no record", errors.Is(err, os.ErrNotExist), true)
 }
 
@@ -217,9 +218,9 @@ func TestServeDigestFailure(t *testing.T) {
 	err := Serve(context.Background(), o)
 	testutil.Require(t, "digest failure returned", err != nil, true)
 	testutil.Expect(t, "digest failure message", err.Error(), "cannot read the serving executable: read denied")
-	_, err = os.Stat(recordPath(o.Roots.StateRoot))
+	_, err = os.Stat(recordPath(o.Roots.Installation.Path()))
 	testutil.Expect(t, "digest failure publishes no record", errors.Is(err, os.ErrNotExist), true)
-	f, won, err := probeLock(o.Roots.StateRoot)
+	f, won, err := probeLock(o.Roots.Installation.Path())
 	testutil.Require(t, "failed server lock probe", err, nil)
 	testutil.Require(t, "failed server releases lock", won, true)
 	releaseLock(f)
@@ -305,10 +306,10 @@ func TestServeEndsReadysWorkBeforeReleasingTheCheckout(t *testing.T) {
 	var recordPresentAtRelease, lockHeldAtRelease, ranAtAll bool
 	o.Releasing = func() {
 		ranAtAll = true
-		_, err := readRecord(o.Roots.StateRoot)
+		_, err := readRecord(o.Roots.Installation.Path())
 		recordPresentAtRelease = err == nil
 		// A second waiter cannot take the lock while Serve still holds it.
-		_, won, _, lockErr := waitLock(o.Roots.StateRoot, true, 0, nil)
+		_, won, _, lockErr := waitLock(o.Roots.Installation.Path(), true, 0, nil)
 		lockHeldAtRelease = lockErr == nil && !won
 	}
 
@@ -318,6 +319,6 @@ func TestServeEndsReadysWorkBeforeReleasingTheCheckout(t *testing.T) {
 	testutil.Expect(t, "Releasing ran", ranAtAll, true)
 	testutil.Expect(t, "the record was still published", recordPresentAtRelease, true)
 	testutil.Expect(t, "the lock was still held", lockHeldAtRelease, true)
-	_, err := readRecord(o.Roots.StateRoot)
+	_, err := readRecord(o.Roots.Installation.Path())
 	testutil.Expect(t, "and the record is gone once Serve has returned", err != nil, true)
 }

@@ -108,7 +108,7 @@ func previewHealthAtWithWork(root string, now time.Time) (HealthVerdict, spend.M
 		work = measured
 		return ledger, err
 	}
-	return previewHealthAtWithMeasure(root, root, now, healthProbe{}, measure), work
+	return previewHealthAtWithMeasure(root, root, root, now, healthProbe{}, measure), work
 }
 
 func writeSyntheticTranscript(t *testing.T, path, cwd, requestID string, size int) {

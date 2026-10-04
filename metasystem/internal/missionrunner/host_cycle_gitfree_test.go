@@ -283,11 +283,18 @@ func newGitFreePreflightBedWithGate(t *testing.T, behavior string, gate []byte) 
 // the fixture contract.
 func newGitFreePreflightBedWithContract(t *testing.T, behavior string, gate []byte, edit func(string) string) (*Engine, *hostCycleSource) {
 	t.Helper()
+	return newGitFreePreflightBedAt(t, "", behavior, gate, edit)
+}
+
+// newGitFreePreflightBedAt puts the state root at project beneath the
+// installation, as an adopted repository does; "" makes them one directory.
+func newGitFreePreflightBedAt(t *testing.T, project, behavior string, gate []byte, edit func(string) string) (*Engine, *hostCycleSource) {
+	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Root: root, Mission: "alpha"}
+	e := &Engine{Root: filepath.Join(root, project), Installation: root, Mission: "alpha"}
 	f := &hostCycleSource{t: t, root: root, contractPath: e.contractPath(), files: map[string][]byte{}}
 	f.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
 	if gate != nil {
@@ -353,7 +360,12 @@ func newGitFreePreflightBedWithContract(t *testing.T, behavior string, gate []by
 
 func buildGitFreeHostCycle(t *testing.T, behavior string) *Engine {
 	t.Helper()
-	e, f := newGitFreePreflightBed(t, behavior)
+	return buildGitFreeHostCycleAt(t, "", behavior)
+}
+
+func buildGitFreeHostCycleAt(t *testing.T, project, behavior string) *Engine {
+	t.Helper()
+	e, f := newGitFreePreflightBedAt(t, project, behavior, nil, nil)
 	equipFullCycleFiles(t, e)
 	goalRepository := &hostCycleGoals{t: t}
 	e.goalSource = &mission.GoalSource{Endpoint: goal.Endpoint{
@@ -503,9 +515,9 @@ func (w *hostCycleWorkspace) MaterializePaths(tree string, paths []string) error
 }
 
 type hostCycleReads struct {
-	t         *testing.T
-	root      string
-	workspace *hostCycleWorkspace
+	t                  *testing.T
+	root, installation string
+	workspace          *hostCycleWorkspace
 }
 
 func (r *hostCycleReads) Git(root string, args ...string) (string, string, int) {
@@ -551,13 +563,13 @@ func (r *hostCycleReads) BlobOID(root string, content []byte) (string, error) {
 	return birthBlobOID(content), nil
 }
 func (r *hostCycleReads) LedgerTruth(root string, state map[string]any, path string) (string, string, error) {
-	if root != r.root {
+	if root != r.installation {
 		r.t.Fatal("ledger root", root)
 	}
 	return "", "", mission.ErrNoAnchor
 }
 func (r *hostCycleReads) LedgerBlobOID(root string, state map[string]any, path string) (string, error) {
-	if root != r.root {
+	if root != r.installation {
 		r.t.Fatal("ledger root", root)
 	}
 	data, err := os.ReadFile(path)
@@ -567,7 +579,7 @@ func (r *hostCycleReads) LedgerBlobOID(root string, state map[string]any, path s
 	return birthBlobOID(data), nil
 }
 func (r *hostCycleReads) AuthenticateLedger(root string, state map[string]any, path string) error {
-	if root != r.root {
+	if root != r.installation {
 		r.t.Fatal("ledger root", root)
 	}
 	return nil
@@ -644,9 +656,9 @@ func installHostCycleRepository(t *testing.T, e *Engine, f *hostCycleSource) {
 		}
 		return w
 	}
-	e.wallReadFacts = &hostCycleReads{t: t, root: e.Root, workspace: w}
+	e.wallReadFacts = &hostCycleReads{t: t, root: e.Root, installation: e.installation(), workspace: w}
 	e.birthEffects = &hostCycleBirth{t: t, root: e.Root, workspace: w}
-	e.continuityFacts = &hostCycleContinuity{t: t, root: e.Root}
+	e.continuityFacts = &hostCycleContinuity{t: t, root: e.installation()}
 	e.anchorFn = func(state, ledger, name string) error {
 		if name == "" || state != filepath.Join(e.missionDir(), "state.json") || ledger != filepath.Join(e.missionDir(), "ledger.md") {
 			return fmt.Errorf("unexpected state anchor: %q %q %q", state, ledger, name)

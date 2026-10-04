@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // EM-07: the context budget of a root that does not exist read "alive (no
@@ -13,7 +15,7 @@ import (
 func TestContextBudgetOfAMissingRootIsAnError(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "nonexistent")
-	role, _, err := ContextBudgetLine(missing, missing, time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), ContextOptions{})
+	role, _, err := ContextBudgetLine(stateroottest.Installation(t, missing), time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), ContextOptions{})
 	want := missing + " does not exist, so there is no installation to read; nothing was read"
 	if err == nil || err.Error() != want {
 		t.Fatalf("missing root err = %v, want %q", err, want)

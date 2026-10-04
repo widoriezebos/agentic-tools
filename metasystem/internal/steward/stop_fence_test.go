@@ -189,7 +189,7 @@ func TestStoppedHealthRemedyPrintsPathWithoutQuotes(t *testing.T) {
 	}
 	closeProcessFence(t, root, 1)
 	roles := []RoleVerdict{{Role: RoleSupervisionOwner, Status: HealthDead, Remedy: "metasystem session start --repo obsolete"}}
-	verdict, err := healthStopped(root, time.Now(), roles, SpendObservation{}, HealthObservationState{})
+	verdict, err := healthStopped(root, root, time.Now(), roles, SpendObservation{}, HealthObservationState{})
 	if err != nil || verdict == nil || len(verdict.Roles) != 1 {
 		t.Fatalf("stopped health = %#v err=%v", verdict, err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -25,7 +26,7 @@ import (
 func TestContextReportVerbPublishesTheWeek(t *testing.T) {
 	root := contextCommandRoot(t)
 	transcript := writeContextCommandTranscript(t, root, "report", 120000, 1, true)
-	if _, err := usagepkg.LatestCall(root, "claude", "report", usagepkg.ReadOptions{
+	if _, err := usagepkg.LatestCall(stateroottest.Installation(t, root), "claude", "report", usagepkg.ReadOptions{
 		Capability: usagepkg.PerCall, Transcript: transcript,
 	}); err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func TestContextReportVerbPublishesTheWeek(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := usagepkg.LatestCall(root, "claude", "report", usagepkg.ReadOptions{
+	if _, err := usagepkg.LatestCall(stateroottest.Installation(t, root), "claude", "report", usagepkg.ReadOptions{
 		Capability: usagepkg.PerCall, Transcript: transcript,
 	}); err != nil {
 		t.Fatal(err)
@@ -109,7 +110,7 @@ func TestContextReportVerbRefusesRetiredEvidence(t *testing.T) {
 func TestContextReportPropagatesRecoveryError(t *testing.T) {
 	root := contextCommandRoot(t)
 	transcript := writeContextCommandTranscript(t, root, "report-error", 120000, 1, true)
-	if _, err := usagepkg.LatestCall(root, "claude", "report-error", usagepkg.ReadOptions{
+	if _, err := usagepkg.LatestCall(stateroottest.Installation(t, root), "claude", "report-error", usagepkg.ReadOptions{
 		Capability: usagepkg.PerCall, Transcript: transcript,
 	}); err != nil {
 		t.Fatal(err)
@@ -1367,6 +1368,11 @@ func contextCommandRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The context verbs admit the root as an installation, which holds
+	// metasystem.conf.
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return root

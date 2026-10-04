@@ -136,7 +136,7 @@ func assertDriftRefused(t *testing.T, b *resolutionFileBed, c *driftAnchorContin
 	if entry["resolution"] != nil {
 		t.Fatalf("refused resolution was saved: %v", entry["resolution"])
 	}
-	asks, err := filepath.Glob(filepath.Join(asksDirPath(b.e.Root, b.e.Mission), "wall-violation*.json"))
+	asks, err := filepath.Glob(filepath.Join(asksDirPath(b.e.installation(), b.e.Mission), "wall-violation*.json"))
 	if err != nil || len(asks) != 1 {
 		t.Fatalf("wall ask files: %v, %v", asks, err)
 	}

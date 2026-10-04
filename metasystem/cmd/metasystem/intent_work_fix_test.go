@@ -307,7 +307,7 @@ func (b *workBed) stateRoot() string {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	return root
+	return root.Path()
 }
 
 // TestIntentBriefCarriesAcceptedDesign: the scaffold carries the accepted

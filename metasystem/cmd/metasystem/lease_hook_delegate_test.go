@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // TestHookDelegateOwnerStatusContract proves the runtime hook's custody
@@ -17,7 +18,7 @@ import (
 // custody JSON with 0, and 1 for a narrowed record that is absent.
 func TestHookDelegateOwnerStatusContract(t *testing.T) {
 	root := t.TempDir()
-	installation := t.TempDir()
+	installation := stateroottest.Installation(t, t.TempDir())
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe current process = %s, %v", state, err)

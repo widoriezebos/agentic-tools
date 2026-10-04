@@ -30,7 +30,7 @@ func TestGoalWorktreePreparationRegistersAndEntersTheStore(t *testing.T) {
 	if problem != nil || path != c.worktree {
 		t.Fatalf("prepare = %q %+v", path, problem)
 	}
-	registry := diskstore.CheckoutRegistry(layout.InstallationRoot)
+	registry := diskstore.CheckoutRegistry(layout.InstallationRoot.Path())
 	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: c.id})
 	if err != nil || len(records) != 1 || records[0].Path != c.worktree || records[0].State != diskstore.StateAccepted || records[0].Identity.Gitdir == "" {
 		t.Fatalf("records = %+v, %v", records, err)
@@ -76,7 +76,7 @@ func TestGoalDoneSweepWaitsForAVerbInsideTheWorktree(t *testing.T) {
 	}
 	defer inside.leaveStores()
 	swept := false
-	err = steward.SweepGoalWorktrees(layout.InstallationRoot, c.id, func(context.Context) error { swept = true; return nil })
+	err = steward.SweepGoalWorktrees(layout.InstallationRoot.Path(), c.id, func(context.Context) error { swept = true; return nil })
 	if err == nil || swept || !strings.Contains(err.Error(), "retries the sweep") {
 		t.Fatalf("a sweep past a verb inside the worktree = %v, swept %v", err, swept)
 	}
@@ -109,7 +109,7 @@ func TestGoalWorktreePreparationRecordsTheCopiedLocalConfiguration(t *testing.T)
 		t.Fatalf("prepare = %+v", problem)
 	}
 	inv.leaveStores()
-	registry := diskstore.CheckoutRegistry(layout.InstallationRoot)
+	registry := diskstore.CheckoutRegistry(layout.InstallationRoot.Path())
 	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: c.id})
 	if err != nil || len(records) != 1 || records[0].Path != path {
 		t.Fatalf("records = %+v, %v", records, err)

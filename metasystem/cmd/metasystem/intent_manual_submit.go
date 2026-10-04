@@ -94,7 +94,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	// before any effect; a repeat of the same inputs reaches the same files.
 	identity := sha256.Sum256(append(append(append([]byte{}, capture.patch...), 0), brief...))
 	digest := hex.EncodeToString(identity[:])[:16]
-	frozen := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-manual", file.Id, digest)
+	frozen := inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-manual", file.Id, digest)
 	frozenPatch, frozenBrief := filepath.Join(frozen, "change.patch"), filepath.Join(frozen, "brief.md")
 	for path, content := range map[string][]byte{frozenPatch: capture.patch, frozenBrief: brief} {
 		if existing, readErr := os.ReadFile(path); readErr == nil {
@@ -110,7 +110,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "this submission's copy couldn't be saved, so nothing was done",
 				next: inv.sameCommand(), nextReason: "tries again", Details: []string{err.Error()}}
 		}
-		if _, err := atomicfile.WriteText(path, string(content), inv.layout.InstallationRoot); err != nil {
+		if _, err := atomicfile.WriteText(path, string(content), inv.layout.InstallationRoot.Path()); err != nil {
 			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "this submission's copy couldn't be saved, so nothing was done",
 				next: inv.sameCommand(), nextReason: "tries again", Details: []string{err.Error()}}
 		}
@@ -132,14 +132,14 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	}
 	conn := inv.connection()
 	original := inv.layout.InstallationRoot
-	endpoint, err := conn.endpoint(original)
+	endpoint, err := conn.endpoint(original.Path())
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "the goal branch's remote can't be reached, so nothing was submitted",
 			next:    inv.publicArgv("goal", "sync"), nextReason: "then repeat this command",
 			Details: []string{"the goal branch endpoint is unavailable: " + err.Error()}}
 	}
-	check := conn.claimCheck(original, id, endpoint)
+	check := conn.claimCheck(original.Path(), id, endpoint)
 	if err := branch.CheckCommitAccess(id, check); err != nil {
 		if holder, next, reason, held := inv.heldElsewhere(id, err); held {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
@@ -157,7 +157,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	}
 	install := inv.goalWorktreeInstallation(worktree)
 	data["worktree"] = worktree
-	base, err := conn.endpointTip(original, endpoint)
+	base, err := conn.endpointTip(original.Path(), endpoint)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "main's current commit can't be read, so nothing was submitted",
@@ -338,8 +338,8 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			next:    inv.publicArgv("work", "land", id), nextReason: "lands the goal's work"}
 	}
 	args := []string{"--root", install, "--goal", id, "--unit", commit, "--brief", frozenBrief}
-	if install != original {
-		args = append(args, "--selected-installation", original)
+	if install != original.Path() {
+		args = append(args, "--selected-installation", original.Path())
 	}
 	result := inv.commitReview(targets, install, id, commit, args)
 	if data, _ := result.Data.(map[string]any); result.Outcome == intentRefused && data["code"] == branch.ReadBriefChangedCode {

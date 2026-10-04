@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 var laneTestNow = time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
@@ -92,7 +93,7 @@ func TestWorkLandAsksOnlyWhetherALaneIsRegistered(t *testing.T) {
 	}
 	production := batchowner.ProductionLandingLaneSeams()
 	production.Home = func() (string, error) { return bed.home, nil }
-	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, bed.seatA)}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		laneRoot: production.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	refused := inv.laneRegistered(nil)
 	if refused == nil || refused.Summary != "this computer has a landing lane, which lands only a goal's branch; nothing was landed" {
@@ -119,7 +120,7 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	bed := newLaneBed(t)
 	registerLane(t, bed.home, bed.landingA, "seat-a", laneTestNow)
 	bed.setRoot(t, bed.seatB, bed.landingB)
-	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatB}, owners: intentOwners{delivery: &intentDeliveryOwners{
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, bed.seatB)}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		laneRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	refused := inv.laneRegistered(nil)
 	if refused == nil || refused.Outcome != intentRefused {
@@ -186,7 +187,7 @@ func TestWorkLandNamesLandingSetForAnOlderLaneRecord(t *testing.T) {
 	if err := os.WriteFile(lane.RecordPath(bed.home), []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, bed.seatA)}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		laneRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	refused := inv.laneRegistered(nil)
 	if refused == nil || strings.Contains(refused.Summary, lane.CodeRecordIncomplete) || !strings.Contains(refused.Summary, "older engine") ||

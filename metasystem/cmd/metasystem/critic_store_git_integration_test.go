@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +47,9 @@ func TestCriticStoreGitIntegration(t *testing.T) {
 		if err := os.MkdirAll(install, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	write := func(path string, data []byte) {
 		t.Helper()
@@ -68,7 +72,7 @@ func TestCriticStoreGitIntegration(t *testing.T) {
 	// accept-risk at the primary: the review's chain is the goal worktree's.
 	job(goalInstall, map[string]any{"jobId": "crit1", "role": "code-critic", "status": "completed"})
 	job(goalInstall, map[string]any{"jobId": "crit1-r2", "role": "code-critic", "status": "completed", "parentJob": "crit1"})
-	atPrimary := &intentInvocation{stateRoot: primary, layout: stateroot.Layout{GitRoot: top, InstallationRoot: primary}, cwd: primary,
+	atPrimary := &intentInvocation{stateRoot: primary, layout: stateroot.Layout{GitRoot: top, InstallationRoot: stateroottest.Installation(t, primary)}, cwd: primary,
 		input: intentInput{values: map[string][]string{}}}
 	if root, problem := atPrimary.reviewRoot("g", "crit1-r2"); problem != nil || root != "crit1" {
 		t.Fatalf("accept-risk at the primary did not read the goal worktree's review: root %q, %+v", root, problem)
@@ -92,7 +96,7 @@ func TestCriticStoreGitIntegration(t *testing.T) {
 	decided := filepath.Join(goalInstall, "decided.md")
 	write(decided, []byte(reviewBinding{Goal: "g", Work: "main", Attempt: 1, Subject: subject, Examination: "crit3", Round: 1, Return: digest}.line()+"\n\n"+
 		deliveryDispositionsHeader))
-	fromWorktree := &intentInvocation{stateRoot: goalInstall, layout: stateroot.Layout{GitRoot: worktree, InstallationRoot: goalInstall}, cwd: goalInstall,
+	fromWorktree := &intentInvocation{stateRoot: goalInstall, layout: stateroot.Layout{GitRoot: worktree, InstallationRoot: stateroottest.Installation(t, goalInstall)}, cwd: goalInstall,
 		input: intentInput{values: map[string][]string{"dispositions": {decided}}}}
 	work := launch.NamedWork{Unit: "main", Record: &launch.UnitRunRecord{Worktree: worktree,
 		Subjects: []launch.UnitSubject{{Round: 1, Commit: subject, Examination: "crit3", ExaminationRound: 1}}}}

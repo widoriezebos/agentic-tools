@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -136,14 +138,16 @@ func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing
 	}
 }
 
-func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(t *testing.T) {
+// The checkout is the state root and its nested installation keeps the stop
+// fence: a mission launch reads the fence a stop closed there and refuses.
+func TestMissionFenceSeparatedRootsClassifiesAtTheNestedInstallationAndKeepsItsFenceClosed(t *testing.T) {
 	root := t.TempDir()
 	root, err := canonicalPath(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	installation := filepath.Join(root, "metasystem")
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1, installation: 1})
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +166,7 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
-	if err := stopfence.Write(root, stopfence.Record{
+	if err := stopfence.Write(installation, stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 4,
 		ChangedAt: "2026-09-08T04:00:00Z", Checkout: root,
 		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 72}},
@@ -170,9 +174,9 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 		t.Fatal(err)
 	}
 	var gotRoot, gotInstallation string
-	classify := func(stateRoot, installed string, _ int64) (lease.Classification, error) {
-		gotRoot, gotInstallation = stateRoot, installed
-		return lease.ClassifyAt(stateRoot, installed, caller)
+	classify := func(checkout, installed string, _ int64) (lease.Classification, error) {
+		gotRoot, gotInstallation = checkout, installed
+		return lease.ClassifyAt(checkout, installed, caller)
 	}
 	_, code := missionFenceBeforeArmWith(t.Output(), root, "start", repositoryTop, classify)
 	if code != 1 || gotRoot != root || gotInstallation != installation {
@@ -182,9 +186,44 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	if err != nil || classification.Class != lease.ClassDelegate {
 		t.Fatalf("nested installation did not classify the mission caller as an agent: %+v, %v", classification, err)
 	}
-	record, err := stopfence.Read(root)
+	record, err := stopfence.Read(installation)
 	if err != nil || record.State != stopfence.StateClosed || record.Generation != 4 {
 		t.Fatalf("agent-classified mission changed the fence: %#v, %v", record, err)
+	}
+	if _, err := os.Stat(stopfence.TransitionPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("a fence appeared under the state root: %v", err)
+	}
+}
+
+// A stop closed the installation's fence and its engine binary is gone: the
+// state root holds no fence, so neither the launch's fence check nor the
+// engine may read one there. Both refuse; nothing is classified or written.
+func TestMissionLaunchSeparatedRootsRefusesWhenTheInstallationHasNoEngine(t *testing.T) {
+	root := t.TempDir()
+	installation := filepath.Join(root, "metasystem")
+	installationShapeAt(t, installation)
+	if err := os.Remove(filepath.Join(installation, "bin", "metasystem")); err != nil {
+		t.Fatal(err)
+	}
+	if err := stopfence.Write(installation, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 6,
+		ChangedAt: "2026-10-03T00:00:00Z", Checkout: root, By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 73}}}); err != nil {
+		t.Fatal(err)
+	}
+	output, code := captureMissionStderr(t, func(_, stderr io.Writer) int {
+		_, code := missionFenceBeforeArmWith(stderr, root, "start", declaredRepositoryTop(t, root, map[string]int{root: 1}), nil)
+		return code
+	})
+	if code != 1 || !strings.HasPrefix(output, "mission start: "+noEngineRefusal+"\n") {
+		t.Fatalf("launch without an engine = code %d %q, want the refusal", code, output)
+	}
+	if engine, err := missionRunnerCommandEngineWith(root, "m-1", stateroot.RepositoryTop); engine != nil || err == nil || !strings.HasPrefix(err.Error(), noEngineRefusal) {
+		t.Fatalf("mission engine without an installation = %v, %v", engine, err)
+	}
+	if record, err := stopfence.Read(installation); err != nil || record.State != stopfence.StateClosed || record.Generation != 6 {
+		t.Fatalf("the installation's fence changed: %+v %v", record, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "artifacts")); !os.IsNotExist(err) {
+		t.Fatalf("a refused launch wrote under the state root: %v", err)
 	}
 }
 

@@ -119,7 +119,7 @@ func (inv *intentInvocation) finishReleaseSets(base string) {
 // stagedLandingPath is a staged landing's record of the goal's release set:
 // artifacts/agents/landing-intent/<goal>/staged-<commit>/landed.json.
 func (inv *intentInvocation) stagedLandingPath(goalID, commit string) (string, string) {
-	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "landing-intent", goalID, "staged-"+commit)
+	dir := inv.layout.InstallationRoot.Path("artifacts", "agents", "landing-intent", goalID, "staged-"+commit)
 	return dir, filepath.Join(dir, "landed.json")
 }
 

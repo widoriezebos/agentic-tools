@@ -58,6 +58,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -394,7 +395,7 @@ func TestASignedInBrowserLaunchEnrollsTheMachineAsTheHumansOwn(t *testing.T) {
 	bed := &signedInLaunchBed{
 		t: t,
 		roots: lifecycle.Roots{
-			Checkout: checkout, Installation: filepath.Join(checkout, signedInLaunchInstallation), StateRoot: canonicalTestDir(t),
+			Checkout: checkout, Installation: stateroottest.Installation(t, filepath.Join(checkout, signedInLaunchInstallation)), StateRoot: stateroottest.State(t, canonicalTestDir(t)),
 		},
 		destination: filepath.Join(landing, "agentic-tools-m1f"),
 		evidence:    canonicalTestDir(t),
@@ -406,8 +407,8 @@ func TestASignedInBrowserLaunchEnrollsTheMachineAsTheHumansOwn(t *testing.T) {
 	// 1. The starter, under a signed-in session whose proof is valid for
 	// this state root. The session's own Human is not the handle: the
 	// proof's is.
-	signed := signedSession(t, bed.roots.StateRoot, signedInLaunchReference)
-	if !signed.Proof.SessionValidFor(bed.roots.StateRoot) {
+	signed := signedSession(t, bed.roots.StateRoot.Path(), signedInLaunchReference)
+	if !signed.Proof.SessionValidFor(bed.roots.StateRoot.Path()) {
 		t.Fatal("the minted proof is not valid for the state root")
 	}
 	var spawned []string
@@ -425,7 +426,7 @@ func TestASignedInBrowserLaunchEnrollsTheMachineAsTheHumansOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the starter refused a signed-in launch: %v", err)
 	}
-	proof := filepath.Join(bed.roots.StateRoot, "artifacts", "agents", "authority", "proofs", launchProofOperation(started.Launch, starterNow)+".json")
+	proof := bed.roots.StateRoot.Path("artifacts", "agents", "authority", "proofs", launchProofOperation(started.Launch, starterNow)+".json")
 	if _, err := os.Stat(proof); err != nil {
 		t.Fatalf("the starter left no proof: %v", err)
 	}

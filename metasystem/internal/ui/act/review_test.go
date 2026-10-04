@@ -7,6 +7,7 @@ package act
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"os"
 	"path/filepath"
 	"strings"
@@ -236,9 +237,9 @@ func TestAVerdictIsComparedAgainUnderTheAuthoritysOwnLock(t *testing.T) {
 	authority := sessionFor(t, bed)
 	taken := authority.reads
 	var once sync.Once
-	authority.reads.fence = func(root string) error {
+	authority.reads.fence = func(installation stateroot.Installation) error {
 		once.Do(func() { write(t, record, withAnotherRoomsFinding("ui-between"), 0o644) })
-		return taken.fence(root)
+		return taken.fence(installation)
 	}
 	before := len(readGoal(t, bed, "ui-between").History)
 

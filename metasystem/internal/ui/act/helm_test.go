@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // helmRoots are the roots whose helm admits every caller in this test
@@ -51,7 +52,7 @@ func TestBootProofIgnoresTheHelm(t *testing.T) {
 	if err != nil || proof.Helm == nil {
 		t.Fatalf("the fixture's helm did not admit the test process: %+v %v", proof, err)
 	}
-	authority := Prove(root, root, int64(os.Getpid()), time.Now())
+	authority := Prove(root, stateroottest.Installation(t, root), int64(os.Getpid()), time.Now())
 	if authority.Proven() || !strings.Contains(authority.Reason(), "helm") {
 		t.Fatalf("a helm proof proved the interface: proven=%t reason=%q", authority.Proven(), authority.Reason())
 	}

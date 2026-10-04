@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -170,7 +171,7 @@ func composed(t *testing.T) Manifest {
 func rootsFor(t *testing.T) resolver.Roots {
 	t.Helper()
 	root := t.TempDir()
-	return resolver.Roots{Checkout: root, Installation: root, StateRoot: root}
+	return resolver.Roots{Checkout: root, Installation: stateroottest.Installation(t, root), StateRoot: stateroottest.State(t, root)}
 }
 
 // confFile is a seat that has moved one setting off its default, so the

@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -101,10 +102,16 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return contextVerbError(stderr, "status", err, *verbose)
 	}
-	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
+	// The thresholds and the call samples are the installation's
+	// configuration and run state, wherever the state root lives.
+	installation, err := installationFromRootFlag(*root)
+	if err != nil {
+		return contextVerbError(stderr, "status", err, *verbose)
+	}
+	role, reading, readErr := steward.ContextBudgetLine(installation, time.Now().UTC(), steward.ContextOptions{
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
 	})
-	window, windowErr := contextWindow(stateRoot)
+	window, windowErr := contextWindow(installation)
 	if *asJSON {
 		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
 	} else {
@@ -128,8 +135,8 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func contextWindow(root string) (contextWindowView, error) {
-	confPath := filepath.Join(root, "metasystem.conf")
+func contextWindow(installation stateroot.Installation) (contextWindowView, error) {
+	confPath := installation.Path("metasystem.conf")
 	settings := launch.DefaultSettings()
 	confExists := true
 	if _, statErr := os.Stat(confPath); os.IsNotExist(statErr) {
@@ -144,7 +151,7 @@ func contextWindow(root string) (contextWindowView, error) {
 	if err != nil {
 		return contextWindowView{}, err
 	}
-	budget, err := config.ContextBudget(root)
+	budget, err := config.ContextBudget(installation)
 	if err != nil {
 		return contextWindowView{}, err
 	}
@@ -245,8 +252,14 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
+	// Who is asking, the note directory and the transcript are read from the
+	// installation; the handoff record and its proof stay with the state root.
+	installation, err := installationFromRootFlag(*root)
+	if err != nil {
+		return contextVerbError(stderr, "handoff", err, *verbose)
+	}
 	if cancelSupplied {
-		caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
+		caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
 		if err != nil {
 			return contextVerbError(stderr, "handoff", err, *verbose)
 		}
@@ -256,7 +269,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 			canceller.Human = act
 			if caller.Class == lease.ClassHuman {
 				act.Proof, _ = proveSessionStopHuman(stateRoot, int64(os.Getppid()), time.Now().UTC())
-				holder, err := currentContextHandoffHolder(stateRoot)
+				holder, err := currentContextHandoffHolder(installation.Path())
 				if err != nil {
 					return contextVerbError(stderr, "handoff", err, *verbose)
 				}
@@ -295,7 +308,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if *note == "" {
 		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"}, *verbose)
 	}
-	caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
+	caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
@@ -304,7 +317,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	toplevel := contextHandoffToplevel(stateRoot)
-	readOptions := usagepkg.ReadOptions{Toplevel: toplevel, Installation: stateRoot}
+	readOptions := usagepkg.ReadOptions{Toplevel: toplevel, Installation: installation.Path()}
 	transcript, transcriptResolved := "", false
 	claudeMemory := ""
 	if caller.Runtime == "claude" {
@@ -327,7 +340,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
-	noteDirectory, err := config.ContextHandoffNoteDirectory(stateRoot, caller.Runtime, claudeMemory)
+	noteDirectory, err := config.ContextHandoffNoteDirectory(installation, caller.Runtime, claudeMemory)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
@@ -462,8 +475,11 @@ func contextHandoffToplevel(root string) string {
 	}
 }
 
-func contextHandoffCallerWithMachine(stateRoot string, resolveMachine func(string) (string, error)) (steward.HandoffCaller, error) {
-	classified, err := classifyContextHandoffCaller(stateRoot, stateRoot, int64(os.Getppid()))
+// contextHandoffCallerWithMachine classifies the caller from the
+// installation's announcements, custody records, adapters and steward
+// intents, all run state; the machine name is the state root's.
+func contextHandoffCallerWithMachine(installation stateroot.Installation, stateRoot string, resolveMachine func(string) (string, error)) (steward.HandoffCaller, error) {
+	classified, err := classifyContextHandoffCaller(installation.Path(), installation.Path(), int64(os.Getppid()))
 	if err != nil {
 		return steward.HandoffCaller{}, fmt.Errorf("who is asking for the handoff cannot be told: %w", err)
 	}
@@ -473,11 +489,11 @@ func contextHandoffCallerWithMachine(stateRoot string, resolveMachine func(strin
 	}
 	caller := steward.HandoffCaller{Class: classified.Class, MainId: classified.MainId, Machine: machine}
 	if classified.Class == lease.ClassDelegate {
-		jobID, active, err := steward.ConsumedActiveJob(stateRoot)
+		jobID, active, err := steward.ConsumedActiveJob(installation.Path())
 		if err != nil || !active {
 			return caller, err
 		}
-		delegate, err := hookContextHandoffDelegate(stateRoot, stateRoot, jobID, int64(os.Getppid()))
+		delegate, err := hookContextHandoffDelegate(installation.Path(), installation.Path(), jobID, int64(os.Getppid()))
 		if err == nil && delegate.Delegate && delegate.JobID == jobID {
 			caller.JobId = jobID
 		}
@@ -486,7 +502,7 @@ func contextHandoffCallerWithMachine(stateRoot string, resolveMachine func(strin
 	if classified.Class != lease.ClassMain || classified.Announcement == nil {
 		return caller, nil
 	}
-	holder, err := currentContextHandoffHolder(stateRoot)
+	holder, err := currentContextHandoffHolder(installation.Path())
 	if err != nil {
 		return steward.HandoffCaller{}, err
 	}

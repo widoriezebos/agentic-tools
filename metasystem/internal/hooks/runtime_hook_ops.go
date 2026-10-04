@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // Ops are the owner operations the runtime hook composes. Each method is one
@@ -21,14 +22,14 @@ type Ops interface {
 	// RuntimeNames is the registered runtime list, one name per line.
 	RuntimeNames() (string, int)
 	// StateRoot validates one installation and returns its state root.
-	StateRoot(installation string) (string, int)
+	StateRoot(installation roots.Installation) (string, int)
 	// HookDelegate proves exact delegate custody for a hook caller: the
 	// custody JSON with status 0, status 3 when the caller is no delegate.
-	HookDelegate(root, metasystemRoot, job string, callerPid int) (string, int)
+	HookDelegate(root string, metasystemRoot roots.Installation, job string, callerPid int) (string, int)
 	// FindAncestor walks up from pid to the first agent runtime ancestor.
-	FindAncestor(repo string, pid int, runtime string, allHosts bool) (string, int)
+	FindAncestor(installation roots.Installation, pid int, runtime string, allHosts bool) (string, int)
 	// Classify classifies a caller against the checkout lease.
-	Classify(root, metasystemRoot string, callerPid int) (string, int)
+	Classify(root string, metasystemRoot roots.Installation, callerPid int) (string, int)
 	// StartContext is a runtime's session-start context declaration.
 	StartContext(runtime string) (string, int)
 	// PeerSeat is the checkout's enrolled seat nickname, the seat its peer
@@ -57,7 +58,7 @@ type Ops interface {
 	// HookExpire records a Stop attempt the deadline parent expired.
 	HookExpire(repo string, elapsedSec int64) int
 	// HealthPreview renders the hook's health preview JSON.
-	HealthPreview(repo, metasystemRoot string) (string, int)
+	HealthPreview(repo string, metasystemRoot roots.Installation) (string, int)
 	// DigestPending reads the narrator digest since the last check-in;
 	// its diagnostic, when it fails, is the output.
 	DigestPending(repo string) (string, int)
@@ -84,7 +85,7 @@ type Ops interface {
 	// StopOutput maps one Stop presentation to the runtime's payload.
 	StopOutput(runtime, inputFile, outputFile string, stderr io.Writer) int
 	// EvidenceGC runs the installation's hook evidence collection.
-	EvidenceGC(installation string, output io.Writer) int
+	EvidenceGC(installation roots.Installation, output io.Writer) int
 	// Slug is the stable slug of a session, as announcement names use it.
 	Slug(value string) string
 	// TokenHex is a fresh random hexadecimal token of the given bytes.
@@ -93,20 +94,20 @@ type Ops interface {
 	Git(args ...string) (string, error)
 	// EngineBehind reports whether the installation's enrolled engine was
 	// built from sources the checkout's landed tree has moved past.
-	EngineBehind(installation, repo string) (bool, error)
+	EngineBehind(installation roots.Installation, repo string) (bool, error)
 	// UnmigratableRetainedPlans names retained executable plans whose stored
 	// argv a rebuilt engine could not run. The rearm is held while any exist.
 	UnmigratableRetainedPlans(repo string) ([]string, error)
 	// StartEngineRebuild starts a rebuild of the installation's engine
 	// detached from the hook, under the bootstrap fence, and returns at once.
 	// A rebuild already running is success.
-	StartEngineRebuild(installation string) error
+	StartEngineRebuild(installation roots.Installation) error
 }
 
 // UpRequest is one `up` invocation of the hook.
 type UpRequest struct {
 	Runtime          string
-	MetasystemRoot   string
+	MetasystemRoot   roots.Installation
 	Repo             string
 	Session          string
 	Pid              string
@@ -132,7 +133,7 @@ type HookCompletion struct {
 	Outcome      string
 	HealthLine   string
 	PayloadFile  string
-	Installation string
+	Installation roots.Installation
 	ReportID     string
 	ReportAlias  string
 	ReportPath   string
@@ -248,7 +249,7 @@ type DeadlineDeps struct {
 	// FixtureDeadline, when set, may replace the deadline timer with a
 	// fixture event for this installation (nil channel: no fixture). An
 	// error refuses the typed wait, as an unauthorized fixture event did.
-	FixtureDeadline func(ctx context.Context, installation string) (<-chan time.Time, error)
+	FixtureDeadline func(ctx context.Context, installation roots.Installation) (<-chan time.Time, error)
 	// ResolverAnswered, when set, is called once the record-coordinate
 	// resolver has answered and its answer is adoptable, so a fixture can
 	// order its deadline after the answer instead of racing the scheduler.

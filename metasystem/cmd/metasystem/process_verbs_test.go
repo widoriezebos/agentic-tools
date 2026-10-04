@@ -12,9 +12,12 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 func separateProcessScopeFixture(t *testing.T) (string, string) {
@@ -25,11 +28,17 @@ func separateProcessScopeFixture(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installation := filepath.Join(repo, "separate-engine")
+	// The named installation is a template installation outside the
+	// checkout's default places, so it is its own state root and its process
+	// records stay beside its engine.
+	installation := filepath.Join(repo, "separate-engine", "metasystem")
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return repo, installation
@@ -59,7 +68,7 @@ func declaredRepositoryTop(t *testing.T, top string, expected map[string]int) fu
 func runnableSeparateProcessScopeFixture(t *testing.T) (string, string) {
 	t.Helper()
 	repo, installation := separateProcessScopeFixture(t)
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\nmetasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	adapter := filepath.Join(installation, "scripts", "agents", "adapters", "fake.sh")
@@ -125,10 +134,10 @@ func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
 	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1})
 	scope, scale, code := parseProcessScopeWith(t.Output(), "arm", []string{"--repo", repo, "--installation", installation}, repositoryTop)
-	if code != 0 || scope.Checkout != repo || scope.Installation != installation || scope.Root != installation || scale < 1 {
+	if code != 0 || scope.Checkout != repo || scope.Installation.Path() != installation || scope.Root.Path() != installation || scale < 1 {
 		t.Fatalf("arm scope = %#v scale=%d code=%d", scope, scale, code)
 	}
-	if err := stopfence.Write(scope.Root, stopfence.Record{
+	if err := stopfence.Write(scope.Installation.Path(), stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 8,
 		ChangedAt: "2026-09-07T12:00:00Z", Checkout: scope.Checkout,
 		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}},
@@ -140,6 +149,126 @@ func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 	report, err := transition.Arm()
 	if err != nil || report.ExitCode != 0 || !strings.Contains(strings.Join(report.Lines, "\n"), "armed "+repo+" generation 9") {
 		t.Fatalf("separate-installation arm = %#v err=%v", report, err)
+	}
+}
+
+// TestProcessScopeSeparatedRootsKeepsRunStateInTheInstallation finds a
+// checkout's installation at <checkout>/metasystem that is not the template,
+// so its state root is the checkout. The stop fence and the records a stop
+// inventories are run state: the steward's arm checks the fence under the
+// installation's artifacts/, the stop transition opens it there, the status
+// reads it there, the stop finds jobs there, and the state root gains nothing.
+func TestProcessScopeSeparatedRootsKeepsRunStateInTheInstallation(t *testing.T) {
+	repo, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := filepath.Join(repo, "metasystem")
+	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1, installation: 1})
+
+	scope, err := resolveProcessScopeWith(repo, "", repositoryTop)
+	if err != nil || scope.Checkout != repo || scope.Installation.Path() != installation || scope.Root.Path() != repo ||
+		scope.Binary != filepath.Join(installation, "bin", "metasystem") {
+		t.Fatalf("scope = %#v err=%v, want the installation %s and the state root %s", scope, err, installation, repo)
+	}
+
+	if err := stopfence.Write(installation, stopfence.Record{
+		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 9,
+		ChangedAt: "2026-10-03T09:00:00Z", Checkout: repo, NotStopped: []stopfence.Survivor{},
+		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 4321}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var seeded string
+	effects := defaultProcessArmEffects()
+	effects.seed = func(root string) (stewardLandingRefSeed, error) { seeded = root; return stewardLandingRefSeed{}, nil }
+	effects.up = func(up.Options) up.Result { t.Fatal("supervision started under a closed fence"); return up.Result{} }
+	_, armErr := effects.steps(scope, 1, processArmAuthority{fixtureGranted: true})
+	var stopped *steward.StoppedError
+	if !errors.As(armErr, &stopped) || stopped.Checkout != installation || seeded != repo {
+		t.Fatalf("arm = %v seeded at %q, want the installation's closed fence to refuse the steward", armErr, seeded)
+	}
+	generation, err := processTransition(scope, 1).OpenFence("arm")
+	if err != nil || generation != 10 {
+		t.Fatalf("opening the fence = generation %d err=%v, want 10", generation, err)
+	}
+	if record, fence := processFence(scope); record.Generation != 10 || fence != stopfence.StateOpen+"/"+stopfence.PhaseArmed {
+		t.Fatalf("the status read the fence %q at generation %d, want the installation's open fence at 10", fence, record.Generation)
+	}
+	if _, err := os.Stat(stopfence.TransitionPath(installation)); err != nil {
+		t.Fatalf("no fence under the installation's artifacts/: %v", err)
+	}
+	entries, err := os.ReadDir(repo)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "metasystem" {
+		t.Fatalf("the state root holds %v (err %v); run state belongs to the installation", entries, err)
+	}
+	for root, id := range map[string]string{installation: "live", repo: "decoy"} {
+		path := filepath.Join(root, "artifacts", "agents", "jobs", id+".json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(`{"jobId":"`+id+`","status":"running"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, family := range processTransition(scope, 1).Families {
+		if family.Name() != "job" {
+			continue
+		}
+		items, err := family.Inventory()
+		if err != nil || len(items) != 1 || items[0].Key != "job:live" {
+			t.Fatalf("the stop's job inventory = %+v err=%v, want the installation's job only", items, err)
+		}
+		if outcome, err := family.Stop(items[0]); err != nil || !strings.Contains(outcome.Line, "job live") {
+			t.Fatalf("the stop handled %+v err=%v, want the installation's job", outcome, err)
+		}
+	}
+}
+
+// TestProcessScopeClassifierRefusesAStateRootAsTheInstallation classifies a
+// caller in a checkout whose installation carries no engine binary. The
+// checkout is a state root only, so the classifier refuses rather than read
+// runtime adapters there; once the checkout holds metasystem.conf, as a
+// self-hosted installation does, it classifies against the checkout.
+func TestProcessScopeClassifierRefusesAStateRootAsTheInstallation(t *testing.T) {
+	repo, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := filepath.Join(repo, "engine")
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(t.TempDir(), "identities.json")
+	if err := os.WriteFile(table, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 2})
+
+	_, err = classifyVerbCallerWith(repo, int64(os.Getpid()), repositoryTop)
+	if err == nil || !strings.Contains(err.Error(), "the installation that serves "+repo+" cannot be found") {
+		t.Fatalf("classification in a state root = %v, want a refusal naming %s", err, repo)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := classifyVerbCallerWith(repo, int64(os.Getpid()), repositoryTop)
+	if err != nil || result.Class != lease.ClassHuman {
+		t.Fatalf("classification in a self-hosted installation = %+v err=%v, want the terminal's human", result, err)
 	}
 }
 
@@ -223,7 +352,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	} {
 		t.Run(test.verb, func(t *testing.T) {
 			stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
-				_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem "+test.verb, repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
+				_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem "+test.verb, repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: stateroottest.Installation(t, installation), InstallationExplicit: true}, test.verb))
 				if authorized {
 					return 0
 				}
@@ -253,7 +382,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		t.Fatal(err)
 	}
 	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int {
-		_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem system start", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
+		_, authorized := requireHumanTerminalAtWith(stderr, installation, installation, "metasystem system start", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: stateroottest.Installation(t, installation), InstallationExplicit: true}, "arm"))
 		if authorized {
 			return 0
 		}
@@ -436,17 +565,19 @@ func printProcessReport(stdout io.Writer, report stoptransition.Report) int {
 
 func processScopeRefusal(stderr io.Writer, verb, repo, installation string, err error) int {
 	sentence := err.Error()
-	scope := processScope{Checkout: "<a path inside the checkout>", Installation: installation, InstallationExplicit: installation != ""}
+	checkout, named := "<a path inside the checkout>", installation
 	if strings.Contains(sentence, "carries no metasystem installation") {
-		scope.Checkout = strings.TrimSuffix(sentence, " carries no metasystem installation")
-		scope.Installation = "<dir>, where <dir> holds this checkout's bin/metasystem"
-		scope.InstallationExplicit = true
+		checkout = strings.TrimSuffix(sentence, " carries no metasystem installation")
+		named = "<dir>, where <dir> holds this checkout's bin/metasystem"
 	} else if strings.Contains(sentence, "carries no engine") {
-		scope.Checkout = repo
-		scope.Installation = "<dir>, where <dir> holds this checkout's bin/metasystem"
-		scope.InstallationExplicit = true
+		checkout = repo
+		named = "<dir>, where <dir> holds this checkout's bin/metasystem"
 	}
-	return refuseProcessVerbTo(stderr, verb, repo, sentence, "run: "+processVerbRetryCommand(scope, verb))
+	command := "metasystem " + publicProcessVerb(verb) + " --repo " + checkout
+	if named != "" {
+		command += " --installation " + named
+	}
+	return refuseProcessVerbTo(stderr, verb, repo, sentence, "run: "+command)
 }
 
 func runProcessStopWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier, stdout, stderr io.Writer) int {

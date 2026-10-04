@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // writeInputFile writes a text input under the command's starting directory
@@ -108,8 +109,8 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 		askPath := parkedHostFailureMission(t, b.root())
 		owners := b.owners()
 		var answers []string
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(_, _, answer string) error { answers = append(answers, answer); return nil }
 			return engine, nil
 		}

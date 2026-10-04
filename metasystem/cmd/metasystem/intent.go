@@ -699,7 +699,9 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err == nil {
 		inv.layout = layout
-		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		var root stateroot.State
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.stateRoot = root.Path()
 	}
 	if err != nil {
 		return inv.notARepository(path, err)

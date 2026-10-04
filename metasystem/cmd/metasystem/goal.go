@@ -584,7 +584,14 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 	}
 	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive, SessionAbsent: *sessionAbsent}
 	stateRoot, rootErr := goal.ResolveStateRoot(*root)
-	options.ContextLine = turnVerdictContextLine(*root, stateRoot, *runtimeName, *session, *transcript, now, rootErr)
+	// The context thresholds and samples are the installation's
+	// configuration and run state, so the line reads the installation the
+	// root names, apart from where the state root lives.
+	installation, contextErr := installationFromRootFlag(*root)
+	if rootErr != nil {
+		contextErr = rootErr
+	}
+	options.ContextLine = turnVerdictContextLine(installation, *runtimeName, *session, *transcript, now, contextErr)
 	if rootErr != nil {
 		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()
 	} else {
@@ -663,7 +670,7 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 	return 0
 }
 
-func turnVerdictContextLine(root, stateRoot, runtimeName, session, transcript string, now time.Time, rootErr error) string {
+func turnVerdictContextLine(installation stateroot.Installation, runtimeName, session, transcript string, now time.Time, rootErr error) string {
 	const contextPrefix = "CONTEXT: "
 	unknown := func(reason string) string {
 		reason = strings.ReplaceAll(strings.ReplaceAll(reason, "\r", " "), "\n", " ")
@@ -679,12 +686,12 @@ func turnVerdictContextLine(root, stateRoot, runtimeName, session, transcript st
 	if rootErr != nil {
 		return unknown(rootErr.Error())
 	}
-	budget, err := config.ContextBudget(root)
+	budget, err := config.ContextBudget(installation)
 	if err != nil {
 		return unknown(err.Error())
 	}
-	reading, err := usagepkg.LatestCall(stateRoot, runtimeName, session, usagepkg.ReadOptions{
-		Capability: usagepkg.PerCall, Transcript: transcript, Installation: root, Now: now, NonBlocking: true,
+	reading, err := usagepkg.LatestCall(installation, runtimeName, session, usagepkg.ReadOptions{
+		Capability: usagepkg.PerCall, Transcript: transcript, Installation: installation.Path(), Now: now, NonBlocking: true,
 	})
 	if err != nil {
 		return unknown(err.Error())

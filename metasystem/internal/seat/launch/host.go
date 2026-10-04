@@ -62,7 +62,12 @@ func (OSHost) Canonical(path string) (string, error) { return realpath.Resolve(p
 // StateRoot is the directory an installation keeps its ledger beneath, from
 // the state-root owner an existing checkout resolves it through.
 func (OSHost) StateRoot(installation string) (string, error) {
-	return stateroot.RootForInstallation(installation)
+	admitted, err := stateroot.ParseInstallation(installation)
+	if err != nil {
+		return "", err
+	}
+	state, err := stateroot.RootForInstallation(admitted)
+	return state.Path(), err
 }
 
 // EvidenceRoot is an installation's evidence root as the engine's one owner

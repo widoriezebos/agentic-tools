@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-var brainActorSitePattern = regexp.MustCompile(`goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller(With)?\(|lease\.ClassifyVerbAt\(e\.Root`)
+var brainActorSitePattern = regexp.MustCompile(`goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller(With)?\(|lease\.ClassifyVerbAt\(e\.(Root|installation\(\))`)
 
 var brainActorSiteExempt = regexp.MustCompile(`^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:`)
 
@@ -122,7 +122,7 @@ internal/dispatch/finding_register.go:	req := goal.VerbRequest{Endpoint: endpoin
 internal/dispatch/stop.go:				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage, Human: human},
 internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
 internal/goal/recover.go:		r.Actor.Human = by
-internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
+internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.installation(), e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}
 internal/ui/act/act.go:		Actor:           goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},

@@ -164,7 +164,7 @@ func installationOf(checkout string) string {
 		return checkout
 	}
 	if layout, err := stateroot.ResolveLayout(checkout); err == nil {
-		return layout.InstallationRoot
+		return layout.InstallationRoot.Path()
 	}
 	return checkout
 }

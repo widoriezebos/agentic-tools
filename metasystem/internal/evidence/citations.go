@@ -128,14 +128,14 @@ func CitationRoots(installation, extras string) ([]string, error) {
 		paths = append(paths, home.Path)
 	}
 	for _, name := range []string{"records", "memory", "plans", "docs"} {
-		paths = append(paths, filepath.Join(roots.StateRoot, name))
+		paths = append(paths, roots.StateRoot.Path(name))
 	}
 	for _, extra := range strings.Split(extras, ",") {
 		if extra = strings.TrimSpace(extra); extra == "" {
 			continue
 		}
 		if !filepath.IsAbs(extra) {
-			extra = filepath.Join(roots.StateRoot, extra)
+			extra = roots.StateRoot.Path(extra)
 		}
 		paths = append(paths, filepath.Clean(extra))
 	}

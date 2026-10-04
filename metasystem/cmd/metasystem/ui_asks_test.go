@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +32,7 @@ func TestUIAsksNamesTheQuestionRecordsItCouldNotRead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "q-1.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	asks := uiAsks(lifecycle.Roots{Checkout: t.TempDir(), StateRoot: state})
+	asks := uiAsks(lifecycle.Roots{Checkout: t.TempDir(), StateRoot: stateroottest.State(t, state)})
 	if read, err := asks(); err != nil || len(read) != 1 {
 		t.Fatalf("a whole channel = %v, %v; want the one question and no error", read, err)
 	}

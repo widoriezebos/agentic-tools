@@ -253,7 +253,7 @@ func (b *brainBed) boot(bound, deadlineMS int, publish ...string) brainBootOutpu
 		project: func(goal.Endpoint) (goal.Projection, error) {
 			return goal.Projection{Tree: &goal.TreeGoals{Live: b.live}}, nil
 		},
-		resolveLayout: brainBootTestLayoutReader(b.root),
+		resolveLayout: brainBootTestLayoutReader(b.t, b.root),
 	}
 	deps := brainBootDependencies{
 		ledgerIdentity: func(string) string { return brainBedLedger },
@@ -361,7 +361,7 @@ func TestBrainBedBootBound(t *testing.T) {
 func TestBrainBedBootErrors(t *testing.T) {
 	t.Parallel()
 	b, _ := declaredBootBed(t)
-	cursor := narratordigest.CursorPathWithLayoutReader(b.root, brainBootTestLayoutReader(b.root), "brain")
+	cursor := narratordigest.CursorPathWithLayoutReader(b.root, brainBootTestLayoutReader(b.t, b.root), "brain")
 	if err := os.MkdirAll(filepath.Dir(cursor), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestBrainBedBootStalled(t *testing.T) {
 	b.writeFile("artifacts/agents/supervision/last-census.json",
 		`{"verdict":"SUCCESS","completedAtEpoch":1788739200,"counts":{"CUSTODY":1,"ANNOUNCED":0,"UNTRACKED":0}}`+"\n")
 	b.writeFile("records/narrator-digest.log", "2026-09-07T00:00:00Z HIGHLIGHT — never read (source: fixture stalled)\n")
-	cursor := narratordigest.CursorPathWithLayoutReader(b.root, brainBootTestLayoutReader(b.root), "brain")
+	cursor := narratordigest.CursorPathWithLayoutReader(b.root, brainBootTestLayoutReader(b.t, b.root), "brain")
 
 	// The child published asks and stalled before the rest.
 	output := b.boot(10000, 1500, "asks")

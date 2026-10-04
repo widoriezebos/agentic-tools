@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -84,7 +85,7 @@ func (b *processBed) owners() intentOwners {
 			transition: func(scope processScope, scale int) *stoptransition.Transition {
 				// No process family is running in the bed: the transition's
 				// own fence, lock and report are what is exercised.
-				return &stoptransition.Transition{Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
+				return &stoptransition.Transition{Root: scope.Installation.Path(), Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families,
 					Self: func() (identity.Ref, error) { return self, nil }}
 			},
 			evidenceRoot: func(conf string) (config.EvidenceRoot, error) {
@@ -108,9 +109,7 @@ func (b *processBed) owners() intentOwners {
 			b.t.Errorf("a human start called the agent session start with %+v", options)
 			return up.Result{}
 		},
-		health: func(repo, installation string, now time.Time) steward.HealthVerdict {
-			return steward.PreviewHealthAt(repo, installation, now, nil)
-		},
+		health:    defaultProcessIntentOwners().health,
 		healthNow: func(string) (time.Time, error) { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC), nil },
 		launches:  func() *launch.Manager { return &launch.Manager{Store: launch.Store{Root: b.launchDir}} },
 		cancelDispatch: func(string, string) (map[string]any, int, error) {
@@ -132,7 +131,9 @@ func (b *processBed) owners() intentOwners {
 			}
 			return b.question, nil
 		},
-		mission: func(root, id string) (*missionrunner.Engine, error) { return missionrunner.NewEngine(root, id), nil },
+		mission: func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			return missionrunner.NewEngineAt(root, installation.Path(), id), nil
+		},
 		ui: func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) {
 			b.t.Error("the interface lifecycle was called")
 			return uiLifecycleResult{}, errors.New("unexpected")
@@ -396,8 +397,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 				resumed = append(resumed, process.argv)
 				return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
 			}})
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(string, string, string) error { return errors.New("anchor refused in the bed") }
 			return engine, nil
 		}
@@ -405,8 +406,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 3 || result.Outcome != intentRefused || missionAskAnswered(askPath) {
 			t.Fatalf("rolled-back answer = %d %+v", code, result)
 		}
-		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
-			engine := missionrunner.NewEngine(root, id)
+		owners.processes.mission = func(root string, installation stateroot.Installation, id string) (*missionrunner.Engine, error) {
+			engine := missionrunner.NewEngineAt(root, installation.Path(), id)
 			engine.AnchorEffect = func(string, string, string) error { return nil }
 			return engine, nil
 		}
@@ -680,7 +681,7 @@ func TestStatusBoardChecksClaimsAtTheStateRoot(t *testing.T) {
 	installation := filepath.Join(top, "metasystem")
 	var read []string
 	inv := &intentInvocation{
-		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: installation, InstallationRel: "metasystem", Template: true},
+		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: stateroottest.Installation(t, installation), InstallationRel: "metasystem", Template: true},
 		stateRoot: installation,
 		owners: intentOwners{delivery: &intentDeliveryOwners{boardView: func(ledgerRoot string, _ time.Time) board.View {
 			read = append(read, ledgerRoot)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // The Stop timeout is a sixty-second budget by default: the registration
@@ -40,12 +41,16 @@ type deadlineParent struct {
 
 	dir, stdoutPath, stderrPath, payloadPath string
 
-	installation, engine string
-	harnessRoot          string
-	session, repo        string
-	record               string
-	fromEngine           bool
-	logFailure           string
+	installation roots.Installation
+	engine       string
+	harnessRoot  string
+	session      string
+	// repo is the installation the engine resolved for the record
+	// coordinates: the refusal record and the hook log are its run state.
+	repo       roots.Installation
+	record     string
+	fromEngine bool
+	logFailure string
 
 	resolverDone    chan struct{}
 	resolvedSession string
@@ -101,7 +106,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 	p.startedMono = inv.Monotonic()
 	if world, ok := worldInstallation(ops, harnessRoot); ok {
 		p.installation = world
-		canonical := world + "/bin/metasystem"
+		canonical := world.Path() + "/bin/metasystem"
 		p.engine = inv.env("METASYSTEM_BIN")
 		if p.engine == "" {
 			p.engine = canonical
@@ -264,7 +269,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 		elapsed = 0
 	}
 	if p.repo != "" && p.engine != "" && inv.IsExecutable(p.engine) {
-		ops.HookExpire(p.repo, elapsed)
+		ops.HookExpire(p.repo.Path(), elapsed)
 	}
 	if published {
 		_, _ = io.WriteString(inv.Stdout, readFileString(p.stdoutPath))
@@ -286,7 +291,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 		// The refusal owner holds the locked occurrence record; its public
 		// response is replaced by the one-line unavailable form.
 		if _, status := ops.StopBlock(StopBlockRequest{
-			Class: "infrastructure", RefusalRecord: p.record, Session: p.session, OpenWorkRoot: p.repo,
+			Class: "infrastructure", RefusalRecord: p.record, Session: p.session, OpenWorkRoot: p.repo.Path(),
 			Cause: cause, Remedy: remedy, Detail: detail,
 		}); status != 0 {
 			recordFailure = "the stop-refusal record could not be read or atomically updated"
@@ -495,7 +500,7 @@ func (p *deadlineParent) captureCoordinates() {
 		p.session = p.resolvedSession
 	}
 	if oneLine(p.resolvedRoot) {
-		if repo, ok := physicalDirectory(p.resolvedRoot); ok {
+		if repo, ok := physicalInstallation(p.resolvedRoot); ok {
 			p.repo = repo
 		} else {
 			p.repo = ""
@@ -521,7 +526,7 @@ func (p *deadlineParent) resolveRecord() {
 	if slug == "" {
 		slug = "session"
 	}
-	p.record = p.repo + "/artifacts/agents/supervision/stop-refusals/" + slug + ".json"
+	p.record = p.repo.Path("artifacts", "agents", "supervision", "stop-refusals", slug+".json")
 }
 
 // payloadSession reads the session without the engine: the first plain
@@ -544,7 +549,7 @@ func (p *deadlineParent) logStopOutcome(outcome, measured string) {
 	if p.repo == "" {
 		return
 	}
-	directory := filepath.Join(p.repo, "artifacts", "agents", "supervision")
+	directory := p.repo.Path("artifacts", "agents", "supervision")
 	_ = os.MkdirAll(directory, 0o755)
 	elapsed := measured
 	if !digits.MatchString(elapsed) {
@@ -570,7 +575,7 @@ func (p *deadlineParent) logStopCondition(code, component string) {
 		p.logFailure = "the infrastructure stop condition could not be logged: the payload named no checkout"
 		return
 	}
-	logPath := filepath.Join(p.repo, "artifacts", "agents", "supervision", "hooks.log")
+	logPath := p.repo.Path("artifacts", "agents", "supervision", "hooks.log")
 	if os.MkdirAll(filepath.Dir(logPath), 0o755) != nil {
 		p.logFailure = "the infrastructure stop condition log directory could not be prepared"
 		return

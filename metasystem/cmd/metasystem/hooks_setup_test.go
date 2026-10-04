@@ -30,7 +30,7 @@ func checkLiveHooks(runtime, live, shipped string, resolve func(string) (statero
 	if err != nil {
 		return err
 	}
-	return hooks.CheckSettings(liveData, shippedData, runtime, layout.InstallationRel, layout.RepositoryRoot == layout.InstallationRoot)
+	return hooks.CheckSettings(liveData, shippedData, runtime, layout.InstallationRel, layout.RepositoryRoot == layout.InstallationRoot.Path())
 }
 
 func TestHooksCheckSupportsEveryHost(t *testing.T) {

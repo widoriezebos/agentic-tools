@@ -114,7 +114,7 @@ func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
 	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	product := filepath.Join(engine.Root, "product.txt")
 	patch := []byte("diff --git a/product.txt b/product.txt\n--- a/product.txt\n+++ b/product.txt\n@@ -1 +1 @@\n-A\n+B\n")
-	digest := (&wallPolicyBed{t: t, root: engine.Root, engine: engine}).authorization(recoveryPre, recoveryB, []string{"product.txt"}, patch, true, nil)
+	digest := (&wallPolicyBed{t: t, engine: engine}).authorization(recoveryPre, recoveryB, []string{"product.txt"}, patch, true, nil)
 	writeText(t, product, "C\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
 	entry := map[string]gittree.Entry{"product.txt": {Mode: "100644", OID: strings.Repeat("f", 40)}}
@@ -176,7 +176,7 @@ func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
 	}
 	// The ask arrives with the ladder's context: the human reads what
 	// the rung ruled out without reconstructing it from events.
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("the park must raise one wall-violation ask: %v", asks)
 	}
@@ -251,7 +251,7 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 	if reason := unresolvedTaint(state); reason != "undeclared host-authored change: x.txt" {
 		t.Fatalf("the park must carry the recovered offense verbatim: %q", reason)
 	}
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("the crash tail must raise one ask: %v", asks)
 	}
@@ -300,7 +300,7 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 	// The record rides into the acceptance payload, and a payload whose
 	// record disagrees with the gate's verdict is tampered evidence.
 	state := readTestDoc(t, statePath)
-	payload, consumed, err := wallEntryPayload(engine.Root, engine.Mission, "alpha-t1-live", state)
+	payload, consumed, err := wallEntryPayload(engine.installation(), engine.Mission, "alpha-t1-live", state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 	// but the chain already carries the turn's acceptance — the gate
 	// proceeds without a park and without resurrecting the record.
 	landed := readTestDoc(t, statePath)
-	fullPayload, fullConsumed, err := wallEntryPayload(engine.Root, engine.Mission, "alpha-t1-live", landed)
+	fullPayload, fullConsumed, err := wallEntryPayload(engine.installation(), engine.Mission, "alpha-t1-live", landed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestWallRecoveryLateMutationFailsTheReverification(t *testing.T) {
 	if reason := unresolvedTaint(state); !strings.Contains(reason, "late-mutation.txt") {
 		t.Fatalf("the park must carry the fresh violation: %q", reason)
 	}
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("the park must raise one ask: %v", asks)
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -2076,7 +2077,13 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 	if !validObligationState(proposed.State) {
 		return PublishResult{}, fmt.Errorf("unknown obligation state %q", proposed.State)
 	}
-	policy, err := config.CorrelationPolicy(r.Endpoint.Root)
+	// The policy slot is the installation's configuration: an endpoint root
+	// that holds no metasystem.conf is refused, never read as an empty slot.
+	installation, err := stateroot.ParseInstallation(r.Endpoint.Root)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	policy, err := config.CorrelationPolicy(installation)
 	if err != nil {
 		return PublishResult{}, err
 	}

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestCorrelationPolicyActivatesOnlyWithTheOneWordChoice(t *testing.T) {
@@ -24,7 +26,7 @@ func TestCorrelationPolicyActivatesOnlyWithTheOneWordChoice(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), content, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			got, err := CorrelationPolicy(root)
+			got, err := CorrelationPolicy(stateroottest.Installation(t, root))
 			if test.ok && (err != nil || got != test.want) {
 				t.Fatalf("choice %q did not activate exactly: got=%q err=%v", test.value, got, err)
 			}

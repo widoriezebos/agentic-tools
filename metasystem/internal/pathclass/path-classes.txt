@@ -16,6 +16,7 @@ install:deploy.json behavior
 install:testing-parallel-ratchet.json behavior
 install:testing-coverage-floors.json behavior
 install:testing-coverage-floors-linux.json behavior
+install:run-state-audit.json behavior
 install:cmd/ behavior
 install:internal/ behavior
 install:docs/ behavior

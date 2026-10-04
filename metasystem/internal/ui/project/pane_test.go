@@ -46,8 +46,8 @@ func goalFile(id, state, intent string) string {
 func seed(t *testing.T, roots Roots) string {
 	t.Helper()
 	state := ""
-	if roots.StateRoot != roots.Checkout {
-		state = relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+	if roots.StateRoot.Path() != roots.Checkout {
+		state = relativeTo(t, roots.Checkout, roots.StateRoot.Path()) + "/"
 	}
 
 	plant(t, roots.Checkout, state+"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n")
@@ -307,7 +307,7 @@ func TestPaneCarriesConcludedGoalsWithTheirState(t *testing.T) {
 
 	roots := selfHostedFixture(t)
 	seed(t, roots)
-	state := relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+	state := relativeTo(t, roots.Checkout, roots.StateRoot.Path()) + "/"
 	plant(t, roots.Checkout, state+"records/goals/dropped.md",
 		goalFile("dropped", "abandoned", "An idea nobody pursued"))
 
@@ -415,7 +415,7 @@ func TestPaneReadsTheSlicePlanOutOfTheRecordsThatHaveOne(t *testing.T) {
 	t.Parallel()
 	roots := selfHostedFixture(t)
 	seed(t, roots)
-	state := relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+	state := relativeTo(t, roots.Checkout, roots.StateRoot.Path()) + "/"
 
 	plant(t, roots.Checkout, state+"plans/goals/sliced-goal.md",
 		"# sliced-goal\n\n- State: claimed\n- Intent: The board reads a slice plan\n"+

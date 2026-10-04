@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -84,12 +85,21 @@ func newHookInstallation(t *testing.T) hookInstallation {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return hookInstallationAt(t, root)
+}
+
+// hookInstallationAt plants the installation shape at root.
+func hookInstallationAt(t *testing.T, root string) hookInstallation {
+	t.Helper()
 	for _, directory := range []string{"bin", "artifacts/agents"} {
 		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\nexit 97\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return hookInstallation{root: root}
@@ -193,34 +203,34 @@ func (f *fakeOps) RuntimeNames() (string, int) {
 	return "claude\ncodex\ndevin\nfake\n", 0
 }
 
-func (f *fakeOps) StateRoot(installation string) (string, int) {
+func (f *fakeOps) StateRoot(installation roots.Installation) (string, int) {
 	f.record("path state-root %s", installation)
 	if f.stateRoot != nil {
-		return f.stateRoot(installation)
+		return f.stateRoot(installation.Path())
 	}
-	return installation + "\n", 0
+	return installation.Path() + "\n", 0
 }
 
-func (f *fakeOps) HookDelegate(root, metasystemRoot, job string, callerPid int) (string, int) {
+func (f *fakeOps) HookDelegate(root string, metasystemRoot roots.Installation, job string, callerPid int) (string, int) {
 	f.record("lease hook-delegate root=%s job=%s caller=%d", root, job, callerPid)
 	if f.hookDelegate != nil {
-		return f.hookDelegate(root, metasystemRoot, job, callerPid)
+		return f.hookDelegate(root, metasystemRoot.Path(), job, callerPid)
 	}
 	return "", 3
 }
 
-func (f *fakeOps) FindAncestor(repo string, pid int, runtime string, allHosts bool) (string, int) {
+func (f *fakeOps) FindAncestor(installation roots.Installation, pid int, runtime string, allHosts bool) (string, int) {
 	f.record("proc find-ancestor pid=%d runtime=%s all-hosts=%t", pid, runtime, allHosts)
 	if f.findAncestor != nil {
-		return f.findAncestor(repo, pid, runtime, allHosts)
+		return f.findAncestor(installation.Path(), pid, runtime, allHosts)
 	}
 	return fmt.Sprintf(`{"runtime":%q,"pid":%d,"pidStartedAt":1700000000}`+"\n", f.identityRuntime, f.identityPid), 0
 }
 
-func (f *fakeOps) Classify(root, metasystemRoot string, callerPid int) (string, int) {
+func (f *fakeOps) Classify(root string, metasystemRoot roots.Installation, callerPid int) (string, int) {
 	f.record("lease classify caller=%d", callerPid)
 	if f.classify != nil {
-		return f.classify(root, metasystemRoot, callerPid)
+		return f.classify(root, metasystemRoot.Path(), callerPid)
 	}
 	return `{"class":"MAIN","mainId":"main-fixture","holder":true,"claimEpoch":7,"announcement":{"runtime":"claude","pid":4321,"pidStartedAt":1700000000,"ownerLineage":"fixture-lineage"}}` + "\n", 0
 }
@@ -335,7 +345,7 @@ func (f *fakeOps) HookExpire(repo string, elapsed int64) int {
 	return 0
 }
 
-func (f *fakeOps) HealthPreview(repo, metasystemRoot string) (string, int) {
+func (f *fakeOps) HealthPreview(repo string, metasystemRoot roots.Installation) (string, int) {
 	f.record("health --hook-preview")
 	if f.health != nil {
 		return f.health()
@@ -513,7 +523,7 @@ func writeTestFile(path, content string) int {
 	return 0
 }
 
-func (f *fakeOps) EvidenceGC(installation string, output io.Writer) int {
+func (f *fakeOps) EvidenceGC(installation roots.Installation, output io.Writer) int {
 	f.record("evidence-gc")
 	if f.evidenceGC != nil {
 		return f.evidenceGC(output)
@@ -551,7 +561,7 @@ func (f *fakeOps) ordinaryGit(args ...string) (string, error) {
 	return "", fmt.Errorf("fixture git: unexpected %s", joined)
 }
 
-func (f *fakeOps) EngineBehind(installation, repo string) (bool, error) {
+func (f *fakeOps) EngineBehind(installation roots.Installation, repo string) (bool, error) {
 	f.record("engine behind")
 	if f.engineBehind != nil {
 		return f.engineBehind()
@@ -567,7 +577,7 @@ func (f *fakeOps) UnmigratableRetainedPlans(repo string) ([]string, error) {
 	return nil, nil
 }
 
-func (f *fakeOps) StartEngineRebuild(installation string) error {
+func (f *fakeOps) StartEngineRebuild(installation roots.Installation) error {
 	f.record("start engine rebuild")
 	if f.rebuild != nil {
 		return f.rebuild()
@@ -640,7 +650,7 @@ func runHook(t *testing.T, installation hookInstallation, ops Ops, call hookCall
 	}
 	if call.fixtureDeadline != nil {
 		fixture := call.fixtureDeadline
-		inv.Deadline.FixtureDeadline = func(context.Context, string) (<-chan time.Time, error) { return fixture, nil }
+		inv.Deadline.FixtureDeadline = func(context.Context, roots.Installation) (<-chan time.Time, error) { return fixture, nil }
 	}
 	status := RunRuntimeHook(inv, ops)
 	return hookRun{status: status, stdout: stdout.String(), stderr: stderr.String()}

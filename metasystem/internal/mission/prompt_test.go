@@ -59,7 +59,7 @@ func TestAssemblePromptWithGoalSourceServesHeldGoal(t *testing.T) {
 	}}
 	source := &GoalSource{Endpoint: goal.Endpoint{Root: repo, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: raw}, Machine: machine}
 	output := filepath.Join(t.TempDir(), "prompt.md")
-	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+	if err := AssemblePromptWithGoalSource(repo, repo, "m1", "t1", output, source); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(output)
@@ -70,7 +70,7 @@ func TestAssemblePromptWithGoalSourceServesHeldGoal(t *testing.T) {
 		t.Fatal("held goal did not enter the real prompt")
 	}
 	raw.corrupt = true
-	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+	if err := AssemblePromptWithGoalSource(repo, repo, "m1", "t1", output, source); err != nil {
 		t.Fatal(err)
 	}
 	data, err = os.ReadFile(output)
@@ -81,7 +81,7 @@ func TestAssemblePromptWithGoalSourceServesHeldGoal(t *testing.T) {
 		t.Fatal("corrupt accepted source served a goal")
 	}
 	source.Endpoint.Repository = nil
-	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+	if err := AssemblePromptWithGoalSource(repo, repo, "m1", "t1", output, source); err != nil {
 		t.Fatal(err)
 	}
 	data, err = os.ReadFile(output)
@@ -144,10 +144,10 @@ func TestAssemblePromptByteStable(t *testing.T) {
 	out1 := filepath.Join(t.TempDir(), "prompt-1.txt")
 	out2 := filepath.Join(t.TempDir(), "prompt-2.txt")
 
-	if err := AssemblePrompt(repo, "m1", "t1", out1); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out1); err != nil {
 		t.Fatal(err)
 	}
-	if err := AssemblePrompt(repo, "m1", "t1", out2); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out2); err != nil {
 		t.Fatal(err)
 	}
 	first, err := os.ReadFile(out1)
@@ -199,7 +199,7 @@ func TestAssemblePromptByteStable(t *testing.T) {
 func TestAssemblePromptOrdersAndFramesData(t *testing.T) {
 	repo := promptSandbox(t)
 	out := filepath.Join(t.TempDir(), "prompt.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(out)
@@ -295,7 +295,7 @@ func TestAssemblePromptReconciliationSurfacesPriorTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(t.TempDir(), "prompt.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(out)
@@ -317,10 +317,10 @@ func TestAssemblePromptReconciliationSurfacesPriorTurn(t *testing.T) {
 func TestAssemblePromptRejectsBadIdentity(t *testing.T) {
 	repo := promptSandbox(t)
 	out := filepath.Join(t.TempDir(), "prompt.txt")
-	if err := AssemblePrompt(repo, "M1", "t1", out); err == nil {
+	if err := AssemblePrompt(repo, repo, "M1", "t1", out); err == nil {
 		t.Fatal("an id outside the grammar must be refused")
 	}
-	if err := AssemblePrompt(repo, "m1", "does-not-exist", out); err == nil {
+	if err := AssemblePrompt(repo, repo, "m1", "does-not-exist", out); err == nil {
 		t.Fatal("a missing turn record must be refused")
 	}
 }
@@ -338,7 +338,7 @@ func TestAssemblePromptEnforcesSizeCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "plans/mission-m1.contract.md"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = AssemblePrompt(repo, "m1", "t1", out)
+	err = AssemblePrompt(repo, repo, "m1", "t1", out)
 	if err == nil {
 		t.Fatal("a prompt over the size ceiling must be refused")
 	}
@@ -452,7 +452,7 @@ func TestPromptGoalSection(t *testing.T) {
 
 	// Absent ledger: no line, assembly clean.
 	out := filepath.Join(t.TempDir(), "prompt-absent.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(out)
@@ -475,7 +475,7 @@ func TestPromptGoalSection(t *testing.T) {
 	gs.accept(t, seedLedger)
 
 	out2 := filepath.Join(t.TempDir(), "prompt-goal.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out2); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out2); err != nil {
 		t.Fatal(err)
 	}
 	text, _ := os.ReadFile(out2)
@@ -490,7 +490,7 @@ func TestPromptGoalSection(t *testing.T) {
 	// assembly still succeeds.
 	write("plans/goals.md", seedLedger+"\n## Queued goal: extra — More\n- Origin: main\n- Next step: Q.\n")
 	out3 := filepath.Join(t.TempDir(), "prompt-degraded.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out3); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out3); err != nil {
 		t.Fatal(err)
 	}
 	text3, _ := os.ReadFile(out3)
@@ -551,7 +551,7 @@ func TestAssemblePromptCarriesHumanAnswers(t *testing.T) {
 			`"turnLog":[]}`)
 
 	out := filepath.Join(t.TempDir(), "prompt.txt")
-	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(out)

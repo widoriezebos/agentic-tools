@@ -350,7 +350,7 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 		previous = healthRecord{}
 	}
 	roles, spendObservation := evaluate(repoRoot, repoRoot, now.UTC(), prober, false)
-	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
+	if stopped, err := healthStopped(repoRoot, repoRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
 		return HealthVerdict{}, err
 	} else if stopped != nil {
 		return *stopped, nil
@@ -381,19 +381,26 @@ func PreviewHealth(repoRoot string, now time.Time, prober identity.Prober) Healt
 }
 
 // PreviewHealthAt reads durable health state from repoRoot and installed
-// configuration and adapters from metasystemRoot.
+// configuration, adapters and the stop fence from metasystemRoot.
 func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober) HealthVerdict {
-	return previewHealthAtWithMeasure(repoRoot, metasystemRoot, now, prober, measureSpend)
+	return previewHealthAtWithMeasure(repoRoot, repoRoot, metasystemRoot, now, prober, measureSpend)
+}
+
+// PreviewInstalledHealth reads the run-state roles (steward, supervision,
+// sessions, jobs, proofs) and the stop fence from installation, where the
+// process verbs arm and stop them, and the other roles from stateRoot.
+func PreviewInstalledHealth(stateRoot, installation string, now time.Time, prober identity.Prober) HealthVerdict {
+	return previewHealthAtWithMeasure(stateRoot, installation, installation, now, prober, measureSpend)
 }
 
 type spendMeasureFunc func(string, string, time.Time) (spend.Ledger, error)
 
-func previewHealthAtWithMeasure(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, measure spendMeasureFunc) HealthVerdict {
+func previewHealthAtWithMeasure(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, measure spendMeasureFunc) HealthVerdict {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles, spendObservation := evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot, now.UTC(), prober, true, measure)
-	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
+	roles, spendObservation := evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot, now.UTC(), prober, true, measure)
+	if stopped, err := healthStopped(metasystemRoot, repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
 		return *stopped
 	}
 	aggregate := "healthy"
@@ -412,8 +419,10 @@ func previewHealthAtWithMeasure(repoRoot, metasystemRoot string, now time.Time, 
 	}
 }
 
-func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend SpendObservation, state HealthObservationState) (*HealthVerdict, error) {
-	closed, record, err := stopfence.Closed(repoRoot)
+// healthStopped reads the stop fence under fenceRoot, the installation whose
+// process records it guards, and words its remedy for the repository.
+func healthStopped(fenceRoot, repoRoot string, now time.Time, roles []RoleVerdict, spend SpendObservation, state HealthObservationState) (*HealthVerdict, error) {
+	closed, record, err := stopfence.Closed(fenceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("read process-creation fence for health: %w", err)
 	}
@@ -453,15 +462,17 @@ func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend Sp
 }
 
 func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {
-	return evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot, now, prober, currentHookAttempt, measureSpend)
+	return evaluateHealthRolesWithMeasure(repoRoot, repoRoot, metasystemRoot, now, prober, currentHookAttempt, measureSpend)
 }
 
-func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc) ([]RoleVerdict, SpendObservation) {
-	return evaluateHealthRolesWithLedger(repoRoot, metasystemRoot, now, prober, currentHookAttempt, measure, newHealthLedger(repoRoot, now))
+func evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc) ([]RoleVerdict, SpendObservation) {
+	return evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot, now, prober, currentHookAttempt, measure, newHealthLedger(repoRoot, now))
 }
 
-func evaluateHealthRolesWithLedger(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc, ledger *healthLedger) ([]RoleVerdict, SpendObservation) {
-	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
+// evaluateHealthRolesWithLedger reads the roles kept wholly in run state under
+// runRoot; the roles that also read the goal ledger or registers use repoRoot.
+func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc, ledger *healthLedger) ([]RoleVerdict, SpendObservation) {
+	state, stateErr := readHealthObject(filepath.Join(runRoot, "artifacts", "agents", "supervision", "state.json"))
 	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
@@ -472,29 +483,29 @@ func evaluateHealthRolesWithLedger(repoRoot, metasystemRoot string, now time.Tim
 		return role
 	}
 	return []RoleVerdict{
-		timed(func() RoleVerdict { return checkStewardRunner(repoRoot, now, prober) }),
-		timed(func() RoleVerdict { return checkSupervisionOwner(repoRoot, prober) }),
-		timed(func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, prober) }),
-		timed(func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) }),
-		timed(func() RoleVerdict { return checkNarratorFreshness(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkStewardRunner(runRoot, now, prober) }),
+		timed(func() RoleVerdict { return checkSupervisionOwner(runRoot, prober) }),
+		timed(func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
+		timed(func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
+		timed(func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
 		timed(func() RoleVerdict { return checkRetroDebt(repoRoot) }),
-		timed(func() RoleVerdict { return checkSessionMain(repoRoot, prober) }),
-		timed(func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHookAttempt) }),
-		timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) }),
-		timed(func() RoleVerdict { return checkContextBudget(repoRoot, metasystemRoot, now, prober) }),
+		timed(func() RoleVerdict { return checkSessionMain(runRoot, prober) }),
+		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
+		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
+		timed(func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
-		timed(func() RoleVerdict { return checkSeatPresence(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
 		timed(func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
 		timed(func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
 		timed(func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
 		spendRole,
 		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
-		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAdmission(repoRoot, now, inspectHostLeases) }),
-		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
-		timed(func() RoleVerdict { return checkDisk(repoRoot) }),
+		timed(func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
+		timed(func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
+		timed(func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
+		timed(func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
+		timed(func() RoleVerdict { return checkDisk(runRoot) }),
 	}, spendObservation
 }
 

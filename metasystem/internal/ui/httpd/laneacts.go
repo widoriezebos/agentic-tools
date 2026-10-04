@@ -63,7 +63,7 @@ func (h *handler) signedPerson(w http.ResponseWriter, r *http.Request, needs str
 	if !ok {
 		return "", false
 	}
-	hand, err := act.SignedIn(h.info.Sessions.Root(), signed.Human, signed.Reference, signed.Proof)
+	hand, err := act.SignedIn(h.info.Sessions.Root(), h.info.Installation, signed.Human, signed.Reference, signed.Proof)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		writeSignInRefusal(w, "session", err.Error())

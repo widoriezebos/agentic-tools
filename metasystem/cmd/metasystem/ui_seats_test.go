@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -88,14 +89,14 @@ func (b *uiSeatsBed) seat(name string) uiSeat {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		b.t.Fatal(err)
 	}
-	return uiSeat{Name: name, Checkout: root, Roots: lifecycle.Roots{Checkout: root, Installation: root, StateRoot: root}}
+	return uiSeat{Name: name, Checkout: root, Roots: lifecycle.Roots{Checkout: root, Installation: stateroottest.Installation(b.t, root), StateRoot: stateroottest.State(b.t, root)}}
 }
 
 // live writes the seat's record of a server at pid and address, and its
 // unheld lock, as the server writes them; the prober answers pid state.
 func (b *uiSeatsBed) live(s uiSeat, pid int64, address string, state identity.Liveness) {
 	b.t.Helper()
-	uiSeatsWriteRecord(b.t, s.Roots.StateRoot, pid, address)
+	uiSeatsWriteRecord(b.t, s.Roots.Installation.Path(), pid, address)
 	b.prober[pid] = state
 }
 
@@ -103,7 +104,7 @@ func (b *uiSeatsBed) live(s uiSeat, pid int64, address string, state identity.Li
 // its metasystem.conf.
 func (b *uiSeatsBed) engine(s uiSeat, content string) string {
 	b.t.Helper()
-	path := filepath.Join(s.Roots.Installation, "bin", "metasystem")
+	path := s.Roots.Installation.Path("bin", "metasystem")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		b.t.Fatal(err)
 	}
@@ -115,29 +116,29 @@ func (b *uiSeatsBed) engine(s uiSeat, content string) string {
 
 func (b *uiSeatsBed) conf(s uiSeat, body string) {
 	b.t.Helper()
-	if err := os.WriteFile(filepath.Join(s.Roots.Installation, "metasystem.conf"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(s.Roots.Installation.Path("metasystem.conf"), []byte(body), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
 }
 
-func uiSeatsWriteRecord(t *testing.T, stateRoot string, pid int64, address string) {
+func uiSeatsWriteRecord(t *testing.T, installation string, pid int64, address string) {
 	t.Helper()
 	process, err := identity.EncodeRef(uiSeatsExact(pid).Ref())
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(lifecycle.Record{SchemaVersion: 1, Process: process, Address: address, Checkout: stateRoot, Installation: stateRoot,
+	encoded, err := json.Marshal(lifecycle.Record{SchemaVersion: 1, Process: process, Address: address, Checkout: installation, Installation: installation,
 		StartedAt: "2026-09-30T10:00:00Z", EngineBuild: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(lifecycle.Dir(stateRoot), 0o755); err != nil {
+	if err := os.MkdirAll(lifecycle.Dir(installation), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(lifecycle.Dir(stateRoot), "server.json"), append(encoded, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(lifecycle.Dir(installation), "server.json"), append(encoded, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	lock, err := os.OpenFile(filepath.Join(lifecycle.Dir(stateRoot), "server.flock"), os.O_RDWR|os.O_CREATE, 0o644)
+	lock, err := os.OpenFile(filepath.Join(lifecycle.Dir(installation), "server.flock"), os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,16 +147,16 @@ func uiSeatsWriteRecord(t *testing.T, stateRoot string, pid int64, address strin
 	}
 }
 
-func uiSeatsHasRecord(stateRoot string) bool {
-	_, err := os.Stat(filepath.Join(lifecycle.Dir(stateRoot), "server.json"))
+func uiSeatsHasRecord(installation string) bool {
+	_, err := os.Stat(filepath.Join(lifecycle.Dir(installation), "server.json"))
 	return err == nil
 }
 
 // uiSeatsHoldLock holds the seat's lock as a running server does, until
 // the returned release.
-func uiSeatsHoldLock(t *testing.T, stateRoot string) func() {
+func uiSeatsHoldLock(t *testing.T, installation string) func() {
 	t.Helper()
-	lock, err := os.OpenFile(filepath.Join(lifecycle.Dir(stateRoot), "server.flock"), os.O_RDWR|os.O_CREATE, 0o644)
+	lock, err := os.OpenFile(filepath.Join(lifecycle.Dir(installation), "server.flock"), os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,19 +216,19 @@ func TestUIStopStopsTheOneOtherSeatsInterface(t *testing.T) {
 	b := newUISeatsBed(t)
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(other, 5201, "127.0.0.1:7878", identity.Alive)
-	before := idemTreeDigest(t, a.Roots.StateRoot)
+	before := idemTreeDigest(t, a.Roots.Installation.Path())
 	got := uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(uiSeatsOf("m1e", other)))
 	if !slices.Equal(b.sent, []uiSeatsSignal{{5201, syscall.SIGTERM}}) {
 		t.Fatalf("signals = %v, want one SIGTERM to 5201; result %+v", b.sent, got)
 	}
-	if uiSeatsHasRecord(other.Roots.StateRoot) {
+	if uiSeatsHasRecord(other.Roots.Installation.Path()) {
 		t.Fatalf("the stopped seat's record remains")
 	}
 	if got.Result.Code != 0 || got.Unchanged || got.Seat == nil || got.Seat.Name != "ui" || got.Seat.Checkout != other.Checkout ||
 		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; stopped the interface of machine ui (pid 5201, :7878)"}) {
 		t.Fatalf("stop from another seat = %+v", got)
 	}
-	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.StateRoot))
+	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.Installation.Path()))
 }
 
 // TestUIStopWithSeveralOtherSeatsStopsNoneAndListsEach (D-stop, several).
@@ -239,7 +240,7 @@ func TestUIStopWithSeveralOtherSeatsStopsNoneAndListsEach(t *testing.T) {
 	b.live(second, 5202, "127.0.0.1:7879", identity.Alive)
 	got := uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(uiSeatsOf("m1e", first, second)))
 	text := uiSeatsText(got)
-	if len(b.sent) != 0 || !uiSeatsHasRecord(first.Roots.StateRoot) || !uiSeatsHasRecord(second.Roots.StateRoot) {
+	if len(b.sent) != 0 || !uiSeatsHasRecord(first.Roots.Installation.Path()) || !uiSeatsHasRecord(second.Roots.Installation.Path()) {
 		t.Fatalf("several running seats: signals %v, result %+v", b.sent, got)
 	}
 	if got.Result.Code != 1 || got.Unchanged || got.Seat != nil || len(got.Seats) != 2 ||
@@ -258,14 +259,14 @@ func TestUIStopOnAnotherSeatKeepsTheIdentityProof(t *testing.T) {
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(other, 5203, "127.0.0.1:7878", identity.Unknown)
 	got := uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(uiSeatsOf("m1e", other)))
-	if len(b.sent) != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 || got.Unchanged ||
+	if len(b.sent) != 0 || !uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 1 || got.Unchanged ||
 		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; machine ui: cannot prove pid 5203 is the interface server; nothing was changed"}) {
 		t.Fatalf("an uninspectable seat = signals %v, %+v", b.sent, got)
 	}
 
 	b.prober[5203] = identity.Dead
 	got = uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(uiSeatsOf("m1e", other)))
-	if len(b.sent) != 0 || uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 0 || !got.Unchanged ||
+	if len(b.sent) != 0 || uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 0 || !got.Unchanged ||
 		!slices.Equal(got.Result.Lines, []string{"interface not running"}) {
 		t.Fatalf("a dead seat's record = signals %v, %+v", b.sent, got)
 	}
@@ -334,7 +335,7 @@ func TestUIStopRefusesAcrossSeatsWhenTheInventoryIsIncomplete(t *testing.T) {
 	}
 	got := uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(incomplete))
 	text := uiSeatsText(got)
-	if len(b.sent) != 0 || !uiSeatsHasRecord(lane.Roots.StateRoot) || !uiSeatsHasRecord(missing.Roots.StateRoot) || got.Result.Code != 1 || got.Unchanged ||
+	if len(b.sent) != 0 || !uiSeatsHasRecord(lane.Roots.Installation.Path()) || !uiSeatsHasRecord(missing.Roots.Installation.Path()) || got.Result.Code != 1 || got.Unchanged ||
 		!strings.Contains(text, "the machines of this computer could not all be read: "+problem+"; nothing was stopped") ||
 		!strings.Contains(text, "metasystem ui stop --repo "+lane.Checkout) || !slices.Equal(got.SeatsProblems, []string{problem}) {
 		t.Fatalf("an incomplete inventory = signals %v, %+v", b.sent, got)
@@ -367,9 +368,9 @@ func TestUIStopTimeoutWithHeldLock(t *testing.T) {
 	b.after = uiSeatsFiredAfter
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(other, 5212, "127.0.0.1:7878", identity.Alive)
-	release := uiSeatsHoldLock(t, other.Roots.StateRoot)
+	release := uiSeatsHoldLock(t, other.Roots.Installation.Path())
 	got := uiLifecycleRunWith("stop", a.Roots, "", 0, b.effects(uiSeatsOf("m1e", other)))
-	if !slices.Equal(b.sent, []uiSeatsSignal{{5212, syscall.SIGTERM}}) || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 || got.Unchanged ||
+	if !slices.Equal(b.sent, []uiSeatsSignal{{5212, syscall.SIGTERM}}) || !uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 1 || got.Unchanged ||
 		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; machine ui: interface (pid 5212) did not stop within 0s; it was sent SIGTERM and left running"}) {
 		t.Fatalf("a seat that keeps its lock = signals %v, %+v", b.sent, got)
 	}
@@ -468,7 +469,7 @@ func TestUIOtherSeatsAreTheMachinesOfThisComputer(t *testing.T) {
 		t.Fatalf("inventory = %+v, want %v", inventory, want)
 	}
 	for _, s := range inventory.Seats {
-		if s.Roots.Checkout != s.Checkout || s.Roots.Installation != s.Checkout || s.Roots.StateRoot != s.Checkout {
+		if s.Roots.Checkout != s.Checkout || s.Roots.Installation.Path() != s.Checkout || s.Roots.StateRoot.Path() != s.Checkout {
 			t.Fatalf("seat %s roots = %+v", s.Name, s.Roots)
 		}
 	}
@@ -506,7 +507,7 @@ func TestUIStopRefusesReportProblemsWithNilError(t *testing.T) {
 			m := newMachineBed(t)
 			m.fleetEdit = leg.edit
 			u := newUISeatsBed(t)
-			u.live(uiSeat{Roots: lifecycle.Roots{StateRoot: m.landing}}, 5301, "127.0.0.1:7878", identity.Alive)
+			u.live(uiSeat{Roots: lifecycle.Roots{Installation: stateroottest.Installation(t, m.landing)}}, 5301, "127.0.0.1:7878", identity.Alive)
 			code, result, data := uiSeatsRunVerb(m, func(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
 				return uiLifecycleRunWith(verb, roots, "", 0, u.effects(options.seats)), nil
 			}, "ui", "stop")
@@ -593,10 +594,10 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 	// The child announces another address than it was asked for: the
 	// report carries what Launch returned (AM-02).
 	b.ready = "127.0.0.1:8766"
-	before := idemTreeDigest(t, a.Roots.StateRoot)
+	before := idemTreeDigest(t, a.Roots.Installation.Path())
 	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
 	if !slices.Equal(b.sent, []uiSeatsSignal{{5501, syscall.SIGTERM}}) || len(b.specs) != 1 ||
-		!slices.Equal(uiSeatsSpawned(b.specs[0]), []string{engine, other.Checkout, other.Roots.Installation, "127.0.0.1:8765"}) {
+		!slices.Equal(uiSeatsSpawned(b.specs[0]), []string{engine, other.Checkout, other.Roots.Installation.Path(), "127.0.0.1:8765"}) {
 		t.Fatalf("restart of the other seat = signals %v launches %+v, %+v", b.sent, b.specs, got)
 	}
 	if got.Result.Code != 0 || got.Seat == nil || got.Seat.Name != "ui" || got.Restart == nil || got.Restart.Stop != lifecycle.StoppedNow ||
@@ -604,7 +605,7 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; restarted the interface of machine ui (pid 5501 -> 4343, :8766)"}) {
 		t.Fatalf("restart of the other seat = %+v %+v", got, got.Restart)
 	}
-	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.StateRoot))
+	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.Installation.Path()))
 
 	// A --listen typed takes precedence over the target's own address.
 	typed := newUISeatsBed(t)
@@ -625,7 +626,7 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 	invalid.engine(other, "engine of ui")
 	invalid.conf(other, "ui.listen=example.com:80\n")
 	got = uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, invalid.effects(uiSeatsOf("m1e", other)))
-	if len(invalid.sent) != 0 || invalid.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
+	if len(invalid.sent) != 0 || invalid.spawns != 0 || !uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 1 ||
 		len(got.Result.Lines) != 1 || !strings.Contains(got.Result.Lines[0], "the listen address must use a loopback IP literal") || !strings.Contains(got.Result.Lines[0], "nothing was done") {
 		t.Fatalf("restart at an invalid address = signals %v spawns %d, %+v", invalid.sent, invalid.spawns, got)
 	}
@@ -640,8 +641,8 @@ func TestUIStartLaunchesTheTargetInstallationsEngine(t *testing.T) {
 	a, other := b.seat("m1e"), b.seat("ui")
 	own := b.engine(a, "engine of m1e")
 	got := uiLifecycleRunWith("start", a.Roots, "127.0.0.1:9999", 0, b.effects(uiSeatsOf("m1e", other)))
-	if got.Result.Code != 0 || len(b.specs) != 1 || !slices.Equal(uiSeatsSpawned(b.specs[0]), []string{own, a.Checkout, a.Roots.Installation, "127.0.0.1:9999"}) ||
-		!slices.Contains(b.engines, a.Roots.Installation) {
+	if got.Result.Code != 0 || len(b.specs) != 1 || !slices.Equal(uiSeatsSpawned(b.specs[0]), []string{own, a.Checkout, a.Roots.Installation.Path(), "127.0.0.1:9999"}) ||
+		!slices.Contains(b.engines, a.Roots.Installation.Path()) {
 		t.Fatalf("start = launches %+v engines %v, %+v", b.specs, b.engines, got)
 	}
 
@@ -650,7 +651,7 @@ func TestUIStartLaunchesTheTargetInstallationsEngine(t *testing.T) {
 	third := b.seat("landing")
 	got = uiLifecycleRunWith("restart", third.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("landing", other)))
 	if got.Result.Code != 0 || len(b.specs) != 2 || uiSeatsSpawned(b.specs[1])[0] != theirs || uiSeatsSpawned(b.specs[1])[1] != other.Checkout ||
-		uiSeatsSpawned(b.specs[1])[2] != other.Roots.Installation || !slices.Contains(b.engines, other.Roots.Installation) {
+		uiSeatsSpawned(b.specs[1])[2] != other.Roots.Installation.Path() || !slices.Contains(b.engines, other.Roots.Installation.Path()) {
 		t.Fatalf("restart of another seat = launches %+v engines %v, %+v", b.specs, b.engines, got)
 	}
 }
@@ -664,13 +665,13 @@ func TestUIRestartRefusesWhenTheTargetEngineIsMissing(t *testing.T) {
 	b.live(other, 5505, "127.0.0.1:8765", identity.Alive)
 	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
 	text := uiSeatsText(got)
-	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
-		!strings.Contains(text, other.Roots.Installation) || !strings.Contains(text, "carries no engine at bin/metasystem") {
+	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 1 ||
+		!strings.Contains(text, other.Roots.Installation.Path()) || !strings.Contains(text, "carries no engine at bin/metasystem") {
 		t.Fatalf("restart of a seat without an engine = signals %v spawns %d, %+v", b.sent, b.spawns, got)
 	}
 	got = uiLifecycleRunWith("start", a.Roots, "127.0.0.1:9999", 0, b.effects(uiSeatsOf("m1e", other)))
 	text = uiSeatsText(got)
-	if b.spawns != 0 || got.Result.Code != 1 || !strings.Contains(text, a.Roots.Installation) || !strings.Contains(text, "carries no engine at bin/metasystem") {
+	if b.spawns != 0 || got.Result.Code != 1 || !strings.Contains(text, a.Roots.Installation.Path()) || !strings.Contains(text, "carries no engine at bin/metasystem") {
 		t.Fatalf("start without an engine = spawns %d, %+v", b.spawns, got)
 	}
 }
@@ -687,7 +688,7 @@ func TestUIRestartWithSeveralOrIncompleteRestartsNone(t *testing.T) {
 	b.engine(second, "engine of landing")
 	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", first, second)))
 	text := uiSeatsText(got)
-	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(first.Roots.StateRoot) || !uiSeatsHasRecord(second.Roots.StateRoot) || got.Result.Code != 1 ||
+	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(first.Roots.Installation.Path()) || !uiSeatsHasRecord(second.Roots.Installation.Path()) || got.Result.Code != 1 ||
 		!strings.Contains(text, "machine ui: pid 5506 at 127.0.0.1:7878: metasystem ui restart --repo "+first.Checkout) ||
 		!strings.Contains(text, "machine landing: pid 5507 at 127.0.0.1:7879: metasystem ui restart --repo "+second.Checkout) {
 		t.Fatalf("restart with several = signals %v spawns %d, %+v", b.sent, b.spawns, got)
@@ -696,7 +697,7 @@ func TestUIRestartWithSeveralOrIncompleteRestartsNone(t *testing.T) {
 	m := newMachineBed(t)
 	m.fleetEdit = func(report *seat.Report) { report.CopyProblem = "presence refs unreadable" }
 	u := newUISeatsBed(t)
-	u.live(uiSeat{Roots: lifecycle.Roots{StateRoot: m.landing}}, 5508, "127.0.0.1:7878", identity.Alive)
+	u.live(uiSeat{Roots: lifecycle.Roots{Installation: stateroottest.Installation(t, m.landing)}}, 5508, "127.0.0.1:7878", identity.Alive)
 	code, result, data := uiSeatsRunVerb(m, func(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
 		return uiLifecycleRunWith(verb, roots, "127.0.0.1:7878", 0, u.effects(options.seats)), nil
 	}, "ui", "restart")
@@ -720,9 +721,9 @@ func TestUIRestartTimeoutWithHeldLock(t *testing.T) {
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(other, 5509, "127.0.0.1:7878", identity.Alive)
 	b.engine(other, "engine of ui")
-	release := uiSeatsHoldLock(t, other.Roots.StateRoot)
+	release := uiSeatsHoldLock(t, other.Roots.Installation.Path())
 	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
-	if !slices.Equal(b.sent, []uiSeatsSignal{{5509, syscall.SIGTERM}}) || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
+	if !slices.Equal(b.sent, []uiSeatsSignal{{5509, syscall.SIGTERM}}) || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.Installation.Path()) || got.Result.Code != 1 ||
 		got.Restart == nil || got.Restart.Stop != lifecycle.Timeout || got.Seat == nil || got.Seat.Name != "ui" {
 		t.Fatalf("restart of a seat that keeps its lock = signals %v spawns %d, %+v %+v", b.sent, b.spawns, got, got.Restart)
 	}
@@ -741,7 +742,7 @@ func TestUIStatusComparesTheTargetInstallationsEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.live(a, 5510, "127.0.0.1:7878", identity.Alive)
-	uiSeatsSetDigest(t, a.Roots.StateRoot, digest)
+	uiSeatsSetDigest(t, a.Roots.Installation.Path(), digest)
 	changed := "the executable on disk differs from the one the interface is running; to pick it up: metasystem ui restart"
 	got := uiLifecycleRunWith("status", a.Roots, "", 0, b.effects(uiSeatsOf("m1e")))
 	if got.State != lifecycle.Running || slices.Contains(got.Result.Lines, changed) {
@@ -754,9 +755,9 @@ func TestUIStatusComparesTheTargetInstallationsEngine(t *testing.T) {
 	}
 }
 
-func uiSeatsSetDigest(t *testing.T, stateRoot, digest string) {
+func uiSeatsSetDigest(t *testing.T, installation, digest string) {
 	t.Helper()
-	path := filepath.Join(lifecycle.Dir(stateRoot), "server.json")
+	path := filepath.Join(lifecycle.Dir(installation), "server.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -846,7 +847,7 @@ func TestUIRestartIsNotBlockedByTheCallersListen(t *testing.T) {
 		got, err = uiLifecycleForWith("restart", a.Roots, uiIntentOptions{seats: seats}, own.effects(nil))
 		refused := err != nil && strings.Contains(err.Error(), "loopback") ||
 			err == nil && got.Result.Code == 1 && len(got.Result.Lines) == 1 && strings.Contains(got.Result.Lines[0], "loopback")
-		if !refused || len(own.sent) != 0 || own.spawns != 0 || !uiSeatsHasRecord(a.Roots.StateRoot) {
+		if !refused || len(own.sent) != 0 || own.spawns != 0 || !uiSeatsHasRecord(a.Roots.Installation.Path()) {
 			t.Fatalf("the caller's own restart with an invalid ui.listen = %v %+v, signals %v spawns %d", err, got, own.sent, own.spawns)
 		}
 	}

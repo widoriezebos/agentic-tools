@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 const (
@@ -212,7 +213,7 @@ func TestHelmReturnForcesThroughTheRealDoneOwner(t *testing.T) {
 			return lease.CurrentHolderView{}, errors.New("no lease")
 		},
 		recover: func(processScope) string { return "supervision: recovered" },
-		fence:   func(string) error { return nil },
+		fence:   func(roots.Installation) error { return nil },
 	}
 	command, rest, _ := resolveIntentArgv([]string{"helm", "return"})
 	code := runIntentIn(command, rest, &stdout, &stderr, bed.root, owners)

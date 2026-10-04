@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 )
@@ -59,7 +60,7 @@ func supBOwners(prober supBProber, armLines []string) processOwners {
 		},
 		transition: func(scope processScope, scale int) *stoptransition.Transition {
 			return &stoptransition.Transition{
-				Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale,
+				Root: scope.Installation.Path(), Checkout: scope.Checkout, ScaleMilli: scale,
 				Families: []stoptransition.Family{supBEmptyFamily{}},
 				Prober:   prober, Now: func() time.Time { return now },
 				Sleep: func(time.Duration) {},
@@ -98,7 +99,7 @@ func supBReadFile(t *testing.T, path string) string {
 // TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb.
 func TestSupBArmRefusesSurvivorsAndRemoteEvidenceUntilTerminal(t *testing.T) {
 	repo := supBRepo(t)
-	scope := processScope{Checkout: repo, Installation: repo, Root: repo, Binary: filepath.Join(repo, "bin", "metasystem")}
+	scope := processScope{Checkout: repo, Installation: stateroottest.Installation(t, repo), Root: stateroottest.State(t, repo), Binary: filepath.Join(repo, "bin", "metasystem")}
 	prober := supBProber{10: identity.Alive, 33: identity.Alive}
 	owners := supBOwners(prober, []string{"component=steward-runner outcome=started"})
 	stopActor := stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}}

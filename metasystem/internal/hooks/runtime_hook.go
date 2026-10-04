@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // stopDeadlineParentEnv names the deadline parent to its Stop worker, and
@@ -246,6 +247,19 @@ func jsonObject(pairs ...string) string {
 	return line
 }
 
+// physicalInstallation is physicalDirectory admitted as an installation: the
+// resolved directory must hold metasystem.conf. The hook's run state lives
+// under the installation, so a directory that is no installation is treated
+// as one that cannot be resolved.
+func physicalInstallation(path string) (stateroot.Installation, bool) {
+	resolved, ok := physicalDirectory(path)
+	if !ok {
+		return "", false
+	}
+	installation, err := stateroot.ParseInstallation(resolved)
+	return installation, err == nil
+}
+
 // physicalDirectory is `cd -- DIR && pwd -P`.
 func physicalDirectory(path string) (string, bool) {
 	absolute, err := filepath.Abs(path)
@@ -271,8 +285,10 @@ func oneLine(value string) bool {
 // Every linked worktree maps once to the same relative installation beneath
 // its primary checkout because the engine arms no linked worktree.
 // Repository identification must succeed; a failed query never becomes proof
-// that the candidate is an ordinary checkout.
-func worldInstallation(ops Ops, harnessRoot string) (string, bool) {
+// that the candidate is an ordinary checkout. The mapped directory is admitted
+// as an installation only when it holds metasystem.conf; one that does not is
+// answered as a hook that finds no installation.
+func worldInstallation(ops Ops, harnessRoot string) (stateroot.Installation, bool) {
 	ids, err := ops.Git("-C", harnessRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
 	if err != nil {
 		return "", false
@@ -315,7 +331,8 @@ func worldInstallation(ops Ops, harnessRoot string) (string, bool) {
 			return "", false
 		}
 	}
-	return world, true
+	installation, err := stateroot.ParseInstallation(world)
+	return installation, err == nil
 }
 
 // installationRoot is the physical installation the hook serves: the

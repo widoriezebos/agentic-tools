@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 type tickContinuationFixture struct {
@@ -66,7 +67,7 @@ func newTickContinuationFixture(t *testing.T, bed *attentionPolicyBed, refuseBas
 		if root != bed.root {
 			t.Fatalf("digest layout root = %q, want %q", root, bed.root)
 		}
-		return stateroot.Layout{GitRoot: root, RepositoryRoot: root, InstallationRoot: root}, nil
+		return stateroot.Layout{GitRoot: root, RepositoryRoot: root, InstallationRoot: stateroottest.Installation(t, root)}, nil
 	}
 	stable := tickHealthRoles(t, bed.root, "bed-m1", func(string, string, time.Time) (spend.Ledger, error) {
 		return fixtureSpendLedger(), nil

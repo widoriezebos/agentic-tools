@@ -23,6 +23,7 @@ import (
 	"time"
 
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // Roots names the three directories this package reads from. It is declared
@@ -30,7 +31,11 @@ import (
 // slice's own comment gives: taking its types closes an import loop. Its
 // fields are the resolver's, so the one conversion below is the whole of the
 // handover.
-type Roots struct{ Checkout, Installation, StateRoot string }
+type Roots struct {
+	Checkout     string
+	Installation roots.Installation
+	StateRoot    roots.State
+}
 
 // SchemaVersion is the shape of the project resource the interface reads. It
 // is 7: the first was the catalogue of canonical documents, which guessed a

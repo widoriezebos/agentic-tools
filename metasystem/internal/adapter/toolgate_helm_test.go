@@ -24,7 +24,7 @@ func TestToolGateSilentUnderHelm(t *testing.T) {
 			t.Fatal(err)
 		}
 		stdout := &bytes.Buffer{}
-		if err := RunToolGate(toolGateOptions(root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)); err != nil || stdout.Len() != 0 {
+		if err := RunToolGate(toolGateOptions(t, root, transcript, "deny", birth, func() time.Time { return birth.Add(time.Millisecond) }, stdout)); err != nil || stdout.Len() != 0 {
 			t.Fatalf("tool gate under the helm: err=%v stdout=%q", err, stdout.String())
 		}
 		if rows := readToolGateRows(t, root); len(rows) != 1 || rows[0].Cause != "helm" || rows[0].Decision != "allow" || rows[0].Tokens != 0 {
