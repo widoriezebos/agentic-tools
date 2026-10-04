@@ -66,6 +66,7 @@ var personActWiring = map[string]string{
 	"cmd/metasystem/session_stop.go#authorizeSessionStop":                "proveSessionStopAttorney",
 	"cmd/metasystem/intent_goals.go#actorArgs":                           "attorneyActor",
 	"cmd/metasystem/intent_work.go#runIntentSettingsSet":                 "directPersonProof",
+	"cmd/metasystem/intent_roster.go#runIntentRosterSet":                 "directPersonProof",
 	"cmd/metasystem/intent_planning.go#runIntentGrant":                   "runIntentGrantEverything",
 	"cmd/metasystem/intent_grant_everything.go#runIntentGrantEverything": "EnrolledTerminalFor",
 }

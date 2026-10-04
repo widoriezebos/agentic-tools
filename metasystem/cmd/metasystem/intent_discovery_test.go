@@ -19,7 +19,11 @@ func TestIntentPublicDiscovery(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("bare = %d %q", code, problem)
 	}
-	if lines := strings.Count(root, "\n"); lines > 50 {
+	most := 26 // only an object adds a line; the 26 others are the headline, headings, delivery, More, usage, hint, blanks and system's wrapped summary
+	for _, group := range intentGroups {
+		most += len(group.objects)
+	}
+	if lines := strings.Count(root, "\n"); lines > most {
 		t.Errorf("the root page is %d lines; it is an orientation, not an inventory", lines)
 	}
 	for _, leak := range []string{"internal", "FAMILY", "usage: metasystem <family>", "goal list", "fetch", "run-loop"} {

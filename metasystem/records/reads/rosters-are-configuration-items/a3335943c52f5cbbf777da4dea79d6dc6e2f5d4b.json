@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "goal": "rosters-are-configuration-items",
+  "unit": "store-durable",
+  "subject": {
+    "commit": "a3335943c52f5cbbf777da4dea79d6dc6e2f5d4b",
+    "parent": "11a0aeffca40167a181387f04ba7fc8724f8c107",
+    "tree": "08bf8feadbdfe5f0cb0c6faab27c620441068848",
+    "patchDigest": "56940f499fbb194d2909c41ebb970c00bc67879cea1994bd2ba27d3283100df5",
+    "unitDigest": "577b7f394943c0767e415735239aa6af36df56f93476d857f1aa1786aac556c8"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-42f0673f6e82d7e708d1b4ef",
+    "round": 1,
+    "closureSha256": "54a72d5002374a903171cef8f0950a2906e37ce5b7935c70348b2d911acd80a7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "08bf8feadbdfe5f0cb0c6faab27c620441068848",
+    "runId": "goal-read-gate-20261003t220243z-81bf3b747f8df243"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "11a0aeffca40167a181387f04ba7fc8724f8c107",
+      "digest": "76233ec6b645ead8c11fba91cc6e50bd613d399022a9b9cb134e87dbf296a141"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_roster_test.go",
+      "readerWord": "reviewed by critic root code-critic-42f0673f6e82d7e708d1b4ef"
+    },
+    {
+      "path": "metasystem/internal/config/roster_write_test.go",
+      "readerWord": "reviewed by critic root code-critic-42f0673f6e82d7e708d1b4ef"
+    }
+  ],
+  "sha256": "de40cc097082fe55739d8fbd8673430481549c116f1bf6d2059d98af20d8fef9"
+}
