@@ -107,6 +107,25 @@ func ProcessDeps(root string) Deps {
 
 func processDeps(root string, git GitQuery, lookupEnv func(string) (string, bool)) Deps {
 	_, _, engine := dispatch.ResolveTool(root, func(root string) (string, string) {
+		// Only a linked worktree's .git file needs Git to locate the serving
+		// installation. Primary checkouts and roots outside Git serve themselves.
+		dir, err := filepath.Abs(root)
+		if err != nil {
+			return root, ""
+		}
+		for {
+			if entry, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+				if !entry.Mode().IsRegular() {
+					return root, ""
+				}
+				break
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				return root, ""
+			}
+			dir = parent
+		}
 		return landpath.SystemInstallation(func(args ...string) landpath.GitResult {
 			out, ok := git(root, args...)
 			code := 0
