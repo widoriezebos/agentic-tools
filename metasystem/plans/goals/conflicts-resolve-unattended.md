@@ -1,6 +1,6 @@
 # conflicts-resolve-unattended
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="Decides how every seat's work reaches main when main moved; a wrong rule either stalls the fleet or lands unreviewed merges; it compounds across every future goal"
@@ -14,14 +14,13 @@ Open read items (fix unit code-critic-afa5c5b14d127ad79b4325ba): 4
 - ReadItem: id=code-critic-afa5c5b14d127ad79b4325ba-3 read=code-critic-afa5c5b14d127ad79b4325ba state=open addedAt=2026-10-04T06:26:47Z changedAt=- closingReference="" text="An empty or truncated resolve-begun.json, left by a crash during its write, makes every later landing resolve fail until someone deletes it by hand, and the error does not name the file; write it through a temporary file and rename, and name the file in the error (N-4)."
 - ReadItem: id=code-critic-afa5c5b14d127ad79b4325ba-4 read=code-critic-afa5c5b14d127ad79b4325ba state=open addedAt=2026-10-04T06:26:47Z changedAt=- closingReference="" text="When the lane itself fails around a successful regeneration (git add, git restore, the log folder or file), the goal is returned with the reason 'regeneration exited -1', which reads as a command failure; name the lane's own failure in the reason instead (N-5)."
 - OpenedAt: 2026-10-03T07:50:15Z
-- Revision: 52
+- Revision: 53
 - Pinned: m1h
 - Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-10-04T03:13:07Z revision=50 opid=ZHC37B022N3X1PJ0824FYEJK8C-m1e-718ba0eb authority=proven digest=8fb1005b850b0112403b19284d33f6323d439303ae49355a2d0b114713e827f3 episode=50
 - Sliced: machine=m1h lineage=steward-seat revision=48 at=2026-10-03T21:06:09Z
-- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T03:13:07Z revision=50 accountingRevision=50 episodeAt=2026-10-03T21:05:59Z episodeRevision=48
-- StopCapability: generation=50 revision=50 machine=m1h claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1h lineage=steward-seat accountingRevision=50 episodeAt=2026-10-03T21:05:59Z episodeRevision=48 idleSeconds=0 released=2026-10-04T06:27:17Z
 
 History:
 - 2026-10-03T07:50:15Z VCKGVG2T8BVYFDGSX7F3AB9RN3-m1e-718ba0eb open actor=human:Wido targets=conflicts-resolve-unattended
@@ -76,4 +75,5 @@ History:
 - 2026-10-04T03:13:07Z ZHC37B022N3X1PJ0824FYEJK8C-m1e-718ba0eb set-budget actor=human:Wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-03T21:05:59Z
 - 2026-10-04T04:52:23Z AD0KZB7QBMBENF19YBF9D90EXZ-m1e-718ba0eb edit actor=human:Wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T03:13:07Z
 - 2026-10-04T06:26:47Z VBMX26ZAVTE3EMB9QK62FSY2SJ-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
-Integrity: sha256=455c580dd37ec5f66714dd2f174d309caf114ada3eb08cafbe4e91c61de8184e
+- 2026-10-04T06:27:17Z 44DRKCMQVVYE1WJX8HV9KZWQRT-m1h-71c5cb39 release actor=m1h+steward-seat targets=conflicts-resolve-unattended reason=unit 1 handed in to the lane at c37e59a3f; unit 2 waits until the deploy-test hang fix in landing-deploys-the-engine lands first (m1e's order, 06:58)
+Integrity: sha256=71e251eed2973ecec2eb8b4c6244bac151a7c98509488b835836226e972fe4f7
