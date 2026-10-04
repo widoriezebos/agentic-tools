@@ -23,6 +23,11 @@ func Render(contract testpolicy.Contract) ([]byte, error) {
 		fallback, _ := json.Marshal(contract.Fallback)
 		fmt.Fprintf(&out, "  \"fallback\": %s,\n", fallback)
 	}
+	if len(contract.Generated) > 0 {
+		if err := renderObjectArray(&out, "generated", contract.Generated); err != nil {
+			return nil, err
+		}
+	}
 	if err := renderObjectArray(&out, "surfaces", contract.Surfaces); err != nil {
 		return nil, err
 	}

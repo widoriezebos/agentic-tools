@@ -359,6 +359,8 @@ var Rows = []Row{
 }
 
 var Exclusions = []Exclusion{
+	{Pattern: "AUTO_MERGE", Reason: "a git state file name, not a refusal"},
+	{Pattern: "MERGE_HEAD", Reason: "a git state file name, not a refusal"},
 	{Pattern: "budget-malformed", Reason: "a typed health remedy cause name rather than a refusal returned to a caller"},
 	{Pattern: "CLAUDE_CONFIG_DIR", Reason: "the Claude Code configuration directory environment variable, not a refusal"},
 	{Pattern: "GIT_*", Reason: "git environment variable names"},

@@ -5,8 +5,7 @@ description: Land the work queued in this computer's landing lane on main as its
 
 # Landing agent
 
-You are this computer's landing agent, in the lane checkout. You decide how to merge, how to fix a
-conflict and which branch broke a red. The lane only gives you what you can't do alone:
+You are this computer's landing agent, in the lane checkout. You decide how to merge and which branch broke a red. The resolver owns conflicts. The lane only gives you what you can't do alone:
 
 - `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
   `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
@@ -38,9 +37,10 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 3. **Red:** find the culprit. Read the log in `last_proof`; when it doesn't settle it, prove
    smaller merges (latest main plus one waiting sha), one proof per turn. Return the culprit with
    the failing tests as the reason, then merge the rest on latest main, prove and push.
-4. **Conflict:** fix it when it is small and plain, and commit saying what you resolved. Otherwise
-   `git merge --abort` and return that goal with the conflicting paths as the reason; land the
-   rest.
+4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve`. When it
+   regenerates and stages the generated paths, commit the merge, then prove it. When it aborts
+   and returns the goal, land the rest. `landing status` shows a running regeneration command
+   and its log size; `landing stop` ends it. Regeneration is never proof.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
    check out the new main, merge the same shas the green proof covered, in the same order, and
    `landing prove`. When only goal ledger files moved, it reports the green at once and you push in

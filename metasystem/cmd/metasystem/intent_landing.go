@@ -56,7 +56,9 @@ type laneVerbOwners struct {
 	keeper func(home, root string) lane.AgentKeeper
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
-	plainProve plain.ProveSeams
+	plainProve       plain.ProveSeams
+	plainResolve     plain.ResolveSeams
+	stopRegeneration func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main.
 	push func(install, checkout string, now time.Time) (plain.PushOutcome, error)
 }
@@ -105,6 +107,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.keeper == nil {
 		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
+	}
+	if owners.stopRegeneration == nil {
+		owners.stopRegeneration = plain.StopRegeneration
 	}
 	if owners.push == nil {
 		owners.push = plain.Push
@@ -163,7 +168,7 @@ func landingIntentCommands() []intentCommand {
 			usage: []string{"metasystem landing stop [--reason TEXT] [--by NAME]"},
 			details: []string{"No landing agent starts until metasystem landing start; status shows who stopped it, when, and the reason it was given.",
 				"metasystem landing unset is the way back to each seat landing its own work.",
-				"A lane already stopped changes nothing."},
+				"Also ends a running regeneration, even when the lane is already stopped."},
 			flags:    []intentFlag{{name: "reason", value: "TEXT", usage: "why it is stopped, kept with the stop and shown by status"}, byFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem landing stop", "metasystem landing stop --reason 'goal-a is red twice on its own tests'"},
@@ -182,6 +187,7 @@ func landingIntentCommands() []intentCommand {
 		landingProveCommand(),
 		landingPushCommand(),
 		landingReturnCommand(),
+		landingResolveCommand(),
 	}
 }
 
@@ -277,6 +283,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		view(page)
 		if data.Root == nil {
 			return
+		}
+		if run := data.RunningRegeneration; run != nil {
+			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
 		}
 		rows := [][2]string{}
 		for _, entry := range data.Queue {
@@ -823,6 +832,9 @@ func runIntentLandingStop(inv *intentInvocation) int {
 func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record, reason string) (intentResult, bool) {
 	targets := laneTargets(record.Root)
 	if pause, paused := lane.ReadPause(home); paused {
+		if err := stopLaneRegeneration(owners, record); err != nil {
+			return landingLaneFailure(targets, "the running regeneration could not be stopped", err), false
+		}
 		result := intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.Who() + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}
 		result.view = func(page *textui.Page) {
 			done := "the landing lane is already stopped by " + pause.Who()
@@ -839,6 +851,9 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	if _, err := lane.SetPauseBecause(home, by, reason, owners.now()); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
+	}
+	if err := stopLaneRegeneration(owners, record); err != nil {
+		return landingLaneFailure(targets, "the lane is paused, but its regeneration could not be stopped", err), false
 	}
 	// The way to seats landing their own work is unset, which line 2 names.
 	who := lane.Pause{By: by, Reason: reason}.Who()
@@ -978,4 +993,12 @@ func (inv *intentInvocation) sayWhenTheLaneLockIsHeld(home string) {
 		page.Mark(textui.Running, "another landing step holds the lane; the stop takes effect when it finishes")
 		_, _ = io.WriteString(inv.stderr, page.String())
 	}
+}
+
+func stopLaneRegeneration(owners laneVerbOwners, record lane.Record) error {
+	layout, err := record.Layout()
+	if err != nil {
+		return err
+	}
+	return owners.stopRegeneration(string(layout.Install))
 }
