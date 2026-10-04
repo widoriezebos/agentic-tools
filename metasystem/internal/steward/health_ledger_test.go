@@ -30,7 +30,7 @@ func TestHealthEvaluationProjectsTheLedgerOnce(t *testing.T) {
 		projections.Add(1)
 		return goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{}}}, nil
 	}
-	evaluateHealthRolesWithLedger(root, root, now, healthProbe{}, true, measureSpend, ledger)
+	evaluateHealthRolesWithLedger(root, root, root, now, healthProbe{}, true, measureSpend, ledger)
 	if got := projections.Load(); got != 1 {
 		t.Fatalf("one health evaluation projected the ledger %d times, want 1", got)
 	}

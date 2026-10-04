@@ -85,7 +85,7 @@ func CreateReview(roots Roots, asked NewReview, now time.Time) (Written, error) 
 	if err := within(home.Path, absolute); err != nil {
 		return Written{}, err
 	}
-	if err := within(roots.StateRoot, absolute); err != nil {
+	if err := within(roots.StateRoot.Path(), absolute); err != nil {
 		return Written{}, err
 	}
 	id, err := resolver.NewID()

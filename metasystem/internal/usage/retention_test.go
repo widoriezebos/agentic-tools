@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestPruneCallSessionsUsesTheNewerMemberAge(t *testing.T) {
@@ -272,7 +274,7 @@ func TestCallRetirementRecoversEveryInterruptedDeletion(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "latest":
-				reading, err := LatestCall(root, "claude", "interrupted", ReadOptions{Capability: PerCall, Transcript: transcript})
+				reading, err := LatestCall(stateroottest.Installation(t, root), "claude", "interrupted", ReadOptions{Capability: PerCall, Transcript: transcript})
 				if err != nil || reading.NewSamples != 1 {
 					t.Fatalf("latest recovery=%+v err=%v", reading, err)
 				}
@@ -511,7 +513,7 @@ func seedRetirementCallWithRows(t *testing.T, root, session string, at time.Time
 	t.Helper()
 	transcript := filepath.Join(t.TempDir(), strings.ReplaceAll(session, "/", "-")+".jsonl")
 	writeCallRows(t, transcript, rows...)
-	if _, err := LatestCall(root, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript, Now: at}); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, root), "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript, Now: at}); err != nil {
 		t.Fatal(err)
 	}
 	appendRetirementRegistration(t, root, CallRegistration{

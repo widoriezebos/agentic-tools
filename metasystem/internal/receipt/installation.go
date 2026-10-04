@@ -15,7 +15,11 @@ import (
 // defaults, and a refusal returns the verb's diagnostic. Advisory lines (a
 // retro-due note) come back in the result's Err for the caller to relay.
 func AddToInstallation(root string, opts Options) (Result, error) {
-	appRoot, err := stateroot.RootForInstallation(root)
+	installation, err := stateroot.ParseInstallation(root)
+	if err != nil {
+		return Result{}, fmt.Errorf("receipt: %w", err)
+	}
+	appRoot, err := stateroot.RootForInstallation(installation)
 	if err != nil {
 		return Result{}, fmt.Errorf("receipt: %w", err)
 	}
@@ -24,7 +28,7 @@ func AddToInstallation(root string, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("receipt: %w", err)
 	}
 	opts.Root = root
-	opts.File = filepath.Join(appRoot, filepath.FromSlash(relative), "receipts.log")
+	opts.File = appRoot.Path(filepath.FromSlash(relative), "receipts.log")
 	defaults := map[*string]string{&opts.Skills: "none", &opts.Verify: "skipped", &opts.Corrections: "0", &opts.StopLoss: "no"}
 	for field, value := range defaults {
 		if *field == "" {

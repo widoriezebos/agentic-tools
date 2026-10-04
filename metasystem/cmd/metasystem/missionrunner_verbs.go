@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The mission-turn and mission-jobs families are the mission runner's
@@ -48,45 +49,62 @@ func parseRunnerArgs(args []string, valued map[string]*string, switches map[stri
 	return true
 }
 
-func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, error) {
-	commandClock, _, err := goalCommandClock(root)
+func missionRunnerCommandEngineWith(root, mission string, repositoryTop func(string) (string, error)) (*missionrunner.Engine, error) {
+	// The engine's launches are gated by the installation's stop fence. A
+	// checkout whose installation cannot be found is refused rather than
+	// read at root, where no fence is kept and an absent one reads as open.
+	_, installation, err := processInstallationWith(root, "", repositoryTop)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", noEngineRefusal, err)
+	}
+	return missionRunnerCommandEngine(root, installation, mission)
+}
+
+// missionRunnerCommandEngine is the mission engine whose contract is under
+// the state root root and whose run state, configuration and delegates are
+// the installation's.
+func missionRunnerCommandEngine(root string, installation stateroot.Installation, mission string) (*missionrunner.Engine, error) {
+	commandClock, _, err := goalCommandClock(installation.Path())
 	if err != nil {
 		return nil, err
 	}
-	engine := missionrunner.NewEngine(root, mission)
+	engine := missionrunner.NewEngineAt(root, installation.Path(), mission)
 	engine.Now = commandClock
-	engine.Delegate = delegateInProcess(root)
+	engine.Delegate = delegateInProcess(installation.Path())
 	return engine, nil
 }
 
 // runMissionRunnerRunLoop is the detached child that start/resume spawn; it
 // is internal and deliberately prints no usage.
 func runMissionRunnerRunLoop(args []string, stdout, stderr io.Writer) int {
-	var root, mission, mode, tag, signal, generationText string
+	var root, installationPath, mission, mode, tag, signal, generationText string
 	ignoreTerm := false
 	ok := parseRunnerArgs(args, map[string]*string{
-		"--root": &root, "--mission": &mission, "--mode": &mode,
+		"--root": &root, "--installation": &installationPath, "--mission": &mission, "--mode": &mode,
 		"--instance-tag": &tag, "--start-signal": &signal,
 		"--fence-generation": &generationText,
 	}, map[string]*bool{"--ignore-term": &ignoreTerm})
 	if !ok {
 		for _, arg := range args {
 			switch arg {
-			case "--root", "--mission", "--mode", "--instance-tag", "--start-signal", "--fence-generation", "--ignore-term":
+			case "--root", "--installation", "--mission", "--mode", "--instance-tag", "--start-signal", "--fence-generation", "--ignore-term":
 			default:
 				if strings.HasPrefix(arg, "--") {
-					return refuseUnknownOption(stdout, stderr, "mission run-loop", arg, "options: --root --mission --mode --instance-tag --start-signal --fence-generation --ignore-term")
+					return refuseUnknownOption(stdout, stderr, "mission run-loop", arg, "options: --root --installation --mission --mode --instance-tag --start-signal --fence-generation --ignore-term")
 				}
 			}
 		}
 	}
 	generation, generationErr := strconv.ParseInt(generationText, 10, 64)
-	if !ok || root == "" || tag == "" || signal == "" ||
+	// The launcher names the installation that holds the mission's run
+	// state, so the loop writes where the launcher and a stop look.
+	installation, installationErr := stateroot.ParseInstallation(installationPath)
+	if !ok || root == "" || installationErr != nil || tag == "" || signal == "" ||
 		generationErr != nil || generation < 0 || !missionIDRe.MatchString(mission) ||
 		(mode != "start" && mode != "resume") {
 		return 2
 	}
-	engine, err := missionRunnerCommandEngine(root, mission)
+	engine, err := missionRunnerCommandEngine(root, installation, mission)
 	if err != nil {
 		fmt.Fprintln(stderr, "mission run-loop:", err)
 		return 1

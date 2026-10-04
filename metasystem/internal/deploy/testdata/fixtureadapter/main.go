@@ -73,13 +73,13 @@ func main() {
 		os.Exit(1)
 	}
 	current := next(state, operation)
-	hold(current.HoldBefore)
+	hold(current.HoldBefore, operation+" "+req.Commit)
 	fmt.Fprintf(os.Stderr, "%s of %s in %s\n", operation, req.Commit, req.Source)
 	var response any
 	if current.Exit == 0 || current.Apply {
 		response = work(state, req)
 	}
-	hold(current.HoldAfter)
+	hold(current.HoldAfter, operation+" "+req.Commit)
 	switch {
 	case current.Raw != "":
 		fmt.Print(current.Raw)
@@ -155,10 +155,16 @@ func next(state, operation string) step {
 	return steps[min(count, len(steps)-1)]
 }
 
-func hold(fifo string) {
+func hold(fifo, call string) {
 	if fifo == "" {
 		return
 	}
+	// A pause ends only a call that has taken its scripted step. Mark
+	// that call before it waits on the FIFO.
+	if err := os.WriteFile(fifo+".held", []byte(call), 0o600); err != nil {
+		fail(err)
+	}
+	defer os.Remove(fifo + ".held")
 	file, err := os.Open(fifo)
 	if err != nil {
 		fail(err)

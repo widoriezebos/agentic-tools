@@ -439,6 +439,8 @@ Efficiency never regresses functionality: no unit lowers a proof floor, removes 
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
+Codex's sandbox is one setting per host, `launch.codex.sandbox`, kept in the host's local settings and set with `metasystem settings set`. `workspace-write`, the default, runs each Codex job in the sandbox its permission envelope maps to, read-only or workspace-write. `danger-full-access` runs every Codex launch on the host unsandboxed (builds, revisions, reads and mission host turns) so its agent can run the repository's tests. `settings set` refuses any other value. A Codex job admitted under `danger-full-access` records the envelope it really runs with: its requested permissions allow the network, read and write the host's root `/`, and carry `widenedBy` `launch.codex.sandbox=danger-full-access`. Follow-up rounds keep the mode their chain was admitted with, so change the setting between units. The accepted risk is that such a job can write anywhere on the host. Wido, 2026-10-04: "Fix the Codex issue in the metasystem: run with danger-full-access; we will switch to running in a VM soon. I accept the risk until then." What still guards the repository is the pre-commit guard on each job's declared outputs, a worktree per unit, the landing lane's proof of the merged tree, the independent read, and the host's process census.
+
 `bin/metasystem system setup` registers the hosts `metasystem.runtimes` enables
 without selecting a globally active runtime or changing the execution roster,
 switches their hooks to the engine, enrolls the commit fence and registers the

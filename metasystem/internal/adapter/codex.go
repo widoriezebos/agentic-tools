@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -52,12 +53,18 @@ func CodexUsage(eventsPath, outputPath string) error {
 // follow-up resumes an existing thread, which has no --sandbox or -C flags, so
 // the thread inherits its cwd and config and carries the supported per-turn
 // overrides through -c settings instead. network is the bare TOML boolean the
-// sandbox honors.
+// sandbox honors. Under danger-full-access neither the network override nor the
+// extra write roots are passed: both configure workspace-write alone, and the
+// unsandboxed turn already reaches the network and every path.
 func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network, session, instanceTag, reasoningEffort string, extraDirs []string) ([]string, error) {
 	if instanceTag == "" {
 		return nil, fmt.Errorf("a codex delegate command requires an instance tag")
 	}
 	tagSetting := "metasystem_instance_tag=" + quoteTOML(instanceTag)
+	fullAccess := sandbox == config.CodexSandboxFullAccess
+	if fullAccess {
+		extraDirs = nil
+	}
 	// Write roots OUTSIDE the workspace — the worktree's git metadata a
 	// commit needs (issue #5) — ride --add-dir on dispatch and the
 	// equivalent writable-roots override on resume (which has no
@@ -72,9 +79,11 @@ func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network,
 			"--sandbox", sandbox,
 			"-C", workspace,
 			"-c", `approval_policy="never"`,
-			"-c", "sandbox_workspace_write.network_access=" + network,
-			"-c", tagSetting,
 		}
+		if !fullAccess {
+			command = append(command, "-c", "sandbox_workspace_write.network_access="+network)
+		}
+		command = append(command, "-c", tagSetting)
 		if reasoningEffort != "" {
 			command = append(command, "-c", "model_reasoning_effort="+quoteTOML(reasoningEffort))
 		}
@@ -95,9 +104,11 @@ func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network,
 			"-c", "model=" + quoteTOML(model),
 			"-c", "sandbox_mode=" + quoteTOML(sandbox),
 			"-c", `approval_policy="never"`,
-			"-c", "sandbox_workspace_write.network_access=" + network,
-			"-c", tagSetting,
 		}
+		if !fullAccess {
+			command = append(command, "-c", "sandbox_workspace_write.network_access="+network)
+		}
+		command = append(command, "-c", tagSetting)
 		if reasoningEffort != "" {
 			command = append(command, "-c", "model_reasoning_effort="+quoteTOML(reasoningEffort))
 		}
@@ -138,8 +149,10 @@ func quoteTOML(value string) string {
 // true. recordPath reads the record's requested envelope; otherwise
 // permissionsPath is the envelope JSON itself. The envelope-to-flag
 // mapping is the security-relevant half of command construction,
-// so it is decided here, not pre-chewed in shell.
-func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, network string, err error) {
+// so it is decided here, not pre-chewed in shell. sandboxMode is the host's
+// launch.codex.sandbox: danger-full-access replaces the mapping whatever the
+// envelope says, a read-only envelope included; any other mode keeps it.
+func CodexPermissionSettings(permissionsPath, recordPath, sandboxMode string) (sandbox, network string, err error) {
 	var envelope map[string]any
 	if recordPath != "" {
 		record, err := readObject(recordPath)
@@ -159,11 +172,31 @@ func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, netwo
 	if len(stringList(envelope["writeRoots"])) == 0 {
 		sandbox = "read-only"
 	}
+	if sandboxMode == config.CodexSandboxFullAccess {
+		sandbox = config.CodexSandboxFullAccess
+	}
 	network = "false"
 	if networkValue, _ := envelope["network"].(string); networkValue == "allow" {
 		network = "true"
 	}
 	return sandbox, network, nil
+}
+
+// CodexAdmittedSandbox is the sandbox mode a delegate round was admitted
+// under: danger-full-access when its record's requested envelope carries the
+// launch.codex.sandbox widening, workspace-write otherwise (an unreadable
+// record included, so the envelope's own mapping decides).
+func CodexAdmittedSandbox(recordPath string) string {
+	record, err := readObject(recordPath)
+	if err != nil {
+		return config.CodexSandboxWorkspaceWrite
+	}
+	permissions, _ := record["permissions"].(map[string]any)
+	requested, _ := permissions["requested"].(map[string]any)
+	if widenedBy, _ := requested["widenedBy"].(string); widenedBy == config.CodexSandboxWidening {
+		return config.CodexSandboxFullAccess
+	}
+	return config.CodexSandboxWorkspaceWrite
 }
 
 // CodexExtraWriteRoots lists the envelope's write roots that fall OUTSIDE

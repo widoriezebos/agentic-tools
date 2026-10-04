@@ -40,6 +40,8 @@ func TestO3RootsAcrossLayouts(t *testing.T) {
 				// The self-hosted layout is the nested metasystem/ directory
 				// whose committed conf declares the template.
 				testutil.Require(t, "declare the template", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644), nil)
+			} else {
+				testutil.Require(t, "configure the installation", os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644), nil)
 			}
 			wantStateRoot := filepath.Join(repository, test.stateRoot)
 
@@ -54,10 +56,10 @@ func TestO3RootsAcrossLayouts(t *testing.T) {
 
 				testutil.Require(t, "resolve roots error from "+repo.name, err, nil)
 				testutil.Expect(t, "checkout from "+repo.name, roots.Checkout, repository)
-				testutil.Expect(t, "installation from "+repo.name, roots.Installation, filepath.Clean(installation))
-				testutil.Expect(t, "state root from "+repo.name, roots.StateRoot, filepath.Clean(wantStateRoot))
-				testutil.Expect(t, "state directory from "+repo.name, Dir(roots.StateRoot),
-					filepath.Join(filepath.Clean(wantStateRoot), "artifacts", "agents", "ui"))
+				testutil.Expect(t, "installation from "+repo.name, roots.Installation.Path(), filepath.Clean(installation))
+				testutil.Expect(t, "state root from "+repo.name, roots.StateRoot.Path(), filepath.Clean(wantStateRoot))
+				testutil.Expect(t, "state directory from "+repo.name, Dir(roots.Installation.Path()),
+					filepath.Join(filepath.Clean(installation), "artifacts", "agents", "ui"))
 			}
 		})
 	}
@@ -94,6 +96,7 @@ func TestO4ResolveRootsRefusesForeignCheckout(t *testing.T) {
 			repository := rootsTestRepository(t, "application")
 			installation := filepath.Join(repository, "metasystem")
 			testutil.Require(t, "create installation", os.MkdirAll(installation, 0o755), nil)
+			testutil.Require(t, "configure the installation", os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644), nil)
 			foreign := test.repo(t)
 			before := map[string][]string{
 				repository: treeSnapshot(t, "application before", repository),

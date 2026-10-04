@@ -200,7 +200,7 @@ func (r *receiptLineRun) decide(goal, directFix string) ReceiptLineDecision {
 	}, r, func(root string) (string, error) {
 		r.take("headTree", root, "")
 		return r.base, nil
-	}, resolver.RootForInstallation, resolver.OwnerForInstallation)
+	}, stateRootPath(admitInstallation(resolver.RootForInstallation)), resolver.OwnerForInstallation)
 	if err != nil {
 		r.fixture.t.Fatalf("receipt-line check failed: %v", err)
 	}

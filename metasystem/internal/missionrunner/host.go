@@ -357,12 +357,12 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 }
 
 // hostEngine is the engine a host turn runs on: METASYSTEM_BIN, else the
-// checkout's own bin/metasystem, as the shell hosts resolved it.
-func hostEngine(root string) string {
+// installation's own bin/metasystem, as the shell hosts resolved it.
+func hostEngine(installation string) string {
 	if engine := os.Getenv("METASYSTEM_BIN"); engine != "" {
 		return engine
 	}
-	return filepath.Join(root, "bin", "metasystem")
+	return filepath.Join(installation, "bin", "metasystem")
 }
 
 // hostFixtureCarriers leads a fixture-owned host's argv with the fixture
@@ -421,10 +421,10 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.runtime = TurnRecordOf(l.turn).Runtime()
 	// The host turn is the engine's delegate-supervisor entry: one process
 	// of its own, leading its group and carrying the turn's tag.
-	if reason := hostRuntimeUnavailable(e.Root, l.runtime); reason != "" {
+	if reason := hostRuntimeUnavailable(e.installation(), l.runtime); reason != "" {
 		return failf(3, "host adapter is not installed for runtime %q: %s", l.runtime, reason)
 	}
-	engine := hostEngine(e.Root)
+	engine := hostEngine(e.installation())
 	if info, err := os.Stat(engine); err != nil || !info.Mode().IsRegular() || unix.Access(engine, unix.X_OK) != nil {
 		return failf(3, "host adapter is not installed or executable: %s", engine)
 	}
@@ -435,7 +435,7 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.tag = "metasystem-host-" + l.turnID
 	l.fakeRuntime = l.runtime == "fake"
 	flags := []string{
-		"--root", e.Root,
+		"--root", e.installation(),
 		"--mission", e.Mission,
 		"--turn-id", l.turnID,
 		"--prompt", prompt,

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // TestGitAdapterEnsureEnrollsTheGuardInAFreshCheckout is the goal CLI shell
@@ -21,7 +23,7 @@ func TestGitAdapterEnsureEnrollsTheGuardInAFreshCheckout(t *testing.T) {
 	if _, err := os.Stat(hook); !os.IsNotExist(err) {
 		t.Fatalf("a fresh checkout already has a pre-commit hook: %v", err)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatalf("Ensure did not enroll the guard: %v", err)
 	}
 	installed, err := os.ReadFile(hook)
@@ -31,7 +33,7 @@ func TestGitAdapterEnsureEnrollsTheGuardInAFreshCheckout(t *testing.T) {
 	if !strings.Contains(string(installed), `internal pre-commit --root "$installation"`) || !isCurrentComposer(string(installed)) {
 		t.Fatalf("the installed hook is not the engine guard's composer:\n%s", installed)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatalf("a second enrollment of an enrolled checkout refused: %v", err)
 	}
 }

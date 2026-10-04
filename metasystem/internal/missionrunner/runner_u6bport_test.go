@@ -82,7 +82,7 @@ func u6bportTurnDirs(t *testing.T, engine *Engine) []string {
 
 func u6bportOpenAsks(t *testing.T, engine *Engine, reasonClass string) []map[string]any {
 	t.Helper()
-	files, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	files, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "*.json"))
 	var open []map[string]any
 	for _, file := range files {
 		ask, err := readJSONDoc(file)
@@ -233,7 +233,7 @@ func TestU6bPortGhostDispatchIsRejectedWithAnOpenHostFailureAsk(t *testing.T) {
 		t.Fatalf("the ghost rejection reason does not name the missing job: %q", reason)
 	}
 	askID, _ := item["askId"].(string)
-	ask, err := readJSONDoc(filepath.Join(asksDirPath(engine.Root, engine.Mission), askID+".json"))
+	ask, err := readJSONDoc(filepath.Join(asksDirPath(engine.installation(), engine.Mission), askID+".json"))
 	if err != nil {
 		t.Fatalf("the rejection's ask %q is not on disk: %v", askID, err)
 	}

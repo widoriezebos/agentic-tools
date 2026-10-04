@@ -5,7 +5,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -70,7 +69,7 @@ func runIntentRosterSet(inv *intentInvocation) int {
 	if owners.home == nil {
 		owners.home = board.Home
 	}
-	confPath := filepath.Join(inv.layout.InstallationRoot, "metasystem.conf")
+	confPath := inv.layout.InstallationRoot.Path("metasystem.conf")
 	listed, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: confPath, LookupEnv: owners.lookupEnv})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error() + "; nothing was changed"})
@@ -135,7 +134,7 @@ func runIntentRosters(inv *intentInvocation, id string) int {
 	if err != nil {
 		return inv.render(*inv.notARepository(path, err))
 	}
-	listed, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: filepath.Join(layout.InstallationRoot, "metasystem.conf"), LookupEnv: owners.lookupEnv})
+	listed, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: layout.InstallationRoot.Path("metasystem.conf"), LookupEnv: owners.lookupEnv})
 	home, homeErr := owners.home()
 	if err == nil {
 		err = homeErr

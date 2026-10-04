@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 type Capability string
@@ -93,8 +95,11 @@ var (
 	callJSONDecodes func()
 )
 
-func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, error) {
-	if err := validateCallLocation(stateRoot, runtime); err != nil {
+// LatestCall reads the session's newest call sample. The cursors, the samples
+// and their maintenance lock are run state under the installation root.
+func LatestCall(installation roots.Installation, runtime, session string, opts ReadOptions) (Reading, error) {
+	installationRoot := installation.Path()
+	if err := validateCallLocation(installationRoot, runtime); err != nil {
 		return Reading{}, err
 	}
 	reading := Reading{Capability: opts.Capability}
@@ -124,21 +129,21 @@ func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, 
 		reading.Reason = reason
 		return reading, nil
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, false, opts.NonBlocking)
+	maintenance, err := lockCallMaintenance(installationRoot, false, opts.NonBlocking)
 	if err != nil {
 		return Reading{}, err
 	}
 	defer unlockCallFile(maintenance)
 
 	if runtime == "claude" {
-		return readUnderCursor(stateRoot, runtime, session, path, func(line []byte, ordinal int64) (*CallSample, *Marker, bool) {
+		return readUnderCursor(installationRoot, runtime, session, path, func(line []byte, ordinal int64) (*CallSample, *Marker, bool) {
 			return parseClaudeLine(line, ordinal, runtime, session)
 		}, opts)
 	}
 
 	tokenCounts := 0
 	usageRecords := 0
-	reading, err = readUnderCursor(stateRoot, runtime, session, path, func(line []byte, _ int64) (*CallSample, *Marker, bool) {
+	reading, err = readUnderCursor(installationRoot, runtime, session, path, func(line []byte, _ int64) (*CallSample, *Marker, bool) {
 		raw := decodeCallLine(line)
 		kind, tokenCount := codexRecordKind(raw)
 		if kind == "token_usage_record" {
@@ -168,17 +173,17 @@ func SessionSlug(session string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func CursorPath(stateRoot, runtime, session string) string {
-	return filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors", runtime+"-"+SessionSlug(session)+".json")
+func CursorPath(installationRoot, runtime, session string) string {
+	return filepath.Join(installationRoot, "artifacts", "agents", "context", "cursors", runtime+"-"+SessionSlug(session)+".json")
 }
 
-func SamplesPath(stateRoot, runtime, session string) string {
-	return filepath.Join(stateRoot, "artifacts", "agents", "context", "samples", runtime+"-"+SessionSlug(session)+".jsonl")
+func SamplesPath(installationRoot, runtime, session string) string {
+	return filepath.Join(installationRoot, "artifacts", "agents", "context", "samples", runtime+"-"+SessionSlug(session)+".jsonl")
 }
 
-func validateCallLocation(stateRoot, runtime string) error {
-	if !filepath.IsAbs(stateRoot) {
-		return fmt.Errorf("state root must be absolute: %s", stateRoot)
+func validateCallLocation(installationRoot, runtime string) error {
+	if !filepath.IsAbs(installationRoot) {
+		return fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
 	if !runtimeNamePattern.MatchString(runtime) {
 		return fmt.Errorf("invalid runtime name %q", runtime)

@@ -90,7 +90,7 @@ func TestVerifiedGuardrails(t *testing.T) {
 	repo := t.TempDir()
 	missionID := "m-vg"
 
-	class, err := VerifiedGuardrails(repo, missionID)
+	class, err := VerifiedGuardrails(repo, repo, missionID)
 	if err != nil || !class.Empty() {
 		t.Fatalf("no fences must mean the empty class: %v %v", class, err)
 	}
@@ -122,7 +122,7 @@ func TestVerifiedGuardrails(t *testing.T) {
 
 	// Fences without an approved digest: unsealed, empty class.
 	writeFences()
-	class, err = VerifiedGuardrails(repo, missionID)
+	class, err = VerifiedGuardrails(repo, repo, missionID)
 	if err != nil || !class.Empty() {
 		t.Fatalf("no approved digest must mean the empty class: %v %v", class, err)
 	}
@@ -130,7 +130,7 @@ func TestVerifiedGuardrails(t *testing.T) {
 	// The approved digest matches: the declared class arrives.
 	fences["approvedContractSha256"] = hex.EncodeToString(sum[:])
 	writeFences()
-	class, err = VerifiedGuardrails(repo, missionID)
+	class, err = VerifiedGuardrails(repo, repo, missionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestVerifiedGuardrails(t *testing.T) {
 	if err := os.WriteFile(contractPath, []byte(contractText+"\n<!-- drifted -->\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifiedGuardrails(repo, missionID); err == nil || !strings.Contains(err.Error(), "cannot trust the contract") {
+	if _, err := VerifiedGuardrails(repo, repo, missionID); err == nil || !strings.Contains(err.Error(), "cannot trust the contract") {
 		t.Fatalf("contract drift must refuse: %v", err)
 	}
 }

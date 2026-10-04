@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -317,7 +318,7 @@ func TestContextCostHookHelper(t *testing.T) {
 
 type contextCostHookOwners struct{ hookOwners }
 
-func (contextCostHookOwners) FindAncestor(string, int, string, bool) (string, int) {
+func (contextCostHookOwners) FindAncestor(roots.Installation, int, string, bool) (string, int) {
 	return fmt.Sprintf(`{"runtime":%q,"pid":%s,"pidStartedAt":%s}`+"\n", os.Getenv("METASYSTEM_CONTEXT_COST_RUNTIME"),
 		os.Getenv("METASYSTEM_CONTEXT_COST_PID"), os.Getenv("METASYSTEM_CONTEXT_COST_STARTED")), 0
 }
@@ -329,7 +330,7 @@ func (contextCostHookOwners) Up(_ hooks.UpRequest, stdout, _ io.Writer) int {
 
 // HealthPreview evaluates at the fixture's own coordinates, as the former
 // wrapper did, so the expected role line names the unresolved temp path.
-func (contextCostHookOwners) HealthPreview(string, string) (string, int) {
+func (contextCostHookOwners) HealthPreview(string, roots.Installation) (string, int) {
 	installation := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION")
 	verdict, err := contextCostHealthAt(installation, installation, os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_HOME"), time.Now().UTC())
 	if err != nil {

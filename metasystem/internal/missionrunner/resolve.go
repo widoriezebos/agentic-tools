@@ -35,7 +35,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// Human-reserved (the design's words): an agent classifying as MAIN,
 	// DELEGATE, supervision, or adapter never resolves taint — the whole
 	// point of the taint is that the machines stop until a human rules.
-	if view, err := lease.ClassifyPersonAt(e.Root, e.Root, e.callerPid(), e.now()); err != nil {
+	if view, err := lease.ClassifyPersonAt(e.installation(), e.installation(), e.callerPid(), e.now()); err != nil {
 		fmt.Fprintf(e.answerErrors(), "resolve refused: this process could not be identified: %v\n", err)
 		return 3
 	} else if view.Class != lease.ClassHuman {
@@ -108,9 +108,9 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// the resolution's compare-and-write pins to it, so a state that
 	// moves between this read and the write refuses instead of becoming
 	// the resolution's silent base.
-	_, verifiedHash, err := e.continuity().VerifyStateWithAnchor(statePath, e.Root, ledgerPath)
+	_, verifiedHash, err := e.continuity().VerifyStateWithAnchor(statePath, e.installation(), ledgerPath)
 	if err != nil {
-		if code, rerr := e.continuity().Reconcile(statePath, e.Root, ledgerPath); rerr != nil || code != 0 {
+		if code, rerr := e.continuity().Reconcile(statePath, e.installation(), ledgerPath); rerr != nil || code != 0 {
 			// The reconciliation refusal carries the ACTIONABLE repair —
 			// surface it, not the generic
 			// verification failure it explains.
@@ -121,7 +121,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
-		if _, verifiedHash, err = e.continuity().VerifyStateWithAnchor(statePath, e.Root, ledgerPath); err != nil {
+		if _, verifiedHash, err = e.continuity().VerifyStateWithAnchor(statePath, e.installation(), ledgerPath); err != nil {
 			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
@@ -176,7 +176,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// The recorded waiting list re-derives after the late answers —
 		// a lawful non-resolution write.
 		repaired := deepCopyDoc(state)
-		repaired["waitingList"] = openAskIDs(asksDirPath(e.Root, e.Mission))
+		repaired["waitingList"] = openAskIDs(asksDirPath(e.installation(), e.Mission))
 		// Pinned to the VERIFIED hash: if the
 		// runner moved the state meanwhile, this stale proposal refuses
 		// instead of legally clearing a marker it never saw.
@@ -289,7 +289,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	}
 	if previousTree == "" {
 		turnID, _ := entry["turnId"].(string)
-		if wall, err := readJSONDoc(filepath.Join(missionDirPath(e.Root, e.Mission), "turns", turnID, "wall.json")); err == nil {
+		if wall, err := readJSONDoc(filepath.Join(missionDirPath(e.installation(), e.Mission), "turns", turnID, "wall.json")); err == nil {
 			previousTree, _ = wall["preTree"].(string)
 		}
 	}
@@ -399,7 +399,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 		ledgerSHA = sha256Hex(string(adoptedBytes))
 	} else {
-		anchored, currentLedger, lerr := e.wallReads().LedgerTruth(e.Root, state, ledgerPath)
+		anchored, currentLedger, lerr := e.wallReads().LedgerTruth(e.installation(), state, ledgerPath)
 		if lerr != nil && !errors.Is(lerr, mission.ErrNoAnchor) {
 			fmt.Fprintf(e.answerErrors(), "resolve refused: cannot verify the mission ledger: %v\n", lerr)
 			return 3
@@ -510,7 +510,7 @@ func sha256Hex(s string) string {
 // verification proved — never a fresh file read, which would
 // self-select any bytes moved since.
 func (e *Engine) verifiedLedgerPin() (string, error) {
-	return e.continuity().LedgerPin(e.Root, e.Mission)
+	return e.continuity().LedgerPin(e.installation(), e.Mission)
 }
 
 // recordedSafeTree reports whether a tree is RECORDED as safe for this
@@ -556,7 +556,7 @@ func (e *Engine) recordedSafeTree(state, entry map[string]any, tree string) bool
 func (e *Engine) answerWallViolationAsks(taintID int64, resolution map[string]any) error {
 	variant, _ := resolution["variant"].(string)
 	resolvedBy, _ := resolution["resolvedBy"].(string)
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	paths, _ := filepath.Glob(filepath.Join(asksDir, "*.json"))
 	for _, path := range paths {
 		ask, err := readJSONDoc(path)
@@ -580,7 +580,7 @@ func (e *Engine) answerWallViolationAsks(taintID int64, resolution map[string]an
 
 // openBoundAsks counts this taint's still-open wall-violation asks.
 func (e *Engine) openBoundAsks(taintID int64) int {
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	paths, _ := filepath.Glob(filepath.Join(asksDir, "*.json"))
 	open := 0
 	for _, path := range paths {
@@ -602,7 +602,7 @@ func (e *Engine) openBoundAsks(taintID int64) int {
 // answers land: every open ask except the ones bound to the taint being
 // resolved.
 func (e *Engine) openAskIDsExcludingTaint(taintID int64) []string {
-	asksDir := asksDirPath(e.Root, e.Mission)
+	asksDir := asksDirPath(e.installation(), e.Mission)
 	ids := []string{}
 	for _, askID := range openAskIDs(asksDir) {
 		bound := false

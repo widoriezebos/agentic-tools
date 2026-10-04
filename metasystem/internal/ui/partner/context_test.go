@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/markdown"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -342,7 +343,7 @@ func documentReader(t *testing.T) func(string) (project.Document, error) {
 	if err := os.WriteFile(filepath.Join(home, "d1.md"), []byte(source), 0o644); err != nil {
 		t.Fatalf("the fixture document must be writable: %v", err)
 	}
-	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	roots := project.Roots{Checkout: checkout, Installation: stateroottest.Installation(t, checkout), StateRoot: stateroottest.State(t, checkout)}
 	return func(id string) (project.Document, error) {
 		return project.Read(roots, id, composedAt)
 	}

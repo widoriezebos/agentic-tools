@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -375,7 +376,13 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 		result.State = state
 		return result, writeWeight(root, state)
 	}
-	policy, policyErr := config.CorrelationPolicy(root)
+	// The policy slot is the installation's configuration: a root that holds
+	// no metasystem.conf is refused, never read as an empty slot.
+	installation, policyErr := stateroot.ParseInstallation(root)
+	policy := ""
+	if policyErr == nil {
+		policy, policyErr = config.CorrelationPolicy(installation)
+	}
 	if policyErr != nil {
 		// A read that failed, not the policy's answer: it may read later.
 		return result, fmt.Errorf("the validation weight was not reset: the review policy can't be read: %w", policyErr)

@@ -80,7 +80,7 @@ func (g *gateActs) line(id, verb, reason string) error {
 }
 
 func (g *gateActs) sitting(_ *session.Session, id, record string, open bool) error {
-	path, err := goal.ReviewRecordPath(g.l.roots.StateRoot, filepath.Join(g.l.roots.Checkout, filepath.FromSlash(record)))
+	path, err := goal.ReviewRecordPath(g.l.roots.StateRoot.Path(), filepath.Join(g.l.roots.Checkout, filepath.FromSlash(record)))
 	if err != nil {
 		return &act.Refusal{Kind: act.KindRequest, Code: "record", Message: err.Error()}
 	}

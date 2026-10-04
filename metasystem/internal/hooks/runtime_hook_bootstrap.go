@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // The engine rebuild a hook starts never runs inside the hook event: the
@@ -24,8 +26,8 @@ const (
 
 // ClaimBootstrapFence claims the installation's bootstrap fence for owner.
 // It reports false, without error, while a live holder has it.
-func ClaimBootstrapFence(installation string, owner int, alive func(int) bool) (bool, error) {
-	fence := filepath.Join(installation, filepath.FromSlash(BootstrapFencePath))
+func ClaimBootstrapFence(installation roots.Installation, owner int, alive func(int) bool) (bool, error) {
+	fence := installation.Path(filepath.FromSlash(BootstrapFencePath))
 	if err := os.MkdirAll(filepath.Dir(fence), 0o755); err != nil {
 		return false, err
 	}
@@ -46,8 +48,8 @@ func ClaimBootstrapFence(installation string, owner int, alive func(int) bool) (
 }
 
 // BootstrapFenceHeld reports whether a live holder has the fence.
-func BootstrapFenceHeld(installation string, alive func(int) bool) bool {
-	target, err := os.Readlink(filepath.Join(installation, filepath.FromSlash(BootstrapFencePath)))
+func BootstrapFenceHeld(installation roots.Installation, alive func(int) bool) bool {
+	target, err := os.Readlink(installation.Path(filepath.FromSlash(BootstrapFencePath)))
 	if err != nil {
 		return false
 	}
@@ -57,8 +59,8 @@ func BootstrapFenceHeld(installation string, alive func(int) bool) bool {
 
 // PointBootstrapFence names pid as the fence holder, replacing the link in
 // one rename.
-func PointBootstrapFence(installation string, pid int) error {
-	fence := filepath.Join(installation, filepath.FromSlash(BootstrapFencePath))
+func PointBootstrapFence(installation roots.Installation, pid int) error {
+	fence := installation.Path(filepath.FromSlash(BootstrapFencePath))
 	staged := fence + "." + strconv.Itoa(os.Getpid())
 	_ = os.Remove(staged)
 	if err := os.Symlink(strconv.Itoa(pid), staged); err != nil {

@@ -41,6 +41,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // Restart is what a human does about an interface that cannot act as them.
@@ -51,12 +52,15 @@ const Restart = "start it from your own terminal with bin/metasystem ui restart 
 // human proof, the caller classification the command edge takes at the same
 // moment, and the name and lineage of the enrolled terminal. An Authority
 // that is not proven carries the reason instead, and refuses both verbs.
+// root is the state root the ledger lives under; installation is where the
+// engine the ledger fence runs is installed.
 type Authority struct {
 	proven         bool
 	human          string
 	lineage        string
 	reason         string
 	root           string
+	installation   stateroot.Installation
 	proof          humanauthority.Proof
 	classification lease.ClassifyResult
 	reads          reads
@@ -75,17 +79,17 @@ type Authority struct {
 // nothing outside a test ever chooses, and nothing here is settable from
 // another package.
 type reads struct {
-	fence     func(root string) error
+	fence     func(installation stateroot.Installation) error
 	endpoint  func(root string) (goal.Endpoint, error)
 	machine   func(root string) (string, error)
 	parkCheck func(root string, endpoint goal.Endpoint) func(goalID, next string) (string, error)
 }
 
-func (r reads) ensureFence(root string) error {
+func (r reads) ensureFence(installation stateroot.Installation) error {
 	if r.fence != nil {
-		return r.fence(root)
+		return r.fence(installation)
 	}
-	return ledgerfence.Ensure(root)
+	return ledgerfence.Ensure(installation)
 }
 
 func (r reads) resolveEndpoint(root string) (goal.Endpoint, error) {
@@ -116,7 +120,7 @@ func (r reads) parkBranchCheck(root string, endpoint goal.Endpoint) func(goalID,
 // controlling terminal at all; the command edge proves over its parent for
 // the same reason, and the relation "this pid is my parent" is established by
 // os.Getppid rather than asserted by a caller.
-func Prove(root, installation string, invokerPID int64, now time.Time) Authority {
+func Prove(root string, installation stateroot.Installation, invokerPID int64, now time.Time) Authority {
 	unproven := func(reason string) Authority {
 		return Authority{root: root, reason: reason + "; " + Restart}
 	}
@@ -129,7 +133,7 @@ func Prove(root, installation string, invokerPID int64, now time.Time) Authority
 		_ = humanauthority.RecordAttorneyRefusal(root, proof, "ui start", "the interface outlives a grant", now)
 		return unproven("the process that started the interface was admitted only by the person at the helm, not proven at the enrolled terminal (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")")
 	}
-	classification, classifyErr := lease.ClassifyVerbAt(root, installation, invokerPID)
+	classification, classifyErr := lease.ClassifyVerbAt(root, installation.Path(), invokerPID)
 	if classifyErr != nil {
 		return unproven("the process that started the interface could not be classified (" + classifyErr.Error() + ")")
 	}
@@ -149,7 +153,7 @@ func Prove(root, installation string, invokerPID int64, now time.Time) Authority
 		return unproven(err.Error())
 	}
 	return Authority{
-		proven: true, human: human, lineage: lineage, root: root,
+		proven: true, human: human, lineage: lineage, root: root, installation: installation,
 		proof: proof, classification: classification,
 	}
 }
@@ -158,9 +162,14 @@ func Prove(root, installation string, invokerPID int64, now time.Time) Authority
 // carries the same explicit fixture grant internal/goal's own tests carry, so
 // a test can exercise the whole publication path without an enrolled
 // terminal. It is bound to the exact root that declared metasystem.runtimes
-// fake and cannot be obtained for a production checkout.
+// fake and cannot be obtained for a production checkout. That root holds
+// metasystem.conf, so it is admitted as the installation too.
 func Fixture(root, human, lineage string, now time.Time) (Authority, error) {
 	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return Authority{}, err
+	}
+	installation, err := stateroot.ParseInstallation(root)
 	if err != nil {
 		return Authority{}, err
 	}
@@ -172,7 +181,7 @@ func Fixture(root, human, lineage string, now time.Time) (Authority, error) {
 		return Authority{}, fmt.Errorf("a test authority needs the person and the session it acts for")
 	}
 	return Authority{
-		proven: true, human: human, lineage: lineage, root: root, proof: proof,
+		proven: true, human: human, lineage: lineage, root: root, installation: installation, proof: proof,
 		classification: lease.ClassifyResult{Class: lease.ClassHuman},
 	}, nil
 }
@@ -192,7 +201,7 @@ const SessionLineage = "browser-session"
 // reads authority=session. The classification is the human class, as the
 // headless fixture authority's is: there is no ancestry to classify, and the
 // thing that was proven is that a human answered a one-time code.
-func SignedIn(root, human, sessionRef string, proof humanauthority.Proof) (Authority, error) {
+func SignedIn(root string, installation stateroot.Installation, human, sessionRef string, proof humanauthority.Proof) (Authority, error) {
 	if strings.TrimSpace(human) == "" || strings.TrimSpace(sessionRef) == "" {
 		return Authority{}, fmt.Errorf("a signed-in session authority names its human and its session")
 	}
@@ -207,7 +216,7 @@ func SignedIn(root, human, sessionRef string, proof humanauthority.Proof) (Autho
 		return Authority{}, fmt.Errorf("the signed-in session names another person or session than the one that signed in")
 	}
 	return Authority{
-		proven: true, human: human, lineage: SessionLineage, root: root, proof: proof,
+		proven: true, human: human, lineage: SessionLineage, root: root, installation: installation, proof: proof,
 		classification: lease.ClassifyResult{Class: lease.ClassHuman},
 	}, nil
 }
@@ -763,7 +772,7 @@ func (a Authority) request(id, action string) (goal.VerbRequest, func(), error) 
 // lineage and name, the boot-time caller classification, a fresh operation
 // identifier and the checkout's clock.
 func (a Authority) assemble() (goal.VerbRequest, error) {
-	if err := a.reads.ensureFence(a.root); err != nil {
+	if err := a.reads.ensureFence(a.installation); err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-fence", err.Error())
 	}
 	endpoint, err := a.reads.resolveEndpoint(a.root)

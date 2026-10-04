@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 const gitSteeringUnset = "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX"
@@ -514,8 +516,8 @@ func equalJSON(a, b any) bool {
 // the installation's own bin/metasystem, or, in a linked worktree, the
 // primary checkout's at the same installation path. git runs with the
 // inherited repository steering removed, as the command's does.
-func DirectEngine(installation string, git func(args ...string) (string, error)) (string, error) {
-	root, ok := physicalDirectory(installation)
+func DirectEngine(installation roots.Installation, git func(args ...string) (string, error)) (string, error) {
+	root, ok := physicalDirectory(installation.Path())
 	if !ok {
 		return "", fmt.Errorf("the installation %s is not a directory", installation)
 	}

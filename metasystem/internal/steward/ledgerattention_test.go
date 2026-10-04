@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -495,7 +496,7 @@ func TestLedgerAttentionKeepsOneDigestAndNudgePerChange(t *testing.T) {
 			t.Fatalf("digest layout root = %q, want %q", root, bed.root)
 		}
 		discoveryCalls = append(discoveryCalls, "layout")
-		return stateroot.Layout{GitRoot: bed.root, RepositoryRoot: bed.root, InstallationRoot: bed.root}, nil
+		return stateroot.Layout{GitRoot: bed.root, RepositoryRoot: bed.root, InstallationRoot: stateroottest.Installation(t, bed.root)}, nil
 	}
 	result := TickResult{LedgerAttention: report}
 	for _, when := range []time.Time{bed.now.Add(4 * time.Minute), bed.now.Add(5 * time.Minute)} {

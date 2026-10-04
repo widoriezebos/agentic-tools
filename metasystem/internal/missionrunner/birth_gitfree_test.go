@@ -120,7 +120,7 @@ func newBirthBed(t *testing.T) *birthBed {
 	if err := os.WriteFile(e.contractPath(), snapshot, 0644); err != nil {
 		t.Fatal(err)
 	}
-	b := &birthBed{t: t, engine: e, snapshot: snapshot, lease: filepath.Join(e.Root, "artifacts", "agents", "checkout.lease.json")}
+	b := &birthBed{t: t, engine: e, snapshot: snapshot, lease: filepath.Join(e.installation(), "artifacts", "agents", "checkout.lease.json")}
 	b.reads = &strictWallReads{t: t}
 	e.wallReadFacts = b.reads
 	b.workspace = &strictBaselineWorkspace{t: t}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -19,7 +20,7 @@ func sessionFor(t *testing.T, bed *ledgerBed) Authority {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := SignedIn(bed.root, "Wido", testSession, proof)
+	authority, err := SignedIn(bed.root, stateroottest.Installation(t, bed.root), "Wido", testSession, proof)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +134,7 @@ func TestASessionAuthorityMustMatchItsOwnProof(t *testing.T) {
 	t.Parallel()
 	bed := ledger(t)
 	elsewhere := t.TempDir()
+	ours := stateroottest.Installation(t, bed.root)
 
 	here, err := humanauthority.SignedInSessionProof(bed.root, "Wido", testSession, "browser", fixtureNow)
 	if err != nil {
@@ -145,19 +147,23 @@ func TestASessionAuthorityMustMatchItsOwnProof(t *testing.T) {
 
 	// The lawful case first, so the refusals below are read as being about
 	// what they name rather than about a constructor that refuses everything.
-	lawful, err := SignedIn(bed.root, "Wido", testSession, here)
+	lawful, err := SignedIn(bed.root, ours, "Wido", testSession, here)
 	if err != nil || !lawful.Proven() {
 		t.Fatalf("a session proof for this checkout was refused: %+v %v", lawful, err)
 	}
 
 	for name, built := range map[string]func() (Authority, error){
-		"no human":        func() (Authority, error) { return SignedIn(bed.root, "", testSession, here) },
-		"no session":      func() (Authority, error) { return SignedIn(bed.root, "Wido", "", here) },
-		"another bed":     func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, there) },
-		"no proof":        func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, humanauthority.Proof{}) },
-		"boot proof":      func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, provenFor(t, bed).proof) },
-		"another human":   func() (Authority, error) { return SignedIn(bed.root, "Somebody-Else", testSession, here) },
-		"another session": func() (Authority, error) { return SignedIn(bed.root, "Wido", "sess-NotThisOne", here) },
+		"no human":    func() (Authority, error) { return SignedIn(bed.root, ours, "", testSession, here) },
+		"no session":  func() (Authority, error) { return SignedIn(bed.root, ours, "Wido", "", here) },
+		"another bed": func() (Authority, error) { return SignedIn(bed.root, ours, "Wido", testSession, there) },
+		"no proof": func() (Authority, error) {
+			return SignedIn(bed.root, ours, "Wido", testSession, humanauthority.Proof{})
+		},
+		"boot proof": func() (Authority, error) {
+			return SignedIn(bed.root, ours, "Wido", testSession, provenFor(t, bed).proof)
+		},
+		"another human":   func() (Authority, error) { return SignedIn(bed.root, ours, "Somebody-Else", testSession, here) },
+		"another session": func() (Authority, error) { return SignedIn(bed.root, ours, "Wido", "sess-NotThisOne", here) },
 	} {
 		authority, err := built()
 		if err == nil {

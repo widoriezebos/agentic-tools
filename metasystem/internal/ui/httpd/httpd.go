@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"io"
 	"io/fs"
 	"net"
@@ -36,7 +37,10 @@ import (
 )
 
 type Info struct {
-	Checkout         string
+	Checkout string
+	// Installation is the installation the interface serves; a signed-in
+	// act that reaches the commit fence names it.
+	Installation     roots.Installation
 	StartedAt        string
 	EngineBuild      string
 	ExecutableDigest string

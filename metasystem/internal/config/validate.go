@@ -575,6 +575,11 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			}
 		}
 	}
+	if raw, present := resolved(CodexSandboxKey, ""); present {
+		if _, err := ParseCodexSandbox(raw); err != nil {
+			add("%v", err)
+		}
+	}
 
 	// Numeric operational knobs are soft-defaulted at READ time (a malformed
 	// bound must not disable bounding), which is only safe because the typo

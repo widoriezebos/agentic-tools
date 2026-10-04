@@ -251,7 +251,7 @@ func (inv *intentInvocation) searchStore(kind, id string) ([]workRef, *intentRes
 		}
 	case refProof:
 		if inv.selectLayoutRoot() == nil {
-			for _, root := range []string{inv.stateRoot, inv.layout.InstallationRoot} {
+			for _, root := range []string{inv.stateRoot, inv.layout.InstallationRoot.Path()} {
 				if _, err := proofrun.ReadAttempt(root, id); err == nil {
 					return []workRef{{kind: kind, id: id}}, nil
 				}

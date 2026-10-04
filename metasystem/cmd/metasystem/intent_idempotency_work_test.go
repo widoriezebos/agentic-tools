@@ -149,7 +149,7 @@ func newWorkIdemDeliveryBed(t *testing.T) *deliveryBed {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bed.install = layout.InstallationRoot
+	bed.install = layout.InstallationRoot.Path()
 	bed.owners = &intentDeliveryOwners{
 		// The landing gate has its own beds (intent_landing_gate_test.go);
 		// these witnesses prove the repeat of a landing the gate admitted.

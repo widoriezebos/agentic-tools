@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -456,7 +457,13 @@ func Adopt(options Options) (Result, error) {
 	// as pre-commit.local behind it. Genesis already enrolled it in a git
 	// target; this makes the enrollment explicit for the report.
 	if targetIsGit {
-		if err := ledgerfence.Ensure(target); err != nil {
+		// The target now carries metasystem.conf, so it is admitted as the
+		// installation whose engine the fence runs.
+		installation, err := stateroot.ParseInstallation(target)
+		if err == nil {
+			err = ledgerfence.Ensure(installation)
+		}
+		if err != nil {
 			return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the pre-commit guard could not be enrolled: %v", err),
 				"once the hook is composed or enrolled by hand")
 		}

@@ -20,6 +20,7 @@ import (
 
 var launchExecutable = os.Executable
 var launchLookupEnv = os.LookupEnv
+var launchMachine = goal.ResolveMachine
 
 // shippedClaudeSettings is the Claude hook settings this engine ships; the
 // seat window it imposes is reported beside the configured one.
@@ -51,7 +52,7 @@ func newLaunchManager() *launch.Manager {
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
-		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, goal.ResolveMachine),
+		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, launchMachine),
 		// The launcher's lane guard reads the host's lane: a seat never
 		// starts there, the landing agent only there (Amendment 1, A-a).
 		Lane: landingLaneCheckout(batchowner.LandingLaneHome)}

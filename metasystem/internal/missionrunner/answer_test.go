@@ -277,3 +277,32 @@ func TestStopLossParkProposalRecordsTheKind(t *testing.T) {
 		t.Fatalf("legacy question changed: %v", ask["question"])
 	}
 }
+
+// On separated roots the runner's park writes its ask under the installation
+// and the answer is recorded there; the state root gets no run state.
+func TestAnswerSeparatedRootsAnswersTheAskUnderTheInstallation(t *testing.T) {
+	t.Parallel()
+	state, installation := t.TempDir(), t.TempDir()
+	engine := NewEngineAt(state, installation, "demo")
+	engine.anchorFn = func(string, string, string) error { return nil }
+	contractPath := filepath.Join(engine.missionDir(), "mission-demo.contract.md")
+	statePath, ledgerPath := filepath.Join(engine.missionDir(), "state.json"), filepath.Join(engine.missionDir(), "ledger.md")
+	writeText(t, contractPath, "# Intent\n\n```mission\ncandidate.branch=main\nstream.primary=Do the work\n```\n")
+	if err := mission.InitLedger(ledgerPath, 8, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
+		t.Fatal(err)
+	}
+	verdict := &StopLossVerdict{Semantics: 2, Tripped: true, Kind: StopLossStagnation, Stagnant: 3, NoGainBudget: 3, Cycles: 5, CycleBudget: 10}
+	if _, err := engine.parkStopLoss(statePath, ledgerPath, "demo", verdict); err != nil {
+		t.Fatal(err)
+	}
+	askPath := filepath.Join(installation, "artifacts", "agents", "missions", "demo", "asks", "stop-loss.json")
+	if code := engine.Answer("stop-loss", "reset: the tail work justifies more of the sealed fences"); code != 0 || readTestDoc(t, askPath)["answeredAt"] == nil {
+		t.Fatalf("answer = %d; the ask under the installation is not answered", code)
+	}
+	if pathExists(filepath.Join(state, "artifacts")) {
+		t.Fatal("the park or the answer wrote under the state root")
+	}
+}

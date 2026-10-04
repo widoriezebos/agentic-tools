@@ -24,7 +24,9 @@ func MaterializeEffective(recordPath, effectivePath string) error {
 // write boundary, so a request for a narrower subdirectory is recorded as the
 // wider boundary that is actually enforced; the widening check then refuses it
 // instead of the launch proceeding on a boundary that is falsely exact. An
-// empty or absent writeRoots is left as it stands.
+// empty or absent writeRoots is left as it stands, and so is an envelope a
+// host setting widened (widenedBy): the workspace is no longer the boundary,
+// and the request already names what the host enforces.
 func RewriteWriteScope(effectivePath, workspace string) error {
 	effective, err := readObject(effectivePath)
 	if err != nil {
@@ -32,6 +34,9 @@ func RewriteWriteScope(effectivePath, workspace string) error {
 	}
 	if effective == nil {
 		return fmt.Errorf("effective permissions file %s is not a JSON object", effectivePath)
+	}
+	if widenedBy, _ := effective["widenedBy"].(string); widenedBy != "" {
+		return nil
 	}
 	if roots, ok := effective["writeRoots"].([]any); ok && len(roots) > 0 {
 		effective["writeRoots"] = []any{resolve(workspace)}

@@ -243,7 +243,7 @@ func (b *machineBed) owners() intentOwners {
 					return lease.Classification{Class: b.class}, nil
 				},
 				transition: func(scope processScope, scale int) *stoptransition.Transition {
-					return &stoptransition.Transition{Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families[scope.Checkout],
+					return &stoptransition.Transition{Root: scope.Installation.Path(), Checkout: scope.Checkout, ScaleMilli: scale, Families: b.families[scope.Checkout],
 						Self: func() (identity.Ref, error) { return self, nil }}
 				},
 			},

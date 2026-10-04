@@ -439,7 +439,7 @@ func TestResumeInspectsOpenTurnFirst(t *testing.T) {
 	if !reflect.DeepEqual(wall["unaccounted"], []any{"solo.go"}) {
 		t.Fatalf("wall unaccounted paths: %v", wall["unaccounted"])
 	}
-	askPaths, err := filepath.Glob(filepath.Join(asksDirPath(root, e.Mission), "*.json"))
+	askPaths, err := filepath.Glob(filepath.Join(asksDirPath(e.installation(), e.Mission), "*.json"))
 	if err != nil || len(askPaths) != 1 {
 		t.Fatalf("wall asks: %v, glob error: %v", askPaths, err)
 	}

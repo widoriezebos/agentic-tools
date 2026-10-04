@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
 
@@ -29,7 +30,7 @@ func TestPreserveRunEvidenceUsesTheResolvedRoot(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run := appRun{roots: lifecycle.Roots{Checkout: checkout, Installation: installation}, key: "k1", lookupEnv: homeOnly(home)}
+	run := appRun{roots: lifecycle.Roots{Checkout: checkout, Installation: stateroottest.Installation(t, installation)}, key: "k1", lookupEnv: homeOnly(home)}
 	record := &applaunch.Record{Key: "k1", Goal: "g1"}
 	if err := run.preserveRunEvidence(record, io.Discard); err != nil {
 		t.Fatal(err)

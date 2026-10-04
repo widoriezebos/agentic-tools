@@ -1,11 +1,14 @@
 package supervisor
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegate"
 )
 
@@ -71,8 +74,9 @@ func codexProbe(d Deps, args []string) int {
 // inherits its cwd and config and takes per-turn overrides through -c only.
 // cacheDirs are the machine delegate cache directories a delegate round's
 // sandbox is granted (disk-lifetimes A7); a host turn passes none.
-func CodexCommand(verb, model, workspace, schema, output, instanceTag, reasoningEffort, permissionsPath, recordPath, session string, cacheDirs []string) ([]string, error) {
-	sandbox, network, err := adapter.CodexPermissionSettings(permissionsPath, recordPath)
+// sandboxMode is the host's launch.codex.sandbox the turn runs under.
+func CodexCommand(verb, model, workspace, schema, output, instanceTag, reasoningEffort, permissionsPath, recordPath, session, sandboxMode string, cacheDirs []string) ([]string, error) {
+	sandbox, network, err := adapter.CodexPermissionSettings(permissionsPath, recordPath, sandboxMode)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +116,21 @@ func (codexOps) Prepare(t *Turn) (Launch, error) {
 			verb = "follow-up"
 		}
 		raw := filepath.Join(t.Dir, "raw.out")
-		command, err := CodexCommand(verb, model, t.Workspace, t.Schema, raw, t.Tag, "", t.Requested, "", t.ResumeSession, nil)
+		// A host turn has no admitted job record: it runs under the host's
+		// setting as it reads now. An installation without a metasystem.conf
+		// (a host bed, a bare checkout) runs under today's sandbox, as it did
+		// before the setting existed.
+		mode, err := d.configValue(config.CodexSandboxKey, config.CodexSandboxWorkspaceWrite)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return Launch{}, err
+			}
+			mode = config.CodexSandboxWorkspaceWrite
+		}
+		if mode, err = config.ParseCodexSandbox(mode); err != nil {
+			return Launch{}, err
+		}
+		command, err := CodexCommand(verb, model, t.Workspace, t.Schema, raw, t.Tag, "", t.Requested, "", t.ResumeSession, mode, nil)
 		if err != nil {
 			return Launch{}, err
 		}
@@ -140,8 +158,11 @@ func (codexOps) Prepare(t *Turn) (Launch, error) {
 		effort = ""
 	}
 	// The envelope decides sandbox and network — in the engine, from the
-	// record itself (KI-12).
-	command, err := CodexCommand(t.Verb, t.Model, t.Workspace, t.Schema, raw, t.Tag, effort, "", t.Record, t.ResumeSession, caches.Directories())
+	// record itself (KI-12). The host's sandbox was read when the job was
+	// admitted and recorded as the request's widening, so the round runs
+	// exactly as wide as its record says even when the setting has changed
+	// since.
+	command, err := CodexCommand(t.Verb, t.Model, t.Workspace, t.Schema, raw, t.Tag, effort, "", t.Record, t.ResumeSession, adapter.CodexAdmittedSandbox(t.Record), caches.Directories())
 	if err != nil {
 		return Launch{}, err
 	}

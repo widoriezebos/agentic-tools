@@ -89,7 +89,7 @@ type answeredRound struct {
 func (inv *intentInvocation) answeredDesignRounds(root string) []answeredRound {
 	var rounds []answeredRound
 	for round := int64(1); ; round++ {
-		returnPath := inv.returnPathAt(inv.layout.InstallationRoot, root, round)
+		returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), root, round)
 		if _, err := os.Stat(returnPath); err != nil {
 			return rounds
 		}

@@ -11,7 +11,7 @@ import (
 // what is missing rather than a bare failure.
 func TestU6bPortAssemblePromptNamesTheMissingTurnRecord(t *testing.T) {
 	repo := promptSandbox(t)
-	err := AssemblePrompt(repo, "m1", "m1-t99-missing", filepath.Join(t.TempDir(), "prompt.md"))
+	err := AssemblePrompt(repo, repo, "m1", "m1-t99-missing", filepath.Join(t.TempDir(), "prompt.md"))
 	if err == nil || !strings.Contains(err.Error(), "missing turn record") {
 		t.Fatalf("a missing turn record must be refused by name: %v", err)
 	}

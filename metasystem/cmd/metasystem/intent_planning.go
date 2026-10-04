@@ -1403,15 +1403,15 @@ func (inv *intentInvocation) standWhereTheCallerIs(id string) *intentResult {
 		return nil
 	}
 	standing, err := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
-	if err != nil || standing == inv.stateRoot {
+	if err != nil || standing.Path() == inv.stateRoot {
 		return nil
 	}
-	if !inv.connection().sameRepository(standing, inv.stateRoot) {
+	if !inv.connection().sameRepository(standing.Path(), inv.stateRoot) {
 		return &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("--repo %s is not a checkout of this repository, so nothing was done", shellCommand([]string{inv.input.text("repo")})),
 			next:    append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "a checkout or goal worktree of this repository"}
 	}
-	inv.layout, inv.stateRoot = layout, standing
+	inv.layout, inv.stateRoot = layout, standing.Path()
 	return nil
 }
 

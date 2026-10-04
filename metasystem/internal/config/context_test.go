@@ -6,26 +6,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 	clearContextEnvironment(t)
 	root := t.TempDir()
 	want := Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}
-	if got, err := ContextBudget(root); err != nil || got != want {
+	if got, err := ContextBudget(stateroottest.Installation(t, root)); err != nil || got != want {
 		t.Fatalf("defaults = %+v, err=%v, want %+v", got, err, want)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf"), ContextCeilingTokensKey+"=250001\n"+ContextHandoffMarginTokensKey+"=145001\n")
-	if got, err := ContextBudget(root); err != nil || got != (Budget{250001, 145001, 105000}) {
+	if got, err := ContextBudget(stateroottest.Installation(t, root)); err != nil || got != (Budget{250001, 145001, 105000}) {
 		t.Fatalf("committed budget = %+v, err=%v", got, err)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf.local"), ContextHandoffMarginTokensKey+"=145002\n")
-	if _, err := ContextBudget(root); err == nil || !strings.Contains(err.Error(), "committed root configuration") {
+	if _, err := ContextBudget(stateroottest.Installation(t, root)); err == nil || !strings.Contains(err.Error(), "committed root configuration") {
 		t.Fatalf("local context law was not refused: %v", err)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\n")
 	t.Setenv(EnvName(ContextCeilingTokensKey), "250002")
-	if got, err := ContextBudget(root); err != nil || got != (Budget{250002, 145002, 105000}) {
+	if got, err := ContextBudget(stateroottest.Installation(t, root)); err != nil || got != (Budget{250002, 145002, 105000}) {
 		t.Fatalf("fixture layers = %+v, err=%v", got, err)
 	}
 
@@ -34,10 +36,10 @@ func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 	codexDirectory := filepath.Join(committedRoot, "codex-memory")
 	putFile(t, filepath.Join(committedRoot, "metasystem.conf"),
 		"metasystem.runtimes=claude,codex\n"+ContextHandoffNoteDirectoryPrefix+"codex="+committedRoot+"//codex-memory\n")
-	if got, err := ContextHandoffNoteDirectory(committedRoot, "claude", claudeDirectory); err != nil || got != claudeDirectory {
+	if got, err := ContextHandoffNoteDirectory(stateroottest.Installation(t, committedRoot), "claude", claudeDirectory); err != nil || got != claudeDirectory {
 		t.Fatalf("Claude note directory = %q err=%v", got, err)
 	}
-	if got, err := ContextHandoffNoteDirectory(committedRoot, "codex", claudeDirectory); err != nil || got != codexDirectory {
+	if got, err := ContextHandoffNoteDirectory(stateroottest.Installation(t, committedRoot), "codex", claudeDirectory); err != nil || got != codexDirectory {
 		t.Fatalf("Codex note directory = %q err=%v", got, err)
 	}
 }
@@ -75,7 +77,7 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 				for _, mode := range []string{"observe", "deny"} {
 					root := t.TempDir()
 					putFile(t, filepath.Join(root, "metasystem.conf"), fmt.Sprintf("%s=%d\n%s=%s\n", ContextCeilingTokensKey, DefaultContextHandoffMarginTokens+ContextConstructionLineTokens, key, mode))
-					if budget, err := ContextBudget(root); err != nil || budget.Trigger != ContextConstructionLineTokens {
+					if budget, err := ContextBudget(stateroottest.Installation(t, root)); err != nil || budget.Trigger != ContextConstructionLineTokens {
 						t.Fatalf("%s=%s changed the construction line: budget=%+v err=%v", key, mode, budget, err)
 					}
 				}
@@ -87,11 +89,11 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 			}
 			root := t.TempDir()
 			putFile(t, filepath.Join(root, "metasystem.conf"), key+"="+fmt.Sprint(boundary)+"\n")
-			if budget, err := ContextBudget(root); err != nil || budget.Trigger != ContextConstructionLineTokens {
+			if budget, err := ContextBudget(stateroottest.Installation(t, root)); err != nil || budget.Trigger != ContextConstructionLineTokens {
 				t.Fatalf("%s refused the construction line: budget=%+v err=%v", key, budget, err)
 			}
 			putFile(t, filepath.Join(root, "metasystem.conf"), key+"="+fmt.Sprint(boundary+direction)+"\n")
-			if _, err := ContextBudget(root); err == nil || !strings.Contains(err.Error(), "construction line 106638") {
+			if _, err := ContextBudget(stateroottest.Installation(t, root)); err == nil || !strings.Contains(err.Error(), "construction line 106638") {
 				t.Fatalf("%s lowered the construction line: %v", key, err)
 			}
 		})
@@ -101,22 +103,22 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 func TestToolGateModeRefusesOtherValues(t *testing.T) {
 	clearContextEnvironment(t)
 	root := t.TempDir()
-	if mode, err := ToolGateMode(root); err != nil || mode != "observe" {
+	if mode, err := ToolGateMode(stateroottest.Installation(t, root)); err != nil || mode != "observe" {
 		t.Fatalf("absent mode = %q, %v", mode, err)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf"), ContextToolGateModeKey+"=deny\n")
-	if mode, err := ToolGateMode(root); err != nil || mode != "deny" {
+	if mode, err := ToolGateMode(stateroottest.Installation(t, root)); err != nil || mode != "deny" {
 		t.Fatalf("deny mode = %q, %v", mode, err)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf"), ContextToolGateModeKey+"=audit\n")
-	if _, err := ToolGateMode(root); err == nil || !strings.Contains(err.Error(), ContextToolGateModeKey) || !strings.Contains(err.Error(), "audit") {
+	if _, err := ToolGateMode(stateroottest.Installation(t, root)); err == nil || !strings.Contains(err.Error(), ContextToolGateModeKey) || !strings.Contains(err.Error(), "audit") {
 		t.Fatalf("audit mode was not refused by key and value: %v", err)
 	}
 }
 
 func TestShippedToolGateModeIsObserve(t *testing.T) {
 	root := filepath.Join("..", "..")
-	mode, err := ToolGateMode(root)
+	mode, err := ToolGateMode(stateroottest.Installation(t, root))
 	if err != nil || mode != "observe" {
 		t.Fatalf("shipped tool gate mode = %q, %v", mode, err)
 	}

@@ -23,9 +23,9 @@ import (
 
 type processScope struct {
 	Checkout             string
-	Installation         string
+	Installation         stateroot.Installation
 	InstallationExplicit bool
-	Root                 string
+	Root                 stateroot.State
 	Binary               string
 }
 
@@ -42,31 +42,64 @@ func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, err
 func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
 	installation, err := upMetasystemRoot("")
 	if err != nil {
-		if scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop); scopeErr == nil {
-			installation = scope.Installation
+		if _, served, scopeErr := processInstallationWith(root, "", repositoryTop); scopeErr == nil {
+			installation = served.Path()
 		} else {
-			// Package tests model a self-hosted installation directly at the
-			// state root without copying a binary. In that layout root is the
-			// installation, which is also ClassifyVerb's historical contract.
-			installation = root
+			// A checkout whose installation carries no engine binary, as in
+			// package tests of the self-hosted layout, is classified against
+			// root itself, and only when root holds metasystem.conf: a state
+			// root that is not also the installation has no runtime adapters,
+			// so reading them there would misclassify every caller.
+			admitted, parseErr := stateroot.ParseInstallation(root)
+			if parseErr != nil {
+				return lease.ClassifyResult{}, fmt.Errorf("the installation that serves %s cannot be found: %w", root, parseErr)
+			}
+			installation = admitted.Path()
 		}
 	}
 	return lease.ClassifyVerbAt(root, installation, callerPid)
 }
 
 func resolveProcessScopeWith(repo, installation string, repositoryTop func(string) (string, error)) (processScope, error) {
-	installationExplicit := installation != ""
+	checkout, installationRoot, err := processInstallationWith(repo, installation, repositoryTop)
+	if err != nil {
+		return processScope{}, err
+	}
+	// The installation holds the engine, its configuration and, under its
+	// artifacts/, the process records; the state root it resolves to holds the
+	// project's state and is the installation itself only in the self-hosted
+	// layout. The checkout is its own repository top, so an installation at
+	// the checkout top resolves to it without asking Git again.
+	top := func(path string) (string, error) {
+		if path == checkout {
+			return checkout, nil
+		}
+		return repositoryTop(path)
+	}
+	stateRoot, err := stateroot.NewResolver(top, nil).RootForInstallation(installationRoot)
+	if err != nil {
+		return processScope{}, err
+	}
+	return processScope{Checkout: checkout, Installation: installationRoot, InstallationExplicit: installation != "", Root: stateRoot, Binary: installationRoot.Path("bin", "metasystem")}, nil
+}
+
+// processInstallationWith finds the checkout that holds repo and the
+// installation that serves it: the one named, or else the checkout or its
+// metasystem/ directory, whichever carries the engine binary. The installation
+// keeps the path as found, so the commands that hand it on name the directory
+// their caller named.
+func processInstallationWith(repo, installation string, repositoryTop func(string) (string, error)) (string, stateroot.Installation, error) {
 	checkout, err := upRepositoryScopeWith(repo, repositoryTop)
 	if err != nil {
-		return processScope{}, fmt.Errorf("%s is not inside a git repository", repo)
+		return "", "", fmt.Errorf("%s is not inside a git repository", repo)
 	}
 	if installation != "" {
 		installation, err = canonicalPath(installation)
 		if err != nil {
-			return processScope{}, err
+			return "", "", err
 		}
 		if !regularFile(filepath.Join(installation, "bin", "metasystem")) {
-			return processScope{}, fmt.Errorf("%s carries no engine", installation)
+			return "", "", fmt.Errorf("%s carries no engine", installation)
 		}
 	} else {
 		for _, candidate := range []string{checkout, filepath.Join(checkout, "metasystem")} {
@@ -76,10 +109,14 @@ func resolveProcessScopeWith(repo, installation string, repositoryTop func(strin
 			}
 		}
 		if installation == "" {
-			return processScope{}, fmt.Errorf("%s carries no metasystem installation", checkout)
+			return "", "", fmt.Errorf("%s carries no metasystem installation", checkout)
 		}
 	}
-	return processScope{Checkout: checkout, Installation: installation, InstallationExplicit: installationExplicit, Root: installation, Binary: filepath.Join(installation, "bin", "metasystem")}, nil
+	installationRoot, err := stateroot.ParseInstallation(installation)
+	if err != nil {
+		return "", "", err
+	}
+	return checkout, installationRoot, nil
 }
 
 func regularFile(path string) bool {
@@ -87,12 +124,16 @@ func regularFile(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// processTransition keeps the stop fence, its lock, its creation claims and
+// the records of the families it stops under the installation: they are run
+// state, and a stop that read them anywhere else would miss what is running.
 func processTransition(scope processScope, scale int) *stoptransition.Transition {
+	installation := scope.Installation.Path()
 	return &stoptransition.Transition{
-		Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale,
+		Root: installation, Checkout: scope.Checkout, ScaleMilli: scale,
 		Families: stoptransition.LocalFamilies(stoptransition.LocalConfig{
-			Root: scope.Root, Checkout: scope.Checkout, Installation: scope.Installation,
-			Binary: scope.Binary, ScaleMilli: scale, CancelJob: delegateCancel(scope.Installation),
+			Root: installation, Checkout: scope.Checkout, Installation: installation,
+			Binary: scope.Binary, ScaleMilli: scale, CancelJob: delegateCancel(installation),
 		}),
 	}
 }
@@ -114,7 +155,7 @@ func publicProcessVerb(verb string) string {
 func processVerbRetryCommand(scope processScope, verb string) string {
 	command := "metasystem " + publicProcessVerb(verb) + " --repo " + scope.Checkout
 	if scope.InstallationExplicit {
-		command += " --installation " + scope.Installation
+		command += " --installation " + scope.Installation.Path()
 	}
 	return command
 }
@@ -176,12 +217,12 @@ func defaultProcessOwners() processOwners {
 }
 
 func (o processOwners) humanTerminal(scope processScope, verb, retry string) (bool, *processRefusal) {
-	return humanTerminalCheck(scope.Root, scope.Installation, verb, o.repositoryTop, o.classify, retry)
+	return humanTerminalCheck(scope.Installation.Path(), scope.Installation.Path(), verb, o.repositoryTop, o.classify, retry)
 }
 
 // stop is the human-terminal checkout stop through the stop transition.
 func (o processOwners) stop(scope processScope, scale int) (stoptransition.Report, *processRefusal) {
-	crashStep, err := processStopCrashStep(scope.Root)
+	crashStep, err := processStopCrashStep(scope.Installation.Path())
 	if err != nil {
 		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error() + ", so nothing was stopped",
 			second: fmt.Sprintf("run: env -u %s %s", processStopCrashVariable, processVerbRetryCommand(scope, "stop")), code: 1}
@@ -255,7 +296,7 @@ func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewB
 			return config.ResolveEvidenceRoot(config.EvidenceRootParams{ConfPath: conf})
 		}
 	}
-	evidence, err := resolveEvidence(filepath.Join(scope.Installation, "metasystem.conf"))
+	evidence, err := resolveEvidence(scope.Installation.Path("metasystem.conf"))
 	if err != nil {
 		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem system start: " + err.Error(), code: 1}
 	}
@@ -324,10 +365,11 @@ func armCheckoutSteps(scope processScope, scale int, authority processArmAuthori
 }
 
 // steps seeds the landing ref, arms the steward under the granted authority,
-// and starts the missing supervision rings. Every step works in the
-// checkout's state root; the installation supplies the engine.
+// and starts the missing supervision rings. The seed writes only the Git
+// configuration of the checkout's state root; the steward's runner, the
+// supervision and the fence they check are run state under the installation.
 func (effects processArmEffects) steps(scope processScope, scale int, authority processArmAuthority) (processArmResult, error) {
-	seed, seedErr := effects.seed(scope.Root)
+	seed, seedErr := effects.seed(scope.Root.Path())
 	if seedErr != nil {
 		return processArmResult{}, seedErr
 	}
@@ -335,9 +377,9 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 	// not need a second provenance line for the seeding mechanism.
 	beforePid, beforeLive := int64(0), false
 	if effects.runner != nil {
-		beforePid, beforeLive = effects.runner(scope.Root)
+		beforePid, beforeLive = effects.runner(scope.Installation.Path())
 	}
-	message, armErr := effects.arm(scope.Root, scope.Binary, authority)
+	message, armErr := effects.arm(scope.Installation.Path(), scope.Binary, authority)
 	lines := []string{}
 	if message != "" {
 		lines = append(lines, message)
@@ -347,11 +389,11 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 	}
 	afterPid, afterLive := int64(0), false
 	if effects.runner != nil {
-		afterPid, afterLive = effects.runner(scope.Root)
+		afterPid, afterLive = effects.runner(scope.Installation.Path())
 	}
 	stewardKept := effects.runner != nil && seed.Ref == "" && beforeLive && afterLive && beforePid == afterPid
 	upResult := effects.up(up.Options{
-		Root: scope.Root, MetasystemRoot: scope.Installation, Scope: scope.Checkout,
+		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout,
 		Binary: scope.Binary, RecoverOnly: true, IfDown: true, WaitScaleMilli: scale,
 		CallerPid: int64(os.Getpid()),
 	})
@@ -486,11 +528,24 @@ func classificationDataRefusal(verb, checkout, retryCommand string, err error) *
 	return &processRefusal{verb: verb, checkout: checkout, sentence: "who started this shell can't be told: " + input + " is damaged (" + failure.Reason() + ")", second: second, code: 1}
 }
 
+// noEngineRefusal is a process command's words for an installation it cannot find.
+const noEngineRefusal = "this installation has no built engine yet, so nothing was done"
+
 // missionFenceBeforeArmFor is the fence check with its caller and report
 // stream explicit: the process a human classification starts from (the
 // launching command supplies itself) and where refusals are written.
 func missionFenceBeforeArmFor(caller ownercall.Process, stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
-	record, err := stopfence.Read(root)
+	// The stop fence is run state under the installation that serves root,
+	// where a stop closes it; the mission's contract stays under root. A
+	// checkout whose installation cannot be found is refused: root holds no
+	// fence, and an absent fence reads as open.
+	scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop)
+	if scopeErr != nil {
+		fmt.Fprintln(stderr, "mission "+mode+": "+noEngineRefusal)
+		fmt.Fprintln(stderr, scopeErr)
+		return 0, 1
+	}
+	record, err := stopfence.Read(scope.Installation.Path())
 	if err != nil {
 		fmt.Fprintln(stderr, "mission "+mode+":", err)
 		return 0, 1
@@ -498,16 +553,8 @@ func missionFenceBeforeArmFor(caller ownercall.Process, stderr io.Writer, root, 
 	if record.State == stopfence.StateOpen {
 		return record.Generation, 0
 	}
-	scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop)
-	if scopeErr != nil {
-		fmt.Fprintln(stderr, "mission "+mode+":", scopeErr)
-		return 0, 1
-	}
 	retryCommand := fmt.Sprintf("metasystem mission %s --root %s --mission <id>", mode, scope.Checkout)
-	// Mission state and its stop fence remain application-owned. Only the
-	// process-control verbs move their supervision/accounting root to the
-	// authenticated installation.
-	classification, classifyErr := classify(scope.Checkout, scope.Installation, caller.Pid)
+	classification, classifyErr := classify(scope.Checkout, scope.Installation.Path(), caller.Pid)
 	if classifyErr != nil {
 		if refusal := classificationDataRefusal("mission "+mode, scope.Checkout, retryCommand, classifyErr); refusal != nil {
 			refusal.printTo(stderr)

@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	seatlaunch "github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -244,7 +245,7 @@ func idemUIBed(t *testing.T) (lifecycle.Roots, identity.Exact) {
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe this process: %v %v", state, err)
 	}
-	return lifecycle.Roots{Checkout: root, Installation: root, StateRoot: root}, exact
+	return lifecycle.Roots{Checkout: root, Installation: stateroottest.Installation(t, root), StateRoot: stateroottest.State(t, root)}, exact
 }
 
 func witnessUIStartRepeat(t *testing.T) {
@@ -263,11 +264,11 @@ func witnessUIStartRepeat(t *testing.T) {
 				return nil, err
 			}
 			encoded, err := json.Marshal(lifecycle.Record{SchemaVersion: 1, Process: process, Address: listen, Checkout: roots.Checkout,
-				Installation: roots.Installation, StartedAt: "2026-09-25T12:00:00Z", EngineBuild: "fixture"})
+				Installation: roots.Installation.Path(), StartedAt: "2026-09-25T12:00:00Z", EngineBuild: "fixture"})
 			if err != nil {
 				return nil, err
 			}
-			if err := os.WriteFile(filepath.Join(lifecycle.Dir(roots.StateRoot), "server.json"), encoded, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(lifecycle.Dir(roots.Installation.Path()), "server.json"), encoded, 0o644); err != nil {
 				return nil, err
 			}
 			return idemUIChild{address: listen}, nil
@@ -276,12 +277,12 @@ func witnessUIStartRepeat(t *testing.T) {
 	if first := uiLifecycleRunWith("start", roots, listen, 0, effects); first.Result.Code != 0 || first.Unchanged || spawns != 1 {
 		t.Fatalf("first start = %+v, spawns %d", first, spawns)
 	}
-	before := idemTreeDigest(t, roots.StateRoot)
+	before := idemTreeDigest(t, roots.Installation.Path())
 	second := uiLifecycleRunWith("start", roots, listen, 0, effects)
 	if second.Result.Code != 0 || !second.Unchanged || spawns != 1 || !strings.Contains(strings.Join(second.Result.Lines, "\n"), "already runs at http://"+listen) {
 		t.Fatalf("repeated start = %+v, spawns %d", second, spawns)
 	}
-	idemSameTree(t, "a repeated interface start", before, idemTreeDigest(t, roots.StateRoot))
+	idemSameTree(t, "a repeated interface start", before, idemTreeDigest(t, roots.Installation.Path()))
 	// Another address is a change: the start runs (and its server refuses).
 	if other := uiLifecycleRunWith("start", roots, "127.0.0.1:9999", 0, effects); other.Unchanged || spawns != 2 {
 		t.Fatalf("start at another address = %+v, spawns %d", other, spawns)
@@ -297,11 +298,11 @@ func witnessUIStopRepeat(t *testing.T) {
 	if first := uiLifecycleRunWith("stop", roots, "", 0, effects); first.Result.Code != 0 || !first.Unchanged {
 		t.Fatalf("first stop = %+v", first)
 	}
-	before := idemTreeDigest(t, roots.StateRoot)
+	before := idemTreeDigest(t, roots.Installation.Path())
 	if second := uiLifecycleRunWith("stop", roots, "", 0, effects); second.Result.Code != 0 || !second.Unchanged {
 		t.Fatalf("repeated stop = %+v", second)
 	}
-	idemSameTree(t, "a repeated interface stop", before, idemTreeDigest(t, roots.StateRoot))
+	idemSameTree(t, "a repeated interface stop", before, idemTreeDigest(t, roots.Installation.Path()))
 
 	// Another machine of this computer running the one interface: the stop
 	// stops it, so it is no repeat; the stop after it is.
@@ -312,11 +313,11 @@ func witnessUIStopRepeat(t *testing.T) {
 	if first := uiLifecycleRunWith("stop", roots, "", 0, across); first.Result.Code != 0 || first.Unchanged || len(seats.sent) != 1 {
 		t.Fatalf("stop of the other seat's interface = %+v, signals %v", first, seats.sent)
 	}
-	before = idemTreeDigest(t, other.Roots.StateRoot)
+	before = idemTreeDigest(t, other.Roots.Installation.Path())
 	if second := uiLifecycleRunWith("stop", roots, "", 0, across); second.Result.Code != 0 || !second.Unchanged || len(seats.sent) != 1 {
 		t.Fatalf("repeated stop across seats = %+v, signals %v", second, seats.sent)
 	}
-	idemSameTree(t, "a repeated stop across seats", before, idemTreeDigest(t, other.Roots.StateRoot))
+	idemSameTree(t, "a repeated stop across seats", before, idemTreeDigest(t, other.Roots.Installation.Path()))
 }
 
 func witnessCoordinatorRepeat(t *testing.T) {

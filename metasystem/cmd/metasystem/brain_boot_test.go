@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func useNonFiringBrainBootTimer(t *testing.T) {
@@ -60,13 +61,13 @@ func declaredBrainBootTestRoot(t *testing.T) (string, func(string) string) {
 	return root, identity
 }
 
-func brainBootTestLayoutReader(root string) func(string) (stateroot.Layout, error) {
+func brainBootTestLayoutReader(tb testing.TB, root string) func(string) (stateroot.Layout, error) {
 	return func(actualRoot string) (stateroot.Layout, error) {
 		if actualRoot != root {
 			panic(fmt.Sprintf("brain digest root %q, want %q", actualRoot, root))
 		}
 		return stateroot.Layout{
-			GitRoot: root, RepositoryRoot: root, InstallationRoot: root, InstallationRel: ".",
+			GitRoot: root, RepositoryRoot: root, InstallationRoot: stateroottest.Installation(tb, root), InstallationRel: ".",
 		}, nil
 	}
 }
@@ -345,7 +346,7 @@ func TestBrainBootDeliveryHelper(t *testing.T) {
 	}
 	if os.Getenv("BRAIN_BOOT_DELIVERY_DIGEST") == "1" {
 		root, dir := os.Getenv("BRAIN_BOOT_DELIVERY_ROOT"), os.Getenv("BRAIN_BOOT_DELIVERY_DIR")
-		if err := writeBrainBootSection(dir, "digest", readBrainDigestWithLayoutReader(root, brainBootTestLayoutReader(root))); err != nil {
+		if err := writeBrainBootSection(dir, "digest", readBrainDigestWithLayoutReader(root, brainBootTestLayoutReader(t, root))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -392,7 +393,7 @@ func TestBrainReadOnlyBootDefersStatusUntilStartDelivered(t *testing.T) {
 	if _, err := os.Stat(statusPath); !os.IsNotExist(err) {
 		t.Fatalf("read-only boot wrote status before publication: %v", err)
 	}
-	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(root)); err != nil {
+	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(t, root)); err != nil {
 		t.Fatalf("start delivery: %v", err)
 	}
 	if _, err := brain.ReadStatus(root); err != nil {
@@ -424,7 +425,7 @@ func TestBrainStartDeliveredRefusesChangedDeclaration(t *testing.T) {
 	if err := os.WriteFile(brain.Path(root), append(changed, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(root)); err == nil || !strings.Contains(err.Error(), "declaration changed") {
+	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(t, root)); err == nil || !strings.Contains(err.Error(), "declaration changed") {
 		t.Fatalf("changed declaration delivery = %v, want the changed-declaration refusal", err)
 	}
 	if _, err := os.Stat(brain.StatusPath(root)); !os.IsNotExist(err) {
@@ -446,7 +447,7 @@ func TestBrainStartDeliveredAdvancesOnlyTheEmittedBrainDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolveLayout := brainBootTestLayoutReader(root)
+	resolveLayout := brainBootTestLayoutReader(t, root)
 	pending, err := narratordigest.PendingWithLayoutReader(root, resolveLayout, "brain")
 	if err != nil || pending.Cursor == 0 || pending.PrefixSHA256 == "" {
 		t.Fatalf("cannot prepare emitted digest coordinates: %+v %v", pending, err)

@@ -41,7 +41,7 @@ func supAWriteJob(t *testing.T, root, job, status string) {
 // recovers to the source's terminal result.
 func TestSupervisionBedAWaitRestartKilledWaiterResumesFromItsRow(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {

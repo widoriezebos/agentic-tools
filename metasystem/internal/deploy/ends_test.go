@@ -143,8 +143,9 @@ func TestEveryEndOfARunOrAnActIsOneLine(t *testing.T) {
 }
 
 // stalled runs act until its calls, "operation commit" each and separated
-// by ", ", started in turn, ends the last with a second person's pause, and
-// waits for act to end.
+// by ", ", started in turn. A second person's pause ends the last call only
+// after it has taken its scripted step and holds its FIFO, then waits for
+// act to end.
 func stalled(t *testing.T, b *bed, calls string, act func(*bed, *Runner)) {
 	t.Helper()
 	started, done := make(chan Active, 32), make(chan struct{})
@@ -159,8 +160,21 @@ func stalled(t *testing.T, b *bed, calls string, act func(*bed, *Runner)) {
 		stalling = awaitStart(t, started, operation, commit)
 	}
 	t.Cleanup(func() { _ = syscall.Kill(-stalling.PID, syscall.SIGKILL) })
+	b.awaitHeld()
 	if _, err := b.runner("Ann", nil).Pause("it hangs"); err != nil {
 		t.Fatal(err)
 	}
-	<-done
+	testenv.AwaitOr(t, "the paused act to end", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, func() string {
+		for _, fifo := range b.fifos {
+			b.releaseIfHeld(fifo)
+		}
+		return "adapter calls so far: " + strings.Join(b.calls(), ", ")
+	})
 }

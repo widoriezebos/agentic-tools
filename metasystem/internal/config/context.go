@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 const (
@@ -36,8 +37,8 @@ var contextKeys = map[string]struct{}{
 var contextRuntimeName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // ContextBudget reads the committed context law for an installation root.
-func ContextBudget(root string) (Budget, error) {
-	return contextBudgetFromConf(filepath.Join(root, "metasystem.conf"))
+func ContextBudget(installation roots.Installation) (Budget, error) {
+	return contextBudgetFromConf(installation.Path("metasystem.conf"))
 }
 
 func contextBudgetFromConf(confPath string) (Budget, error) {
@@ -74,8 +75,8 @@ func validateContextKeys(confPath string) error {
 }
 
 // ToolGateMode reads whether the Claude tool gate observes or denies calls.
-func ToolGateMode(root string) (string, error) {
-	confPath := filepath.Join(root, "metasystem.conf")
+func ToolGateMode(installation roots.Installation) (string, error) {
+	confPath := installation.Path("metasystem.conf")
 	if err := validateContextKeys(confPath); err != nil {
 		return "", err
 	}
@@ -92,7 +93,7 @@ func ToolGateMode(root string) (string, error) {
 // ContextHandoffNoteDirectory resolves the directory that may contain a
 // runtime's handoff note. Claude uses its discovered project memory directory
 // when the committed configuration does not name a different directory.
-func ContextHandoffNoteDirectory(root, runtime, claudeDefault string) (string, error) {
+func ContextHandoffNoteDirectory(installation roots.Installation, runtime, claudeDefault string) (string, error) {
 	if !contextRuntimeName.MatchString(runtime) {
 		return "", contextConfigInvalid(ContextHandoffNoteDirectoryPrefix+runtime, "names an unknown runtime")
 	}
@@ -101,7 +102,7 @@ func ContextHandoffNoteDirectory(root, runtime, claudeDefault string) (string, e
 	if runtime == "claude" {
 		fallback = claudeDefault
 	}
-	value, err := budgetLawValue(filepath.Join(root, "metasystem.conf"), key, fallback)
+	value, err := budgetLawValue(installation.Path("metasystem.conf"), key, fallback)
 	if err != nil {
 		return "", contextConfigInvalid(key, "%v", err)
 	}

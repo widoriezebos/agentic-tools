@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // readAt is the one instant every test reads at, so "read at" is a fact of the
@@ -28,7 +30,7 @@ func selfHostedFixture(t *testing.T) Roots {
 	installation := filepath.Join(checkout, "metasystem")
 	plant(t, installation, "metasystem.conf", "")
 	makeDirectory(t, filepath.Join(installation, "scripts", "agents"))
-	return Roots{Checkout: checkout, Installation: installation, StateRoot: installation}
+	return Roots{Checkout: checkout, Installation: stateroottest.Installation(t, installation), StateRoot: stateroottest.State(t, installation)}
 }
 
 func adoptedFixture(t *testing.T) Roots {
@@ -36,7 +38,7 @@ func adoptedFixture(t *testing.T) Roots {
 	checkout := gitRepository(t)
 	plant(t, checkout, "metasystem.conf", "")
 	makeDirectory(t, filepath.Join(checkout, "scripts", "agents"))
-	return Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	return Roots{Checkout: checkout, Installation: stateroottest.Installation(t, checkout), StateRoot: stateroottest.State(t, checkout)}
 }
 
 func gitRepository(t *testing.T) string {

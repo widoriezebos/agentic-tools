@@ -102,7 +102,7 @@ func TestContractValidationRejectsNonCanonicalCap(t *testing.T) {
 
 func TestAuthorizeCapUsesPairCap(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	result, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", "", nil)
+	result, err := AuthorizeCap(repo, repo, mission, "job-1", "codex", "gpt-5-6-sol", "", nil)
 	if err != nil {
 		t.Fatalf("authorize should succeed: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			repo, mission := fenceEnv(t)
 			if operation == "release" {
-				if _, err := AuthorizeCap(repo, mission, "job-release", "codex", "gpt-5-6-sol", "", nil); err != nil {
+				if _, err := AuthorizeCap(repo, repo, mission, "job-release", "codex", "gpt-5-6-sol", "", nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -164,9 +164,9 @@ func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
 			var err error
 			switch operation {
 			case "cycle":
-				err = ReserveCycle(repo, mission)
+				err = ReserveCycle(repo, repo, mission)
 			case "authorize":
-				_, err = AuthorizeCap(repo, mission, "job-authorize", "codex", "gpt-5-6-sol", "", nil)
+				_, err = AuthorizeCap(repo, repo, mission, "job-authorize", "codex", "gpt-5-6-sol", "", nil)
 			case "release":
 				err = ReleaseJob(repo, mission, "job-release")
 			}
@@ -189,7 +189,7 @@ func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
 func TestAuthorizeCapRefusesAboveSigned(t *testing.T) {
 	repo, mission := fenceEnv(t)
 	requested := 300
-	if _, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", "", &requested); err == nil ||
+	if _, err := AuthorizeCap(repo, repo, mission, "job-1", "codex", "gpt-5-6-sol", "", &requested); err == nil ||
 		!strings.Contains(err.Error(), "above signed") {
 		t.Fatalf("a request above the signed cap must be refused, got %v", err)
 	}
@@ -212,7 +212,7 @@ func TestFMA_R2_MissionCapSourceBypass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := AuthorizeCap(repo, mission, "job-source", "claude", "claude-fable-5-1", "claude-fable-5", nil)
+	result, err := AuthorizeCap(repo, repo, mission, "job-source", "claude", "claude-fable-5-1", "claude-fable-5", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,11 +236,11 @@ func TestFMA_R2_MissionCapSourceBypass(t *testing.T) {
 func TestReserveCycleTripsFenceAndBatchesAsk(t *testing.T) {
 	repo, mission := fenceEnv(t)
 	// fence.cycles=1: the first cycle is allowed.
-	if err := ReserveCycle(repo, mission); err != nil {
+	if err := ReserveCycle(repo, repo, mission); err != nil {
 		t.Fatalf("the first cycle should be allowed: %v", err)
 	}
 	// The second trips the cycles fence and writes a batched ask.
-	err := ReserveCycle(repo, mission)
+	err := ReserveCycle(repo, repo, mission)
 	if err == nil || !strings.Contains(err.Error(), "cycles") {
 		t.Fatalf("the cycle fence should refuse the second cycle, got %v", err)
 	}
@@ -595,7 +595,7 @@ func TestAggregateUsageContentEqualWriteSkipped(t *testing.T) {
 // "batched ask written: " with nothing after the colon.
 func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	if err := ReserveCycle(repo, mission); err != nil {
+	if err := ReserveCycle(repo, repo, mission); err != nil {
 		t.Fatalf("the first cycle should be allowed: %v", err)
 	}
 	// Make the asks directory impossible to create: a FILE in its place.
@@ -603,7 +603,7 @@ func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
 	if err := os.WriteFile(asksPath, []byte("not a directory\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := ReserveCycle(repo, mission)
+	err := ReserveCycle(repo, repo, mission)
 	if err == nil || !strings.Contains(err.Error(), "FAILED to write batched ask") {
 		t.Fatalf("the refusal must carry the ask-write failure, got: %v", err)
 	}
@@ -616,7 +616,7 @@ func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
 // not keep counting against fence.jobs or hold a concurrency slot.
 func TestReleaseJobFreesAHuskedReservation(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	if _, err := AuthorizeCap(repo, mission, "husk-1", "codex", "gpt-5-6-sol", "", nil); err != nil {
+	if _, err := AuthorizeCap(repo, repo, mission, "husk-1", "codex", "gpt-5-6-sol", "", nil); err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
 	fences, _ := readJSONObjectFile(filepath.Join(missionDir(repo, mission), "fences.json"))
@@ -647,7 +647,7 @@ func TestAuthorizeCapRefusesPinnedContractDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeText(t, contractPath, strings.Replace(string(data), "fence.cycles=", "fence.cycles=9", 1))
-	if _, err := AuthorizeCap(repo, mission, "job-drift", "codex", "gpt-5-6-sol", "", nil); err == nil ||
+	if _, err := AuthorizeCap(repo, repo, mission, "job-drift", "codex", "gpt-5-6-sol", "", nil); err == nil ||
 		!strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a drifted pinned contract must refuse naming the pin, got %v", err)
 	}
@@ -663,7 +663,7 @@ func TestAuthorizeCapRefusesWhitespaceOnlyDrift(t *testing.T) {
 	// Raw-file hashing deliberately sees what the canonical approval digest
 	// ignores: a trailing-whitespace-only edit still drifts the pin.
 	writeText(t, contractPath, string(data)+"  \n")
-	if _, err := AuthorizeCap(repo, mission, "job-ws", "codex", "gpt-5-6-sol", "", nil); err == nil ||
+	if _, err := AuthorizeCap(repo, repo, mission, "job-ws", "codex", "gpt-5-6-sol", "", nil); err == nil ||
 		!strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a whitespace-only drift must refuse naming the pin, got %v", err)
 	}

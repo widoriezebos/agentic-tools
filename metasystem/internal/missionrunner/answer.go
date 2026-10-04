@@ -336,7 +336,7 @@ func (e *Engine) fenceReachedInner(values map[string]string) (bool, []string, er
 	if err != nil {
 		return false, nil, err
 	}
-	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), e.now())
+	return fenceReachedAt(fences, values, missionJobStatuses(e.installation(), e.Mission), e.now())
 }
 
 // answerOutput and answerErrors are where Answer and Status report: the

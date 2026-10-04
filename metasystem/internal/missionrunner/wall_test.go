@@ -597,7 +597,7 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	}
 	trace.done()
 	// The crash happened after both the append and the state count write.
-	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
+	if err := mission.ReserveCycle(engine.Root, engine.installation(), engine.Mission); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
@@ -697,7 +697,7 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	if violation, _ := wall["violation"].(string); !strings.Contains(violation, "solo.go") {
 		t.Fatalf("wall violation: %v", wall["violation"])
 	}
-	asks, err := filepath.Glob(filepath.Join(asksDirPath(root, engine.Mission), "*.json"))
+	asks, err := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "*.json"))
 	if err != nil || len(asks) != 1 {
 		t.Fatalf("wall asks: %v, %v", asks, err)
 	}
@@ -757,7 +757,7 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	// The TRUE production crash window: the runner RESERVED
 	// cycle 1, opened the turn, appended its block, then died before the
 	// state write — reservation and the open marker answer for the block.
-	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
+	if err := mission.ReserveCycle(engine.Root, engine.installation(), engine.Mission); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
@@ -1075,7 +1075,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 // and the stderr text is captured.
 func TestAnswerRefusesSupersededAsk(t *testing.T) {
 	bed := newVerificationFileBed(t)
-	writeJSONFile(t, filepath.Join(asksDirPath(bed.e.Root, bed.e.Mission), "ask-1-1.json"),
+	writeJSONFile(t, filepath.Join(asksDirPath(bed.e.installation(), bed.e.Mission), "ask-1-1.json"),
 		map[string]any{"askId": "ask-1-1", "streamId": "build", "reasonClass": "reserved-decision",
 			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
 
@@ -1111,7 +1111,7 @@ func TestResolveTaintRestore(t *testing.T) {
 
 	// A generic answer NEVER clears taint: the wall-violation ask
 	// refuses toward the resolution verb by name.
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) == 0 {
 		t.Fatal("the park must have raised a wall-violation ask")
 	}
@@ -1213,7 +1213,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("the park must have raised exactly one wall-violation ask: %v", asks)
 	}
@@ -1227,7 +1227,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 	secondAsk := deepCopyDoc(firstAsk)
 	secondAsk["askId"] = firstAsk["askId"].(string) + "-second"
 	secondAsk["taintId"] = 2
-	secondAskPath := filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation-second.json")
+	secondAskPath := filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation-second.json")
 	writeJSONFile(t, secondAskPath, secondAsk)
 	proposed := deepCopyDoc(state)
 	taint := proposed["workspaceTaint"].(map[string]any)
@@ -1235,7 +1235,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 		"taintId": 2, "turnId": "alpha-t1-second", "reason": "second drift",
 		"setAt": "2026-08-18T00:00:00Z", "resolution": nil})
 	taint["next"] = 3
-	proposed["waitingList"] = openAskIDs(asksDirPath(engine.Root, engine.Mission))
+	proposed["waitingList"] = openAskIDs(asksDirPath(engine.installation(), engine.Mission))
 	if _, err := engine.writeState(statePath, proposed); err != nil {
 		t.Fatal(err)
 	}
@@ -1348,7 +1348,7 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("expected one bound ask: %v", asks)
 	}
@@ -1357,7 +1357,7 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	unbound := deepCopyDoc(readTestDoc(t, asks[0]))
 	unbound["askId"] = unbound["askId"].(string) + "-unbound"
 	delete(unbound, "taintId")
-	unboundPath := filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation-unbound.json")
+	unboundPath := filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation-unbound.json")
 	writeJSONFile(t, unboundPath, unbound)
 
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
@@ -1603,7 +1603,7 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("expected one bound ask: %v", asks)
 	}
@@ -1640,7 +1640,7 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 		t.Fatalf("the re-offense must book taint 2: %v", entries)
 	}
 	boundToSecond := 0
-	askPaths, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	askPaths, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "*.json"))
 	for _, path := range askPaths {
 		doc := readTestDoc(t, path)
 		if doc["reasonClass"] != "wall-violation" || doc["answeredAt"] != nil {
@@ -2491,7 +2491,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	}
 	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
 	trace.install(engine)
-	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), engine.Mission), "wall-violation*.json"))
 	if len(asks) != 1 {
 		t.Fatalf("wall asks = %v", asks)
 	}
@@ -2499,7 +2499,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	crashed["answeredAt"] = nil
 	crashed["answer"] = nil
 	writeJSONFile(t, asks[0], crashed)
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
+	announcements, _ := filepath.Glob(filepath.Join(engine.installation(), "artifacts", "agents", "mains", "*.json"))
 	for _, path := range announcements {
 		os.Remove(path)
 	}
@@ -2535,7 +2535,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	beforeHash, _ := beforeIntegrity["hash"].(string)
 	trace.movedRetry(trace.tip)
 	trace.begin()
-	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); code == 0 {
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.installation(), ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
 	trace.done()
@@ -2547,7 +2547,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	// The HUMAN VERB surfaces the actionable
 	// repair: resolve-taint over the moved bytes must print
 	// the restore instruction, not a generic verification failure.
-	announcements2, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
+	announcements2, _ := filepath.Glob(filepath.Join(engine.installation(), "artifacts", "agents", "mains", "*.json"))
 	for _, path := range announcements2 {
 		os.Remove(path)
 	}
@@ -2575,7 +2575,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	trace.lag(trace.tip)
 	trace.publication(healed, "")
 	trace.begin()
-	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.installation(), ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("reconciliation must heal the refused-anchor tail: code=%d err=%v", code, rerr)
 	}
 	trace.done()
@@ -2641,7 +2641,7 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	}
 	trace.movedRetry(trace.tip)
 	trace.begin()
-	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); code == 0 {
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.installation(), ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
 	trace.done()
@@ -2656,7 +2656,7 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	trace.lag(trace.tip)
 	trace.publication(healed, "")
 	trace.begin()
-	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.installation(), ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("restoration must heal the close-marker gap: code=%d err=%v", code, rerr)
 	}
 	trace.done()
@@ -2769,7 +2769,7 @@ func TestResolveTaintCrashHealsAtReconcile(t *testing.T) {
 	trace.lag(trace.tip)
 	trace.publication(healed, "")
 	trace.begin()
-	code, err := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath)
+	code, err := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.installation(), ledgerPath)
 	if err != nil || code != 0 {
 		t.Fatalf("the anchor-lag heal must recover the resolution write: code=%d err=%v", code, err)
 	}
@@ -2864,7 +2864,7 @@ func parkedSoloBuildMission(t *testing.T) *Engine {
 	// ancestry. Clearing the dead run's announcements — and pinning the
 	// person-at-a-terminal fact, now that HUMAN is positive-only —
 	// simulates exactly that, so the human-reserved gate sees ClassHuman.
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
+	announcements, _ := filepath.Glob(filepath.Join(engine.installation(), "artifacts", "agents", "mains", "*.json"))
 	for _, path := range announcements {
 		if err := os.Remove(path); err != nil {
 			t.Fatal(err)

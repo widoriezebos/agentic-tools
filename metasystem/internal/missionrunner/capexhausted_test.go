@@ -50,7 +50,7 @@ func TestCapExhaustedReachesLedger(t *testing.T) {
 	fences := readTestDoc(t, engine.fencesPath())
 	fences["cycles"] = 1
 	writeJSONFile(t, engine.fencesPath(), fences)
-	runnersDir := filepath.Join(engine.Root, "artifacts", "agents", "missions", "runners")
+	runnersDir := filepath.Join(engine.installation(), "artifacts", "agents", "missions", "runners")
 	os.MkdirAll(runnersDir, 0o755)
 	record := engine.runnerRecord(os.Getpid(), os.Getpid(), 1, "fixture")
 	writeJSONFile(t, filepath.Join(runnersDir, engine.Mission+".json"), record)

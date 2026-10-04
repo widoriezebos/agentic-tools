@@ -41,7 +41,7 @@ func (inv *intentInvocation) engineVerb(verb string, args ...string) (verbresult
 	if envelope == nil {
 		envelope = runIntentOwnerEnvelope
 	}
-	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot}, verb)
+	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot.Path()}, verb)
 	return result, nil, readErr
 }
 
@@ -290,15 +290,16 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		if problem := inv.resolveLayout(); problem != nil {
 			return inv.render(*problem)
 		}
-		inv.stateRoot, _ = inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		root, _ := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		inv.stateRoot = root.Path()
 	} else if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot}}
+	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot.Path()}}
 	scope := map[string]any{"scope": "installation", "stateRoot": inv.stateRoot}
 	switch choice {
 	case "recover":
-		reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
+		reports, err := recoverGoalJournal(inv.layout.InstallationRoot, inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: scope,
 				Summary: "the goal changes left unfinished here could not be finished: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose what stops recovery"})
@@ -425,7 +426,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
 	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
-	request := missionResolveRequest{root: root, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
+	request := missionResolveRequest{root: root.Path(), installation: inv.layout.InstallationRoot, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
 		by: inv.input.text("by"), reason: inv.input.text("reason")}
 	done := fmt.Sprintf("mission %s: problem %s is resolved as confirmed restored; files were not changed by this command", mission, inv.input.text("problem"))
 	if choice != "confirm-restored" {
@@ -520,7 +521,7 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot}}
+	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot.Path()}}
 	base, err := goal.BaseTip(inv.stateRoot)
 	var deltas []goal.SnapshotDelta
 	if err == nil {

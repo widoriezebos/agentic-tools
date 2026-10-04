@@ -117,7 +117,7 @@ func deployCommand(command intentCommand, run func(*intentInvocation, deployProj
 		if problem := inv.resolveLayout(); problem != nil {
 			return inv.render(*problem)
 		}
-		project, err := resolveDeployProject(inv.deploy(), inv.layout.InstallationRoot, inv.layout.GitRoot)
+		project, err := resolveDeployProject(inv.deploy(), inv.layout.InstallationRoot.Path(), inv.layout.GitRoot)
 		switch {
 		case errors.Is(err, deploy.ErrNoContract):
 			return inv.render(intentResult{Outcome: intentUnchanged, Summary: deploy.ErrNoContract.Error() + ", so there is nothing to deploy and nothing was done",
@@ -134,7 +134,7 @@ func deployCommand(command intentCommand, run func(*intentInvocation, deployProj
 // deployPerson proves the person a rollback, pause or resume needs; an
 // agent is told who runs it and how.
 func (inv *intentInvocation) deployPerson(project deployProject, act string) (string, *intentResult) {
-	by, err := project.owners.person(inv.layout.InstallationRoot)
+	by, err := project.owners.person(inv.layout.InstallationRoot.Path())
 	if err == nil {
 		return by, nil
 	}
@@ -306,7 +306,7 @@ func (inv *intentInvocation) pausedRefusal(pause deploy.Pause) intentResult {
 func runIntentDeployNow(inv *intentInvocation, project deployProject) int {
 	by := strings.TrimSpace(inv.input.text("by"))
 	if by == "" {
-		if person, err := project.owners.person(inv.layout.InstallationRoot); err == nil {
+		if person, err := project.owners.person(inv.layout.InstallationRoot.Path()); err == nil {
 			by = person
 		} else {
 			by = "the seat at " + project.root

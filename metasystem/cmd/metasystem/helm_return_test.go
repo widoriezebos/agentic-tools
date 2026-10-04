@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -112,7 +113,7 @@ func newReturnBed(t *testing.T, branch string) *returnBed {
 		}
 		return "supervision: recovered"
 	}
-	h.fence = func(string) error {
+	h.fence = func(roots.Installation) error {
 		if b.fail {
 			return errors.New("no executable engine")
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -58,24 +59,27 @@ var (
 )
 
 // ContextBudgetLine owns holder selection, one usage read, and the role
-// verdict shared by health and the explicit status command.
-func ContextBudgetLine(stateRoot, installationRoot string, now time.Time, opts ContextOptions) (RoleVerdict, usage.Reading, error) {
+// verdict shared by health and the explicit status command. The thresholds,
+// the holder's announcement, the call samples and the spills are all run
+// state of the installation, so one installation root answers the line.
+func ContextBudgetLine(installation stateroot.Installation, now time.Time, opts ContextOptions) (RoleVerdict, usage.Reading, error) {
 	// A named root that is not there has no holder to report on (EM-07).
-	if _, err := os.Stat(installationRoot); errors.Is(err, fs.ErrNotExist) {
-		err = fmt.Errorf("%s does not exist, so there is no installation to read; nothing was read", installationRoot)
+	if _, err := os.Stat(installation.Path()); errors.Is(err, fs.ErrNotExist) {
+		err = fmt.Errorf("%s does not exist, so there is no installation to read; nothing was read", installation.Path())
 		return roleUnknown(RoleContext, err.Error(), ""), usage.Reading{}, err
 	}
-	return contextBudgetLineWithProber(stateRoot, installationRoot, now, opts, identity.KernelProber{})
+	return contextBudgetLineWithProber(installation, now, opts, identity.KernelProber{})
 }
 
-func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
+func contextBudgetLineWithProber(installation stateroot.Installation, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
+	installationRoot := installation.Path()
 	remedy := "metasystem session handoff --status --root " + installationRoot
 	diagnostic := opts.Transcript != ""
-	budget, err := config.ContextBudget(installationRoot)
+	budget, err := config.ContextBudget(installation)
 	if err != nil {
 		return roleUnknown(RoleContext, err.Error(), "metasystem settings check --repo "+installationRoot), usage.Reading{}, err
 	}
-	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(stateRoot, opts, prober)
+	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(installationRoot, opts, prober)
 	if err != nil {
 		return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), remedy), diagnostic), usage.Reading{}, err
 	}
@@ -113,7 +117,7 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 		return contextVerdict(reading, budget, installationRoot, true), reading, nil
 	}
 	if !holder.explicit && unobservableReason == "" {
-		if err := usage.RegisterSessionNonBlocking(stateRoot, holder.runtime, holder.session, holder.process.Pid, holder.process.StartedAtSec); err != nil {
+		if err := usage.RegisterSessionNonBlocking(installationRoot, holder.runtime, holder.session, holder.process.Pid, holder.process.StartedAtSec); err != nil {
 			return roleUnknown(RoleContext, err.Error(), remedy), usage.Reading{}, err
 		}
 	}
@@ -126,20 +130,21 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 		}
 	}
 	readOpts.Toplevel = toplevel
-	reading, err := usage.LatestCall(stateRoot, holder.runtime, holder.session, readOpts)
+	reading, err := usage.LatestCall(installation, holder.runtime, holder.session, readOpts)
 	if err != nil {
 		return roleUnknown(RoleContext, err.Error(), remedy), reading, err
 	}
 
 	verdict := contextVerdict(reading, budget, installationRoot, false)
-	if spillPath, bytes, found := output.NewestSince(stateRoot, reading.PreviousReadAt); found {
+	if spillPath, bytes, found := output.NewestSince(installationRoot, reading.PreviousReadAt); found {
 		verdict.Reason += fmt.Sprintf("; newest spill: %s (%d bytes)", filepath.Base(spillPath), bytes)
 	}
 	return verdict, reading, nil
 }
 
 // readContextTranscriptOverride keeps an operator-supplied transcript outside
-// the evidence that health and reports consume.
+// the evidence that health and reports consume: a scratch directory stands in
+// for the installation for the length of one read.
 func readContextTranscriptOverride(runtime, session string, opts usage.ReadOptions) (usage.Reading, error) {
 	// In the process's registered scratch root (Part B U1b-2): a killed
 	// read leaves a root the sweeper proves about, never a TMPDIR entry.
@@ -151,7 +156,7 @@ func readContextTranscriptOverride(runtime, session string, opts usage.ReadOptio
 	if err != nil {
 		return usage.Reading{}, fmt.Errorf("cannot create diagnostic context store: %w", err)
 	}
-	reading, readErr := usage.LatestCall(root, runtime, session, opts)
+	reading, readErr := readContextScratch(root, runtime, session, opts)
 	cleanupErr := removeContextDiagnosticRoot(root)
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("cannot remove diagnostic context store %s: %w", root, cleanupErr)
@@ -159,12 +164,37 @@ func readContextTranscriptOverride(runtime, session string, opts usage.ReadOptio
 	return reading, errors.Join(readErr, cleanupErr)
 }
 
-func checkContextBudget(stateRoot, installationRoot string, now time.Time, prober identity.Prober) RoleVerdict {
-	verdict, _, _ := contextBudgetLineWithProber(stateRoot, installationRoot, now, ContextOptions{}, prober)
+// readContextScratch admits the scratch directory, marked with an empty
+// metasystem.conf, as the installation one read keeps its samples under.
+func readContextScratch(root, runtime, session string, opts usage.ReadOptions) (usage.Reading, error) {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
+		return usage.Reading{}, fmt.Errorf("cannot create diagnostic context store: %w", err)
+	}
+	installation, err := stateroot.ParseInstallation(root)
+	if err != nil {
+		return usage.Reading{}, fmt.Errorf("cannot create diagnostic context store: %w", err)
+	}
+	return usage.LatestCall(installation, runtime, session, opts)
+}
+
+func checkContextBudget(installation stateroot.Installation, now time.Time, prober identity.Prober) RoleVerdict {
+	verdict, _, _ := contextBudgetLineWithProber(installation, now, ContextOptions{}, prober)
 	return verdict
 }
 
-func resolveContextIdentity(stateRoot string, opts ContextOptions, prober identity.Prober) (*contextIdentity, string, string, error) {
+// checkInstalledContextBudget is the health role over the root health names
+// as the installation. The line reads that installation's configuration and
+// run state, so a root that holds no metasystem.conf, such as a state root
+// apart from its installation, is refused rather than read as one.
+func checkInstalledContextBudget(metasystemRoot string, now time.Time, prober identity.Prober) RoleVerdict {
+	installation, err := stateroot.ParseInstallation(metasystemRoot)
+	if err != nil {
+		return roleUnknown(RoleContext, err.Error(), "metasystem settings check --repo "+metasystemRoot)
+	}
+	return checkContextBudget(installation, now, prober)
+}
+
+func resolveContextIdentity(installationRoot string, opts ContextOptions, prober identity.Prober) (*contextIdentity, string, string, error) {
 	if (opts.Runtime == "") != (opts.Session == "") {
 		return nil, "", "", fmt.Errorf("runtime and session must be supplied together")
 	}
@@ -172,7 +202,7 @@ func resolveContextIdentity(stateRoot string, opts ContextOptions, prober identi
 		return &contextIdentity{runtime: opts.Runtime, session: opts.Session, explicit: true}, "", "", nil
 	}
 
-	directory := filepath.Join(stateRoot, "artifacts", "agents", "mains")
+	directory := filepath.Join(installationRoot, "artifacts", "agents", "mains")
 	leasePath := filepath.Join(directory, "worktree-lease.json")
 	var lease contextLease
 	if err := readContextJSON(leasePath, &lease); err != nil {

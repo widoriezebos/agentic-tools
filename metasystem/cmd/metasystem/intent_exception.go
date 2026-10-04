@@ -85,7 +85,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	data := map[string]any{"goal": goalID}
 	// Everything the landing touches is the main installation: a request
 	// from a goal's linked checkout delivers into the checkout it belongs to.
-	primary := goalBranchHolderRoot(root)
+	primary := goalBranchHolderRoot(root.Path())
 	subjects := filepath.Join(primary, "artifacts", "agents", "intent-land", goalID)
 	if _, err := (gittree.Workspace{Dir: primary}).TopLevel(); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "git can't read the main checkout, so nothing was recorded",
@@ -105,7 +105,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	inv.finishReleaseSets(filepath.Join(primary, "artifacts", "agents", "landing-intent", goalID))
 	var subject landing.CarriedSubject
 	if opid == "" {
-		composed, composedTip, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
+		composed, composedTip, problem := inv.composeCarriedSubject(root.Path(), primary, goalID, targets, data)
 		if problem != nil {
 			return *problem
 		}
@@ -196,7 +196,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			if !present {
 				// A word recorded elsewhere (a channel answer) is adopted
 				// only when the goal composes to exactly its workspace now.
-				composed, composedTip, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
+				composed, composedTip, problem := inv.composeCarriedSubject(root.Path(), primary, goalID, targets, data)
 				if problem != nil {
 					return inv.carriedStopped(goalID, opid, targets, data, strings.TrimSuffix(problem.Summary, ", so nothing was recorded"),
 						append([]string{"its candidate cannot be composed"}, problem.Details...)...)

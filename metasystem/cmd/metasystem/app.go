@@ -182,7 +182,7 @@ type appRun struct {
 func resolveAppRun(roots lifecycle.Roots, contract applaunch.Contract, contractPath, ref, goal string) appRun {
 	run := appRun{roots: roots, contract: contract, contractPath: contractPath, ref: ref, goal: goal,
 		key: applaunch.KeyFor(ref)}
-	run.runDir = applaunch.RunDir(roots.StateRoot, run.key)
+	run.runDir = applaunch.RunDir(roots.Installation.Path(), run.key)
 	// Every run's data has a directory of its own, the standing run's too:
 	// the state root a prepare is given is one it may clear, and the
 	// engine's own installation is never that.
@@ -195,7 +195,7 @@ func resolveAppRun(roots lifecycle.Roots, contract applaunch.Contract, contractP
 	if contract.Log != "" {
 		run.logPath = filepath.Join(run.tree, filepath.FromSlash(contract.Log))
 	} else {
-		run.logPath = applaunch.DefaultLogPath(roots.StateRoot, run.key)
+		run.logPath = applaunch.DefaultLogPath(roots.Installation.Path(), run.key)
 	}
 	return run
 }
@@ -207,7 +207,7 @@ func (r appRun) readOptions() applaunch.ReadOptions {
 }
 
 func (r appRun) status() (applaunch.Status, error) {
-	return applaunch.Read(r.roots.StateRoot, r.key, r.contract, r.readOptions())
+	return applaunch.Read(r.roots.Installation.Path(), r.key, r.contract, r.readOptions())
 }
 
 // seedRecord is what the supervisor writes before it spawns anything.
@@ -382,7 +382,7 @@ func (r *appRun) allocateAddress() error {
 		r.address = r.contract.Address
 		return nil
 	}
-	if record, err := applaunch.ReadRecord(r.roots.StateRoot, r.key); err == nil && record.Address != "" {
+	if record, err := applaunch.ReadRecord(r.roots.Installation.Path(), r.key); err == nil && record.Address != "" {
 		if available(record.Address) {
 			r.address = record.Address
 			return nil
@@ -411,7 +411,7 @@ func (r *appRun) allocateAddress() error {
 // takenAddresses are the addresses this seat's other runs already hold.
 func (r appRun) takenAddresses() map[string]bool {
 	taken := map[string]bool{r.contract.Address: true}
-	keys, err := applaunch.Keys(r.roots.StateRoot)
+	keys, err := applaunch.Keys(r.roots.Installation.Path())
 	if err != nil {
 		return taken
 	}
@@ -419,7 +419,7 @@ func (r appRun) takenAddresses() map[string]bool {
 		if key == r.key {
 			continue
 		}
-		if record, err := applaunch.ReadRecord(r.roots.StateRoot, key); err == nil && record.Address != "" {
+		if record, err := applaunch.ReadRecord(r.roots.Installation.Path(), key); err == nil && record.Address != "" {
 			taken[record.Address] = true
 		}
 	}
@@ -453,7 +453,7 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 		return nil
 	}
 	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
-		ConfPath: filepath.Join(r.roots.Installation, "metasystem.conf"), LookupEnv: r.lookupEnv})
+		ConfPath: r.roots.Installation.Path("metasystem.conf"), LookupEnv: r.lookupEnv})
 	if err != nil {
 		return fmt.Errorf("goal %s's run evidence was not copied, so its run stays open: %v", goal, err)
 	}
@@ -491,7 +491,7 @@ func (r *appRun) endRun(record *applaunch.Record, clean bool, out io.Writer) err
 	if err := r.preserveRunEvidence(record, out); err != nil {
 		return err
 	}
-	if err := applaunch.RemoveRecord(r.roots.StateRoot, r.key); err != nil {
+	if err := applaunch.RemoveRecord(r.roots.Installation.Path(), r.key); err != nil {
 		return err
 	}
 	if clean {
@@ -513,9 +513,9 @@ func (r appRun) launchSupervisor() (string, error) {
 	}
 	spec := applaunch.LaunchSpec{
 		Executable: executable,
-		Args:       applaunch.ServeArgs(r.roots.Checkout, r.roots.Installation, r.key, r.ref, r.goal, r.address),
+		Args:       applaunch.ServeArgs(r.roots.Checkout, r.roots.Installation.Path(), r.key, r.ref, r.goal, r.address),
 		Dir:        r.roots.Checkout,
-		LogPath:    filepath.Join(applaunch.Dir(r.roots.StateRoot), r.key+".launch.log"),
+		LogPath:    filepath.Join(applaunch.Dir(r.roots.Installation.Path()), r.key+".launch.log"),
 	}
 	wait := time.Duration(r.contract.ReadyWaitMS())*time.Millisecond + 10*time.Second
 	if r.supervisorWait != 0 {
@@ -570,7 +570,7 @@ func runAppServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return refuse(err.Error())
 	}
-	_, contract, contractPath, err := loadPhysicalLaunchContract(roots.Installation)
+	_, contract, contractPath, err := loadPhysicalLaunchContract(roots.Installation.Path())
 	if err != nil {
 		return refuse(err.Error())
 	}
@@ -594,7 +594,7 @@ func runAppServe(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 	err = applaunch.Supervise(applaunch.SuperviseOptions{
 		Context:     ctx,
-		StateRoot:   roots.StateRoot,
+		StateRoot:   roots.Installation.Path(),
 		Seed:        seed,
 		Contract:    contract,
 		ProjectRoot: run.tree,

@@ -86,7 +86,7 @@ func (p *Project) readGoals() {
 // entries are listed and opened through the directory's own root, so a symlink
 // whose target lies outside does not open.
 func (p *Project) goalsIn(relative, where string) []Goal {
-	directory := filepath.Join(p.Roots.StateRoot, filepath.FromSlash(relative))
+	directory := p.Roots.StateRoot.Path(filepath.FromSlash(relative))
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return nil

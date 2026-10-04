@@ -129,12 +129,12 @@ func contractValuesFromBytes(data []byte) (map[string]string, error) {
 
 // verifiedContractValues reads the live contract, checks its raw-file sha256
 // against the approved digest recorded in the fences, and parses it.
-func verifiedContractValues(repo, mission string, fences map[string]any) (map[string]string, error) {
+func verifiedContractValues(root, mission string, fences map[string]any) (map[string]string, error) {
 	approved, _ := fences["approvedContractSha256"].(string)
 	if !sha256HexRe.MatchString(approved) {
 		return nil, fmt.Errorf("mission fence refused: approvedContractSha256 is absent or invalid")
 	}
-	path := filepath.Join(repo, "plans", fmt.Sprintf("mission-%s.contract.md", mission))
+	path := filepath.Join(root, "plans", fmt.Sprintf("mission-%s.contract.md", mission))
 	snapshot, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("mission contract is unreadable: %v", err)
@@ -423,13 +423,15 @@ func ReleaseJobWithClock(repo, mission, job string, clock func() time.Time) erro
 	return atomicWriteJSON(path, fences)
 }
 
-// ReserveCycle checks the cycle fences and records a cycle.
-func ReserveCycle(repo, mission string) error {
-	return ReserveCycleWithClock(repo, mission, nowUTC)
+// ReserveCycle checks the cycle fences and records a cycle. The contract is
+// read under the state root root; the fences and asks are run state under
+// the installation repo.
+func ReserveCycle(root, repo, mission string) error {
+	return ReserveCycleWithClock(root, repo, mission, nowUTC)
 }
 
 // ReserveCycleWithClock applies the cycle fences using a caller-owned clock.
-func ReserveCycleWithClock(repo, mission string, clock func() time.Time) error {
+func ReserveCycleWithClock(root, repo, mission string, clock func() time.Time) error {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -443,7 +445,7 @@ func ReserveCycleWithClock(repo, mission string, clock func() time.Time) error {
 	if err != nil {
 		return err
 	}
-	values, err := verifiedContractValues(repo, mission, fences)
+	values, err := verifiedContractValues(root, mission, fences)
 	if err != nil {
 		return err
 	}
@@ -459,13 +461,15 @@ func ReserveCycleWithClock(repo, mission string, clock func() time.Time) error {
 
 // AuthorizeCap authorizes a per-job cap for a runtime/model pair, computing the
 // deadline against the mission's remaining wall clock, and records the
-// reservation. It returns the authorization result.
-func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, requested *int) (map[string]any, error) {
-	return AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource, requested, nowUTC)
+// reservation. It returns the authorization result. The contract is read
+// under the state root root; the fences and asks are run state under the
+// installation repo.
+func AuthorizeCap(root, repo, mission, job, runtime, model, aliasSource string, requested *int) (map[string]any, error) {
+	return AuthorizeCapWithClock(root, repo, mission, job, runtime, model, aliasSource, requested, nowUTC)
 }
 
 // AuthorizeCapWithClock computes authorization and deadlines using a caller-owned clock.
-func AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource string, requested *int, clock func() time.Time) (map[string]any, error) {
+func AuthorizeCapWithClock(root, repo, mission, job, runtime, model, aliasSource string, requested *int, clock func() time.Time) (map[string]any, error) {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -479,7 +483,7 @@ func AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource strin
 	if err != nil {
 		return nil, err
 	}
-	values, err := verifiedContractValues(repo, mission, fences)
+	values, err := verifiedContractValues(root, mission, fences)
 	if err != nil {
 		return nil, err
 	}

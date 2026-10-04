@@ -16,6 +16,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -43,7 +45,7 @@ type helmOwners struct {
 	done          func(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof, force bool) intentResult
 	read          func(inv *intentInvocation, patch, brief string) intentResult
 	recover       func(scope processScope) string
-	fence         func(root string) error
+	fence         func(installation stateroot.Installation) error
 }
 
 func (o helmOwners) withDefaults() helmOwners {
@@ -100,7 +102,7 @@ func (o helmOwners) withDefaults() helmOwners {
 		o.recover = helmRecover
 	}
 	if o.fence == nil {
-		o.fence = ensureGuardEnrolled
+		o.fence = ledgerfence.Ensure
 	}
 	return o
 }
@@ -180,17 +182,17 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			Decision: "run metasystem helm take inside the seat's checkout"})
 	}
 	layout, err := inv.owners.resolver.ResolveLayout(path)
-	root := layout.InstallationRoot
+	var root stateroot.State
 	if err == nil {
-		root, err = inv.owners.resolver.RootForInstallation(root)
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this checkout has no MetaSystem installation; nothing was done",
 			Decision: "run metasystem helm take inside a checkout MetaSystem is set up in", Details: []string{err.Error()}})
 	}
 	now, pid := owners.now().UTC(), owners.pid()
-	proof, err := humanauthority.ProveTerminal(root, pid, owners.reader, now)
-	if err == nil && !proof.TerminalValidFor(root) {
+	proof, err := humanauthority.ProveTerminal(root.Path(), pid, owners.reader, now)
+	if err == nil && !proof.TerminalValidFor(root.Path()) {
 		err = fmt.Errorf("terminal human authority was not proven")
 	}
 	if err != nil {
@@ -200,11 +202,11 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			Details: []string{"refused because: " + err.Error()}})
 	}
 	record := helm.Record{By: strings.TrimSpace(inv.input.text("name")), At: now.Format(time.RFC3339), Reason: reason, Checkout: seat.Checkout, Enrollment: "unreadable"}
-	enrollment, readErr := humanauthority.ReadEnrollment(root)
+	enrollment, readErr := humanauthority.ReadEnrollment(root.Path())
 	if readErr == nil {
 		record.Enrollment, record.EnrolledAs = "other-terminal", enrollment.Human
 		// A helm proof is never the take's grade: only the real walk is.
-		if enrolled, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil && enrolled.Helm == nil {
+		if enrolled, proveErr := humanauthority.Prove(root.Path(), pid, owners.reader, now); proveErr == nil && enrolled.Helm == nil {
 			record.Enrollment = "proven"
 			if record.By == "" {
 				record.By = enrollment.Human
@@ -223,7 +225,7 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	// a failed enrollment leaves the helm taken and says what to run.
 	enrollmentLine, enrolledNow := "", false
 	if record.Enrollment != "proven" && (readErr == nil || os.IsNotExist(readErr)) {
-		if enrolled, enrollErr := humanauthority.Enroll(root, pid, owners.reader, record.By, now); enrollErr != nil {
+		if enrolled, enrollErr := humanauthority.Enroll(root.Path(), pid, owners.reader, record.By, now); enrollErr != nil {
 			enrollmentLine = "this terminal is not enrolled (" + humanauthority.PlainReason(enrollErr) + "): " + humanauthority.PersonActRemedy("")
 		} else {
 			record.Enrollment, record.EnrolledAs, enrolledNow = "proven", enrolled.Human, !enrolled.Repeat
@@ -233,7 +235,7 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			}
 		}
 	}
-	if record.Machine, err = owners.machine(root); err != nil {
+	if record.Machine, err = owners.machine(root.Path()); err != nil {
 		record.Machine, _ = os.Hostname()
 	}
 	record.LeaderRef = fmt.Sprintf("%d@%d", proof.TerminalRef.PID, proof.TerminalRef.PIDStartedAt)
@@ -338,13 +340,13 @@ func (inv *intentInvocation) helmEnrollment(path string, record helm.Record) hel
 	enroll := shellCommand([]string{"metasystem", "system", "enroll", "--name", record.By})
 	leader := fmt.Sprintf("session leader %s (%s)", record.Leader, record.LeaderRef)
 	layout, err := inv.owners.resolver.ResolveLayout(path)
-	root := layout.InstallationRoot
+	var root stateroot.State
 	if err == nil {
-		root, err = inv.owners.resolver.RootForInstallation(root)
+		root, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	var enrollment humanauthority.Enrollment
 	if err == nil {
-		enrollment, err = humanauthority.ReadEnrollment(root)
+		enrollment, err = humanauthority.ReadEnrollment(root.Path())
 	}
 	switch {
 	case err != nil:
@@ -430,7 +432,7 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 		return append(lines, "running work: unavailable: "+err.Error())
 	}
 	running := 0
-	paths, _ := filepath.Glob(filepath.Join(layout.InstallationRoot, "artifacts", "agents", "jobs", "*.json"))
+	paths, _ := filepath.Glob(layout.InstallationRoot.Path("artifacts", "agents", "jobs", "*.json"))
 	for _, path := range paths {
 		if object, readErr := dispatchcore.ReadRecordObject(path); readErr == nil && !dispatchcore.TerminalStatus(fmt.Sprint(object["status"])) {
 			running++

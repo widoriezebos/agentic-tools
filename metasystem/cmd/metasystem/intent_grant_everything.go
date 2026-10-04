@@ -233,7 +233,7 @@ func (inv *intentInvocation) liveGeneralGrant(paths ...string) (goal.PowerOfAtto
 	owners := inv.owners.attorney.withDefaults()
 	var candidates []string
 	first := ""
-	for _, path := range append(paths, inv.stateRoot, inv.layout.InstallationRoot) {
+	for _, path := range append(paths, inv.stateRoot, inv.layout.InstallationRoot.Path()) {
 		if path == "" {
 			continue
 		}

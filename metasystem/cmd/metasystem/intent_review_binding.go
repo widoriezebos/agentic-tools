@@ -232,8 +232,10 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 				nextReason: "the correction carries these findings and decisions to the builder; its result is reviewed again"}
 		}
 	}
-	closer := *inv
-	closer.layout.InstallationRoot = root
+	closer, refused := inv.closerAt(targets, root)
+	if refused != nil {
+		return refused
+	}
 	closer.input = intentInput{values: map[string][]string{"dispositions": {path}}}
 	closer.reviewWork = nil
 	closed := closer.closeChain(rootJob)

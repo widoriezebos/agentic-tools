@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
@@ -21,7 +23,7 @@ func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
 	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 	writeCallRows(t, transcript, claudeAssistant("only", 40, 2, 3, false, "2026-09-13T14:00:00Z"))
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	first, err := LatestCall(stateRoot, "claude", "unchanged", opts)
+	first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "unchanged", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +32,7 @@ func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
 	previous := callBytesRead
 	callBytesRead = func(count int) { bytesRead += count }
 	t.Cleanup(func() { callBytesRead = previous })
-	second, err := LatestCall(stateRoot, "claude", "unchanged", opts)
+	second, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "unchanged", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestLatestCallNonBlockingReturnsBusy(t *testing.T) {
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 
-	_, readErr := LatestCall(stateRoot, "claude", "busy", ReadOptions{
+	_, readErr := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "busy", ReadOptions{
 		Capability: PerCall, Transcript: transcript, NonBlocking: true,
 	})
 	var busy *CursorBusyError
@@ -115,7 +117,7 @@ func TestUnchangedEmptyTranscriptDoesNotRepublishCursor(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-			first, err := LatestCall(stateRoot, "claude", "unchanged-"+name, opts)
+			first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "unchanged-"+name, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -144,7 +146,7 @@ func TestUnchangedEmptyTranscriptDoesNotRepublishCursor(t *testing.T) {
 				writeCallCursor = originalWriter
 			}()
 
-			second, err := LatestCall(stateRoot, "claude", "unchanged-"+name, opts)
+			second, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "unchanged-"+name, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +170,7 @@ func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
 	thirdAt := secondAt.Add(time.Minute)
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript, Now: firstAt}
 
-	first, err := LatestCall(stateRoot, "claude", session, opts)
+	first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +179,7 @@ func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
 	}
 
 	opts.Now = secondAt
-	unchanged, err := LatestCall(stateRoot, "claude", session, opts)
+	unchanged, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +188,7 @@ func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
 	}
 
 	appendCallTestRow(t, transcript, claudeAssistant("second", 2, 0, 0, false, "2026-09-13T14:02:00Z"))
-	appended, err := LatestCall(stateRoot, "claude", session, opts)
+	appended, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +200,7 @@ func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
 	writeCallRows(t, replacement, claudeAssistant("replacement", 3, 0, 0, false, "2026-09-13T14:03:00Z"))
 	opts.Transcript = replacement
 	opts.Now = thirdAt
-	restarted, err := LatestCall(stateRoot, "claude", session, opts)
+	restarted, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +208,7 @@ func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
 		t.Fatalf("restarted reading times previous=%s current=%s", restarted.PreviousReadAt, restarted.Cursor.LastReadAt)
 	}
 
-	unsupported, err := LatestCall(t.TempDir(), "devin", "unsupported", ReadOptions{Capability: PerInvocation, Now: thirdAt})
+	unsupported, err := LatestCall(stateroottest.Installation(t, t.TempDir()), "devin", "unsupported", ReadOptions{Capability: PerInvocation, Now: thirdAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +226,7 @@ func TestRotatedTranscriptRestartsTheCursor(t *testing.T) {
 		claudeAssistant("two", 2, 0, 0, false, "2026-09-13T15:01:00Z"),
 		claudeAssistant("three", 3, 0, 0, false, "2026-09-13T15:02:00Z"),
 	)
-	if _, err := LatestCall(stateRoot, "claude", "rotated", opts); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "rotated", opts); err != nil {
 		t.Fatal(err)
 	}
 	old, err := os.Open(transcript)
@@ -238,7 +240,7 @@ func TestRotatedTranscriptRestartsTheCursor(t *testing.T) {
 	large := claudeAssistant("replacement", 10, 0, 0, false, "2026-09-13T15:03:00Z")
 	large = strings.TrimSuffix(large, "}") + `,"padding":"` + strings.Repeat("x", 4096) + `"}`
 	writeCallRows(t, transcript, large)
-	replaced, err := LatestCall(stateRoot, "claude", "rotated", opts)
+	replaced, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "rotated", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +266,7 @@ func TestRotatedTranscriptRestartsTheCursor(t *testing.T) {
 	if closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	truncated, err := LatestCall(stateRoot, "claude", "rotated", opts)
+	truncated, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "rotated", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,13 +313,13 @@ func TestConcurrentReadersCountEachSampleOnce(t *testing.T) {
 			for {
 				select {
 				case <-writerDone:
-					_, err := LatestCall(stateRoot, "claude", "concurrent", opts)
+					_, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "concurrent", opts)
 					if err != nil {
 						readerErrors <- err
 					}
 					return
 				default:
-					if _, err := LatestCall(stateRoot, "claude", "concurrent", opts); err != nil {
+					if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "concurrent", opts); err != nil {
 						readerErrors <- err
 						return
 					}
@@ -335,7 +337,7 @@ func TestConcurrentReadersCountEachSampleOnce(t *testing.T) {
 		t.Fatal(err)
 	default:
 	}
-	final, err := LatestCall(stateRoot, "claude", "concurrent", opts)
+	final, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "concurrent", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +361,7 @@ func TestCursorKeepsAnUnterminatedTail(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	first, err := LatestCall(stateRoot, "claude", "tail", opts)
+	first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "tail", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +380,7 @@ func TestCursorKeepsAnUnterminatedTail(t *testing.T) {
 	if closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	second, err := LatestCall(stateRoot, "claude", "tail", opts)
+	second, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "tail", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +400,7 @@ func TestMalformedCursorStartsFresh(t *testing.T) {
 	if err := os.WriteFile(cursorPath, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	reading, err := LatestCall(stateRoot, "claude", "malformed", ReadOptions{Capability: PerCall, Transcript: transcript})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "malformed", ReadOptions{Capability: PerCall, Transcript: transcript})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +445,7 @@ func TestSemanticallyForeignCursorStartsFresh(t *testing.T) {
 	if err := os.WriteFile(cursorPath, encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	reading, err := LatestCall(stateRoot, "claude", "semantic", ReadOptions{Capability: PerCall, Transcript: transcript})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "semantic", ReadOptions{Capability: PerCall, Transcript: transcript})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +463,7 @@ func TestScanErrorDoesNotAppendBeforeCursorAdvances(t *testing.T) {
 	)
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
 	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := LatestCall(stateRoot, "claude", "overlong", opts); err == nil || !strings.Contains(err.Error(), "token too long") {
+		if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "overlong", opts); err == nil || !strings.Contains(err.Error(), "token too long") {
 			t.Fatalf("attempt %d error = %v", attempt+1, err)
 		}
 		if got := jsonlLineCountIfPresent(t, SamplesPath(stateRoot, "claude", "overlong")); got != 0 {
@@ -474,7 +476,7 @@ func TestOnlySidechainsRemainUnknown(t *testing.T) {
 	stateRoot := t.TempDir()
 	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 	writeCallRows(t, transcript, claudeAssistant("side", 100, 0, 0, true, "2026-09-13T19:00:00Z"))
-	reading, err := LatestCall(stateRoot, "claude", "sidechain", ReadOptions{Capability: PerCall, Transcript: transcript})
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "sidechain", ReadOptions{Capability: PerCall, Transcript: transcript})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,11 +490,11 @@ func TestSidechainCountSurvivesIncrementalReads(t *testing.T) {
 	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 	writeCallRows(t, transcript, claudeAssistant("first", 10, 0, 0, false, "2026-09-13T19:10:00Z"))
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	if _, err := LatestCall(stateRoot, "claude", "sidechain-count", opts); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "sidechain-count", opts); err != nil {
 		t.Fatal(err)
 	}
 	appendCallTestRow(t, transcript, claudeAssistant("side", 100, 0, 0, true, "2026-09-13T19:11:00Z"))
-	second, err := LatestCall(stateRoot, "claude", "sidechain-count", opts)
+	second, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "sidechain-count", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +502,7 @@ func TestSidechainCountSurvivesIncrementalReads(t *testing.T) {
 		t.Fatalf("second reading = %#v", second)
 	}
 	appendCallTestRow(t, transcript, claudeAssistant("third", 30, 0, 0, false, "2026-09-13T19:12:00Z"))
-	third, err := LatestCall(stateRoot, "claude", "sidechain-count", opts)
+	third, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "sidechain-count", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +536,7 @@ func TestClaudePhysicalLineIdentitySurvivesIncrementalReads(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-			first, err := LatestCall(stateRoot, "claude", "physical-lines-"+name, opts)
+			first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "physical-lines-"+name, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -552,7 +554,7 @@ func TestClaudePhysicalLineIdentitySurvivesIncrementalReads(t *testing.T) {
 			previous := callBytesRead
 			callBytesRead = func(count int) { bytesRead += count }
 			t.Cleanup(func() { callBytesRead = previous })
-			second, err := LatestCall(stateRoot, "claude", "physical-lines-"+name, opts)
+			second, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "physical-lines-"+name, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -566,7 +568,7 @@ func TestClaudePhysicalLineIdentitySurvivesIncrementalReads(t *testing.T) {
 				t.Fatalf("second progress = %#v", second.Cursor)
 			}
 			bytesRead = 0
-			unchanged, err := LatestCall(stateRoot, "claude", "physical-lines-"+name, opts)
+			unchanged, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "physical-lines-"+name, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -596,7 +598,7 @@ func TestCursorSchemaRequiresExplicitProgressFields(t *testing.T) {
 		}
 		writeCallCursorFixture(t, CursorPath(stateRoot, "claude", "schema-one"), legacy)
 		appendCallTestRow(t, transcript, claudeAssistant("", 7, 0, 0, false, "2026-09-13T21:02:00Z"))
-		reading, err := LatestCall(stateRoot, "claude", "schema-one", ReadOptions{Capability: PerCall, Transcript: transcript})
+		reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "schema-one", ReadOptions{Capability: PerCall, Transcript: transcript})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -642,7 +644,7 @@ func TestCursorSchemaRequiresExplicitProgressFields(t *testing.T) {
 			raw := cursorMap(t, fixture)
 			test.mutate(raw)
 			writeCallCursorFixture(t, CursorPath(stateRoot, "claude", test.name), raw)
-			reading, err := LatestCall(stateRoot, "claude", test.name, ReadOptions{Capability: PerCall, Transcript: transcript})
+			reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", test.name, ReadOptions{Capability: PerCall, Transcript: transcript})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -657,7 +659,7 @@ func TestCursorSchemaRequiresExplicitProgressFields(t *testing.T) {
 		transcript := filepath.Join(t.TempDir(), "rollout.jsonl")
 		writeCallRows(t, transcript, codexUsage("first", 1, 0, 0, 9001, "2026-09-13T21:04:00Z"))
 		opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-		first, err := LatestCall(stateRoot, "codex", "large-provider-ordinal", opts)
+		first, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", "large-provider-ordinal", opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -670,7 +672,7 @@ func TestCursorSchemaRequiresExplicitProgressFields(t *testing.T) {
 		previous := callBytesRead
 		callBytesRead = func(count int) { bytesRead += count }
 		t.Cleanup(func() { callBytesRead = previous })
-		second, err := LatestCall(stateRoot, "codex", "large-provider-ordinal", opts)
+		second, err := LatestCall(stateroottest.Installation(t, stateRoot), "codex", "large-provider-ordinal", opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -689,7 +691,7 @@ func TestCursorWriteFailureRetriesWithoutDuplicateRows(t *testing.T) {
 		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 		writeCallRows(t, transcript, claudeAssistant("main", 1, 0, 0, false, "2026-09-13T21:06:00Z"))
 		writeCallCursor = func(string, any) error { return errors.New("injected cursor failure") }
-		if _, err := LatestCall(stateRoot, "claude", "checkpoint-failure", ReadOptions{Capability: PerCall, Transcript: transcript}); err == nil {
+		if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", "checkpoint-failure", ReadOptions{Capability: PerCall, Transcript: transcript}); err == nil {
 			t.Fatal("initial checkpoint failure was accepted")
 		}
 		if _, err := os.Stat(CursorPath(stateRoot, "claude", "checkpoint-failure")); !os.IsNotExist(err) {
@@ -713,7 +715,7 @@ func TestCursorWriteFailureRetriesWithoutDuplicateRows(t *testing.T) {
 			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
 			if existing {
 				writeCallRows(t, transcript, claudeAssistant("old", 1, 0, 0, false, "2026-09-13T21:07:00Z"))
-				if _, err := LatestCall(stateRoot, "claude", session, opts); err != nil {
+				if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts); err != nil {
 					t.Fatal(err)
 				}
 			} else if err := os.WriteFile(transcript, nil, 0o644); err != nil {
@@ -741,7 +743,7 @@ func TestCursorWriteFailureRetriesWithoutDuplicateRows(t *testing.T) {
 				}
 				return originalWriter(path, value)
 			}
-			if _, err := LatestCall(stateRoot, "claude", session, opts); err == nil {
+			if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts); err == nil {
 				t.Fatal("final cursor failure was accepted")
 			}
 			failedCursorBytes := readCallTestFile(t, cursorPath)
@@ -760,7 +762,7 @@ func TestCursorWriteFailureRetriesWithoutDuplicateRows(t *testing.T) {
 			}
 
 			writeCallCursor = originalWriter
-			final, err := LatestCall(stateRoot, "claude", session, opts)
+			final, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -792,7 +794,7 @@ func TestReadersRecoverUncommittedSampleSuffix(t *testing.T) {
 			session := "recover-" + reader
 			writeCallRows(t, transcript, claudeAssistant("committed", 1, 0, 0, false, "2026-09-13T21:11:00Z"))
 			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-			if _, err := LatestCall(stateRoot, "claude", session, opts); err != nil {
+			if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts); err != nil {
 				t.Fatal(err)
 			}
 			cursorPath := CursorPath(stateRoot, "claude", session)
@@ -816,7 +818,7 @@ func TestReadersRecoverUncommittedSampleSuffix(t *testing.T) {
 				previous := callBytesRead
 				callBytesRead = func(count int) { bytesRead += count }
 				t.Cleanup(func() { callBytesRead = previous })
-				reading, err := LatestCall(stateRoot, "claude", session, opts)
+				reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -840,7 +842,7 @@ func TestPartialSampleAppendRetriesFromCommittedBoundary(t *testing.T) {
 	session := "partial-sample"
 	writeCallRows(t, transcript, claudeAssistant("first", 1, 0, 0, false, "2026-09-13T21:12:00Z"))
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	if _, err := LatestCall(stateRoot, "claude", session, opts); err != nil {
+	if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts); err != nil {
 		t.Fatal(err)
 	}
 	samplesPath := SamplesPath(stateRoot, "claude", session)
@@ -848,7 +850,7 @@ func TestPartialSampleAppendRetriesFromCommittedBoundary(t *testing.T) {
 	partialRow := encodedCallRow(t, sampleRow{Kind: "sample", CallSample: CallSample{Runtime: "claude", Session: session, InvocationID: "second", PromptTokens: 2, InputTokens: 2, At: time.Now().UTC(), Ordinal: 2, Source: "claude-transcript"}})
 	appendCallTestBytes(t, samplesPath, partialRow[:len(partialRow)/2])
 	appendCallTestRow(t, transcript, claudeAssistant("second", 2, 0, 0, false, "2026-09-13T21:13:00Z"))
-	reading, err := LatestCall(stateRoot, "claude", session, opts)
+	reading, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -877,14 +879,14 @@ func TestPartialSampleAppendRetriesFromCommittedBoundary(t *testing.T) {
 
 func TestUntrustedOrShortSampleLogIsPreserved(t *testing.T) {
 	type fixture struct {
-		stateRoot, transcript, cursorPath, samplesPath, session string
+		root, transcript, cursorPath, samplesPath, session string
 	}
 	newFixture := func(t *testing.T, name string) fixture {
 		t.Helper()
 		stateRoot := t.TempDir()
 		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
 		writeCallRows(t, transcript, claudeAssistant("committed", 1, 0, 0, false, "2026-09-13T21:14:00Z"))
-		if _, err := LatestCall(stateRoot, "claude", name, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+		if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", name, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
 			t.Fatal(err)
 		}
 		return fixture{stateRoot, transcript, CursorPath(stateRoot, "claude", name), SamplesPath(stateRoot, "claude", name), name}
@@ -956,13 +958,13 @@ func TestUntrustedOrShortSampleLogIsPreserved(t *testing.T) {
 			test.mutate(t, f)
 			cursorBefore := snapshotCallPath(t, f.cursorPath)
 			samplesBefore := snapshotCallPath(t, f.samplesPath)
-			_, _, callsErr := Calls(f.stateRoot, "claude", f.session, time.Time{})
+			_, _, callsErr := Calls(f.root, "claude", f.session, time.Time{})
 			if callsErr == nil {
 				t.Fatal("Calls accepted unavailable committed evidence")
 			}
 			assertCallPathSnapshot(t, f.cursorPath, cursorBefore)
 			assertCallPathSnapshot(t, f.samplesPath, samplesBefore)
-			_, latestErr := LatestCall(f.stateRoot, "claude", f.session, ReadOptions{Capability: PerCall, Transcript: f.transcript})
+			_, latestErr := LatestCall(stateroottest.Installation(t, f.root), "claude", f.session, ReadOptions{Capability: PerCall, Transcript: f.transcript})
 			if latestErr == nil {
 				t.Fatal("LatestCall accepted unavailable committed evidence")
 			}
@@ -994,7 +996,7 @@ func TestTranscriptRestartKeepsCommittedSampleHistory(t *testing.T) {
 				strings.Repeat("x", 4096),
 			)
 			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-			first, err := LatestCall(stateRoot, "claude", session, opts)
+			first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1034,7 +1036,7 @@ func TestTranscriptRestartKeepsCommittedSampleHistory(t *testing.T) {
 				}
 				return errors.New("unexpected second cursor write")
 			}
-			if _, err := LatestCall(stateRoot, "claude", session, opts); err == nil {
+			if _, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts); err == nil {
 				t.Fatal("restart publication failure was accepted")
 			}
 			if got := readCallTestFile(t, cursorPath); !bytes.Equal(got, oldCursorBytes) {
@@ -1045,7 +1047,7 @@ func TestTranscriptRestartKeepsCommittedSampleHistory(t *testing.T) {
 			}
 
 			writeCallCursor = originalWriter
-			final, err := LatestCall(stateRoot, "claude", session, opts)
+			final, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1078,7 +1080,7 @@ func TestSidechainOnlyProgressSurvivesBeforeFirstSample(t *testing.T) {
 		claudeAssistant("side-two", 91, 0, 0, true, "2026-09-13T21:19:00Z"),
 	)
 	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
-	first, err := LatestCall(stateRoot, "claude", session, opts)
+	first, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1091,7 +1093,7 @@ func TestSidechainOnlyProgressSurvivesBeforeFirstSample(t *testing.T) {
 	callBytesRead = func(count int) { bytesRead += count }
 	t.Cleanup(func() { callBytesRead = previous })
 	for attempt := 0; attempt < 2; attempt++ {
-		unchanged, err := LatestCall(stateRoot, "claude", session, opts)
+		unchanged, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1104,7 +1106,7 @@ func TestSidechainOnlyProgressSurvivesBeforeFirstSample(t *testing.T) {
 	}
 	appendCallTestRow(t, transcript, `{"type":"user"}`)
 	appendCallTestRow(t, transcript, claudeAssistant("main-one", 1, 0, 0, false, "2026-09-13T21:20:00Z"))
-	mainOne, err := LatestCall(stateRoot, "claude", session, opts)
+	mainOne, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1114,7 +1116,7 @@ func TestSidechainOnlyProgressSurvivesBeforeFirstSample(t *testing.T) {
 	samplesPath := SamplesPath(stateRoot, "claude", session)
 	firstSampleBytes := readCallTestFile(t, samplesPath)
 	appendCallTestRow(t, transcript, claudeAssistant("side-three", 92, 0, 0, true, "2026-09-13T21:21:00Z"))
-	sidechainOnly, err := LatestCall(stateRoot, "claude", session, opts)
+	sidechainOnly, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1125,7 +1127,7 @@ func TestSidechainOnlyProgressSurvivesBeforeFirstSample(t *testing.T) {
 		t.Fatal("sidechain-only read rewrote historical sample rows")
 	}
 	appendCallTestRow(t, transcript, claudeAssistant("main-two", 2, 0, 0, false, "2026-09-13T21:22:00Z"))
-	mainTwo, err := LatestCall(stateRoot, "claude", session, opts)
+	mainTwo, err := LatestCall(stateroottest.Installation(t, stateRoot), "claude", session, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

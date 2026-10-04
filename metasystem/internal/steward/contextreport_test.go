@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -737,11 +738,11 @@ func TestContextReportExcludesTranscriptDiagnostics(t *testing.T) {
 	writeLiveContextHolder(t, root, "claude", "live")
 	diagnostic := filepath.Join(t.TempDir(), "diagnostic.jsonl")
 	reportTestWrite(t, diagnostic, reportClaudeCall("diagnostic-high", 210001, weekStart.Add(2*time.Hour))+reportClaudeMarker(weekStart.Add(3*time.Hour)))
-	role, reading, err := ContextBudgetLine(root, root, now, ContextOptions{Transcript: diagnostic})
+	role, reading, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Transcript: diagnostic})
 	if err != nil || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || role.Status != HealthDead {
 		t.Fatalf("inferred diagnostic = role=%+v reading=%+v err=%v", role, reading, err)
 	}
-	role, _, err = ContextBudgetLine(root, root, now, ContextOptions{Runtime: "claude", Session: "absent", Transcript: diagnostic})
+	role, _, err = ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "claude", Session: "absent", Transcript: diagnostic})
 	if err != nil || role.Status != HealthDead {
 		t.Fatalf("absent-session diagnostic = role=%+v err=%v", role, err)
 	}
@@ -829,7 +830,7 @@ func seedContextReportSession(t *testing.T, root, runtimeName, session, content 
 
 func seedContextReportRead(t *testing.T, root, runtimeName, session, transcript string) {
 	t.Helper()
-	reading, err := usage.LatestCall(root, runtimeName, session, usage.ReadOptions{
+	reading, err := usage.LatestCall(stateroottest.Installation(t, root), runtimeName, session, usage.ReadOptions{
 		Capability: usage.PerCall, Transcript: transcript, Now: time.Now().UTC(),
 	})
 	if err != nil {

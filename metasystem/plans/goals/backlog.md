@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 153
+- Revision: 161
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -202,4 +202,17 @@ History:
 - 2026-10-04T06:26:47Z VBMX26ZAVTE3EMB9QK62FSY2SJ-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-03T21:05:59Z ack
 - 2026-10-04T06:26:47Z VBMX26ZAVTE3EMB9QK62FSY2SJ-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T03:13:07Z ack
 - 2026-10-04T07:00:26Z QYDXBT9X032SXXJ4RHJWSPF0YA-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-03T13:25:07Z ack
-Integrity: sha256=ac4a7d0d58defb7da3b35d36f4c13aad2229eb49220a3aa7aad600c3497933f4
+- 2026-10-04T07:13:36Z 2HZEYVH3JJ1PDSP0SZF9KCMWK4-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-04T03:43:20Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T17:56:51Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T22:10:47Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T01:03:24Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T03:12:59Z ack
+- 2026-10-04T07:54:49Z YHAS5G3ER5ZYA8PRVP863RHX8X-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T07:31:39Z ack
+- 2026-10-04T08:20:16Z 7V3K7XGF27ZS3FNRRMX0WDXKN4-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-03T15:55:56Z ack
+- 2026-10-04T12:06:11Z 0P5FP3348WTN4R25KDWMJ3PC78-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T03:12:51Z ack
+- 2026-10-04T12:06:11Z 0P5FP3348WTN4R25KDWMJ3PC78-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T05:41:54Z ack
+- 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T07:59:10Z ack
+- 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T11:38:01Z ack
+- 2026-10-04T13:02:08Z 39425ZKJYYF0NSFP83SXSMJ5E2-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T07:57:20Z ack
+- 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z ack
+Integrity: sha256=ce2d201eede6f1db3c46f3c72d52241ff568bda7803414f04be572e26ce090b7

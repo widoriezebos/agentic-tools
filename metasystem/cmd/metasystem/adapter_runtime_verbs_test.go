@@ -53,8 +53,13 @@ func TestAdapterClaudeToolGateVerb(t *testing.T) {
 		{name: "native-subagent", mode: "observe", agentID: "agent-1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("context.toolgate.mode="+test.mode+"\n"), 0o644); err != nil {
+			// A template installation is its own state root, so the gate
+			// resolves both roots without a Git repository.
+			root := filepath.Join(t.TempDir(), "metasystem")
+			if err := os.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.template=true\ncontext.toolgate.mode="+test.mode+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			transcript := filepath.Join(root, "transcript.jsonl")
@@ -103,6 +108,70 @@ func TestAdapterClaudeToolGateVerb(t *testing.T) {
 			}
 			if count := strings.Count(string(rows), "\n"); count != test.wantRows {
 				t.Fatalf("row count=%d rows=%q", count, rows)
+			}
+		})
+	}
+}
+
+// TestAdapterClaudeToolGateVerbAppliesTheInstallationThresholds drives the
+// verb on an installation whose metasystem.conf sets a 120K ceiling and a 40K
+// margin, a trigger of 80K where the defaults put it at 105K. The --root flag
+// names either the installation or the checkout that contains it; both reach
+// the installation's thresholds and keep the decision row under its
+// artifacts/agents/context.
+func TestAdapterClaudeToolGateVerbAppliesTheInstallationThresholds(t *testing.T) {
+	birth := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
+	previousBirth, previousClock := toolGateProcessBirth, toolGateClock
+	toolGateProcessBirth = func(int64) (time.Time, bool) { return birth, true }
+	toolGateClock = func() time.Time { return birth.Add(time.Millisecond) }
+	t.Cleanup(func() {
+		toolGateProcessBirth, toolGateClock = previousBirth, previousClock
+	})
+
+	for _, flag := range []string{"installation", "checkout"} {
+		t.Run(flag, func(t *testing.T) {
+			checkout := t.TempDir()
+			installation := filepath.Join(checkout, "metasystem")
+			if err := os.MkdirAll(installation, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			conf := "metasystem.template=true\ncontext.toolgate.mode=deny\ncontext.ceiling.tokens=120000\ncontext.handoff.margin.tokens=40000\n"
+			if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+			line := `{"type":"assistant","requestId":"tool-gate","timestamp":"2026-10-03T09:00:00Z","message":{"usage":{"input_tokens":85000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}` + "\n"
+			if err := os.WriteFile(transcript, []byte(line), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			payload, err := json.Marshal(map[string]any{
+				"session_id": "threshold-session", "transcript_path": transcript,
+				"tool_name": "Bash", "tool_input": map[string]string{"command": "rm x"}, "cwd": checkout,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := installation
+			if flag == "checkout" {
+				root = checkout
+			}
+			var code int
+			var stdout, stderr string
+			withStdin(t, string(payload), func() {
+				code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+					return runAdapterClaudeToolGate([]string{"--root", root}, stdout, stderr)
+				})
+			})
+			want := "CONTEXT AT 85K (trigger 80K): this call is denied; run metasystem session handoff --root " + installation + " alone"
+			if code != 0 || stderr != "" || !strings.Contains(stdout, `"permissionDecision":"deny"`) || !strings.Contains(stdout, want) {
+				t.Fatalf("code=%d stdout=%q stderr=%q, want a denial naming %q", code, stdout, stderr, want)
+			}
+			rows, err := os.ReadFile(filepath.Join(installation, "artifacts", "agents", "context", "tool-gate.jsonl"))
+			if err != nil || strings.Count(string(rows), "\n") != 1 || !strings.Contains(string(rows), `"decision":"deny"`) {
+				t.Fatalf("installation rows = %q (err %v), want the one denial", rows, err)
+			}
+			if _, err := os.Stat(filepath.Join(checkout, "artifacts")); !os.IsNotExist(err) {
+				t.Fatalf("the containing checkout gained artifacts/ (err %v); the gate keeps its rows in the installation", err)
 			}
 		})
 	}

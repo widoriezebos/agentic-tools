@@ -439,6 +439,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	if err != nil {
 		return fmt.Errorf("cannot read the requested permissions: %v", err)
 	}
+	if permissions, err = admittedRequest(p.LookupEnv, p.Root, p.Runtime, permissions); err != nil {
+		return err
+	}
 	fallbacks, err := decodeJSONValue([]byte(p.Fallbacks))
 	if err != nil {
 		return fmt.Errorf("invalid capability fallbacks: %v", err)

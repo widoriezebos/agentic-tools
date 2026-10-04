@@ -445,8 +445,11 @@ func promptTurnInt(v any) (int64, bool) {
 // AssemblePrompt writes one unattended mission host-turn prompt for the given
 // turn to output, assembled from the frozen authority and the mission's live
 // control-plane data. The bytes are a deterministic function of the inputs.
-func AssemblePrompt(repo, mission, turnID, output string) error {
-	return AssemblePromptWithGoalSource(repo, mission, turnID, output, nil)
+// The contract and the serving goal are read under the state root root; the
+// mission directory, job records and configuration under the installation
+// repo.
+func AssemblePrompt(root, repo, mission, turnID, output string) error {
+	return AssemblePromptWithGoalSource(root, repo, mission, turnID, output, nil)
 }
 
 // GoalSource binds one optional serving-goal read to a repository and machine.
@@ -456,7 +459,7 @@ type GoalSource struct {
 	Machine  string
 }
 
-func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSource *GoalSource) error {
+func AssemblePromptWithGoalSource(root, repo, mission, turnID, output string, goalSource *GoalSource) error {
 	if !idRe.MatchString(mission) || !idRe.MatchString(turnID) {
 		return fmt.Errorf("mission and turn ids must match the lowercase metasystem id grammar")
 	}
@@ -508,7 +511,7 @@ func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSour
 		}
 	}
 
-	contractPath := filepath.Join(repo, "plans", fmt.Sprintf("mission-%s.contract.md", mission))
+	contractPath := filepath.Join(root, "plans", fmt.Sprintf("mission-%s.contract.md", mission))
 	contractData, err := os.ReadFile(contractPath)
 	if err != nil {
 		return fmt.Errorf("prompt authority artifact is unreadable: %v", err)
@@ -630,15 +633,15 @@ func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSour
 	var goalId, goalIntent string
 	var goalOK bool
 	if goalSource == nil {
-		if endpoint, endpointErr := goal.ResolveEndpoint(repo); endpointErr == nil {
+		if endpoint, endpointErr := goal.ResolveEndpoint(root); endpointErr == nil {
 			_, _ = goal.Project(endpoint, true, time.Now())
 		}
-		goalId, goalIntent, goalOK = (&goal.Store{Root: repo}).ServingProjection()
+		goalId, goalIntent, goalOK = (&goal.Store{Root: root}).ServingProjection()
 	} else {
-		if goalSource.Endpoint.Repository != nil && goalSource.Endpoint.Root == repo {
+		if goalSource.Endpoint.Repository != nil && goalSource.Endpoint.Root == root {
 			_, _ = goal.Project(goalSource.Endpoint, true, time.Now())
 		}
-		goalId, goalIntent, goalOK = (&goal.Store{Root: repo}).ServingProjectionAtEndpoint(goalSource.Endpoint, goalSource.Machine)
+		goalId, goalIntent, goalOK = (&goal.Store{Root: root}).ServingProjectionAtEndpoint(goalSource.Endpoint, goalSource.Machine)
 	}
 	if goalOK {
 		block := "## Serving goal\n" + goalId + " — " + goalIntent
