@@ -72,6 +72,9 @@ type intentWorkOwners struct {
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
 	settings func(confPath string) (launch.Settings, error)
 	config   func(key, confPath string) (value, source string, code int, err error)
+
+	resolveModel func(confPath, runtime, model string) (string, error)
+	inspectRead  func(root, goalID, commit string) (branch.BranchReadResult, error)
 	// jobWatch and runWatch are the job and tracked-run waiters work wait
 	// --exit-code blocks in, with their own pinned exit codes.
 	jobWatch command
@@ -94,6 +97,9 @@ func intentConfPath(layout stateroot.Layout) string {
 
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
+	if owners.inspectRead == nil {
+		owners.inspectRead = branch.InspectBranchRead
+	}
 	if owners.units == nil {
 		// The selected installation supplies the templates and the launch
 		// settings; launch and unit records stay the user's own stores.
@@ -150,6 +156,12 @@ func (inv *intentInvocation) work() intentWorkOwners {
 	}
 	if owners.config == nil {
 		owners.config = configSettingWithDefault
+	}
+	if owners.resolveModel == nil {
+		owners.resolveModel = func(confPath, runtime, model string) (string, error) {
+			model, _, err := config.ResolveModelAlias(confPath, runtime, model)
+			return model, err
+		}
 	}
 	return owners
 }
@@ -1136,11 +1148,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
 		text = append(text, "The build, its checks and the read finished, but the read did not return VERDICT: land; this is not a clean read.")
 	}
-	text = append(text, "The read is preliminary feedback for the author. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))
+	text = append(text, "A clean read of the build by another model than the builder's is the unit's read; any other read is feedback and work review asks the committed critic. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))
 	judged := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text,
 		Summary: fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (%s; read verdict: %s)", record.Unit, record.Goal, record.ID, round.Number, round.Outcome, verdict)}
 	if launch.UnitReviewReadyOutcomes[round.Outcome] {
-		judged.next, judged.nextReason = inv.workArgv(record, "review"), "the checks passed: review records this result and asks for its independent review"
+		judged.next, judged.nextReason = inv.workArgv(record, "review"), "the checks passed: review records this result and completes its unit read"
 	} else {
 		judged.next, judged.nextReason = inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE"), "the attempt did not pass its checks; a correction brief starts one new attempt"
 	}

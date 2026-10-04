@@ -337,6 +337,17 @@ func directSource(r attestationReads, req CommitReadRequest, subject Attestation
 	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil, nil
 }
 
+// UnitReadVerdictIsLand checks the first VERDICT: line of a report and the
+// recorded verdict, ignoring surrounding whitespace on both lines.
+func UnitReadVerdictIsLand(verdictLine, report string) bool {
+	for _, line := range strings.Split(report, "\n") {
+		if strings.HasPrefix(line, "VERDICT:") {
+			return strings.TrimSpace(verdictLine) == "VERDICT: land" && strings.TrimSpace(line) == "VERDICT: land"
+		}
+	}
+	return false
+}
+
 func validateUnitReadBundle(data []byte, goalID string, subject AttestationSubject) (UnitReadBundle, error) {
 	var bundle UnitReadBundle
 	var problem string
@@ -346,6 +357,8 @@ func validateUnitReadBundle(data []byte, goalID string, subject AttestationSubje
 		problem = "names another goal or commit"
 	} else if strings.TrimSpace(bundle.ReadLaunch) == "" {
 		problem = "has no read launch"
+	} else if strings.ContainsAny(bundle.ReadLaunch, "/ \t\r\n") || strings.ContainsAny(bundle.ReadModel, " \t\r\n") {
+		problem = "has a read launch or model that cannot be recorded in landing provenance"
 	} else if strings.TrimSpace(bundle.ReadModel) == "" || strings.TrimSpace(bundle.BuildModel) == "" || bundle.ReadModel == bundle.BuildModel {
 		problem = "needs different, non-empty read and build models"
 	} else if bundle.ExaminedTree != subject.Tree {
@@ -353,14 +366,7 @@ func validateUnitReadBundle(data []byte, goalID string, subject AttestationSubje
 	} else if bundle.ExaminedBase != subject.Parent {
 		problem = "examined another base than the commit's parent"
 	} else {
-		verdict := ""
-		for _, line := range strings.Split(bundle.Report, "\n") {
-			if strings.HasPrefix(line, "VERDICT:") {
-				verdict = line
-				break
-			}
-		}
-		if bundle.VerdictLine != "VERDICT: land" || verdict != bundle.VerdictLine {
+		if !UnitReadVerdictIsLand(bundle.VerdictLine, bundle.Report) {
 			problem = "has no matching first VERDICT: land line in the report"
 		} else {
 			var record struct {

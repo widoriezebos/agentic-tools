@@ -32,6 +32,7 @@ type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	Collect                                                  bool
+	UnitRead                                                 []byte
 	// Join has BriefPath start a read only: a read of this build already
 	// started (by the other review form, under its own brief) is joined.
 	Join bool
@@ -613,11 +614,49 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
+	if request.UnitRead != nil && record.RootJob != "" {
+		return result, operationRefusal(ReadInvalidCode, "this build's review already started with a critic; its unit read cannot replace that critic\nrun: metasystem work review %s", request.GoalID)
+	}
 	if request.Retry > 0 {
 		return retryBranchRead(request, common, recordPath, record, result)
 	}
 	if record.AttestationCommit != "" {
 		result.State = "already-collected"
+		return result, nil
+	}
+	if request.UnitRead != nil {
+		bundle, err := validateUnitReadBundle(request.UnitRead, request.GoalID, subject)
+		if err != nil {
+			return result, err
+		}
+		record, _, err = resolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID,
+			UnitCommit: request.UnitCommit, Gate: request.Gate, NewID: request.NewID, Repository: repository}, common, recordPath, record, subject)
+		if err != nil {
+			return result, err
+		}
+		entries, err := repository.Entries(request.Repo, request.UnitCommit)
+		if err != nil {
+			return result, err
+		}
+		var tests []TestChange
+		for _, path := range testPathsFromEntries(entries) {
+			tests = append(tests, TestChange{Path: path, ReaderWord: "reviewed by unit read " + bundle.ReadLaunch})
+		}
+		commit := request.Commit
+		if commit == nil {
+			commit = CommitRead
+		}
+		attestation, _, err := commit(CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
+			EndpointTip: request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
+			CheckClaim: request.CheckClaim, UnitRead: request.UnitRead, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests})
+		if err != nil {
+			return result, err
+		}
+		record.AttestationCommit = attestation
+		if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+			return result, err
+		}
+		result.State, result.AttestationCommit, result.GateRunID = "collected", attestation, record.GateRunID
 		return result, nil
 	}
 	if record.RootJob != "" {
@@ -757,14 +796,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 // installedBranchRead finds the newest Goal-Read of this unit commit already
 // on the local goal branch and adopts it only when its attestation validates
 // and binds this record's critic root, fast-gate run and subject tree. A unit
-// whose current attestation comes from a reader record has no critic read
-// installed, so a critic's read of it is still to be committed.
-func installedBranchRead(request BranchReadRequest, info KindInfo, record branchReadRecord) (string, bool, error) {
-	tip, present, err := localBranchTip(request.Repo, goalBranchRef(request.GoalID))
-	if err != nil || !present {
-		return "", false, err
-	}
-	commits, err := ValidateRange(request.Repo, request.EndpointTip, tip, request.GoalID)
+// whose current attestation comes from a reader record or a unit read has
+// no critic read installed, so a critic's read is still to be committed.
+func installedBranchRead(reads attestationReads, request BranchReadRequest, info KindInfo, record branchReadRecord, tip string) (string, bool, error) {
+	commits, err := reads.Range(request.Repo, request.EndpointTip, tip, request.GoalID)
 	if err != nil {
 		return "", false, err
 	}
@@ -773,18 +808,18 @@ func installedBranchRead(request BranchReadRequest, info KindInfo, record branch
 		if commit.Kind != Read {
 			continue
 		}
-		kind, err := KindOf(request.Repo, commit.ID, request.GoalID)
+		kind, err := reads.Kind(request.Repo, commit.ID, request.GoalID)
 		if err != nil {
 			return "", false, err
 		}
 		if kind.CommitID != request.UnitCommit {
 			continue
 		}
-		att, err := ValidateAttestation(request.Repo, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
+		att, err := validateAttestation(reads, request.Repo, "", request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit, map[string]bool{})
 		if err != nil {
 			return "", false, operationRefusal(ReadInvalidCode, "the recorded review %s of build %s doesn't hold up: %s\nrun: metasystem work review %s", commit.ID, request.UnitCommit, firstLine(err), request.GoalID)
 		}
-		if att.Source.Kind == "reader-record" {
+		if att.Source.Kind == "reader-record" || att.Source.Kind == "unit-read" {
 			return "", false, nil
 		}
 		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree {
@@ -800,7 +835,11 @@ func installedBranchReadFor(request BranchReadRequest, info KindInfo, record bra
 	if request.Repository != nil {
 		return "", false, nil
 	}
-	return installedBranchRead(request, info, record)
+	tip, present, err := localBranchTip(request.Repo, goalBranchRef(request.GoalID))
+	if err != nil || !present {
+		return "", false, err
+	}
+	return installedBranchRead(gitAttestationReads{}, request, info, record, tip)
 }
 
 // retryBranchRead examines the recorded critic chain's failed round once

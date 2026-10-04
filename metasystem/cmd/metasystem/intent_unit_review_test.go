@@ -813,3 +813,320 @@ func TestReviewCloseAdmitsItsCheckoutThroughParseInstallation(t *testing.T) {
 		t.Fatalf("closerAt = %+v, %+v; want a copy aimed at %s that leaves the selected installation %s", closer, refused, checkout, selected)
 	}
 }
+
+func promotionFacts() (launch.UnitReview, launch.UnitSubject, launch.Record, launch.Record, []byte, []byte) {
+	yes := true
+	review := launch.UnitReview{Record: launch.UnitRunRecord{ID: "unit-run-a", Goal: "goal-a"}, Base: "base", BuildBrief: "brief",
+		Round: launch.UnitRound{Number: 1, Outcome: "green", Steps: []launch.UnitStep{
+			{Name: "build", LaunchID: "build-a", Model: "builder-alias", State: launch.StepPassed},
+			{Name: "read", LaunchID: "read-a", Model: "reader-alias", State: launch.StepPassed, Verdict: "VERDICT: land", VerdictCounts: &yes}}}}
+	subject := launch.UnitSubject{Commit: "commit", ExpectedParent: "base", StagedTree: "tree", Published: "commit"}
+	build := launch.Record{ID: "build-a", Adapter: "codex-exec", AdapterData: map[string]json.RawMessage{"model": json.RawMessage(`"builder-model"`)}}
+	read := launch.Record{ID: "read-a", Kind: "read", State: launch.Completed, Adapter: "codex-exec", VerdictCounts: &yes,
+		AdapterData: map[string]json.RawMessage{"model": json.RawMessage(`"reader-model"`)}}
+	report := []byte("The changes hold.\nVERDICT: land\n")
+	readJSON, _ := json.MarshalIndent(read, "", " ")
+	return review, subject, build, read, report, readJSON
+}
+
+func TestCleanReadIsPromoted(t *testing.T) {
+	t.Parallel()
+	review, subject, build, read, report, raw := promotionFacts()
+	bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw)
+	if bundle == nil || reason != "" || bundle.ReadModel != "reader-model" || bundle.BuildModel != "builder-model" || bundle.Report != string(report) || bundle.LaunchRecord != string(raw) || bundle.GoalRevision != 7 || bundle.ExaminedTree != "tree" || bundle.ExaminedBase != "base" {
+		t.Fatalf("bundle=%+v reason=%s", bundle, reason)
+	}
+	subject.Amends, subject.AmendsParent, subject.ExpectedParent = "old-commit", "base", "old-tip"
+	if bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw); bundle == nil || reason != "" {
+		t.Fatalf("amend=%+v reason=%s", bundle, reason)
+	}
+}
+
+func TestReadOnTheBuildModelIsNotPromoted(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"same model", "fix verdict", "uncounted", "partitioned", "base", "missing report", "missing record"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			review, subject, build, read, report, raw := promotionFacts()
+			want := "unavailable"
+			switch name {
+			case "same model":
+				read.AdapterData["model"] = build.AdapterData["model"]
+				want = "different"
+			case "fix verdict":
+				review.Round.Steps[1].Verdict = "VERDICT: fix first (1 material findings)"
+				want = "VERDICT: land"
+			case "uncounted":
+				no := false
+				review.Round.Steps[1].VerdictCounts = &no
+				want = "does not count"
+			case "partitioned":
+				review.Round.Steps = append(review.Round.Steps, review.Round.Steps[1])
+				want = "exactly one"
+			case "base":
+				subject.ExpectedParent = "other"
+				want = "parent"
+			case "missing report":
+				report = nil
+			case "missing record":
+				raw = nil
+			}
+			bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw)
+			if bundle != nil || !strings.Contains(reason, want) {
+				t.Fatalf("bundle=%+v reason=%q want=%s", bundle, reason, want)
+			}
+		})
+	}
+}
+
+func newUnitPromotionReview(t *testing.T, clean bool) (*workBed, *intentInvocation, launch.UnitReview) {
+	t.Helper()
+	bed := newWorkBed(t)
+	owners := bed.workOwners()
+	owners.work.inspectRead = func(root, goal, commit string) (branch.BranchReadResult, error) {
+		if root != bed.worktree || goal != bed.id || commit != "commit" {
+			t.Fatalf("inspection root=%s goal=%s commit=%s", root, goal, commit)
+		}
+		return branch.BranchReadResult{}, nil
+	}
+	owners.work.resolveModel = func(_, _, model string) (string, error) {
+		if clean && model == "reader-alias" {
+			return "reader-model", nil
+		}
+		return "builder-model", nil
+	}
+	layout, err := owners.resolver.ResolveLayout(bed.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, subject, build, read, report, _ := promotionFacts()
+	review.Record.Goal, review.Record.Unit, review.Record.Worktree = bed.id, "promote", bed.worktree
+	review.Subject = &subject
+	review.Round.Directory = filepath.Join(t.TempDir(), "round-1")
+	build.AdapterData["model"], read.AdapterData["model"] = json.RawMessage(`"builder-alias"`), json.RawMessage(`"reader-alias"`)
+	reportPath := filepath.Join(t.TempDir(), "report.md")
+	if err := os.WriteFile(reportPath, report, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read.Outputs = []launch.Output{{Path: reportPath}}
+	for _, record := range []launch.Record{build, read} {
+		if err := bed.manager.Store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return bed, &intentInvocation{owners: owners, layout: layout, stateRoot: bed.root()}, review
+}
+
+func runUnitPromotionReview(t *testing.T, bed *workBed, inv *intentInvocation, review launch.UnitReview) intentResult {
+	t.Helper()
+	return inv.reviewUnitRound(&launch.UnitRunner{Manager: bed.manager}, nil, review, func(launch.UnitSubject) error {
+		t.Fatal("a published subject was rewritten")
+		return nil
+	})
+}
+
+func TestUnitReviewRecordsThePromotedRead(t *testing.T) {
+	t.Parallel()
+	for _, clean := range []bool{true, false} {
+		t.Run(strconv.FormatBool(clean), func(t *testing.T) {
+			t.Parallel()
+			bed, inv, review := newUnitPromotionReview(t, clean)
+			reads, publications := 0, 0
+			inv.owners.delivery = &intentDeliveryOwners{
+				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+					reads++
+					index := slices.Index(args, "--unit-read")
+					if clean {
+						if index < 0 || slices.Contains(args, "--brief") || slices.Contains(args, "--join") {
+							t.Fatalf("promotion args %v", args)
+						}
+						body, err := os.ReadFile(args[index+1])
+						var bundle branch.UnitReadBundle
+						if err != nil || json.Unmarshal(body, &bundle) != nil || bundle.Goal != bed.id || bundle.ReadLaunch != "read-a" || bundle.ReadModel != "reader-model" || bundle.BuildModel != "builder-model" || bundle.GoalRevision != bed.goalFile(bed.id).Revision {
+							t.Fatalf("bundle=%+v err=%v", bundle, err)
+						}
+					} else if index >= 0 || !slices.Contains(args, "--brief") || !slices.Contains(args, "--join") {
+						t.Fatalf("critic args %v", args)
+					}
+					return branch.BranchReadResult{State: "collected", AttestationCommit: "attestation"}, 0, nil
+				},
+				publishRead: func(string, string, string) (branch.PublishReadResult, error) {
+					publications++
+					return branch.PublishReadResult{State: "current"}, nil
+				},
+			}
+			result := runUnitPromotionReview(t, bed, inv, review)
+			data, _ := result.Data.(map[string]any)
+			if result.Outcome != intentConfirmed || reads != 1 || publications != 1 || !slices.Contains(result.next, "land") {
+				t.Fatalf("result=%+v reads=%d publications=%d", result, reads, publications)
+			}
+			if clean && (!strings.Contains(result.Summary, "read-a by reader-model is the unit's read") || data["readNotPromoted"] != nil) {
+				t.Fatalf("promotion=%+v", result)
+			}
+			if !clean && !strings.Contains(fmt.Sprint(data["readNotPromoted"]), "different") {
+				t.Fatalf("reason=%+v", result)
+			}
+		})
+	}
+}
+
+func TestUnitReviewRecordsThePromotedReadContinuesRecordedCritic(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"open", "already-collected"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			bed, inv, review := newUnitPromotionReview(t, true)
+			inspections, reads := 0, 0
+			inv.owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
+				inspections++
+				return branch.BranchReadResult{RootJob: "critic-a"}, nil
+			}
+			inv.owners.delivery = &intentDeliveryOwners{
+				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+					reads++
+					if slices.Contains(args, "--unit-read") || !slices.Contains(args, "--join") || slices.Index(args, "--brief") < 0 {
+						t.Fatalf("recorded critic args %v", args)
+					}
+					return branch.BranchReadResult{State: state, RootJob: "critic-a", AttestationCommit: "attestation"}, 0, nil
+				},
+				publishRead: func(string, string, string) (branch.PublishReadResult, error) {
+					return branch.PublishReadResult{State: "current"}, nil
+				},
+			}
+			result := runUnitPromotionReview(t, bed, inv, review)
+			data, _ := result.Data.(map[string]any)
+			want := intentInProgress
+			if state == "already-collected" {
+				want = intentUnchanged
+			}
+			if result.Outcome != want || inspections != 1 || reads != 1 || data["rootJob"] != "critic-a" || !strings.Contains(fmt.Sprint(data["readNotPromoted"]), "critic") {
+				t.Fatalf("result=%+v inspections=%d reads=%d", result, inspections, reads)
+			}
+		})
+	}
+}
+
+func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
+	t.Parallel()
+	for _, refusal := range []error{
+		&branch.OpError{Code: branch.ReadInvalidCode, Message: "unit read does not bind this commit"},
+		errors.New("unit bundle cannot be recorded"),
+	} {
+		t.Run(refusal.Error(), func(t *testing.T) {
+			t.Parallel()
+			bed, inv, review := newUnitPromotionReview(t, true)
+			reads := 0
+			inv.owners.delivery = &intentDeliveryOwners{
+				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+					reads++
+					if reads == 1 {
+						if !slices.Contains(args, "--unit-read") {
+							t.Fatalf("promotion args %v", args)
+						}
+						return branch.BranchReadResult{}, 1, refusal
+					}
+					if reads != 2 || slices.Contains(args, "--unit-read") || !slices.Contains(args, "--join") || slices.Index(args, "--brief") < 0 {
+						t.Fatalf("fallback args %v", args)
+					}
+					return branch.BranchReadResult{State: "collected", RootJob: "critic-a", AttestationCommit: "attestation"}, 0, nil
+				},
+				publishRead: func(string, string, string) (branch.PublishReadResult, error) {
+					return branch.PublishReadResult{State: "current"}, nil
+				},
+			}
+			result := runUnitPromotionReview(t, bed, inv, review)
+			data, _ := result.Data.(map[string]any)
+			if result.Outcome != intentConfirmed || reads != 2 || data["readNotPromoted"] != refusal.Error() || data["readLaunch"] != nil || strings.Contains(result.Summary, "build's clean read") || !slices.Contains(result.next, "land") {
+				t.Fatalf("result=%+v reads=%d", result, reads)
+			}
+		})
+	}
+}
+
+func TestUnitReviewRecordsThePromotedReadReusesBundle(t *testing.T) {
+	t.Parallel()
+	bed, inv, review := newUnitPromotionReview(t, true)
+	var saved []byte
+	var savedPath string
+	reads := 0
+	inv.owners.delivery = &intentDeliveryOwners{
+		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+			reads++
+			index := slices.Index(args, "--unit-read")
+			if index < 0 {
+				t.Fatalf("promotion args %v", args)
+			}
+			path := args[index+1]
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reads == 1 {
+				saved, savedPath = body, path
+			} else if savedPath != path || !bytes.Equal(body, saved) {
+				t.Fatalf("bundle changed: before=%s after=%s", saved, body)
+			}
+			// No attestation save is reported: the repeat must reconcile the
+			// published read against exactly the same bundle bytes.
+			return branch.BranchReadResult{State: "collected", AttestationCommit: "attestation"}, 0, nil
+		},
+		publishRead: func(string, string, string) (branch.PublishReadResult, error) {
+			return branch.PublishReadResult{State: "current"}, nil
+		},
+	}
+	if result := runUnitPromotionReview(t, bed, inv, review); result.Outcome != intentConfirmed {
+		t.Fatalf("first result=%+v", result)
+	}
+	file := bed.goalFile(bed.id)
+	file.Revision++
+	bed.addGoal(file)
+	// A retained bundle remains the read even if today's alias table changed.
+	inv.owners.work.resolveModel = func(_, _, _ string) (string, error) {
+		t.Fatal("a repeat resolved models again")
+		return "", nil
+	}
+	if result := runUnitPromotionReview(t, bed, inv, review); result.Outcome != intentConfirmed || reads != 2 {
+		t.Fatalf("repeat result=%+v reads=%d", result, reads)
+	}
+}
+
+func TestUnitReviewRecordsThePromotedReadRefusalDoesNotRepeat(t *testing.T) {
+	t.Parallel()
+	bed, inv, review := newUnitPromotionReview(t, true)
+	reads := 0
+	inv.owners.delivery = &intentDeliveryOwners{
+		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+			reads++
+			if reads == 1 {
+				if !slices.Contains(args, "--unit-read") {
+					t.Fatalf("promotion args %v", args)
+				}
+				return branch.BranchReadResult{}, 1, errors.New("bundle refused")
+			}
+			if reads != 2 || slices.Contains(args, "--unit-read") || !slices.Contains(args, "--join") {
+				t.Fatalf("critic args %v", args)
+			}
+			return branch.BranchReadResult{}, 1, errors.New("critic unavailable")
+		},
+	}
+	result := runUnitPromotionReview(t, bed, inv, review)
+	data, _ := result.Data.(map[string]any)
+	want := inv.publicArgv("work", "review", "--commit", "commit", "--goal", bed.id)
+	if result.Outcome != intentRefused || reads != 2 || data["readNotPromoted"] != "bundle refused" || !slices.Equal(result.next, want) || slices.Equal(result.next, inv.sameCommand()) {
+		t.Fatalf("result=%+v reads=%d", result, reads)
+	}
+}
+
+func TestCleanReadIsPromotedWithTrimmedVerdict(t *testing.T) {
+	t.Parallel()
+	review, subject, build, read, _, raw := promotionFacts()
+	report := []byte("The changes hold.\r\nVERDICT: land \r\n")
+	bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw)
+	if bundle == nil || reason != "" || bundle.Report != string(report) {
+		t.Fatalf("bundle=%+v reason=%s", bundle, reason)
+	}
+	report = []byte("VERDICT: fix first\r\nVERDICT: land \r\n")
+	if bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw); bundle != nil || !strings.Contains(reason, "VERDICT:") {
+		t.Fatalf("first verdict bundle=%+v reason=%s", bundle, reason)
+	}
+}

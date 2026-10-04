@@ -155,6 +155,9 @@ func (f *attestationPolicyFixture) CommitExists(repo, commit string) error {
 }
 func (f *attestationPolicyFixture) Kind(repo, commit, goal string) (KindInfo, error) {
 	f.next("Kind", repo, commit, goal)
+	if commit == f.tip {
+		return KindInfo{Kind: Read, Units: []string{"u1"}, CommitID: f.unit}, nil
+	}
 	return KindInfo{Kind: Unit, Unit: "u1", Units: []string{"u1"}, CommitID: commit}, nil
 }
 func (f *attestationPolicyFixture) Prefix(repo string) (string, error) {
@@ -797,6 +800,9 @@ func TestUnitReadOfAnotherTreeIsInvalid(t *testing.T) {
 		{"commit", func(b *UnitReadBundle) { b.Commit = policyID("0") }, "another goal or commit"},
 		{"schema", func(b *UnitReadBundle) { b.SchemaVersion = 2 }, "schema"},
 		{"launch id", func(b *UnitReadBundle) { b.ReadLaunch = "" }, "read launch"},
+		{"launch slash", func(b *UnitReadBundle) { b.ReadLaunch = "read/launch" }, "provenance"},
+		{"launch space", func(b *UnitReadBundle) { b.ReadLaunch = "read launch" }, "provenance"},
+		{"model space", func(b *UnitReadBundle) { b.ReadModel = "read model" }, "provenance"},
 		{"changed bytes", func(b *UnitReadBundle) { b.Report = "VERDICT: fix first (1 material findings)\n" }, "changed after the review"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -823,6 +829,9 @@ func TestUnitReadOfAnotherTreeIsInvalid(t *testing.T) {
 				t.Fatalf("recording invalid bundle: %v", err)
 			}
 			if tc.name != "changed bytes" {
+				if tc.name == "launch slash" || tc.name == "launch space" {
+					att.Source.ReadLaunch = bundle.ReadLaunch
+				}
 				att.Source.ClosureSHA256 = policyHash(req.UnitRead)
 				att.SHA256, err = digestAttestation(att)
 				if err != nil {
@@ -973,5 +982,122 @@ func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
 		if repo == f.clone && (err == nil || !strings.Contains(err.Error(), "code-critic root")) {
 			t.Fatalf("legacy without job files: %v", err)
 		}
+	}
+}
+
+func TestCleanReadIsPromoted(t *testing.T) {
+	t.Parallel()
+	f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+	bundle := policyCanonical(t, policyUnitRead(f))
+	gates, commits := 0, 0
+	req := BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: f.unit, GoalID: "goal-a", UnitCommit: f.unit,
+		Repository: branchPolicyRepository{f}, UnitRead: bundle, CheckClaim: func() error { return nil },
+		Gate: func(string) (string, error) { gates++; return "go gate: fast mode passed", nil },
+		Delegate: func(string, string, string, string, string) (string, error) {
+			t.Fatal("a promoted read dispatched a critic")
+			return "", nil
+		},
+		NewID: func(string) (string, error) { return "fast-unit-tree", nil },
+		Commit: func(got CommitReadRequest) (string, Attestation, error) {
+			commits++
+			if !bytes.Equal(got.UnitRead, bundle) || got.RootJob != "" || got.GateTree != f.tree || got.GateRunID != "fast-unit-tree" {
+				t.Fatalf("promotion request %+v", got)
+			}
+			f.expectStart(f.root)
+			f.expectAfterGate(f.root, true)
+			commit, att, err := commitRead(got, f, f.effects())
+			if err == nil && att.Source.Kind != "unit-read" {
+				t.Fatalf("source %+v", att.Source)
+			}
+			return commit, att, err
+		}}
+	f.expectBranchStart()
+	f.expect("Detached", f.root, f.unit)
+	f.expect("BranchEntries", f.root, f.unit)
+	result, err := RunBranchRead(req)
+	if err != nil || result.State != "collected" || result.AttestationCommit != f.tip || gates != 1 || commits != 1 {
+		t.Fatalf("result=%+v gates=%d commits=%d err=%v", result, gates, commits, err)
+	}
+	f.expectBranchStart()
+	result, err = RunBranchRead(req)
+	if err != nil || result.State != "already-collected" || gates != 1 || commits != 1 {
+		t.Fatalf("repeat=%+v err=%v", result, err)
+	}
+}
+
+func TestUnitReadWithARecordedCriticIsRefused(t *testing.T) {
+	t.Parallel()
+	f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+	// Use the owner's path so the recorded critic belongs to this unit.
+	f.expect("CommonDir", f.root)
+	common, path, _, err := branchReadPathsWithRepository(branchPolicyRepository{f}, f.root, "goal-a", f.unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBranchReadRecord(common, path, branchReadRecord{SchemaVersion: 1, Goal: "goal-a", UnitCommit: f.unit, Tree: f.tree, RootJob: f.job}); err != nil {
+		t.Fatal(err)
+	}
+	f.expectBranchStart()
+	_, err = RunBranchRead(BranchReadRequest{Repo: f.root, EndpointTip: f.base, BranchTip: f.unit, GoalID: "goal-a", UnitCommit: f.unit,
+		Repository: branchPolicyRepository{f}, UnitRead: policyCanonical(t, policyUnitRead(f)), CheckClaim: func() error { return nil },
+		Gate: func(string) (string, error) { t.Fatal("a refused read ran the gate"); return "", nil },
+		Commit: func(CommitReadRequest) (string, Attestation, error) {
+			t.Fatal("a refused read committed")
+			return "", Attestation{}, nil
+		},
+		Delegate: func(string, string, string, string, string) (string, error) {
+			t.Fatal("a refused read dispatched")
+			return "", nil
+		}})
+	if err == nil || !strings.Contains(err.Error(), "already started with a critic") {
+		t.Fatalf("refusal: %v", err)
+	}
+}
+
+func TestCleanReadIsPromotedWithTrimmedVerdict(t *testing.T) {
+	t.Parallel()
+	f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+	bundle := policyUnitRead(f)
+	bundle.Report = "The changes hold.\r\nVERDICT: land \r\n"
+	req := f.request(true)
+	req.RootJob, req.UnitRead = "", policyCanonical(t, bundle)
+	f.expectStart(f.root)
+	f.expectAfterGate(f.root, true)
+	_, att, err := commitRead(req, f, f.effects())
+	if err != nil || att.Source.Kind != "unit-read" {
+		t.Fatalf("attestation=%+v err=%v", att, err)
+	}
+	f.expectValidation(f.root, f.tip, true)
+	if _, err := validateAttestation(f, f.root, f.tip, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err != nil {
+		t.Fatalf("validating trimmed verdict: %v", err)
+	}
+}
+
+func TestInstalledBranchReadAcceptsUnitRead(t *testing.T) {
+	t.Parallel()
+	f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+	req := f.request(true)
+	req.RootJob, req.UnitRead = "", policyCanonical(t, policyUnitRead(f))
+	f.expectStart(f.root)
+	f.expectAfterGate(f.root, true)
+	if _, _, err := commitRead(req, f, f.effects()); err != nil {
+		t.Fatal(err)
+	}
+	f.ranges[f.base+":"+f.unit] = f.rangeFacts()
+	f.ranges[f.base+":"+f.tip] = append(f.rangeFacts(), Commit{ID: f.tip, Kind: Read})
+	f.expect("Range", f.root, f.base, f.tip, "goal-a")
+	f.expect("Kind", f.root, f.tip, "goal-a")
+	f.expect("TopLevel", f.root)
+	f.expect("ReadSubject", f.root, f.unit)
+	f.expect("RawEntries", f.root, f.unit)
+	f.expect("Range", f.root, f.base, f.unit, "goal-a")
+	f.expect("RawEntries", f.root, f.unit)
+	f.expect("TopLevel", f.root)
+	commit, found, err := installedBranchRead(f,
+		BranchReadRequest{Repo: f.root, EndpointTip: f.base, GoalID: "goal-a", UnitCommit: f.unit},
+		KindInfo{Kind: Unit, Units: []string{"u1"}},
+		branchReadRecord{RootJob: f.job, GateRunID: "fast-unit-tree", Tree: f.tree}, f.tip)
+	if err != nil || found || commit != "" {
+		t.Fatalf("installed unit read: commit=%s found=%t err=%v", commit, found, err)
 	}
 }

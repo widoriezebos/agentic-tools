@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,10 +23,10 @@ import (
 // the Goal-Unit commit (or amends the unit's earlier one) under the claim
 // and worktree commit token, with the endpoint and claim of the selected
 // installation; the branch push owner publishes it; commitReview, shared
-// with review commit, requests the committed critic, requires the chain's
-// recorded closure before collection, and publishes the collected Goal-Read.
-// The preliminary read of the build is feedback and is never promoted;
-// findings are never accepted here.
+// with review commit, records the unit's read and publishes its Goal-Read.
+// A committed critic requires the chain's recorded closure before collection.
+// A clean read of the build by another model than the builder's is the
+// unit's read. Any other read is feedback and requests the committed critic.
 
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
@@ -285,11 +286,6 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	data["published"] = subject.Published
 	args := []string{"--root", install, "--goal", goalID, "--unit", subject.Commit}
-	if review.BuildBrief != "" {
-		// The work's own brief starts its read; a read the commit form
-		// already started for this build is joined.
-		args = append(args, "--brief", review.BuildBrief, "--join")
-	}
 	if inv.input.has("model") {
 		args = append(args, "--model", inv.input.text("model"))
 	}
@@ -302,7 +298,69 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
 	}
-	result := inv.commitReview(targets, install, goalID, subject.Commit, args)
+	criticArgs := slices.Clone(args)
+	if review.BuildBrief != "" {
+		// The work's brief starts its read; an existing critic is joined.
+		criticArgs = append(criticArgs, "--brief", review.BuildBrief, "--join")
+	}
+	var bundle *branch.UnitReadBundle
+	var reason string
+	read, inspectErr := inv.work().inspectRead(install, goalID, subject.Commit)
+	switch {
+	case inspectErr != nil:
+		reason = "the branch read record could not be inspected: " + inspectErr.Error()
+	case read.RootJob != "":
+		reason = "this build's review already started with a critic"
+	default:
+		path := filepath.Join(filepath.Dir(review.Round.Directory), fmt.Sprintf("unit-read-%d.json", review.Round.Number))
+		body, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			var saved branch.UnitReadBundle
+			if err := json.Unmarshal(body, &saved); err != nil {
+				reason = "the saved unit read bundle is damaged: " + err.Error()
+			} else {
+				bundle = &saved
+			}
+		case errors.Is(err, os.ErrNotExist):
+			var revision uint64
+			if projection, _, failed := inv.projection(); failed == nil && projection.Tree.Live[goalID] != nil {
+				revision = projection.Tree.Live[goalID].Revision
+			}
+			bundle, reason = readPromotion(runner, review, *subject, revision, func(runtime, model string) (string, error) {
+				return inv.work().resolveModel(intentConfPath(inv.layout), runtime, model)
+			})
+			if bundle != nil {
+				body, err = json.MarshalIndent(bundle, "", "  ")
+				if err == nil {
+					// ReviewSubject holds the run's lock; a repeat reads these
+					// same bytes even if the goal revision or aliases changed.
+					err = os.WriteFile(path, append(body, '\n'), 0o600)
+				}
+				if err != nil {
+					return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
+						Summary: "the unit is published, but its clean read bundle could not be saved", Details: []string{err.Error()},
+						next: retry, nextReason: "saves and records the same read"}
+				}
+			}
+		default:
+			reason = "the saved unit read bundle could not be read: " + err.Error()
+		}
+		if bundle != nil {
+			args = append(args, "--unit-read", path)
+			data["readLaunch"], data["readModel"] = bundle.ReadLaunch, bundle.ReadModel
+		}
+	}
+	if bundle == nil {
+		args = criticArgs
+		data["readNotPromoted"] = reason
+	}
+	result := inv.commitReview(targets, install, goalID, subject.Commit, args, criticArgs)
+	if merged, ok := result.Data.(map[string]any); ok && merged["readNotPromoted"] != nil {
+		bundle = nil
+		delete(data, "readLaunch")
+		delete(data, "readModel")
+	}
 	if merged, ok := result.Data.(map[string]any); ok {
 		for key, value := range data {
 			if _, taken := merged[key]; !taken {
@@ -313,9 +371,87 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if bundle != nil {
+			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
+		}
 		result.next, result.nextReason = inv.publicArgv("work", "land", goalID), "the unit's read is published on the goal branch; landing admits it by its own rules"
 	}
 	return result
+}
+
+// unitReadPromotion decides from retained facts alone. Models come from the
+// launches, since a step's model may be an alias.
+func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, revision uint64, build, read launch.Record, report, readJSON []byte) (*branch.UnitReadBundle, string) {
+	var reads []launch.UnitStep
+	for _, step := range review.Round.Steps {
+		if strings.HasPrefix(step.Name, "read") {
+			reads = append(reads, step)
+		}
+	}
+	if len(reads) != 1 {
+		return nil, "the round must have exactly one read step"
+	}
+	step := reads[0]
+	if revision == 0 || len(report) == 0 || len(readJSON) == 0 || read.State != launch.Completed || read.Kind != "read" || !read.VerdictIsCounting() {
+		return nil, "the read's report, completed launch or goal revision is unavailable"
+	}
+	if step.State != launch.StepPassed || !branch.UnitReadVerdictIsLand(step.Verdict, string(report)) {
+		return nil, "the read did not pass with VERDICT: land"
+	}
+	if step.VerdictCounts == nil || !*step.VerdictCounts {
+		return nil, "the read's verdict does not count"
+	}
+	var buildModel, readModel string
+	_ = json.Unmarshal(build.AdapterData["model"], &buildModel)
+	_ = json.Unmarshal(read.AdapterData["model"], &readModel)
+	if buildModel == "" || readModel == "" || buildModel == readModel {
+		return nil, "the read and build need different, non-empty resolved models"
+	}
+	parent := subject.ExpectedParent
+	if subject.Amends != "" {
+		parent = subject.AmendsParent
+	}
+	if review.Base != parent {
+		return nil, "the run's base is not the commit's parent"
+	}
+	runtime := strings.TrimSuffix(strings.TrimSuffix(read.Adapter, "-exec"), "-headless")
+	return &branch.UnitReadBundle{SchemaVersion: 1, Goal: review.Record.Goal, Commit: subject.Commit, UnitRun: review.Record.ID,
+		Round: review.Round.Number, ReadLaunch: step.LaunchID, ReadRuntime: runtime, ReadModel: readModel, BuildModel: buildModel,
+		ExaminedBase: review.Base, ExaminedTree: subject.StagedTree, GoalRevision: revision,
+		VerdictLine: "VERDICT: land", Report: string(report), LaunchRecord: string(readJSON)}, ""
+}
+
+func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject launch.UnitSubject, revision uint64, resolve func(runtime, model string) (string, error)) (*branch.UnitReadBundle, string) {
+	var build, read launch.Record
+	var report, readJSON []byte
+	if runner.Manager != nil {
+		for _, step := range review.Round.Steps {
+			if strings.HasPrefix(step.Name, "build") {
+				build, _ = runner.Manager.Store.Read(step.LaunchID)
+			} else if strings.HasPrefix(step.Name, "read") {
+				read, _ = runner.Manager.Store.Read(step.LaunchID)
+				if len(read.Outputs) == 1 {
+					report, _ = os.ReadFile(read.Outputs[0].Path)
+				}
+				if dir, err := runner.Manager.Store.StateDir(step.LaunchID); err == nil {
+					readJSON, _ = os.ReadFile(filepath.Join(dir, "record.json"))
+				}
+			}
+		}
+	}
+	for _, record := range []*launch.Record{&build, &read} {
+		var model string
+		if json.Unmarshal(record.AdapterData["model"], &model) != nil {
+			continue
+		}
+		runtime := strings.TrimSuffix(strings.TrimSuffix(record.Adapter, "-exec"), "-headless")
+		model, err := resolve(runtime, model)
+		if err != nil {
+			return nil, "the launches' model ids could not be resolved"
+		}
+		record.AdapterData["model"], _ = json.Marshal(model)
+	}
+	return unitReadPromotion(review, subject, revision, build, read, report, readJSON)
 }
 
 // neverLaunchedCause is why a review's dispatch started nothing, in the
@@ -470,10 +606,29 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 // publication owner, with its records in root. A terminal critic whose
 // chain is not closed yields the author's close and collects nothing; a
 // repeat publishes the same attestation without reading again. review
-// commit and review run share it.
-func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string) intentResult {
+// commit and review run share it. A refused unit read uses the supplied
+// critic arguments; if that start also fails, commit review continues it.
+func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
 	result, code, err := owners.branchRead(args)
+	if err != nil && slices.Contains(args, "--unit-read") && len(fallback) > 0 {
+		reason := err.Error()
+		args = fallback[0]
+		result, code, err = owners.branchRead(args)
+		fallbackFailed := err != nil
+		defer func() {
+			data, _ := out.Data.(map[string]any)
+			if data == nil {
+				data = map[string]any{}
+				out.Data = data
+			}
+			data["readNotPromoted"] = reason
+			if fallbackFailed && slices.Equal(out.next, inv.sameCommand()) {
+				out.next = inv.publicArgv("work", "review", "--commit", unit, "--goal", goalID)
+				out.nextReason = "requests the committed critic for this version"
+			}
+		}()
+	}
 	if err == nil && result.State == "closed" {
 		// The critic's records are where it was dispatched: this
 		// installation's store, or its primary checkout's when the critic

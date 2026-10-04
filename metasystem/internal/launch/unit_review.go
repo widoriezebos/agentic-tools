@@ -65,8 +65,9 @@ type UnitReview struct {
 }
 
 // UnitReviewReadyOutcomes are the round outcomes whose proof passed and
-// whose result the proof left unchanged. The preliminary read's outcome is
-// feedback; it neither admits nor refuses a committed review.
+// whose result the proof left unchanged. A clean read by another model than
+// the builder's is the unit's read; other reads are feedback and work review
+// asks the committed critic. The read never refuses a committed review.
 var UnitReviewReadyOutcomes = map[string]bool{"green": true, "read-failed": true, "read-compacted": true}
 
 // ErrRunStillRunning marks the UNIT_REVIEW_NOT_READY refusal of a run whose
