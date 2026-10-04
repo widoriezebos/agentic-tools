@@ -35,6 +35,7 @@ import {
   publishedWords,
   reservedWords,
   RESERVED_MEANING,
+  roundWords,
   workingByGoal,
   workingSource,
   type WorkingGroup,
@@ -102,8 +103,8 @@ import { Trouble } from "../shell/Trouble";
  * stuck seat's item and in a seat's opened row, for a seat of this computer
  * other than the one serving this page, which a terminal stops. Stop asks
  * once more, saying what it ends. What a person wants only now and then — a
- * machine's engine and generation, a health check's reasons — is behind a
- * disclosure.
+ * machine's engine and generation, an unreadable health record's message —
+ * is behind a disclosure.
  *
  * Both are read when the pane mounts, when a person presses the section's
  * refresh, and when the server says a presence attempt or a board change
@@ -416,7 +417,8 @@ function FleetBlocks({
  * list, newest first — each as one line, a quiet second line where the record
  * carries a reason, and exactly one thing to do: the act at the line's end,
  * or the command to type, in code. A silent machine's goals each carry their
- * own command under their title; a health check's reasons are behind Details.
+ * own command under their title; an unreadable health record's message is
+ * behind Details.
  *
  * Empty, the block is absent rather than a line saying nothing needs you: the
  * verdict on top already says All good, and a standing "all clear" row is a
@@ -1052,8 +1054,7 @@ function WorkingBlock({ working, now }: { working: Working; now: Date }) {
         <span className="ms-fleet-work-name">This job</span>
         <span>
           {working.phase.role}
-          {working.phase.round > 0 && ` round ${String(working.phase.round)}`}
-          {working.phase.round > 0 && working.phase.roundLimit !== null && ` of ${String(working.phase.roundLimit)}`}
+          {working.phase.round > 0 && ` ${roundWords(working.phase.round, working.phase.roundLimit)}`}
         </span>
         <Chip>{working.job.status}</Chip>
         {working.job.startedAt !== null && (

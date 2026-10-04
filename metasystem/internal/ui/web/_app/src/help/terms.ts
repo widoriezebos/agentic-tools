@@ -384,11 +384,11 @@ export const HELP: Record<HelpId, Term> = {
   },
   "fleet-verdict": {
     term: "Verdict",
-    text: "One line on whether anything on this computer needs you: All good only when Needs you is empty and every section of this page could be read; otherwise how many things need you, or which section could not be read. Checked on this computer: its seats, its landing lane and this checkout's questions. Questions asked on other computers are not checked here.",
+    text: "One line on whether anything on this computer needs you: All good only when Needs you is empty and every section of this page could be read; otherwise how many things need you, or which section could not be read. Checked on this computer: its seats, its landing lane and this checkout's questions. Questions asked on other computers are not checked here. The steward's own checks are not counted here; metasystem system check lists them.",
   },
   "fleet-needs-you": {
     term: "Needs you",
-    text: "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's own health, and goals held by a machine this seat has not heard from. Each is one line with one thing to do: a button that opens the goal, the question or the proof's log, Resume for a paused lane, Stop for a stuck seat's machine, or the one command to type at a terminal on this computer. Resume and Stop act in your name, so they ask you to sign in first, and Stop asks once more before it stops.",
+    text: "Everything on this page that waits for you, newest first: a seat of this computer that is stuck, the landing lane paused or unable to run, a branch that came back and was not handed in again, a red proof nothing has answered, a question this checkout's seats asked you, this computer's steward not running, and goals held by a machine this seat has not heard from. Each is one line with one thing to do: a button that opens the goal, the question or the proof's log, Resume for a paused lane, Stop for a stuck seat's machine, or the one command to type at a terminal on this computer. Resume and Stop act in your name, so they ask you to sign in first, and Stop asks once more before it stops.",
   },
   "lane-pause": {
     term: "Pause",

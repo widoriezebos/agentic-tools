@@ -333,7 +333,7 @@ describe("what needs you", () => {
     const fleet = fleetRead({
       needsYou: silent,
       machines: [machine({ machine: "ui", this: true, holds: [] }), machine({ holds: [held()] })],
-      this: health("unhealthy", [{ role: "census-freshness", status: "dead", reason: "no census success is recorded" }]),
+      this: health("unhealthy", [{ role: "steward-runner", status: "dead", reason: "runner is gone" }]),
     });
     const red = { tree: "t1", commit: "c1", result: "red", log: "/l/a-9.log", at: at(-20), attempt: "a-9", reason: "the proving command exited 1" };
     const read = boardRead({
@@ -514,42 +514,31 @@ describe("what needs you", () => {
       }),
     });
 
-    const [item] = needs(fleet, boardRead());
+    const items = needs(fleet, boardRead());
+    expect(items).toHaveLength(1);
+    const [item] = items;
 
     expect(item.words).toBe("This computer's steward is not running.");
     expect(item.command).toBe("metasystem system start");
-    expect(item.details).toEqual(["runner pid 41 is gone"]);
+    expect(item.details).toEqual([]);
   });
 
-  it("gives a failed health check system check, every failing reason behind Details, and none of the alive roles", () => {
-    const one = fleetRead({
-      this: health("unhealthy", [
-        { role: "steward-runner", status: "alive", reason: "runner alive" },
-        { role: "seat-presence", status: "dead", reason: "presence not published since 09:10" },
-      ]),
-    });
-    const several = fleetRead({
-      this: health("unhealthy", [
-        { role: "steward-runner", status: "alive", reason: "runner alive" },
-        { role: "narrator-freshness", status: "dead", reason: "lastSuccess is stale at 153h56m38s" },
-        { role: "session-main", status: "unknown", reason: "no session main is announced" },
-        { role: "capability-snapshots", status: "dead", reason: "" },
-      ]),
-    });
+  it.each([
+    ["retro-debt", "RETRO DEBT awaits a receipt after arc-goal:verbs-match-intent:602TW9BXPRBJ04Q9NZGSYSHT8K-m1e-c6925449"],
+    ["stop-hook-duration", "the last Stop took 21s of the 60s budget on m1e; the threshold is 15s"],
+    ["context-budget", "614 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum"],
+    ["ledger-attention", "the shared ledger moved to 12360c3a01ef 56m ago and is unexamined past 30m"],
+    ["trunk-red", "deep validation cadence is overdue at trunk 7d0fc86923afaacb75f4252a81c92a4ae0e82ed9 tree 71e8dd435547ed4d6e19c2ede4c3870fb0cfd816"],
+    ["new-health-role", "an engineer's check failed"],
+    ["capability-snapshots", ""],
+  ])("leaves a failing %s check to the steward, with no item or change to the verdict", (role, reason) => {
+    const fleet = fleetRead({ this: health("unhealthy", [...seat().health!.roles, { role, status: "dead", reason }]) });
+    const items = needs(fleet, boardRead());
+    const verdict = verdictOf(fleet, boardRead(), items, now);
 
-    const [single] = needs(one, boardRead());
-    const [many] = needs(several, boardRead());
-
-    expect(single.words).toBe("This computer's health check failed: presence not published since 09:10.");
-    expect(single.command).toBe("metasystem system check");
-    expect(single.details).toEqual(["presence not published since 09:10"]);
-    expect(many.words).toBe("This computer's health check failed on 3 checks.");
-    expect(many.command).toBe("metasystem system check");
-    expect(many.details).toEqual(["lastSuccess is stale at 153h56m38s", "no session main is announced", "a check failed and recorded no reason"]);
-    for (const item of [single, many]) {
-      expect(item.details.join(" ")).not.toContain("runner alive");
-      expect(`${item.words} ${item.details.join(" ")}`).not.toMatch(/steward-runner|seat-presence|narrator-freshness|session-main|capability-snapshots/);
-    }
+    expect(items).toEqual([]);
+    expect(verdict).toMatchObject({ words: "All good on this computer", tone: "ok" });
+    if (reason !== "") expect(JSON.stringify({ items, verdict })).not.toContain(reason);
   });
 
   it("names a health record it could not read, with the reader's reason and system check, and is never All good over it", () => {
@@ -564,10 +553,10 @@ describe("what needs you", () => {
     expect(verdictOf(torn, boardRead(), items, now).words).not.toContain("All good");
   });
 
-  it("names a health check that could not decide, with the undecided checks' reasons and system check, and is never All good over it", () => {
+  it("names a steward that could not be checked, with system check and no Details", () => {
     const undecided = fleetRead({
       this: health("unknown", [
-        { role: "steward-runner", status: "alive", reason: "runner alive" },
+        { role: "steward-runner", status: "unknown", reason: "runner pid 41 could not be probed" },
         { role: "census-freshness", status: "unknown", reason: "no census success is recorded" },
       ]),
     });
@@ -575,10 +564,17 @@ describe("what needs you", () => {
     const items = needs(undecided, boardRead());
 
     expect(items).toHaveLength(1);
-    expect(items[0].words).toBe("This computer's last health check could not decide.");
-    expect(items[0].details).toEqual(["no census success is recorded"]);
+    expect(items[0].words).toBe("This computer's steward could not be checked.");
+    expect(items[0].details).toEqual([]);
     expect(items[0].command).toBe("metasystem system check");
     expect(verdictOf(undecided, boardRead(), items, now)).toMatchObject({ words: "1 thing needs you", tone: "attention" });
+  });
+
+  it.each(["census-freshness", "new-health-role"])("ignores an undecided %s check, including the aggregate state", (role) => {
+    const fleet = fleetRead({ this: health("unknown", [...seat().health!.roles, { role, status: "unknown", reason: "could not decide" }]) });
+    const items = needs(fleet, boardRead());
+    expect(items).toEqual([]);
+    expect(verdictOf(fleet, boardRead(), items, now).words).toBe("All good on this computer");
   });
 
   it("names a health record the steward stopped writing, with system start", () => {
@@ -588,6 +584,8 @@ describe("what needs you", () => {
 
     expect(item.words).toBe(`This computer's steward has not recorded its health since ${minuteTime(at(-3))}.`);
     expect(item.command).toBe("metasystem system start");
+    expect(item.details).toEqual([]);
+    expect(verdictOf(fleet, boardRead(), [item], now).words).toBe("1 thing needs you");
   });
 
   it("says nothing about a checkout that was never armed", () => {
@@ -780,7 +778,7 @@ describe("the Doing column", () => {
     const session = working({ goal: "one-folder", phase: { role: "working", round: 0, roundLimit: null }, job: { ...working().job, id: "s", role: "working", startedAt: at(-90) } });
     const review = working({ phase: { role: "review", round: 3, roundLimit: 20 }, job: { ...working().job, id: "r", role: "review", startedAt: at(-9) } });
 
-    expect(doingOf(machine({ working: [session, review] }), undefined, [], now).words).toBe("reviewing · round 3 of 20 · 9 min");
+    expect(doingOf(machine({ working: [session, review] }), undefined, [], now).words).toBe("reviewing · round 3 · 9 min");
     expect(doingOf(machine({ working: [session] }), undefined, [], now).words).toBe("working · 90 min");
   });
 
@@ -802,6 +800,26 @@ describe("the Doing column", () => {
 
     expect(doingOf(machine({ holds: [held1] }), proving, [], now)).toEqual({ words: "proving · 120 of 189 · 12 min", active: true, source: "board" });
     expect(doingOf(machine({ holds: [held1] }), reviewing, [], now).words).toBe("reviewing · round 2 of 3 · 5 min");
+  });
+
+  it.each([
+    [1, 20, "round 1"], [17, 20, "round 17"], [18, 20, "round 18 of 20"],
+    [20, 20, "round 20 of 20"], [3, null, "round 3"],
+  ] as const)("says %s with limit %s in the jobs and board writers as %s", (round, limit, words) => {
+    for (const role of ["building", "review", "revise"]) {
+      const job = working({ phase: { role, round, roundLimit: limit } });
+      const verb = role === "review" ? "reviewing" : role === "revise" ? "revising" : "building";
+      expect(doingOf(machine({ working: [job] }), undefined, [], now).words).toBe(`${verb} · ${words} · 42 min`);
+    }
+    for (const stage of ["review", "revise"] as const) {
+      const card = seatOf([{ goal: "one-folder", stage, round: { n: round, max: limit }, since: at(-5) }]);
+      expect(doingOf(machine({ holds: [held1] }), card, [], now).words).toBe(`${stage === "review" ? "reviewing" : "revising"} · ${words} · 5 min`);
+    }
+  });
+
+  it("says reviewing, round 3 for the board card without making its cap a plan", () => {
+    const card = seatOf([{ goal: "one-folder", stage: "review", round: { n: 3, max: 20 }, since: at(-5) }]);
+    expect(doingOf(machine(), card, [], now).words).toBe("reviewing · round 3 · 5 min");
   });
 
   it("drops a stale card: one for a goal the machine no longer holds, or one the board cannot believe", () => {
