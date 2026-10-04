@@ -537,6 +537,68 @@ func TestSplitReadsSharingAReportWaitForPriorCollection(t *testing.T) {
 	}
 }
 
+func TestResumedSplitReadsWaitForTheRunningRead(t *testing.T) {
+	t.Parallel()
+	diff := "diff --git a/a/x.go b/a/x.go\n--- a/a/x.go\n+++ b/a/x.go\n+x\ndiff --git a/b/y.go b/b/y.go\n--- a/b/y.go\n+++ b/b/y.go\n+y\n"
+	fixture := newUnitFixture(t, diff, "branch", "round", "branch", "branch")
+	fixture.manager.Settings.ReadSplitLines = 1
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Read.Outputs = []string{filepath.Join(t.TempDir(), "shared-read.md")}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstCollected := false
+	fixture.runner.AfterWrite = func(record UnitRunRecord) error {
+		if len(record.Rounds) > 0 {
+			for _, step := range record.Rounds[0].Steps {
+				if step.Name == "read:a" && step.State == StepPassed {
+					firstCollected = true
+				}
+			}
+		}
+		return nil
+	}
+	readStarts := 0
+	fixture.starter.onStart = func(record Record) error {
+		if record.Kind == "read" {
+			readStarts++
+			if readStarts == 2 && !firstCollected {
+				t.Error("second writer started before the first report was collected")
+			}
+		}
+		return nil
+	}
+	fixture.starter.holdKind = "read"
+	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || !first.Capped || first.Step != "read:a" || readStarts != 1 {
+		t.Fatalf("first=%+v read starts=%d err=%v", first, readStarts, err)
+	}
+	held, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+	if err != nil || !held.Capped || held.Step != "read:a" || readStarts != 1 {
+		t.Fatalf("resume while held=%+v read starts=%d err=%v", held, readStarts, err)
+	}
+	if second := stepNamed(t, held.Record.Rounds[0], "read:b"); second.State != StepPending || second.LaunchID != "" {
+		t.Fatalf("second read moved while the first ran: %+v", second)
+	}
+	fixture.manager.Store.Update(held.Launch, func(record *Record) error {
+		yes, code := true, 0
+		record.State, record.ExitCode, record.VerdictCounts, record.Measurement.Verdict = Completed, &code, &yes, "pass"
+		return nil
+	})
+	fixture.starter.holdKind = ""
+	final, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+	if err != nil || final.Record.Rounds[0].Outcome != "green" || readStarts != 2 {
+		t.Fatalf("outcome=%+v read starts=%d err=%v", final.Record.Rounds, readStarts, err)
+	}
+}
+
 func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
 	output := filepath.Join(t.TempDir(), "read.out")

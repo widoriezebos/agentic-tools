@@ -235,6 +235,14 @@ func (sequence readSequence) run(readStart int, deadline time.Time) (int, bool, 
 	}
 	for index := readStart; index < len(round.Steps); index++ {
 		step := &round.Steps[index]
+		// A serial read an earlier call left running completes before a
+		// later read starts.
+		if sequence.serial && strings.HasPrefix(step.Name, "read") && step.State == StepRunning {
+			if capped, err := sequence.driver.waitStep(index, deadline); err != nil || capped {
+				return index, capped, err
+			}
+			continue
+		}
 		if !strings.HasPrefix(step.Name, "read") || step.State != StepPending && step.State != StepStarting {
 			continue
 		}
