@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // The bootstrap fence names its holder's pid: a live holder keeps it, a dead
@@ -14,15 +17,15 @@ import (
 func TestBootstrapFenceClaim(t *testing.T) {
 	t.Parallel()
 	alive := func(pid int) bool { return pid == os.Getpid() }
-	holder := func(t *testing.T, installation string) string {
+	holder := func(t *testing.T, installation roots.Installation) string {
 		t.Helper()
-		target, err := os.Readlink(filepath.Join(installation, filepath.FromSlash(BootstrapFencePath)))
+		target, err := os.Readlink(installation.Path(filepath.FromSlash(BootstrapFencePath)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return target
 	}
-	installation := t.TempDir()
+	installation := stateroottest.Installation(t, t.TempDir())
 	if claimed, err := ClaimBootstrapFence(installation, os.Getpid(), alive); !claimed || err != nil {
 		t.Fatalf("fresh claim = %v %v", claimed, err)
 	}
@@ -42,7 +45,7 @@ func TestBootstrapFenceClaim(t *testing.T) {
 	if claimed, err := ClaimBootstrapFence(installation, os.Getpid(), alive); !claimed || err != nil || holder(t, installation) != strconv.Itoa(os.Getpid()) {
 		t.Fatalf("claim over a dead holder = %v %v holder %s", claimed, err, holder(t, installation))
 	}
-	entries, _ := os.ReadDir(filepath.Dir(filepath.Join(installation, filepath.FromSlash(BootstrapFencePath))))
+	entries, _ := os.ReadDir(filepath.Dir(installation.Path(filepath.FromSlash(BootstrapFencePath))))
 	if len(entries) != 1 {
 		t.Fatalf("the fence left staging links: %v", entries)
 	}
@@ -51,7 +54,7 @@ func TestBootstrapFenceClaim(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(directory, filepath.FromSlash(BootstrapFencePath)), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if claimed, err := ClaimBootstrapFence(directory, os.Getpid(), alive); claimed || err == nil {
+	if claimed, err := ClaimBootstrapFence(stateroottest.Installation(t, directory), os.Getpid(), alive); claimed || err == nil {
 		t.Fatalf("claim over a directory = %v %v", claimed, err)
 	}
 }

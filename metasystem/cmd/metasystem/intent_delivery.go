@@ -422,7 +422,7 @@ func productionIntentLaneRoot(root string, now time.Time) (string, bool, error) 
 // ---- shared job-store reads
 
 func (inv *intentInvocation) jobRecord(id string) (map[string]any, error) {
-	return inv.jobRecordAt(inv.layout.InstallationRoot, id)
+	return inv.jobRecordAt(inv.layout.InstallationRoot.Path(), id)
 }
 
 func (inv *intentInvocation) jobRecordAt(installation, id string) (map[string]any, error) {
@@ -476,7 +476,7 @@ func criticRole(role string) bool {
 
 // newestRound is the chain's highest-numbered round record.
 func (inv *intentInvocation) newestRound(root string) (map[string]any, error) {
-	return inv.newestRoundAt(inv.layout.InstallationRoot, root)
+	return inv.newestRoundAt(inv.layout.InstallationRoot.Path(), root)
 }
 
 func (inv *intentInvocation) newestRoundAt(installation, root string) (map[string]any, error) {
@@ -497,7 +497,7 @@ func (inv *intentInvocation) newestRoundAt(installation, root string) (map[strin
 }
 
 func (inv *intentInvocation) returnPath(root string, round int64) string {
-	return inv.returnPathAt(inv.layout.InstallationRoot, root, round)
+	return inv.returnPathAt(inv.layout.InstallationRoot.Path(), root, round)
 }
 
 func (inv *intentInvocation) returnPathAt(installation, root string, round int64) string {
@@ -860,7 +860,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		path = filepath.Join(inv.cwd, path)
 	}
 	target := []intentTarget{{Kind: "design", ID: file}}
-	roots, err := project.ResolveRoots(inv.layout.InstallationRoot)
+	roots, err := project.ResolveRoots(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return intentResult{Targets: target, Outcome: intentRefused, code: 1, Summary: "the project's design folders can't be read, so nothing was reviewed",
 			next: inv.publicArgv("settings", "check"), nextReason: "checks the project's configuration", Details: []string{err.Error()}}
@@ -912,7 +912,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		return *refused
 	}
 	digest := sha256.Sum256(data)
-	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-review",
+	dir := inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-review",
 		"design-"+strings.ToLower(record.ID)+"-"+hex.EncodeToString(digest[:6]))
 	outputs := filepath.Join(dir, "outputs.md")
 	brief := filepath.Join(dir, "brief.md")
@@ -949,14 +949,14 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		return intentResult{Targets: target, Outcome: intentFailed, Summary: "the review's brief can't be written, so nothing was reviewed",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
-	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath)) == 0 {
+	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath)) == 0 {
 		// The first paid critique needs the goal's claim; an approved goal
 		// nobody holds is claimed lawfully, with no build worktree.
 		if refused := inv.acquireDesignCritiqueClaim(goalID); refused != nil {
 			return *refused
 		}
 	}
-	chainsBefore := len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath))
+	chainsBefore := len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath))
 	result := inv.dispatchReview(target, []string{"--role", "design-critic", "--brief", brief, "--goal", goalID,
 		"--destructive-reach", "DESIGN-BEARING", "--outputs", outputs, "--design", gitRel})
 	if chainsBefore == 0 {
@@ -1032,7 +1032,7 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 	if refused != nil {
 		return *refused
 	}
-	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-review", "job-"+job)
+	dir := inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-review", "job-"+job)
 	brief := filepath.Join(dir, "brief.md")
 	briefText := reviewBrief("code-critique", "job "+job, goalID, rounds, calls,
 		"the threat model of the design and brief job "+job+" implements (where they state none: our own agents and operators make mistakes, nobody attacks); a true finding outside it closes as out-of-scope.",
@@ -1076,7 +1076,7 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 			return delegateOutcome{}, problem
 		}
 	}
-	request := delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), engine: binary, args: args, dir: inv.layout.InstallationRoot}
+	request := delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), engine: binary, args: args, dir: inv.layout.InstallationRoot.Path()}
 	ran := ownerCall(func(stdout, stderr io.Writer) int { return inv.ownerCalls().delegate(request, stdout, stderr) })
 	var outcome delegateOutcome
 	if ran.err != nil || json.Unmarshal(bytes.TrimSpace(ran.stdout), &outcome) != nil || outcome.Outcome == "" {
@@ -1118,7 +1118,7 @@ func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root s
 	if rebind == nil {
 		rebind = dispatchcore.CritiqueChainBudgetRebind
 	}
-	if _, err := rebind(inv.layout.InstallationRoot, root); err != nil {
+	if _, err := rebind(inv.layout.InstallationRoot.Path(), root); err != nil {
 		return withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "the goal's review-round limit can't be applied to this review, so nothing was continued or closed",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}})
@@ -1139,7 +1139,7 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 	root := job
 	if parent := recordText(record, "parentJob"); parent != "" {
 		root = parent
-		if chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot, job); err == nil && chainRoot != "" {
+		if chainRoot, err := dispatchcore.ChainRootOf(inv.layout.InstallationRoot.Path(), job); err == nil && chainRoot != "" {
 			root = chainRoot
 		}
 	}
@@ -1196,8 +1196,8 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	// --changes do: a goal worktree's installation, with this one selected.
 	root := inv.goalBranchInstallation(goalID)
 	args := []string{"--root", root, "--goal", goalID, "--unit", unit}
-	if root != inv.layout.InstallationRoot {
-		args = append(args, "--selected-installation", inv.layout.InstallationRoot)
+	if root != inv.layout.InstallationRoot.Path() {
+		args = append(args, "--selected-installation", inv.layout.InstallationRoot.Path())
 	}
 	if inv.input.has("brief") {
 		args = append(args, "--brief", inv.callerPath(inv.input.text("brief")))
@@ -1218,7 +1218,7 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 func (inv *intentInvocation) goalBranchInstallation(goalID string) string {
 	worktrees, err := inv.registeredWorktrees()
 	if err != nil {
-		return inv.layout.InstallationRoot
+		return inv.layout.InstallationRoot.Path()
 	}
 	for path, entry := range worktrees {
 		if _, err := os.Stat(path); err != nil {
@@ -1228,7 +1228,7 @@ func (inv *intentInvocation) goalBranchInstallation(goalID string) string {
 			return inv.goalWorktreeInstallation(path)
 		}
 	}
-	return inv.layout.InstallationRoot
+	return inv.layout.InstallationRoot.Path()
 }
 
 // criticClosure reports what a terminal commit critic still needs before its
@@ -1354,7 +1354,7 @@ func (inv *intentInvocation) composeFoldMessage(review string, round int64, subj
 	}
 	digest := func(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 	identity := sha256.Sum256([]byte(strings.Join([]string{review, fmt.Sprint(round), subject, digest(brief), digest(returned), digest(dispositions)}, "\n")))
-	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-fold",
+	dir := inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-fold",
 		fmt.Sprintf("%s-r%d-%s", review, round, hex.EncodeToString(identity[:6])))
 	body := strings.Join([]string{
 		strings.TrimRight(string(brief), "\n"),
@@ -1451,9 +1451,11 @@ func joinRefusal(targets []intentTarget, review string, violations []string, ret
 func (inv *intentInvocation) closeChain(job string) intentResult {
 	// The chain's records are where its critic was dispatched: a goal
 	// worktree or the primary checkout that serves it (branch.CriticStore).
-	if store := branch.CriticStore(inv.layout.InstallationRoot, job); store != inv.layout.InstallationRoot {
-		closer := *inv
-		closer.layout.InstallationRoot = store
+	if store := branch.CriticStore(inv.layout.InstallationRoot.Path(), job); store != inv.layout.InstallationRoot.Path() {
+		closer, refused := inv.closerAt([]intentTarget{jobTarget(job)}, store)
+		if refused != nil {
+			return *refused
+		}
 		return closer.closeChain(job)
 	}
 	targets := []intentTarget{jobTarget(job)}
@@ -1477,7 +1479,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if writer == nil {
 		writer = recordWriterPreflight
 	}
-	if cause, err := writer(inv.layout.InstallationRoot, job); err != nil {
+	if cause, err := writer(inv.layout.InstallationRoot.Path(), job); err != nil {
 		if cause == "record-writer-refused" {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": cause},
 				Summary:  fmt.Sprintf("closing %s writes its records, which this shell may not do; nothing was closed", job),
@@ -1506,13 +1508,13 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		// terminal round the decisions answer is folded here; a repeat is
 		// unchanged. The fold decides nothing: the round's material findings
 		// enter the register open, and only the decisions below resolve them.
-		if _, err := dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot, job, recordText(round, "jobId")); err != nil {
+		if _, err := dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), job, recordText(round, "jobId")); err != nil {
 			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 				Summary: fmt.Sprintf("review %s round %d can't be recorded with its chain; nothing was closed", job, recordRound(round)),
 				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 		}
 		if violations := validate.CritiqueClosedWithRegister(inv.returnPath(job, recordRound(round)), inv.flagPath("dispositions"),
-			inv.layout.InstallationRoot, job); len(violations) > 0 {
+			inv.layout.InstallationRoot.Path(), job); len(violations) > 0 {
 			return joinRefusal(targets, job, violations, inv.sameCommand())
 		}
 		decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
@@ -1540,7 +1542,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 				applied[id] = decision
 			}
 		}
-		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, job, applied); err != nil {
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), job, applied); err != nil {
 			return *withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 				Summary: "the decisions can't be recorded, so nothing was closed",
 				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("review %s: %v", job, err)}})
@@ -1565,7 +1567,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if closeOwner == nil {
 		closeOwner = inProcessCloseOwner
 	}
-	ran := closeOwner(inv.layout.InstallationRoot, argv)
+	ran := closeOwner(inv.layout.InstallationRoot.Path(), argv)
 	after, readErr := inv.jobRecord(job)
 	closed := false
 	if readErr == nil {
@@ -1700,7 +1702,7 @@ func runIntentLand(inv *intentInvocation) int {
 // has, its checkout; the refusal when that can't be read.
 func (inv *intentInvocation) laneCheck(targets []intentTarget) (string, bool, *intentResult) {
 	owners := inv.delivery()
-	root, configured, err := owners.laneRoot(inv.layout.InstallationRoot, owners.now())
+	root, configured, err := owners.laneRoot(inv.layout.InstallationRoot.Path(), owners.now())
 	var laneRefusal *lane.Refusal
 	if errors.As(err, &laneRefusal) {
 		return "", false, laneRefusalResult(targets, laneRefusal)
@@ -1849,7 +1851,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	root := inv.layout.InstallationRoot
 	owners := inv.delivery()
-	base := filepath.Join(root, "artifacts", "agents", "landing-intent", goalID)
+	base := root.Path("artifacts", "agents", "landing-intent", goalID)
 	if result := inv.resumeSweep(targets, goalID, base); result != nil {
 		return *result
 	}
@@ -1858,7 +1860,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	if problem != nil {
 		return *problem
 	}
-	state, err := owners.branchState(root, goalID)
+	state, err := owners.branchState(root.Path(), goalID)
 	if err != nil {
 		refused := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
@@ -1926,7 +1928,7 @@ func (inv *intentInvocation) resumeSweep(targets []intentTarget, goalID, base st
 			continue
 		}
 		data := map[string]any{"route": "hand", "landing": landed, "retained": filepath.Dir(path)}
-		if err := inv.delivery().sweep(inv.layout.InstallationRoot, goalID, landed.Landing); err != nil {
+		if err := inv.delivery().sweep(inv.layout.InstallationRoot.Path(), goalID, landed.Landing); err != nil {
 			return &intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
 				Summary: fmt.Sprintf("landed %s on %s, and the merged goal branch is still not swept: %v", landed.Landing, landed.Endpoint, err),
 				next:    inv.sameCommand(), nextReason: "retries the branch owner's sweep of the pushed landing"}
@@ -1974,14 +1976,14 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 			Summary: fmt.Sprintf("goal %s already landed %s on %s", goalID, landed.Landing, landed.Endpoint)}
 	}
-	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanding)
+	writeHandLandingCard(inv.stderr, root.Path(), goalID, board.StageLanding)
 	selection := []string{"--last"}
 	if through != "" {
 		selection = []string{"--through", through}
 	}
 	prepared := filepath.Join(dir, "prepared")
 	if _, err := os.Stat(prepared); err != nil {
-		candidate, code, err := owners.landCandidate(append([]string{"--root", root, "--goal", goalID}, selection...))
+		candidate, code, err := owners.landCandidate(append([]string{"--root", root.Path(), "--goal", goalID}, selection...))
 		if err != nil {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "the landing can't be put together: " + err.Error(),
 				next: inv.sameCommand(), nextReason: "once that is settled"}
@@ -1994,7 +1996,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 			}
 		}
 		data["receipt"] = receipt
-		outcome, code, err := owners.landPrep(append([]string{"--root", root, "--goal", goalID, "--out", prepared, "--test-receipt", receipt}, selection...))
+		outcome, code, err := owners.landPrep(append([]string{"--root", root.Path(), "--goal", goalID, "--out", prepared, "--test-receipt", receipt}, selection...))
 		if err != nil {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "the landing couldn't be prepared: " + err.Error(),
 				next: inv.sameCommand(), nextReason: "once that is settled"}
@@ -2017,7 +2019,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	if setErr != nil {
 		data["releaseError"] = setErr.Error()
 	}
-	pushed, endpoint, code, err := owners.landPush([]string{"--root", root, "--goal", goalID, "--prepared", prepared})
+	pushed, endpoint, code, err := owners.landPush([]string{"--root", root.Path(), "--goal", goalID, "--prepared", prepared})
 	if pushed.Landing == "" {
 		data["pushError"] = fmt.Sprint(err)
 		return intentResult{Targets: targets, Outcome: intentPartial, code: max(code, 1), Data: data,
@@ -2027,7 +2029,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet,
 		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	data["landing"] = landed
-	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded)
+	writeHandLandingCard(inv.stderr, root.Path(), goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
@@ -2133,9 +2135,9 @@ func (inv *intentInvocation) prepareReceipt(targets []intentTarget, data map[str
 	// the caller its admission classifies, the parent the former child
 	// classified.
 	caller, installation := ownercall.CurrentProcess(), inv.layout.InstallationRoot
-	args := []string{"--root", installation, "--tree", subject, "--mode", "auto", "--goal", goalID}
+	args := []string{"--root", installation.Path(), "--tree", subject, "--mode", "auto", "--goal", goalID}
 	ran := ownerCall(func(stdout, stderr io.Writer) int {
-		return inv.ownerCalls().landingTestReceipt(caller, stdout, stderr, installation, args)
+		return inv.ownerCalls().landingTestReceipt(caller, stdout, stderr, installation.Path(), args)
 	})
 	var parsed landing.TestReceipt
 	encoded := bytes.TrimSpace(ran.stdout)

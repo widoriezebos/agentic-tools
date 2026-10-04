@@ -162,7 +162,7 @@ func TestScopePartialPatchCommitViolates(t *testing.T) {
 func TestScopeMergeIntegrationLawfulAndFastForwardNamesRemedy(t *testing.T) {
 	bed := newScopeCompositionBed(t, "pre")
 	bed.captureOrigin("origin", bed.pre, bed.refs("origin", ""))
-	jobsDir := jobsDirPath(bed.engine.Root)
+	jobsDir := jobsDirPath(bed.engine.installation())
 	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestScopeSameTipDetachViolates(t *testing.T) {
 // still from consumption on.
 func TestScopeAgentBranchFreeThenHeld(t *testing.T) {
 	bed := newScopePolicyBed(t)
-	root := bed.engine.Root
+	root := bed.engine.installation()
 	jobsDir := jobsDirPath(root)
 	os.MkdirAll(jobsDir, 0o755)
 	writeJSONFile(t, filepath.Join(jobsDir, "job-1.json"),
@@ -836,7 +836,7 @@ func TestScopeReviewedTreeIsNotGloballyAccounted(t *testing.T) {
 
 	// The same reviewed tree remains lawful on a merge side tip. Only
 	// first-parent commits must account for the full open-origin tree.
-	writeJSONFile(t, filepath.Join(jobsDirPath(bed.engine.Root), "job-x.json"),
+	writeJSONFile(t, filepath.Join(jobsDirPath(bed.engine.installation()), "job-x.json"),
 		map[string]any{"jobId": "job-x", "branch": "agent/job-x", "mission": "demo", "role": "implementer"})
 	bed.expectCapture("merge", originTree, originTree, originTree, bed.refs("merge", "sideTip"), []string{})
 	bed.expectAccountantAndGuard()

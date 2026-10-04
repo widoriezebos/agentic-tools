@@ -12,7 +12,7 @@ import (
 // a later timeout can ask for the setting that actually ran out.
 func TestAuthorizeCapRecordsTheSettingThatBindsTheCap(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	pair, err := AuthorizeCap(repo, mission, "job-pair", "codex", "gpt-5-6-sol", "", nil)
+	pair, err := AuthorizeCap(repo, repo, mission, "job-pair", "codex", "gpt-5-6-sol", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestAuthorizeCapRecordsTheSettingThatBindsTheCap(t *testing.T) {
 		t.Fatalf("pair resolution source = %v, want key cap.min.codex.gpt-5-6-sol signedMin 180", source)
 	}
 	lower := 20
-	fallback, err := AuthorizeCap(repo, mission, "job-default", "claude", "claude-fable-5", "", &lower)
+	fallback, err := AuthorizeCap(repo, repo, mission, "job-default", "claude", "claude-fable-5", "", &lower)
 	if err != nil {
 		t.Fatal(err)
 	}

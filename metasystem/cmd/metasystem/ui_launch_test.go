@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
@@ -35,7 +36,7 @@ func newStarterBed(t *testing.T) *starterBed {
 	t.Helper()
 	checkout := t.TempDir()
 	return &starterBed{roots: lifecycle.Roots{
-		Checkout: checkout, Installation: filepath.Join(checkout, "metasystem"), StateRoot: t.TempDir(),
+		Checkout: checkout, Installation: stateroottest.Installation(t, filepath.Join(checkout, "metasystem")), StateRoot: stateroottest.State(t, t.TempDir()),
 	}}
 }
 
@@ -62,7 +63,7 @@ func (b *starterBed) starter() func(*session.Session, launch.Request) (launch.Re
 }
 
 func (b *starterBed) proofPath(record launch.Record) string {
-	return filepath.Join(b.roots.StateRoot, "artifacts", "agents", "authority", "proofs",
+	return b.roots.StateRoot.Path("artifacts", "agents", "authority", "proofs",
 		launchProofOperation(record.Launch, starterNow)+".json")
 }
 
@@ -105,7 +106,7 @@ func TestTheStarterRefusesANilSessionAndAProofNotValidForTheStateRoot(t *testing
 func TestTheStarterStampsTheEnrollmentFromTheProofAndTheServersClock(t *testing.T) {
 	t.Parallel()
 	bed := newStarterBed(t)
-	signed := signedSession(t, bed.roots.StateRoot, "01M3SESSIONREFERENCE000000")
+	signed := signedSession(t, bed.roots.StateRoot.Path(), "01M3SESSIONREFERENCE000000")
 	record, err := bed.starter()(signed, freshAsk(t))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -141,7 +142,7 @@ func TestTheStarterStampsTheEnrollmentFromTheProofAndTheServersClock(t *testing.
 func TestTheProofIsRecordedBeforeTheSpawn(t *testing.T) {
 	t.Parallel()
 	bed := newStarterBed(t)
-	signed := signedSession(t, bed.roots.StateRoot, "01M3SESSIONREFERENCE000000")
+	signed := signedSession(t, bed.roots.StateRoot.Path(), "01M3SESSIONREFERENCE000000")
 	record, err := bed.starter()(signed, freshAsk(t))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -170,14 +171,14 @@ func TestAnUnrecordableProofStartsNothing(t *testing.T) {
 	bed := newStarterBed(t)
 	// A file where the proofs directory's parent should be: nothing can be
 	// written beneath it.
-	blocked := filepath.Join(bed.roots.StateRoot, "artifacts", "agents", "authority")
+	blocked := bed.roots.StateRoot.Path("artifacts", "agents", "authority")
 	if err := os.MkdirAll(filepath.Dir(blocked), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	signed := signedSession(t, bed.roots.StateRoot, "01M3SESSIONREFERENCE000000")
+	signed := signedSession(t, bed.roots.StateRoot.Path(), "01M3SESSIONREFERENCE000000")
 	if _, err := bed.starter()(signed, freshAsk(t)); err == nil {
 		t.Fatal("a launch started with a proof that could not be recorded")
 	}
@@ -219,7 +220,7 @@ func TestARetryReStampsOnlyARecordThatCarriesAnEnrollment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	signed := signedSession(t, bed.roots.StateRoot, "01M3NEWSESSION000000000000")
+	signed := signedSession(t, bed.roots.StateRoot.Path(), "01M3NEWSESSION000000000000")
 	retried, err := bed.starter()(signed, launch.Request{Resume: withOne})
 	if err != nil {
 		t.Fatalf("retry: %v", err)
@@ -249,7 +250,7 @@ func TestASpawnThatFailsIsRecordedAsFailed(t *testing.T) {
 	t.Parallel()
 	bed := newStarterBed(t)
 	bed.spawnErr = errors.New("the launch could not be started: no engine")
-	signed := signedSession(t, bed.roots.StateRoot, "01M3SESSIONREFERENCE000000")
+	signed := signedSession(t, bed.roots.StateRoot.Path(), "01M3SESSIONREFERENCE000000")
 	if _, err := bed.starter()(signed, freshAsk(t)); err == nil {
 		t.Fatal("a failed spawn answered a launch")
 	}

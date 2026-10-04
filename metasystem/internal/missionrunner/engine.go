@@ -53,10 +53,15 @@ func exitFor(err error) int {
 	return 3
 }
 
-// Engine drives one mission's runner lifecycle under one checkout root. Its
+// Engine drives one mission's runner lifecycle on its two roots. Its
 // event stream is the flight-recorder witness: emitting never fails a caller.
 type Engine struct {
-	Root                 string
+	// Root is the state root: the mission's contract and every project-state
+	// read, and the checkout the wall inspects.
+	Root string
+	// Installation is the installation whose artifacts/ holds this engine's
+	// run state, where a stop looks for running missions. Empty is the
+	// layout where the installation is Root.
 	Installation         string
 	Mission              string
 	contractSource       *contract.Source
@@ -172,20 +177,29 @@ func (e *Engine) classifierInstallation() string {
 	return e.Root
 }
 
+// installation is the directory whose artifacts/ holds this engine's run
+// state and whose metasystem.conf configures it.
+func (e *Engine) installation() string {
+	if e.Installation != "" {
+		return e.Installation
+	}
+	return e.Root
+}
+
 func (e *Engine) readFence() (stopfence.Record, error) {
 	if e.fenceRead != nil {
-		return e.fenceRead(e.Root)
+		return e.fenceRead(e.installation())
 	}
-	return stopfence.Read(e.Root)
+	return stopfence.Read(e.installation())
 }
 
 // fixtures is the engine's root-checked fixture authority, constructed on
-// demand from Root. A refused construction (leaked fixture in a non-fake
-// checkout) returns the ERROR — the caller refuses its decision, never
+// demand from the installation. A refused construction (leaked fixture in a
+// non-fake checkout) returns the ERROR — the caller refuses its decision, never
 // normalizes to kernel-only, because a kernel-only fallback would let a
 // leaked fixture authorize what only a real checkout may.
 func (e *Engine) fixtures() (*fixtureauth.Authorization, error) {
-	return fixtureauth.New(e.Root)
+	return fixtureauth.New(e.installation())
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.
@@ -218,6 +232,14 @@ func NewEngine(root, mission string) *Engine {
 		Mission: mission,
 		emitter: events.Emitter{Component: "runner", Pid: int64(os.Getpid())},
 	}
+}
+
+// NewEngineAt builds the engine for one mission whose contract is under the
+// state root root and whose run state is under installation.
+func NewEngineAt(root, installation, mission string) *Engine {
+	engine := NewEngine(root, mission)
+	engine.Installation = installation
+	return engine
 }
 
 // callerPid is the process classification starts from.
@@ -263,7 +285,7 @@ func (e *Engine) emit(event, summary string, fields map[string]string) {
 			kept[key] = value
 		}
 	}
-	e.emitter.Emit(e.Root, event, summary, kept)
+	e.emitter.Emit(e.installation(), event, summary, kept)
 }
 
 // clipSummary bounds a free-text summary before it enters the event stream.
@@ -304,7 +326,7 @@ func randomHex(n int) string {
 
 // missionDir is the mission's artifact directory.
 func (e *Engine) missionDir() string {
-	return missionDirPath(e.Root, e.Mission)
+	return missionDirPath(e.installation(), e.Mission)
 }
 
 // contractPath is the authored mission contract in plans/.
@@ -319,7 +341,7 @@ func (e *Engine) approvedContractPath() string {
 
 // runnerPaths are the runner's record, heartbeat, and log files.
 func (e *Engine) runnerPaths() (record, heartbeat, log string) {
-	dir := filepath.Join(e.Root, "artifacts", "agents", "missions", "runners")
+	dir := filepath.Join(e.installation(), "artifacts", "agents", "missions", "runners")
 	return filepath.Join(dir, e.Mission+".json"),
 		filepath.Join(dir, e.Mission+".heartbeat"),
 		filepath.Join(dir, e.Mission+".log")

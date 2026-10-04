@@ -169,7 +169,7 @@ func adoptionSource(inv *intentInvocation) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s is not inside a metasystem template checkout: %v", shellCommand([]string{path}), err)
 	}
-	return layout.InstallationRoot, nil
+	return layout.InstallationRoot.Path(), nil
 }
 
 // buildAdoptionEngine runs the bootstrap build in the template: the engine is

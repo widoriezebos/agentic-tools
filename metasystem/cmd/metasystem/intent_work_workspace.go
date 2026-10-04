@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
@@ -109,7 +108,7 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 				next:    append(inv.typedArgvLess("copy-of"), "--copy-of", "HEAD"), nextReason: "or another commit of this checkout"})
 		}
 	}
-	settings, _ := diskstore.LoadSettings(filepath.Join(inv.layout.InstallationRoot, "metasystem.conf"), nil)
+	settings, _ := diskstore.LoadSettings(inv.layout.InstallationRoot.Path("metasystem.conf"), nil)
 	workspace, err := diskstore.ObtainWorkspace(context.Background(), diskstore.WorkspaceRequest{Registry: registry, Control: inv.stateRoot,
 		GitRoot: inv.layout.GitRoot, Owner: owner, Name: name, CopyOf: copyOf, CapBytes: settings.Bytes(config.DiskWorkspaceKey),
 		Now: owners.now().UTC(), Entropy: rand.Reader, Git: owners.git})
@@ -126,7 +125,7 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: "the workspace couldn't be made: " + err.Error(),
 			next: inv.publicArgv("disk", "show"), nextReason: "names what is at the path; then repeat this command"})
 	}
-	environment := append([]string{"TMPDIR=" + workspace.Tmp}, workspaceCaches(inv.layout.InstallationRoot)...)
+	environment := append([]string{"TMPDIR=" + workspace.Tmp}, workspaceCaches(inv.layout.InstallationRoot.Path())...)
 	lines := []string{"path: " + workspace.Record.Path}
 	for _, entry := range environment {
 		lines = append(lines, "export "+entry)

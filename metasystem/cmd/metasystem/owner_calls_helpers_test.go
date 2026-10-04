@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // scriptDelegator adapts a fake delegate executable to the in-process
@@ -76,13 +77,13 @@ func recordingOwnerCalls(prefix []string, record func([]string)) *intentOwnerCal
 			record(words(append([]string{"channel", "wait"}, args...)...))
 			return real.channelWait(caller, lineage, stdout, stderr, args)
 		},
-		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+		missionStatus: func(stdout, stderr io.Writer, root string, installation stateroot.Installation, mission string) int {
 			record(words("mission", "status", "--root", root, "--mission", mission))
-			return real.missionStatus(stdout, stderr, root, mission)
+			return real.missionStatus(stdout, stderr, root, installation, mission)
 		},
-		missionLaunch: func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+		missionLaunch: func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, top func(string) (string, error)) int {
 			record(words("mission", mode, "--root", root, "--mission", mission))
-			return real.missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
+			return real.missionLaunch(caller, stdout, stderr, root, mission, mode, wait, top)
 		},
 		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
 			record(words(request.words()...))
@@ -155,10 +156,10 @@ func processBackedOwnerCalls(executable func() (string, error), process func(int
 		channelWait: func(_ ownercall.Process, _ string, stdout, stderr io.Writer, args []string) int {
 			return run(flagValue(args, "--root"), stdout, stderr, append([]string{"channel", "wait"}, args...)...)
 		},
-		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
+		missionStatus: func(stdout, stderr io.Writer, root string, _ stateroot.Installation, mission string) int {
 			return run(root, stdout, stderr, "mission", "status", "--root", root, "--mission", mission)
 		},
-		missionLaunch: func(_ ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, _ bool) int {
+		missionLaunch: func(_ ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, _ bool, _ func(string) (string, error)) int {
 			return run(root, stdout, stderr, "mission", mode, "--root", root, "--mission", mission)
 		},
 		missionResolveTaint: func(_ ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {

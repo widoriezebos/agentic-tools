@@ -87,8 +87,9 @@ const (
 const contextReportCoverage = "This cohort covers distinct recorded per-call samples. Runtimes with per-invocation usage, including Devin and ACP outcomes, are outside it. Calls the harness did not record are outside it. Claude fallback identity uses a physical line and timestamp. Compaction sources are Claude compact_boundary and Codex compacted. A reset is a later registered session for the same runtime and process identity. This report does not prove an independent inventory of all provider calls."
 
 // WriteContextReport reads and validates all evidence before publishing the
-// calls export and then the digest-bound Markdown report.
-func WriteContextReport(stateRoot string, weekStart, now time.Time) (
+// calls export and then the digest-bound Markdown report. The evidence and
+// the report are run state under the installation root.
+func WriteContextReport(installationRoot string, weekStart, now time.Time) (
 	callsPath, reportPath string, report ContextReport, err error,
 ) {
 	weekStart, err = contextReportWeekStart(weekStart)
@@ -97,11 +98,11 @@ func WriteContextReport(stateRoot string, weekStart, now time.Time) (
 	}
 	weekEnd := weekStart.AddDate(0, 0, 7)
 	weekName := weekStart.Format("2006-01-02")
-	directory := filepath.Join(stateRoot, "artifacts", "reports", "coordinator-context", weekName)
+	directory := filepath.Join(installationRoot, "artifacts", "reports", "coordinator-context", weekName)
 	callsPath = filepath.Join(directory, "calls.jsonl")
 	reportPath = filepath.Join(directory, "report.md")
 
-	evidence, err := readContextCallEvidence(stateRoot)
+	evidence, err := readContextCallEvidence(installationRoot)
 	if err != nil {
 		return callsPath, reportPath, ContextReport{}, err
 	}
@@ -124,12 +125,12 @@ func WriteContextReport(stateRoot string, weekStart, now time.Time) (
 		duplicateSamples, duplicateMarkers, weekStart, weekEnd)
 	coverageGaps = mergeContextCoverageGaps(coverageGaps, sourceGaps)
 
-	handoffs, err := contextReportHandoffs(stateRoot, weekStart, weekEnd)
+	handoffs, err := contextReportHandoffs(installationRoot, weekStart, weekEnd)
 	if err != nil {
 		return callsPath, reportPath, ContextReport{}, err
 	}
 	report.Handoffs = handoffs
-	referenceMismatches, referenceGaps, err := contextReportReferenceMismatches(stateRoot, weekStart, weekEnd)
+	referenceMismatches, referenceGaps, err := contextReportReferenceMismatches(installationRoot, weekStart, weekEnd)
 	if err != nil {
 		return callsPath, reportPath, ContextReport{}, err
 	}
@@ -145,12 +146,12 @@ func WriteContextReport(stateRoot string, weekStart, now time.Time) (
 	digestText := hex.EncodeToString(digest[:])
 	reportText := renderContextReport(report, coverageGaps, digestText, now.UTC())
 
-	if durable, writeErr := atomicfile.WriteText(callsPath, callsText, stateRoot); writeErr != nil {
+	if durable, writeErr := atomicfile.WriteText(callsPath, callsText, installationRoot); writeErr != nil {
 		return callsPath, reportPath, ContextReport{}, fmt.Errorf("cannot publish context calls %s: %w", callsPath, writeErr)
 	} else if !durable {
 		return callsPath, reportPath, ContextReport{}, fmt.Errorf("context calls %s were published with durability unknown", callsPath)
 	}
-	if durable, writeErr := atomicfile.WriteText(reportPath, reportText, stateRoot); writeErr != nil {
+	if durable, writeErr := atomicfile.WriteText(reportPath, reportText, installationRoot); writeErr != nil {
 		return callsPath, reportPath, ContextReport{}, fmt.Errorf("cannot publish context report %s: %w", reportPath, writeErr)
 	} else if !durable {
 		return callsPath, reportPath, ContextReport{}, fmt.Errorf("context report %s was published with durability unknown", reportPath)
@@ -511,8 +512,8 @@ func contextReportResets(registrations []usage.CallRegistration, weekStart, week
 	return resets
 }
 
-func contextReportHandoffs(stateRoot string, weekStart, weekEnd time.Time) (int, error) {
-	directory := filepath.Join(stateRoot, "artifacts", "agents", "steward", "consumed")
+func contextReportHandoffs(installationRoot string, weekStart, weekEnd time.Time) (int, error) {
+	directory := filepath.Join(installationRoot, "artifacts", "agents", "steward", "consumed")
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -548,8 +549,8 @@ func contextReportHandoffs(stateRoot string, weekStart, weekEnd time.Time) (int,
 	return count, nil
 }
 
-func contextReportReferenceMismatches(stateRoot string, weekStart, weekEnd time.Time) ([]string, []string, error) {
-	directory := filepath.Join(stateRoot, "artifacts", "agents", "jobs")
+func contextReportReferenceMismatches(installationRoot string, weekStart, weekEnd time.Time) ([]string, []string, error) {
+	directory := filepath.Join(installationRoot, "artifacts", "agents", "jobs")
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
 		return nil, nil, nil

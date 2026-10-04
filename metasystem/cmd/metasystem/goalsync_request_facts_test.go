@@ -57,6 +57,20 @@ func (f *syncRequestFacts) checkRoot(root string) {
 	}
 }
 
+// checkInstallation holds the fence to this repository's directory: the
+// installation it receives may spell that directory through a symlink.
+func (f *syncRequestFacts) checkInstallation(installation string) {
+	f.t.Helper()
+	got, gotErr := filepath.EvalSymlinks(installation)
+	want, wantErr := filepath.EvalSymlinks(f.root)
+	if gotErr != nil || wantErr != nil {
+		got, want = installation, f.root
+	}
+	if got != want {
+		f.t.Fatalf("fence installation = %q, want the directory %q", installation, f.root)
+	}
+}
+
 func (f *syncRequestFacts) dependencies() syncRequestDependencies {
 	return syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
@@ -82,8 +96,8 @@ func (f *syncRequestFacts) dependencies() syncRequestDependencies {
 				return record.Identity
 			},
 		},
-		ensureGuard: func(root string) error {
-			f.checkRoot(root)
+		ensureGuard: func(installation string) error {
+			f.checkInstallation(installation)
 			f.guardCalls++
 			f.events = append(f.events, "guard")
 			return nil

@@ -34,30 +34,30 @@ var callEvidenceSnapshotStep func(string)
 
 // ReadCallEvidence copies the registry, discovered sessions, and their
 // committed rows while excluding concurrent writers and maintenance.
-func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
-	if !filepath.IsAbs(stateRoot) {
-		return CallEvidence{}, fmt.Errorf("state root must be absolute: %s", stateRoot)
+func ReadCallEvidence(installationRoot string) (CallEvidence, error) {
+	if !filepath.IsAbs(installationRoot) {
+		return CallEvidence{}, fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, true, false)
+	maintenance, err := lockCallMaintenance(installationRoot, true, false)
 	if err != nil {
 		return CallEvidence{}, err
 	}
 	defer unlockCallFile(maintenance)
-	if _, err := recoverAllCallRetirements(stateRoot); err != nil {
+	if _, err := recoverAllCallRetirements(installationRoot); err != nil {
 		return CallEvidence{}, err
 	}
-	retention, err := readCallRetention(stateRoot)
+	retention, err := readCallRetention(installationRoot)
 	if err != nil {
 		return CallEvidence{}, err
 	}
 
-	registrations, _, err := callRegistrationsUnderMaintenance(stateRoot)
+	registrations, _, err := callRegistrationsUnderMaintenance(installationRoot)
 	if err != nil {
 		return CallEvidence{}, err
 	}
 	observeCallEvidenceSnapshotStep("registrations")
 
-	sessions, err := callSessionsUnderMaintenance(stateRoot)
+	sessions, err := callSessionsUnderMaintenance(installationRoot)
 	if err != nil {
 		return CallEvidence{}, err
 	}
@@ -65,20 +65,20 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 
 	evidence := CallEvidence{Sessions: sessions, Registrations: registrations, RetainedSince: retention.RetainedSince}
 	for _, session := range sessions {
-		samples, markers, readErr := callsUnderMaintenance(stateRoot, session.Runtime, session.Session, time.Time{})
+		samples, markers, readErr := callsUnderMaintenance(installationRoot, session.Runtime, session.Session, time.Time{})
 		if readErr != nil {
 			return CallEvidence{}, fmt.Errorf(
 				"cannot read context session %s/%s cursor=%s samples=%s: %w",
 				session.Runtime, session.Session,
-				CursorPath(stateRoot, session.Runtime, session.Session),
-				SamplesPath(stateRoot, session.Runtime, session.Session), readErr)
+				CursorPath(installationRoot, session.Runtime, session.Session),
+				SamplesPath(installationRoot, session.Runtime, session.Session), readErr)
 		}
 		for _, sample := range samples {
 			if sample.Runtime != session.Runtime || sample.Session != session.Session {
 				return CallEvidence{}, fmt.Errorf(
 					"context sample identity %s/%s does not match discovered session %s/%s in %s",
 					sample.Runtime, sample.Session, session.Runtime, session.Session,
-					SamplesPath(stateRoot, session.Runtime, session.Session))
+					SamplesPath(installationRoot, session.Runtime, session.Session))
 			}
 		}
 		for _, marker := range markers {
@@ -86,7 +86,7 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 				return CallEvidence{}, fmt.Errorf(
 					"context marker identity %s/%s does not match discovered session %s/%s in %s",
 					marker.Runtime, marker.Session, session.Runtime, session.Session,
-					SamplesPath(stateRoot, session.Runtime, session.Session))
+					SamplesPath(installationRoot, session.Runtime, session.Session))
 			}
 		}
 		evidence.Samples = append(evidence.Samples, samples...)
@@ -96,15 +96,15 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 	return evidence, nil
 }
 
-func callMaintenancePath(stateRoot string) string {
-	return filepath.Join(stateRoot, "artifacts", "agents", "context", "maintenance.lock")
+func callMaintenancePath(installationRoot string) string {
+	return filepath.Join(installationRoot, "artifacts", "agents", "context", "maintenance.lock")
 }
 
 // ProbeMaintenance reports whether the maintenance lock is free, probing it
 // LOCK_SH|LOCK_NB without creating the lock file or its directory and
 // holding nothing afterwards (Part B R15). An absent lock reads as free.
-func ProbeMaintenance(stateRoot string) (free bool, err error) {
-	file, err := os.OpenFile(callMaintenancePath(stateRoot), os.O_RDONLY, 0)
+func ProbeMaintenance(installationRoot string) (free bool, err error) {
+	file, err := os.OpenFile(callMaintenancePath(installationRoot), os.O_RDONLY, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return true, nil
 	}
@@ -123,8 +123,8 @@ func ProbeMaintenance(stateRoot string) (free bool, err error) {
 	return true, nil
 }
 
-func lockCallMaintenance(stateRoot string, exclusive, nonBlocking bool) (*lock.FileLock, error) {
-	path := callMaintenancePath(stateRoot)
+func lockCallMaintenance(installationRoot string, exclusive, nonBlocking bool) (*lock.FileLock, error) {
+	path := callMaintenancePath(installationRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("cannot create call store lock directory: %w", err)
 	}

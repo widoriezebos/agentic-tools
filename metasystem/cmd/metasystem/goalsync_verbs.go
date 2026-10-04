@@ -15,12 +15,21 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // ensureGuardEnrolled is the command edge's name for the fence enrollment
 // internal/ledgerfence owns, which the interface server's in-process ledger
-// publications share.
-func ensureGuardEnrolled(root string) error { return ledgerfence.Ensure(root) }
+// publications share. The root it is handed arrives as a flag value and is
+// admitted as the installation whose engine the fence runs; a directory
+// without metasystem.conf is refused before anything is enrolled.
+func ensureGuardEnrolled(root string) error {
+	installation, err := stateroot.ParseInstallation(root)
+	if err != nil {
+		return err
+	}
+	return ledgerfence.Ensure(installation)
+}
 
 // goalActorFromDependencies is the actor from request dependencies: their
 // machine reader and the lineage they carry.
@@ -187,9 +196,11 @@ func goalRepairAcceptRemoteTo(stdout, stderr io.Writer, root, by string, facts g
 }
 
 // recoverGoalJournal runs the one recovery rule over the journal and returns
-// what it did to each stranded entry.
-func recoverGoalJournal(root string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) ([]goal.RecoveryReport, error) {
-	if err := dependencies.ensureGuard(root); err != nil {
+// what it did to each stranded entry. The fence is enrolled for the
+// installation, whose engine the commit hook runs; the journal is the state
+// root's.
+func recoverGoalJournal(installation stateroot.Installation, root string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) ([]goal.RecoveryReport, error) {
+	if err := dependencies.ensureGuard(installation.Path()); err != nil {
 		return nil, err
 	}
 	endpoint, err := dependencies.endpoint(root)

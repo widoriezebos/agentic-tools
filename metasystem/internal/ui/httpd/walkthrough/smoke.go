@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -71,7 +72,15 @@ func runSmoke(runtimeName, model, engine, kit, out string) {
 	}
 
 	state := newLedger(false)
-	state.roots = project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	installation, err := stateroot.ParseInstallation(checkout)
+	if err != nil {
+		log.Fatalf("cannot admit the smoke checkout as its installation: %v", err)
+	}
+	stateRoot, err := stateroot.ParseState(checkout)
+	if err != nil {
+		log.Fatalf("cannot admit the smoke checkout as its state root: %v", err)
+	}
+	state.roots = project.Roots{Checkout: checkout, Installation: installation, StateRoot: stateRoot}
 	facts := partner.Facts{
 		Observe: state.observe,
 		Project: func() (project.Pane, error) { return state.project(), nil },

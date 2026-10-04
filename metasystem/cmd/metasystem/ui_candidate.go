@@ -33,7 +33,7 @@ func candidateRunWith(roots lifecycle.Roots, goal, at, action string, owners int
 	if at != "" && !commitName.MatchString(at) {
 		return httpd.Candidate{}, &httpd.CandidateRefusal{Code: "action", Message: "a candidate runs at a whole commit id, and " + at + " is not one"}
 	}
-	if _, _, _, err := loadPhysicalLaunchContract(roots.Installation); err != nil {
+	if _, _, _, err := loadPhysicalLaunchContract(roots.Installation.Path()); err != nil {
 		return httpd.Candidate{}, &httpd.CandidateRefusal{Code: httpd.CodeNoContract,
 			Message: "this goal's candidate cannot run from here: " + err.Error()}
 	}

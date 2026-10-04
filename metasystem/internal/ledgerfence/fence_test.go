@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -41,7 +42,7 @@ func TestEnsureRefusesACheckoutWithoutAnExecutableEngine(t *testing.T) {
 			root := t.TempDir()
 			engine := filepath.Join(root, "bin", "metasystem")
 			tc.engine(t, engine)
-			err := Ensure(root)
+			err := Ensure(stateroottest.Installation(t, root))
 			if err == nil {
 				t.Fatal("Ensure enrolled a fence with no executable engine")
 			}
@@ -241,7 +242,7 @@ func TestEnsureComposesARejectingLocalHookGitAdapter(t *testing.T) {
 	if err := testexec.WriteFile(local, []byte("#!/usr/bin/env bash\necho 'project check refuses' >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	hook, err := os.ReadFile(local)
@@ -259,7 +260,7 @@ func TestEnsureComposesARejectingLocalHookGitAdapter(t *testing.T) {
 	if ran, _ := os.ReadFile(marker); !strings.Contains(string(ran), root) {
 		t.Fatalf("the guard did not run before the local hook for %s: %q", root, ran)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatalf("an enrolled fence refused re-enrollment: %v", err)
 	}
 }
@@ -270,7 +271,7 @@ func TestEnsureFencesARepositoryLocalHooksPathGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, marker := fenceGitAdapterRepo(t, 1)
 	fenceGit(t, root, "config", "core.hooksPath", ".githooks")
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	if hook, err := os.ReadFile(filepath.Join(root, ".githooks", "pre-commit")); err != nil || !isCurrentComposer(string(hook)) {
@@ -304,7 +305,7 @@ func TestEnsureUpgradesARetiredScriptComposerGitAdapter(t *testing.T) {
 	if err := testexec.WriteFile(filepath.Join(hooks, "pre-commit.local"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	hook, err := os.ReadFile(filepath.Join(hooks, "pre-commit"))
@@ -332,7 +333,7 @@ func TestEnsureUpgradesARetiredScriptComposerGitAdapter(t *testing.T) {
 func TestLinkedWorktreeRunsThePrimaryEngineGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, marker := fenceGitAdapterRepo(t, 0)
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	linked := filepath.Join(t.TempDir(), "linked")
@@ -340,7 +341,7 @@ func TestLinkedWorktreeRunsThePrimaryEngineGitAdapter(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(linked, "bin", "metasystem")); !os.IsNotExist(err) {
 		t.Fatalf("the linked worktree has its own engine: %v", err)
 	}
-	if err := Ensure(linked); err != nil {
+	if err := Ensure(stateroottest.Installation(t, linked)); err != nil {
 		t.Fatalf("enrollment from a linked worktree refused the primary engine: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(linked, "b.txt"), []byte("b\n"), 0o644); err != nil {
@@ -368,7 +369,7 @@ func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, _ := fenceGitAdapterRepo(t, 0)
 	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.Stat(hook)
@@ -379,7 +380,7 @@ func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ = os.Stat(hook)
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	if after, err := os.Stat(hook); err != nil || !after.ModTime().Equal(before.ModTime()) {
@@ -390,7 +391,7 @@ func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
 	if err := testexec.WriteFile(hook, []byte(own), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Ensure(root); err != nil {
+	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(hook); err != nil || string(data) != own {
@@ -425,7 +426,7 @@ func TestEnsureTellsNoRepositoryFromAnUnreadableOne(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := Ensure(root)
+			err := Ensure(stateroottest.Installation(t, root))
 			if tc.gitFile != (err != nil) || tc.gitFile && !strings.Contains(err.Error(), "cannot be proven") {
 				t.Fatalf("Ensure = %v", err)
 			}

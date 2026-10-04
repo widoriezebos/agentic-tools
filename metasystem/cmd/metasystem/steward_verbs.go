@@ -162,7 +162,7 @@ func completeHookAttempt(request hooks.HookCompletion, stderr io.Writer) int {
 		stopElapsedSec = &elapsed
 	}
 	_, err := steward.CompleteHookAttemptWithDelivery(request.Repo, generation, attempt, steward.ComponentResult(request.Result),
-		request.Outcome, request.HealthLine, string(payload), steward.HookDeliveryReference{Installation: request.Installation, ID: request.ReportID, Alias: request.ReportAlias, Path: request.ReportPath, SHA256: request.ReportSHA256}, stopElapsedSec, time.Now())
+		request.Outcome, request.HealthLine, string(payload), steward.HookDeliveryReference{Installation: request.Installation.Path(), ID: request.ReportID, Alias: request.ReportAlias, Path: request.ReportPath, SHA256: request.ReportSHA256}, stopElapsedSec, time.Now())
 	if err != nil {
 		fmt.Fprintf(stderr, "steward hook-complete: %v\n", err)
 		return 1
@@ -229,7 +229,7 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "steward revive: %v\n", rootErr)
 			return 1
 		}
-		if err := steward.PrepareIntent(repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
+		if err := steward.PrepareIntent(repo, receiptRoot.Path("receipts.log"), it); err != nil {
 			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}

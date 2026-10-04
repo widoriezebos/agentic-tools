@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // lifecycle is one receipt, Stop worker or SessionEnd invocation: the
@@ -22,8 +23,9 @@ type lifecycle struct {
 	inv Invocation
 	ops Ops
 
-	harnessRoot, world, engine    string
-	repo, session, transcript     string
+	harnessRoot, engine           string
+	world, repo                   stateroot.Installation
+	session, transcript           string
 	sessionAbsent, stopHookActive bool
 	payload                       string
 	stopStarted                   int64
@@ -158,7 +160,11 @@ func (l *lifecycle) prepare() {
 		if stateHint == "" || installationHint == "" || jobHint == "" || !inv.IsExecutable(installationHint+"/bin/metasystem") {
 			l.refuse("delegate context hint is incomplete or its engine is unavailable", 1)
 		}
-		result, status := ops.HookDelegate(stateHint, installationHint, jobHint, inv.Ppid)
+		hinted, err := stateroot.ParseInstallation(installationHint)
+		if err != nil {
+			l.refuse("delegate context hint is incomplete or its engine is unavailable", 1)
+		}
+		result, status := ops.HookDelegate(stateHint, hinted, jobHint, inv.Ppid)
 		if status == 0 && strings.Contains(result, `"delegate":true`) {
 			l.intentionalSkip()
 		}
@@ -171,7 +177,7 @@ func (l *lifecycle) prepare() {
 	if l.world, ok = worldInstallation(ops, l.harnessRoot); !ok {
 		exitHook(0)
 	}
-	canonical := l.world + "/bin/metasystem"
+	canonical := l.world.Path() + "/bin/metasystem"
 	l.engine = inv.env("METASYSTEM_BIN")
 	if l.engine == "" {
 		l.engine = canonical
@@ -220,7 +226,7 @@ func (l *lifecycle) prepare() {
 		}
 		exitHook(0)
 	}
-	if l.repo, ok = physicalDirectory(repo); !ok {
+	if l.repo, ok = physicalInstallation(repo); !ok {
 		exitHook(0)
 	}
 	l.session = jsonValue(payload, "session_id")
@@ -244,7 +250,7 @@ func (l *lifecycle) prepare() {
 	// Runtime signatures are anchored on the executable, so an intermediate
 	// shell does not impersonate the runtime merely because its arguments
 	// name this hook. Start at the immediate parent.
-	local, status := ops.HookDelegate(l.repo, l.world, "", inv.Ppid)
+	local, status := ops.HookDelegate(l.repo.Path(), l.world, "", inv.Ppid)
 	if status == 0 && strings.Contains(local, `"delegate":true`) {
 		l.intentionalSkip()
 	} else if status != 0 && status != 3 {
@@ -285,7 +291,7 @@ func (l *lifecycle) prepare() {
 		// whose authenticated main was announced explicitly. Classification
 		// returns that exact announcement; an unannounced process gains
 		// nothing here.
-		view, status := ops.Classify(l.repo, l.world, inv.Ppid)
+		view, status := ops.Classify(l.repo.Path(), l.world, inv.Ppid)
 		view = trimNewlines(view)
 		class := jsonValue(view, "class")
 		if status != 0 || class == "" {
@@ -324,7 +330,7 @@ func (l *lifecycle) classifyHolder() {
 		return
 	}
 	pid, _ := strconv.Atoi(l.identityPid)
-	view, status := l.ops.Classify(l.repo, l.world, pid)
+	view, status := l.ops.Classify(l.repo.Path(), l.world, pid)
 	view = trimNewlines(view)
 	if status != 0 || view == "" {
 		l.recordFailure("the checkout holder could not be classified", "checkout-holder")
@@ -338,7 +344,7 @@ func (l *lifecycle) classifyHolder() {
 	if l.seatLineage == "" {
 		l.seatLineage = l.mainID
 	}
-	if machine, err := l.ops.Git("-C", l.repo, "config", "--get", "metasystem.goal.machine"); err == nil {
+	if machine, err := l.ops.Git("-C", l.repo.Path(), "config", "--get", "metasystem.goal.machine"); err == nil {
 		l.seatMachine = trimNewlines(machine)
 	}
 	if l.mainClass == "" || (l.mainHolder != "true" && l.mainHolder != "false") {
@@ -380,13 +386,13 @@ func (l *lifecycle) runtimeSession() (string, bool) {
 // announcement. The second visibility channel runs before every exit.
 func (l *lifecycle) end() {
 	inv, ops := l.inv, l.ops
-	pending, status := ops.StewardPending(l.repo)
+	pending, status := ops.StewardPending(l.repo.Path())
 	if status == 0 {
 		if pending = trimNewlines(pending); pending != "" {
 			_ = writeLine(inv.Stdout, l.surface("Steward incidents pending: "+pending))
 		}
 	}
-	if ops.SessionEnd(l.repo, l.session) != 0 {
+	if ops.SessionEnd(l.repo.Path(), l.session) != 0 {
 		_ = writeLine(inv.Stdout, l.surface("MetaSystem could not withdraw this session's unused stop permission; later stops treat it as unsafe\nrun: metasystem system check"))
 	}
 	if l.identity == "" {
@@ -396,7 +402,7 @@ func (l *lifecycle) end() {
 	session, absent := l.runtimeSession()
 	var discard capturedOutput
 	ops.Up(UpRequest{
-		Runtime: inv.Runtime, MetasystemRoot: l.world, Repo: l.repo, Session: l.session,
+		Runtime: inv.Runtime, MetasystemRoot: l.world, Repo: l.repo.Path(), Session: l.session,
 		Pid: l.identityPid, StartTime: l.identityStarted, Tag: l.tag(),
 		RuntimeSession: session, NoRuntimeSession: absent, Retire: true, CallerPid: inv.Pid,
 	}, &discard, &discard)
@@ -491,7 +497,7 @@ func (l *lifecycle) stop() {
 	turnKey := sha256Text(l.session + "\n" + l.payload)
 	var attempt string
 	var status int
-	s.timed("attempt", func() { attempt, status = ops.HookAttempt(l.repo, inv.Pid, turnKey) })
+	s.timed("attempt", func() { attempt, status = ops.HookAttempt(l.repo.Path(), inv.Pid, turnKey) })
 	attempt = trimNewlines(attempt)
 	if status != 0 || attempt == "" {
 		l.evidenceFail = "HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
@@ -523,7 +529,7 @@ func (s *stopRun) arm() {
 	}
 	if s.identityPid != "" {
 		s.upRC = ops.Up(UpRequest{
-			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo, Session: s.session,
+			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo.Path(), Session: s.session,
 			Pid: s.identityPid, StartTime: s.identityStarted, Tag: s.tag(),
 			RuntimeSession: session, NoRuntimeSession: absent, CallerPid: inv.Pid,
 		}, &upOut, &upErr)
@@ -531,7 +537,7 @@ func (s *stopRun) arm() {
 		// A Stop with no session identity still drives the restricted verify
 		// and recovery path. It gains no announcement or lease authority.
 		s.upRC = ops.Up(UpRequest{
-			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo, RecoverOnly: true, IfDown: true,
+			Runtime: inv.Runtime, MetasystemRoot: s.world, Repo: s.repo.Path(), RecoverOnly: true, IfDown: true,
 			RuntimeSession: session, NoRuntimeSession: absent, CallerPid: inv.Pid,
 		}, &upOut, &upErr)
 	}
@@ -588,7 +594,7 @@ func (s *stopRun) arm() {
 	s.healthCapture = s.workFile("health.json")
 	var health string
 	var healthRC int
-	s.timed("health", func() { health, healthRC = ops.HealthPreview(s.repo, s.world) })
+	s.timed("health", func() { health, healthRC = ops.HealthPreview(s.repo.Path(), s.world) })
 	_ = os.WriteFile(s.healthCapture, []byte(health), 0o600)
 	s.healthLine = jsonValue(health, "line")
 	if healthRC > 2 || s.healthLine == "" {
@@ -598,7 +604,7 @@ func (s *stopRun) arm() {
 
 	var digest string
 	var digestRC int
-	s.timed("digest", func() { digest, digestRC = ops.DigestPending(s.repo) })
+	s.timed("digest", func() { digest, digestRC = ops.DigestPending(s.repo.Path()) })
 	digest = trimNewlines(digest)
 	if digestRC == 0 {
 		message, messageRC := jsonValueStatus(digest, "message")
@@ -642,9 +648,9 @@ var (
 // check reads the holder protocol state and opens the hook evidence trail.
 func (s *stopRun) check() {
 	ops := s.ops
-	s.refusalRecord = filepath.Join(s.repo, "artifacts", "agents", "supervision", "stop-refusals", ops.Slug(s.session)+".json")
+	s.refusalRecord = s.repo.Path("artifacts", "agents", "supervision", "stop-refusals", ops.Slug(s.session)+".json")
 	if s.mainID != "" {
-		growth, status := ops.ProtocolGrowth(s.repo, s.mainID)
+		growth, status := ops.ProtocolGrowth(s.repo.Path(), s.mainID)
 		growth = trimNewlines(growth)
 		if status != 0 {
 			s.recordFailure("the holder protocol state could not be read", "holder-protocol")
@@ -659,7 +665,7 @@ func (s *stopRun) check() {
 	}
 	// The evidence trail sits beside the rest of the supervision state. One
 	// hook-log line per infrastructure condition, in every outcome.
-	s.supervisionDir = filepath.Join(s.repo, "artifacts", "agents", "supervision")
+	s.supervisionDir = s.repo.Path("artifacts", "agents", "supervision")
 	_ = os.MkdirAll(s.supervisionDir, 0o755)
 }
 
@@ -726,7 +732,7 @@ func (s *stopRun) decide() {
 	if s.identityPid != "" {
 		pid, _ := strconv.Atoi(s.identityPid)
 		renewRC := 0
-		s.timed("lease", func() { renewRC = ops.RenewLease(s.repo, pid) })
+		s.timed("lease", func() { renewRC = ops.RenewLease(s.repo.Path(), pid) })
 		if renewRC != 0 {
 			s.recordFailure("the checkout holder lease could not be renewed", "holder-lease")
 		}
@@ -737,7 +743,7 @@ func (s *stopRun) decide() {
 	// the verdict's surfaceWatchdog answer decides exactly-once surfacing.
 	var watchdogText string
 	var watchdogRC int
-	s.timed("watchdog", func() { watchdogText, watchdogRC = ops.WatchdogReport(s.repo) })
+	s.timed("watchdog", func() { watchdogText, watchdogRC = ops.WatchdogReport(s.repo.Path()) })
 	watchdogText = trimNewlines(watchdogText)
 	if watchdogRC != 0 {
 		s.recordFailure("the supervision watchdog state could not be read", "watchdog")
@@ -785,7 +791,7 @@ func (s *stopRun) decide() {
 	var status int
 	s.timed("verdict", func() {
 		stdout, stderr, status = ops.TurnVerdict(TurnVerdictRequest{
-			Root: s.repo, Session: s.session, SessionAbsent: s.sessionAbsent, Watchdog: watchdogDigest,
+			Root: s.repo.Path(), Session: s.session, SessionAbsent: s.sessionAbsent, Watchdog: watchdogDigest,
 			MainID: s.mainID, StopHookActive: s.stopHookActive, Transcript: s.transcript, Runtime: inv.Runtime,
 			FactsFile: s.factsFile, CompletionFile: s.completionFile,
 		})
@@ -908,7 +914,7 @@ func (s *stopRun) advanceProtocol() {
 		return
 	}
 	pid, _ := strconv.Atoi(s.identityPid)
-	s.ops.ProtocolAdvance(s.repo, s.mainID, pid, s.protocolCounts)
+	s.ops.ProtocolAdvance(s.repo.Path(), s.mainID, pid, s.protocolCounts)
 }
 
 func (s *stopRun) fallback(retainedBlock bool) {
@@ -942,7 +948,7 @@ func (s *stopRun) present(retainedBlock string, advisor bool) {
 	_ = os.WriteFile(failures, []byte(s.stopFailure), 0o600)
 	_ = os.WriteFile(notices, []byte(s.extras), 0o600)
 	request := StopInputRequest{
-		Root: s.repo, Runtime: s.inv.Runtime, Session: s.session, Attempt: token, MainID: s.mainID,
+		Root: s.repo.Path(), Runtime: s.inv.Runtime, Session: s.session, Attempt: token, MainID: s.mainID,
 		Machine: s.seatMachine, Lineage: s.seatLineage, ClaimEpoch: s.seatClaimEp, Advisor: advisor,
 		HealthFile: s.healthCapture, DigestFile: s.digestCapture, DigestCursorPrefix: s.digestPrefix,
 		ReceiptFile: s.receiptCapture, ReceiptStderrFile: s.receiptStderr, ReceiptExit: s.receiptRC,
@@ -957,7 +963,7 @@ func (s *stopRun) present(retainedBlock string, advisor bool) {
 		s.fallback(block)
 		return
 	}
-	if s.ops.StopPresent(s.repo, input, s.presentation, log) != 0 {
+	if s.ops.StopPresent(s.repo.Path(), input, s.presentation, log) != 0 {
 		s.fallback(block)
 		return
 	}
@@ -979,7 +985,7 @@ func (w *hookLogWriter) Write(data []byte) (int, error) {
 }
 
 func (s *stopRun) completeAttempt(request HookCompletion) int {
-	request.Repo, request.Generation, request.Attempt = s.repo, s.generation, s.attemptSeq
+	request.Repo, request.Generation, request.Attempt = s.repo.Path(), s.generation, s.attemptSeq
 	request.ElapsedSec, request.HasElapsed = s.stopElapsedSec, true
 	status := s.ops.HookComplete(request)
 	if status == 2 {
@@ -1022,7 +1028,7 @@ func (s *stopRun) emit(response string) {
 		return
 	}
 	if s.deliveryReady && s.digestMessage != "" && digits.MatchString(s.digestCursor) && sha256Hex.MatchString(s.digestPrefix) {
-		if ops.DigestAdvance(s.repo, s.digestCursor, s.digestPrefix) != 0 {
+		if ops.DigestAdvance(s.repo.Path(), s.digestCursor, s.digestPrefix) != 0 {
 			_ = writeLine(inv.Stderr, "supervision hook: emitted the narrator digest but could not advance its check-in cursor")
 		}
 	}

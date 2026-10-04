@@ -739,7 +739,7 @@ func blobOID(root string, content []byte) (string, error) {
 const ledgerViolationPrefix = "mission ledger"
 
 func (e *Engine) guardLedgerInTurn(state map[string]any, ledgerPath string) (string, error) {
-	anchored, current, err := e.wallReads().LedgerTruth(e.Root, state, ledgerPath)
+	anchored, current, err := e.wallReads().LedgerTruth(e.installation(), state, ledgerPath)
 	if errors.Is(err, mission.ErrNoAnchor) {
 		return "", nil
 	}
@@ -994,7 +994,7 @@ func (e *Engine) runWallInspection(preTree string, diskState map[string]any, cer
 	for attempt := 0; attempt < 3 && !stable; attempt++ {
 		capture = nil
 		var err error
-		inspection, err = inspectWallWithWorkspace(e.wallWorkspace(e.Root), e.Root, e.Mission, preTree, diskState, certified, declared, guardrails, declarationViolation,
+		inspection, err = inspectWallWithWorkspace(e.wallWorkspace(e.Root), e.installation(), e.Mission, preTree, diskState, certified, declared, guardrails, declarationViolation,
 			func(expected string) (string, error) {
 				snapped, cerr := e.captureWallPostureStable(expected, declared)
 				if cerr != nil {
@@ -1318,7 +1318,7 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 	if err != nil {
 		return nil, err
 	}
-	outcome, err := ParkProposal(e.Root, e.Mission, current, "wall-violation", nowISO())
+	outcome, err := ParkProposal(e.installation(), e.Mission, current, "wall-violation", nowISO())
 	if err != nil {
 		return nil, err
 	}
@@ -1468,7 +1468,7 @@ func (e *Engine) orphanedViolationEvidence(state map[string]any) (turnID, violat
 		}
 		booked[turn] = true
 	}
-	paths, _ := filepath.Glob(filepath.Join(missionDirPath(e.Root, e.Mission), "turns", "*", "wall.json"))
+	paths, _ := filepath.Glob(filepath.Join(missionDirPath(e.installation(), e.Mission), "turns", "*", "wall.json"))
 	for _, path := range paths {
 		doc, err := readJSONDoc(path)
 		if err != nil {

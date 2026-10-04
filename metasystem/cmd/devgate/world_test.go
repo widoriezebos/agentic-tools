@@ -116,6 +116,7 @@ func newGateWorld(t *testing.T) *gateWorld {
 	pass := func(string) (string, bool) { return "", true }
 	w.owners.dependencyRatchet = func(string) (string, bool) { return "dependency ratchet passed\n", true }
 	w.owners.parallelRatchet = func(string) (string, bool) { return "parallel ratchet passed\n", true }
+	w.owners.rootAuditRatchet = func(string) (string, bool) { return "run-state audit passed: 0 open site(s)\n", true }
 	w.owners.hookStartExits = pass
 	w.owners.stopSurface = func(string) (string, bool) {
 		return "stop decision surface: fixture; added 0, moved 0, removed 0\n", true

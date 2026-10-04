@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
@@ -219,7 +220,17 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	// The fixture checkout serves itself: it is the installation, holding the
+	// metasystem.conf the fixture planted, and the state root beneath it.
+	installation, err := stateroot.ParseInstallation(checkout)
+	if err != nil {
+		return err
+	}
+	stateRoot, err := stateroot.ParseState(checkout)
+	if err != nil {
+		return err
+	}
+	roots := project.Roots{Checkout: checkout, Installation: installation, StateRoot: stateRoot}
 	state.roots = roots
 	if *holder != "" && *holder != "none" && *holder != string(holderAttempt) && *holder != string(holderNeedsWork) {
 		return fmt.Errorf("-holder takes none, attempt or needs-work, not %q", *holder)
@@ -1763,7 +1774,7 @@ func (l *ledger) plantGoal(id, intent string) {
 	if l.roots.StateRoot == "" || strings.ContainsAny(id, `/\`) {
 		return
 	}
-	full := filepath.Join(l.roots.StateRoot, "plans", "goals", id+".md")
+	full := l.roots.StateRoot.Path("plans", "goals", id+".md")
 	_ = os.WriteFile(full, []byte("# "+id+"\n\n- State: queued\n- Intent: "+intent+"\n"), 0o644)
 	l.opened = append(l.opened, id)
 }

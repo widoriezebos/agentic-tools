@@ -185,7 +185,7 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 	if err := within(home.Path, absolute); err != nil {
 		return Written{}, err
 	}
-	if err := within(roots.StateRoot, absolute); err != nil {
+	if err := within(roots.StateRoot.Path(), absolute); err != nil {
 		return Written{}, err
 	}
 	if _, err := os.Lstat(absolute); err == nil {
@@ -568,7 +568,7 @@ func AskQuestion(roots Roots, asked NewQuestion, now time.Time) (Asked, error) {
 	row := "| " + id + " | " + now.Format(time.DateOnly) + " | " + text + " | " +
 		strings.Join(goals, " ") + " | " + resolver.QuestionOpen + " |"
 
-	if err := within(roots.StateRoot, register.Path); err != nil {
+	if err := within(roots.StateRoot.Path(), register.Path); err != nil {
 		return Asked{}, err
 	}
 	existing, err := os.ReadFile(register.Path)
@@ -606,7 +606,7 @@ func SetQuestionStatus(roots Roots, id, status string) (Asked, error) {
 	if !found {
 		return Asked{}, fmt.Errorf("this project has no questions register")
 	}
-	if err := within(roots.StateRoot, register.Path); err != nil {
+	if err := within(roots.StateRoot.Path(), register.Path); err != nil {
 		return Asked{}, err
 	}
 	raw, err := os.ReadFile(register.Path)

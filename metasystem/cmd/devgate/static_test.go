@@ -178,6 +178,32 @@ func TestStaticRatchetsRefuseBeforeAnyToolRuns(t *testing.T) {
 	}
 }
 
+func TestStaticAndGateRefuseOnTheRootAuditRatchet(t *testing.T) {
+	t.Parallel()
+	refusal := "run-state audit: new crossing x/x.go x.F: variable stateRoot -> filepath.Join(_, \"artifacts\") (owner none; found 1, listed 0)\n"
+	for _, gate := range []string{"static", "gate"} {
+		w := newGateWorld(t)
+		w.owners.rootAuditRatchet = func(string) (string, bool) { return refusal, false }
+		run := w.static
+		if gate == "gate" {
+			run = w.gate
+		}
+		if code := run(); code != 1 || !strings.Contains(w.stderr.String(), "--- run-state audit refused:\n"+refusal) {
+			t.Fatalf("%s: exit %d stderr %q", gate, code, w.stderr.String())
+		}
+		if len(w.nativeCalls) != 0 {
+			t.Fatalf("%s: a refused run-state audit still paid the native selection", gate)
+		}
+		if data, _ := os.ReadFile(filepath.Join(w.root, "bin", "metasystem")); string(data) != "#!/bin/sh\nexit 0\n" {
+			t.Fatalf("%s: a refused run-state audit published an engine: %q", gate, data)
+		}
+	}
+	passing := newGateWorld(t)
+	if code := passing.static(); code != 0 || !strings.Contains(passing.stdout.String(), "run-state audit passed: 0 open site(s)\n") {
+		t.Fatalf("a passing audit: exit %d stdout %q", code, passing.stdout.String())
+	}
+}
+
 func TestStaticRefusesTheWitnessProtocol(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"METASYSTEM_GATE_WITNESS", "METASYSTEM_GATE_WITNESS_WRITE"} {

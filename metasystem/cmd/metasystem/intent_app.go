@@ -151,7 +151,7 @@ func (inv *intentInvocation) appVerb(verb string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
-	_, contract, contractPath, err := loadPhysicalLaunchContract(roots.Installation)
+	_, contract, contractPath, err := loadPhysicalLaunchContract(roots.Installation.Path())
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: err.Error() + "; nothing was done", next: []string{"metasystem", "help", "app", "start"}, nextReason: "what the launch contract holds"})
@@ -445,7 +445,7 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 	}
 	switch status.State {
 	case applaunch.Running, applaunch.Starting:
-		rejoined, err := applaunch.Rejoin(context.Background(), run.roots.StateRoot, run.key, run.contract, run.readOptions(), 0)
+		rejoined, err := applaunch.Rejoin(context.Background(), run.roots.Installation.Path(), run.key, run.contract, run.readOptions(), 0)
 		if err != nil {
 			return intentResult{Outcome: intentPartial, code: 1, Targets: targets, text: rejoined.Lines(), Data: appData(run, rejoined),
 				Summary: "the application is already running but did not become ready: " + err.Error()}
@@ -556,7 +556,7 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: appData(run, before),
 			Summary: "no application run is recorded for " + run.key, view: appActView("no application run is recorded for "+run.key, nil, nil)}
 	}
-	result, err := applaunch.Stop(run.roots.StateRoot, run.key, run.contract, applaunch.StopOptions{
+	result, err := applaunch.Stop(run.roots.Installation.Path(), run.key, run.contract, applaunch.StopOptions{
 		Probe: applaunch.ProbeOnce, Wait: wait, ProjectRoot: run.tree, Environment: run.environment()})
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the application could not be stopped: " + err.Error(), retry: "try again"}
@@ -608,14 +608,14 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 	}
 	// The check runs the testing runner in this process (design 6.2).
 	var stderr bytes.Buffer
-	output, code, err := inv.work().testRun(run.roots.Installation, append([]string{"internal"}, appCheckArgv(run.roots.Installation, run.contract.Check, address)...), &stderr)
+	output, code, err := inv.work().testRun(run.roots.Installation.Path(), append([]string{"internal"}, appCheckArgv(run.roots.Installation.Path(), run.contract.Check, address)...), &stderr)
 	ran := intentProcessResult{stdout: output, stderr: stderr.Bytes(), code: code, err: err}
 	verdict := "pass"
 	if ran.code != 0 || ran.err != nil {
 		verdict = "fail"
 	}
 	at := time.Now().UTC().Format(time.RFC3339)
-	_ = applaunch.UpdateRecord(run.roots.StateRoot, run.key, func(record *applaunch.Record) {
+	_ = applaunch.UpdateRecord(run.roots.Installation.Path(), run.key, func(record *applaunch.Record) {
 		record.Check = &applaunch.Check{Group: run.contract.Check, Verdict: verdict, At: at, Address: address}
 	})
 	result := ownerViewed(ownerVerbResult(ran, targets, "check "+run.contract.Check+" passed against "+address,

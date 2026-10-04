@@ -103,10 +103,10 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(Dir(o.Roots.StateRoot), 0o755); err != nil {
+	if err := os.MkdirAll(Dir(o.Roots.Installation.Path()), 0o755); err != nil {
 		return err
 	}
-	if rec, err := readRecord(o.Roots.StateRoot); err == nil {
+	if rec, err := readRecord(o.Roots.Installation.Path()); err == nil {
 		ref, _ := identity.ParseRef(rec.Process)
 		if identity.AliveRef(o.Prober, ref) == identity.Alive {
 			return &AlreadyRunningError{rec.Address}
@@ -115,22 +115,22 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if o.LockWait == 0 {
 		o.LockWait = 5 * time.Second
 	}
-	f, won, _, err := waitLock(o.Roots.StateRoot, true, o.LockWait, o.After)
+	f, won, _, err := waitLock(o.Roots.Installation.Path(), true, o.LockWait, o.After)
 	if err != nil {
 		return err
 	}
 	if !won {
 		refusal := &AlreadyRunningError{}
-		if rec, err := readRecord(o.Roots.StateRoot); err == nil {
+		if rec, err := readRecord(o.Roots.Installation.Path()); err == nil {
 			refusal.Address = rec.Address
 		}
 		return refusal
 	}
 	defer releaseLock(f)
-	if err := removeRecord(o.Roots.StateRoot); err != nil {
+	if err := removeRecord(o.Roots.Installation.Path()); err != nil {
 		return err
 	}
-	if err := rotateLog(o.Roots.StateRoot); err != nil {
+	if err := rotateLog(o.Roots.Installation.Path()); err != nil {
 		return err
 	}
 	self, state, err := o.Prober.Probe(int64(os.Getpid()))
@@ -158,7 +158,7 @@ func Serve(ctx context.Context, o Options) (result error) {
 	}
 	rec := Record{
 		SchemaVersion: 1, Process: process, Address: listener.Addr().String(),
-		Checkout: o.Roots.Checkout, Installation: o.Roots.Installation,
+		Checkout: o.Roots.Checkout, Installation: o.Roots.Installation.Path(),
 		StartedAt: o.Now().UTC().Format(time.RFC3339), EngineBuild: o.EngineBuild,
 		ExecutableDigest: digest, Authority: o.Authority,
 	}
@@ -172,10 +172,10 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if err != nil {
 		return err
 	}
-	if _, err := atomicfile.WriteText(recordPath(o.Roots.StateRoot), string(data)+"\n", o.Roots.StateRoot); err != nil {
+	if _, err := atomicfile.WriteText(recordPath(o.Roots.Installation.Path()), string(data)+"\n", o.Roots.Installation.Path()); err != nil {
 		return err
 	}
-	defer func() { result = errors.Join(result, removeRecord(o.Roots.StateRoot)) }()
+	defer func() { result = errors.Join(result, removeRecord(o.Roots.Installation.Path())) }()
 	if o.Ready != nil {
 		o.Ready(rec.Address)
 	}

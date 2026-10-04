@@ -55,7 +55,7 @@ func newResolutionFileBedBeforeOpen(t *testing.T, beforeOpen func(*recoveryFileB
 	r.e.continuityFacts = b
 	r.e.pinnedAnchorEffect = b.pin
 	state := f.stateDoc()
-	park, err := ParkProposal(r.e.Root, r.e.Mission, state, "wall-violation", "2026-08-18T00:00:00Z")
+	park, err := ParkProposal(r.e.installation(), r.e.Mission, state, "wall-violation", "2026-08-18T00:00:00Z")
 	if err != nil {
 		t.Fatal(err)
 	}

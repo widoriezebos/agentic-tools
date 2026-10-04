@@ -65,14 +65,14 @@ func writeJob(t *testing.T, engine *Engine, job string, fields map[string]any) s
 	for key, value := range fields {
 		doc[key] = value
 	}
-	path := filepath.Join(jobsDirPath(engine.Root), job+".json")
+	path := filepath.Join(jobsDirPath(engine.installation()), job+".json")
 	writeJSONFile(t, path, doc)
 	return path
 }
 
 func assertRunnerFenceAsk(t *testing.T, engine *Engine, reason string) {
 	t.Helper()
-	askPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
+	askPath := filepath.Join(engine.installation(), "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
 	ask, err := os.ReadFile(askPath)
 	if err != nil {
 		t.Fatalf("budget-cap reap wrote no mission fence ask: %v", err)
@@ -156,7 +156,7 @@ func TestRunnerReapRefusesRecordThatOutranTheCompare(t *testing.T) {
 	if _, stamped := after["error"]; stamped {
 		t.Fatalf("no verdict may land on a lost compare: %v", after)
 	}
-	askPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
+	askPath := filepath.Join(engine.installation(), "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
 	if _, err := os.Stat(askPath); !os.IsNotExist(err) {
 		t.Fatalf("a void budget-cap verdict must not raise a mission fence ask: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestRunnerReapReportsMissionFenceAskFailure(t *testing.T) {
 		"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
 		"capDeadline": isoAt(now.Add(-time.Minute)),
 	})
-	asksPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks")
+	asksPath := filepath.Join(engine.installation(), "artifacts", "agents", "missions", engine.Mission, "asks")
 	if err := os.WriteFile(asksPath, []byte("blocks mission ask directory creation"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestRunnerReapReportsMissionFenceAskFailure(t *testing.T) {
 	if after := readTestDoc(t, path); after["status"] != "timeout" || after["error"] != "budget-cap" {
 		t.Fatalf("the applied reap verdict must survive a fence ask failure: %v", after)
 	}
-	events, readErr := os.ReadFile(filepath.Join(engine.Root, "artifacts", "agents", "events.jsonl"))
+	events, readErr := os.ReadFile(filepath.Join(engine.installation(), "artifacts", "agents", "events.jsonl"))
 	if readErr != nil {
 		t.Fatalf("fence ask failure emitted no runner event: %v", readErr)
 	}
@@ -443,7 +443,7 @@ func TestDrainParksStalledAtDeadline(t *testing.T) {
 	if parked == nil || parked["status"] != "parked" || parked["parkReason"] != "drain-stalled" {
 		t.Fatalf("an unprovable survivor must park at the deadline: %v", parked)
 	}
-	askPath := filepath.Join(asksDirPath(engine.Root, "demo"), "drain-stalled.json")
+	askPath := filepath.Join(asksDirPath(engine.installation(), "demo"), "drain-stalled.json")
 	ask := readTestDoc(t, askPath)
 	if ask["reasonClass"] != "drain-stalled" || ask["answeredAt"] != nil {
 		t.Fatalf("the park must raise the survivors ask: %v", ask)
@@ -489,7 +489,7 @@ func TestDrainStalledParkWritesStateThenAsk(t *testing.T) {
 	if state := readTestDoc(t, statePath); state["status"] != "parked" || state["parkReason"] != "drain-stalled" {
 		t.Fatalf("the state write comes first: %v", state)
 	}
-	askPath := filepath.Join(asksDirPath(engine.Root, "demo"), "drain-stalled.json")
+	askPath := filepath.Join(asksDirPath(engine.installation(), "demo"), "drain-stalled.json")
 	if pathExists(askPath) {
 		t.Fatal("the ask write comes after the state write")
 	}
@@ -516,7 +516,7 @@ func TestDrainStalledParkWritesStateThenAsk(t *testing.T) {
 	if err := engine.ensureDrainStallAsk(state); err != nil {
 		t.Fatal(err)
 	}
-	paths, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, "demo"), "drain-stalled*.json"))
+	paths, _ := filepath.Glob(filepath.Join(asksDirPath(engine.installation(), "demo"), "drain-stalled*.json"))
 	if len(paths) != 1 {
 		t.Fatalf("re-raising must not duplicate the ask: %v", paths)
 	}
@@ -532,7 +532,7 @@ func parkedDrainStalledMission(t *testing.T) (engine *Engine, statePath, ledgerP
 	if err != nil || parked == nil {
 		t.Fatalf("fixture park failed: parked=%v err=%v", parked, err)
 	}
-	askPath = filepath.Join(asksDirPath(engine.Root, "demo"), "drain-stalled.json")
+	askPath = filepath.Join(asksDirPath(engine.installation(), "demo"), "drain-stalled.json")
 	return engine, statePath, ledgerPath, askPath
 }
 
@@ -783,7 +783,7 @@ func TestSecondDrainStallParksWithAFreshAsk(t *testing.T) {
 	if first["answeredAt"] == nil {
 		t.Fatal("the first ask stays answered")
 	}
-	second := readTestDoc(t, filepath.Join(asksDirPath(engine.Root, "demo"), "drain-stalled-2.json"))
+	second := readTestDoc(t, filepath.Join(asksDirPath(engine.installation(), "demo"), "drain-stalled-2.json"))
 	if second["answeredAt"] != nil || second["reasonClass"] != "drain-stalled" {
 		t.Fatalf("the second park needs a fresh open ask: %v", second)
 	}

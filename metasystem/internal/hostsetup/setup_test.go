@@ -751,7 +751,7 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 	}
 	wantRepo, _ := filepath.EvalSymlinks(repo)
 	wantInstallation, _ := filepath.EvalSymlinks(installation)
-	if result.Layout.GitRoot != wantRepo || result.Layout.RepositoryRoot != wantInstallation || result.Layout.InstallationRoot != wantInstallation || result.Layout.InstallationRel != filepath.ToSlash(relative) || result.Layout.Template {
+	if result.Layout.GitRoot != wantRepo || result.Layout.RepositoryRoot != wantInstallation || result.Layout.InstallationRoot.Path() != wantInstallation || result.Layout.InstallationRel != filepath.ToSlash(relative) || result.Layout.Template {
 		t.Fatalf("nested adopted setup selected the wrong layout: %+v", result.Layout)
 	}
 	if strings.Join(result.Runtimes, ",") != "claude,codex,devin" {

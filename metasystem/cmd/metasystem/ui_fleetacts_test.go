@@ -15,6 +15,7 @@ package main
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -198,10 +199,10 @@ func TestUIStopRefusesTheSelfHostedServingCheckoutWhereTheStopRuns(t *testing.T)
 	installation := b.selfHosted()
 	resolver := stateroot.NewResolver(b.top, noExecutable)
 	layout, err := resolver.ResolveLayout(b.this)
-	if err != nil || layout.GitRoot != b.this || layout.InstallationRoot != installation {
+	if err != nil || layout.GitRoot != b.this || layout.InstallationRoot.Path() != installation {
 		t.Fatalf("the bed's serving checkout = %+v %v; want the self-hosted layout, installation %s", layout, err, installation)
 	}
-	if root, err := resolver.RootForInstallation(installation); err != nil || root != installation {
+	if root, err := resolver.RootForInstallation(stateroottest.Installation(t, installation)); err != nil || root.Path() != installation {
 		t.Fatalf("its state root = %q %v; want the installation itself", root, err)
 	}
 	acts := uiFleetActs{checkout: b.this, owners: b.owners}

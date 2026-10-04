@@ -98,7 +98,7 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 // goalWorktreeInstallation is the selected installation's place inside a
 // goal worktree of the same repository.
 func (inv *intentInvocation) goalWorktreeInstallation(worktree string) string {
-	relative, err := filepath.Rel(inv.layout.GitRoot, inv.layout.InstallationRoot)
+	relative, err := filepath.Rel(inv.layout.GitRoot, inv.layout.InstallationRoot.Path())
 	if err != nil || relative == "." || strings.HasPrefix(relative, "..") {
 		return worktree
 	}
@@ -192,7 +192,7 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 	if realpath.ResolveExisting(inv.layout.GitRoot) == realpath.ResolveExisting(path) {
 		return path, nil
 	}
-	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot.Path()})
 	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
@@ -249,11 +249,11 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	}
 	conn := inv.connection()
 	install := inv.layout.InstallationRoot
-	endpoint, err := conn.endpoint(install)
+	endpoint, err := conn.endpoint(install.Path())
 	if err != nil {
 		return refused("the goal branch can't be reached", retry, "try again; --verbose shows the cause", "the goal branch endpoint is unavailable: %v", err)
 	}
-	check := conn.claimCheck(install, id, endpoint)
+	check := conn.claimCheck(install.Path(), id, endpoint)
 	if err := branch.CheckHolder(check); err != nil {
 		return refused(fmt.Sprintf("goal %s's worktree is made only for the session that claims the goal", id), inv.publicArgv("goal", "claim", id),
 			"claims it for this session; then repeat this command", "goal/%s is prepared only under this session's claim: %v", id, err)
@@ -264,7 +264,7 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	}
 	_, localErr := git(inv.layout.GitRoot, "rev-parse", "--verify", "-q", ref+"^{commit}")
 	local := localErr == nil
-	remoteTip, remote, err := conn.transport.RemoteTip(install, endpoint.Remote, ref)
+	remoteTip, remote, err := conn.transport.RemoteTip(install.Path(), endpoint.Remote, ref)
 	if err != nil {
 		return refused(fmt.Sprintf("goal branch goal/%s on %s can't be read", id, endpoint.Remote), retry, "try again; --verbose shows the cause", "cannot read %s's goal/%s: %v", endpoint.Remote, id, err)
 	}
@@ -285,7 +285,7 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 			}
 		}
 	}
-	endpointTip, err := conn.endpointTip(install, endpoint)
+	endpointTip, err := conn.endpointTip(install.Path(), endpoint)
 	if err != nil {
 		return refused("the goal branch's newest commit can't be read", retry, "try again; --verbose shows the cause", "cannot resolve the landing endpoint's tip: %v", err)
 	}
@@ -396,7 +396,7 @@ func (inv *intentInvocation) goalWorktreeControl() string {
 	if inv.stateRoot != "" {
 		return inv.stateRoot
 	}
-	return inv.layout.InstallationRoot
+	return inv.layout.InstallationRoot.Path()
 }
 
 // enterGoalWorktree holds goal id's registered worktree shared for the rest
@@ -497,7 +497,7 @@ func (inv *intentInvocation) entered(id string) bool {
 // its local configuration (its local-config-paths manifest) in a new goal
 // worktree, through the same session-isolation owner second sessions use.
 func (inv *intentInvocation) isolateAdapterConfiguration(source, destination string) error {
-	paths, err := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	paths, err := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot.Path()})
 	if err != nil {
 		return err
 	}
@@ -520,6 +520,6 @@ func (inv *intentInvocation) isolateAdapterConfiguration(source, destination str
 	if err := file.Close(); err != nil {
 		return err
 	}
-	_, err = validate.SessionIsolation(source, destination, file.Name(), inv.layout.InstallationRoot)
+	_, err = validate.SessionIsolation(source, destination, file.Name(), inv.layout.InstallationRoot.Path())
 	return err
 }

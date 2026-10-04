@@ -129,6 +129,9 @@ func gcliAuthorityProcessCheckout(t *testing.T) string {
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 

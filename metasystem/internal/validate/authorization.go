@@ -97,7 +97,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	// declared net needs the warden's review before it can be
 	// authorized — the wall re-refuses unmarked guardrail touches at
 	// consumption regardless, so this is the early, explainable refusal.
-	guardrails, err := mission.VerifiedGuardrails(r.root, missionName)
+	guardrails, err := mission.VerifiedGuardrails(r.root, r.root, missionName)
 	if err != nil {
 		return err
 	}

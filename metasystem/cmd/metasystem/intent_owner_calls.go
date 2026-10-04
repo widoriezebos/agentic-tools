@@ -56,11 +56,11 @@ type intentOwnerCalls struct {
 	// identity's.
 	channelWait func(caller ownercall.Process, lineage string, stdout, stderr io.Writer, args []string) int
 	// missionStatus prints a mission's runner status line.
-	missionStatus func(stdout, stderr io.Writer, root, mission string) int
+	missionStatus func(stdout, stderr io.Writer, root string, installation stateroot.Installation, mission string) int
 	// missionLaunch starts or resumes a mission's detached run loop, or with
 	// wait runs the whole mission in this process; a closed fence's human
 	// reopening classifies caller.
-	missionLaunch func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int
+	missionLaunch func(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, repositoryTop func(string) (string, error)) int
 	// missionSeal checks one authored mission contract and seals it,
 	// returning the digest its approval line signs and the sizing warnings;
 	// a sealed contract answers contract.ErrAlreadySealed.
@@ -74,6 +74,7 @@ type intentOwnerCalls struct {
 // safe tree, or adopt the disputed workspace waiving the named claims.
 type missionResolveRequest struct {
 	root, mission string
+	installation  stateroot.Installation
 	taint         int64
 	variant, tree string
 	by, reason    string
@@ -117,8 +118,8 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return configValidateTo(stdout, stderr, conf, cleanOwnerRoot(repo))
 		},
 		delegate: runDelegateWith,
-		missionStatus: func(stdout, stderr io.Writer, root, mission string) int {
-			engine := missionrunner.NewEngine(cleanOwnerRoot(root), mission)
+		missionStatus: func(stdout, stderr io.Writer, root string, installation stateroot.Installation, mission string) int {
+			engine := missionrunner.NewEngineAt(cleanOwnerRoot(root), installation.Path(), mission)
 			engine.Output, engine.Errors = stdout, stderr
 			return engine.Status()
 		},
@@ -148,7 +149,7 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 			return goalCarryLandingWith(dependencies, stdout, stderr, args)
 		},
 		missionResolveTaint: func(caller ownercall.Process, stdout, stderr io.Writer, request missionResolveRequest) int {
-			engine := missionrunner.NewEngine(cleanOwnerRoot(request.root), request.mission)
+			engine := missionrunner.NewEngineAt(cleanOwnerRoot(request.root), request.installation.Path(), request.mission)
 			engine.Output, engine.Errors, engine.Caller = stdout, stderr, caller.Pid
 			return engine.ResolveTaint(request.taint, request.variant, request.tree, request.by, request.reason, request.waived)
 		},
@@ -159,13 +160,16 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 // fence check (a closed fence reopens only for a person, classified from
 // caller), then the runner's launch at the fence's generation, detached or,
 // with wait, in this process until the mission ends.
-func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
+func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool, repositoryTop func(string) (string, error)) int {
 	root = cleanOwnerRoot(root)
-	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, personClassifyAt)
+	if repositoryTop == nil {
+		repositoryTop = stateroot.RepositoryTop
+	}
+	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, repositoryTop, personClassifyAt)
 	if code != 0 {
 		return code
 	}
-	engine, err := missionRunnerCommandEngine(root, mission)
+	engine, err := missionRunnerCommandEngineWith(root, mission, repositoryTop)
 	if err != nil {
 		fmt.Fprintln(stderr, "mission "+mode+":", err)
 		return 1
@@ -191,7 +195,7 @@ func (inv *intentInvocation) goalOwnerCall(owner func(syncRequestDependencies, i
 	dependencies, dir := inv.owners.dependencies, inv.layout.InstallationRoot
 	dependencies.report = nil
 	dependencies.authorityFacts.caller = ownercall.CurrentProcess()
-	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir, args) })
+	return ownerCall(func(stdout, stderr io.Writer) int { return owner(dependencies, stdout, stderr, dir.Path(), args) })
 }
 
 // ownerCall runs one owner function in this process on fresh buffers and

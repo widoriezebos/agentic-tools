@@ -52,7 +52,7 @@ func designReviewRunWith(roots lifecycle.Roots, id string, asked httpd.DesignAsk
 		if !found {
 			return httpd.DesignAnswer{}, &httpd.DesignRefusal{Code: "no-chain", Message: "this design has no critique to answer"}
 		}
-		returnPath := filepath.Join(roots.Installation, "artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(asked.After, 10), "return.json")
+		returnPath := roots.Installation.Path("artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(asked.After, 10), "return.json")
 		// A round with no findings has nothing to press, so nothing wrote its
 		// file; the engine's template is its whole answer.
 		if _, statErr := os.Stat(roundDecisionsPath(returnPath)); statErr != nil {
@@ -119,7 +119,7 @@ func designOf(roots lifecycle.Roots, id string) (string, intentDesignRecord, err
 
 // designChainOf is the design's one critique chain, of whichever goal.
 func designChainOf(roots lifecycle.Roots, design string) (dispatchcore.DesignCritiqueChain, bool) {
-	chains := dispatchcore.DesignCritiqueChains(roots.Installation, "", design)
+	chains := dispatchcore.DesignCritiqueChains(roots.Installation.Path(), "", design)
 	if len(chains) != 1 {
 		return dispatchcore.DesignCritiqueChain{}, false
 	}
@@ -134,7 +134,7 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 	}
 	loop := httpd.DesignLoop{Design: id, State: "none", Rounds: []httpd.DesignRound{},
 		ToolCalls: designToolCalls(roots)}
-	chains := dispatchcore.DesignCritiqueChains(roots.Installation, "", design)
+	chains := dispatchcore.DesignCritiqueChains(roots.Installation.Path(), "", design)
 	if len(chains) > 1 {
 		loop.Chains = len(chains)
 		return loop, nil
@@ -146,8 +146,8 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 	loop.Chain, loop.Goal, loop.Round = chain.Root, chain.Goal, chain.NewestRound
 	loop.Status = recordText(chain.Newest, "status")
 	loop.Critic = roundModel(roots, chain.Root, chain.NewestRound)
-	loop.Limit = reviewRoundCeiling(roots.Installation)
-	if root, err := readJobRecord(roots.Installation, chain.Root); err == nil {
+	loop.Limit = reviewRoundCeiling(roots.Installation.Path())
+	if root, err := readJobRecord(roots.Installation.Path(), chain.Root); err == nil {
 		if limit, ok := root["reviewRoundLimit"].(float64); ok && limit >= 1 {
 			loop.Limit = int64(limit)
 		}
@@ -165,7 +165,7 @@ func designLoopRead(roots lifecycle.Roots, id string) (httpd.DesignLoop, error) 
 	default:
 		loop.State = "deciding"
 		newest := &loop.Rounds[len(loop.Rounds)-1]
-		returnPath := filepath.Join(roots.Installation, "artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(chain.NewestRound, 10), "return.json")
+		returnPath := roots.Installation.Path("artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(chain.NewestRound, 10), "return.json")
 		_, templated := os.Stat(roundDecisionsPath(returnPath))
 		switch {
 		case newest.Prose != "":
@@ -187,7 +187,7 @@ func roundModel(roots lifecycle.Roots, root string, round int64) string {
 	var composition struct {
 		Model string `json:"model"`
 	}
-	data, err := os.ReadFile(filepath.Join(roots.Installation, "artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "composition.json"))
+	data, err := os.ReadFile(roots.Installation.Path("artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "composition.json"))
 	if err != nil || json.Unmarshal(data, &composition) != nil {
 		return ""
 	}
@@ -196,7 +196,7 @@ func roundModel(roots lifecycle.Roots, root string, round int64) string {
 
 // designToolCalls is the reader budget the sheet prefills.
 func designToolCalls(roots lifecycle.Roots) int {
-	value := config.ConfValue(filepath.Join(roots.Installation, "metasystem.conf"), config.ReviewDesignToolCallsKey, "")
+	value := config.ConfValue(roots.Installation.Path("metasystem.conf"), config.ReviewDesignToolCallsKey, "")
 	if calls, err := strconv.Atoi(value); err == nil && calls > 0 {
 		return calls
 	}
@@ -217,7 +217,7 @@ func readJobRecord(installation, job string) (map[string]any, error) {
 // can read is shown as its words, and offers no presses.
 func designRoundRead(roots lifecycle.Roots, root string, round int64) httpd.DesignRound {
 	read := httpd.DesignRound{Round: round, Findings: []httpd.DesignFinding{}, Decisions: []httpd.DesignRow{}}
-	returnPath := filepath.Join(roots.Installation, "artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "return.json")
+	returnPath := roots.Installation.Path("artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "return.json")
 	data, err := os.ReadFile(returnPath)
 	if err != nil {
 		return read
@@ -286,7 +286,7 @@ func designDecide(roots lifecycle.Roots, id string, round int64, row httpd.Desig
 	case round != chain.NewestRound || recordText(chain.Newest, "status") != "completed":
 		return refuse("round", fmt.Sprintf("round %d is not the critique's newest finished examination; only that round is decided", round))
 	}
-	returnPath := filepath.Join(roots.Installation, "artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(round, 10), "return.json")
+	returnPath := roots.Installation.Path("artifacts", "agents", chain.Root, "rounds", strconv.FormatInt(round, 10), "return.json")
 	findings, _, err := readIntentFindings(returnPath)
 	if err != nil {
 		return refuse("return", "round "+strconv.FormatInt(round, 10)+"'s return cannot be read: "+err.Error())
@@ -377,7 +377,7 @@ func writeRoundTemplate(roots lifecycle.Roots, chain dispatchcore.DesignCritique
 // and the subject and return digests.
 func designTemplate(roots lifecycle.Roots, chain dispatchcore.DesignCritiqueChain, recordID string, round int64, returnPath string, findings []intentFinding) (string, error) {
 	var entry designReviewEntry
-	data, err := os.ReadFile(filepath.Join(roots.Installation, "artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json"))
+	data, err := os.ReadFile(roots.Installation.Path("artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json"))
 	if err == nil {
 		err = json.Unmarshal(data, &entry)
 	}

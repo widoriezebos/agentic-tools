@@ -117,7 +117,7 @@ func LaneSteward(laneRoot, repoRoot string) bool {
 		return true
 	}
 	layout, err := stateroot.ResolveLayout(laneRoot)
-	return err == nil && realpath.Resolve(layout.InstallationRoot) == here
+	return err == nil && realpath.Resolve(layout.InstallationRoot.Path()) == here
 }
 
 // MaxGap is the longest gap between two cycles that still counts as observed

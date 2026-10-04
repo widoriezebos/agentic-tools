@@ -111,7 +111,7 @@ func uiSeatCandidates(inventory uiSeatInventory, prober identity.Prober) []uiSea
 	var candidates []uiSeatCandidate
 	for _, other := range inventory.Seats {
 		view := uiSeatView{Machine: other.Name, Checkout: other.Checkout}
-		status, err := lifecycle.Read(other.Roots.StateRoot, prober)
+		status, err := lifecycle.Read(other.Roots.Installation.Path(), prober)
 		if err != nil {
 			view.State, view.Problem = lifecycle.Unreadable, err.Error()
 		} else {
@@ -179,7 +179,7 @@ func uiStopAcrossSeats(own lifecycle.Result, inventory uiSeatInventory, stop lif
 		return uiLifecycleResult{Result: own, Unchanged: true, Seats: views, SeatsProblems: problems}
 	case 1:
 		candidate := candidates[0]
-		stopped, unchanged := lifecycle.StopReport(candidate.seat.Roots.StateRoot, stop)
+		stopped, unchanged := lifecycle.StopReport(candidate.seat.Roots.Installation.Path(), stop)
 		acted := candidate.seat
 		result := uiLifecycleResult{Seat: &acted, Unchanged: unchanged, Seats: views, SeatsProblems: problems}
 		if stopped.Code == 0 && !unchanged {
@@ -262,7 +262,7 @@ const uiEngineDecision = "build and install this checkout's engine (go run ./cmd
 // uiEngineFor resolves the target's engine before anything is stopped or
 // started; a missing one is a refusal that changed nothing.
 func uiEngineFor(engine func(string) (string, error), target lifecycle.Roots, prefix string) (string, *uiLifecycleResult) {
-	binary, err := engine(target.Installation)
+	binary, err := engine(target.Installation.Path())
 	if err != nil {
 		return "", &uiLifecycleResult{Result: lifecycle.Result{Lines: []string{prefix + err.Error() + "; nothing was done"}, Code: 1}, Decision: uiEngineDecision}
 	}

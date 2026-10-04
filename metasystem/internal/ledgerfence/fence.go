@@ -21,6 +21,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 // Ensure installs or composes the pre-commit guard before any goal mutation
@@ -32,9 +33,11 @@ import (
 // without the guard refuses toward manual composition — enrollment never
 // clobbers (the never-clobber rule, held here too). A composer this program
 // wrote earlier (including the retired script-guard shapes) is upgraded in
-// place.
-func Ensure(root string) error {
-	absRoot, err := filepath.Abs(root)
+// place. The fence belongs to the installation: the hook runs the
+// installation's own engine and names the installation as its root, so a
+// state root handed here would enroll a hook that finds no engine.
+func Ensure(installation roots.Installation) error {
+	absRoot, err := filepath.Abs(installation.Path())
 	if err != nil {
 		return err
 	}

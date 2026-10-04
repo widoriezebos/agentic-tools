@@ -172,8 +172,10 @@ func GuardrailContradiction(declared map[string]bool, guardrails *GuardrailClass
 // the contract through the runner's own verified parse — remains the
 // enforcement authority for every record, stamped or not. A digest
 // that IS present and does not match the live contract stays a hard
-// refusal: that is a tamper signal, never an absence.
-func VerifiedGuardrails(repo, missionID string) (*GuardrailClass, error) {
+// refusal: that is a tamper signal, never an absence. The contract is read
+// under the state root root; the fences are run state under the installation
+// repo.
+func VerifiedGuardrails(root, repo, missionID string) (*GuardrailClass, error) {
 	empty, _ := ParseGuardrails(ContractGuardrailSubject, "", nil)
 	if _, fencesPath, _ := fencePaths(repo, missionID); !fileExists(fencesPath) {
 		return empty, nil
@@ -185,7 +187,7 @@ func VerifiedGuardrails(repo, missionID string) (*GuardrailClass, error) {
 	if approved, _ := fences["approvedContractSha256"].(string); !sha256HexRe.MatchString(approved) {
 		return empty, nil
 	}
-	values, err := verifiedContractValues(repo, missionID, fences)
+	values, err := verifiedContractValues(root, missionID, fences)
 	if err != nil {
 		return nil, fmt.Errorf("guardrail custody cannot trust the contract: %v", err)
 	}

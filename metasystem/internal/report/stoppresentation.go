@@ -625,12 +625,12 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	if err != nil {
 		return StopPresentationResult{}, err
 	}
-	if err := validateStopPresentationInput(resolvedRoot, input); err != nil {
+	if err := validateStopPresentationInput(resolvedRoot.Path(), input); err != nil {
 		return StopPresentationResult{}, err
 	}
 	decision, repair := stopInterventions(input)
 	reportID := input.Identity.SessionKey + "-" + input.Identity.Attempt
-	reportDir, err := stopreport.ReportDir(resolvedRoot)
+	reportDir, err := stopreport.ReportDir(resolvedRoot.Path())
 	if err != nil {
 		return StopPresentationResult{}, err
 	}
@@ -659,7 +659,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	} else if !os.IsNotExist(err) {
 		return StopPresentationResult{}, fmt.Errorf("inspect Stop report path: %w", err)
 	}
-	reservation, err := stopreport.ReserveShortestAlias(resolvedRoot, reportID)
+	reservation, err := stopreport.ReserveShortestAlias(resolvedRoot.Path(), reportID)
 	if err != nil {
 		return StopPresentationResult{}, fmt.Errorf("reserve Stop report alias: %w", err)
 	}
@@ -680,7 +680,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	if err != nil {
 		return StopPresentationResult{}, err
 	}
-	durable, err := atomicfile.WriteText(reportPath, string(markdown), resolvedRoot)
+	durable, err := atomicfile.WriteText(reportPath, string(markdown), resolvedRoot.Path())
 	if err != nil {
 		return StopPresentationResult{}, fmt.Errorf("publish Stop report: %w", err)
 	}
@@ -692,7 +692,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	if err := stopreport.PublishAlias(reservation, reportSHA); err != nil {
 		return StopPresentationResult{}, err
 	}
-	verified, verifiedIdentity, resolution, err := stopreport.Read(resolvedRoot, reservation.Alias)
+	verified, verifiedIdentity, resolution, err := stopreport.Read(resolvedRoot.Path(), reservation.Alias)
 	if err != nil || verifiedIdentity != input.Identity || resolution.ID != reportID || resolution.Path != reportPath || !bytes.Equal(verified, markdown) {
 		if err == nil {
 			err = fmt.Errorf("reserved Stop report alias did not resolve to its published report")
@@ -709,14 +709,14 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	} else if !os.IsNotExist(err) {
 		return StopPresentationResult{}, fmt.Errorf("inspect Stop presentation output: %w", err)
 	}
-	durable, err = atomicfile.WriteText(outputPath, string(encoded)+"\n", resolvedRoot)
+	durable, err = atomicfile.WriteText(outputPath, string(encoded)+"\n", resolvedRoot.Path())
 	if err != nil {
 		return StopPresentationResult{}, fmt.Errorf("publish Stop presentation: %w", err)
 	}
 	if !durable {
 		return StopPresentationResult{}, fmt.Errorf("publish Stop presentation: crash durability is unknown")
 	}
-	if err := pruneStopReports(resolvedRoot, reportDir, input.Identity.SessionKey, reportPath, now.UTC()); err != nil {
+	if err := pruneStopReports(resolvedRoot.Path(), reportDir, input.Identity.SessionKey, reportPath, now.UTC()); err != nil {
 		fmt.Fprintf(os.Stderr, "report stop-present: prune old Stop reports: %v\n", err)
 	}
 	return result, nil
@@ -1387,7 +1387,8 @@ func pruneStopReports(root, dir, sessionKey, current string, now time.Time) erro
 
 func StopStatusRoot(explicit string) (string, error) {
 	if explicit != "" {
-		return stateroot.RootForCandidate(explicit)
+		root, err := stateroot.RootForCandidate(explicit)
+		return root.Path(), err
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -1400,7 +1401,8 @@ func StopStatusRoot(explicit string) (string, error) {
 	if filepath.Base(executable) != "metasystem" || filepath.Base(filepath.Dir(executable)) != "bin" {
 		return "", fmt.Errorf("executing binary is not installed as <installation>/bin/metasystem")
 	}
-	return stateroot.RootForCandidate(filepath.Dir(filepath.Dir(executable)))
+	root, err := stateroot.RootForCandidate(filepath.Dir(filepath.Dir(executable)))
+	return root.Path(), err
 }
 
 func ReadStopStatus(root, id string) ([]byte, StopIdentity, error) {

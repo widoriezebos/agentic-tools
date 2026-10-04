@@ -178,7 +178,7 @@ func read(roots Roots, id string, now time.Time, beforeOpen func()) (Document, e
 		Headings:     []markdown.Heading{},
 		Blocks:       []markdown.Block{},
 	}
-	owner, ownerReason := ownerOf(roots.Installation, document.Path)
+	owner, ownerReason := ownerOf(roots.Installation.Path(), document.Path)
 	document.Owner = owner
 
 	if len(data) > maxDocumentBytes {

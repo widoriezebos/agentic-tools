@@ -42,7 +42,7 @@ func TestGitAdapterStillbornCleanupAndCorrectedRetry(t *testing.T) {
 	t.Parallel()
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	commitBedBaseline(t, engine.Root)
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
+	leasePath := filepath.Join(engine.installation(), "artifacts", "agents", "checkout.lease.json")
 	// The bed's own build already armed and pinned (the parent's half).
 	// A fileMode flip in the SAME gap refuses at the child's admission
 	// before any dirt considerations.

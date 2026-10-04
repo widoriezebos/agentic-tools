@@ -31,11 +31,11 @@ const (
 // never their referent. The repo mode rides along so callers needing
 // the self-hosting distinction get both answers from one mouth.
 func (r Resolver) Owner(path string) (Ownership, string, error) {
-	installation, err := r.installationRoot()
+	installation, err := r.ExecutableInstallation()
 	if err != nil {
 		return OwnerOutside, "", err
 	}
-	return r.OwnerForInstallation(installation, path)
+	return r.OwnerForInstallation(installation.Path(), path)
 }
 
 // OwnerForInstallation applies the ownership rule for an explicitly located

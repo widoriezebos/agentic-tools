@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -55,7 +54,7 @@ func receiptStatus(args []string, stdout, stderr io.Writer) int {
 			return refusePassthrough(stderr, 1, "the receipt ledger cannot be found: "+err.Error(),
 				textui.Hint{Argv: []string{"metasystem", "system", "check"}, Reason: "names what is wrong here"})
 		}
-		checkArgs = append(slices.Clone(checkArgs), "--file", filepath.Join(root, "receipts.log"))
+		checkArgs = append(slices.Clone(checkArgs), "--file", root.Path("receipts.log"))
 	}
 	_, opts, due, env, code := receiptResult(append([]string{"check"}, checkArgs...), stdout, stderr)
 	if code >= 0 {
@@ -306,7 +305,7 @@ func receiptResult(args []string, stdout, stderr io.Writer) (string, receipt.Opt
 			return action, opts, receipt.Result{}, env, refusePassthrough(stderr, 1, "the receipt ledger cannot be found: "+err.Error(),
 				textui.Hint{Argv: []string{"metasystem", "system", "check"}, Reason: "names what is wrong here"})
 		}
-		opts.File = filepath.Join(root, "receipts.log")
+		opts.File = root.Path("receipts.log")
 	}
 	if action == "add" && *launchID != "" {
 		record, err := receiptLaunchStore().Read(*launchID)

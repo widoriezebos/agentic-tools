@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -152,6 +153,30 @@ func TestRunLoopRefusesClosedFenceBeforeLease(t *testing.T) {
 	}
 	if pathExists(filepath.Join(root, "artifacts", "agents", "missions", "closed", "lease.d")) {
 		t.Fatal("closed fence allowed a mission lease")
+	}
+}
+
+// A stop closes the fence under the installation; the mission's root is the
+// state root, which holds no fence. Both the launcher and the run loop refuse.
+func TestLaunchSeparatedRootsRefusesTheInstallationsClosedFence(t *testing.T) {
+	t.Parallel()
+	root, installation := t.TempDir(), t.TempDir()
+	if err := stopfence.Write(installation, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
+		Generation: 4, ChangedAt: "2026-10-03T00:00:00Z", Checkout: root, NotStopped: []stopfence.Survivor{},
+		By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 76}}}); err != nil {
+		t.Fatal(err)
+	}
+	var refusal strings.Builder
+	engine := NewEngine(root, "closed")
+	engine.Installation, engine.Errors = installation, &refusal
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code, loopCode := engine.Launch("start", false), engine.RunLoopAtGeneration("start", "tag", signal, 4, false)
+	started, _ := os.ReadFile(signal)
+	if code != 3 || loopCode != 3 || !strings.Contains(refusal.String(), "agent-free terminal") || !strings.Contains(string(started), "agent-free terminal") {
+		t.Fatalf("launch %d %q and run loop %d %s, want both refused by the installation's closed fence", code, refusal.String(), loopCode, started)
+	}
+	if pathExists(filepath.Join(root, "artifacts")) {
+		t.Fatal("a refused launch wrote under the state root")
 	}
 }
 
@@ -308,5 +333,58 @@ func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 	intent, err := readJSONDoc(filepath.Join(engine.missionDir(), "stop-intent.json"))
 	if err != nil || intent["missionId"] != runner.MissionID || !intentMatchesRunner(intent, record) {
 		t.Fatalf("stop intent did not bind the signalled runner: %#v, %v", intent, err)
+	}
+}
+
+// A stop inventories missions under the installation. On separated roots it
+// finds the runner record the engine keeps there, and the stop intent it
+// writes is the one the runner reads, so the runner ends. The state root
+// gets no run state.
+func TestStopSeparatedRootsFindsAndStopsTheRunningMission(t *testing.T) {
+	t.Parallel()
+	state, installation, tag := t.TempDir(), t.TempDir(), "metasystem-mission-runner-held-fixture"
+	// The held runner carries the run loop's words, so the kernel proves its
+	// group is the mission's.
+	ready, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := exec.Command("/bin/sh", "-c", "printf x >&3; read -r _", "metasystem", "mission", "run-loop", "--instance-tag", tag)
+	held.ExtraFiles, held.SysProcAttr = []*os.File{readyWrite}, &syscall.SysProcAttr{Setpgid: true}
+	release, err := held.StdinPipe()
+	if err != nil || held.Start() != nil {
+		t.Fatal("the held runner did not start")
+	}
+	_ = readyWrite.Close()
+	done := make(chan struct{})
+	go func() { _ = held.Wait(); close(done) }()
+	t.Cleanup(func() { _ = release.Close(); <-done })
+	if _, err := io.ReadFull(ready, make([]byte, 1)); err != nil {
+		t.Fatal(err)
+	}
+	started, err := processStartedAt(held.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngineAt(state, installation, "held")
+	recordPath, _, _ := engine.runnerPaths()
+	if err := atomicWriteJSON(recordPath, engine.runnerRecord(held.Process.Pid, held.Process.Pid, started, tag)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := Inventory(installation)
+	if err != nil || len(items) != 1 || items[0].Kind != ItemRunner || items[0].RecordPath != recordPath {
+		t.Fatalf("stop inventory = %+v, %v; want the runner recorded at %s", items, err, recordPath)
+	}
+	if outcome, err := Stop(items[0], StopOptions{}); err != nil || outcome.Result != "stopped" {
+		t.Fatalf("stop = %+v, %v", outcome, err)
+	}
+	engine.stopNotifications = make(chan os.Signal, 1)
+	engine.stopNotifications <- syscall.SIGTERM
+	var stopped *runnerStoppedError
+	if err := engine.checkStopNotification(""); !errors.As(err, &stopped) {
+		t.Fatalf("the runner did not take the stop's intent: %v", err)
+	}
+	if pathExists(filepath.Join(state, "artifacts")) {
+		t.Fatal("the stop or the runner wrote under the state root")
 	}
 }

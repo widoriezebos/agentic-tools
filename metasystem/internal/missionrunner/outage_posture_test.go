@@ -71,7 +71,7 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 		t.Fatalf("the fixture must witness repeated overloads staying unparked: %d turn(s)\n%v",
 			overloadedTurns, turnLog)
 	}
-	mark, ok := outage.Read(engine.Root)
+	mark, ok := outage.Read(engine.installation())
 	if !ok || mark.LastClass != "overloaded" || mark.Source != "mission-runner" {
 		t.Fatalf("the outage mark must record the provider's weather: %+v ok=%v", mark, ok)
 	}
@@ -115,7 +115,7 @@ func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	if errField, _ := first["error"].(string); errField != "provider-overloaded" {
 		t.Fatalf("the clean-exit overload names itself: error=%q detail=%v", errField, first["detail"])
 	}
-	if mark, ok := outage.Read(engine.Root); !ok || mark.LastClass != "overloaded" {
+	if mark, ok := outage.Read(engine.installation()); !ok || mark.LastClass != "overloaded" {
 		t.Fatalf("the document must feed the mark: %+v ok=%v", mark, ok)
 	}
 	if len(*backoffs) == 0 || (*backoffs)[0] != 150*time.Millisecond {

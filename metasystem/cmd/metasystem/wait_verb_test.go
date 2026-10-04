@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -165,8 +166,19 @@ func TestWaitPathSelectorIsValidated(t *testing.T) {
 	}
 }
 
-func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
+// selfHostedWaitRoot is a checkout that serves itself: the installation its
+// waiting caller is classified against is the root, marked by metasystem.conf.
+func selfHostedWaitRoot(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -321,7 +333,7 @@ func TestWaitActionableCheckUsesNoGitAndHonorsItsContext(t *testing.T) {
 }
 
 func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
-	root := t.TempDir()
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -360,7 +372,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 }
 
 func TestWaitInstalledRunCommand(t *testing.T) {
-	root := t.TempDir()
+	root := selfHostedWaitRoot(t)
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -1210,11 +1222,13 @@ type pendingWaitHookOwners struct {
 
 // EngineBehind keeps the generation cutover out of these runs: the fixture
 // installation's engine is the one under test, never behind its sources.
-func (pendingWaitHookOwners) EngineBehind(string, string) (bool, error) { return false, nil }
+func (pendingWaitHookOwners) EngineBehind(roots.Installation, string) (bool, error) {
+	return false, nil
+}
 
 // EvidenceGC keeps the fixture installation's evidence collection inert, as
 // its stub evidence-gc.sh did: the test process is not an authenticated main.
-func (pendingWaitHookOwners) EvidenceGC(string, io.Writer) int { return 0 }
+func (pendingWaitHookOwners) EvidenceGC(roots.Installation, io.Writer) int { return 0 }
 
 func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	o.upRequests = append(o.upRequests, request)
@@ -1224,7 +1238,7 @@ func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Wr
 	}
 	// The installed engine arms, as the wrapper's pass-through did: this
 	// test binary is not the enrolled engine.
-	arguments := []string{"up", "--metasystem-root", request.MetasystemRoot, "--repo", request.Repo,
+	arguments := []string{"up", "--metasystem-root", request.MetasystemRoot.Path(), "--repo", request.Repo,
 		"--session", request.Session, "--pid", request.Pid, "--start-time", request.StartTime, "--tag", request.Tag}
 	if request.NoRuntimeSession {
 		arguments = append(arguments, "--no-runtime-session")
@@ -1248,7 +1262,7 @@ func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Wr
 	return 0
 }
 
-func (o *pendingWaitHookOwners) HealthPreview(string, string) (string, int) {
+func (o *pendingWaitHookOwners) HealthPreview(string, roots.Installation) (string, int) {
 	return pendingWaitHealthyPreview + "\n", 0
 }
 

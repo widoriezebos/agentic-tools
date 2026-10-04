@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
@@ -92,8 +93,8 @@ func TestDescribeAcrossLayoutsAndRecords(t *testing.T) {
 				testutil.Expect(t, "adopted from", described.AdoptedFrom, adoption.wantAdoptedFrom)
 				testutil.Expect(t, "conflict", described.Conflict, layout.selfHosted && adoption.wantRecord == Recorded)
 				testutil.Expect(t, "checkout", described.Checkout, roots.Checkout)
-				testutil.Expect(t, "installation", described.Installation, roots.Installation)
-				testutil.Expect(t, "state root", described.StateRoot, roots.StateRoot)
+				testutil.Expect(t, "installation", described.Installation, roots.Installation.Path())
+				testutil.Expect(t, "state root", described.StateRoot, roots.StateRoot.Path())
 				testutil.Expect(t, "engine build", described.EngineBuild, record().EngineBuild)
 				testutil.Expect(t, "started at", described.StartedAt, record().StartedAt)
 				testutil.Expect(t, "executable digest", described.ExecutableDigest, record().ExecutableDigest)
@@ -147,7 +148,7 @@ func TestDescribeUsesTheConfiguredSubject(t *testing.T) {
 func TestDescribeRefusesAnInstallationItCannotResolve(t *testing.T) {
 	t.Parallel()
 
-	roots := Roots{Checkout: t.TempDir(), Installation: filepath.Join(t.TempDir(), "no-such-installation"), StateRoot: t.TempDir()}
+	roots := Roots{Checkout: t.TempDir(), Installation: stateroottest.Installation(t, filepath.Join(t.TempDir(), "no-such-installation")), StateRoot: stateroottest.State(t, t.TempDir())}
 
 	_, err := Describe(roots, record(), "")
 

@@ -73,14 +73,14 @@ var (
 // committed evidence are both strictly older than before. Registry history
 // and stable lock files are never removed. It waits for the maintenance
 // lock and judges the cutoff against the wall clock.
-func PruneCallSessions(stateRoot string, before time.Time) (removed int, err error) {
-	return retireCallSessions(context.Background(), stateRoot, before, callRetentionNow(), 0, false)
+func PruneCallSessions(installationRoot string, before time.Time) (removed int, err error) {
+	return retireCallSessions(context.Background(), installationRoot, before, callRetentionNow(), 0, false)
 }
 
 // PruneCallSessionsAt is PruneCallSessions judged against the caller's
 // clock: the context-prune verb passes the now it prunes handoffs with.
-func PruneCallSessionsAt(stateRoot string, before, now time.Time) (removed int, err error) {
-	return retireCallSessions(context.Background(), stateRoot, before, now, 0, false)
+func PruneCallSessionsAt(installationRoot string, before, now time.Time) (removed int, err error) {
+	return retireCallSessions(context.Background(), installationRoot, before, now, 0, false)
 }
 
 // RetireCallSessions is the disk sweeper's retirement (Part B 3.5): the
@@ -88,16 +88,16 @@ func PruneCallSessionsAt(stateRoot string, before, now time.Time) (removed int, 
 // without waiting (held is a *CallStoreBusyError at once), the interrupted
 // journals present are recovered, at most limit pairs are retired, the
 // context is checked between pairs, and the lock is released on return.
-func RetireCallSessions(ctx context.Context, stateRoot string, before, now time.Time, limit int) (removed int, err error) {
+func RetireCallSessions(ctx context.Context, installationRoot string, before, now time.Time, limit int) (removed int, err error) {
 	if limit < 1 {
 		return 0, fmt.Errorf("call retirement limit must be positive, got %d", limit)
 	}
-	return retireCallSessions(ctx, stateRoot, before, now, limit, true)
+	return retireCallSessions(ctx, installationRoot, before, now, limit, true)
 }
 
-func retireCallSessions(ctx context.Context, stateRoot string, before, now time.Time, limit int, nonBlocking bool) (removed int, err error) {
-	if !filepath.IsAbs(stateRoot) {
-		return 0, fmt.Errorf("state root must be absolute: %s", stateRoot)
+func retireCallSessions(ctx context.Context, installationRoot string, before, now time.Time, limit int, nonBlocking bool) (removed int, err error) {
+	if !filepath.IsAbs(installationRoot) {
+		return 0, fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
 	if err := validateCallCutoff(before, now); err != nil {
 		return 0, err
@@ -105,29 +105,29 @@ func retireCallSessions(ctx context.Context, stateRoot string, before, now time.
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if err := validateCallStorageParents(stateRoot); err != nil {
+	if err := validateCallStorageParents(installationRoot); err != nil {
 		return 0, err
 	}
-	maintenance, err := lockCallMaintenance(stateRoot, true, nonBlocking)
+	maintenance, err := lockCallMaintenance(installationRoot, true, nonBlocking)
 	if err != nil {
 		return 0, err
 	}
 	defer unlockCallFile(maintenance)
 
-	recovered, err := recoverAllCallRetirements(stateRoot)
+	recovered, err := recoverAllCallRetirements(installationRoot)
 	removed += recovered
 	if err != nil {
 		return removed, err
 	}
-	retention, err := readCallRetention(stateRoot)
+	retention, err := readCallRetention(installationRoot)
 	if err != nil {
 		return removed, err
 	}
-	registrations, _, err := callRegistrationsUnderMaintenance(stateRoot)
+	registrations, _, err := callRegistrationsUnderMaintenance(installationRoot)
 	if err != nil {
 		return removed, err
 	}
-	candidates, err := callRetirementCandidates(stateRoot, registrations, before, false)
+	candidates, err := callRetirementCandidates(installationRoot, registrations, before, false)
 	if err != nil {
 		return removed, err
 	}
@@ -151,7 +151,7 @@ func retireCallSessions(ctx context.Context, stateRoot string, before, now time.
 			candidateBoundary = retention.RetainedSince
 		}
 		retention = callRetention{SchemaVersion: callRetentionSchema, RetainedSince: candidateBoundary}
-		if err := publishCallRetention(stateRoot, retention); err != nil {
+		if err := publishCallRetention(installationRoot, retention); err != nil {
 			return removed, err
 		}
 	}
@@ -164,7 +164,7 @@ func retireCallSessions(ctx context.Context, stateRoot string, before, now time.
 		if candidate.Orphan {
 			retireErr = retireEmptySamplesOrphan(candidate, before)
 		} else {
-			retireErr = retireCallSession(stateRoot, candidate.Session, before)
+			retireErr = retireCallSession(installationRoot, candidate.Session, before)
 		}
 		if retireErr != nil {
 			var completed *callRetirementCompletedError
@@ -205,31 +205,31 @@ type CallInspection struct {
 // DL3B-05): it lists the retirable pairs and the interrupted journals,
 // recovers nothing, publishes no boundary, truncates nothing and creates no
 // file or directory; the maintenance lock is probed without being created.
-func InspectCallSessions(stateRoot string, before, now time.Time) (CallInspection, error) {
+func InspectCallSessions(installationRoot string, before, now time.Time) (CallInspection, error) {
 	var inspection CallInspection
-	if !filepath.IsAbs(stateRoot) {
-		return inspection, fmt.Errorf("state root must be absolute: %s", stateRoot)
+	if !filepath.IsAbs(installationRoot) {
+		return inspection, fmt.Errorf("state root must be absolute: %s", installationRoot)
 	}
 	if err := validateCallCutoff(before, now); err != nil {
 		return inspection, err
 	}
-	if err := validateCallStorageParents(stateRoot); err != nil {
+	if err := validateCallStorageParents(installationRoot); err != nil {
 		return inspection, err
 	}
-	free, err := ProbeMaintenance(stateRoot)
+	free, err := ProbeMaintenance(installationRoot)
 	if err != nil {
 		return inspection, err
 	}
 	inspection.MaintenanceHeld = !free
-	inspection.Interrupted, err = callRetirementCursorPaths(stateRoot)
+	inspection.Interrupted, err = callRetirementCursorPaths(installationRoot)
 	if err != nil {
 		return inspection, err
 	}
-	registrations, _, err := readCallRegistrations(filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl"))
+	registrations, _, err := readCallRegistrations(filepath.Join(installationRoot, "artifacts", "agents", "context", "sessions.jsonl"))
 	if err != nil {
 		return inspection, err
 	}
-	candidates, err := callRetirementCandidates(stateRoot, registrations, before, true)
+	candidates, err := callRetirementCandidates(installationRoot, registrations, before, true)
 	if err != nil {
 		return inspection, err
 	}
@@ -245,44 +245,44 @@ func InspectCallSessions(stateRoot string, before, now time.Time) (CallInspectio
 
 // recoverCallRetirement completes one journal-authorized deletion. The caller
 // holds the maintenance lock and the stable lock beside cursorPath.
-func recoverCallRetirement(stateRoot, cursorPath string) error {
+func recoverCallRetirement(installationRoot, cursorPath string) error {
 	journalPath := callRetirementPath(cursorPath)
-	journal, present, err := readCallRetirementJournal(stateRoot, cursorPath)
+	journal, present, err := readCallRetirementJournal(installationRoot, cursorPath)
 	if err != nil || !present {
 		return err
 	}
-	retention, err := readCallRetention(stateRoot)
+	retention, err := readCallRetention(installationRoot)
 	if err != nil {
 		return err
 	}
 	if retention.RetainedSince.Before(callRetentionBoundary(journal.Cutoff)) {
 		return fmt.Errorf("call retirement record %s is not covered by retention boundary %s", journalPath, retention.RetainedSince.Format(time.RFC3339Nano))
 	}
-	if err := validateCallRetirementTargets(stateRoot, cursorPath, journal); err != nil {
+	if err := validateCallRetirementTargets(installationRoot, cursorPath, journal); err != nil {
 		return err
 	}
 	// A journal can be visible after a post-rename sync failure. Rewriting both
 	// authorizations makes their durability explicit before recovery unlinks.
-	if err := publishCallRetention(stateRoot, retention); err != nil {
+	if err := publishCallRetention(installationRoot, retention); err != nil {
 		return err
 	}
-	if err := publishCallRetirementJournal(stateRoot, journalPath, journal); err != nil {
+	if err := publishCallRetirementJournal(installationRoot, journalPath, journal); err != nil {
 		return err
 	}
-	return completeCallRetirement(stateRoot, cursorPath, journal)
+	return completeCallRetirement(installationRoot, cursorPath, journal)
 }
 
 // retireCallSession publishes a recoverable authorization before deleting a
 // pair. Its caller holds the exclusive maintenance lock.
-func retireCallSession(stateRoot string, session CallSession, before time.Time) error {
-	cursorPath := CursorPath(stateRoot, session.Runtime, session.Session)
+func retireCallSession(installationRoot string, session CallSession, before time.Time) error {
+	cursorPath := CursorPath(installationRoot, session.Runtime, session.Session)
 	lock, err := lockCallFile(cursorPath + ".lock")
 	if err != nil {
 		return fmt.Errorf("cannot lock call session retirement %s: %w", cursorPath, err)
 	}
 	defer unlockCallFile(lock)
 
-	journal, err := prepareCallRetirement(stateRoot, session, before)
+	journal, err := prepareCallRetirement(installationRoot, session, before)
 	if err != nil {
 		return err
 	}
@@ -290,14 +290,14 @@ func retireCallSession(stateRoot string, session CallSession, before time.Time) 
 	if err := requireUnusedCallRetirementPath(journalPath); err != nil {
 		return err
 	}
-	if err := publishCallRetirementJournal(stateRoot, journalPath, journal); err != nil {
+	if err := publishCallRetirementJournal(installationRoot, journalPath, journal); err != nil {
 		return err
 	}
-	return completeCallRetirement(stateRoot, cursorPath, journal)
+	return completeCallRetirement(installationRoot, cursorPath, journal)
 }
 
-func recoverAllCallRetirements(stateRoot string) (int, error) {
-	paths, err := callRetirementCursorPaths(stateRoot)
+func recoverAllCallRetirements(installationRoot string) (int, error) {
+	paths, err := callRetirementCursorPaths(installationRoot)
 	if err != nil {
 		return 0, err
 	}
@@ -308,7 +308,7 @@ func recoverAllCallRetirements(stateRoot string) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("cannot lock call retirement %s: %w", cursorPath, err)
 		}
-		validateErr := validateRecoverableCallRetirement(stateRoot, cursorPath)
+		validateErr := validateRecoverableCallRetirement(installationRoot, cursorPath)
 		unlockCallFile(lock)
 		if validateErr != nil {
 			return 0, validateErr
@@ -320,7 +320,7 @@ func recoverAllCallRetirements(stateRoot string) (int, error) {
 		if err != nil {
 			return recovered, fmt.Errorf("cannot lock call retirement %s: %w", cursorPath, err)
 		}
-		recoverErr := recoverCallRetirement(stateRoot, cursorPath)
+		recoverErr := recoverCallRetirement(installationRoot, cursorPath)
 		unlockCallFile(lock)
 		if recoverErr != nil {
 			var completed *callRetirementCompletedError
@@ -334,30 +334,30 @@ func recoverAllCallRetirements(stateRoot string) (int, error) {
 	return recovered, nil
 }
 
-func validateRecoverableCallRetirement(stateRoot, cursorPath string) error {
-	journal, present, err := readCallRetirementJournal(stateRoot, cursorPath)
+func validateRecoverableCallRetirement(installationRoot, cursorPath string) error {
+	journal, present, err := readCallRetirementJournal(installationRoot, cursorPath)
 	if err != nil {
 		return err
 	}
 	if !present {
 		return fmt.Errorf("call retirement record disappeared before recovery: %s", callRetirementPath(cursorPath))
 	}
-	retention, err := readCallRetention(stateRoot)
+	retention, err := readCallRetention(installationRoot)
 	if err != nil {
 		return err
 	}
 	if retention.RetainedSince.Before(callRetentionBoundary(journal.Cutoff)) {
 		return fmt.Errorf("call retirement record %s is not covered by retention boundary %s", callRetirementPath(cursorPath), retention.RetainedSince.Format(time.RFC3339Nano))
 	}
-	return validateCallRetirementTargets(stateRoot, cursorPath, journal)
+	return validateCallRetirementTargets(installationRoot, cursorPath, journal)
 }
 
-func callRetirementCandidates(stateRoot string, registrations []CallRegistration, before time.Time, observe bool) ([]callRetirementCandidate, error) {
-	if err := validateCallStorageParents(stateRoot); err != nil {
+func callRetirementCandidates(installationRoot string, registrations []CallRegistration, before time.Time, observe bool) ([]callRetirementCandidate, error) {
+	if err := validateCallStorageParents(installationRoot); err != nil {
 		return nil, err
 	}
-	cursorDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors")
-	samplesDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "samples")
+	cursorDir := filepath.Join(installationRoot, "artifacts", "agents", "context", "cursors")
+	samplesDir := filepath.Join(installationRoot, "artifacts", "agents", "context", "samples")
 	stems := map[string]bool{}
 	if err := collectCallStoreStems(cursorDir, ".json", stems); err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func callRetirementCandidates(stateRoot string, registrations []CallRegistration
 	for _, stem := range names {
 		cursorPath := filepath.Join(cursorDir, stem+".json")
 		if observe {
-			candidate, eligible, inspectErr := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, true)
+			candidate, eligible, inspectErr := inspectCallRetirementCandidate(installationRoot, cursorPath, registrations, before, true)
 			if inspectErr != nil {
 				return nil, inspectErr
 			}
@@ -388,7 +388,7 @@ func callRetirementCandidates(stateRoot string, registrations []CallRegistration
 		if err != nil {
 			return nil, fmt.Errorf("cannot lock call retirement candidate %s: %w", cursorPath, err)
 		}
-		candidate, eligible, inspectErr := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, false)
+		candidate, eligible, inspectErr := inspectCallRetirementCandidate(installationRoot, cursorPath, registrations, before, false)
 		unlockCallFile(lock)
 		if inspectErr != nil {
 			return nil, inspectErr
@@ -409,8 +409,8 @@ func callRetirementCandidates(stateRoot string, registrations []CallRegistration
 // inspectCallRetirementCandidate judges one pair. observe never truncates:
 // a samples log past its committed boundary needs recovery first, so an
 // observation reports the pair not eligible this pass.
-func inspectCallRetirementCandidate(stateRoot, cursorPath string, registrations []CallRegistration, before time.Time, observe bool) (callRetirementCandidate, bool, error) {
-	samplesPath := filepath.Join(stateRoot, "artifacts", "agents", "context", "samples", strings.TrimSuffix(filepath.Base(cursorPath), ".json")+".jsonl")
+func inspectCallRetirementCandidate(installationRoot, cursorPath string, registrations []CallRegistration, before time.Time, observe bool) (callRetirementCandidate, bool, error) {
+	samplesPath := filepath.Join(installationRoot, "artifacts", "agents", "context", "samples", strings.TrimSuffix(filepath.Base(cursorPath), ".json")+".jsonl")
 	cursorInfo, cursorExists, err := callStoreMember(cursorPath)
 	if err != nil {
 		return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, err)
@@ -438,7 +438,7 @@ func inspectCallRetirementCandidate(stateRoot, cursorPath string, registrations 
 	if err != nil {
 		return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, err)
 	}
-	if CursorPath(stateRoot, cursor.Runtime, cursor.Session) != cursorPath || SamplesPath(stateRoot, cursor.Runtime, cursor.Session) != samplesPath {
+	if CursorPath(installationRoot, cursor.Runtime, cursor.Session) != cursorPath || SamplesPath(installationRoot, cursor.Runtime, cursor.Session) != samplesPath {
 		return callRetirementCandidate{}, false, pairError(cursorPath, samplesPath, fmt.Errorf("cursor identity %s/%s does not map to both store basenames", cursor.Runtime, cursor.Session))
 	}
 	if observe {
@@ -579,8 +579,8 @@ func decodeOneStrictJSON(data []byte, value any) bool {
 	return decoder.Decode(&struct{}{}) == io.EOF
 }
 
-func prepareCallRetirement(stateRoot string, session CallSession, before time.Time) (callRetirementJournal, error) {
-	cursorPath := CursorPath(stateRoot, session.Runtime, session.Session)
+func prepareCallRetirement(installationRoot string, session CallSession, before time.Time) (callRetirementJournal, error) {
+	cursorPath := CursorPath(installationRoot, session.Runtime, session.Session)
 	cursorBytes, err := os.ReadFile(cursorPath)
 	if err != nil {
 		return callRetirementJournal{}, fmt.Errorf("cannot read call cursor for retirement %s: %w", cursorPath, err)
@@ -593,14 +593,14 @@ func prepareCallRetirement(stateRoot string, session CallSession, before time.Ti
 		return callRetirementJournal{}, fmt.Errorf("call cursor retirement identity changed at %s", cursorPath)
 	}
 	registrations := []CallRegistration{{Runtime: session.Runtime, Session: session.Session, FirstSeen: before.Add(-time.Nanosecond)}}
-	candidate, eligible, err := inspectCallRetirementCandidate(stateRoot, cursorPath, registrations, before, false)
+	candidate, eligible, err := inspectCallRetirementCandidate(installationRoot, cursorPath, registrations, before, false)
 	if err != nil {
 		return callRetirementJournal{}, err
 	}
 	if !eligible || candidate.Orphan {
 		return callRetirementJournal{}, fmt.Errorf("call session is no longer eligible for retirement: %s/%s", session.Runtime, session.Session)
 	}
-	samplesPath := SamplesPath(stateRoot, session.Runtime, session.Session)
+	samplesPath := SamplesPath(installationRoot, session.Runtime, session.Session)
 	_, samplesPresent, err := callStoreMember(samplesPath)
 	if err != nil {
 		return callRetirementJournal{}, err
@@ -641,14 +641,14 @@ func prepareCallRetirement(stateRoot string, session CallSession, before time.Ti
 	return journal, nil
 }
 
-func validateCallRetirementTargets(stateRoot, cursorPath string, journal callRetirementJournal) error {
-	if err := validateCallStorageParents(stateRoot); err != nil {
+func validateCallRetirementTargets(installationRoot, cursorPath string, journal callRetirementJournal) error {
+	if err := validateCallStorageParents(installationRoot); err != nil {
 		return err
 	}
-	if CursorPath(stateRoot, journal.Runtime, journal.Session) != cursorPath {
+	if CursorPath(installationRoot, journal.Runtime, journal.Session) != cursorPath {
 		return fmt.Errorf("call retirement record %s identity %s/%s does not map to its own stem", callRetirementPath(cursorPath), journal.Runtime, journal.Session)
 	}
-	samplesPath := SamplesPath(stateRoot, journal.Runtime, journal.Session)
+	samplesPath := SamplesPath(installationRoot, journal.Runtime, journal.Session)
 	if info, present, err := callStoreMember(cursorPath); err != nil {
 		return pairError(cursorPath, samplesPath, err)
 	} else if present {
@@ -686,11 +686,11 @@ func validateCallRetirementTargets(stateRoot, cursorPath string, journal callRet
 	return nil
 }
 
-func completeCallRetirement(stateRoot, cursorPath string, journal callRetirementJournal) error {
-	if err := validateCallRetirementTargets(stateRoot, cursorPath, journal); err != nil {
+func completeCallRetirement(installationRoot, cursorPath string, journal callRetirementJournal) error {
+	if err := validateCallRetirementTargets(installationRoot, cursorPath, journal); err != nil {
 		return err
 	}
-	samplesPath := SamplesPath(stateRoot, journal.Runtime, journal.Session)
+	samplesPath := SamplesPath(installationRoot, journal.Runtime, journal.Session)
 	journalPath := callRetirementPath(cursorPath)
 	for _, path := range []string{samplesPath, cursorPath} {
 		if err := removeCallStorePath(path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -740,8 +740,8 @@ func retireEmptySamplesOrphan(candidate callRetirementCandidate, before time.Tim
 	return nil
 }
 
-func callRetentionPath(stateRoot string) string {
-	return filepath.Join(stateRoot, "artifacts", "agents", "context", "retention.json")
+func callRetentionPath(installationRoot string) string {
+	return filepath.Join(installationRoot, "artifacts", "agents", "context", "retention.json")
 }
 
 func callRetirementPath(cursorPath string) string { return cursorPath + ".retiring.json" }
@@ -755,8 +755,8 @@ func callRetentionBoundary(before time.Time) time.Time {
 	return midnight.AddDate(0, 0, 1)
 }
 
-func readCallRetention(stateRoot string) (callRetention, error) {
-	path := callRetentionPath(stateRoot)
+func readCallRetention(installationRoot string) (callRetention, error) {
+	path := callRetentionPath(installationRoot)
 	info, statErr := os.Lstat(path)
 	if statErr == nil && !info.Mode().IsRegular() {
 		return callRetention{}, fmt.Errorf("call retention boundary is not a regular file: %s", path)
@@ -778,15 +778,15 @@ func readCallRetention(stateRoot string) (callRetention, error) {
 	return retention, nil
 }
 
-func publishCallRetention(stateRoot string, retention callRetention) error {
+func publishCallRetention(installationRoot string, retention callRetention) error {
 	if retention.SchemaVersion != callRetentionSchema || !validCallRetentionTime(retention.RetainedSince) {
 		return fmt.Errorf("invalid call retention boundary")
 	}
-	return publishCallRetentionValue(callRetentionPath(stateRoot), retention, stateRoot, "call retention boundary")
+	return publishCallRetentionValue(callRetentionPath(installationRoot), retention, installationRoot, "call retention boundary")
 }
 
-func publishCallRetirementJournal(stateRoot, path string, journal callRetirementJournal) error {
-	return publishCallRetentionValue(path, journal, stateRoot, "record of retiring calls")
+func publishCallRetirementJournal(installationRoot, path string, journal callRetirementJournal) error {
+	return publishCallRetentionValue(path, journal, installationRoot, "record of retiring calls")
 }
 
 func publishCallRetentionValue(path string, value any, anchor, label string) error {
@@ -804,7 +804,7 @@ func publishCallRetentionValue(path string, value any, anchor, label string) err
 	return nil
 }
 
-func readCallRetirementJournal(stateRoot, cursorPath string) (callRetirementJournal, bool, error) {
+func readCallRetirementJournal(installationRoot, cursorPath string) (callRetirementJournal, bool, error) {
 	path := callRetirementPath(cursorPath)
 	if _, present, err := callStoreMember(path); err != nil {
 		return callRetirementJournal{}, true, err
@@ -826,14 +826,14 @@ func readCallRetirementJournal(stateRoot, cursorPath string) (callRetirementJour
 		!journal.SamplesPresent && (journal.SamplesDigest != "" || journal.SamplesFileDev != 0 || journal.SamplesFileInode != 0) {
 		return callRetirementJournal{}, true, fmt.Errorf("call retirement record is malformed: %s", path)
 	}
-	if CursorPath(stateRoot, journal.Runtime, journal.Session) != cursorPath {
+	if CursorPath(installationRoot, journal.Runtime, journal.Session) != cursorPath {
 		return callRetirementJournal{}, true, fmt.Errorf("call retirement record %s identity does not map to its own stem", path)
 	}
 	return journal, true, nil
 }
 
-func callRetirementCursorPaths(stateRoot string) ([]string, error) {
-	cursorDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors")
+func callRetirementCursorPaths(installationRoot string) ([]string, error) {
+	cursorDir := filepath.Join(installationRoot, "artifacts", "agents", "context", "cursors")
 	if err := validateCallStorageDirectory(cursorDir); err != nil {
 		return nil, err
 	}
@@ -857,13 +857,13 @@ func callRetirementCursorPaths(stateRoot string) ([]string, error) {
 	return paths, nil
 }
 
-func validateCallStorageParents(stateRoot string) error {
+func validateCallStorageParents(installationRoot string) error {
 	for _, directory := range []string{
-		filepath.Join(stateRoot, "artifacts"),
-		filepath.Join(stateRoot, "artifacts", "agents"),
-		filepath.Join(stateRoot, "artifacts", "agents", "context"),
-		filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors"),
-		filepath.Join(stateRoot, "artifacts", "agents", "context", "samples"),
+		filepath.Join(installationRoot, "artifacts"),
+		filepath.Join(installationRoot, "artifacts", "agents"),
+		filepath.Join(installationRoot, "artifacts", "agents", "context"),
+		filepath.Join(installationRoot, "artifacts", "agents", "context", "cursors"),
+		filepath.Join(installationRoot, "artifacts", "agents", "context", "samples"),
 	} {
 		if err := validateCallStorageDirectory(directory); err != nil {
 			return err

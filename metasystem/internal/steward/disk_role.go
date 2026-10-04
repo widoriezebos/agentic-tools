@@ -266,9 +266,9 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
 		if layout, err := stateroot.ResolveLayout(top); err == nil {
 			if pass.Clones {
-				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot, layout.InstallationRoot, pass.Now))
+				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot, layout.InstallationRoot.Path(), pass.Now))
 			}
-			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
+			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot.Path(),
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
 		}
 		if suiteFailures, err := suiteFailureClass(top, settings, pass); err == nil {
@@ -431,10 +431,10 @@ func unitGoalEnded(ledgerFor func(string) *ledgerView) func(goal, worktree strin
 			return false, false
 		}
 		root := layout.InstallationRoot
-		if views[root] == nil {
-			views[root] = ledgerFor(root)
+		if views[root.Path()] == nil {
+			views[root.Path()] = ledgerFor(root.Path())
 		}
-		projection, err := views[root].get()
+		projection, err := views[root.Path()].get()
 		if err != nil || projection.Tree.Live[goalID] != nil {
 			return false, err == nil
 		}
@@ -766,7 +766,7 @@ func diskSettingsFor(checkout string) (diskstore.Settings, error) {
 	if err != nil {
 		return diskstore.Settings{}, err
 	}
-	return diskstore.LoadSettings(filepath.Join(layout.InstallationRoot, "metasystem.conf"), nil)
+	return diskstore.LoadSettings(layout.InstallationRoot.Path("metasystem.conf"), nil)
 }
 
 // clonesReport is the unowned-clone report's class, with the git roots of

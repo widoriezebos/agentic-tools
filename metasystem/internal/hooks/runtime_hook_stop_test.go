@@ -86,7 +86,7 @@ func TestStopEmitsThePresentedVerdict(t *testing.T) {
 	completion := ops.completion(t)
 	if completion.Result != "OK" || completion.Outcome != "EMITTED" || completion.Generation != "2" || completion.Attempt != "3" ||
 		completion.HealthLine != "HEALTH healthy — fixture" || completion.ReportID != "report-id" || completion.ReportAlias != "a1" ||
-		completion.Installation != installation.root || !completion.HasElapsed || completion.ElapsedSec < 3 {
+		completion.Installation.Path() != installation.root || !completion.HasElapsed || completion.ElapsedSec < 3 {
 		t.Fatalf("completion = %+v", completion)
 	}
 	if !ops.called("steward digest-advance cursor=42 prefix=" + strings.Repeat("d", 64)) {

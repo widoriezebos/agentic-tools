@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -70,6 +71,34 @@ func TestParallelRatchetRefusesARaisedSerialCount(t *testing.T) {
 	delete(files, "go.mod")
 	if out, ok := parallelRatchet(ownerTree(t, files)); ok || !strings.HasPrefix(out, "PARALLEL_RATCHET_REFUSED: parallel ratchet module path unreadable") {
 		t.Fatalf("missing go.mod: %v %q", ok, out)
+	}
+}
+
+func TestRootAuditRatchetCountsOpenSitesAndRefusesAnUnlistedOrFixedOne(t *testing.T) {
+	t.Parallel()
+	entry := `{"owner":"later-work","count":1,"file":"internal/x/x.go","function":"internal/x.Runs","source":"State state.Path","sink":"Path(\"artifacts\")"}`
+	files := map[string]string{
+		"go.mod":                  "module example.com/fixture\n\ngo 1.27\n",
+		"internal/roots/roots.go": "package roots\n\ntype State string\n\nfunc (s State) Path(segments ...string) string { return string(s) }\n",
+		"internal/x/x.go":         "package x\n\nimport \"example.com/fixture/internal/roots\"\n\nfunc Runs(state roots.State) string { return state.Path(\"artifacts\") }\n",
+		"run-state-audit.json":    `{"sites":[` + entry + `]}`,
+	}
+	defer testenv.HoldToolchain()()
+	if out, ok := rootAuditRatchet(ownerTree(t, files)); !ok || out != "run-state audit passed: 1 open site(s) listed in run-state-audit.json, each owned by a later work\n" {
+		t.Fatalf("listed: %v %q", ok, out)
+	}
+	files["run-state-audit.json"] = `{"sites":[]}`
+	if out, ok := rootAuditRatchet(ownerTree(t, files)); ok || !strings.HasPrefix(out, "run-state audit: new crossing internal/x/x.go internal/x.Runs: State state.Path -> Path(\"artifacts\") (owner none; found 1, listed 0; at internal/x/x.go:5") {
+		t.Fatalf("unlisted: %v %q", ok, out)
+	}
+	files["run-state-audit.json"] = `{"sites":[` + entry + `]}`
+	files["internal/x/x.go"] = "package x\n"
+	if out, ok := rootAuditRatchet(ownerTree(t, files)); ok || !strings.HasSuffix(out, "(owner later-work; listed 1, found 0): delete this entry from run-state-audit.json\n") {
+		t.Fatalf("fixed but listed: %v %q", ok, out)
+	}
+	delete(files, "run-state-audit.json")
+	if out, ok := rootAuditRatchet(ownerTree(t, files)); ok || !strings.HasPrefix(out, "run-state audit list unreadable") {
+		t.Fatalf("missing list: %v %q", ok, out)
 	}
 }
 

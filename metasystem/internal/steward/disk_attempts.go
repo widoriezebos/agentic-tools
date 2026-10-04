@@ -255,7 +255,7 @@ func readRecordJSON(path string, value any) error {
 func attemptRetention(top string, now time.Time, target int64, keep time.Duration) *proofrun.Retention {
 	installation := top
 	if layout, err := stateroot.ResolveLayout(top); err == nil {
-		installation = layout.InstallationRoot
+		installation = layout.InstallationRoot.Path()
 	}
 	ledger := checkoutLedger(top, now)
 	prober := identity.KernelProber{}
@@ -303,7 +303,7 @@ func landingLaneRootsWith(resolve func(string, time.Time) (string, bool, error),
 	}
 	roots := []string{root}
 	if layout, err := stateroot.ResolveLayout(root); err == nil {
-		roots = append(roots, layout.InstallationRoot)
+		roots = append(roots, layout.InstallationRoot.Path())
 	}
 	return roots, nil
 }
