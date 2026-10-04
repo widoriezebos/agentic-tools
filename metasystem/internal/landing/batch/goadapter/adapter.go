@@ -4,6 +4,12 @@
 package goadapter
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -29,17 +35,51 @@ func init() { adapter.Register(Name, Adapter{}) }
 // Detects recognises a Go module root, or a checkout holding one under metasystem/.
 func (Adapter) Detects(root string) bool { return unitGateModuleRoot(root) != "" }
 
-// Closure selects the changed packages and their reverse dependents; tree
+// Closure finds the module under root and selects changed packages and their
+// reverse dependents. Exact trees report unowned repository-relative paths;
 // HEAD compares base with the working tree, untracked files included.
 func (Adapter) Closure(root, base, tree string) (adapter.Closure, error) {
-	var selection UnitPackages
-	var err error
 	if tree == "HEAD" {
-		selection, err = SelectWorkingUnitPackages(root, base)
-	} else {
-		selection, err = SelectUnitPackages(root, base, tree)
+		moduleRoot := unitGateModuleRoot(root)
+		if moduleRoot == "" {
+			return adapter.Closure{}, fmt.Errorf("no Go module under %s", root)
+		}
+		selection, err := SelectWorkingUnitPackages(moduleRoot, base)
+		return closureOf(selection), err
 	}
-	return closureOf(selection), err
+	return closureWithWorkspaceSnapshot(gittree.Workspace{Dir: root}, base, tree, nil)
+}
+
+func closureWithWorkspaceSnapshot(workspace gittree.Workspace, base, tree string, openSnapshot func(string) (string, func() error, error)) (adapter.Closure, error) {
+	root := workspace.Dir
+	moduleRoot := unitGateModuleRoot(root)
+	if moduleRoot == "" {
+		return adapter.Closure{}, fmt.Errorf("no Go module under %s", root)
+	}
+	prefix, err := filepath.Rel(root, moduleRoot)
+	if err != nil {
+		return adapter.Closure{}, err
+	}
+	workspace.Dir = moduleRoot
+	if openSnapshot == nil {
+		openSnapshot = func(tree string) (string, func() error, error) {
+			detached, err := workspace.NewDetachedWorktree(tree)
+			if err != nil {
+				return "", nil, err
+			}
+			return detached.Workspace().Dir, detached.Close, nil
+		}
+	}
+	selected, err := gopackages.SelectOwnedWithWorkspaceSnapshot(workspace, base, tree, nil, os.Environ(), openSnapshot)
+	if err != nil {
+		return adapter.Closure{}, err
+	}
+	closure := adapter.Closure{Tree: selected.Tree, Module: selected.ModulePath,
+		Changed: selected.Changed, Dependents: selected.Dependents}
+	for _, path := range selected.Unowned {
+		closure.Unowned = append(closure.Unowned, filepath.ToSlash(filepath.Join(prefix, filepath.FromSlash(path))))
+	}
+	return closure, nil
 }
 
 // OwnerUnit maps test2json's package import path to the closure's relative package.
