@@ -22,17 +22,17 @@ Open read items (fix unit lane-rebased-review-r1): 2
 - ReadItem: id=gate2-preliminary-r5-1 read=gate2-preliminary-r5 state=fixed addedAt=2026-10-03T21:01:07Z changedAt=2026-10-04T07:17:00Z closingReference="88e4da1f422db6582aaeb838bbb5ec944f5944d7" text="The gate's checked chain read lists job records with filepath.Glob (internal/dispatch/critique.go:38-43), which ignores a directory read error, so an unreadable artifacts/agents/jobs folder reads as no chains and an accepted page saying 'Critique: closed' records ok instead of unchecked. An unreadable jobs folder already stops every dispatch on that checkout; harmless while the gate only warns. Unit switch should read the folder with os.ReadDir and treat any error but not-exist as unchecked before refuse can stop a build."
 - ReadItem: id=gate2-preliminary-r1-1 read=gate2-preliminary-r1 state=fixed addedAt=2026-10-03T20:14:52Z changedAt=2026-10-04T07:16:54Z closingReference="b5be8979afecc48753195b65327d0e23eb5ab190" text="Unreadable critique state reads as no open critique: dispatch.DesignCritiqueChains (internal/dispatch/design_chain.go:26-33) goes through loadCritiqueState, which skips unreadable job JSON (critique.go:29-46), so the gate's production chain adapter (cmd/metasystem/intent_design_gate.go:43-51) never reports an error and a page saying 'Critique: closed' records ok instead of unchecked. Harmless while the gate only warns; unit switch must surface the read error before refuse can stop a build."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 81
+- Revision: 82
 - Labels: headless-fleet, headless-process
-- Budget: elapsedLimit=2d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 5
-- NormApproval: approvedRef=HFFF18A8EPDDS3E37ZEPNHAF4J-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=65
-- Approved: by=human:Wido at=2026-10-04T05:41:44Z revision=66 opid=HFFF18A8EPDDS3E37ZEPNHAF4J-m1e-718ba0eb authority=proven digest=96569f3dfca3b8de9fb36313d9699fcce9b4e2cad9f5644b0407bdeeeb1a90fa episode=66
+- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 6
+- NormApproval: approvedRef=YZRHZXYY6WP37VD3WC0TSMDHZA-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=81
+- Approved: by=human:Wido at=2026-10-04T11:38:01Z revision=82 opid=YZRHZXYY6WP37VD3WC0TSMDHZA-m1e-718ba0eb authority=proven digest=494c9762ba1ea9a36b0ffaa4c9f46150625784a56949324e64663f0afdbd8388 episode=82
 - Sliced: machine=m1k lineage=steward-seat revision=50 at=2026-10-03T16:24:27Z
 - AcceptedRisk: finding=GATE2-RECORD-PATH-ESCAPE chain=code-critic-42d9da2c9a70e7f3b210039f by=Wido opid=JTWYGKTRV4Z5SSX8YHSVSRCR6G-m1e-718ba0eb
 - AcceptedRisk: finding=GATE2-UNREADABLE-JOBS-FALSE-OK chain=code-critic-42d9da2c9a70e7f3b210039f by=Wido opid=7YG39QCXQH2J4WXMY9SD1WNW7T-m1e-718ba0eb
-- Claimed: machine=m1k lineage=steward-seat at=2026-10-04T07:59:10Z revision=80 accountingRevision=66 episodeAt=2026-10-03T16:01:55Z episodeRevision=50 idleSeconds=1658
-- StopCapability: generation=80 revision=80 machine=m1k claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1k lineage=steward-seat at=2026-10-04T11:38:01Z revision=82 accountingRevision=82 episodeAt=2026-10-03T16:01:55Z episodeRevision=50 idleSeconds=1658
+- StopCapability: generation=82 revision=82 machine=m1k claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -116,4 +116,5 @@ History:
 - 2026-10-04T07:31:32Z EDEB7TNWV3D337MJN0MTVEHMF9-m1k-71c5cb39 release actor=m1k+steward-seat targets=design-gate-at-dispatch reason=handed in: tip 9453adbd0f48 waits in the landing lane; all six units reviewed and published; seat m1k moves to unit-rounds-converge-or-stop (pinned, m1e in Wido's word)
 - 2026-10-04T07:59:10Z DV1PQSAPF5EC8WK1SH7VKW4R6S-m1k-71c5cb39 claim actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-04T08:28:43Z WANW2CXGR3HKQQ7W3PEKN0ZQX3-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
-Integrity: sha256=c16cf39cb689495ceadcfad5a0edd530620969ac380636bf9b89bf91da5ecf96
+- 2026-10-04T11:38:01Z YZRHZXYY6WP37VD3WC0TSMDHZA-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T07:59:10Z
+Integrity: sha256=8472a5234d82d82a4d2c685fe61f7e644ce268ae7d1b8162298e878b154269b2
