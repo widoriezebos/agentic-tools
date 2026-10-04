@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 const RebaseConflictCode = "GOAL_REBASE_CONFLICT"
@@ -115,6 +117,12 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 	onMain, err := r.facts.Ancestor(req.Repo, req.EndpointTip, local)
 	if err != nil {
 		return result, err
+	}
+	if !onMain {
+		onMain, err = rebaseLedgerOnly(req, local, d.git)
+		if err != nil {
+			return result, err
+		}
 	}
 	if !onMain {
 		next, err := replayRebase(req, local, d)
@@ -242,6 +250,32 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		}
 	}
 	return result, nil
+}
+
+// Goal history lines advance main without changing a unit's code. The lane
+// merges these files without conflict, so only ledger changes need no replay.
+// This also lets the rebase's own history line leave a repeat with nothing to do.
+func rebaseLedgerOnly(req RebaseRequest, local string, git func(string, ...string) ([]byte, error)) (bool, error) {
+	base, err := git(req.Repo, "merge-base", req.EndpointTip, local)
+	if err != nil {
+		return false, err
+	}
+	// Compare trees so changes brought onto main by a merge are included.
+	changed, err := git(req.Repo, "diff", "--name-only", "-z", strings.TrimSpace(string(base)), req.EndpointTip)
+	if err != nil {
+		return false, err
+	}
+	prefix, err := git(req.Repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return false, err
+	}
+	installation := strings.TrimSpace(string(prefix))
+	for _, name := range strings.Split(string(changed), "\x00") {
+		if name != "" && (!strings.HasPrefix(name, installation) || !goal.IsLedgerFile(strings.TrimPrefix(name, installation))) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string, error) {
