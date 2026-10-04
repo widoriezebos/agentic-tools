@@ -12,7 +12,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 )
 
@@ -110,6 +112,13 @@ func HostBoardSource(installation string) *httpd.BoardSource {
 		return nil
 	}
 	return &httpd.BoardSource{Home: home, Seats: source.Seats, Prober: source.Prober, Stall: source.stall,
+		Stuck: func(now time.Time) ([]launch.UnitStanding, error) {
+			limits, err := steward.StuckUnitLimits(installation)
+			if err != nil {
+				return nil, err
+			}
+			return launch.UnitStandings("", launch.Store{}, limits, now)
+		},
 		Lane: func(now time.Time) plain.Status { return landingLaneStatus(LandingLaneHome, now) }}
 }
 
