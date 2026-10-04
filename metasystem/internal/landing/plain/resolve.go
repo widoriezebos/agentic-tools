@@ -193,7 +193,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			if err == nil && len(created) > 0 {
 				_, err = git(append([]string{"clean", "-f", "--"}, created...)...)
 			}
-			names, listErr := generatedFiles(git, outputs, paths)
+			names, listErr := conflict.GeneratedFiles(git, outputs, paths)
 			err = errors.Join(err, listErr)
 			if err == nil && len(names) > 0 {
 				_, err = git(append([]string{"restore", "--source=AUTO_MERGE", "--worktree", "--"}, names...)...)
@@ -217,7 +217,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			ownsBegun = true
 		}
-		if err := takeMain(git, checkout, paths); err != nil {
+		if err := conflict.TakeMain(git, checkout, paths); err != nil {
 			return abort(err)
 		}
 		logs := filepath.Join(Dir(install), "regenerations")
@@ -247,49 +247,13 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 		}
 		// A conflict absent from both HEAD and the regenerated index is already
 		// staged as a deletion; Git cannot add that now-unknown path again.
-		names, err := generatedFiles(git, outputs, nil)
-		if err != nil {
+		if err := conflict.StageGenerated(git, outputs); err != nil {
 			return abort(err)
-		}
-		if len(names) > 0 {
-			if _, err := git(append([]string{"add", "-A", "--"}, names...)...); err != nil {
-				return abort(err)
-			}
 		}
 		out.Outcome, out.Exit = "resolved", 0
 		return nil
 	})
 	return out, err
-}
-
-// Restore cannot remove an unmerged path missing from HEAD. Remove those
-// paths from the index and checkout, and restore the paths main still has.
-func takeMain(git conflict.Git, checkout string, paths []string) error {
-	listed, err := git(append([]string{"ls-tree", "-r", "--name-only", "-z", "HEAD", "--"}, paths...)...)
-	if err != nil {
-		return err
-	}
-	present := nulPaths(listed)
-	var missing []string
-	for _, name := range paths {
-		if !slices.Contains(present, name) {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		if _, err := git(append([]string{"rm", "--cached", "--ignore-unmatch", "--"}, missing...)...); err != nil {
-			return err
-		}
-		for _, name := range missing {
-			if err := os.Remove(filepath.Join(checkout, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-	}
-	if len(present) > 0 {
-		_, err = git(append([]string{"restore", "--source=HEAD", "--staged", "--worktree", "--"}, present...)...)
-	}
-	return err
 }
 
 func installationPrefix(install, checkout string) (string, error) {
@@ -305,22 +269,6 @@ func installationPrefix(install, checkout string) (string, error) {
 
 func nulPaths(list string) []string {
 	return strings.FieldsFunc(list, func(r rune) bool { return r == 0 })
-}
-
-func generatedFiles(git conflict.Git, generated func(string) bool, conflicts []string) ([]string, error) {
-	names := append([]string(nil), conflicts...)
-	for _, args := range [][]string{{"ls-files", "-z"}, {"ls-files", "--others", "--exclude-standard", "-z"}} {
-		listed, err := git(args...)
-		if err != nil {
-			return nil, err
-		}
-		for _, name := range nulPaths(listed) {
-			if generated(name) && !slices.Contains(names, name) {
-				names = append(names, name)
-			}
-		}
-	}
-	return names, nil
 }
 
 // Regeneration records are deliberately independent of results.jsonl: only

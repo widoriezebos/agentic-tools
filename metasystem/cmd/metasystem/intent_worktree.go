@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -23,6 +24,7 @@ import (
 // own owners; tests give each invocation its own claim, token and
 // transport while keeping the real commit and push owners.
 type intentConnectionOwners struct {
+	askRebase    func(string, channelAskInput) (channel.Question, []string, int, error)
 	recordRebase func(*intentInvocation, string, branch.RebaseResult) error
 	rebase       func(branch.RebaseRequest) (branch.RebaseResult, error)
 	rebaseGate   func(string) (string, error)
@@ -58,6 +60,9 @@ func goalWorktreeLockReason(goalID string) string {
 
 func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
+	if owners.askRebase == nil {
+		owners.askRebase = askChannelQuestion
+	}
 	if owners.rebase == nil {
 		owners.rebase = branch.Rebase
 	}
