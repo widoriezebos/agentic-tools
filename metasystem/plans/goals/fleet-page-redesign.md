@@ -9,7 +9,7 @@
 - Origin: main
 - Next step: Steps 1 (a5d4d6895) and 2 (235a2412a: Pause, Resume and Stop as the signed-in person) are on main. Step 3, next: a steward role's health reason shows on the Fleet page only as one plain line with the act it implies, or not at all (Wido 17:50: 'no mere mortal will know what to do with this'); test corpus: the five lines he saw (retro debt, the slow last Stop, the token line, the ledger unexamined past 30m, deep validation overdue); and Doing shows 'round 1' alone, the cap only within two of it (Wido 20:14). Desktop only. Estimate 2 h, 3 attempts: Fable design note, Opus build, Sol read, lane.
 - OpenedAt: 2026-10-03T06:25:15Z
-- Revision: 74
+- Revision: 75
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -17,6 +17,7 @@
 - Approved: by=human:Wido at=2026-10-04T00:37:57Z revision=73 opid=JW7DP49PHA53EGBA4B1EFNJKXH-m1e-718ba0eb authority=proven digest=68aab1cbdfe931ca178b38c5ce13ad4a058f245ca30bd5d68b09ad2ea9d380f0 episode=73
 - Sliced: machine=ui lineage=steward-seat revision=20 at=2026-10-03T11:43:38Z
 - AcceptedRisk: finding=synthetic-16c0b3ac9bc88ba2ff736e7473c8e75c88a8cbeb8236d216c9a7db38960859e2 chain=code-critic-0a479e2a27d9f131087a09e8 by=Wido opid=T348YM2TY02GW6FHABYRYVFJRR-ui-31a738e9
+- AcceptedRisk: finding=synthetic-e49433942369293a9e93963e7ae6b63e00ac660b761238e8cce4ba8545925a00 chain=code-critic-0a479e2a27d9f131087a09e8 by=Wido opid=68A34DWYRWWP4P9CE97QF57FCK-ui-31a738e9
 - Claimed: machine=ui lineage=steward-seat at=2026-10-04T00:37:57Z revision=73 accountingRevision=73 episodeAt=2026-10-03T07:22:05Z episodeRevision=10 idleSeconds=57
 - StopCapability: generation=73 revision=73 machine=ui claimEpoch=3 fenceEpoch=0
 
@@ -95,4 +96,5 @@ History:
 - 2026-10-03T23:31:14Z SW0M34165G49MDT0G9YKFK301N-ui-71c5cb39 claim actor=ui+steward-seat targets=fleet-page-redesign
 - 2026-10-04T00:37:57Z JW7DP49PHA53EGBA4B1EFNJKXH-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T23:31:14Z
 - 2026-10-04T01:53:26Z T348YM2TY02GW6FHABYRYVFJRR-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-page-redesign reason=Accepted by m1e in Wido word: runner artifact, round 1 finished clean but was marked process-lost on a stale goal-worktree engine (item P class); round 3 on a current engine confirmed 0 material (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-page-redesign/metasystem)
-Integrity: sha256=5079cdaf501bf43c70cf8db4f0955b35df44e91b0d37dda3dac812aff52353d9
+- 2026-10-04T01:53:33Z 68A34DWYRWWP4P9CE97QF57FCK-ui-31a738e9 accept-risk actor=human:Wido targets=fleet-page-redesign reason=Accepted by m1e in Wido word: runner artifact, round 2 finished clean but was marked process-lost on a stale goal-worktree engine (item P class); round 3 on a current engine confirmed 0 material (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-page-redesign/metasystem)
+Integrity: sha256=b93e046239adb40cf3811bd860f3fa104fc069b0f94c7c96371109c2d774dc4f
