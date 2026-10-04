@@ -148,6 +148,10 @@ var coreSettings = []Setting{
 		Meaning: "seconds a steward tick may take before the resident runner is considered stuck"},
 	{Key: "steward.stop-slow-sec", Default: "15", ProofInput: true,
 		Meaning: "a Stop using this many seconds of its sixty-second budget is unhealthy"},
+	{Key: "steward.stuck.build-min", Default: "45", Meaning: "minutes a running unit build may take before its seat reports it stuck"},
+	{Key: "steward.stuck.proof-min", Default: "30", Meaning: "minutes a running unit proof may take before its seat reports it stuck"},
+	{Key: "steward.stuck.read-min", Default: "35", Meaning: "minutes a running unit read may take before its seat reports it stuck"},
+	{Key: "steward.stuck.rounds", Default: "3", Meaning: "rounds a running unit may reach before its seat reports it stuck"},
 	// The lane steward's behaviour patterns (design
 	// steward-acts-on-behaviour-patterns, D4). Not proof inputs: they only
 	// decide what the steward reports.
