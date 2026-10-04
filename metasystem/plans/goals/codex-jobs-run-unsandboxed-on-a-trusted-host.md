@@ -1,6 +1,6 @@
 # codex-jobs-run-unsandboxed-on-a-trusted-host
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="A sandbox mode flag on a launch path every seat uses (exposure 3); the mode exists in Codex and is a one-value change (novelty 1); a wrong value leaves builds blind as today or lifts the sandbox on this trusted host, which Wido accepted on 2026-10-04 until the fleet runs in a VM (severity 2); nothing accumulates (1)."
@@ -9,15 +9,18 @@
 - Origin: main
 - Next step: One unit. A per-host setting launch.codex.sandbox (values workspace-write, the default, and danger-full-access) read by the adapter mapping (internal/adapter/codex.go CodexPermissionSettings and BuildCodexCommand, both the fresh-thread and the resume form) and by the unit launcher (internal/launch/codex.go, which hardcodes -s workspace-write); when it says danger-full-access the sandbox flag is danger-full-access for every Codex launch on this host whatever the job's envelope says, and network_access is not passed. Tests: the mapping for both values, the launcher's argv for both values, the resume form, and that the setting is read from the seat's local settings. Docs: the settings reference names the key and Wido's 2026-10-04 risk acceptance (until the fleet runs in a VM). Measured cause: 9 of the 27 review rounds analysed for 2026-10-03/04 were proof-red rounds because the Codex builder could not run the tests inside its sandbox.
 - OpenedAt: 2026-10-04T07:27:31Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-04T07:28:22Z revision=2 opid=8QQHYQKZEJC8BRWPQ4R8JZNVS1-m1e-718ba0eb authority=proven digest=664bd03b458504827d4fb522fc8f187bbc0f2b8fc38d4f67b2cff431edbbf707 episode=2
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-04T07:32:41Z revision=5 accountingRevision=5 episodeAt=2026-10-04T07:32:41Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-04T07:27:31Z J6KK8P5ZHNKZ51JV7EH1CKD0C1-m1e-718ba0eb open actor=human:Wido targets=codex-jobs-run-unsandboxed-on-a-trusted-host
 - 2026-10-04T07:28:22Z 8QQHYQKZEJC8BRWPQ4R8JZNVS1-m1e-718ba0eb approve actor=human:Wido targets=codex-jobs-run-unsandboxed-on-a-trusted-host
 - 2026-10-04T07:28:34Z Q60D5NPFGJA40TSFMA742XH2DZ-m1e-718ba0eb set-pin actor=human:Wido targets=codex-jobs-run-unsandboxed-on-a-trusted-host
 - 2026-10-04T07:28:43Z 0VD0ENC1TY80E9ED5VBA3HMJE2-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,codex-jobs-run-unsandboxed-on-a-trusted-host,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order subject=codex-jobs-run-unsandboxed-on-a-trusted-host from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=7c820828b7d7b89c01c5da1a9cb5289f464fd92c4e552fc3e566d512c59a97ff
+- 2026-10-04T07:32:41Z Y62SFE6XSF2HTX876ARSQHFAW3-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=codex-jobs-run-unsandboxed-on-a-trusted-host
+Integrity: sha256=c874908ee80cd452bc0ab0d73d3c20c4ff3ac422cbe2d4ba466954830dbce046
