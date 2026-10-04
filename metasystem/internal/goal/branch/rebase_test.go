@@ -12,6 +12,8 @@ type rebaseFixture struct {
 	d                                              rebaseDependencies
 	tip, remote, origin                            string
 	onMain, dirty, empty                           bool
+	prefix                                         string
+	mainPaths                                      []string
 	replayErr, carryErr, pushErr                   error
 	conflict                                       string
 	units, old                                     []Commit
@@ -24,7 +26,8 @@ type rebaseFixture struct {
 
 func newRebaseFixture(t *testing.T) *rebaseFixture {
 	t.Helper()
-	f := &rebaseFixture{tip: policyFirst, remote: policyFirst, reads: map[string]string{}}
+	f := &rebaseFixture{tip: policyFirst, remote: policyFirst, reads: map[string]string{},
+		prefix: "metasystem/", mainPaths: []string{"metasystem/code.go"}}
 	f.req = RebaseRequest{Repo: t.TempDir(), GoalID: "goal-a", Remote: "origin", EndpointTip: pushPolicyBase,
 		CheckClaim: func() error {
 			f.claims++
@@ -101,6 +104,12 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 		},
 		git: func(_ string, args ...string) ([]byte, error) {
 			switch strings.Join(args, " ") {
+			case "merge-base " + pushPolicyBase + " " + f.tip:
+				return []byte(policyMoved + "\n"), nil
+			case "diff --name-only -z " + policyMoved + " " + pushPolicyBase:
+				return []byte(strings.Join(f.mainPaths, "\x00") + "\x00"), nil
+			case "rev-parse --show-prefix":
+				return []byte(f.prefix + "\n"), nil
 			case "rebase --reapply-cherry-picks --empty=keep --no-autosquash " + pushPolicyBase:
 				return nil, f.replayErr
 			case "diff --name-only --diff-filter=U":
@@ -184,6 +193,66 @@ func (f *rebaseFixture) reviewedUnit() {
 
 func TestRebasePolicy(t *testing.T) {
 	t.Parallel()
+	for _, test := range []struct {
+		name, prefix, state string
+		paths               []string
+	}{
+		{"live ledger", "metasystem/", "held", []string{"metasystem/plans/goals/goal-a.md"}},
+		{"recorded ledger", "metasystem/", "held", []string{"metasystem/records/goals/goal-a.md"}},
+		{"mixed change", "metasystem/", "rebased", []string{"metasystem/plans/goals/goal-a.md", "metasystem/code.go"}},
+		{"outside installation", "metasystem/", "rebased", []string{"plans/goals/goal-a.md"}},
+		{"root installation", "", "held", []string{"plans/goals/goal-a.md", "records/goals/goal-b.md"}},
+		{"no net change", "metasystem/", "held", nil},
+		{"path with newline", "metasystem/", "held", []string{"metasystem/records/goals/a\nb.md"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newRebaseFixture(t)
+			f.prefix, f.mainPaths = test.prefix, test.paths
+			got, err := rebaseWith(f.req, f.d)
+			if err != nil || got.State != test.state {
+				t.Fatalf("main changes %q: %+v %v", test.paths, got, err)
+			}
+			if test.state == "held" && (got.NewTip != policyFirst || len(f.events) != 0 || f.carries+f.gates+f.pushes+f.closed != 0) {
+				t.Fatalf("ledger-only main wrote something: %+v %+v", got, f)
+			}
+		})
+	}
+	t.Run("ledger-only main still publishes an unpublished branch", func(t *testing.T) {
+		f := newRebaseFixture(t)
+		f.mainPaths = []string{"metasystem/plans/goals/goal-a.md"}
+		f.remote = ""
+		got, err := rebaseWith(f.req, f.d)
+		if err != nil || got.State != "pushed" || got.NewTip != policyFirst || f.pushes != 1 || len(f.events) != 0 || f.closed != 0 {
+			t.Fatalf("publication: %+v %v %+v", got, err, f)
+		}
+	})
+	t.Run("ledger-only main still carries missing reviews", func(t *testing.T) {
+		f := newRebaseFixture(t)
+		f.mainPaths = []string{"metasystem/plans/goals/goal-a.md"}
+		f.reviewedUnit()
+		f.tip, f.origin, f.kept = policySecond, f.remote, []string{policyFirst}
+		got, err := rebaseWith(f.req, f.d)
+		if err != nil || !reflect.DeepEqual(got.Carried, []string{"u1"}) || f.carries != 1 || f.gates != 1 || f.pushes != 1 || len(f.events) != 0 || f.closed != 0 {
+			t.Fatalf("carry: %+v %v %+v", got, err, f)
+		}
+	})
+	for _, command := range []string{"merge-base", "diff", "rev-parse"} {
+		t.Run("main change read fails at "+command, func(t *testing.T) {
+			f := newRebaseFixture(t)
+			git := f.d.git
+			failure := errors.New("main changes unavailable")
+			f.d.git = func(repo string, args ...string) ([]byte, error) {
+				if args[0] == command {
+					return nil, failure
+				}
+				return git(repo, args...)
+			}
+			_, err := rebaseWith(f.req, f.d)
+			if !errors.Is(err, failure) || len(f.events) != 0 || f.carries+f.gates+f.pushes+f.closed != 0 {
+				t.Fatalf("read failure: %v %+v", err, f)
+			}
+		})
+	}
 	t.Run("hold_writes_nothing", func(t *testing.T) {
 		f := newRebaseFixture(t)
 		f.onMain = true
