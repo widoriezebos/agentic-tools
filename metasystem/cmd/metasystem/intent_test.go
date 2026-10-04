@@ -60,6 +60,11 @@ func (b *intentBed) owners() intentOwners {
 	dependencies := b.dependencies()
 	dependencies.ownerLineage = func() string { return b.lineage }
 	return intentOwners{
+		ownEngine: ownEngineOwners{
+			executable: func() (string, error) { return filepath.Join(b.root(), "bin", "metasystem"), nil },
+			serving:    func(root string) (string, string) { return root, "" },
+			lookupEnv:  func(string) (string, bool) { return "", false },
+		},
 		resolver:     stateroot.NewResolver(fakeTop(b.root()), noExecutable),
 		prove:        fixedFixtureGoalAuthority,
 		commandNow:   b.commandNow,

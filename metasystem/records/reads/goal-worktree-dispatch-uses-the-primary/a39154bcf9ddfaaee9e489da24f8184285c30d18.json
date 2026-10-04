@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "goal-worktree-dispatch-uses-the-primary",
+  "unit": "u1b2",
+  "subject": {
+    "commit": "a39154bcf9ddfaaee9e489da24f8184285c30d18",
+    "parent": "5c1c0116460239df90a94cd8408ffd2e940de351",
+    "tree": "78e5db7e50687fe5045393b3dd60f0bbdbd33709",
+    "patchDigest": "b0f0e685edd1bf90f4bbd040c09149271399b8100f81d218d49a70dc8dc9798b",
+    "unitDigest": "d3324279a0230af1e7fd9859de863efc01f73dbbdfa3502890534baff7c81f49"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-170d7dc8ae34f0f7aba0b680",
+    "round": 1,
+    "closureSha256": "aff25224906cb9530f4150742a3aa517f6f3ff4ed8ef0c37bef1643ac90bb180"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "78e5db7e50687fe5045393b3dd60f0bbdbd33709",
+    "runId": "goal-read-gate-20261004t164641z-e983ebb2afaaa43d"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_test.go",
+      "readerWord": "reviewed by critic root code-critic-170d7dc8ae34f0f7aba0b680"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/wait_verb_test.go",
+      "readerWord": "reviewed by critic root code-critic-170d7dc8ae34f0f7aba0b680"
+    }
+  ],
+  "sha256": "c01a97c61e0c8d88eff7fb2333103f87f0ba7745e83199e07e40b6f1e9cd9f32"
+}
