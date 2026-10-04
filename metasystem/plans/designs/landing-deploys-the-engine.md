@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3Z76QRHDCBSE48GQY6G0MSS
-- Status: accepted
+- Status: done (step 1; steps 2 and 3 deferred)
 - Goals: landing-deploys-the-engine
 
 Revision 5: accepted by Wido on 2026-10-03, 15:20 CEST (ruling R-144-m1h, in `memory/rulings.md`): his decisions are under "Decisions Wido made" below, decision 3 now makes the central engine a per-project choice declared at adoption, and the obligation on the neighbouring one-folder design is recorded. Revision 4 recorded the rules the step-1 build settled with its reader (unit `chain`, nine preliminary reads): a person's rollback or resume does not overlap a run, every run and act ends with one record line, `version`'s `none` is recorded, and each operation runs its own commit's adapter; they are marked "(revision 4)" below. Revision 3 folded critique rounds 1 and 2 (Codex on Astra: 8 then 4 material findings, all accepted; round 2's fold removes the request file whose patches caused three of its four findings; the adjudication is at the end of this page). Facts were read at `b31a1e8e9` on 2026-10-02. Paths are relative to the installation, `metasystem/` in this repository. Nothing here is built yet.
