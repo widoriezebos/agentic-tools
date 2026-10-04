@@ -4,6 +4,7 @@
 - Id: 01M42VWZ7JQMPT8QRAV68B5AHA
 - Status: accepted
 - Goals: goal-worktree-dispatch-uses-the-primary
+- Critique: closed at round 4 on 0 material findings (Codex Astra, design-critic-27f014429cd290f06ce7fc74)
 
 **Scope.** This page covers six of the goal record's seven faces (the engine, the runtime registry, the settings, the engine skew check, the frozen brief at review, the handoff continuation) and the unit the record added on 2026-10-04, the seat-start prompt. The seventh face, the Codex sandbox denials, belongs to goal `codex-jobs-run-unsandboxed-on-a-trusted-host`.
 
