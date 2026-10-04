@@ -16,11 +16,14 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 	t.Parallel()
 	const stamp = "abc1234"
 	const head = "0123456789abcdef0123456789abcdef01234567"
-	logKey := func(s string) string { return "*|log --format=commit %H --name-only --ancestry-path " + s + "..HEAD" }
+	logKey := func(s string) string {
+		return "*|log --format=commit %H --name-only --ancestry-path " + s + ".." + head
+	}
 
 	t.Run("unknown stamp is silent", func(t *testing.T) {
 		t.Parallel()
 		b := newBed(t)
+		b.doubles.Git.Responses["*|merge-base HEAD refs/heads/main"] = fake.GitResponse{Stdout: head + "\n"}
 		b.doubles.Git.Responses[logKey("fixture-unknown-stamp")] = fake.GitResponse{Code: 128, Stderr: "fatal: bad revision"}
 		result := b.run("__engine-skew-preflight", "fixture-unknown-stamp")
 		requireExit(t, result, 0, b.stderr.String())
@@ -32,6 +35,7 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 	t.Run("agent script change refuses", func(t *testing.T) {
 		t.Parallel()
 		b := newBed(t)
+		b.doubles.Git.Responses["*|merge-base HEAD refs/heads/main"] = fake.GitResponse{Stdout: head + "\n"}
 		b.doubles.Git.Responses[logKey(stamp)] = fake.GitResponse{Stdout: "commit " + head + "\n\ninternal/protocol/roles/implementer.md\n"}
 		result := b.run("__engine-skew-preflight", stamp)
 		requireExit(t, result, 1, b.stderr.String())
@@ -48,6 +52,7 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 	t.Run("unrelated change is admitted", func(t *testing.T) {
 		t.Parallel()
 		b := newBed(t)
+		b.doubles.Git.Responses["*|merge-base HEAD refs/heads/main"] = fake.GitResponse{Stdout: head + "\n"}
 		b.doubles.Git.Responses[logKey(stamp)] = fake.GitResponse{Stdout: "commit " + head + "\n\nREADME.md\ndocs/guide.md\n"}
 		requireExit(t, b.run("__engine-skew-preflight", stamp), 0, b.stderr.String())
 	})
