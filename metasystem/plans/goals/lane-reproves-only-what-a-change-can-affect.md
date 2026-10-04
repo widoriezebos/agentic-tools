@@ -1,6 +1,6 @@
 # lane-reproves-only-what-a-change-can-affect
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 4
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Decides what the lane proves before every push to main; a wrong selection lets an unproved change land, an over-broad one stalls landing"
@@ -15,13 +15,14 @@ Open read items (fix unit code-critic-278456279a4c71e7ba3cdefe): 2
 - ReadItem: id=code-critic-278456279a4c71e7ba3cdefe-1 read=code-critic-278456279a4c71e7ba3cdefe state=open addedAt=2026-10-04T19:00:41Z changedAt=- closingReference="" text="N-1 (unit 2): metasystem test groups prints no diagnostic text for a Go package that fails outside any single test (TestMain exit, init panic, go test timeout); the group is red with its exit status or stall named, but a timeout's goroutine dump does not reach the proof log."
 - ReadItem: id=code-critic-278456279a4c71e7ba3cdefe-2 read=code-critic-278456279a4c71e7ba3cdefe state=open addedAt=2026-10-04T19:00:41Z changedAt=- closingReference="" text="N-2 (unit 2): metasystem test groups prints the landing environment line before validating ids, so a refused selection still leaves that line on stdout (exit non-zero, no group lines)."
 - OpenedAt: 2026-10-03T08:54:48Z
-- Revision: 58
+- Revision: 59
 - Pinned: m1f
 - Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-10-04T15:37:28Z revision=55 opid=CGWKBFEVQK93VSW2XSMEZPSJVN-m1e-718ba0eb authority=proven digest=83bf39bf6e1e576d377738e845549ba1748393a997e30d71532ca6e1cb729b71 episode=55
 - Sliced: machine=m1f lineage=steward-seat revision=51 at=2026-10-04T12:10:22Z
-- Episode: machine=m1f lineage=main-1790454088-93948-21671b accountingRevision=57 episodeAt=2026-10-04T20:54:08Z episodeRevision=57 idleSeconds=0 released=2026-10-04T21:09:54Z
+- Claimed: machine=m1f lineage=steward-seat at=2026-10-04T21:10:52Z revision=59 accountingRevision=59 episodeAt=2026-10-04T21:10:52Z episodeRevision=59
+- StopCapability: generation=59 revision=59 machine=m1f claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T08:54:48Z 74YXV0DW10Q79JHYTRMM2DV8M3-m1e-718ba0eb open actor=human:Wido targets=lane-reproves-only-what-a-change-can-affect
@@ -82,4 +83,5 @@ History:
 - 2026-10-04T19:00:41Z KVBM907F0994CBZG8MV7F0CN1K-m1f-71c5cb39 read-items-add actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect
 - 2026-10-04T20:54:08Z 9T0A4Z7A10J96X96G2XZ9Y6Y4Z-m1f-f456f182 steal actor=human:wido targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T15:37:28Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the m1f checkout
 - 2026-10-04T21:09:54Z NA0AJPD11N9EQYW8Z815XVTQ1H-m1f-f456f182 release actor=m1f+main-1790454088-93948-21671b targets=lane-reproves-only-what-a-change-can-affect reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
-Integrity: sha256=adc40fb5b7e65c8b0787f06f1140bf2f86d2427d8b38551113996917089bcfa4
+- 2026-10-04T21:10:52Z A8J9T0DYJ0T6B5CBH02RXQWHYW-m1f-71c5cb39 claim actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect
+Integrity: sha256=3fcfb2031d48274fc13091dcd6dd5ac7ef2569dd553840e844acfa7cc63d889e
