@@ -7,8 +7,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +24,58 @@ import (
 )
 
 var seatBedNow = time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+
+func TestStewardProviderProbe(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		runtime, model, result string
+		answered               bool
+	}{
+		{"claude", "seat-model", `{"type":"result","is_error":true,"result":"You've hit your session limit · resets 10:10am (Europe/Amsterdam)"}`, false},
+		{"claude", "seat-model", `{"type":"result","is_error":false,"result":"ok"}`, true},
+		{"claude", "seat-model", `{"type":"result"}`, false},
+		{"claude", "seat-model", `{"type":"system","is_error":false}`, false},
+		{"codex", "seat-model", "", false},
+		{"claude", "", `{"type":"result","is_error":false,"result":"ok"}`, false},
+	} {
+		t.Run(test.runtime+test.model+test.result, func(t *testing.T) {
+			t.Parallel()
+			root, calls := t.TempDir(), 0
+			answered, err := stewardProviderProbe(root, func(top string) (launch.Settings, error) {
+				if top != root {
+					t.Fatalf("settings root=%q", top)
+				}
+				return launch.Settings{SeatRuntime: test.runtime, SeatModel: test.model}, nil
+			}, func(cmd *exec.Cmd) ([]byte, error) {
+				calls++
+				input, err := io.ReadAll(cmd.Stdin)
+				if err != nil || cmd.Dir != os.TempDir() || cmd.Dir == root || string(input) != "Reply with the single word ok." || !reflect.DeepEqual(cmd.Args, []string{"claude", "-p", "--model", "seat-model", "--output-format", "json"}) {
+					t.Fatalf("unexpected provider command: %v, %q, %q, %v", cmd.Args, cmd.Dir, input, err)
+				}
+				kinds := 0
+				for _, entry := range cmd.Env {
+					if strings.HasPrefix(entry, launch.KindEnv+"=") {
+						kinds++
+						if entry != launch.KindEnv+"=probe" {
+							t.Fatalf("unexpected provider launch kind: %q", entry)
+						}
+					}
+				}
+				if kinds != 1 {
+					t.Fatalf("provider launch kind appears %d times", kinds)
+				}
+				return []byte(test.result), nil
+			})
+			wantCalls := 0
+			if test.runtime == "claude" && test.model != "" {
+				wantCalls = 1
+			}
+			if err != nil || answered != test.answered || calls != wantCalls {
+				t.Fatalf("answered=%v, calls=%d, error=%v", answered, calls, err)
+			}
+		})
+	}
+}
 
 // seatPlan is the seat ladder's selection over the bed's accepted ledger, as
 // the steward's tick reads it, with the holder steps the gate names.
