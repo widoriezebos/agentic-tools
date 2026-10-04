@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "goal": "records-land-through-the-lane",
+  "unit": "records-hand-in",
+  "subject": {
+    "commit": "183c95b3d6b218daf984df0640fec95c1fb4e6f8",
+    "parent": "a043f6f666223ee2c3efaa6cd9087a609fee7d5a",
+    "tree": "a56a8508e8139e845fe0af95d5b5bc3bd9c3db12",
+    "patchDigest": "adeb2f7dfbe47184c2dc322f39c8ed2d696e3b4215cd62b923987b449ec4fafd",
+    "unitDigest": "dfc25b916fae541a5941665c6b29ac9c69ec60de5ddd470995bc9d6a3a735cdd"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-20655a33a6f19d0c7f69c54c",
+    "round": 1,
+    "closureSha256": "7214ad92c8e8e267e17f0b9fb017b7d4736200384aae083f2d061a3600154cab"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a56a8508e8139e845fe0af95d5b5bc3bd9c3db12",
+    "runId": "goal-read-gate-20261004t232938z-88a0ee96470f5755"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "008f24b97464a63a817ac255b4520cee4c9dec59",
+    "fromTree": "e4653336c9ddefc07b782daeaa9e80c64290b6db",
+    "toCommit": "183c95b3d6b218daf984df0640fec95c1fb4e6f8",
+    "toTree": "a56a8508e8139e845fe0af95d5b5bc3bd9c3db12"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/person_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-20655a33a6f19d0c7f69c54c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help-work-land.txt",
+      "readerWord": "reviewed by critic root code-critic-20655a33a6f19d0c7f69c54c"
+    }
+  ],
+  "sha256": "16e465263845fe7880f0df07fefd95f84f8b920d214997f225fe87939bd138af"
+}
