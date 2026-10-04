@@ -5,7 +5,7 @@
 - Status: accepted
 - Goals: unit-rounds-converge-or-stop
 
-Revision 3, 2026-10-04. Author: Fable (claude-fable-5-1) for seat m1k; revised by seat m1k (Claude Opus 5.5) after Astra round 1, Wido's answer to question 1 and his widening of 16:30 (D11 to D13, relayed by m1e). No round-1 finding was critical: no second round. Cites at main `57b0966ca`, paths under `metasystem/`.
+Revision 4, 2026-10-04. Author: Fable (claude-fable-5-1) for seat m1k; revised by seat m1k (Claude Opus 5.5) after Astra round 1, Wido's answer to question 1 and his widening of 16:30 (D11 to D13, relayed by m1e). No round-1 finding was critical: no second round. Revision 4 (seat, at the first unit brief) changes D11's record from a code-critic chain to a `unit-read` source. Cites at main `57b0966ca`, paths under `metasystem/`.
 
 Accepted 2026-10-04 in Wido's word after one Astra round (m1e, message d-decc63664c1b1c0df043c1c317): build D11 first, then D12, D13, the cap, the stop and the warm read; units of at most 400 lines, one committed Opus read each.
 
@@ -43,7 +43,7 @@ Expected effect, to measure: partner-acts 18 rounds to about 4, lane-resolve 9 t
 
 **Hand-in (D10).** `handIn` (`cmd/metasystem/landing_plain.go:69-72`) fills `plain.Line.Units` from `NamedWork` (`unit_named.go:476`): counted rounds, machinery rounds by cause, proof kind, whether the read was promoted.
 
-**One read per version (D11, D12).** A plan has a per-round read only when the build brief says `Read each round: yes` (parsed like `intent_work.go:59`); without it a green round ends unread. A counted per-round read saying `VERDICT: land` with no material finding, on another model than the build's, is promoted: after `work review` commits, the branch read owner, where it would dispatch (`read.go:649-653`), records a closed code-critic chain whose round 1 is that read (the commit subject, a LAND return with the commit's tree, the launch's model, an empty register), as `attest.go:440-444` validates. No critic starts.
+**One read per version (D11, D12).** A plan has a per-round read only when the build brief says `Read each round: yes` (parsed like `intent_work.go:59`); without it a green round ends unread. A counted per-round read saying `VERDICT: land`, on another model than the build's, of a diff whose base is the commit's parent, is promoted: after `work review` commits, the branch read owner runs its quick check and, where it would dispatch (`read.go:649-653`), records the attestation with a third source kind, `unit-read` (`attest.go:37-44`): a bundle of the read's launch record, its report verbatim, both models and the tree it read, validated against the commit's subject. `BindLandedUnit` binds its transition as a critic's (`attest.go:569-575`) and the lane admits it (`internal/landing/attested.go:47`). No critic starts. A synthesized critic chain was rejected: the reader never received the critic's prompt or its read-only permissions.
 
 **One design round (D13).** A design chain's frozen cap (`internal/dispatch/build.go:607-617`) becomes 1, raised to 2 by deciding round 1 only when a finding is `critical`, which the design-critique brief defines as "cannot be built as written". Otherwise the decisions close it, kept as the round's file and the page's Dispositions section (`intent_design_dispositions.go:198-223`), and a second round is refused `DESIGN_ROUND_ONE`: "round 1 of D found no critical finding; its findings are folded and recorded; no second round was started". An accepted material finding closes as folded, not `cap-exhausted-human-raise` (`finding_register.go:857-865`), unless `severe` (`:842-845`).
 
@@ -62,7 +62,7 @@ Expected effect, to measure: partner-acts 18 rounds to about 4, lane-resolve 9 t
 |---|---|---|---|
 | choosing the round's test commands | the seat's `--check` argv | the testing adapter's steps, then `--check` | `metasystem/cmd/metasystem/intent_work.go:673`, `metasystem/internal/testpolicy/adapter/adapter.go:68` |
 | deciding whether a round is read | every plan | the build brief's line | `metasystem/internal/launch/unit_plan.go:113` |
-| writing a unit's code-critic chain | the dispatched critic | the branch read owner, for a promoted read | `metasystem/internal/goal/branch/read.go:649` |
+| certifying a unit's read for landing | a closed code-critic chain | also a promoted unit read | `metasystem/internal/goal/branch/attest.go:440` |
 | starting a design's round 2 | any decided round 1 | a critical round-1 finding | `metasystem/cmd/metasystem/intent_design_review.go:225` |
 
 ## 5. Deferred
@@ -76,8 +76,8 @@ Expected effect, to measure: partner-acts 18 rounds to about 4, lane-resolve 9 t
 1. Answered (b), 2026-10-04: the relation labels. The alternative stays (a), the literal "findings in the last fold's lines", a cap of two.
 2. Does a split inherit its predecessor's counted rounds? Recommended: no; the hand-in shows the chain.
 3. D7 explains 1 of 27 measured rounds. Recommended: build it last.
-4. Under D12 a re-read after a revise is warm and D11 promotes warm reads, dropping the binding's "one cold read at the end"; the guard is the cited fold. Recommended: yes. Alternative: a cold critic when the last read was warm, one more read per revised unit.
-5. Is BREAKING the severity `critical`? Recommended: yes. Alternative: also rigor `severe`.
+4. Answered yes, 2026-10-04 (m1e, d-1f81a65a04cc29b2bb625605f0): a promoted clean warm read is the unit's one read; no cold read at the end; the guard is a model other than the build's and folds verified with cited lines.
+5. Answered yes, 2026-10-04: BREAKING is the severity `critical`.
 
 ## 7. Units
 
@@ -85,7 +85,8 @@ Every test stubs Git. U: `newUnitFixture` (`internal/launch/unit_test.go:128`). 
 
 |Unit|Decisions|Red without it|Lines production/test|
 |---|---|---|---|
-|`promote`|D11|`TestCleanReadIsPromoted`, `TestReadOnTheBuildModelIsNotPromoted`, `TestPromotedReadAttestationValidates`; `internal/goal/branch/read_test.go`; D|180/220|
+|`read-source`|D11|`TestUnitReadAttestationValidates`, `TestUnitReadOfAnotherTreeIsInvalid`, `TestLaneAdmitsAUnitRead`; `internal/goal/branch/attest_test.go`, `internal/landing/attested_test.go`|160/200|
+|`promote`|D11|`TestCleanReadIsPromoted`, `TestReadOnTheBuildModelIsNotPromoted`; `cmd/metasystem/intent_unit_review_test.go`; D|120/160|
 |`optional-read`|D12|`TestRoundWithoutReadEndsGreen`, `TestBriefLineAsksForTheRead`; U, W|60/90|
 |`design`|D13|`TestSecondDesignRoundRefusedWithoutCritical`, `TestOneRoundCloseFoldsAccepted`; `intent_design_review_test.go`; D|110/170|
 |`cause`|D2|`TestLaunchNamesItsEnvironmentCause`; `internal/launch/cause_test.go`; a fake adapter|90/140|
@@ -98,4 +99,4 @@ Every test stubs Git. U: `newUnitFixture` (`internal/launch/unit_test.go:128`). 
 
 ## 8. Folds
 
-Astra round 1: PROOF-CANDIDATE-CONTRACT fixed (working-tree closure); RULING answered (b); SPLIT-PREDECESSOR-CLOSURE fixed (two split cases); WARM-READ-DECISION-SOURCE fixed (the decisions section); CAUSE-DEPENDENT-REGRESSION fixed (red counts); MOVED-EFFECTS-NO-ROWS fixed (section 4). Widening: D11 to D13. Acceptance: units re-cut to at most 400 lines in m1e's order.
+Astra round 1: PROOF-CANDIDATE-CONTRACT fixed (working-tree closure); RULING answered (b); SPLIT-PREDECESSOR-CLOSURE fixed (two split cases); WARM-READ-DECISION-SOURCE fixed (the decisions section); CAUSE-DEPENDENT-REGRESSION fixed (red counts); MOVED-EFFECTS-NO-ROWS fixed (section 4). Widening: D11 to D13. Acceptance: units re-cut to at most 400 lines in m1e's order. Revision 4: D11's record.
