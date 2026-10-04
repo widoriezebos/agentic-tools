@@ -55,7 +55,37 @@ type Result struct {
 	// how the proving command ended ("the proving command exited 1") or why it
 	// could not run; for an inherited green, the tree it inherits from. An
 	// ordinary green has none.
-	Reason string `json:"reason,omitempty"`
+	Reason string       `json:"reason,omitempty"`
+	Failed []FailedUnit `json:"failed,omitempty"`
+	Load   float64      `json:"load,omitempty"`
+	Repeat string       `json:"repeat,omitempty"`
+}
+
+// FailedUnit names the tests that failed and the surfaces the judge read.
+type FailedUnit struct {
+	Unit     string   `json:"unit"`
+	Tests    []string `json:"tests"`
+	Surfaces []string `json:"surfaces"`
+}
+
+// UnitJudgement says whether the batch affects a unit and all its failures are registered.
+type UnitJudgement struct {
+	Affected, Known bool
+	Surfaces        []string
+}
+
+// FlakeRecord carries both checks of a unit to its register and fix goal.
+type FlakeRecord struct {
+	FailedUnit
+	Commit, Tree, Attempt, Log       string
+	Load                             float64
+	Repeat, RepeatAttempt, RepeatLog string
+}
+
+// FlakeRecorded is the confirmed record's fix goal and sighting count.
+type FlakeRecorded struct {
+	Goal string
+	Seen int
 }
 
 // ProveSeams are a proof's effects.
@@ -71,6 +101,10 @@ type ProveSeams struct {
 	NewID func() string
 	// Git runs git in a directory for a proof run (Run); nil is Git.
 	Git func(dir string, args ...string) (string, error)
+	// Judge reads the batch's effect and registered failures; nil cannot tell.
+	Judge func(checkout, commit string, failed []FailedUnit) (map[string]UnitJudgement, error)
+	// RecordFlake confirms a sighting and its fix goal; nil cannot record.
+	RecordFlake func(FlakeRecord) (FlakeRecorded, error)
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -128,6 +162,54 @@ func (b *Busy) Error() string {
 	return fmt.Sprintf("tree %s is being proven (attempt %s, since %s), so nothing else was started", Short(b.Running.Tree), b.Running.Attempt, b.Running.Since)
 }
 
+// NoRepeat refuses another check of a tree whose allowance has been spent.
+type NoRepeat struct{}
+
+func (*NoRepeat) Error() string {
+	return "this code failed its check and gets no other; give the goal that broke it back"
+}
+
+// checkState clears completed records and records dead checks under the lane lock.
+// The attempt running in this process must not be marked dead.
+func checkState(install, attempt string, seams ProveSeams) (Running, bool, bool, error) {
+	running, recorded, alive, err := ReadRunning(install, seams)
+	if err != nil || !recorded || alive {
+		return running, recorded, alive, err
+	}
+	results, err := Results(install)
+	if err != nil {
+		return running, recorded, alive, err
+	}
+	exists := false
+	for _, result := range results {
+		if running.Attempt != "" && result.Attempt == running.Attempt {
+			return Running{}, false, false, os.Remove(runningPath(install))
+		}
+		exists = exists || result.Tree == running.Tree
+	}
+	if attempt != "" && running.Attempt == attempt {
+		return running, recorded, alive, nil
+	}
+	red := Result{Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
+		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended"}
+	if !exists {
+		red.Repeat = "allowed"
+	}
+	if err := appendLine(resultsPath(install), red); err != nil {
+		return running, recorded, alive, err
+	}
+	return Running{}, false, false, os.Remove(runningPath(install))
+}
+
+// checkBound reads the newest line under the lane lock before any check starts.
+func checkBound(install, tree string) (Result, bool, error) {
+	result, found, err := ResultFor(install, tree)
+	if err == nil && found && result.Result != Green && result.Repeat != "allowed" {
+		err = &NoRepeat{}
+	}
+	return result, found, err
+}
+
 // ReadRunning is the proof recorded running and whether its process runs;
 // false when none is recorded.
 func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) {
@@ -168,16 +250,24 @@ func head(git func(string, ...string) (string, error), checkout string) (commit,
 // command and records the result. A repeat while the same tree's proof runs
 // starts nothing (already true); another tree's running proof is *Busy.
 func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
-	commit, tree, err := Head(checkout)
+	commit, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return Running{}, false, err
 	}
 	var started Running
 	already := false
 	err = withLock(install, func() error {
-		running, recorded, alive, err := ReadRunning(install, seams)
+		running, recorded, alive, err := checkState(install, "", seams)
 		if err != nil {
 			return err
+		}
+		result, found, err := checkBound(install, tree)
+		if err != nil {
+			return err
+		}
+		if found && result.Result == Green {
+			started, already = Running{Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
+			return nil
 		}
 		if recorded && alive {
 			if running.Tree == tree {
@@ -214,27 +304,30 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 // result is red, or a running proof, settles nothing: Start reports or
 // starts the proof.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
-	commit, tree, err := Head(checkout)
+	commit, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return Result{}, false, err
 	}
 	var settled Result
 	found := false
 	err = withLock(install, func() error {
-		_, recorded, alive, err := ReadRunning(install, seams)
-		if err != nil || recorded && alive {
+		_, recorded, alive, err := checkState(install, "", seams)
+		if err != nil {
 			return err
 		}
-		if result, ok, err := ResultFor(install, tree); err != nil || ok {
+		if result, ok, err := checkBound(install, tree); err != nil || ok {
 			settled, found = result, ok && result.Result == Green
 			return err
+		}
+		if recorded && alive {
+			return nil
 		}
 		from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, tree)
 		if !ok {
 			return nil
 		}
 		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
-			Reason: "inherits green from tree " + Short(from) + ": only goal ledger files changed since"}
+			Reason: inheritedReason(from)}
 		found = true
 		return appendLine(resultsPath(install), settled)
 	})
@@ -264,17 +357,36 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return Result{}, err
 	}
 	running := Running{Attempt: attempt, Tree: tree, Commit: commit}
+	var previous, result Result
+	already := false
 	err = withLock(install, func() error {
-		current, recorded, alive, err := ReadRunning(install, seams)
+		current, recorded, alive, err := checkState(install, attempt, seams)
 		if err != nil {
 			return err
 		}
 		if attempt != "" && recorded && current.Attempt == attempt {
 			running = current
+		}
+		var found bool
+		previous, found, err = checkBound(install, running.Tree)
+		if err != nil {
+			return err
+		}
+		if found && previous.Result == Green {
+			result, already = previous, true
 			return nil
 		}
-		if recorded && alive {
+		if recorded && alive && current.Attempt != attempt {
 			return &Busy{Running: current}
+		}
+		if found {
+			previous.Repeat = "started"
+			if err := appendLine(resultsPath(install), previous); err != nil {
+				return err
+			}
+		}
+		if attempt != "" && recorded && current.Attempt == attempt {
+			return nil
 		}
 		if running.Attempt == "" {
 			running.Attempt = seams.newID()
@@ -286,20 +398,18 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		return writeRunning(install, running)
 	})
-	if err != nil {
-		return Result{}, err
+	if err != nil || already {
+		return result, err
 	}
-	outcome, reason := Green, ""
-	if from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree); ok {
-		reason = "inherits green from tree " + Short(from) + ": only goal ledger files changed since"
-		fmt.Fprintf(output, "landing prove: %s\n", reason)
-	} else if runErr := proveInWorktree(seams.git, install, checkout, command, running, output); runErr != nil {
-		// The proof command ran and failed, or could not run: its own
-		// exit is the reason, read from nothing but runErr.
-		outcome, reason = Red, runErr.Error()
-		fmt.Fprintf(output, "\nlanding prove: %v\n", runErr)
+	result = Result{Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	if from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree); previous.Result == "" && ok {
+		result.Reason = inheritedReason(from)
+	} else {
+		result = proveInWorktree(seams, install, checkout, command, running, output, result, previous)
 	}
-	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt, Reason: reason}
+	if result.Reason != "" {
+		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
+	}
 	err = withLock(install, func() error {
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err
@@ -334,10 +444,10 @@ func ledgerPath(path string) bool {
 
 // ledgerOnlySinceGreen names a recent green tree from which tree differs
 // only in goal ledger files.
-func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, checkout, tree string) (string, bool) {
+func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, checkout, tree string) (Result, bool) {
 	results, err := Results(install)
 	if err != nil {
-		return "", false
+		return Result{}, false
 	}
 	checked := 0
 	for index := len(results) - 1; index >= 0 && checked < 10; index-- {
@@ -358,10 +468,18 @@ func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, 
 			}
 		}
 		if ledgerOnly {
-			return green.Tree, true
+			return green, true
 		}
 	}
-	return "", false
+	return Result{}, false
+}
+
+func inheritedReason(from Result) string {
+	reason := "inherits green from tree " + Short(from.Tree) + ": only goal ledger files changed since"
+	if from.Reason != "" {
+		reason += "; " + from.Reason
+	}
+	return reason
 }
 
 // Results are every recorded result, oldest first.
@@ -421,37 +539,99 @@ func Git(dir string, args ...string) (string, error) {
 // worktree after. Worktrees a crashed proof left are removed first. Only
 // this process proves (it holds running.json), so every worktree under
 // proofTrees is a leftover.
-func proveInWorktree(git func(string, ...string) (string, error), install, checkout, command string, running Running, output io.Writer) error {
+func proveInWorktree(seams ProveSeams, install, checkout, command string, running Running, output io.Writer, result, previous Result) Result {
+	git := seams.git
 	trees := proofTrees(install)
 	removeProofTrees(git, checkout, trees, output)
 	if err := os.MkdirAll(trees, 0o755); err != nil {
-		return err
+		result.Result, result.Reason = Red, err.Error()
+		return result
 	}
 	tree := filepath.Join(trees, running.Attempt)
 	if _, err := git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
-		return fmt.Errorf("the worktree of commit %s could not be made: %w", Short(running.Commit), err)
+		result.Result, result.Reason = Red, fmt.Sprintf("the worktree of commit %s could not be made: %v", Short(running.Commit), err)
+		return result
 	}
 	defer func() {
 		if _, err := git(checkout, "worktree", "remove", "--force", tree); err != nil {
-			fmt.Fprintf(output, "\nlanding prove: the proof's worktree stays until the next prove: %v\n", err)
+			fmt.Fprintf(output, "\nlanding prove: the check's worktree stays until the next check: %v\n", err)
 		}
 	}()
 	dir := tree
 	if rel, err := filepath.Rel(checkout, install); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 		dir = filepath.Join(tree, rel)
 	}
-	shell := exec.Command("/bin/sh", "-c", command)
-	shell.Dir = dir
-	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit)
-	shell.Stdin, shell.Stdout, shell.Stderr = nil, output, output
-	if err := shell.Run(); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.Exited() {
-			return fmt.Errorf("the proving command exited %d", exit.ExitCode())
+	report, runErr := runCheck(dir, command, running, "", output)
+	if runErr == nil {
+		if previous.Result == Red && len(previous.Failed) > 0 {
+			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}
-		return fmt.Errorf("the proving command ended: %w", err)
+		return result
 	}
-	return nil
+	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
+	if report.kind == "not-run" && previous.Result == "" {
+		result.Repeat = "allowed"
+	}
+	if report.kind != "complete" {
+		return result
+	}
+	result.Failed = report.failed
+	if seams.Judge == nil {
+		return result
+	}
+	judged, err := seams.Judge(checkout, running.Commit, result.Failed)
+	if err != nil {
+		return result
+	}
+	known := len(result.Failed) > 0
+	for i := range result.Failed {
+		unit := &result.Failed[i]
+		j, found := judged[unit.Unit]
+		unit.Surfaces = j.Surfaces
+		if !found || j.Affected {
+			return result
+		}
+		known = known && j.Known && len(unit.Tests) > 0
+	}
+	if previous.Result != "" {
+		return result
+	}
+	if !known {
+		result.Repeat = "allowed"
+		return result
+	}
+	result.Repeat = "started"
+	if err := withLock(install, func() error { return appendLine(resultsPath(install), result) }); err != nil {
+		result.Reason = "the repeat could not be recorded: " + err.Error()
+		return result
+	}
+	if err := os.MkdirAll(filepath.Join(Dir(install), "proofs"), 0o755); err != nil {
+		result.Reason = "the repeat's log folder could not be made: " + err.Error()
+		return result
+	}
+	repeats := make([]Running, len(result.Failed))
+	var failures []string
+	for i, unit := range result.Failed {
+		repeat := running
+		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
+		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
+		repeats[i] = repeat
+		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err == nil {
+			_, err = runCheck(dir, command, repeat, unit.Unit, io.MultiWriter(output, file))
+			err = errors.Join(err, file.Close())
+		}
+		if err != nil {
+			failures = append(failures, unit.Unit+": "+err.Error())
+		}
+	}
+	if len(failures) > 0 {
+		result.Reason = strings.Join(failures, "; ")
+		return result
+	}
+	green := result
+	green.Result, green.Repeat, green.Failed, green.Load, green.Reason = Green, "", nil, 0, ""
+	return recordFlakes(seams, result, green, "alone", repeats)
 }
 
 // removeProofTrees removes the lane repository's worktrees under trees,

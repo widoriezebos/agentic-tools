@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func proveStubbed(t *testing.T, install string, git stubGit, command string) Res
 		t.Fatalf("prove: %v (%s)", err, output.String())
 	}
 	last, ok, err := LastResult(install)
-	if err != nil || !ok || last != result {
+	if err != nil || !ok || !reflect.DeepEqual(last, result) {
 		t.Fatalf("the result recorded is not the result returned: %+v %v %v, returned %+v", last, ok, err, result)
 	}
 	return result
