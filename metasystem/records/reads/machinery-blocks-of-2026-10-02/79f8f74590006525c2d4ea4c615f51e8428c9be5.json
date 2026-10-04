@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-02",
+  "unit": "acceptance-closes-closed-chain",
+  "subject": {
+    "commit": "79f8f74590006525c2d4ea4c615f51e8428c9be5",
+    "parent": "4840e8b0084bf88c58ba3b5ad8dd973f461da9e8",
+    "tree": "99caef2c5ed00856f87913740134aacb43ed52ee",
+    "patchDigest": "f3ed68dcfab0840c6dd42bf3073c8e645d2a4c298661873a29c34e26ff0bf5ee",
+    "unitDigest": "be0d3baf2ba8271eaa7272bdccce1f8838634184d21a631269ccfa5cb0ecf1b8"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-6aebcb678afd2781812062e8",
+    "round": 1,
+    "closureSha256": "f8fa7886c4ef8f0f08410f902baf03d01f60a041702220297b81e6183913ce46"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "99caef2c5ed00856f87913740134aacb43ed52ee",
+    "runId": "goal-read-gate-20261003t235024z-afed40ce4d74f514"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/dispatch/accepted_risk_closure_test.go",
+      "readerWord": "reviewed by critic root code-critic-6aebcb678afd2781812062e8"
+    },
+    {
+      "path": "metasystem/internal/dispatch/read_subject_compute_test.go",
+      "readerWord": "reviewed by critic root code-critic-6aebcb678afd2781812062e8"
+    }
+  ],
+  "sha256": "04fbe1085981927d35bcf99c1a0a0167fa64dd0a57bafe75beb2aa4a0696e940"
+}
