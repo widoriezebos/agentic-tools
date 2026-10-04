@@ -5200,3 +5200,6 @@ Review linkage: goal plans/goals/fleet-panel-ux.md (opid=86BBAFQKGYCDB233EASW6NQ
 Limitation — Register citation resolution: The accepted-risk register reader validates that each specimen fact has non-empty durable-reference citations of allowed kinds, but it does not dereference commit, goal, ruling, job, or record targets during intake. Enrichment: Add cross-record citation resolution that checks each target before an entry can count.
 2026-10-04T00:16:57Z HIGHLIGHT — A landing moved the repository storyline to commit 1bb05e6ce671. (source: commit 1bb05e6ce671a6786d0878d1be0c220ebb39b9e5)
 2026-10-04T01:00:15Z HIGHLIGHT — A landing moved the repository storyline to commit 15f4459d9235. (source: commit 15f4459d9235c4717e43c68f3f2f9cd30794a34f)
+2026-10-04T02:03:37Z HIGHLIGHT — A landing moved the repository storyline to commit bfd27c5cd5ec. (source: commit bfd27c5cd5ec1ce98a34b50ae276b13423f7382f)
+2026-10-04T02:14:00Z LOWLIGHT — The steward escalated: the model provider is overloaded or limited; holding the seat start until the provider recovers. (source: episode escalation-idle-backlog-dead-bfd27c5cd5ec1ce98a34b50ae276b13423f7382f)
+2026-10-04T02:45:13Z HIGHLIGHT — The steward started a revival after proving the prior worker dead. (source: episode revival-bfd27c5cd5ec1ce98a34b50ae276b13423f7382f-0)
