@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 var t0 = time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
@@ -47,25 +49,17 @@ func TestUpdateDecidesOnTheCardUnderTheLock(t *testing.T) {
 			return current, true
 		})
 	}()
-	// Wait for the second writer to reach the held file lock, without timing
-	// the filesystem or allowing the first write to race ahead of its read.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	// Wait until the second writer is blocked on the seat lock before letting
+	// the first writer publish its build card.
+	testenv.Await(t, "the second writer to reach the seat lock", func() bool {
 		stack := make([]byte, 1<<20)
 		n := runtime.Stack(stack, true)
 		waiting := false
 		for _, goroutine := range strings.Split(string(stack[:n]), "\n\n") {
 			waiting = waiting || strings.Contains(goroutine, "TestUpdateDecidesOnTheCardUnderTheLock.func") && strings.Contains(goroutine, "syscall.Flock")
 		}
-		if waiting {
-			break
-		}
-		if time.Now().After(deadline) {
-			close(resume)
-			t.Fatal("the second writer never reached the seat lock")
-		}
-		runtime.Gosched()
-	}
+		return waiting
+	})
 	close(resume)
 	if err := <-first; err != nil {
 		t.Fatal(err)
