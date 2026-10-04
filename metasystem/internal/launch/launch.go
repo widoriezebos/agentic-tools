@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -517,6 +518,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 				}
 			}
 		}
+		record.Cause = m.stopCause(*record)
 		return nil
 	})
 	if err != nil {
@@ -553,6 +555,7 @@ func (m *Manager) fail(id, reason string, exit *int) (Record, error) {
 			return nil
 		}
 		record.State, record.Reason, record.ExitCode = Failed, reason, exit
+		record.Cause = m.stopCause(*record)
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
 		if record.Kind == "read" {
 			counts := false
@@ -781,6 +784,26 @@ func adapterOutcome(adapter Adapter, exitCode int, measureErr error) (State, str
 		return Completed, ""
 	}
 	return Failed, fmt.Sprintf("exit-%d", exitCode)
+}
+
+// stopCause names an environmental failure without changing the launch's outcome.
+func (m *Manager) stopCause(record Record) string {
+	if record.State != Failed {
+		return ""
+	}
+	switch {
+	case record.Reason == "supervisor-lost", record.Reason == "supervisor-lost-before-child":
+		return "process-lost"
+	case strings.HasPrefix(record.Reason, "declared-outputs: declared-output-busy:"), strings.HasPrefix(record.Reason, "declared-output: declared-output-busy:"):
+		return "output-busy"
+	}
+	if owner, ok := m.Adapters[record.Adapter].(interface {
+		StopCause(Record, string) string
+	}); ok {
+		stateDir, _ := m.Store.StateDir(record.ID)
+		return owner.StopCause(record, stateDir)
+	}
+	return ""
 }
 func refDead(prober identity.Prober, ref *identity.Ref) bool {
 	return ref == nil || prober != nil && identity.AliveRef(prober, *ref) == identity.Dead

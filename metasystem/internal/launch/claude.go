@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 var errClaudeResultUnreadable = errors.New("result-unreadable")
@@ -140,6 +141,16 @@ func (ClaudeHeadless) Outcome(exitCode int, measureErr error) (State, string) {
 	default:
 		return Completed, ""
 	}
+}
+
+func (ClaudeHeadless) StopCause(_ Record, stateDir string) string {
+	if _, _, ok := outage.ClassifyLogs(filepath.Join(stateDir, "stderr.log")); ok {
+		return outage.ProviderLimit
+	}
+	if _, _, ok := outage.ClassifyProviderResult(filepath.Join(stateDir, "result.json")); ok {
+		return outage.ProviderLimit
+	}
+	return ""
 }
 
 func measurePage(record Record, stateDir string) (Measurement, []Output, error) {
