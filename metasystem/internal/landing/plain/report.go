@@ -1,12 +1,9 @@
 package plain
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -80,24 +77,6 @@ func readReport(tail []byte) checkReport {
 		return checkReport{}
 	}
 	return report
-}
-
-func runCheck(dir, command string, running Running, only string, output io.Writer) (checkReport, error) {
-	copied := &commandTail{output: output}
-	shell := exec.Command("/bin/sh", "-c", command)
-	shell.Dir = dir
-	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only)
-	shell.Stdout, shell.Stderr = copied, copied
-	err := shell.Run()
-	report := readReport(copied.tail)
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.Exited() {
-			return report, fmt.Errorf("the proving command exited %d", exit.ExitCode())
-		}
-		return report, fmt.Errorf("the proving command ended: %w", err)
-	}
-	return report, nil
 }
 
 func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Running) Result {

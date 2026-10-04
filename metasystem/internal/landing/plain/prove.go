@@ -533,6 +533,24 @@ func Git(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+func runCheck(dir, command string, running Running, only string, output io.Writer) (checkReport, error) {
+	copied := &commandTail{output: output}
+	shell := exec.Command("/bin/sh", "-c", command)
+	shell.Dir = dir
+	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only)
+	shell.Stdout, shell.Stderr = copied, copied
+	err := shell.Run()
+	report := readReport(copied.tail)
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.Exited() {
+			return report, fmt.Errorf("the proving command exited %d", exit.ExitCode())
+		}
+		return report, fmt.Errorf("the proving command ended: %w", err)
+	}
+	return report, nil
+}
+
 // proveInWorktree runs command in a fresh detached worktree of the lane
 // repository checked out at running.Commit, from the worktree's folder that
 // matches the installation's place in the checkout, and removes the
