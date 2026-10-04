@@ -243,7 +243,7 @@ func (s *session) dispatchJob(args []string) error {
 	// The roster, tier, and escalation decisions live in the engine; this
 	// keeps only the approval ladder below.
 	roster, rosterErr := dispatch.ResolveRoster(dispatch.RosterParams{
-		ConfPath: filepath.Join(s.root, "metasystem.conf"), Role: a.role, Mode: mode,
+		ConfPath: s.settingsPath(), Role: a.role, Mode: mode,
 		RuntimeOverride: a.runtimeOverride, ModelOverride: a.modelOverride, LookupEnv: s.configLookup(),
 	})
 	if rosterErr != nil {
@@ -664,7 +664,7 @@ func (s *session) dispatchJob(args []string) error {
 	}
 	params := dispatch.BuildRecordParams{
 		LookupEnv: s.configLookup(), Output: recordJSON, Job: job, Role: a.role, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
-		Root: s.root, Runtime: runtime, Workspace: workspace, CapResolution: capResolution, Model: model,
+		Root: s.root, SettingsFile: s.settingsPath(), Runtime: runtime, Workspace: workspace, CapResolution: capResolution, Model: model,
 		AliasedFrom: aliasedFrom, RosterAliasedFrom: rosterAliasedFrom, Overridden: roster.Overridden,
 		Snapshot: snapshot.path, InputBytes: inputBytes, InputHash: inputHash, Permissions: permissionJSON,
 		Fallbacks: snapshot.fallbacks, ApprovalName: approvalName, ApprovedAt: approvedAt,

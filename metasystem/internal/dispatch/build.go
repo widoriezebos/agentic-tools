@@ -191,6 +191,7 @@ type BuildRecordParams struct {
 	MissionTurn       string
 	Stream            string
 	Root              string // dispatching checkout root, for mission provenance
+	SettingsFile      string // empty uses Root/metasystem.conf
 	Runtime           string
 	Workspace         string
 	CapResolution     string // cap-resolution file
@@ -475,7 +476,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
+	if err := validateRuntimeHazardConfigurationWith(p.LookupEnv, dispatchSettingsPath(p.Root, p.SettingsFile), p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return err
 	}
 	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
@@ -666,6 +667,7 @@ type BuildFollowRecordParams struct {
 	Model            string
 	AliasedFrom      string
 	Root             string // dispatching checkout root, for mission provenance
+	SettingsFile     string // empty uses Root/metasystem.conf
 	GoalRevision     uint64
 	GoalTier         uint8
 	GateWidth        string
@@ -839,7 +841,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, runtimeName, model, p.DestructiveReach); err != nil {
+	if err := validateRuntimeHazardConfigurationWith(p.LookupEnv, dispatchSettingsPath(p.Root, p.SettingsFile), runtimeName, model, p.DestructiveReach); err != nil {
 		return err
 	}
 	capMinutes, ok := numInt(authority.capMin)

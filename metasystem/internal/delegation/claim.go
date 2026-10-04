@@ -1,8 +1,6 @@
 package delegation
 
 import (
-	"path/filepath"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
@@ -45,7 +43,7 @@ func (s *session) claimLaunch(request claimRequest, preflight bool) (string, int
 			},
 		}), 1
 	}
-	confPath := filepath.Join(s.root, "metasystem.conf")
+	confPath := s.settingsPath()
 	resolvedCap, _, _, err := dispatch.ResolveCap(confPath, request.role, request.runtime, config.CanonicalModel(request.model), request.aliasSource, request.capMin)
 	if err != nil {
 		s.eprintln(err.Error())
@@ -53,7 +51,7 @@ func (s *session) claimLaunch(request claimRequest, preflight bool) (string, int
 	}
 	resumed := request.resumedSession
 	params := dispatch.ClaimLaunchParams{
-		LookupEnv: s.configLookup(), Root: s.root, OpID: request.opID, OperationID: request.operationID,
+		LookupEnv: s.configLookup(), Root: s.root, SettingsFile: s.settingsPath(), OpID: request.opID, OperationID: request.operationID,
 		MainID: request.mainID, ClaimEpoch: request.claimEpoch, GoalID: request.goalID,
 		GoalRevision: request.goalRevision, GoalTier: request.goalTier, MachineID: request.machineID,
 		ApprovedRef: request.approvedRef, AdapterVerb: request.adapterVerb, GateWidth: request.gateWidth,

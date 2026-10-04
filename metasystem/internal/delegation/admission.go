@@ -345,7 +345,7 @@ func (s *session) requireSliceAdmission(proposed int64, approval, approvalGoal s
 
 // resolveNonmissionCap is resolve_nonmission_cap (job resolve-cap --output).
 func (s *session) resolveNonmissionCap(role, runtime, model, aliasSource, requested, output string) error {
-	capMin, rule, origin, err := dispatch.ResolveCap(filepath.Join(s.root, "metasystem.conf"), role, runtime, model, aliasSource, requested)
+	capMin, rule, origin, err := dispatch.ResolveCap(s.settingsPath(), role, runtime, model, aliasSource, requested)
 	if err != nil {
 		s.eprintln(err.Error())
 		return exitWith(1)
@@ -356,7 +356,7 @@ func (s *session) resolveNonmissionCap(role, runtime, model, aliasSource, reques
 // authorizeJobCap is authorize_job_cap.
 func (s *session) authorizeJobCap(job, role, runtime, modelKey, aliasSource, missionID, override, noun, output string) error {
 	if missionID != "" {
-		if err := dispatch.RefuseUnsignedMissionCap(filepath.Join(s.root, "metasystem.conf"), role, runtime, modelKey, aliasSource); err != nil {
+		if err := dispatch.RefuseUnsignedMissionCap(s.settingsPath(), role, runtime, modelKey, aliasSource); err != nil {
 			s.eprintln(err.Error())
 			return exitWith(1)
 		}

@@ -72,7 +72,7 @@ func (s *session) composePacket(request composeRequest) (composedPacket, error) 
 	s.cleanupPrompt, s.cleanupComposition, s.cleanupStage = packet.prompt, packet.composition, packet.stage
 	margin := int64(-1)
 	if capMin > 0 {
-		resolved, marginErr := dispatch.ReturnMarginMinutes(filepath.Join(s.root, "metasystem.conf"))
+		resolved, marginErr := dispatch.ReturnMarginMinutes(s.settingsPath())
 		if marginErr != nil {
 			s.eprintln("job compose-role-packet: " + marginErr.Error())
 			return packet, exitWith(1)
@@ -80,7 +80,7 @@ func (s *session) composePacket(request composeRequest) (composedPacket, error) 
 		margin = resolved
 	}
 	_, err = dispatch.ComposeRolePacket(dispatch.ComposeRolePacketParams{
-		LookupEnv: s.configLookup(), Root: s.root, Role: request.role, Brief: request.brief, JobID: request.job, Runtime: request.runtime,
+		LookupEnv: s.configLookup(), Root: s.root, SettingsFile: s.settingsPath(), Role: request.role, Brief: request.brief, JobID: request.job, Runtime: request.runtime,
 		Model: request.model, ToolPolicy: request.toolPolicy, Round: request.round, Mission: request.mission,
 		DestructiveReach: dispatch.HazardClass(request.destructiveReach), GoalTier: request.goalTier,
 		Output: packet.prompt, CompositionOutput: packet.composition, StageDir: packet.stage,

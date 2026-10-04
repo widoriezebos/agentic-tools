@@ -125,6 +125,18 @@ func ValidateRuntimeHazardConfiguration(root, runtime, model string, class Hazar
 // reading configuration through the invocation's lookup (nil is the process
 // environment).
 func ValidateRuntimeHazardConfigurationWith(lookup func(string) (string, bool), root, runtime, model string, class HazardClass) error {
+	return validateRuntimeHazardConfigurationWith(lookup, dispatchSettingsPath(root, ""), runtime, model, class)
+}
+
+// dispatchSettingsPath keeps settings ownership separate from record and tree ownership.
+func dispatchSettingsPath(root, settingsFile string) string {
+	if settingsFile != "" {
+		return settingsFile
+	}
+	return filepath.Join(root, "metasystem.conf")
+}
+
+func validateRuntimeHazardConfigurationWith(lookup func(string) (string, bool), settingsFile, runtime, model string, class HazardClass) error {
 	configuration, err := MinimumHazardConfiguration(class)
 	if err != nil {
 		return err
@@ -132,7 +144,7 @@ func ValidateRuntimeHazardConfigurationWith(lookup func(string) (string, bool), 
 	if configuration.BuilderReasoningEffort != "xhigh" {
 		return nil
 	}
-	proven, err := runtimeProvesMaximalExecution(root, runtime, model, lookup)
+	proven, err := runtimeProvesMaximalExecution(settingsFile, runtime, model, lookup)
 	if err != nil {
 		return err
 	}
@@ -142,7 +154,7 @@ func ValidateRuntimeHazardConfigurationWith(lookup func(string) (string, bool), 
 	return nil
 }
 
-func runtimeProvesMaximalExecution(root, runtime, model string, lookup ...func(string) (string, bool)) (bool, error) {
+func runtimeProvesMaximalExecution(settingsFile, runtime, model string, lookup ...func(string) (string, bool)) (bool, error) {
 	var lookupEnv func(string) (string, bool)
 	if len(lookup) > 0 {
 		lookupEnv = lookup[0]
@@ -152,7 +164,7 @@ func runtimeProvesMaximalExecution(root, runtime, model string, lookup ...func(s
 	}
 	key := "runtime." + runtime + ".maximal-models"
 	value, _, err := config.Get(config.GetParams{
-		Key: key, ConfPath: filepath.Join(root, "metasystem.conf"), Default: "", DefaultSet: true, LookupEnv: lookupEnv,
+		Key: key, ConfPath: settingsFile, Default: "", DefaultSet: true, LookupEnv: lookupEnv,
 	})
 	if err != nil {
 		return false, fmt.Errorf("resolve %s: %w", key, err)
@@ -372,7 +384,7 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 			ref, asString(configuration["builderEffortTier"]), asString(configuration["builderReasoningEffort"]), asString(critic["reasoningEffort"]),
 			required.IndependentCritiqueEffortTier, required.IndependentCritiqueReasoningEffort)).withRun(reviewRun)
 	}
-	proven, proofErr := runtimeProvesMaximalExecution(repoRoot, asString(critic["runtime"]), asString(critic["requestedModel"]))
+	proven, proofErr := runtimeProvesMaximalExecution(dispatchSettingsPath(repoRoot, ""), asString(critic["runtime"]), asString(critic["requestedModel"]))
 	if proofErr != nil || !proven {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q does not prove the required maximum critic effort", ref)).withRun(reviewRun)
 	}
@@ -540,7 +552,7 @@ func validateClosureProvingCritic(repoRoot, jobsDir, criticRoot, criticRole stri
 	if runtimeName == "" || requestedModel == "" {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has empty runtime/requestedModel %q/%q", prefix, runtimeName, requestedModel)).withRun(reviewRun)
 	}
-	proven, proofErr := runtimeProvesMaximalExecution(repoRoot, runtimeName, requestedModel)
+	proven, proofErr := runtimeProvesMaximalExecution(dispatchSettingsPath(repoRoot, ""), runtimeName, requestedModel)
 	if proofErr != nil || !proven {
 		detail := "mapping does not admit this pair"
 		if proofErr != nil {

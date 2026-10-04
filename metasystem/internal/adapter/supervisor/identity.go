@@ -100,7 +100,7 @@ func contractSnapshot(runtime, enforcement string) ([]byte, error) {
 func (d Deps) configValue(key, fallback string) (string, error) {
 	value, _, err := config.Get(config.GetParams{
 		Key: key, Default: fallback, DefaultSet: true,
-		ConfPath: filepath.Join(d.Root, "metasystem.conf"),
+		ConfPath: filepath.Join(d.installation(), "metasystem.conf"),
 		LookupEnv: func(name string) (string, bool) {
 			for _, entry := range d.Environ {
 				if found, value, ok := strings.Cut(entry, "="); ok && found == name {

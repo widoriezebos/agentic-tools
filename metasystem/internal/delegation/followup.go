@@ -261,7 +261,7 @@ func (s *session) followUp(args []string) error {
 	role, _ := field(latest, "role")
 	runtime, _ := field(latest, "runtime")
 	requestedModel, _ := field(latest, "requestedModel")
-	model, aliased, err := config.ResolveModelAlias(filepath.Join(s.root, "metasystem.conf"), runtime, requestedModel)
+	model, aliased, err := config.ResolveModelAlias(s.settingsPath(), runtime, requestedModel)
 	if err != nil {
 		s.eprintln(err.Error())
 		return exitWith(1)
@@ -636,7 +636,7 @@ func (s *session) followUp(args []string) error {
 		ParentJob: operationParent, Model: model, AliasedFrom: aliasedFrom, Snapshot: snapshot.path,
 		Fallbacks: snapshot.fallbacks, ResumeMode: resumeMode, Continuation: continuation,
 		InputBytes: inputBytes, InputHash: inputHash, MissionTurn: missionTurn, MainID: s.inv.MainID,
-		ClaimEpoch: reservationClaimEpoch, CapResolution: capResolution, Root: s.root,
+		ClaimEpoch: reservationClaimEpoch, CapResolution: capResolution, Root: s.root, SettingsFile: s.settingsPath(),
 		GoalRevision: subj.goalRevision, GoalTier: subj.goalTier, GateWidth: subj.goalWidth, ApprovedRef: approvedRef,
 		DestructiveReach: dispatch.HazardClass(subj.destructiveReach), Composition: filepath.Join(roundDir, "composition.json"),
 		LaunchMode: dispatch.LaunchMode(launchMode), OutputStream: outputStream,

@@ -174,8 +174,7 @@ type Request struct {
 	// standard error; nil discards.
 	Stderr io.Writer
 	// ConfigEnv is configuration this request carries (KEY=VALUE with
-	// config.EnvName keys, for example a critic read's selected-installation
-	// roster). The lifecycle resolves configuration through it above the
+	// config.EnvName keys). The lifecycle resolves configuration through it above the
 	// process environment, in this process (VOA-14); the adapter processes
 	// it starts receive it through OwnerConfig.ConfigEnv.
 	ConfigEnv []string
@@ -302,6 +301,8 @@ type session struct {
 	root      string
 	repoScope string
 	ms        string
+
+	settingsFile string
 
 	agents, jobs, heartbeats, locks, recordLocks, capabilities, worktrees string
 

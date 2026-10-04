@@ -38,6 +38,8 @@ type Deps struct {
 	// Root is the installation root: the directory holding scripts/ and
 	// artifacts/ (the adapter scripts' `root`).
 	Root string
+	// ServingInstallation owns the runtime registry and settings; empty uses Root.
+	ServingInstallation string
 	// Engine is the engine binary children run (the claude SessionStart
 	// hook, the fixture holds): METASYSTEM_BIN, else the serving installation's.
 	Engine string
@@ -106,25 +108,9 @@ func ProcessDeps(root string) Deps {
 }
 
 func processDeps(root string, git GitQuery, lookupEnv func(string) (string, bool)) Deps {
-	_, _, engine := dispatch.ResolveTool(root, func(root string) (string, string) {
-		// Only a linked worktree's .git file needs Git to locate the serving
-		// installation. Primary checkouts and roots outside Git serve themselves.
-		dir, err := filepath.Abs(root)
-		if err != nil {
+	installation, _, engine := dispatch.ResolveTool(root, func(root string) (string, string) {
+		if !dispatch.InLinkedWorktree(root) {
 			return root, ""
-		}
-		for {
-			if entry, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-				if !entry.Mode().IsRegular() {
-					return root, ""
-				}
-				break
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				return root, ""
-			}
-			dir = parent
 		}
 		return landpath.SystemInstallation(func(args ...string) landpath.GitResult {
 			out, ok := git(root, args...)
@@ -141,7 +127,7 @@ func processDeps(root string, git GitQuery, lookupEnv func(string) (string, bool
 	}
 	environ := os.Environ()
 	return Deps{
-		Root: root, Engine: engine, Self: self, Environ: environ, Getenv: os.Getenv,
+		Root: root, ServingInstallation: installation, Engine: engine, Self: self, Environ: environ, Getenv: os.Getenv,
 		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
 		Clock:        SystemClock(),
 		Dispatch:     EngineDispatcher{Root: root, Engine: engine, Environ: environ},
@@ -194,6 +180,13 @@ func (d Deps) lifecycleReap(job string) {
 
 func (d Deps) agents() string { return filepath.Join(d.Root, "artifacts", "agents") }
 func (d Deps) jobs() string   { return filepath.Join(d.agents(), "jobs") }
+
+func (d Deps) installation() string {
+	if d.ServingInstallation != "" {
+		return d.ServingInstallation
+	}
+	return d.Root
+}
 
 // exitStatus maps a finished command to the shell's status: its exit code,
 // 128 plus the signal for a signalled child, 127 when it never started.
