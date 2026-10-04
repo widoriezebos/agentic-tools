@@ -318,6 +318,13 @@ func TestRecordsHandInSummaryKeepsItsSubject(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(result.Summary, want+" handed to the lane;") {
 		t.Fatalf("records hand-in summary: %d %+v", code, result)
 	}
+	if _, _, err := plain.Return(b.lane, "standing-validation", "records check failed", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	code, result = b.runJSON(b.owners, "work", "land", "standing-validation", "--records", recordsPath, "--again", "--delivered", "The design is accepted")
+	if code != 0 || !strings.HasPrefix(result.Summary, want+" handed to the lane;") || !strings.Contains(result.Summary, "re-queued after a return that needed no change") {
+		t.Fatalf("records re-queue summary: %d %+v", code, result)
+	}
 	code, result = b.land(recordsPath)
 	if code != 0 || result.Outcome != intentUnchanged || !strings.HasPrefix(result.Summary, want+" is waiting in the landing lane;") {
 		t.Fatalf("records repeat summary: %d %+v", code, result)
