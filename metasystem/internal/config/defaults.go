@@ -389,6 +389,10 @@ var coreSettings = []Setting{
 		Meaning: "the design lane's Codex model"},
 	{Key: "launch.read.model.codex", Default: "gpt-6-astra", ProofInput: true, Runtime: "codex",
 		Meaning: "the read lane's Codex model, different from the author's"},
+	// The host's Codex sandbox is a property of the host, set in its local
+	// settings, so it is no proof input.
+	{Key: CodexSandboxKey, Default: CodexSandboxWorkspaceWrite, ProofInput: false,
+		Meaning: "every Codex launch's sandbox on this host: workspace-write (the default) keeps each job's read-only or workspace-write envelope; danger-full-access runs every Codex job unsandboxed and records its envelope as widened by this setting (risk accepted by Wido, 2026-10-04, until the fleet runs in a VM)"},
 	{Key: "launch.build.model.devin", Default: "claude-opus-5-5", ProofInput: true, Runtime: "devin",
 		Meaning: "the build lane's Devin model"},
 	{Key: "launch.critique.model.devin", Default: "gpt-6-astra", ProofInput: true, Runtime: "devin",

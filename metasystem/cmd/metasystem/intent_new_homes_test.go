@@ -174,6 +174,29 @@ func TestSettingsSetWritesTheLocalConfiguration(t *testing.T) {
 	}
 }
 
+// TestSettingsSetRefusesAnUnknownCodexSandbox: launch.codex.sandbox takes
+// workspace-write or danger-full-access; any other value is refused naming
+// both, and nothing is written.
+func TestSettingsSetRefusesAnUnknownCodexSandbox(t *testing.T) {
+	t.Parallel()
+	root, owners := newHomesSettingsInstallation(t)
+	code, result := runSettingsSet(t, root, owners, "launch.codex.sandbox", "other")
+	if code != 2 || result.Outcome != intentRefused ||
+		!strings.Contains(result.Summary, "workspace-write") || !strings.Contains(result.Summary, "danger-full-access") {
+		t.Fatalf("settings set launch.codex.sandbox other = %d %+v", code, result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "metasystem.conf.local")); !os.IsNotExist(err) {
+		t.Fatalf("a refused value wrote the local configuration: err=%v", err)
+	}
+	if code, result := runSettingsSet(t, root, owners, "launch.codex.sandbox", "danger-full-access"); code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("settings set launch.codex.sandbox danger-full-access = %d %+v", code, result)
+	}
+	local, err := os.ReadFile(filepath.Join(root, "metasystem.conf.local"))
+	if err != nil || string(local) != "launch.codex.sandbox=danger-full-access\n" {
+		t.Fatalf("local configuration = %q err=%v", local, err)
+	}
+}
+
 func witnessSettingsSetRepeat(t *testing.T) {
 	root, owners := newHomesSettingsInstallation(t)
 	if code, result := runSettingsSet(t, root, owners, "launch.read.model", "fixture-model"); code != 0 || result.Outcome != intentConfirmed {

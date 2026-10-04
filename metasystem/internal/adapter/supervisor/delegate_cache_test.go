@@ -150,3 +150,59 @@ func TestDevinLaunchFormsExportTheDelegateCache(t *testing.T) {
 		t.Fatalf("Devin launch forms using delegateRoundEnv = %d, want 3", count)
 	}
 }
+
+// A Codex round admitted under full access runs as wide as its record says:
+// --sandbox danger-full-access with no network override or extra write
+// roots, and its effective envelope keeps the widened roots.
+func TestCodexRoundRunsAsWideAsItsRecord(t *testing.T) {
+	t.Parallel()
+	round := newDelegateCacheRound(t)
+	round.turn.Env = nil
+	mustWrite(t, round.turn.Record, `{"role":"implementer","instanceTag":"tag-1","permissions":{"requested":{"readRoots":["/"],"writeRoots":["/"],"network":"allow","tools":"runtime-default","approvals":"deny","widenedBy":"launch.codex.sandbox=danger-full-access"}}}`)
+	mustWrite(t, round.turn.Effective, `{"readRoots":["/"],"writeRoots":["/"],"network":"allow","widenedBy":"launch.codex.sandbox=danger-full-access"}`)
+	launch, err := codexOps{}.Prepare(round.turn)
+	if err != nil || launch.Refusal != nil {
+		t.Fatalf("prepare: %v %+v", err, launch.Refusal)
+	}
+	argv := strings.Join(launch.Argv, " ")
+	if !strings.Contains(argv, "--sandbox danger-full-access") || strings.Contains(argv, "network_access") || strings.Contains(argv, "--add-dir") {
+		t.Fatalf("argv = %s", argv)
+	}
+	if got := readText(t, round.turn.Effective); !strings.Contains(got, `"writeRoots":["/"]`) {
+		t.Fatalf("the widened effective envelope was pinned: %s", got)
+	}
+}
+
+// A mission host turn has no admitted record and runs under the host's
+// setting: workspace-write's mapping when unset, full access when the local
+// settings say so.
+func TestCodexHostTurnRunsUnderTheHostSandbox(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ local, want string }{
+		{"", "--sandbox read-only"},
+		{"launch.codex.sandbox=danger-full-access\n", "--sandbox danger-full-access"},
+	} {
+		root := t.TempDir()
+		dir := filepath.Join(root, "turn")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=claude,codex\n")
+		if test.local != "" {
+			mustWrite(t, filepath.Join(root, "metasystem.conf.local"), test.local)
+		}
+		mustWrite(t, filepath.Join(dir, "turn.json"), `{"model":"m"}`)
+		requested := filepath.Join(root, "workspace-permissions.json")
+		mustWrite(t, requested, `{"readRoots":["."],"writeRoots":[],"network":"deny","approvals":"deny","tools":"read-only"}`)
+		turn := &Turn{d: Deps{Root: root}, Role: RoleHost, Verb: "start-turn", Runtime: "codex", Root: root, Workspace: root, Dir: dir,
+			Record: filepath.Join(dir, "turn.json"), Tag: "tag-1", Prompt: filepath.Join(dir, "prompt.md"), Schema: filepath.Join(dir, "schema.json"),
+			Requested: requested}
+		launch, err := codexOps{}.Prepare(turn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if argv := strings.Join(launch.Argv, " "); !strings.Contains(argv, test.want) {
+			t.Fatalf("local %q: argv = %s, want %s", test.local, argv, test.want)
+		}
+	}
+}

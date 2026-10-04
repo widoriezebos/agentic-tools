@@ -39,6 +39,7 @@ const (
 	LandingRuntimeKey           = "launch.landing.runtime"
 	LandingModelKey             = "launch.landing.model"
 	LandingEffortKey            = "launch.landing.effort"
+	CodexSandboxKey             = config.CodexSandboxKey
 )
 
 // SeatOwnerLineage is the owner lineage every steward-started seat main runs
@@ -78,6 +79,7 @@ type Settings struct {
 	DesignBaselinePeakTokens                          int64
 	SeatRuntime, SeatModel, SeatEffort                string
 	LandingRuntime, LandingModel, LandingEffort       string
+	CodexSandbox                                      string
 	Values                                            []Setting
 }
 
@@ -111,6 +113,8 @@ var settingDefaults = []Setting{
 	{Key: LandingRuntimeKey, Value: config.MustDefault(LandingRuntimeKey), Source: "default"},
 	{Key: LandingModelKey, Value: config.MustDefault(LandingModelKey), Source: "default"},
 	{Key: LandingEffortKey, Value: config.MustDefault(LandingEffortKey), Source: "default"},
+	// The host's Codex sandbox, one mode for every Codex launch.
+	{Key: CodexSandboxKey, Value: config.MustDefault(CodexSandboxKey), Source: "default"},
 }
 
 // LoadShippedSeatWindow reads the seat window the engine's shipped Claude
@@ -289,6 +293,10 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			result.LandingModel = setting.Value
 		case LandingEffortKey:
 			result.LandingEffort = setting.Value
+		case CodexSandboxKey:
+			if result.CodexSandbox, err = config.ParseCodexSandbox(setting.Value); err != nil {
+				return Settings{}, invalidSetting(setting.Key, err)
+			}
 		}
 	}
 	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines,
