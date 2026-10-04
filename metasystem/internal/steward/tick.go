@@ -65,6 +65,8 @@ type TickConfig struct {
 	// it; nil keeps nothing. RunLoop calls it once per cycle outside the
 	// helm, and between cycles every laneRecheck while the lane waits.
 	KeepLandingLane func() lane.AgentRun
+	// ProbeProvider answers one provider call without a limit; nil probes nothing.
+	ProbeProvider func(top string) (bool, error)
 	// Stopping reports that the resident runner received a stop signal:
 	// the tick finishes the stop in progress and starts no further one.
 	// Only RunLoop sets it; nil is never stopping.

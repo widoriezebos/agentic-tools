@@ -6,13 +6,19 @@ package main
 // are the launch lane's (internal/launch).
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -161,6 +167,35 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 // steward starts its seat main when ready work has no seat.
 func wireStewardSeat(config *steward.TickConfig) {
 	config.Seat = newStewardSeatLauncher()
+}
+
+func stewardProviderProbe(top string, settings func(string) (launch.Settings, error), output func(*exec.Cmd) ([]byte, error)) (bool, error) {
+	seat, err := settings(top)
+	if err != nil || seat.SeatRuntime != "claude" || seat.SeatModel == "" {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", seat.SeatModel, "--output-format", "json")
+	cmd.Dir, cmd.Stdin = diskstore.ProcessTempRoot(), strings.NewReader("Reply with the single word ok.")
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, launch.KindEnv+"=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, launch.KindEnv+"=probe")
+	data, runErr := output(cmd)
+	var result struct {
+		Type    string `json:"type"`
+		IsError *bool  `json:"is_error"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return false, errors.Join(runErr, err)
+	}
+	if result.Type == "result" && result.IsError != nil && !*result.IsError {
+		return true, nil
+	}
+	return false, runErr
 }
 
 // hostSeatCapped reports whether the steward of any seat of this host has
