@@ -47,7 +47,8 @@ func SetPause(home, by string, now time.Time) (changed bool, err error) {
 }
 
 // SetPauseBecause records a person's pause with why it was made; a lane
-// already paused is unchanged, its first reason kept.
+// already paused is unchanged, its first reason kept. A pause written but not
+// confirmed on disk returns changed and ErrNotDurable.
 func SetPauseBecause(home, by, reason string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
 		changed, err = setPauseLockedBecause(home, by, reason, now)

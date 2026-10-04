@@ -35,6 +35,8 @@ type attestationPolicyFixture struct {
 	patchErrors                                                        map[string]error
 	missingCommit                                                      string
 	ranges                                                             map[string][]Commit
+	ancestors                                                          map[string]bool
+	ancestorErr                                                        error
 	snapshots                                                          map[string]map[string][]byte
 	transitions                                                        map[string][]byte
 	treeEntries                                                        map[string]string
@@ -152,6 +154,10 @@ func (f *attestationPolicyFixture) CommitExists(repo, commit string) error {
 		return os.ErrNotExist
 	}
 	return nil
+}
+func (f *attestationPolicyFixture) IsAncestor(repo, commit, ancestorOf string) (bool, error) {
+	f.next("IsAncestor", repo, commit, ancestorOf)
+	return f.ancestors[commit+":"+ancestorOf], f.ancestorErr
 }
 func (f *attestationPolicyFixture) Kind(repo, commit, goal string) (KindInfo, error) {
 	f.next("Kind", repo, commit, goal)

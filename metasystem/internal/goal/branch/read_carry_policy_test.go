@@ -360,6 +360,8 @@ func TestAttestationCarrySurvivesChangedBaseAndEarlierRead(t *testing.T) {
 	c.f.expect("Range", c.f.root, c.endpoint, c.f.unit, "goal-a")
 	c.f.expect("RawEntries", c.f.root, policyID("9"))
 	c.f.expect("RawEntries", c.f.root, policyID("3"))
+	c.f.expect("IsAncestor", c.f.root, policyID("9"), c.endpoint)
+	c.f.expect("IsAncestor", c.f.root, policyID("3"), c.endpoint)
 	_, err = validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{})
 	var refusal *OpError
 	if !errors.As(err, &refusal) || refusal.Code != ReadInvalidCode {

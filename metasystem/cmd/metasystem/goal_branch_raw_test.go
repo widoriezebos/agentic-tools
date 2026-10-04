@@ -205,6 +205,10 @@ func (f *branchRawFixture) CommitExists(_, c string) error {
 	}
 	return nil
 }
+func (f *branchRawFixture) IsAncestor(string, string, string) (bool, error) {
+	f.t.Fatal("unexpected ancestry read")
+	return false, nil
+}
 func (f *branchRawFixture) Kind(r, c, g string) (branch.KindInfo, error) {
 	return branch.KindOfWithRaw(r, c, g, f.raw)
 }

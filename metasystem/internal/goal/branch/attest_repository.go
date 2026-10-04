@@ -19,6 +19,7 @@ type attestationReads interface {
 	SnapshotFile(repo, snapshot, path string) ([]byte, error)
 	TopLevel(repo string) (string, error)
 	CommitExists(repo, commit string) error
+	IsAncestor(repo, commit, ancestorOf string) (bool, error)
 	Kind(repo, commit, goal string) (KindInfo, error)
 	Prefix(repo string) (string, error)
 	Transition(repo, before, after string) ([]byte, error)
@@ -108,6 +109,9 @@ func (gitAttestationReads) TopLevel(repo string) (string, error) {
 func (gitAttestationReads) CommitExists(r, c string) error {
 	_, err := gitOutput(r, "cat-file", "-e", c+"^{commit}")
 	return err
+}
+func (gitAttestationReads) IsAncestor(repo, commit, ancestorOf string) (bool, error) {
+	return ancestor(repo, commit, ancestorOf)
 }
 func (gitAttestationReads) Kind(repo, commit, goal string) (KindInfo, error) {
 	return KindOf(repo, commit, goal)

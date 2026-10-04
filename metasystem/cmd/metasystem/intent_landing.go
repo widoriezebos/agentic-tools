@@ -54,6 +54,8 @@ type laneVerbOwners struct {
 	// keeper is the landing agent's keeper of the lane checkout root, the
 	// one the lane checkout's steward runs each tick (landing run).
 	keeper func(home, root string) lane.AgentKeeper
+	// pause writes a person's stop (lane.SetPauseBecause).
+	pause func(home, by, reason string, now time.Time) (bool, error)
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
 	plainProve       plain.ProveSeams
@@ -118,7 +120,30 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.push == nil {
 		owners.push = plain.PushChecked
 	}
+	if owners.pause == nil {
+		owners.pause = lane.SetPauseBecause
+	}
 	return owners
+}
+
+// laneUnconfirmed is what a person reads after a lane write this computer
+// could not confirm is on disk.
+const laneUnconfirmed = "it is written, but this computer could not confirm it is on disk; metasystem landing status checks it after a restart"
+
+// unconfirmedLane adds laneUnconfirmed to a written result when err is
+// lane.ErrNotDurable.
+func unconfirmedLane(result intentResult, err error) intentResult {
+	if !errors.Is(err, lane.ErrNotDurable) {
+		return result
+	}
+	result.Summary += "\n" + laneUnconfirmed
+	if view := result.view; view != nil {
+		result.view = func(page *textui.Page) {
+			view(page)
+			page.Mark(textui.Alert, laneUnconfirmed)
+		}
+	}
+	return result
 }
 
 func landingIntentCommands() []intentCommand {
@@ -509,7 +534,7 @@ func runIntentLandingSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root), Summary: refusal.Message,
 			next: refusal.Argv, nextReason: refusal.Fix, Details: []string{"refused because: " + refusal.Code}})
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, lane.ErrNotDurable) {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root), Summary: "the landing lane couldn't be saved, so nothing was registered",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be registered: " + err.Error()}})
 	}
@@ -529,7 +554,7 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	if len(view.Owner.Fix) > 0 {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
 	}
-	return inv.render(result)
+	return inv.render(unconfirmedLane(result, err))
 }
 
 // laneFixReason is why a person runs a lane's fix, by the command it is.
@@ -852,7 +877,8 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	}
 	by := inv.landingActor(owners)
 	inv.sayWhenTheLaneLockIsHeld(home)
-	if _, err := lane.SetPauseBecause(home, by, reason, owners.now()); err != nil {
+	_, err := owners.pause(home, by, reason, owners.now())
+	if err != nil && !errors.Is(err, lane.ErrNotDurable) {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
 	}
@@ -861,13 +887,13 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	}
 	// The way to seats landing their own work is unset, which line 2 names.
 	who := lane.Pause{By: by, Reason: reason}.Who()
-	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
+	return unconfirmedLane(intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
 		Summary: "stopped the landing lane for " + who + "; no landing agent starts until metasystem landing start",
 		Details: []string{"the lane at " + record.Root + " starts no landing agent until metasystem landing start"},
 		next:    inv.publicArgv("landing", "unset"), nextReason: "lets each seat land its own work instead",
 		view: func(page *textui.Page) {
 			page.Done("stopped the landing lane for " + who + "; no landing agent starts until it starts again")
-		}}, true
+		}}, err), true
 }
 
 // runIntentLandingUnset takes the lane away at a person's word (design r10

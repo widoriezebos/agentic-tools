@@ -36,6 +36,8 @@ type laneVerbBed struct {
 	// lane checkout at the helm.
 	keeper func(home, root string) lane.AgentKeeper
 	helmed bool
+	// pause replaces the write of a person's stop; nil writes it.
+	pause func(home, by, reason string, now time.Time) (bool, error)
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -81,6 +83,7 @@ func (bed *laneVerbBed) owners() intentOwners {
 		now:    func() time.Time { return laneTestNow },
 		unset:  bed.unset,
 		keeper: bed.keeper,
+		pause:  bed.pause,
 		helm: func(root string) helm.State {
 			if bed.helmed {
 				return helm.State{Active: true}
@@ -208,6 +211,34 @@ func TestLandingStopRecordsItsReason(t *testing.T) {
 	if code != 0 || strings.ContainsAny(pause.Reason, "\n\x1b") || !strings.HasPrefix(pause.Reason, "red twice run: rm -rf / [31m") ||
 		len([]rune(pause.Reason)) > 200 || !strings.HasSuffix(pause.Reason, "…") || strings.Contains(stdout, "\x1b") || strings.Contains(stdout, "\n\nrun: rm") {
 		t.Fatalf("a stop with a multi-line reason = %d %q; recorded %q", code, stdout, pause.Reason)
+	}
+}
+
+// A stop whose pause is written but not confirmed on disk is a stop: the
+// lane is stopped, and the person reads that this computer could not
+// confirm it is on disk.
+func TestLandingStopNotConfirmedOnDiskIsAStop(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	bed.pause = func(home, by, reason string, now time.Time) (bool, error) {
+		changed, err := lane.SetPauseBecause(home, by, reason, now)
+		return changed, errors.Join(err, lane.ErrNotDurable)
+	}
+	code, stdout, stderr := bed.run(t, "landing", "stop", "--by", "Wido")
+	if code != 0 || !strings.Contains(oneSpaced(stdout), "stopped the landing lane for Wido") || !strings.Contains(oneSpaced(stdout), laneUnconfirmed) {
+		t.Fatalf("an unconfirmed stop = %d %q %q; want the stop and %q", code, stdout, stderr, laneUnconfirmed)
+	}
+	if pause, paused := lane.ReadPause(bed.home); !paused || pause.By != "Wido" {
+		t.Fatalf("the pause = %+v %v; want stopped by Wido", pause, paused)
+	}
+	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start = %d", code)
+	}
+	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido", "--json"); code != 0 || !strings.Contains(stdout, laneUnconfirmed) {
+		t.Fatalf("an unconfirmed stop --json = %d %q; want %q in its summary", code, stdout, laneUnconfirmed)
 	}
 }
 

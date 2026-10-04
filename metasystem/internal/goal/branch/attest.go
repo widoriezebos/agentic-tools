@@ -419,6 +419,23 @@ func withoutReadFolds(folds []Fold) []Fold {
 	return kept
 }
 
+func foldsMatchWithReads(r attestationReads, repo, endpointTip string, recorded, current []Fold) bool {
+	if sameFoldDigests(recorded, current) {
+		return true
+	}
+	remaining := make([]Fold, 0, len(recorded))
+	for _, fold := range recorded {
+		landed, err := r.IsAncestor(repo, fold.Commit, endpointTip)
+		if err != nil {
+			return false
+		}
+		if !landed {
+			remaining = append(remaining, fold)
+		}
+	}
+	return sameFoldDigests(remaining, current)
+}
+
 func readAttestationAt(r attestationReads, repo, snapshot, goalID, commit string) (Attestation, error) {
 	rel := attestationPath(goalID, commit)
 	data, err := attestationFileAt(r, repo, snapshot, rel)
@@ -521,7 +538,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s describes other changes than the build holds\nrun: metasystem work review %s", commit, goalID)
 	}
 	folds, err := foldRangeWithReads(r, repo, endpointTip, commit, goalID)
-	if err != nil || !sameFoldDigests(folds, att.Folds) {
+	if err != nil || !foldsMatchWithReads(r, repo, endpointTip, att.Folds, folds) {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s no longer matches the goal branch below it\nrun: metasystem work review %s", commit, goalID)
 	}
 	if att.Gate.Kind != "go-gate-fast" || att.Gate.RunID == "" || att.Gate.Tree != subject.Tree {

@@ -179,12 +179,34 @@ func readJSON(path string, into any) (bool, error) {
 	return true, nil
 }
 
+// ErrNotDurable means a lane file is written, but this computer could not
+// confirm it is on disk, so a crash may lose it; it is not a failure.
+var ErrNotDurable = errors.New("it is written, but this computer could not confirm it is on disk")
+
+// writeFile replaces a lane file; a variable so tests can doubt a write.
+var writeFile = atomicfile.WriteFile
+
+// writeJSON writes value to path in home's host directory. The write is
+// anchored at home's parent, which pre-exists where the host directory may
+// be new; a write that committed but is not durable returns ErrNotDurable.
 func writeJSON(home, path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteFile(path, append(data, '\n'), 0o600, HostDir(home))
+	durable, err := writeFile(path, append(data, '\n'), 0o600, filepath.Dir(filepath.Clean(home)))
+	if err == nil && !durable {
+		return fmt.Errorf("%s: %w", path, ErrNotDurable)
+	}
+	return err
+}
+
+// written is err with ErrNotDurable taken as written, for a file a later
+// write replaces: the keeper's state and the unset's journal and fence.
+func written(err error) error {
+	if errors.Is(err, ErrNotDurable) {
+		return nil
+	}
 	return err
 }
 
@@ -244,7 +266,8 @@ func registeredText(record Record) string {
 // The same layout again changes nothing (changed false); anything else
 // writes a record with a custody epoch greater than any this computer has
 // used, and returns the previous record. It is refused while an unset is
-// under way. The keeper's restart count starts over with a new lane.
+// under way. The keeper's restart count starts over with a new lane. A
+// record written but not confirmed on disk returns changed and ErrNotDurable.
 func Register(home string, layout Layout, by string, now time.Time) (previous Record, changed bool, err error) {
 	if layout.Checkout == "" || layout.Install == "" {
 		return Record{}, false, &Refusal{Code: CodeRegisterInvalid, Message: "no landing checkout was resolved; nothing was registered",
@@ -281,10 +304,14 @@ func Register(home string, layout Layout, by string, now time.Time) (previous Re
 		record := Record{Root: string(layout.Checkout), Install: string(layout.Install), CustodyEpoch: used + 1, RegisteredBy: by, At: now.UTC().Format(time.RFC3339)}
 		// The epoch is spent before the record names it, so a crash between
 		// the two never hands the same epoch to two registrations.
-		if err := writeJSON(home, epochPath(home), epochRecord{CustodyEpoch: record.CustodyEpoch}); err != nil {
+		epochErr := writeJSON(home, epochPath(home), epochRecord{CustodyEpoch: record.CustodyEpoch})
+		if written(epochErr) != nil {
+			return epochErr
+		}
+		if err := writeJSON(home, RecordPath(home), record); err != nil {
 			return err
 		}
-		return writeJSON(home, RecordPath(home), record)
+		return epochErr
 	})
 	return previous, changed, err
 }
