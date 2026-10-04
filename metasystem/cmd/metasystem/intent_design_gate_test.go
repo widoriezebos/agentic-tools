@@ -125,6 +125,45 @@ func TestDesignGateWarnsAndStillBuilds(t *testing.T) {
 	}
 }
 
+// A build run from inside its own goal worktree keeps the design check's
+// line out of that worktree's tracked digest, which would enter the unit's
+// change: the line goes to the primary checkout, or nowhere when the
+// primary is that worktree too.
+func TestDesignGateDigestStaysOutOfTheTreeUnderBuild(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"primary elsewhere", "primary is the worktree"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bed := newDesignGateBed(t, 2)
+			bed.worktree = bed.root()
+			if err := os.MkdirAll(filepath.Join(filepath.Dir(bed.worktree), "objects"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(filepath.Dir(bed.worktree), "index"), []byte("index"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if name == "primary elsewhere" {
+				bed.primary = t.TempDir()
+			}
+			_, output := designGateBuild(t, bed, "u")
+			own, err := narratordigest.PendingWithLayoutReader(bed.stateRoot(), bed.owners().resolver.ResolveLayout)
+			if err != nil || strings.Contains(own.Message, "design-gate") {
+				t.Fatalf("the worktree's own digest took the line: %+v err=%v", own, err)
+			}
+			if bed.primary == "" {
+				if !strings.Contains(output, "digest line was left out") {
+					t.Fatalf("the left-out line is not said: %q", output)
+				}
+				return
+			}
+			primary, err := narratordigest.PendingWithLayoutReader(bed.primary, bed.owners().resolver.ResolveLayout)
+			if err != nil || strings.Count(primary.Message, "has no accepted design") != 1 || !strings.Contains(primary.Message, "design-gate "+bed.id+"/u") {
+				t.Fatalf("the primary's digest: %+v err=%v output=%q", primary, err, output)
+			}
+		})
+	}
+}
+
 func TestDesignGateStandingEvidence(t *testing.T) {
 	t.Parallel()
 	for _, tier := range []uint8{1, 2, 3} {

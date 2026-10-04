@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
@@ -189,10 +190,41 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 	}
 	if line != "" {
 		entry := narratordigest.Entry{Kind: "lowlight", Text: line, SourceType: "design-gate", SourceID: f.Goal + "/" + unit}
-		if err := o.digest(inv.stateRoot, entry, now); err != nil {
+		root, err := inv.designGateDigestRoot(worktree)
+		if err == nil && root == "" {
+			fmt.Fprintln(inv.stderr, "warning: the design check's digest line was left out, because the only digest is in the worktree under build and would enter its change; the build goes on\nnothing to do: the dispatch record holds the verdict")
+		} else if err == nil {
+			err = o.digest(root, entry, now)
+		}
+		if err != nil {
 			inv.designGateWriteWarning(err)
 		}
 	}
+}
+
+// designGateDigestRoot is where a build's design-check line is written: the
+// invocation's state root, unless that lies inside the worktree under build,
+// whose tracked digest would then enter the unit's change. Then the line goes
+// to the primary checkout, the first tree git worktree list names; when that
+// is the worktree under build too, the root is empty and no line is written.
+func (inv *intentInvocation) designGateDigestRoot(worktree string) (string, error) {
+	tree := realpath.Resolve(worktree)
+	if !realpath.Within(realpath.Resolve(inv.stateRoot), tree) {
+		return inv.stateRoot, nil
+	}
+	output, err := inv.work().git(inv.layout.GitRoot, "worktree", "list", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("the primary checkout cannot be found: %w", err)
+	}
+	primary, _, _ := strings.Cut(string(output), "\n")
+	primary, found := strings.CutPrefix(primary, "worktree ")
+	if !found || primary == "" {
+		return "", fmt.Errorf("the primary checkout cannot be found: git worktree list names no tree")
+	}
+	if realpath.Within(realpath.Resolve(primary), tree) {
+		return "", nil
+	}
+	return primary, nil
 }
 
 func (inv *intentInvocation) designGateWriteWarning(err error) string {

@@ -46,6 +46,9 @@ type workBed struct {
 	readDirs   map[string]bool
 	designGate designGateOwners
 	config     func(key, confPath string) (value, source string, code int, err error)
+	// primary, when set, is the main tree git worktree list names first;
+	// otherwise that is the bed's root.
+	primary string
 }
 
 type workClock struct {
@@ -239,7 +242,11 @@ func (b *workBed) workOwners() intentOwners {
 			joined := strings.Join(args, " ")
 			switch {
 			case joined == "worktree list --porcelain":
-				listing := "worktree " + b.root() + "\nHEAD main-commit\nbranch refs/heads/main\n"
+				primary := b.root()
+				if b.primary != "" {
+					primary = b.primary
+				}
+				listing := "worktree " + primary + "\nHEAD main-commit\nbranch refs/heads/main\n"
 				if b.branchListed {
 					listing += "\nworktree " + b.worktree + "\nHEAD " + b.head + "\nbranch refs/heads/goal/" + b.id + "\n"
 				}
