@@ -5199,3 +5199,4 @@ Specimen fact: metasystem/internal/board/board.go:140-153 and :190-200 classify 
 Review linkage: goal plans/goals/fleet-panel-ux.md (opid=86BBAFQKGYCDB233EASW6NQQKQ-ui-31a738e9).
 Limitation — Register citation resolution: The accepted-risk register reader validates that each specimen fact has non-empty durable-reference citations of allowed kinds, but it does not dereference commit, goal, ruling, job, or record targets during intake. Enrichment: Add cross-record citation resolution that checks each target before an entry can count.
 2026-10-04T00:16:57Z HIGHLIGHT — A landing moved the repository storyline to commit 1bb05e6ce671. (source: commit 1bb05e6ce671a6786d0878d1be0c220ebb39b9e5)
+2026-10-04T01:00:15Z HIGHLIGHT — A landing moved the repository storyline to commit 15f4459d9235. (source: commit 15f4459d9235c4717e43c68f3f2f9cd30794a34f)
