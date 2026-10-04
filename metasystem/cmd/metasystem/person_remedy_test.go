@@ -5,12 +5,15 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 // H1 (a refusal names a working remedy): a refusal that needs a person at
@@ -22,11 +25,20 @@ const personEnrollCommand = "metasystem system enroll --name NAME"
 
 func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 	t.Parallel()
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.kind=adopted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inv := &intentInvocation{cwd: root, stateRoot: root,
+		layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, root)}}
 	notReached := humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 	disk := func(act string) func() string {
 		return func() string {
 			owners := diskOwners{person: func(string) (string, error) { return "", notReached }}
-			_, problem := diskPerson(&intentInvocation{}, owners, "/nowhere", act)
+			_, problem := diskPerson(inv, owners, root, act)
 			if problem == nil {
 				return ""
 			}
@@ -41,10 +53,12 @@ func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 		{"disk clean --release", "then repeat this command", disk("--release s1")},
 		{"disk clean --discard", "then repeat this command", disk("--discard j2:c1")},
 		{"a human verb's proof", "", func() string {
-			return humanProofRemedy(newHumanVerbValues("park", nil), false, "", "", notReached).command
+			values := newHumanVerbValues("park", nil)
+			values.root = root
+			return humanProofRemedy(values, false, "", "", notReached).command
 		}},
 		{"session stop by a shell off the enrolled terminal", "then repeat this command", func() string {
-			return sessionStopRefusal("", "", notReached)
+			return sessionStopRefusal(root, "", notReached)
 		}},
 	} {
 		got := test.refusal()
