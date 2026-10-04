@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "board-follows-the-lane",
+  "subject": {
+    "commit": "411c02a4c126b92d5f47203bf0810da77ad0be88",
+    "parent": "ee5e4b7e5eda74e914c7de4d56727fea5826e476",
+    "tree": "d2e4b65ceaf1b149d7a51d34dcec0dcbbf436de2",
+    "patchDigest": "ebb65022c436d3bceadc53a2be40d34c6420ee2786e4d375638659a66d53a6ea",
+    "unitDigest": "39b5cc3834da295b1872158f5f5592dfec41f0f1b65a3b321aec2cac66bb6f67"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a633e6f9b70e89bc4cd74e27",
+    "round": 1,
+    "closureSha256": "d0f3b18b2ab7d702673aa9e587785cae3d1a93e18682d4aaa85736906ec7ca7e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d2e4b65ceaf1b149d7a51d34dcec0dcbbf436de2",
+    "runId": "goal-read-gate-20261004t193422z-d6eef544db137d2f"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "f1b9b1ebbea8f47958c53a761515d37478aba3c2",
+    "fromTree": "640713e5d5a5165e627c180fb0a89055cfcb3e60",
+    "toCommit": "411c02a4c126b92d5f47203bf0810da77ad0be88",
+    "toTree": "d2e4b65ceaf1b149d7a51d34dcec0dcbbf436de2"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-a633e6f9b70e89bc4cd74e27"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_deploy_test.go",
+      "readerWord": "reviewed by critic root code-critic-a633e6f9b70e89bc4cd74e27"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_handin_test.go",
+      "readerWord": "reviewed by critic root code-critic-a633e6f9b70e89bc4cd74e27"
+    },
+    {
+      "path": "metasystem/internal/board/card_test.go",
+      "readerWord": "reviewed by critic root code-critic-a633e6f9b70e89bc4cd74e27"
+    },
+    {
+      "path": "metasystem/internal/board/view_test.go",
+      "readerWord": "reviewed by critic root code-critic-a633e6f9b70e89bc4cd74e27"
+    }
+  ],
+  "sha256": "d485fdd86a48ddf6e4509489ef8cebda9299085e3424322610515abdaeef8b2e"
+}
