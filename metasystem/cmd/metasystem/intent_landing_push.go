@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -35,6 +37,9 @@ func (inv *intentInvocation) laneDesignPair(pair [2]string) {
 
 func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmitted) landingPushOwners {
 	if o.contains == nil {
+		o.contains = admitted.owners.contained
+	}
+	if o.contains == nil {
 		o.contains = plain.ContainedIn
 	}
 	if o.facts == nil {
@@ -50,8 +55,9 @@ func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmi
 		o.record = plain.RecordDesignCheck
 	}
 	if o.notify == nil {
+		contains := o.contains
 		o.notify = func(outcome plain.PushOutcome) error {
-			return postLanded(admitted.installation, landedMessage(admitted.installation, string(admitted.layout.Checkout), outcome.Old, outcome.Commit), outcome.Commit, admitted.owners.now())
+			return postLanded(admitted.installation, landedMessage(admitted.installation, string(admitted.layout.Checkout), outcome.Old, outcome.Commit, contains), outcome.Commit, admitted.owners.now())
 		}
 	}
 	return o
@@ -108,9 +114,13 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 // sentences of what the waiting hand-ins it put on main (head contains
 // them, old did not) delivered, one per line in queue order. Hand-ins
 // with no sentence add nothing; none at all is an empty message.
-func landedMessage(install, checkout, old, head string) string {
+func landedMessage(install, checkout, old, head string, owners ...func(string, string) func(string) (bool, error)) string {
 	waiting, _ := plain.Waiting(install)
-	inHead, inOld := plain.ContainedIn(checkout, head), plain.ContainedIn(checkout, old)
+	contained := plain.ContainedIn
+	if len(owners) > 0 {
+		contained = owners[0]
+	}
+	inHead, inOld := contained(checkout, head), contained(checkout, old)
 	var sentences []string
 	for _, entry := range waiting {
 		now, _ := inHead(entry.SHA)
@@ -164,6 +174,7 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 		if problem := owners.notify(outcome); problem != nil {
 			told = []string{"the channel was not told of the landing; the next landing or tick retries once: " + problem.Error()}
 		}
+		told = append(told, inv.writeLandedCards(admitted, owners.contains, outcome)...)
 	}
 	// The project's deploy follows a push that changed main; a failed
 	// deploy is told here and by deploy status, never on the channel.
@@ -198,4 +209,103 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	}
 	summary := "pushed " + shortLandingID(outcome.Commit) + " to main (from " + shortLandingID(outcome.Old) + ")"
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root), Details: told})
+}
+
+func (inv *intentInvocation) boardHome() (string, error) {
+	lookup := inv.owners.lookupEnv
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	return board.HomeWith(lookup)
+}
+
+// writeLandedCards follows every hand-in put on main, including superseded
+// ones. Problems with the board are news about the card, never a failed push.
+func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains func(string, string) func(string) (bool, error), outcome plain.PushOutcome) []string {
+	entries, err := plain.Entries(admitted.installation)
+	if err != nil {
+		return []string{"the landed cards could not be read from the queue: " + err.Error()}
+	}
+	checkout := string(admitted.layout.Checkout)
+	inHead := contains(checkout, outcome.Commit)
+	inOld := contains(checkout, outcome.Old)
+	unitsOnMain := admitted.owners.unitsOnMain
+	if unitsOnMain == nil {
+		unitsOnMain = plain.UnitsOnMain
+	}
+	goals, pending, problems := []string{}, map[string]bool{}, map[string]string{}
+	selected := map[string]bool{}
+	for _, entry := range entries {
+		if entry.State == plain.StateReturned {
+			continue
+		}
+		now, err := inHead(entry.SHA)
+		if err != nil {
+			problems[entry.Goal] = err.Error()
+			continue
+		}
+		if !now {
+			if entry.State == plain.StateWaiting {
+				pending[entry.Goal] = true
+			}
+			continue
+		}
+		before, err := inOld(entry.SHA)
+		if err != nil {
+			problems[entry.Goal] = err.Error()
+		} else if !before && !selected[entry.Goal] {
+			selected[entry.Goal] = true
+			goals = append(goals, entry.Goal)
+		}
+	}
+	var told []string
+	for goal, problem := range problems {
+		told = append(told, fmt.Sprintf("the landed card for %s was not written: %s", goal, problem))
+	}
+	if len(goals) == 0 {
+		return told
+	}
+	home, err := inv.boardHome()
+	if err != nil {
+		return append(told, "the landed cards were not written: "+err.Error())
+	}
+	for _, goal := range goals {
+		if problems[goal] != "" {
+			continue
+		}
+		card, live := board.LiveCard(home, goal)
+		problem := "no single live card holds the goal"
+		if live {
+			var count int
+			count, err = unitsOnMain(checkout, outcome.Commit, goal)
+			if err == nil {
+				problem = "the card ended or disappeared before the update"
+				err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
+					if current.Goal == "" || current.Stage.Terminal() {
+						return current, false
+					}
+					current.Landed = count
+					current.Writer.At = admitted.owners.now()
+					if !current.Stage.ProcessBound() {
+						current.Stage = board.StageClaimedIdle
+						if pending[goal] {
+							current.Stage = board.StageJoined
+						}
+						current.Owner, current.Job, current.Proof = nil, nil, nil
+						current.Since = time.Time{}
+						current.Writer.Component = "landing-push"
+					}
+					problem = ""
+					return current, true
+				})
+			}
+			if err != nil {
+				problem = err.Error()
+			}
+		}
+		if problem != "" {
+			told = append(told, fmt.Sprintf("the landed card for %s was not written: %s", goal, problem))
+		}
+	}
+	return told
 }

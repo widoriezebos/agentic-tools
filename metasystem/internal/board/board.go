@@ -187,7 +187,7 @@ func unknownReason(card Card, armed []Seat, prober identity.Prober, now time.Tim
 	if card.Stage.Terminal() {
 		return ""
 	}
-	if card.Stage.processBound() {
+	if card.Stage.ProcessBound() {
 		if card.Owner == nil || card.Owner.Pid <= 0 {
 			return "no owner"
 		}

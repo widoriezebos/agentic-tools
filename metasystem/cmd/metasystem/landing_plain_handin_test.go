@@ -16,7 +16,14 @@ import (
 // lands.
 func plainLaneBed(t *testing.T, sources ...string) (*deliveryBed, *landingOwners, string) {
 	t.Helper()
-	b := newDeliveryBed(t)
+	return plainLaneBedWith(t, false, sources...)
+}
+
+func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*deliveryBed, *landingOwners, string) {
+	t.Helper()
+	b := newDeliveryBedWith(t, nil, withoutGit)
+	b.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
+	b.owners.recordLanded = func(*intentInvocation, string) error { return nil }
 	owners := &landingOwners{status: readBranch(2, sources...)}
 	owners.install(b)
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/landing", true, nil }
