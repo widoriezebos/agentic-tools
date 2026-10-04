@@ -75,7 +75,11 @@ Tests, failing first. `panel.test.ts`: each of the five corpus lines, placed as 
 
 Later, when it hurts: budget and spend crossings as items with Open goal, from the typed causes the steward already records (RemedyFacts), once such a line is seen on the page; the steward's own alert (`alert_episode.go`) sends the same raw lines to the channel, the engine's lane, where this table could serve as the plain words; a hidden check whose automatic repair ended (FailureEscalation, not in the payload) shown as "a check of this computer's steward has failed for N h" with `system check`, when one stays dead for hours with nobody told; whether a build's first round is said at all; Box's "attempt 3 of 10", the same cap-as-plan reading, not asked.
 
+The guard m1e asked for in Wido's line of work (2026-10-04 01:40): a hidden check that stays dead longer than two hours surfaces as one plain sentence naming the seat, with the act "ask the partner". It is not built in step 3, for two reasons in the live record (`artifacts/agents/steward/health.json`, 01:55). First, no role records how long it has been dead: a role carries only `consecutiveFailures` (capped at 5) and `failureEscalation`, and failure episodes are pruned after one hour. So the guard needs the steward to write a failing-since time per role, and the fleet payload to carry it. Second, as worded it would surface retro-debt, trunk-red and capability-snapshots permanently: all three are dead with NO_LAWFUL_REMEDY today, so Wido's lines would return as "a check has failed for 2 h". It needs a small design of its own: which roles count, the since field and the words.
+
 ## 8. Open questions for Wido
+
+Answered 2026-10-04 01:40 by m1e in Wido's word, under his rulings of 2026-10-03 and recorded for him to overturn in the morning: 1 yes, 2 yes, 3 yes, 4 yes, 5 later.
 
 1. Of 23 steward checks, one stays on the page (the steward not running) with the two record-level lines; the other 22, the five you saw among them, leave the page and are read at `metasystem system check`. Recommended: yes.
 2. This amends FR-01 of the accepted page: an undecided check of a hidden role no longer holds the verdict; an unreadable record, a stale record and an undecided steward check still do. Recommended: yes.
