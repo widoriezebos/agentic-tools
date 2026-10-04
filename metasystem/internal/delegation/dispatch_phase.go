@@ -379,7 +379,7 @@ func (s *session) dispatchJob(args []string) error {
 		}
 		authorityBase = resolved
 	}
-	if err := s.briefAuthority(a.brief, authorityBase, a.reviews); err != nil {
+	if err := s.briefAuthority(a.brief, authorityBase, a.role, a.reviews); err != nil {
 		return s.die(1, "brief authority admission refused: "+err.Error())
 	}
 	// A new goal-free operation has no exact revision seam, so its global

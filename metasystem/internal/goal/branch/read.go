@@ -94,6 +94,10 @@ type branchReadRecord struct {
 	DispatchPending   bool   `json:"dispatchPending,omitempty"`
 	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
 	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
+	// BriefFromBuild: the composed brief carries the unit's build brief,
+	// which the build ran with, so the critic's dispatch does not re-check
+	// its cited paths.
+	BriefFromBuild bool `json:"briefFromBuild,omitempty"`
 	// Retries maps a failed examination round to the round its retry
 	// admitted ("pending" before the follow-up reported it).
 	Retries           map[string]string `json:"retries,omitempty"`
@@ -139,6 +143,27 @@ func loadBranchReadRecord(path string) (branchReadRecord, error) {
 		return branchReadRecord{}, fmt.Errorf("goal branch read record is malformed")
 	}
 	return record, nil
+}
+
+// BuildBriefAdmitted reports whether briefPath is a goal read's composed
+// brief whose record marks it as carrying the unit's build brief and whose
+// bytes are the ones recorded. Any read or parse failure answers false.
+func BuildBriefAdmitted(briefPath string) bool {
+	commit, found := strings.CutSuffix(filepath.Base(briefPath), ".md")
+	dir := filepath.Dir(briefPath)
+	if !found || commit == "" || filepath.Base(filepath.Dir(dir)) != "goal-reads" || filepath.Base(filepath.Dir(filepath.Dir(dir))) != "metasystem" {
+		return false
+	}
+	record, err := loadBranchReadRecord(filepath.Join(dir, commit+".json"))
+	if err != nil || !record.BriefFromBuild || record.Brief != briefPath {
+		return false
+	}
+	data, err := os.ReadFile(briefPath)
+	if err != nil {
+		return false
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]) == record.FrozenBriefSHA256
 }
 
 func saveBranchReadRecord(common, path string, record branchReadRecord) error {
@@ -693,6 +718,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		record.Runtime, record.Model = effectiveRuntime, effectiveModel
 		sum := sha256.Sum256([]byte(brief))
 		record.FrozenBriefSHA256 = hex.EncodeToString(sum[:])
+		record.BriefFromBuild = request.Join && supplied != nil
 	}
 	record.DispatchPending, record.DispatchRetryable = true, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
