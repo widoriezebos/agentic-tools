@@ -89,6 +89,10 @@ type TrunkRedSighting struct {
 	Sample string         `json:"sample,omitempty"`
 	Rerun  *TrunkRedRerun `json:"rerun,omitempty"`
 	Hang   *TrunkRedHang  `json:"hang,omitempty"`
+
+	Load     float64  `json:"load,omitempty"`
+	Surfaces []string `json:"surfaces,omitempty"`
+	Repeat   string   `json:"repeat,omitempty"`
 }
 
 type TrunkRedOwner struct {
