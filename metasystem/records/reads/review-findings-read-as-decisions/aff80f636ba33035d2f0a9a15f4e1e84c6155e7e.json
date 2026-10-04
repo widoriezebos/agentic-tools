@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "review-findings-read-as-decisions",
+  "unit": "whole-record",
+  "subject": {
+    "commit": "aff80f636ba33035d2f0a9a15f4e1e84c6155e7e",
+    "parent": "255a2514de127c7b30a522c016cb07fdd1708baa",
+    "tree": "91396680a908358de1879119badd31fa891e29c8",
+    "patchDigest": "08e39e91d2738469c5242cb9099d327e57c20400e7e13fd59a6ab364bfb44fce",
+    "unitDigest": "2a176067efa0cff6390ce4fcaa1a79a5289fa82e7c3a4d5aa0e3ad4d5184277b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-66763944e3d5c8d3452b07a7",
+    "round": 1,
+    "closureSha256": "e2a511bdd72d19ca27ad98b6c55dccb028d4ba4e41225151e87f3dcd5c982ec5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "91396680a908358de1879119badd31fa891e29c8",
+    "runId": "goal-read-gate-20261004t054151z-349a1bd9d3098b67"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "0537df27f9af8a54f44c8379d70bc772faace7328884a7eb7a7c150fd2151a01"
+}
