@@ -1,4 +1,4 @@
-Working Mode: <working mode>
+Working Mode: <working mode, lower case, e.g. implement>
 Mission Stream: <active mission stream; omit this line when no mission is active>
 Orchestrator Identity: <identity>
 Date: <YYYY-MM-DD>
