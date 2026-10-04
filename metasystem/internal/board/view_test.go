@@ -10,6 +10,31 @@ import (
 	"time"
 )
 
+func TestStageTextSaysUnitsLanded(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		stage Stage
+		count int
+		want  string
+	}{
+		{StageClaimedIdle, 3, "3 units landed"},
+		{StageClaimedIdle, 1, "1 unit landed"},
+		{StageJoined, 3, "joined, 3 units landed"},
+		{StageReview, 1, "review round 2, 1 unit landed"},
+	} {
+		if got := StageText(test.stage, &Round{N: 2}, nil, test.count); got != test.want {
+			t.Errorf("StageText(%s, %d) = %q, want %q", test.stage, test.count, got, test.want)
+		}
+	}
+	seat := seatOf("m1b")
+	view := NewView([]Seat{seat}, Picture{Cards: []Card{{Seat: seat, Goal: "goal-x", Stage: StageClaimedIdle, Landed: 3}}})
+	view.Readable = true
+	text := strings.Join(view.Lines(t0, time.UTC, false), "\n")
+	if !strings.Contains(text, "goal-x, 3 units landed") || strings.Contains(text, "claimed idle") {
+		t.Fatalf("a landed count was counted idle: %s", text)
+	}
+}
+
 // TestBoardViewIsOneLinePerSeatInLocalTime (R23, R24, U10d): the view every
 // reader prints names each armed seat of this host on one line, with its
 // underway goal's stage, round of limit or proof sections and local start

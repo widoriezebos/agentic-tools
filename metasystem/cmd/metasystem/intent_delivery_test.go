@@ -58,13 +58,15 @@ func newDeliveryBedAmended(t *testing.T, amend func(*goal.GoalFile)) *deliveryBe
 	return bed
 }
 
-func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
+func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile), withoutGit ...bool) *deliveryBed {
 	t.Helper()
 	bed := &deliveryBed{intentBed: newIntentBed(t, false, amend)}
 	// The project's design homes and the close owner resolve the checkout
 	// through Git itself.
-	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
+	if len(withoutGit) == 0 || !withoutGit[0] {
+		if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v: %s", err, output)
+		}
 	}
 	layout, err := stateroot.NewResolver(fakeTop(bed.root()), noExecutable).ResolveLayout(bed.root())
 	if err != nil {

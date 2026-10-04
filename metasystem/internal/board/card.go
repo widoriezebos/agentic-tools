@@ -69,9 +69,9 @@ func (s Stage) Valid() bool { _, ok := stages[s]; return ok }
 // Terminal reports whether the stage ends the claim's life on the board.
 func (s Stage) Terminal() bool { return stages[s] }
 
-// processBound reports whether a live process carries the stage, so the card
+// ProcessBound reports whether a live process carries the stage, so the card
 // must name it as owner.
-func (s Stage) processBound() bool {
+func (s Stage) ProcessBound() bool {
 	switch s {
 	case StageBuild, StageRevise, StageUnitProof, StageReview, StageLanding:
 		return true
@@ -151,6 +151,7 @@ type Card struct {
 	LastProgressAt time.Time   `json:"lastProgressAt"`
 	Owner          *Owner      `json:"owner,omitempty"`
 	Batch          string      `json:"batch,omitempty"`
+	Landed         int         `json:"landed,omitempty"`
 	Stages         []StageSpan `json:"stages,omitempty"`
 	Writer         Writer      `json:"writer"`
 }
@@ -286,7 +287,16 @@ func WriteAt(home string, card Card) error {
 	if !card.Stage.Valid() {
 		return fmt.Errorf("board: card for goal %s names no stage of the vocabulary: %q", card.Goal, card.Stage)
 	}
-	dir, err := seatDir(home, card.Seat.Machine)
+	return Update(home, card.Seat, card.Goal, func(Card) (Card, bool) { return card, true })
+}
+
+// Update reads, decides and publishes a goal's card under its seat's lock.
+// A missing or unreadable card is zero; a false decision leaves it untouched.
+func Update(home string, seat Seat, goal string, decide func(Card) (Card, bool)) error {
+	if err := checkName("goal", goal); err != nil {
+		return err
+	}
+	dir, err := seatDir(home, seat.Machine)
 	if err != nil {
 		return err
 	}
@@ -295,8 +305,16 @@ func WriteAt(home string, card Card) error {
 		return err
 	}
 	defer unlock()
-	path := filepath.Join(dir, card.Goal+".json")
+	path := filepath.Join(dir, goal+".json")
 	previous, havePrevious := readCardFile(path)
+	card, write := decide(previous)
+	if !write {
+		return nil
+	}
+	card.Seat, card.Goal = seat, goal
+	if !card.Stage.Valid() {
+		return fmt.Errorf("board: card for goal %s names no stage of the vocabulary: %q", goal, card.Stage)
+	}
 	next := carry(card, previous, havePrevious)
 	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
@@ -329,6 +347,9 @@ func carry(card Card, previous Card, havePrevious bool) Card {
 		return card
 	}
 	card.Stages = append([]StageSpan(nil), previous.Stages...)
+	if card.Landed == 0 {
+		card.Landed = previous.Landed
+	}
 	if previous.Stage != card.Stage {
 		if card.Since.IsZero() {
 			card.Since = at
@@ -357,7 +378,7 @@ func progressed(previous, next Card) bool {
 			return true
 		}
 	}
-	return previous.Batch != next.Batch
+	return previous.Batch != next.Batch || previous.Landed != next.Landed
 }
 
 func jobKey(job *Job) string {

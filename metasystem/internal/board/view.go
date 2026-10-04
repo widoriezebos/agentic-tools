@@ -109,6 +109,7 @@ type GoalView struct {
 	Round          *Round    `json:"round,omitempty"`
 	Proof          *Proof    `json:"proof,omitempty"`
 	Batch          string    `json:"batch,omitempty"`
+	Landed         int       `json:"landed,omitempty"`
 	Since          time.Time `json:"since,omitzero"`
 	LastProgressAt time.Time `json:"lastProgressAt,omitzero"`
 	Unknown        string    `json:"unknown,omitempty"`
@@ -153,7 +154,7 @@ func NewView(seats []Seat, picture Picture) View {
 }
 
 func goalView(card Card, unknown string) GoalView {
-	return GoalView{Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch,
+	return GoalView{Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch, Landed: card.Landed,
 		Since: card.Since, LastProgressAt: card.LastProgressAt, Unknown: unknown}
 }
 
@@ -216,7 +217,7 @@ func seatText(seat SeatView, now time.Time, location *time.Location) string {
 		switch {
 		case entry.Unknown != "":
 			shown = append(shown, goalText(entry, now, location))
-		case entry.Stage == StageClaimedIdle:
+		case entry.Stage == StageClaimedIdle && entry.Landed == 0:
 			idle++
 		case entry.Stage.Terminal():
 			finished++
@@ -256,7 +257,7 @@ func goalText(entry GoalView, now time.Time, location *time.Location) string {
 		}
 		return text
 	}
-	text := entry.Goal + ", " + StageText(entry.Stage, entry.Round, entry.Proof)
+	text := entry.Goal + ", " + StageText(entry.Stage, entry.Round, entry.Proof, entry.Landed)
 	if entry.Stage == StageJoined && entry.Batch != "" {
 		text += " batch " + entry.Batch
 	}
@@ -268,7 +269,7 @@ func goalText(entry GoalView, now time.Time, location *time.Location) string {
 
 // StageText is a stage as a person reads it: review round 2 of 3, unit
 // proof 120 of 189, claimed idle.
-func StageText(stage Stage, round *Round, proof *Proof) string {
+func StageText(stage Stage, round *Round, proof *Proof, landed ...int) string {
 	text := strings.ReplaceAll(string(stage), "-", " ")
 	if proof != nil && proof.Planned > 0 && stage == StageUnitProof {
 		text += fmt.Sprintf(" %d of %d", proof.Done, proof.Planned)
@@ -279,6 +280,13 @@ func StageText(stage Stage, round *Round, proof *Proof) string {
 		} else {
 			text += fmt.Sprintf(" round %d", round.N)
 		}
+	}
+	if len(landed) > 0 && landed[0] > 0 {
+		count := fmt.Sprintf("%d unit%s landed", landed[0], plural(landed[0]))
+		if stage == StageClaimedIdle {
+			return count
+		}
+		text += ", " + count
 	}
 	return text
 }
