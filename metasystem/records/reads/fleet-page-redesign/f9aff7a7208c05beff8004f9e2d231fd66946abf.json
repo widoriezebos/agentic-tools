@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "fleet-page-redesign",
+  "unit": "health-lines",
+  "subject": {
+    "commit": "f9aff7a7208c05beff8004f9e2d231fd66946abf",
+    "parent": "03c50688e9ff35b02597e727391e5b9717932d8a",
+    "tree": "47dff67787545c624c59096e28f41dbd3c448348",
+    "patchDigest": "347ba4a51368a174346b315c1c18c786b74f23f9c0ac15ec38e9d9e3ad4521a8",
+    "unitDigest": "6615d88ea678852d32f979246f629b4eb68777f94a578b3b97f63ec97017cf69"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0a479e2a27d9f131087a09e8",
+    "round": 3,
+    "closureSha256": "b5723d2733758fe113065bf32121ac332730b2397e876f234566bb8d90087289"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "47dff67787545c624c59096e28f41dbd3c448348",
+    "runId": "goal-read-gate-20261004t002908z-065405a03be4cc44"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "225736a5e689a8a10146f98c73f0543df6ac0fd2f436e832fc35bbe84137c79c"
+}
