@@ -57,6 +57,8 @@ type laneVerbOwners struct {
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
 	plainProve       plain.ProveSeams
+	mainEndpoint     func(string) (goal.Endpoint, error)
+	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main.
