@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "closed-rule-finding",
+  "subject": {
+    "commit": "394e4934782a2b2e07cdd6b85f28a201abda4ef9",
+    "parent": "4067cc621025d867366a2c52d6ecc3f3f38f1c38",
+    "tree": "9aa3e219b2016a7dc6e4a37166785ad951810e7b",
+    "patchDigest": "e7f98d5be3c6aba7e8be9511234948f174cf0280ef4ec272a6247361c6e25b64",
+    "unitDigest": "c5f9396d92d35c7aded95268a0f12be671e96d4df8efef7c58a150b6514d791f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d922b7a541addf5f8d33ef47",
+    "round": 1,
+    "closureSha256": "38629261b5084da22a67fb3f2c23a98d6dfdd8290f99d64c47706fa88f557225"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "9aa3e219b2016a7dc6e4a37166785ad951810e7b",
+    "runId": "goal-read-gate-20261004t181457z-17ccc28d4f3a8f59"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "4067cc621025d867366a2c52d6ecc3f3f38f1c38",
+      "digest": "bc625615d64f79ecff67dd62eeecd46fe075c5713047680ff465f30d922a3bf2"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/validate/movedeffects_test.go",
+      "readerWord": "reviewed by critic root code-critic-d922b7a541addf5f8d33ef47"
+    }
+  ],
+  "sha256": "6f709e89a9a3e636eb523610bfb23b0af0958bf561bad62c2ddbbbbf93034558"
+}
