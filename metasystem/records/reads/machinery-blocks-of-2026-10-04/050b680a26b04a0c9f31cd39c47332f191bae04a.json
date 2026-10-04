@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "roster-not-digested",
+  "subject": {
+    "commit": "050b680a26b04a0c9f31cd39c47332f191bae04a",
+    "parent": "7e6c37bd57489bae4d75226a836eb32770d30294",
+    "tree": "42df5fbf8b598eeae8c18addfccf82340fbc172f",
+    "patchDigest": "d32b6052a80453bdd4d6611f333549e0e08dad04334f1b1d75ba52628c8b1bd4",
+    "unitDigest": "63b702d9d852221f322878797ab695cba092d566ab12b27839e87a7dc84fefa7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-faf062c3887d1c0e1cf26ab4",
+    "round": 1,
+    "closureSha256": "d91dd2132babb2c349182deeeca9d339ceb3d15932c9b16ca3478bf2cf94bce8"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "42df5fbf8b598eeae8c18addfccf82340fbc172f",
+    "runId": "goal-read-gate-20261004t175039z-d4adf63ca8a989b5"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_named_test.go",
+      "readerWord": "reviewed by critic root code-critic-faf062c3887d1c0e1cf26ab4"
+    }
+  ],
+  "sha256": "f716bff79cc2a5cbf434b69add6e70fa30ae11caee672804e107959e0cc96a70"
+}
