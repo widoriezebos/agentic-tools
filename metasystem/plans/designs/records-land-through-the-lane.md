@@ -2,8 +2,11 @@
 
 - Kind: design
 - Id: 01M446E2Q92FQTXF3SVYGWNFJV
-- Status: draft
+- Status: accepted
 - Goals: records-land-through-the-lane
+- Critique: closed at round 2 on 0 material findings (Codex Astra: round 1 six material, folded; the confirmation read closed all six)
+
+Accepted 2026-10-04 22:15 by the ui seat for the build: tier 2, one Astra round and one confirmation read; m1e agreed the dispositions at 22:02 (rulings and cross-branch ids out of step 1; unit 3 waits for lane-reproves units 3 and 4).
 
 ## 1. The rule
 
