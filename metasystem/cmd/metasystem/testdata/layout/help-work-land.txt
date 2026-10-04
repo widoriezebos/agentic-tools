@@ -1,6 +1,6 @@
 metasystem work land · land a goal's reviewed work
 
-  usage   metasystem work land G [--through COMMIT] [--delivered TEXT]
+  usage   metasystem work land G [--through COMMIT] [--delivered TEXT] [--again]
           metasystem work land G --queue-only
           metasystem work land j2:J
           metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]
@@ -37,6 +37,8 @@ MetaSystem administration
 Options  before or after the target; -- ends them
   --through COMMIT           land a human-approved prefix ending at this unit commit
   --queue-only               only mark the held goal waiting to land, for a later work land G
+  --again                    re-queue a returned tip when the return no longer applies; a waiting
+                             tip holds
   --delivered TEXT           one plain sentence of what this delivers, posted to the channel when it
                              reaches main
   --message FILE             land a hand-made change with this commit message (- reads it from

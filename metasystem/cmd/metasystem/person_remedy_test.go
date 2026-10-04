@@ -22,11 +22,12 @@ const personEnrollCommand = "metasystem system enroll --name NAME"
 
 func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 	t.Parallel()
+	root := t.TempDir()
 	notReached := humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 	disk := func(act string) func() string {
 		return func() string {
 			owners := diskOwners{person: func(string) (string, error) { return "", notReached }}
-			_, problem := diskPerson(&intentInvocation{}, owners, "/nowhere", act)
+			_, problem := diskPerson(&intentInvocation{cwd: root, stateRoot: root}, owners, root, act)
 			if problem == nil {
 				return ""
 			}
