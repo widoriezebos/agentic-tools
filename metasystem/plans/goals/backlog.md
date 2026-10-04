@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 160
+- Revision: 161
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -214,4 +214,5 @@ History:
 - 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T07:59:10Z ack
 - 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T11:38:01Z ack
 - 2026-10-04T13:02:08Z 39425ZKJYYF0NSFP83SXSMJ5E2-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T07:57:20Z ack
-Integrity: sha256=d45d0a4d21249fbe873da542c2f0bc9bf7a02620daea9a33e3ef18267a017faf
+- 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z ack
+Integrity: sha256=ce2d201eede6f1db3c46f3c72d52241ff568bda7803414f04be572e26ce090b7

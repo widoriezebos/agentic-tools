@@ -1,6 +1,6 @@
 # design-gate-at-dispatch
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
@@ -30,7 +30,7 @@ Open read items (fix unit switch-reread-r1): 2
 - ReadItem: id=gate2-preliminary-r5-1 read=gate2-preliminary-r5 state=fixed addedAt=2026-10-03T21:01:07Z changedAt=2026-10-04T07:17:00Z closingReference="88e4da1f422db6582aaeb838bbb5ec944f5944d7" text="The gate's checked chain read lists job records with filepath.Glob (internal/dispatch/critique.go:38-43), which ignores a directory read error, so an unreadable artifacts/agents/jobs folder reads as no chains and an accepted page saying 'Critique: closed' records ok instead of unchecked. An unreadable jobs folder already stops every dispatch on that checkout; harmless while the gate only warns. Unit switch should read the folder with os.ReadDir and treat any error but not-exist as unchecked before refuse can stop a build."
 - ReadItem: id=gate2-preliminary-r1-1 read=gate2-preliminary-r1 state=fixed addedAt=2026-10-03T20:14:52Z changedAt=2026-10-04T07:16:54Z closingReference="b5be8979afecc48753195b65327d0e23eb5ab190" text="Unreadable critique state reads as no open critique: dispatch.DesignCritiqueChains (internal/dispatch/design_chain.go:26-33) goes through loadCritiqueState, which skips unreadable job JSON (critique.go:29-46), so the gate's production chain adapter (cmd/metasystem/intent_design_gate.go:43-51) never reports an error and a page saying 'Critique: closed' records ok instead of unchecked. Harmless while the gate only warns; unit switch must surface the read error before refuse can stop a build."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 90
+- Revision: 91
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=20
 - BudgetExceptions: 7
@@ -40,7 +40,8 @@ Open read items (fix unit switch-reread-r1): 2
 - AcceptedRisk: finding=GATE2-RECORD-PATH-ESCAPE chain=code-critic-42d9da2c9a70e7f3b210039f by=Wido opid=JTWYGKTRV4Z5SSX8YHSVSRCR6G-m1e-718ba0eb
 - AcceptedRisk: finding=GATE2-UNREADABLE-JOBS-FALSE-OK chain=code-critic-42d9da2c9a70e7f3b210039f by=Wido opid=7YG39QCXQH2J4WXMY9SD1WNW7T-m1e-718ba0eb
 - AcceptedRisk: finding=F-1-BUILD-DIGEST-LINE-ENTERS-UNIT-DIFF chain=code-critic-8f77dfc769a9373f3722a5c1 by=Wido opid=NBHBGJKC44MJ3PSBP134G8XC9F-m1e-718ba0eb
-- Episode: machine=m1k lineage=steward-seat accountingRevision=84 episodeAt=2026-10-03T16:01:55Z episodeRevision=50 idleSeconds=1658 released=2026-10-04T13:04:39Z
+- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T14:29:56Z revision=91 accountingRevision=91 episodeAt=2026-10-04T14:29:56Z episodeRevision=91
+- StopCapability: generation=91 revision=91 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -133,4 +134,5 @@ History:
 - 2026-10-04T13:02:08Z KXENEZY3TJV5D3YEYGDWW3EWF5-m1k-71c5cb39 read-items-add actor=m1k+steward-seat targets=design-gate-at-dispatch
 - 2026-10-04T13:04:39Z H33RVZ3YPRSNT39221XZ4JTN8K-m1k-71c5cb39 release actor=m1k+steward-seat targets=design-gate-at-dispatch reason=handed in to the lane at 55ebdd8b714e with every unit read; the seat moves to unit-rounds-converge-or-stop and reclaims this goal if the lane returns it
 - 2026-10-04T14:15:09Z D6Y5NRYZ7K7BJ780F8EVC87EWB-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,codex-jobs-run-unsandboxed-on-a-trusted-host,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order from=1:7 to=1:6
-Integrity: sha256=4dc61d33178b666bac062c30d99208f25b5d0d7b935231a9b058f5320552c41b
+- 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 claim actor=m1l+steward-seat targets=design-gate-at-dispatch
+Integrity: sha256=46a1f2295fa23bbd15f40ecd4eb10ecd4032da1e673e323983dfe6581efa4e88
