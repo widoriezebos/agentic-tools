@@ -18,15 +18,15 @@ Open read items (fix unit gate2-preliminary-r5): 1
 Open read items (fix unit switch-preliminary-r3): 1
 - ReadItem: id=switch-preliminary-r3-1 read=switch-preliminary-r3 state=open addedAt=2026-10-03T21:57:50Z changedAt=- closingReference="" text="Under design.gate.mode=refuse the build refusal prints an empty governed-by= (cmd/metasystem/intent_work.go:602-608) and the dispatch record's GovernedBy is empty (intent_design_gate.go:138-139), because the ruling ids come with unit governance (refusal.GovernedBy, design section 7 unit 5). Unit governance must fill both from the map, omit the detail when no id is known, and assert a non-empty id in intent_design_gate_switch_test.go:78."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 65
+- Revision: 66
 - Labels: headless-fleet, headless-process
-- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 4
-- NormApproval: approvedRef=4QJHQBSHSY1ASMJ7QW14G5R320-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=63
-- Approved: by=human:Wido at=2026-10-04T03:12:59Z revision=64 opid=4QJHQBSHSY1ASMJ7QW14G5R320-m1e-718ba0eb authority=proven digest=a28ed57c1209d375e785be5425ca73990a3140a4d1e31a1372512ceed13f7a16 episode=64
+- Budget: elapsedLimit=2d4h attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 5
+- NormApproval: approvedRef=HFFF18A8EPDDS3E37ZEPNHAF4J-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=65
+- Approved: by=human:Wido at=2026-10-04T05:41:44Z revision=66 opid=HFFF18A8EPDDS3E37ZEPNHAF4J-m1e-718ba0eb authority=proven digest=96569f3dfca3b8de9fb36313d9699fcce9b4e2cad9f5644b0407bdeeeb1a90fa episode=66
 - Sliced: machine=m1k lineage=steward-seat revision=50 at=2026-10-03T16:24:27Z
-- Claimed: machine=m1k lineage=steward-seat at=2026-10-04T03:12:59Z revision=64 accountingRevision=64 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
-- StopCapability: generation=64 revision=64 machine=m1k claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1k lineage=steward-seat at=2026-10-04T05:41:44Z revision=66 accountingRevision=66 episodeAt=2026-10-03T16:01:55Z episodeRevision=50
+- StopCapability: generation=66 revision=66 machine=m1k claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -94,4 +94,5 @@ History:
 - 2026-10-04T01:03:24Z 3Q85KFT487SJ1SG74Y8KHNZB6W-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T22:10:47Z
 - 2026-10-04T03:12:59Z 4QJHQBSHSY1ASMJ7QW14G5R320-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T01:03:24Z
 - 2026-10-04T04:34:59Z F2S98KHZABD7846154QRRM262V-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=landing-deploys-the-engine from=1:4 to=1:5 requested-sequence=4
-Integrity: sha256=d9632e7142861229c25d988711df1c1125b5f27c47c2c37f39e6fd941dc283b4
+- 2026-10-04T05:41:44Z HFFF18A8EPDDS3E37ZEPNHAF4J-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T03:12:59Z
+Integrity: sha256=d807b816fe2919c6d4101e21ab62c4e039fb0e5d2e2c5044abda13a2a53b9096
