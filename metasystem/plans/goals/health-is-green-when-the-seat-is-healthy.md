@@ -21,15 +21,15 @@ Open read items (fix unit stuck-detector-review-r1): 3
 - ReadItem: id=stuck-detector-review-r1-2 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-2-ONE-BAD-RUN-FREEZES-ALL (review code-critic-fa0262e1ba7a51f5b35d447b, not material): one unparsable run.json anywhere in the host-wide unit store makes every stuck-unit observation Unknown and removes every stuck stamp from /api/board until the file is repaired; scope an unreadable run to its own goal and unit when its name can be read."
 - ReadItem: id=stuck-detector-review-r1-3 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-3-SECOND-LEDGER-READ (review code-critic-fa0262e1ba7a51f5b35d447b, not material): the stuck-unit pass reads the claimed-goal ledger a second time each tick and reads Unknown on a seat whose ledger is not yet the new world; share the delivery role's read."
 - OpenedAt: 2026-10-03T09:22:09Z
-- Revision: 56
+- Revision: 57
 - Pinned: m1l
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=50
 - Approved: by=human:Wido at=2026-10-04T15:00:09Z revision=51 opid=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb authority=proven digest=6a4d004a6d67338ab0e0855b5a4cec42fa1e435472ccde6af5b359901f9c038d episode=51
 - Sliced: machine=m1l lineage=steward-seat revision=48 at=2026-10-04T14:54:42Z
-- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T15:00:09Z revision=51 accountingRevision=51 episodeAt=2026-10-04T14:33:15Z episodeRevision=48
-- StopCapability: generation=51 revision=51 machine=m1l claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1l lineage=main-1790454088-93948-21671b at=2026-10-04T20:54:25Z revision=57 accountingRevision=57 episodeAt=2026-10-04T20:54:25Z episodeRevision=57
+- StopCapability: generation=57 revision=57 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T09:22:09Z YF6TX22AGCF2X3HD0MT1F7VVPN-m1e-718ba0eb open actor=human:Wido targets=health-is-green-when-the-seat-is-healthy
@@ -88,4 +88,5 @@ History:
 - 2026-10-04T18:37:19Z EAX8N524NWPK7QXK8KF32Y1XB4-m1l-71c5cb39 read-items-add actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
 - 2026-10-04T19:17:54Z 6MJYD1MZE4XAEYS69PZDXMVPNS-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:52 to=1:51
 - 2026-10-04T19:25:33Z ZXVGSJNET61KPF751XEHKCREVP-m1l-71c5cb39 read-items-add actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
-Integrity: sha256=b9a621dfde72f27f4001d7a93d48b14a48f9f380e931c1a882f502b66801c45b
+- 2026-10-04T20:54:25Z NRM1YDTQC6RG8G7R1BM8PB5TCA-m1l-f456f182 steal actor=human:wido targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T15:00:09Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the m1l checkout
+Integrity: sha256=b0caa6df1f06e0f59e59fe8b56d1920a83e7209ffca5822aae65c8809640ac29
