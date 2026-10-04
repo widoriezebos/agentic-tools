@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -123,6 +124,8 @@ func TestSetRosterRowRefusesAndLeavesTheFileAsItWas(t *testing.T) {
 		{"an unknown field", `{"version": 1, "colour": "red"}`, "seat", "seat", "claude:claude-opus-5-5:high", `the rosters file FILE can't be used: it is not valid rosters JSON (json: unknown field "colour"); nothing was changed`},
 		{"trailing bytes", rostersJSON(tierOneDesign+`}}`) + "\n}", "tier-1", "design", "codex:gpt-5.5:high", "the rosters file FILE can't be used: it holds more after its JSON object; nothing was changed"},
 	}
+	// Only these need repair; every other refusal is an input refusal.
+	repairs := []string{"a model that does not resolve", "an unusable version", "a broken row elsewhere", "an unknown field", "trailing bytes"}
 	for _, c := range cases {
 		home := rosterHome(t, c.content)
 		before, beforeErr := os.ReadFile(config.RostersPath(home))
@@ -130,12 +133,15 @@ func TestSetRosterRowRefusesAndLeavesTheFileAsItWas(t *testing.T) {
 		if want := strings.ReplaceAll(c.want, "FILE", config.RostersPath(home)); changed || err == nil || err.Error() != want {
 			t.Errorf("%s: SetRosterRow(%s, %s, %q) = %v, %v;\nwant false, %q", c.name, c.roster, c.row, c.value, changed, err, want)
 		}
+		if input := !slices.Contains(repairs, c.name); errors.Is(err, config.ErrRosterInput) != input {
+			t.Errorf("%s: errors.Is(%v, ErrRosterInput) = %v, want %v", c.name, err, !input, input)
+		}
 		after, afterErr := os.ReadFile(config.RostersPath(home))
 		if errors.Is(afterErr, fs.ErrNotExist) != (c.content == "") || c.content != "" && (beforeErr != nil || afterErr != nil) || string(after) != string(before) {
 			t.Errorf("%s: the refused write changed the rosters file from %q to %q (%v, %v)", c.name, before, after, beforeErr, afterErr)
 		}
 	}
-	if changed, err := config.SetRosterRow("relative", "seat", "seat", "claude:claude-opus-5-5:high", installed, runs); changed || err == nil || err.Error() != `the rosters need an absolute home, got "relative"; nothing was changed` {
+	if changed, err := config.SetRosterRow("relative", "seat", "seat", "claude:claude-opus-5-5:high", installed, runs); changed || err == nil || err.Error() != `the rosters need an absolute home, got "relative"; nothing was changed` || errors.Is(err, config.ErrRosterInput) {
 		t.Errorf("a relative home got %v, %v; want it refused", changed, err)
 	}
 }

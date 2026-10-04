@@ -107,6 +107,7 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_review_help.go":    {group: "G4"},
 	"cmd/metasystem/intent_selection.go":      {group: "G4"},
 	"cmd/metasystem/intent_references.go":     {group: "G4"},
+	"cmd/metasystem/intent_roster.go":         {group: "G4"},
 	// G4a's converted verbs: their run functions print through textui.
 	"cmd/metasystem/intent_design.go#runIntentDesign":            {layout: auditEnforce},
 	"cmd/metasystem/intent_work.go#runIntentBrief":               {layout: auditEnforce},

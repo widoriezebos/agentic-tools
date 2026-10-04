@@ -29,6 +29,7 @@ Run
   app          the application this project builds, under its launch contract
   ui           the browser interface
   settings     MetaSystem settings and coordination
+  roster       this computer's rosters: which agent, model and effort does each kind of work
 
 Practice
   receipt      task receipts and the retro cadence

@@ -186,6 +186,10 @@ func Rosters(home string) ([]RosterView, error) {
 	return views, nil
 }
 
+// ErrRosterInput means a roster write was refused for its roster, row or
+// value, so another one can succeed; an unusable file or home needs repair.
+var ErrRosterInput = errors.New("the roster, row or value is refused")
+
 // ErrRosterNotDurable means the row is written, but may not survive a crash.
 var ErrRosterNotDurable = errors.New("the roster row is written, but its durability could not be confirmed")
 
@@ -205,10 +209,10 @@ func SetRosterRow(home, roster, row, value string, runtimes []string, resolve fu
 func (write RosterWriter) SetRow(home, roster, row, value string, runtimes []string, resolve func(runtime, model string) (string, error)) (changed bool, err error) {
 	i := slices.IndexFunc(rosterKinds, func(kind rosterKind) bool { return kind.id == roster })
 	if i < 0 {
-		return false, unchanged("%s is not a roster; the rosters are %s", roster, plainList(RosterIDs()))
+		return false, refused("%s is not a roster; the rosters are %s", roster, plainList(RosterIDs()))
 	}
 	if !slices.Contains(rosterKinds[i].rows, row) {
-		return false, unchanged("%s is not a row of %s; its rows are %s", row, roster, plainList(rosterKinds[i].rows))
+		return false, refused("%s is not a row of %s; its rows are %s", row, roster, plainList(rosterKinds[i].rows))
 	}
 	agent := RosterAgent{Runtime: "main"}
 	if fields := strings.Split(value, ":"); value != "main" {
@@ -221,10 +225,10 @@ func (write RosterWriter) SetRow(home, roster, row, value string, runtimes []str
 		}
 	}
 	if problem := rowProblem(row, agent); problem != "" {
-		return false, unchanged("%s", problem)
+		return false, refused("%s", problem)
 	}
 	if agent.Runtime != "main" && !slices.Contains(runtimes, agent.Runtime) {
-		return false, unchanged("%s is not one of this installation's runtimes (%s)", agent.Runtime, strings.Join(runtimes, ", "))
+		return false, refused("%s is not one of this installation's runtimes (%s)", agent.Runtime, strings.Join(runtimes, ", "))
 	}
 	if !filepath.IsAbs(home) {
 		return false, unchanged("the rosters need an absolute home, got %q", home)
@@ -268,7 +272,7 @@ func (write RosterWriter) SetRow(home, roster, row, value string, runtimes []str
 		} else if rows[0].Model != rows[1].Model {
 			both = runs[0] + " (" + plainList(written) + ")"
 		}
-		return false, unchanged("%s %s and %s would both run %s; the author and the reviewer of a piece of work are different models", roster, pair[0], pair[1], both)
+		return false, refused("%s %s and %s would both run %s; the author and the reviewer of a piece of work are different models", roster, pair[0], pair[1], both)
 	}
 	if file.Rosters == nil {
 		file.Rosters = map[string]rosterEntry{}
@@ -401,6 +405,15 @@ func unusable(home, problem string) error {
 func unchanged(format string, args ...any) error {
 	return fmt.Errorf(format+"; nothing was changed", args...)
 }
+
+// refused is an input refusal: its words are unchanged's, and it is ErrRosterInput.
+func refused(format string, args ...any) error {
+	return inputRefusal{unchanged(format, args...)}
+}
+
+type inputRefusal struct{ error }
+
+func (inputRefusal) Is(target error) bool { return target == ErrRosterInput }
 
 // plainList writes items as a person says them: "claude and codex".
 func plainList(items []string) string {

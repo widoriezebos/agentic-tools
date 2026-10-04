@@ -87,10 +87,9 @@ func runIntentRosterSet(inv *intentInvocation) int {
 	})
 	if err != nil && !errors.Is(err, config.ErrRosterNotDurable) {
 		code := 1
-		// The store's input refusals end this way; file and resolver failures
-		// need repair rather than another roster, row or value.
-		if strings.HasSuffix(err.Error(), "; nothing was changed") && errors.Unwrap(err) == nil &&
-			!strings.HasPrefix(err.Error(), "the rosters file ") && !strings.HasPrefix(err.Error(), "the rosters need an absolute home") {
+		// An input refusal wants another roster, row or value; file, home and
+		// resolver failures need repair instead.
+		if errors.Is(err, config.ErrRosterInput) {
 			code = 2
 		}
 		return inv.render(intentResult{Outcome: intentRefused, code: code, Summary: err.Error()})
