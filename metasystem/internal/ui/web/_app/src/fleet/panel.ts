@@ -705,6 +705,7 @@ export type Doing = {
 
 /** A stage of a goal's card, as the column says it, and whether it is work in hand. */
 const STAGES: Record<string, { words: string; working: boolean }> = {
+  "claimed-idle": { words: "claimed idle", working: false },
   build: { words: "building", working: true },
   revise: { words: "revising", working: true },
   "unit-proof": { words: "proving", working: true },
@@ -771,7 +772,7 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   }
   const held = new Set(machine.holds.map((one) => one.goal));
   const cards = (seat?.goals ?? []).filter(
-    (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined,
+    (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined && (goal.stage !== "claimed-idle" || (goal.landed ?? 0) > 0),
   );
   // Work that moves wins over a stalled goal beside it (step-2 design 2a.1):
   // the stalled goal is its own Needs you item.
@@ -802,7 +803,7 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
 
 function cardWords(goal: BoardSeat["goals"][number], now: Date): string {
   const stage = goal.stage ?? "";
-  const words = STAGES[stage].words;
+  const words = stage === "claimed-idle" ? `${String(goal.landed)} ${goal.landed === 1 ? "unit" : "units"} landed` : STAGES[stage].words;
   let progress = "";
   if (stage === "unit-proof" && goal.proof !== undefined && goal.proof.planned > 0) {
     progress = `${String(goal.proof.done)} of ${String(goal.proof.planned)}`;
