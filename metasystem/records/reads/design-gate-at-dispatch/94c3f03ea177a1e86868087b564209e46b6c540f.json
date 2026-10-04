@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "design-gate-at-dispatch",
+  "unit": "governance",
+  "subject": {
+    "commit": "94c3f03ea177a1e86868087b564209e46b6c540f",
+    "parent": "fd4577940b98448e49048ca3de0372766167b7f1",
+    "tree": "fab8678100517e781f0e33c4dd9685de98bfc161",
+    "patchDigest": "0665403bbcc7b49fe889561782728e0989b890901fba0e5d99a285b1782fb2c3",
+    "unitDigest": "9fa171d2a8f4436cbc186c7d7205353b3885c5107e5cdd26873510728b98fc1f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-1b72dc96710d693d95417807",
+    "round": 1,
+    "closureSha256": "4335559c5868be3cb5f6bf6f5bb7a218d6e239870b5ceaa91aec752f97c110a6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "fab8678100517e781f0e33c4dd9685de98bfc161",
+    "runId": "goal-read-gate-20261004t121146z-f56d82f6ddaaece5"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_gate_switch_test.go",
+      "readerWord": "reviewed by critic root code-critic-1b72dc96710d693d95417807"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-1b72dc96710d693d95417807"
+    },
+    {
+      "path": "metasystem/internal/landing/landpath/commit_design_test.go",
+      "readerWord": "reviewed by critic root code-critic-1b72dc96710d693d95417807"
+    }
+  ],
+  "sha256": "b6ecd37222f6bd5642c61b9c50898c1d2ea7154af3994dc0daf9efc33fa23f67"
+}
