@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 162
+- Revision: 163
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -217,4 +217,5 @@ History:
 - 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z ack
 - 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:01:26Z ack
 - 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:23:38Z ack
-Integrity: sha256=417acc47f571136467716cdcc020b77720085726ef394f28db26aeb32f336539
+- 2026-10-04T14:35:15Z 4HX85XR2SHM71K72AHWGTGCVEB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=codex-jobs-run-unsandboxed-on-a-trusted-host displaced=m1e+main-1790454088-93948-21671b@2026-10-04T07:32:41Z ack
+Integrity: sha256=54c325f4e34f5142c92c7889b8a7d52c4e2f780662ec14a19e4bef3e2b6e5866
