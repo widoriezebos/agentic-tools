@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-02",
+  "unit": "landed-folds-dropped",
+  "subject": {
+    "commit": "d00e3fc132a2b7d0a346ae465874dcc3d1095e6e",
+    "parent": "80537e9d505d92900c92a65092a75f566b46b3be",
+    "tree": "e58e9b808ba0a6fc4d61c47e248947c0de673e60",
+    "patchDigest": "a1c07252dc09947e4d6aa5dfd158007b26029c0c54253eddc580a5bc8eb30eb5",
+    "unitDigest": "9dd047b21d54a235cbacea0b50019bb27b3846254df4d5908a1ba31e09c6abd3"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-7267a20f08c3992430b60d04",
+    "round": 2,
+    "closureSha256": "d297b3122bdec45addaec3b79b2baca6bea770d10966c74cc89a0181c0120eb7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e58e9b808ba0a6fc4d61c47e248947c0de673e60",
+    "runId": "goal-read-gate-20261004t130905z-5bf903bc9f3f70c3"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "a07376686fc5c30aeae3a5f30e5cb5443caa2139",
+      "digest": "5c8b0190a0f3ea3a18539872a800fe000e41332de495d905281d4833cef1fb0e"
+    },
+    {
+      "kind": "read",
+      "commit": "83b1cb5c5e2688e17271226f8678806968ab43cf",
+      "digest": "ef07919fcece45a453aafec2b6d44f33feda9598d9af3dfe90a63a1ed881cda8"
+    },
+    {
+      "kind": "read",
+      "commit": "fa771893d6ffe4773880c21c4ab1cc6a4eb3ec4e",
+      "digest": "af173f6a5f36caa6aff306832e6ca6c14da1856b8d87ab566bb7a36f1982fad4"
+    },
+    {
+      "kind": "read",
+      "commit": "fc9b78974fd9d1ca546de3444d9a496a27abb7a5",
+      "digest": "df51ba45a2cb536dbabd07fb22f2e360bee55ca53878a133e4490a4ec4c801c2"
+    },
+    {
+      "kind": "read",
+      "commit": "5a737b67c070f04735ad926265bd4b0e84f59fec",
+      "digest": "bd28dae0dbb1a82f925d0ce7ebec7ed3735679bee2a485d368af783af7c6309c"
+    },
+    {
+      "kind": "read",
+      "commit": "685aa55f23ff485b62e794cd0fd8b54ced80aa02",
+      "digest": "195d5404f93414ea9fbe7aa7adab852b2dec9f0e48db9412174035ae01bdd3a2"
+    },
+    {
+      "kind": "read",
+      "commit": "83aa318d25b7cb7a06201fda8cc804fd8c5b30cf",
+      "digest": "20e0a5b783ae51f677d0df97e76951a95b5e3378ed3f97ab1dbe2856272fbdc7"
+    },
+    {
+      "kind": "read",
+      "commit": "80537e9d505d92900c92a65092a75f566b46b3be",
+      "digest": "21b83b75420620995a99062dc0a9ca0aa6b605e503a62aa538889dc0d0ab1602"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/goal_branch_raw_test.go",
+      "readerWord": "reviewed by critic root code-critic-7267a20f08c3992430b60d04"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/land_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-7267a20f08c3992430b60d04"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/read_attestation_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-7267a20f08c3992430b60d04"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/read_carry_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-7267a20f08c3992430b60d04"
+    }
+  ],
+  "sha256": "89e61da71e124eef2418a67b405b3a9b404d47c4802c7ee6d65f9ed79e83db63"
+}
