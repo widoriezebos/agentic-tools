@@ -22,6 +22,12 @@ const gateBedTip = "2222222222222222222222222222222222222222"
 func gatedDeliveryBed(t *testing.T, amend func(*goal.GoalFile)) (*deliveryBed, *landingOwners, *[]string) {
 	t.Helper()
 	b := newDeliveryBedWith(t, amend)
+	b.work.git = func(_ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") != "worktree list --porcelain" {
+			t.Fatalf("unexpected Git read: %v", args)
+		}
+		return nil, nil
+	}
 	owners := &landingOwners{status: readBranch(2, "critic-root", "critic-root")}
 	owners.install(b)
 	b.owners.branchTip = func(string, string) (string, error) { return gateBedTip, nil }
