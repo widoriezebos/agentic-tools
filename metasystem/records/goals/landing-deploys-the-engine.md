@@ -1,6 +1,6 @@
 # landing-deploys-the-engine
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
@@ -10,8 +10,9 @@
 - Next step: Fix unit (reopened 2026-10-04 06:33 by m1e in Wido word): internal/deploy TestEveryEndOfARunOrAnActIsOneLine hangs: its stalled helper (ends_test.go:151-154) runs a Runner whose call blocks on a pipe from a helper process with no deadline (runner.go:160); it held the lane proof of rosters-are-configuration-items 46 minutes until aborted by pid. Give the helper read a deadline from the test clock (or an injected seam) and make the proof-side wait bounded; one unit, one critic (Claude Opus 5.5), hand in from the primary. Steps 2 and 3 stay deferred.
 - ReadItem: id=code-critic-6bd82e9caf9d73d29783303e-2 read=code-critic-6bd82e9caf9d73d29783303e state=accepted addedAt=2026-10-04T07:53:45Z changedAt=2026-10-04T12:06:59Z closingReference="A stale comment on a test table field (ends_test.go); test-only wording, no behavior; the flake goal owns the deploy fixture from here. Closed by m1e in Wido word." text="stall-wait (preliminary read): the comment on the table's stall field (internal/deploy/ends_test.go, the rows struct) still says the pause ends the call once its process started; it now ends it once the call holds its FIFO. The fixture's step comment does not mention the <fifo>.held marker."
 - ReadItem: id=code-critic-6bd82e9caf9d73d29783303e-1 read=code-critic-6bd82e9caf9d73d29783303e state=moved addedAt=2026-10-04T07:53:45Z changedAt=2026-10-04T12:06:38Z closingReference="lane-records-flakes-and-routes-their-fix" text="stall-wait N-1: a pause's SIGKILL skips the fixture adapter's deferred removal of <fifo>.held (internal/deploy/testdata/fixtureadapter/main.go hold), so the marker outlives a killed call; harmless while each bed awaits one hold before its only pause, but a test that awaits a second hold on one bed must clear or key the marker first."
+- Concluded: Step 1 (the lane deploys the engine after every push) landed 2026-10-03 22:12 and its rollback and resume rehearsal passed at 01:24; the reopened fix unit (the deploy test that hung the lane: a held adapter call paused before its scripted hold on a slow host, test-only, 212b48f52) landed 14:02 in lane push 26 (9dede1460). Step 2 (the steward re-arms after every lane push without the seat fetching) stays recorded on the goal page for a follow-up goal. Concluded by m1e in Wido word.
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 67
+- Revision: 68
 - Pinned: m1h
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -23,7 +24,6 @@
 - AcceptedRisk: finding=F-1 chain=code-critic-c37dcad364f65af4e4054b9b by=Wido opid=AS9GNCBKN8PH1PQCM3W8FF9TG4-m1e-718ba0eb
 - AcceptedRisk: finding=F-1 chain=code-critic-7f310906bee9baf0f3132b61 by=Wido opid=EADM8HG11EKR06H0F21K495K6K-m1e-718ba0eb
 - AcceptedRisk: finding=synthetic-14a994b7282580db53aa64eea98eb89f0adde960121e11b7118c95f55ec23508 chain=code-critic-6bd82e9caf9d73d29783303e by=Wido opid=TXX4BKCWT0QMGFNQEPF0VA9REH-m1e-718ba0eb
-- Episode: machine=m1h lineage=steward-seat accountingRevision=60 episodeAt=2026-10-04T06:27:22Z episodeRevision=60 idleSeconds=0 released=2026-10-04T07:57:14Z
 
 History:
 - 2026-10-01T15:20:49Z VFWZW80FZ53PQW3JTWNRYTDB40-m1e-528c72bf open actor=human:Wido targets=landing-deploys-the-engine
@@ -93,4 +93,5 @@ History:
 - 2026-10-04T07:57:14Z 1KEAVDPCSEE22W22ASX5VH1PNV-m1h-71c5cb39 release actor=m1h+steward-seat targets=landing-deploys-the-engine reason=fix unit stall-wait handed to the lane at e3a3147ed4ea; m1e routes this seat to conflicts-resolve-unattended unit 2
 - 2026-10-04T12:06:38Z CPZGDJPGNQC2S1JKF37KDZB8P2-m1e-718ba0eb read-items-close actor=human:Wido targets=landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix
 - 2026-10-04T12:06:59Z R8QRPB4XFM6C7F1HYAM9Z0G39B-m1e-718ba0eb read-items-close actor=human:Wido targets=landing-deploys-the-engine
-Integrity: sha256=2369ac9190d06aa625e312636df6ddc4d69b92296cb16d8f62767166ceba1b0a
+- 2026-10-04T12:07:15Z G9ETMX6J6G23344VC0VS1V7MS2-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory
+Integrity: sha256=77d8eda02dd2c09d1cb359bccdfd472afba48d5bd1de3ac579e9bf891351bb2a
