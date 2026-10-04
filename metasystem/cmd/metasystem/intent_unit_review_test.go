@@ -260,7 +260,7 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			}
 			result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: install, Remote: "origin",
 				EndpointTip: c.endpointTip(), BranchTip: tip, GoalID: goalID, UnitCommit: flagValue(args, "--unit"),
-				Collect: slices.Contains(args, "--collect"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
+				Collect: slices.Contains(args, "--collect"), Join: slices.Contains(args, "--join"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
 				CheckClaim: func() error { return nil },
 				Gate:       func(string) (string, error) { return "gate-run-1", nil },
 				Delegate:   delegate,
