@@ -322,6 +322,37 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 	}
 }
 
+func TestHandInAgainRequeuesReturnedTipAndHoldsWaiting(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	line := Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: "same-tip", Delivered: "Makes landing reliable"}
+	if _, _, err := HandIn(install, line); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 2; round++ {
+		if _, _, err := Return(install, line.Goal, "merge conflict", bedNow); err != nil {
+			t.Fatal(err)
+		}
+		if entry, added, err := HandIn(install, line); err != nil || added || entry.State != StateReturned {
+			t.Fatalf("without again: %+v added=%v err=%v", entry, added, err)
+		}
+		line.Again, line.Delivered = true, ""
+		entry, added, err := HandIn(install, line)
+		entries, readErr := Entries(install)
+		if err != nil || !added || entry.State != StateWaiting || entry.Delivered != "Makes landing reliable" || readErr != nil || len(entries) != round+2 || entries[round].State != StateReturned || entries[round].Reason != "merge conflict" {
+			t.Fatalf("again: %+v added=%v err=%v; history=%+v err=%v", entry, added, err, entries, readErr)
+		}
+		before, _ := os.ReadFile(queuePath(install))
+		line.Delivered = "Another sentence"
+		entry, added, err = HandIn(install, line)
+		after, readErr := os.ReadFile(queuePath(install))
+		if err != nil || added || entry.State != StateWaiting || readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("waiting repeat: %+v added=%v err=%v queue=%q -> %q err=%v", entry, added, err, before, after, readErr)
+		}
+		line.Again, line.Delivered = false, ""
+	}
+}
+
 // landing prove's detached start: the proof runs in a process of its own,
 // a repeat while the same tree's proof runs starts nothing, another tree is
 // refused, and the result is appended when it ends.
