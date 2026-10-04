@@ -16,14 +16,14 @@ Open read items (fix unit code-critic-afa5c5b14d127ad79b4325ba): 4
 - ReadItem: id=code-critic-afa5c5b14d127ad79b4325ba-3 read=code-critic-afa5c5b14d127ad79b4325ba state=open addedAt=2026-10-04T06:26:47Z changedAt=- closingReference="" text="An empty or truncated resolve-begun.json, left by a crash during its write, makes every later landing resolve fail until someone deletes it by hand, and the error does not name the file; write it through a temporary file and rename, and name the file in the error (N-4)."
 - ReadItem: id=code-critic-afa5c5b14d127ad79b4325ba-4 read=code-critic-afa5c5b14d127ad79b4325ba state=open addedAt=2026-10-04T06:26:47Z changedAt=- closingReference="" text="When the lane itself fails around a successful regeneration (git add, git restore, the log folder or file), the goal is returned with the reason 'regeneration exited -1', which reads as a command failure; name the lane's own failure in the reason instead (N-5)."
 - OpenedAt: 2026-10-03T07:50:15Z
-- Revision: 56
+- Revision: 57
 - Pinned: m1h
-- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-10-04T03:13:07Z revision=50 opid=ZHC37B022N3X1PJ0824FYEJK8C-m1e-718ba0eb authority=proven digest=8fb1005b850b0112403b19284d33f6323d439303ae49355a2d0b114713e827f3 episode=50
+- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-10-04T13:00:29Z revision=57 opid=J1H8T8ZG0ZS4X6WVESV46K0RP7-m1e-718ba0eb authority=proven digest=8a4d18b682a67c19dadb008725828fa8f4675c9f50c71456035fa3ecd596761b episode=57
 - Sliced: machine=m1h lineage=steward-seat revision=48 at=2026-10-03T21:06:09Z
-- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T07:57:20Z revision=55 accountingRevision=50 episodeAt=2026-10-03T21:05:59Z episodeRevision=48 idleSeconds=5403
-- StopCapability: generation=55 revision=55 machine=m1h claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T13:00:29Z revision=57 accountingRevision=57 episodeAt=2026-10-03T21:05:59Z episodeRevision=48 idleSeconds=5403
+- StopCapability: generation=57 revision=57 machine=m1h claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T07:50:15Z VCKGVG2T8BVYFDGSX7F3AB9RN3-m1e-718ba0eb open actor=human:Wido targets=conflicts-resolve-unattended
@@ -82,4 +82,5 @@ History:
 - 2026-10-04T07:28:43Z 0VD0ENC1TY80E9ED5VBA3HMJE2-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,codex-jobs-run-unsandboxed-on-a-trusted-host,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order subject=codex-jobs-run-unsandboxed-on-a-trusted-host from=1:1 to=1:2 requested-sequence=1
 - 2026-10-04T07:57:20Z 7A9BJRTRA3G2MSCT1VJ9RYFPPE-m1h-71c5cb39 claim actor=m1h+steward-seat targets=conflicts-resolve-unattended
 - 2026-10-04T08:06:43Z DB995JE74BRQJBME0ECN2H7E3G-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
-Integrity: sha256=a6d63726bcc59bef1bcfaf8191ffef136f3961f4c4eb7c3470c6312c8a64e4fd
+- 2026-10-04T13:00:29Z J1H8T8ZG0ZS4X6WVESV46K0RP7-m1e-718ba0eb set-budget actor=human:Wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T07:57:20Z
+Integrity: sha256=d8bbf8da22368834274acdc315d82699bb506f9a62a4daba50cbf51a2cab3ea5
