@@ -500,6 +500,9 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 		t.Fatalf("decisions, close, collection and publication: code=%d %+v", code, result)
 	}
 	owners := j.owners
+	owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+		return branch.RebaseResult{State: "held"}, nil
+	}
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.branchRead = owners.delivery.branchRead
 	realProcess := owners.delivery.process

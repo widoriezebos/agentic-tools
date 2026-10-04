@@ -41,6 +41,7 @@ func holderStopOver(t *testing.T, bed *intentBed, owners intentOwners, now time.
 func (b *deliveryBed) deliveryOwners() intentOwners {
 	owners := b.intentBed.owners()
 	owners.delivery, owners.connection = b.owners, b.connection
+	owners.work = b.work
 	return owners
 }
 
