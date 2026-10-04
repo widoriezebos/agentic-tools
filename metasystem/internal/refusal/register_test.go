@@ -747,10 +747,12 @@ func proseRowSiteEmits(t *testing.T, root string, row Prose) bool {
 
 func TestHCL11EntryPointsPresent(t *testing.T) {
 	carriedOverrides := 0
+	designCarryable := false
 	carryQuestions := map[string]bool{}
 	for _, row := range Rows {
 		if row.Override == CarriedLanding {
 			carriedOverrides++
+			designCarryable = designCarryable || row.Code == "LANDING_DESIGN_NOT_STANDING"
 			if row.Pending != "" {
 				t.Errorf("carried override %s is still pending: %s", row.Code, row.Pending)
 			}
@@ -762,11 +764,10 @@ func TestHCL11EntryPointsPresent(t *testing.T) {
 			}
 		}
 	}
-	// The original 48 pending Rows lose three non-carry ledger-meaning
-	// overrides and the two deleted promotion-reader failures, leaving 43
-	// carryable refusal codes.
-	if carriedOverrides != 43 {
-		t.Fatalf("carried refusal override count = %d, want 43 carryable refusal rows", carriedOverrides)
+	// Every carryable refusal has a standing exception path, including the
+	// design check a person may carry past.
+	if carriedOverrides != 44 || !designCarryable {
+		t.Fatalf("carried refusal override count = %d, want 44 including LANDING_DESIGN_NOT_STANDING", carriedOverrides)
 	}
 	want := []string{"carry-ledger-moved", "carry-goal-not-live", "carry-word-missing", "carry-word-unproven", "carry-seat-mismatch", "carry-tree-mismatch", "carry-not-carryable", "carry-word-expired", "carry-word-consumed", "carry-debt-unpaid", "carry-cap-reached", "carry-base-judge-blind", "carry-battery-unverified", "carry-unneeded", "carry-refusal-mismatch"}
 	for _, code := range want {

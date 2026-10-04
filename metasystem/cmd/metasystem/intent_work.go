@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -30,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -61,9 +63,10 @@ var intentReaderToolCalls = regexp.MustCompile(`(?m)^Maximum reader tool calls:\
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	units func(layout stateroot.Layout) *launch.UnitRunner
-	git   func(dir string, args ...string) ([]byte, error)
-	wait  func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
+	designGate designGateOwners
+	units      func(layout stateroot.Layout) *launch.UnitRunner
+	git        func(dir string, args ...string) ([]byte, error)
+	wait       func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -594,6 +597,26 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		problem.Targets = targets
 		return inv.render(*problem)
 	}
+	gateFacts := inv.designGateFacts(string(inv.layout.InstallationRoot), id)
+	gateResult := designgate.Check(gateFacts)
+	person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
+	if gateResult.Mode == "refuse" && gateResult.WouldRefuse {
+		reason := strings.TrimPrefix(strings.SplitN(gateResult.Warning[0], ";", 2)[0], "warning: ")
+		if !person {
+			detail := fmt.Sprintf("BUILD_DESIGN_NOT_ACCEPTED goal=%s verdict=%s", id, gateResult.Verdict)
+			if ruling := refusal.GovernedBy["BUILD_DESIGN_NOT_ACCEPTED"]; ruling != "" {
+				detail += " governed-by=" + ruling
+			}
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+				Summary: reason + "; nothing was built", Data: map[string]any{"designGate": gateResult},
+				next:    inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"),
+				Details: []string{detail}})
+		}
+		gateResult.Warning[0] = "warning: " + reason + "; it goes on at your word"
+	}
+	if gateResult.Warning[0] != "" {
+		fmt.Fprintln(inv.stderr, gateResult.Warning[0]+"\n"+gateResult.Warning[1])
+	}
 	runner := inv.unitRunner()
 	request, problem := inv.unitRequest(runner, id, unit, designs, int(file.Budget.ReviewRoundLimit))
 	if problem != nil {
@@ -620,10 +643,19 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			}
 		}
 	}
+	prepare := request.prepare
+	request.prepare = func(directory string) (string, error) {
+		path, err := prepare(directory)
+		if err == nil {
+			inv.recordDesignGate(filepath.Dir(filepath.Dir(directory)), request.worktree, unit, gateFacts, gateResult, person)
+		}
+		return path, err
+	}
 	result, err := runner.AdvancePrepared(request.worktree, id, unit, request.bytes, request.options, request.prepare)
 	outcome := inv.unitOutcome(runner, result, err, targets, inv.sameCommand())
 	if data, ok := outcome.Data.(map[string]any); ok {
 		data["inputs"] = request.directory
+		data["designGate"] = gateResult
 	}
 	return inv.render(outcome)
 }

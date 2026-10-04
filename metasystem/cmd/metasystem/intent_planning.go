@@ -330,6 +330,7 @@ func intentPlanningCommands() []intentCommand {
 			details: []string{
 				"PERMISSION is " + strings.Join(goal.PermissionNames(), ", ") + ".",
 				"stop-test-changes lets the goal's landing move or change a test assertion that says whether work must stop, under a declaration the Stop decision audit checks.",
+				"build-without-design lets the goal be built and landed without an accepted, reviewed design until withdrawn; allow prints and records its impact.",
 				"Allowing is a person's act at the enrolled terminal; goal show lists what a goal is allowed.",
 			},
 			flags: withFlags([]intentFlag{

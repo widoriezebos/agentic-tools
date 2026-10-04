@@ -3862,7 +3862,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			// approval does: the ledger names the hand that acted.
 			recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
 			if permissionChanged {
-				f.History[len(f.History)-1].Reason = permissionReason(*fields.Permission, fields.Why)
+				f.History[len(f.History)-1].Reason = permissionReason(f.Id, *fields.Permission, fields.Why)
 			}
 			if raise {
 				if riskRaised != nil {

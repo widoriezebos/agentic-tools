@@ -626,6 +626,14 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	// The disk-lifetime settings of Part B 3.13, in every source.
 	errs = append(errs, validateDiskSettings(confPath, values, os.LookupEnv)...)
+	if _, err := ParseDesignGateMode(values[DesignGateModeKey]); err != nil {
+		add("%s", err.Error())
+	}
+	if raw, _, err := Get(GetParams{Key: DesignGateModeKey, ConfPath: confPath}); err != nil {
+		add("%s: %v", DesignGateModeKey, err)
+	} else if _, err := ParseDesignGateMode(raw); err != nil {
+		add("%s", err.Error())
+	}
 	if raw, present := values[LandingHumanFromTierKey]; present {
 		if _, err := landingTier(raw); err != nil {
 			add("%s", err.Error())

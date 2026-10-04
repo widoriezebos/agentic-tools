@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "goal": "design-gate-at-dispatch",
+  "unit": "landing",
+  "subject": {
+    "commit": "78db2594c07ceb05fe68a82e2742f24198e013b3",
+    "parent": "94ce0c8f0a381f683191bfac836b8c9c8f5aebb8",
+    "tree": "f5b2331b83912a5b00309d82da221f87d1f38aaf",
+    "patchDigest": "36f47e3b4ed4dd8a1570e584b9377406f54c745431eb44c79e9d444bb239aad2",
+    "unitDigest": "3fc21de46db9cfedf66e6551acfd8f4b86af151a028ef6005639511b351b1911"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-00cc8f2df3eb96813017bc6c",
+    "round": 1,
+    "closureSha256": "881293c15e6b79475a4f3ea6745774472211324454999d3471b1880924ffb6f3"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "f5b2331b83912a5b00309d82da221f87d1f38aaf",
+    "runId": "goal-read-gate-20261004t121407z-4d440eef1c07c14f"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/refusal/register_test.go",
+      "readerWord": "reviewed by critic root code-critic-00cc8f2df3eb96813017bc6c"
+    }
+  ],
+  "sha256": "0e3e2bc14f083a0f0ec01202b3e69224bea506eb1e1317410d1d059c5d2ae0b2"
+}

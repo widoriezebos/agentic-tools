@@ -60,6 +60,7 @@ exit 0
       "Intent": "Govern validation.",
       "Origin": "main",
       "StopSurfaceMoves": false,
+      "DesignGateOff": false,
       "NextStep": "Push 17 landed the batch lane; confirm the ledger tip after the next sync. Then close the goal.",
       "Conclude": "",
       "OpenedAt": "2026-08-30T08:00:00Z",

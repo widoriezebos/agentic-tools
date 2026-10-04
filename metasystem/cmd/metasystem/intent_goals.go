@@ -279,10 +279,11 @@ func (view intentBudgetView) lines() []string {
 }
 
 type intentDesignRef struct {
-	ID     string `json:"id"`
-	Path   string `json:"path"`
-	Status string `json:"status"`
-	Title  string `json:"title"`
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Status   string `json:"status"`
+	Title    string `json:"title"`
+	Critique string `json:"critique,omitempty"`
 }
 
 // linkedDesigns are the design records naming the goal on their Goals line,
@@ -297,8 +298,24 @@ func (inv *intentInvocation) linkedDesigns(id string) ([]intentDesignRef, string
 		return nil, err.Error()
 	}
 	var refs []intentDesignRef
+	byID := map[string]int{}
 	for _, record := range read.List(project.KindDesign, project.ListOptions{Goal: id}) {
-		refs = append(refs, intentDesignRef{ID: record.ID, Path: record.Path, Status: record.Status, Title: record.Title})
+		ref := intentDesignRef{ID: record.ID, Path: record.Path, Status: record.Status, Title: record.Title}
+		for _, field := range record.Head {
+			if field.Key == "Critique" {
+				ref.Critique = field.Value
+			}
+		}
+		// A record reached through two homes keeps its checkout-relative
+		// name when available; a record outside the checkout stays absolute.
+		if index, found := byID[ref.ID]; found {
+			if filepath.IsAbs(refs[index].Path) && !filepath.IsAbs(ref.Path) {
+				refs[index] = ref
+			}
+			continue
+		}
+		byID[ref.ID] = len(refs)
+		refs = append(refs, ref)
 	}
 	return refs, ""
 }

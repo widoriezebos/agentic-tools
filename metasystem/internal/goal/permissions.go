@@ -15,6 +15,8 @@ type Permission struct {
 	Name string
 	// Words is the permission in plain words, as goal show says it.
 	Words string
+	// Impact explains the standing allowance before it is granted.
+	Impact func(goalID string) string
 	// Holds reports whether the goal record carries the permission.
 	Holds func(*GoalFile) bool
 	// Set records or clears it.
@@ -26,6 +28,8 @@ type Permission struct {
 // it as the line "- StopSurface: moves", which the Stop surface audit reads.
 const PermissionStopTestChanges = "stop-test-changes"
 
+const PermissionBuildWithoutDesign = "build-without-design"
+
 // Permissions is the table of every goal permission, in the order goal show
 // lists them. A new permission is one row here and one field in the record.
 var Permissions = []Permission{
@@ -34,6 +38,15 @@ var Permissions = []Permission{
 		Words: "stop-test changes",
 		Holds: func(f *GoalFile) bool { return f.StopSurfaceMoves },
 		Set:   func(f *GoalFile, allowed bool) { f.StopSurfaceMoves = allowed },
+	},
+	{
+		Name:  PermissionBuildWithoutDesign,
+		Words: "building and landing without an accepted design",
+		Impact: func(id string) string {
+			return fmt.Sprintf("This lets goal %[1]s be built and landed without an accepted, reviewed design.\nThe risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands.\nIt holds for every later build and landing of %[1]s until withdrawn.\nTo undo: metasystem goal disallow %[1]s build-without-design", id)
+		},
+		Holds: func(f *GoalFile) bool { return f.DesignGateOff },
+		Set:   func(f *GoalFile, allowed bool) { f.DesignGateOff = allowed },
 	},
 }
 
@@ -97,13 +110,16 @@ func parsePermissionDelta(value string) (PermissionChange, error) {
 
 // permissionReason is the History reason of an edit that changes a
 // permission: which way it moved and, when given, why.
-func permissionReason(change PermissionChange, why string) string {
+func permissionReason(id string, change PermissionChange, why string) string {
 	reason := "Disallowed: " + change.Name
 	if change.Allowed {
 		reason = "Allowed: " + change.Name
 	}
 	if why = strings.TrimSpace(why); why != "" {
 		reason += " why=" + why
+	}
+	if permission, err := LookupPermission(change.Name); err == nil && change.Allowed && permission.Impact != nil {
+		reason += " impact=" + strings.Join(strings.Fields(permission.Impact(id)), " ")
 	}
 	return reason
 }

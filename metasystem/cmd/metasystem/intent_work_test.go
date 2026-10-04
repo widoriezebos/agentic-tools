@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"context"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -43,6 +44,11 @@ type workBed struct {
 	// under the temporary root, found through each result's plan.
 	readDirsMu sync.Mutex
 	readDirs   map[string]bool
+	designGate designGateOwners
+	config     func(key, confPath string) (value, source string, code int, err error)
+	// primary, when set, is the main tree git worktree list names first;
+	// otherwise that is the bed's root.
+	primary string
 }
 
 type workClock struct {
@@ -166,6 +172,10 @@ func newWorkBed(t *testing.T) *workBed {
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
 	bed := &workBed{intentBed: newIntentBed(t, false, amend), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
+	bed.designGate = designGateOwners{
+		chains:   func(string, string, string) ([]designgate.Chain, error) { return nil, nil },
+		identity: func(string) (string, error) { return "01M4189Q0RH1NSPD3PNAS6G177", nil },
+	}
 	// A public build creates the read's findings directory under the shared
 	// temporary root with a unique name; the bed removes only its own.
 	t.Cleanup(bed.removeReadDirs)
@@ -223,6 +233,8 @@ func (b *workBed) workOwners() intentOwners {
 		claimCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
 	}
 	owners.work = intentWorkOwners{
+		designGate: b.designGate,
+		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
 			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot}
 		},
@@ -230,7 +242,11 @@ func (b *workBed) workOwners() intentOwners {
 			joined := strings.Join(args, " ")
 			switch {
 			case joined == "worktree list --porcelain":
-				listing := "worktree " + b.root() + "\nHEAD main-commit\nbranch refs/heads/main\n"
+				primary := b.root()
+				if b.primary != "" {
+					primary = b.primary
+				}
+				listing := "worktree " + primary + "\nHEAD main-commit\nbranch refs/heads/main\n"
 				if b.branchListed {
 					listing += "\nworktree " + b.worktree + "\nHEAD " + b.head + "\nbranch refs/heads/goal/" + b.id + "\n"
 				}

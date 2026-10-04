@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "design-gate-at-dispatch",
+  "unit": "fixes",
+  "subject": {
+    "commit": "94ce0c8f0a381f683191bfac836b8c9c8f5aebb8",
+    "parent": "edbd1f3b59792dd713caccd8bca9b81109a57f4d",
+    "tree": "76575e795778a707d94a447cb1a07901dc9000fe",
+    "patchDigest": "a317df474db4eea857b435798a5bbe46500c222d6e227e590a4816fb55d1b5e3",
+    "unitDigest": "4941c7fd2f833f5fd0e051e153f5efb2c2952554018526e720b0ab09bb36a290"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0c8adba37ea4d3f70722a366",
+    "round": 1,
+    "closureSha256": "251c0556a821e077057202f95986643770be61e1d21c0c12575ec320d12a4f76"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "76575e795778a707d94a447cb1a07901dc9000fe",
+    "runId": "goal-read-gate-20261004t121159z-392b41198f6c2b39"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_gate_test.go",
+      "readerWord": "reviewed by critic root code-critic-0c8adba37ea4d3f70722a366"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/public_error_messages_test.go",
+      "readerWord": "reviewed by critic root code-critic-0c8adba37ea4d3f70722a366"
+    }
+  ],
+  "sha256": "1c3fce6c0a579807b43b09b3de5aa41fd2b513058e72f6fb0c87beddc4647ba5"
+}
