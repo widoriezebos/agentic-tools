@@ -236,6 +236,59 @@ func TestUnitRunStartsOnGoalBranch(t *testing.T) {
 	}
 }
 
+func TestPlanWithoutReadIsAdmitted(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "")
+	body, _ := os.ReadFile(fixture.plan)
+	for _, form := range []string{"absent", "null", "missing brief"} {
+		var raw map[string]any
+		json.Unmarshal(body, &raw)
+		switch form {
+		case "absent":
+			delete(raw, "read")
+		case "null":
+			raw["read"] = nil
+		default:
+			delete(raw["read"].(map[string]any), "brief")
+		}
+		changed, _ := json.Marshal(raw)
+		os.WriteFile(fixture.plan, changed, 0o600)
+		plan, err := ReadUnitPlan(fixture.plan)
+		if form == "missing brief" {
+			if err == nil || !strings.Contains(ErrorDetail(err), "field=read.brief") {
+				t.Fatalf("%s: %v", form, err)
+			}
+		} else if err != nil || plan.HasRead() || plan.Read.Brief != "" {
+			t.Fatalf("%s: plan=%+v err=%v", form, plan, err)
+		}
+	}
+}
+
+func TestRoundWithoutReadEndsGreen(t *testing.T) {
+	t.Parallel()
+	for _, fail := range []string{"", "build", "proof"} {
+		fixture := newUnitFixture(t, "")
+		fixture.starter.failKind = fail
+		plan, _ := ReadUnitPlan(fixture.plan)
+		plan.Read = UnitReadPlan{}
+		body, _ := json.Marshal(plan)
+		os.WriteFile(fixture.plan, body, 0o600)
+		result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+		if err != nil {
+			t.Fatal(err)
+		}
+		round := result.Record.Rounds[0]
+		want := map[string]string{"": "green", "build": "build-failed", "proof": "proof-red"}[fail]
+		launches := []string{"build", "proof"}
+		if fail == "build" {
+			launches = launches[:1]
+		}
+		if round.Outcome != want || round.ReadModel != "" || !slices.Equal(fixture.starter.order, launches) || len(round.Steps) != 2 {
+			t.Fatalf("%s: round=%+v launches=%v", fail, round, fixture.starter.order)
+		}
+	}
+}
+
 func TestUnitRunRefusesMainBranch(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", "main")

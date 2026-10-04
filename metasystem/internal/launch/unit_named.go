@@ -380,14 +380,18 @@ func namedUnitDigestContent(plan UnitPlan, worktree string, settings Settings, r
 	if content.UnitsPage, err = file(plan.Build.UnitsPage); err != nil {
 		return "", err
 	}
-	if content.ReadBrief, err = file(plan.Read.Brief); err != nil {
-		return "", err
+	if plan.HasRead() {
+		if content.ReadBrief, err = file(plan.Read.Brief); err != nil {
+			return "", err
+		}
 	}
 	if content.BuildInputs, err = files(plan.Build.Inputs); err != nil {
 		return "", err
 	}
-	if content.ReadInputs, err = files(plan.Read.Inputs); err != nil {
-		return "", err
+	if plan.HasRead() {
+		if content.ReadInputs, err = files(plan.Read.Inputs); err != nil {
+			return "", err
+		}
 	}
 	content.BuildOutputs, content.ReadOutputs, content.Units = plan.Build.Outputs, plan.Read.Outputs, plan.Build.Units
 	content.ReadModel = plan.Read.Model
