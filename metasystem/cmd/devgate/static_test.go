@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -524,5 +525,126 @@ func TestStaticJudgesOnlyTheListedTrees(t *testing.T) {
 	}
 	if judged != 4 {
 		t.Fatalf("judging calls = %d; want vet, staticcheck and deadcode on two platforms", judged)
+	}
+}
+
+// The pinned static tools resolve from this computer's module cache alone:
+// staticcheck's run and deadcode's install carry the cache as their only
+// module proxy, read once from go env GOMODCACHE, while the other stages
+// keep the caller's environment.
+func TestStaticRunsThePinnedToolsFromTheModuleCacheOnly(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	if code := w.static(); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, w.output())
+	}
+	if reads := w.called("go env GOMODCACHE"); len(reads) != 1 {
+		t.Fatalf("go env GOMODCACHE calls = %v, want one per static run", reads)
+	}
+	want := "file://" + w.modCache + "/cache/download"
+	staticcheck := w.called("go run -trimpath -p=3 " + staticcheckModule)
+	install := w.called("go install -trimpath " + deadcodeModule)
+	if len(staticcheck) != 1 || envValue(staticcheck[0].env, "GOPROXY") != want {
+		t.Fatalf("staticcheck must run with GOPROXY=%s: %v", want, staticcheck)
+	}
+	if len(install) != 1 || envValue(install[0].env, "GOPROXY") != want {
+		t.Fatalf("deadcode must install with GOPROXY=%s: %v", want, install)
+	}
+	for _, call := range w.called("go vet") {
+		if _, set := newEnvironment(call.env).lookup("GOPROXY"); set {
+			t.Fatalf("vet was given a module proxy: %q", call.env)
+		}
+	}
+}
+
+// A pinned tool the module cache lacks is red with the warm-up command a
+// person runs on a computer with network; static never fetches it itself.
+func TestStaticNamesTheWarmUpWhenTheModuleCacheLacksAPinnedTool(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	missing := func(module string) string {
+		return "go: " + module + ": " + module + ": reading file://" + w.modCache + "/cache/download/" +
+			strings.Replace(module, "@", "/@v/", 1) + ".info: no such file or directory\n"
+	}
+	w.statuses["staticcheck"], w.outputs["staticcheck"] = 1, missing(staticcheckModule)
+	w.statuses["deadcode-install"], w.outputs["deadcode-install"] = 1, missing(deadcodeModule)
+	if code := w.static(); code != 1 {
+		t.Fatalf("exit %d, want 1:\n%s", code, w.output())
+	}
+	warm := "run: go run ./cmd/devgate warm  (from metasystem/, on a computer with network)\n"
+	for _, want := range []string{
+		"--- staticcheck 2026.2 (module v0.8.0) is not in this computer's module cache\n" + warm + missing(staticcheckModule),
+		"--- deadcode (golang.org/x/tools v0.50.0) is not in this computer's module cache\n" + warm + missing(deadcodeModule),
+	} {
+		if !strings.Contains(w.stderr.String(), want) {
+			t.Fatalf("stderr lacks %q:\n%s", want, w.stderr.String())
+		}
+	}
+}
+
+// Without a module cache to read from, the pinned tools cannot run offline,
+// so they do not run and the static stage is red with the cause.
+func TestStaticWithoutAModuleCacheIsRed(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		world func(*gateWorld)
+		want  string
+	}{
+		{"empty answer", func(w *gateWorld) { w.modCache = "" }, "go env GOMODCACHE answered nothing\n"},
+		{"failed", func(w *gateWorld) {
+			w.modCache = ""
+			w.statuses["gomodcache"], w.outputs["gomodcache"] = 1, "go: GOMODCACHE entry is relative\n"
+		}, "go env GOMODCACHE failed (status 1): go: GOMODCACHE entry is relative\n"},
+	} {
+		w := newGateWorld(t)
+		test.world(w)
+		if code := w.static(); code != 1 {
+			t.Fatalf("%s: exit %d, want 1:\n%s", test.name, code, w.output())
+		}
+		want := "--- staticcheck and dead code did not run: the module cache could not be located\n" + test.want
+		if !strings.Contains(w.stderr.String(), want) {
+			t.Fatalf("%s: stderr lacks %q:\n%s", test.name, want, w.stderr.String())
+		}
+		if ran := append(w.called(staticcheckModule), w.called(deadcodeModule)...); len(ran) != 0 {
+			t.Fatalf("%s: the pinned tools ran without the module cache: %v", test.name, ran)
+		}
+	}
+}
+
+// warm installs each pinned static tool once with the caller's environment,
+// so the go command fills the module cache from wherever the caller fetches
+// modules, then removes its scratch GOBIN.
+func TestWarmFillsTheModuleCacheForBothPinnedTools(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	w.setenv("GOPROXY=https://proxy.example,direct")
+	if code := run(context.Background(), []string{"warm"}, w.root, w.deps()); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, w.output())
+	}
+	installs := w.called("go install -trimpath ")
+	if len(installs) != 2 || installs[0].args[2] != staticcheckModule || installs[1].args[2] != deadcodeModule {
+		t.Fatalf("installs = %v, want staticcheck then deadcode", installs)
+	}
+	for _, call := range installs {
+		bin := envValue(call.env, "GOBIN")
+		if envValue(call.env, "GOPROXY") != "https://proxy.example,direct" || !strings.HasPrefix(bin, filepath.Join(w.tmp, "metasystem-devgate-warm.")) {
+			t.Fatalf("%s: env %q, want the caller's GOPROXY and a scratch GOBIN", call, call.env)
+		}
+		if _, err := os.Stat(bin); !os.IsNotExist(err) {
+			t.Fatalf("scratch GOBIN %s survived warm: %v", bin, err)
+		}
+	}
+	want := "devgate warm: staticcheck is in this computer's module cache\n" +
+		"devgate warm: deadcode is in this computer's module cache\n"
+	if w.stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", w.stdout.String(), want)
+	}
+
+	failed := newGateWorld(t)
+	failed.statuses["deadcode-install"], failed.outputs["deadcode-install"] = 1, "go: dial tcp: no route to host\n"
+	if code := run(context.Background(), []string{"warm"}, failed.root, failed.deps()); code != 1 ||
+		!strings.Contains(failed.stderr.String(), "devgate warm: deadcode could not be installed ("+deadcodeModule+"):\ngo: dial tcp: no route to host\n") {
+		t.Fatalf("a failed warm-up: exit %d:\n%s", code, failed.output())
 	}
 }

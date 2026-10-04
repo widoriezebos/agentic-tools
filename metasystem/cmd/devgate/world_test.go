@@ -38,6 +38,9 @@ type gateWorld struct {
 	gitInside bool
 	gitFiles  []string
 
+	// modCache is what the stubbed `go env GOMODCACHE` answers.
+	modCache string
+
 	// statuses maps a stage key to the exit status its stub returns;
 	// outputs maps it to the text the stub prints.
 	statuses map[string]int
@@ -84,7 +87,7 @@ func newGateWorld(t *testing.T) *gateWorld {
 		t.Fatal(err)
 	}
 	w := &gateWorld{t: t, root: filepath.Join(base, "metasystem"), tmp: filepath.Join(base, "tmp"),
-		statuses: map[string]int{}, outputs: map[string]string{}}
+		modCache: filepath.Join(base, "gomodcache"), statuses: map[string]int{}, outputs: map[string]string{}}
 	for _, dir := range []string{w.tmp, filepath.Join(w.root, "internal", "fixture"), filepath.Join(w.root, "cmd", "metasystem"),
 		filepath.Join(w.root, "docs"), filepath.Join(w.root, "bin"), filepath.Join(w.root, "scripts", "agents")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -305,11 +308,18 @@ func (w *gateWorld) deps() deps {
 					_, _ = io.WriteString(stdout, "auto\n")
 					return nil
 				}
+				if len(args) == 2 && args[1] == "GOMODCACHE" {
+					_, _ = io.WriteString(stdout, w.modCache+"\n")
+					return w.respond("gomodcache", stderr)
+				}
 				_, _ = io.WriteString(stdout, "darwin\narm64\n-mod=readonly -trimpath\noff\n\n0\nauto\n")
 				return nil
 			case "vet":
 				return w.respond("vet", stdout)
 			case "install":
+				if slices.Contains(args, staticcheckModule) {
+					return w.respond("staticcheck-install", stdout)
+				}
 				return w.respond("deadcode-install", stdout)
 			case "run":
 				switch {

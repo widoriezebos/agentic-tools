@@ -47,19 +47,24 @@ func parseDeadCode(output string) []deadCodeFinding {
 	return findings
 }
 
-// deadCode installs deadcode for this host into a scratch directory, runs it
-// with the tests as roots once per platform (GOOS steers only the analysis),
-// and returns the reds: a run that could not complete, or the functions every
-// platform leaves unreached that the allowlist does not keep.
-func (g *gateRun) deadCode() []string {
+// deadCode installs deadcode for this host into a scratch directory from the
+// module cache proxy alone, runs it with the tests as roots once per platform
+// (GOOS steers only the analysis), and returns the reds: a run that could not
+// complete, or the functions every platform leaves unreached that the
+// allowlist does not keep.
+func (g *gateRun) deadCode(proxy string) []string {
 	bin, err := os.MkdirTemp(tempDir(g.env), "metasystem-gate-deadcode.")
 	if err != nil {
 		return []string{"dead code check could not run: " + err.Error()}
 	}
 	defer func() { _ = os.RemoveAll(bin) }()
 	var install bytes.Buffer
-	if g.d.goTool(g.ctx, g.root, g.env.with("GOBIN="+bin).list(), []string{"install", "-trimpath", deadcodeModule}, &install, &install) != nil {
-		return []string{"dead code check could not install deadcode (golang.org/x/tools v0.50.0):\n" + strings.TrimRight(install.String(), "\n")}
+	if g.d.goTool(g.ctx, g.root, g.env.with("GOBIN="+bin, "GOPROXY="+proxy).list(), []string{"install", "-trimpath", deadcodeModule}, &install, &install) != nil {
+		output := strings.TrimRight(install.String(), "\n")
+		if notCached(output, proxy) {
+			return []string{notCachedRed("deadcode (golang.org/x/tools v0.50.0)", output)}
+		}
+		return []string{"dead code check could not install deadcode (golang.org/x/tools v0.50.0):\n" + output}
 	}
 	var reds []string
 	seen := map[string]int{}

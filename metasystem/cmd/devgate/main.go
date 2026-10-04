@@ -22,6 +22,9 @@
 //     commit's engine into ~/.metasystem/engines/<commit>/, moves the pointer
 //     ~/.metasystem/bin/metasystem, reports what is active and rolls back
 //     (internal/enginedeploy).
+//   - warm: puts the pinned static tools (staticcheck, deadcode) in this
+//     computer's module cache, which static and gate run them from without
+//     network; it is run where there is network.
 //
 // Every action is a leaf: none of them schedules `metasystem test run`
 // (VOA-09), so a testing group that runs one cannot recurse.
@@ -81,6 +84,8 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 		return runGateAction(ctx, args[1:], root, deps)
 	case "deploy":
 		return runDeploy(ctx, args[1:], root, deps)
+	case "warm":
+		return runWarm(ctx, args[1:], root, deps)
 	default:
 		fmt.Fprintf(deps.stderr, "devgate has no action %q; %s\n", args[0], usage)
 		return 2
@@ -89,7 +94,7 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 
 // usage is what devgate says when no action it knows is named: its four
 // actions, and the one a developer runs first.
-const usage = "devgate takes one action: build, static, gate or deploy; nothing was run\nrun: go run ./cmd/devgate static"
+const usage = "devgate takes one action: build, static, gate, deploy or warm; nothing was run\nrun: go run ./cmd/devgate static"
 
 // deps is every effect the build has on the world, so a test drives the
 // whole action against stubbed Git, a stubbed Go toolchain and a chosen fence.
