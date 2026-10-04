@@ -1,6 +1,6 @@
 # records-land-through-the-lane
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 23
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Changes what the lane admits and proves; a wrong rule lets an unaudited record on main or blocks every design landing; builds on the scratch-commit token and the ledger-only inheritance that exist"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: Design first, tier 2: a records hand-in (the seat names the goal and the record files; the engine makes the commit on the goal branch with a token, as it does for scratch commits) and its lane proof (only the record audits, not the full suite, since no code changed: the lane's ledger-only inheritance generalised to records-only trees); the plan-class rule becomes two rules (a build commit touches no plan files; a records commit touches only them); accepted design pages and rulings land this way, with the status change in the same hand-in. Done when: a seat hands in an accepted design page or a ruling and it is on main through the lane without any person's push, and the record audits ran on it.
 - OpenedAt: 2026-10-03T15:40:34Z
-- Revision: 47
+- Revision: 48
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-03T15:40:42Z revision=2 opid=NJS36AW1ER3YVT8BSA92RQPSEB-m1e-718ba0eb authority=proven digest=c40c08b0845fb352da6d4ce17f90b7dc8cc611a48f875e8dd552e71226e97756 episode=2
-- Claimed: machine=ui lineage=main-1790454088-93948-21671b at=2026-10-04T20:54:30Z revision=47 accountingRevision=47 episodeAt=2026-10-04T20:54:30Z episodeRevision=47
-- StopCapability: generation=47 revision=47 machine=ui claimEpoch=3 fenceEpoch=0
+- Episode: machine=ui lineage=main-1790454088-93948-21671b accountingRevision=47 episodeAt=2026-10-04T20:54:30Z episodeRevision=47 idleSeconds=0 released=2026-10-04T21:13:01Z
 
 History:
 - 2026-10-03T15:40:34Z VM3PBQ2A8EPE1R7R1BDWAQ92QX-m1e-718ba0eb open actor=human:Wido targets=records-land-through-the-lane
@@ -64,4 +63,5 @@ History:
 - 2026-10-04T19:17:54Z 6MJYD1MZE4XAEYS69PZDXMVPNS-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:24 to=1:23
 - 2026-10-04T19:21:34Z CMJKRPJQYVGH09QC4NBSPQMW57-ui-71c5cb39 claim actor=ui+steward-seat targets=records-land-through-the-lane
 - 2026-10-04T20:54:30Z 1FQ7HXFT1KRPVHZVA2YH326DD4-ui-f456f182 steal actor=human:Wido targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T19:21:34Z reason=Wido 2026-10-04 22:25: all seats paused; m1e finishes the machinery goals itself and holds this goal's lease from the ui checkout
-Integrity: sha256=5d91e0221c09e35a34ca82dea08a6f279fd4fa00df7713acb467a79ea1ecf579
+- 2026-10-04T21:13:01Z 4JE3DC2VJJ7M6VDDEE3R24M30J-ui-f456f182 release actor=ui+main-1790454088-93948-21671b targets=records-land-through-the-lane reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
+Integrity: sha256=33bb35311f7ef01f2680bfcdb29d0772681ee5de514ca7e3688888d26b260232
