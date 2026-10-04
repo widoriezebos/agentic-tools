@@ -1,6 +1,6 @@
 # agent-works-as-project-partner
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 16
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="An agent mode that acts with a person's authority across the whole project; a wrong boundary lets an agent decide what only the person may, a too narrow one keeps the tricks"
@@ -19,13 +19,12 @@ Open read items (fix unit code-critic-b718483f152c164e7e39cc87): 4
 - ReadItem: id=code-critic-b718483f152c164e7e39cc87-3 read=code-critic-b718483f152c164e7e39cc87 state=open addedAt=2026-10-04T12:06:11Z changedAt=- closingReference="" text="partner status: intent_helm.go withHelm prints 'no live grant' when a grant under another lineage is live beside the partner grant; show the other grant."
 - ReadItem: id=code-critic-b718483f152c164e7e39cc87-4 read=code-critic-b718483f152c164e7e39cc87 state=open addedAt=2026-10-04T12:06:11Z changedAt=- closingReference="" text="partner start notice: runIntentPartnerStart prints 'From now until ... acts in your name' before the busy check and the grant record; print it after both succeed."
 - OpenedAt: 2026-10-03T10:03:15Z
-- Revision: 48
+- Revision: 49
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 5
 - Approved: by=human:Wido at=2026-10-04T11:37:52Z revision=46 opid=JB20FJ0V9F1QY8Z905XBX9161Y-m1e-718ba0eb authority=proven digest=5b4eeeb42f9be15c585fd6eed021a1477471c6dfe2cab5beafee93f7bb029f42 episode=46
 - Sliced: machine=m1l lineage=steward-seat revision=5 at=2026-10-03T16:18:11Z
-- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T11:37:52Z revision=46 accountingRevision=46 episodeAt=2026-10-03T15:51:37Z episodeRevision=5
-- StopCapability: generation=46 revision=46 machine=m1l claimEpoch=1 fenceEpoch=0
+- Parked: by=human:Wido at=2026-10-04T14:14:56Z displaced=m1l+steward-seat@2026-10-04T11:37:52Z because=Paused on Wido order of 2026-10-04 16:05 (only machinery improvements run). Branch holds the rebased partner-mode and partner-acts and the partner-audits unit in progress; resume trigger: Wido lifts the improvements-only order. Paused by m1e in Wido word.
 
 History:
 - 2026-10-03T10:03:15Z MPVK1FAH5SGPAVB3J4T7YA775Y-m1e-718ba0eb open actor=human:Wido targets=agent-works-as-project-partner
@@ -76,4 +75,5 @@ History:
 - 2026-10-04T11:37:52Z JB20FJ0V9F1QY8Z905XBX9161Y-m1e-718ba0eb set-budget actor=human:Wido targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T05:41:54Z
 - 2026-10-04T12:06:11Z 0P5FP3348WTN4R25KDWMJ3PC78-m1l-71c5cb39 read-items-add actor=m1l+steward-seat targets=agent-works-as-project-partner
 - 2026-10-04T12:07:15Z G9ETMX6J6G23344VC0VS1V7MS2-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:17 to=1:16
-Integrity: sha256=63b2b6dd41ae104cf791f8ffa9af1e4738604f65f087cf2285455792e68b8b57
+- 2026-10-04T14:14:56Z NKVBNX3KQYGQV60NR9MW3JY1Y7-m1e-718ba0eb park actor=human:Wido targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z reason=Paused on Wido order of 2026-10-04 16:05 (only machinery improvements run). Branch holds the rebased partner-mode and partner-acts and the partner-audits unit in progress; resume trigger: Wido lifts the improvements-only order. Paused by m1e in Wido word.
+Integrity: sha256=35c98ef61f2300ff1842461679661650693fd086c5f9086b2cdc265e2c689041
