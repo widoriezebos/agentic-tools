@@ -320,12 +320,20 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 			unitLists[kind.Unit] = true
 		}
 		if kind.Kind == Read {
-			subject, present := unitCommits[kind.CommitID]
-			if !present {
+			subject, inRange := unitCommits[kind.CommitID]
+			present := inRange
+			if !inRange {
 				subject, err = kindOfWithGit(repo, kind.CommitID, goalID, gitRead)
 				present = err == nil && subject.Kind == Unit
 			}
-			if !present || !sameUnits(subject.Units, kind.Units) || !unitLists[kind.Unit] {
+			reviewed := present && sameUnits(subject.Units, kind.Units)
+			earlier := reviewed && unitLists[kind.Unit]
+			// A read may carry the review of a build main already holds.
+			if reviewed && !inRange && !earlier {
+				_, err = gitRead(repo, "merge-base", "--is-ancestor", kind.CommitID, base)
+				earlier = err == nil
+			}
+			if !earlier {
 				return nil, rangeRefusal(goalID, id, "the review names no earlier build of the same work")
 			}
 		}
