@@ -36,6 +36,7 @@ type AttestationSubject struct {
 
 type AttestationSource struct {
 	Kind          string `json:"kind"`
+	ReadLaunch    string `json:"readLaunch,omitempty"`
 	RootJob       string `json:"rootJob,omitempty"`
 	Round         int64  `json:"round,omitempty"`
 	ClosureSHA256 string `json:"closureSha256,omitempty"`
@@ -87,11 +88,32 @@ type closureBundle struct {
 	Files         map[string]string `json:"files"`
 }
 
+// UnitReadBundle preserves the report and launch JSON verbatim as strings.
+// The examined base and tree bind the read to one commit's change.
+type UnitReadBundle struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	Goal          string `json:"goal"`
+	Commit        string `json:"commit"`
+	UnitRun       string `json:"unitRun"`
+	Round         int    `json:"round"`
+	ReadLaunch    string `json:"readLaunch"`
+	ReadRuntime   string `json:"readRuntime"`
+	ReadModel     string `json:"readModel"`
+	BuildModel    string `json:"buildModel"`
+	ExaminedBase  string `json:"examinedBase"`
+	ExaminedTree  string `json:"examinedTree"`
+	GoalRevision  uint64 `json:"goalRevision"`
+	VerdictLine   string `json:"verdictLine"`
+	Report        string `json:"report"`
+	LaunchRecord  string `json:"launchRecord"`
+}
+
 type CommitReadRequest struct {
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
 	Units                                         []string
 	CheckClaim                                    func() error
 	RootJob, ReaderRecord, Carry                  string
+	UnitRead                                      []byte
 	GateRunID, GateTree                           string
 	TestsChanged                                  []TestChange
 	Transport                                     PushTransport
@@ -105,6 +127,7 @@ type CommitReadRequest struct {
 
 type LandedUnit struct {
 	Goal, Unit, Digest, CriticRoot, GateRunID string
+	ReadLaunch, ReadModel                     string
 	Round                                     int64
 	GoalRevision                              uint64
 	FoldPaths, ChangedPaths                   []string
@@ -258,6 +281,18 @@ func fileSHA256At(r attestationReads, repo, snapshot, path string) (string, []by
 }
 
 func directSource(r attestationReads, req CommitReadRequest, subject AttestationSubject, read readsubject.ReadSubject) (AttestationSource, []byte, error) {
+	if len(req.UnitRead) != 0 {
+		if req.RootJob != "" || req.ReaderRecord != "" {
+			return AttestationSource{}, nil, fmt.Errorf("read needs exactly one of --root-job, --reader-record or a unit read")
+		}
+		bundle, err := validateUnitReadBundle(req.UnitRead, req.GoalID, subject)
+		if err != nil {
+			return AttestationSource{}, nil, err
+		}
+		sum := sha256.Sum256(req.UnitRead)
+		return AttestationSource{Kind: "unit-read", ReadLaunch: bundle.ReadLaunch,
+			ClosureSHA256: hex.EncodeToString(sum[:])}, append([]byte(nil), req.UnitRead...), nil
+	}
 	if (req.RootJob == "") == (req.ReaderRecord == "") {
 		return AttestationSource{}, nil, fmt.Errorf("read needs exactly one of --root-job or --reader-record")
 	}
@@ -300,6 +335,60 @@ func directSource(r attestationReads, req CommitReadRequest, subject Attestation
 		return AttestationSource{}, nil, fmt.Errorf("the reader's record must name commit %s and change %s", subject.Commit, subject.UnitDigest)
 	}
 	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil, nil
+}
+
+func validateUnitReadBundle(data []byte, goalID string, subject AttestationSubject) (UnitReadBundle, error) {
+	var bundle UnitReadBundle
+	var problem string
+	if err := json.Unmarshal(data, &bundle); err != nil || bundle.SchemaVersion != 1 {
+		problem = "is damaged or has an unknown schema"
+	} else if bundle.Goal != goalID || bundle.Commit != subject.Commit {
+		problem = "names another goal or commit"
+	} else if strings.TrimSpace(bundle.ReadLaunch) == "" {
+		problem = "has no read launch"
+	} else if strings.TrimSpace(bundle.ReadModel) == "" || strings.TrimSpace(bundle.BuildModel) == "" || bundle.ReadModel == bundle.BuildModel {
+		problem = "needs different, non-empty read and build models"
+	} else if bundle.ExaminedTree != subject.Tree {
+		problem = "examined another tree"
+	} else if bundle.ExaminedBase != subject.Parent {
+		problem = "examined another base than the commit's parent"
+	} else {
+		verdict := ""
+		for _, line := range strings.Split(bundle.Report, "\n") {
+			if strings.HasPrefix(line, "VERDICT:") {
+				verdict = line
+				break
+			}
+		}
+		if bundle.VerdictLine != "VERDICT: land" || verdict != bundle.VerdictLine {
+			problem = "has no matching first VERDICT: land line in the report"
+		} else {
+			var record struct {
+				State         string `json:"state"`
+				Kind          string `json:"kind"`
+				VerdictCounts bool   `json:"verdictCounts"`
+			}
+			if err := json.Unmarshal([]byte(bundle.LaunchRecord), &record); err != nil || record.State != "completed" || record.Kind != "read" || !record.VerdictCounts {
+				problem = "has no completed read launch with verdictCounts true"
+			}
+		}
+	}
+	if problem != "" {
+		return UnitReadBundle{}, operationRefusal(ReadInvalidCode, "the unit read of %s %s\nrun: metasystem work review %s", subject.Commit, problem, goalID)
+	}
+	return bundle, nil
+}
+
+func unitReadBundleAt(r attestationReads, repo, snapshot, goalID, commit string, source AttestationSource) ([]byte, UnitReadBundle, error) {
+	digest, data, err := fileSHA256At(r, repo, snapshot, closureBundlePath(goalID, commit))
+	if err != nil || digest != source.ClosureSHA256 {
+		return nil, UnitReadBundle{}, operationRefusal(ReadInvalidCode, "the unit read's saved files for %s are missing or changed after the review\nrun: metasystem work review %s", commit, goalID)
+	}
+	var bundle UnitReadBundle
+	if err := json.Unmarshal(data, &bundle); err != nil || bundle.ReadLaunch != source.ReadLaunch {
+		return nil, UnitReadBundle{}, operationRefusal(ReadInvalidCode, "the unit read's saved files for %s are damaged or name another read launch\nrun: metasystem work review %s", commit, goalID)
+	}
+	return data, bundle, nil
 }
 
 func sameFoldDigests(a, b []Fold) bool {
@@ -459,6 +548,17 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		return att, nil
 	}
 	switch att.Source.Kind {
+	case "unit-read":
+		if att.Source.RootJob != "" || att.Source.Round != 0 || att.Source.ReaderRecord != "" || att.Source.RecordSHA256 != "" {
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the unit read of %s names fields from other review sources\nrun: metasystem work review %s", commit, goalID)
+		}
+		data, _, err := unitReadBundleAt(r, repo, snapshot, goalID, commit, att.Source)
+		if err == nil {
+			_, err = validateUnitReadBundle(data, goalID, subject)
+		}
+		if err != nil {
+			return Attestation{}, err
+		}
 	case "critic-root":
 		closure, err := validateCriticSource(r, repo, snapshot, goalID, commit, att.Source, read)
 		if err != nil || closure.Round != att.Source.Round {
@@ -592,10 +692,19 @@ func bindLandedUnit(r attestationReads, repo, snapshot, endpointTip, goalID, com
 	}
 	result := LandedUnit{Goal: att.Goal, Unit: att.Unit, Digest: att.Subject.UnitDigest,
 		CriticRoot: att.Source.RootJob, Round: att.Source.Round, GateRunID: att.Gate.RunID}
-	if att.Source.Kind != "critic-root" {
+	if att.Source.Kind == "reader-record" {
 		return result, nil
 	}
-	result.GoalRevision, err = attestedGoalRevision(r, repo, snapshot, goalID, commit, att.Source)
+	if att.Source.Kind == "unit-read" {
+		var bundle UnitReadBundle
+		_, bundle, err = unitReadBundleAt(r, repo, snapshot, goalID, commit, att.Source)
+		result.ReadLaunch, result.ReadModel, result.GoalRevision = bundle.ReadLaunch, bundle.ReadModel, bundle.GoalRevision
+		if err == nil && (bundle.Goal != goalID || bundle.GoalRevision == 0) {
+			err = fmt.Errorf("read launch %s is not bound to goal %s at a revision", bundle.ReadLaunch, goalID)
+		}
+	} else {
+		result.GoalRevision, err = attestedGoalRevision(r, repo, snapshot, goalID, commit, att.Source)
+	}
 	if err != nil {
 		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
 	}

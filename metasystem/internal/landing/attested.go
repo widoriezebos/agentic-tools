@@ -44,7 +44,7 @@ func observeAttestedWithFacts(params ObserveParams, change string, facts observa
 	if bound.Goal != params.Goal {
 		return refuse("attested-goal-mismatch", provenance)
 	}
-	if bound.CriticRoot == "" {
+	if bound.CriticRoot == "" && bound.ReadLaunch == "" {
 		return refuse("attested-not-critic", provenance)
 	}
 	if bound.Destructive && !bound.HasPlan {
@@ -52,6 +52,10 @@ func observeAttestedWithFacts(params ObserveParams, change string, facts observa
 	}
 	provenance = fmt.Sprintf("attested=%s goal=%s unit=%s critic=%s/%d change=%s",
 		params.Attested, bound.Goal, bound.Unit, bound.CriticRoot, bound.Round, bound.Digest)
+	if bound.ReadLaunch != "" {
+		provenance = fmt.Sprintf("attested=%s goal=%s unit=%s reader=%s/%s change=%s",
+			params.Attested, bound.Goal, bound.Unit, bound.ReadLaunch, bound.ReadModel, bound.Digest)
+	}
 	if _, err := readObservationReceipt(params, facts); err != nil {
 		result := refuse("attested-invalid", provenance)
 		result.Detail = err.Error()

@@ -694,6 +694,185 @@ func policySnapshotCopy(source map[string][]byte) map[string][]byte {
 	}
 	return copy
 }
+
+func policyUnitRead(f *attestationPolicyFixture) UnitReadBundle {
+	return UnitReadBundle{SchemaVersion: 1, Goal: "goal-a", Commit: f.unit, UnitRun: "unit-run-a", Round: 2,
+		ReadLaunch: "read-launch-a", ReadRuntime: "codex", ReadModel: "reader-model", BuildModel: "builder-model",
+		ExaminedBase: f.subject.Parent, ExaminedTree: f.tree, GoalRevision: 1, VerdictLine: "VERDICT: land",
+		Report:       "The changes hold.\nVERDICT: land\n",
+		LaunchRecord: "{\n \"state\": \"completed\", \"kind\": \"read\", \"verdictCounts\": true\n}\n"}
+}
+
+func TestUnitReadAttestationValidates(t *testing.T) {
+	t.Parallel()
+	f := newAttestationPolicyFixture(t, "metasystem/code.go", true)
+	bundle := policyUnitRead(f)
+	req := f.request(true)
+	req.RootJob, req.UnitRead = "", policyCanonical(t, bundle)
+	for _, source := range []string{"critic", "record"} {
+		mixed := req
+		if source == "critic" {
+			mixed.RootJob = f.job
+		} else {
+			mixed.ReaderRecord = f.record
+		}
+		expectReadFacts(f, f.root, f.base, f.unit, f.unit, f.rangeFacts())
+		if _, _, err := commitRead(mixed, f, f.effects()); err == nil || !strings.Contains(err.Error(), "exactly one") {
+			t.Fatalf("mixed %s source: %v", source, err)
+		}
+	}
+	f.expectStart(f.root)
+	f.expectAfterGate(f.root, true)
+	_, att, err := commitRead(req, f, f.effects())
+	if err != nil || att.Source.Kind != "unit-read" || att.Source.ReadLaunch != bundle.ReadLaunch || att.Source.ClosureSHA256 != policyHash(req.UnitRead) {
+		t.Fatalf("recorded source=%+v err=%v", att.Source, err)
+	}
+	if !bytes.Equal(f.snapshots[f.tip][closureBundlePath("goal-a", f.unit)], req.UnitRead) {
+		t.Fatal("the saved bundle changed the read's bytes")
+	}
+	f.clone = t.TempDir()
+	f.expectValidation(f.clone, f.tip, true)
+	if _, err := validateAttestation(f, f.clone, f.tip, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(f.root, "metasystem")
+	before, omitted, applied := policyID("5"), policyID("6"), policyID("7")
+	planPath := "plans/goal-a.md"
+	f.treeEntries[f.plan+":metasystem/"+planPath] = "100644 blob " + policyID("2")
+	for _, after := range []string{omitted, applied} {
+		f.transitions[before+":"+after] = policyRaw("code.go", policyID("3"), policyID("4"))
+	}
+	f.expectBind(nested, f.tip, before, omitted, true, false)
+	if _, err := bindLandedUnit(f, nested, f.tip, f.base, "goal-a", f.unit, before, omitted); err == nil || !strings.Contains(err.Error(), planPath) {
+		t.Fatalf("omitted fold: %v", err)
+	}
+	f.treeEntries[applied+":"+planPath] = f.treeEntries[f.plan+":metasystem/"+planPath]
+	f.expectBind(nested, f.tip, before, applied, true, true)
+	bound, err := bindLandedUnit(f, nested, f.tip, f.base, "goal-a", f.unit, before, applied)
+	if err != nil || bound.ReadLaunch != bundle.ReadLaunch || bound.ReadModel != bundle.ReadModel || bound.GoalRevision != bundle.GoalRevision || !bound.HasPlan || !reflect.DeepEqual(bound.FoldPaths, []string{planPath}) || !reflect.DeepEqual(bound.ChangedPaths, []string{"code.go"}) {
+		t.Fatalf("bound=%+v err=%v", bound, err)
+	}
+	bundle.GoalRevision = 0
+	data := policyCanonical(t, bundle)
+	att.Source.ClosureSHA256 = policyHash(data)
+	att.SHA256, _ = digestAttestation(att)
+	f.snapshots[f.tip][closureBundlePath("goal-a", f.unit)] = data
+	f.snapshots[f.tip][attestationPath("goal-a", f.unit)] = policyCanonical(t, att)
+	f.expect("CommitExists", nested, f.unit)
+	f.expect("Kind", nested, f.unit, "goal-a")
+	f.expect("SnapshotFile", nested, f.tip, attestationPath("goal-a", f.unit))
+	f.expectValidation(nested, f.tip, true)
+	f.expect("SnapshotFile", nested, f.tip, closureBundlePath("goal-a", f.unit))
+	_, err = bindLandedUnit(f, nested, f.tip, f.base, "goal-a", f.unit, before, applied)
+	var bindingError *LandedUnitError
+	if !errors.As(err, &bindingError) || bindingError.Code != "invalid" {
+		t.Fatalf("missing goal revision: %v", err)
+	}
+}
+
+func TestUnitReadOfAnotherTreeIsInvalid(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		change func(*UnitReadBundle)
+		want   string
+	}{
+		{"tree", func(b *UnitReadBundle) { b.ExaminedTree = policyID("0") }, "another tree"},
+		{"base", func(b *UnitReadBundle) { b.ExaminedBase = policyID("0") }, "another base"},
+		{"same model", func(b *UnitReadBundle) { b.ReadModel = b.BuildModel }, "models"},
+		{"empty read model", func(b *UnitReadBundle) { b.ReadModel = "" }, "models"},
+		{"empty build model", func(b *UnitReadBundle) { b.BuildModel = "" }, "models"},
+		{"fix verdict", func(b *UnitReadBundle) {
+			b.VerdictLine = "VERDICT: fix first (1 material findings)"
+			b.Report = b.VerdictLine
+		}, "VERDICT:"},
+		{"first verdict", func(b *UnitReadBundle) { b.Report = "VERDICT: fix first (1 material findings)\n" + b.Report }, "VERDICT:"},
+		{"missing verdict", func(b *UnitReadBundle) { b.Report = "No verdict.\n" }, "VERDICT:"},
+		{"uncounted", func(b *UnitReadBundle) { b.LaunchRecord = `{"state":"completed","kind":"read","verdictCounts":false}` }, "launch"},
+		{"missing count", func(b *UnitReadBundle) { b.LaunchRecord = `{"state":"completed","kind":"read"}` }, "launch"},
+		{"damaged launch", func(b *UnitReadBundle) { b.LaunchRecord = "{" }, "launch"},
+		{"incomplete", func(b *UnitReadBundle) { b.LaunchRecord = `{"state":"running","kind":"read","verdictCounts":true}` }, "launch"},
+		{"not a read", func(b *UnitReadBundle) { b.LaunchRecord = `{"state":"completed","kind":"build","verdictCounts":true}` }, "launch"},
+		{"goal", func(b *UnitReadBundle) { b.Goal = "goal-b" }, "another goal or commit"},
+		{"commit", func(b *UnitReadBundle) { b.Commit = policyID("0") }, "another goal or commit"},
+		{"schema", func(b *UnitReadBundle) { b.SchemaVersion = 2 }, "schema"},
+		{"launch id", func(b *UnitReadBundle) { b.ReadLaunch = "" }, "read launch"},
+		{"changed bytes", func(b *UnitReadBundle) { b.Report = "VERDICT: fix first (1 material findings)\n" }, "changed after the review"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+			bundle := policyUnitRead(f)
+			req := f.request(true)
+			req.RootJob, req.UnitRead = "", policyCanonical(t, bundle)
+			f.expectStart(f.root)
+			f.expectAfterGate(f.root, true)
+			_, att, err := commitRead(req, f, f.effects())
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.change(&bundle)
+			req.UnitRead = policyCanonical(t, bundle)
+			expectReadFacts(f, f.root, f.base, f.unit, f.unit, f.rangeFacts())
+			_, _, err = commitRead(req, f, f.effects())
+			recordingWant := tc.want
+			if tc.name == "changed bytes" {
+				recordingWant = "VERDICT:"
+			}
+			if err == nil || !strings.Contains(goal.RecordText(err), ReadInvalidCode) || !strings.Contains(err.Error(), recordingWant) {
+				t.Fatalf("recording invalid bundle: %v", err)
+			}
+			if tc.name != "changed bytes" {
+				att.Source.ClosureSHA256 = policyHash(req.UnitRead)
+				att.SHA256, err = digestAttestation(att)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.snapshots[f.tip][closureBundlePath("goal-a", f.unit)] = req.UnitRead
+			f.snapshots[f.tip][attestationPath("goal-a", f.unit)] = policyCanonical(t, att)
+			f.expectValidation(f.root, f.tip, true)
+			_, err = validateAttestation(f, f.root, f.tip, f.base, "goal-a", "u1", f.unit, map[string]bool{})
+			if err == nil || !strings.Contains(goal.RecordText(err), ReadInvalidCode) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("validating invalid bundle: %v", err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*AttestationSource)
+	}{
+		{"root job", func(s *AttestationSource) { s.RootJob = "critic-a" }},
+		{"round", func(s *AttestationSource) { s.Round = 1 }},
+		{"reader record", func(s *AttestationSource) { s.ReaderRecord = "metasystem/records/misc/read.md" }},
+		{"record digest", func(s *AttestationSource) { s.RecordSHA256 = strings.Repeat("a", 64) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newAttestationPolicyFixture(t, "metasystem/code.go", false)
+			req := f.request(true)
+			req.RootJob, req.UnitRead = "", policyCanonical(t, policyUnitRead(f))
+			f.expectStart(f.root)
+			f.expectAfterGate(f.root, true)
+			_, att, err := commitRead(req, f, f.effects())
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.change(&att.Source)
+			att.SHA256, err = digestAttestation(att)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.snapshots[f.tip][attestationPath("goal-a", f.unit)] = policyCanonical(t, att)
+			f.expectValidation(f.root, f.tip, true, true)
+			_, err = validateAttestation(f, f.root, f.tip, f.base, "goal-a", "u1", f.unit, map[string]bool{})
+			if err == nil || !strings.Contains(goal.RecordText(err), ReadInvalidCode) || !strings.Contains(err.Error(), "other review sources") {
+				t.Fatalf("validating mixed source: %v", err)
+			}
+		})
+	}
+}
+
 func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
 	t.Parallel()
 	f := newAttestationPolicyFixture(t, "metasystem/code.go", false)

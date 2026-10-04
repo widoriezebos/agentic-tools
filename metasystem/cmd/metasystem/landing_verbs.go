@@ -65,6 +65,7 @@ func runLandingObserve(args []string, stdout, stderr io.Writer) int {
 	params.BindAttested = func(commit, snapshot, base, goal, beforeTree, afterTree string) (landing.AttestedUnit, error) {
 		bound, err := goalbranch.BindLandedUnit(*root, snapshot, base, goal, commit, beforeTree, afterTree)
 		return landing.AttestedUnit{Goal: bound.Goal, Unit: bound.Unit, Digest: bound.Digest, CriticRoot: bound.CriticRoot, GateRunID: bound.GateRunID,
+			ReadLaunch: bound.ReadLaunch, ReadModel: bound.ReadModel,
 			Round: bound.Round, GoalRevision: bound.GoalRevision, FoldPaths: bound.FoldPaths, ChangedPaths: bound.ChangedPaths,
 			HasPlan: bound.HasPlan, Destructive: bound.Destructive}, err
 	}
