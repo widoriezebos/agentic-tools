@@ -3,12 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func rebaseIntentBed(t *testing.T) (*workBed, intentOwners, *int) {
@@ -104,5 +108,90 @@ func TestIntentWorkRebaseFromGoalWorktree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := runIntentIn(command, rest, &stdout, &stderr, b.worktree, owners); code != 0 {
 		t.Fatalf("goal worktree code=%d stdout=%s stderr=%s", code, &stdout, &stderr)
+	}
+}
+
+func rebaseJudgementFixture(t *testing.T) *branch.RebaseConflict {
+	t.Helper()
+	refused := &branch.RebaseConflict{OpError: &branch.OpError{Code: branch.RebaseJudgementCode, Message: "choose the source version"}}
+	err := json.Unmarshal([]byte(`{"MainTip":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Unit":"u1","Paths":[{"Path":"source.go","Original":"base-blob","Main":"main-blob","Goal":"goal-blob","FirstLine":2,"LastLine":3,"MainCommit":"main-commit","MainGoal":"peer"},{"Path":"added.go","Main":"main-added","Goal":"goal-added","MainCommit":"another-commit"}]}`), refused)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return refused
+}
+
+func TestIntentWorkRebaseJudgementAsksPerPath(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []bool{false, true} {
+		t.Run(fmt.Sprint(failure), func(t *testing.T) {
+			t.Parallel()
+			b, owners, _ := rebaseIntentBed(t)
+			refused := rebaseJudgementFixture(t)
+			owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+				return branch.RebaseResult{}, fmt.Errorf("branch stopped: %w", refused)
+			}
+			var inputs []channelAskInput
+			owners.connection.askRebase = func(root string, in channelAskInput) (channel.Question, []string, int, error) {
+				if realpath.ResolveExisting(root) != realpath.ResolveExisting(b.root()) {
+					t.Fatalf("question root %s want %s", root, b.root())
+				}
+				inputs = append(inputs, in)
+				if failure {
+					return channel.Question{}, nil, 1, errors.New("channel unavailable")
+				}
+				return channel.Question{ID: fmt.Sprintf("q%d", len(inputs))}, nil, 0, nil
+			}
+			code, stdout, stderr := b.run(owners, "work", "rebase", b.id)
+			if code == 0 || stdout != "" || len(inputs) != 2 || !strings.Contains(stderr, "main is at aaaaaaaaaaaa") || !strings.Contains(stderr, "nothing was changed") {
+				t.Fatalf("refusal %d %q %q inputs %v", code, stdout, stderr, inputs)
+			}
+			text := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+			wantQuestions := []string{
+				fmt.Sprintf("Goal %s and main both changed lines 2 to 3 of source.go. Keep main's, keep the goal's, or write a third.", b.id),
+				fmt.Sprintf("Goal %s and main both changed added.go where no common version exists. Keep main's, keep the goal's, or write a third.", b.id),
+			}
+			for i, in := range inputs {
+				if in.Goal != b.id || in.Kind != "other" || len(in.Facts) != 3 || len(in.Options) != 3 || text(in.Facts[0]) != wantQuestions[i] {
+					t.Fatalf("question %+v", in)
+				}
+				change := "peer"
+				if i == 1 {
+					change = "another-commit"
+				}
+				impact := fmt.Sprintf("Impact: main's drops what %s did there and unit u1 loses its read; the goal's undoes main's change there (%s); a third is read again. Nothing lands until you answer.", b.id, change)
+				if text(in.Facts[1]) != impact {
+					t.Fatalf("impact %q want %q", in.Facts[1], impact)
+				}
+				want := []string{fmt.Sprintf("keep main's: main's drops what %s did there and unit u1 loses its read", b.id), fmt.Sprintf("keep the goal's: the goal's undoes main's change there (%s)", change), "write a third: a third is read again"}
+				if !reflect.DeepEqual(in.Options, want) {
+					t.Fatalf("options %q", in.Options)
+				}
+				if failure && !strings.Contains(text(stderr), wantQuestions[i]) {
+					t.Fatalf("missing fallback %q", stderr)
+				}
+				if !failure && !strings.Contains(stderr, fmt.Sprintf("metasystem question wait q%d", i+1)) {
+					t.Fatalf("missing wait %q", stderr)
+				}
+			}
+			if inputs[0].Facts[2] != "Blobs: original base-blob, main main-blob, goal goal-blob." {
+				t.Fatal(inputs[0].Facts[2])
+			}
+		})
+	}
+}
+
+func TestIntentWorkRebaseJudgementCode(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := rebaseIntentBed(t)
+	owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+		return branch.RebaseResult{}, rebaseJudgementFixture(t)
+	}
+	owners.connection.askRebase = func(string, channelAskInput) (channel.Question, []string, int, error) {
+		return channel.Question{ID: "question-id"}, nil, 0, nil
+	}
+	code, result := b.runJSON(owners, "work", "rebase", b.id)
+	if code == 0 || result.Data.(map[string]any)["code"] != branch.RebaseJudgementCode || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem question wait question-id" {
+		t.Fatalf("refusal %+v code %d", result, code)
 	}
 }
