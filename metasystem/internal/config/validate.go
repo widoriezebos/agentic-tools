@@ -592,6 +592,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
 		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey, BoardHandoverLockWaitSecKey,
+		"steward.stuck.build-min", "steward.stuck.proof-min", "steward.stuck.read-min", "steward.stuck.rounds",
 		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey,
 	} {
 		if raw, present := values[knob]; present {

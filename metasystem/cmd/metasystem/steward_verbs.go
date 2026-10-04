@@ -316,6 +316,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	// The lane's steward reports behaviour patterns; every other steward's
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run
+	tickConfig.StuckUnits = (steward.StuckUnits{}).Run
 	wireStewardSeat(&tickConfig)
 	tickConfig.ProbeProvider = func(top string) (bool, error) {
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
