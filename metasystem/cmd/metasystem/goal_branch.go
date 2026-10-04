@@ -16,6 +16,7 @@ import (
 
 	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -154,19 +155,27 @@ type delegateCaller func(request delegateRequest, stdout, stderr io.Writer) int
 
 // callDelegate runs one delegate request; root owns its records and tree files. It returns
 // stdout, stderr, and an error for a nonzero status.
-func callDelegate(delegate delegateCaller, root string, args []string) ([]byte, []byte, error) {
+func callDelegate(delegate delegateCaller, root string, args []string, selected ...string) ([]byte, []byte, error) {
 	if delegate == nil {
 		delegate = runDelegateWith
 	}
 	var stdout, stderr bytes.Buffer
-	status := delegate(delegateRequest{rootOverride: root, args: args}, &stdout, &stderr)
+	request := delegateRequest{rootOverride: root, args: args}
+	if len(selected) > 0 && selected[0] != "" {
+		installation, err := filepath.Abs(selected[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		request.environment = []string{dispatchcore.SelectedInstallationEnv + "=" + installation}
+	}
+	status := delegate(request, &stdout, &stderr)
 	if status != 0 {
 		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("delegate exited with status %d", status)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
 
-func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string) (string, error) {
+func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string, selected ...string) (string, error) {
 	args := []string{"--role", "code-critic", "--reviews", "commit:" + commit,
 		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
 	if runtime != "" {
@@ -175,7 +184,7 @@ func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime,
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	output, stderr, err := callDelegate(delegate, root, args)
+	output, stderr, err := callDelegate(delegate, root, args, selected...)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome != "" {
 		if err == nil && outcome.Outcome == "WON" && outcome.JobID != "" {
@@ -195,8 +204,8 @@ func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime,
 
 // readFollowUp starts one more round of a critic chain through the delegate
 // follow-up and returns the round's job id.
-func readFollowUp(delegate delegateCaller, root, rootJob, brief string) (string, error) {
-	output, stderr, err := callDelegate(delegate, root, []string{"--follow-up", rootJob, "--brief", brief})
+func readFollowUp(delegate delegateCaller, root, rootJob, brief string, selected ...string) (string, error) {
+	output, stderr, err := callDelegate(delegate, root, []string{"--follow-up", rootJob, "--brief", brief}, selected...)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome == "WON" && outcome.JobID != "" && err == nil {
 		return outcome.JobID, nil
@@ -269,7 +278,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	delegate := dependencies.Delegate
 	if delegate == nil {
 		delegate = func(brief, goalID, commit, runtime, model string) (string, error) {
-			return readDelegate(dependencies.Delegator, *root, brief, goalID, commit, runtime, model)
+			return readDelegate(dependencies.Delegator, *root, brief, goalID, commit, runtime, model, *selected)
 		}
 	}
 	var readRepository branch.BranchReadRepository
@@ -286,7 +295,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
-			return readFollowUp(dependencies.Delegator, *root, rootJob, brief)
+			return readFollowUp(dependencies.Delegator, *root, rootJob, brief, *selected)
 		}})
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err

@@ -35,8 +35,9 @@ type BranchReadRequest struct {
 	// started (by the other review form, under its own brief) is joined.
 	Join bool
 	// Selected is the installation that asked for the read (the seat's
-	// checkout) when it is not Repo. A file the brief cites that the
-	// critic's tree lacks is frozen from it, or from Repo, into Repo.
+	// checkout) when it is not Repo. The caller supplies its registry and
+	// settings to Delegate. A file the brief cites that the critic's tree
+	// lacks is frozen from it, or from Repo, into Repo.
 	Selected string
 	// Retry names a failed examination round of the recorded critic chain
 	// to examine once more; FollowUp starts that round in the same chain.

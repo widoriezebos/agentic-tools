@@ -121,6 +121,9 @@ func processDeps(root string, git GitQuery, lookupEnv func(string) (string, bool
 			return landpath.GitResult{Stdout: []byte(out), Code: code}
 		}, root)
 	}, lookupEnv)
+	if selected, ok := lookupEnv(dispatch.SelectedInstallationEnv); ok && selected != "" {
+		installation, _ = landpath.SystemInstallation(nil, root, selected)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		self = ""
