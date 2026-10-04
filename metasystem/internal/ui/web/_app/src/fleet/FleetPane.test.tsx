@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BoardPayload, Held, Lane, LandNowAnswer, Machine, Page, ThisSeat } from "./api";
+import type { BoardPayload, Held, Lane, LandNowAnswer, Machine, Page, ThisSeat, Working } from "./api";
 import { captureOfFleet } from "./capture";
 import { NO_PRESENCE } from "./fleet";
 import { minuteTime } from "../backlog/format";
@@ -468,7 +468,7 @@ describe("the fleet page", () => {
     expect(needs).toContain('rel="noopener noreferrer"');
   });
 
-  it("puts a failed health check's reasons behind Details, one line each, with no role name and none of the alive roles", () => {
+  it("leaves hidden failing and undecided checks out of all panel words", () => {
     const unhealthy = calm({
       this: seat({
         health: {
@@ -484,12 +484,37 @@ describe("the fleet page", () => {
       }),
     });
 
-    const needs = needsOf(rendered(unhealthy, board()));
+    const markup = rendered(unhealthy, board());
 
-    expect(needs).toContain("This computer&#x27;s health check failed on 2 checks.");
-    expect(needs).toContain(">metasystem system check</code>");
-    expect(needs).toMatch(/<details class="ms-fleet-details"><summary class="ms-fleet-details-summary">Details<\/summary><ul class="ms-fleet-needs-reasons"><li>lastSuccess is stale<\/li><li>no session main is announced<\/li><\/ul><\/details>/);
-    expect(needs).not.toMatch(/steward-runner|narrator-freshness|session-main|runner alive/);
+    expect(needsOf(markup)).toBe("");
+    expect(text(markup)).toContain("All good on this computer");
+    expect(markup).not.toMatch(/steward-runner|narrator-freshness|session-main|runner alive|lastSuccess is stale|no session main is announced/);
+  });
+
+  it.each([
+    ["dead", "is not running", "start"], ["unknown", "could not be checked", "check"],
+  ])("renders the %s steward's one line and command without Details", (status, words, command) => {
+    const payload = calm({ this: seat({ health: { ...seat().health!, state: status === "dead" ? "unhealthy" : "unknown", roles: [{ role: "steward-runner", status, reason: "runner pid 41" }] } }) });
+    const needs = needsOf(rendered(payload, board()));
+    expect(needs).toContain(`This computer&#x27;s steward ${words}.`);
+    expect(needs).toContain(`>metasystem system ${command}</code>`);
+    expect(needs).not.toMatch(/<details|runner pid|steward-runner/);
+  });
+
+  it.each([
+    [1, 20, "round 1"], [17, 20, "round 17"], [18, 20, "round 18 of 20"],
+    [20, 20, "round 20 of 20"], [3, null, "round 3"],
+  ] as const)("writes round %s with limit %s as %s in the opened job", (round, roundLimit, words) => {
+    const working: Working = {
+      goal: "plain-lane",
+      phase: { role: "building", round, roundLimit },
+      job: { id: "j1", role: "building", status: "running", startedAt: null, capMinutes: null, capEndsAt: null },
+      box: null,
+      chain: [],
+    };
+    const markup = rendered(calm({ machines: [machine({ standing: "reachable", working: [working] })] }), board());
+    const line = [...markup.matchAll(/<p class="ms-fleet-work-line">[\s\S]*?<\/p>/g)].find(([line]) => line.includes(">This job</span>"))?.[0] ?? "";
+    expect(line).toContain(`<span>building ${words}</span>`);
   });
 
   it("names a stale health record and an unreadable one in Needs you, each with its command", () => {
@@ -635,7 +660,7 @@ describe("the fleet page", () => {
 
     expect(markup).toContain("<th scope=\"col\">Doing");
     expect(markup).not.toContain("<th scope=\"col\">Running");
-    expect(markup).toContain("reviewing · round 3 of 20 · ");
+    expect(markup).toContain("reviewing · round 3 · ");
   });
 
   it("no longer draws the This host list, nor the board's stale cards anywhere", () => {

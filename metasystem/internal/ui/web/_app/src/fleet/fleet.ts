@@ -172,6 +172,13 @@ function minutesUntil(to: string, from: Date): number | null {
   return Math.ceil((at - from.getTime()) / 60000);
 }
 
+/** The review cap is a backstop, shown only within two rounds of it. */
+export function roundWords(round: number, limit: number | null): string {
+  return limit !== null && round >= limit - 2
+    ? `round ${String(round)} of ${String(limit)}`
+    : `round ${String(round)}`;
+}
+
 /**
  * The phase sentence the rail says: what the machine is in the middle
  * of, how long that job has run, and the cap it reserved.
@@ -179,11 +186,7 @@ function minutesUntil(to: string, from: Date): number | null {
 export function phaseWords(working: Working, now: Date): string {
   const parts = [working.phase.role];
   if (working.phase.round > 0) {
-    parts.push(
-      working.phase.roundLimit === null
-        ? `round ${String(working.phase.round)}`
-        : `round ${String(working.phase.round)} of ${String(working.phase.roundLimit)}`,
-    );
+    parts.push(roundWords(working.phase.round, working.phase.roundLimit));
   }
   if (working.goal !== "") {
     parts.push(`on ${working.goal}`);
