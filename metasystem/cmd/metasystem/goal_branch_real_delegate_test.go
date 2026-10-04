@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -314,6 +316,12 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	// worktree.
 	arm := []string{"up", "--metasystem-root", worktree}
 	armEnv := append(os.Environ(), "METASYSTEM_BIN="+installed, "METASYSTEM_AGENT_RUNTIME=claude")
+	for _, seatEntry := range launch.SeatEnvironment() {
+		name, _, _ := strings.Cut(seatEntry, "=")
+		armEnv = slices.DeleteFunc(armEnv, func(entry string) bool {
+			return strings.HasPrefix(entry, name+"=")
+		})
+	}
 	t.Cleanup(func() {
 		shutdown := exec.Command(installed, append(arm, "--repo", worktree, "--shutdown")...)
 		shutdown.Env = armEnv

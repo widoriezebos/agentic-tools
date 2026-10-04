@@ -5,8 +5,21 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+// ResolveTool names the installation serving root, its checkout, and the
+// engine to run. The installation resolver owns the worktree mapping;
+// METASYSTEM_BIN explicitly overrides that installation's engine.
+func ResolveTool(root string, serving func(string) (string, string), lookupEnv func(string) (string, bool)) (installation, checkout, engine string) {
+	installation, checkout = serving(root)
+	engine, _ = lookupEnv("METASYSTEM_BIN")
+	if engine == "" {
+		engine = filepath.Join(installation, "bin", "metasystem")
+	}
+	return
+}
 
 // Filesystem-path facts the dispatch decisions rest on: where a path really
 // is once symlinks resolve, whether it sits inside a boundary, the record
