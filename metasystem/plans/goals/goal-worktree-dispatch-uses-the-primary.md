@@ -21,15 +21,15 @@ Open read items (fix unit code-critic-53498693cac978f76ba9e0f3): 4
 - ReadItem: id=code-critic-53498693cac978f76ba9e0f3-3 read=code-critic-53498693cac978f76ba9e0f3 state=open addedAt=2026-10-04T14:34:41Z changedAt=- closingReference="" text="u1: in internal/dispatch/fspath.go, ResolveTool sits above the file's header comment, and OwnerConfig.Engine's comment does not say METASYSTEM_BIN now wins for the empty default."
 - ReadItem: id=code-critic-53498693cac978f76ba9e0f3-4 read=code-critic-53498693cac978f76ba9e0f3 state=open addedAt=2026-10-04T14:34:41Z changedAt=- closingReference="" text="u1: TestProcessDepsTakesTheServingInstallationsEngine has no METASYSTEM_BIN row; the launch test's lookup stub answers other keys loosely."
 - OpenedAt: 2026-10-03T21:24:10Z
-- Revision: 23
+- Revision: 24
 - Pinned: m1g
-- Budget: elapsedLimit=1d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 2
-- NormApproval: approvedRef=RPPFNEHE6V2CGHZ881760W6V30-m1e-718ba0eb minutes=1500 reviewRounds=20 goalRevision=19
-- Approved: by=human:Wido at=2026-10-04T14:28:12Z revision=20 opid=RPPFNEHE6V2CGHZ881760W6V30-m1e-718ba0eb authority=proven digest=a062f5b787923104921cc25b85e9215384de0e8b929321b5e1d5bc714035469a episode=20
+- Budget: elapsedLimit=2d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 3
+- NormApproval: approvedRef=5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb minutes=1500 reviewRounds=20 goalRevision=23
+- Approved: by=human:Wido at=2026-10-04T18:02:19Z revision=24 opid=5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb authority=proven digest=9ed1e6b7b28a0b68e523d61a7f88606fedd51f2f822a30f4172d3c86e5eafa9b episode=24
 - Sliced: machine=m1g lineage=steward-seat revision=14 at=2026-10-04T07:25:06Z
-- Claimed: machine=m1g lineage=steward-seat at=2026-10-04T14:28:12Z revision=20 accountingRevision=20 episodeAt=2026-10-04T07:01:26Z episodeRevision=13
-- StopCapability: generation=20 revision=20 machine=m1g claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1g lineage=steward-seat at=2026-10-04T18:02:19Z revision=24 accountingRevision=24 episodeAt=2026-10-04T07:01:26Z episodeRevision=13
+- StopCapability: generation=24 revision=24 machine=m1g claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T21:24:10Z 2S0NGTRKDFA87BXSDEEMXHYNZ6-m1e-718ba0eb open actor=human:Wido targets=goal-worktree-dispatch-uses-the-primary
@@ -55,4 +55,5 @@ History:
 - 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-04T16:01:55Z P99PPHGETY7VV1R8B03KV81XTQ-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-04T17:45:40Z TTZG6YQTXD4X5GJTM6B7GZN99N-m1g-71c5cb39 read-items-add actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
-Integrity: sha256=73f5470cf88ade3e7593437793df8daff673e113f93ec4bf2a1a4ae5a4ae07ef
+- 2026-10-04T18:02:19Z 5CJQKJAY2MBQMVQM77C1N065DG-m1e-718ba0eb set-budget actor=human:Wido targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T14:28:12Z
+Integrity: sha256=104430a324d58bf06fd98cba9ff6a38271c7549995e69f3e0b457509aba15a5b
