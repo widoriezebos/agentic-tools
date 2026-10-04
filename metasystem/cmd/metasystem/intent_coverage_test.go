@@ -23,7 +23,7 @@ var publicPairs = []string{
 	"decision list", "decision show",
 	"design write", "design show", "design list", "design check", "design review", "design stop",
 	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work rebase", "work status", "work stop", "work workspace",
-	"test run", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
+	"test run", "test groups", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"agent ask", "agent reply", "agent inbox",
 	"incident list", "incident claim", "incident close",
