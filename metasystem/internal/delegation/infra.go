@@ -43,7 +43,8 @@ func (s *session) emit(event string, fields map[string]string) {
 }
 
 // engineSkewPreflight refuses a dispatch whose engine is older than the
-// checkout when engine or agent sources changed since the engine's commit.
+// checkout's main-side history when engine or agent sources changed since
+// the engine's commit. Goal branch changes are the subject under review.
 // The stamp is the running engine's build stamp unless a focused fixture
 // supplies one.
 func (s *session) engineSkewPreflight(stamp string) error {
@@ -53,7 +54,12 @@ func (s *session) engineSkewPreflight(stamp string) error {
 	if stamp == "" || stamp == "dev" {
 		return nil
 	}
-	out, _, err := s.l.ports.Git.Run(s.ctx, s.repoScope, "log", "--format=commit %H", "--name-only", "--ancestry-path", stamp+"..HEAD")
+	base, _, err := s.l.ports.Git.Run(s.ctx, s.repoScope, "merge-base", "HEAD", "refs/heads/main")
+	if err != nil {
+		// A missing common history cannot be repaired by rebuilding the engine.
+		return nil
+	}
+	out, _, err := s.l.ports.Git.Run(s.ctx, s.repoScope, "log", "--format=commit %H", "--name-only", "--ancestry-path", stamp+".."+strings.TrimSpace(string(base)))
 	if err != nil {
 		return nil
 	}
