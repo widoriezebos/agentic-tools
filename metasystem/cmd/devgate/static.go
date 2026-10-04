@@ -246,11 +246,22 @@ func (g *gateRun) collectStatic() int {
 	if d.goTool(g.ctx, g.root, env, append([]string{"vet", "-trimpath", "-p=" + g.workers}, g.judged()...), &vetOut, &vetOut) != nil {
 		reds = append(reds, "go vet failed:\n"+strings.TrimRight(vetOut.String(), "\n"))
 	}
-	var staticcheckOut bytes.Buffer
-	if d.goTool(g.ctx, g.root, env, append([]string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule}, g.judged()...), &staticcheckOut, &staticcheckOut) != nil {
-		reds = append(reds, "staticcheck 2026.2 (module v0.8.0) refused (or could not run):\n"+strings.TrimRight(staticcheckOut.String(), "\n"))
+	// The pinned tools run from this computer's module cache alone, so a
+	// build job without network judges like any other checkout.
+	if proxy, red := g.moduleCacheProxy(env); red != "" {
+		reds = append(reds, red)
+	} else {
+		var staticcheckOut bytes.Buffer
+		if d.goTool(g.ctx, g.root, g.env.with("GOPROXY="+proxy).list(), append([]string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule}, g.judged()...), &staticcheckOut, &staticcheckOut) != nil {
+			output := strings.TrimRight(staticcheckOut.String(), "\n")
+			if notCached(output, proxy) {
+				reds = append(reds, notCachedRed("staticcheck 2026.2 (module v0.8.0)", output))
+			} else {
+				reds = append(reds, "staticcheck 2026.2 (module v0.8.0) refused (or could not run):\n"+output)
+			}
+		}
+		reds = append(reds, g.deadCode(proxy)...)
 	}
-	reds = append(reds, g.deadCode()...)
 
 	scratch, err := os.CreateTemp(tempDir(g.env), "metasystem-gate-collect.")
 	if err == nil {
@@ -333,6 +344,74 @@ func (g *gateRun) collectStatic() int {
 			fmt.Fprintf(d.stderr, "--- %s\n", red)
 		}
 		return 1
+	}
+	return 0
+}
+
+// warmCommand puts the pinned static tools in this computer's module cache,
+// the only place static and the full gate run them from.
+const warmCommand = "go run ./cmd/devgate warm"
+
+// moduleCacheProxy is this computer's module cache as a read-only module
+// proxy, file://GOMODCACHE/cache/download, or the red that says why the
+// cache could not be located. The pinned tools run with it as their only
+// GOPROXY, so they never reach the network. GOPROXY=off would not do: go run
+// and go install of pkg@version look up the module's latest version to check
+// for deprecation, which off refuses even with a warm cache and the file
+// proxy answers from it.
+func (g *gateRun) moduleCacheProxy(env []string) (string, string) {
+	const red = "staticcheck and dead code did not run: the module cache could not be located\n"
+	var out, errOut bytes.Buffer
+	if err := g.d.goTool(g.ctx, g.root, env, []string{"env", "GOMODCACHE"}, &out, &errOut); err != nil {
+		return "", red + fmt.Sprintf("go env GOMODCACHE failed (status %d): %s", exitStatus(err), strings.TrimRight(errOut.String(), "\n"))
+	}
+	cache := strings.TrimSpace(out.String())
+	if cache == "" {
+		return "", red + "go env GOMODCACHE answered nothing"
+	}
+	return "file://" + filepath.ToSlash(filepath.Join(cache, "cache", "download")), ""
+}
+
+// notCached reports go command output saying the module cache proxy lacks
+// a file the tool needs.
+func notCached(output, proxy string) bool {
+	return strings.Contains(output, "reading "+proxy+"/") && strings.Contains(output, ": no such file or directory")
+}
+
+// notCachedRed is the red for a pinned tool the module cache lacks: it
+// names the warm-up a person runs where there is network.
+func notCachedRed(tool, output string) string {
+	return tool + " is not in this computer's module cache\n" +
+		"run: " + warmCommand + "  (from metasystem/, on a computer with network)\n" + output
+}
+
+// runWarm puts the pinned static tools in this computer's module cache: it
+// installs each into a scratch GOBIN with the caller's environment, so the
+// go command fetches whatever the cache lacks, and removes the scratch
+// directory. Static then runs them from that cache without network.
+func runWarm(ctx context.Context, args []string, root string, d deps) int {
+	if len(args) > 0 {
+		fmt.Fprintf(d.stderr, "devgate warm takes no arguments; got %s\n", args[0])
+		return 2
+	}
+	env := newEnvironment(d.environ())
+	bin, err := os.MkdirTemp(tempDir(env), "metasystem-devgate-warm.")
+	if err != nil {
+		fmt.Fprintf(d.stderr, "devgate warm: its scratch directory could not be created: %v\n", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(bin) }()
+	for _, tool := range []struct{ name, module string }{{"staticcheck", staticcheckModule}, {"deadcode", deadcodeModule}} {
+		var out bytes.Buffer
+		if err := d.goTool(ctx, root, env.with("GOBIN="+bin).list(), []string{"install", "-trimpath", tool.module}, &out, &out); err != nil {
+			output := strings.TrimRight(out.String(), "\n")
+			if output == "" {
+				output = err.Error()
+			}
+			fmt.Fprintf(d.stderr, "devgate warm: %s could not be installed (%s):\n%s\n", tool.name, tool.module, output)
+			return 1
+		}
+		fmt.Fprintf(d.stdout, "devgate warm: %s is in this computer's module cache\n", tool.name)
 	}
 	return 0
 }
