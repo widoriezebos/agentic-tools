@@ -544,6 +544,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return landReadyRequest(r, target), nil
 	case LandedVerb:
 		return landedRequest(r, target, in.Args["reason"]), nil
+	case "rebase":
+		return rebasedRequest(r, target, in.Args["reason"]), nil
 	case sendBackVerb:
 		answer, err := parseSendBackReason(in.Args["reason"])
 		if err != nil {

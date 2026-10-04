@@ -15,6 +15,7 @@ func rebaseIntentBed(t *testing.T) (*workBed, intentOwners, *int) {
 	t.Helper()
 	b := newWorkBed(t)
 	owners := b.workOwners()
+	owners.connection.recordRebase = func(*intentInvocation, string, branch.RebaseResult) error { return nil }
 	writes := new(int)
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return strings.Repeat("a", 40), nil }
 	owners.connection.section = func(_ string, body func(func(func() error) error) error) error {

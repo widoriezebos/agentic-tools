@@ -850,6 +850,25 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	return dependencies.publish(result, err)
 }
 
+// runGoalRecordRebase records a published rebase through the goal mutation owner.
+func runGoalRecordRebase(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	flags := newFlagSet("goal rebase", dependencies.outStream(), dependencies.errStream())
+	root := pathFlag(flags, "root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	reason := flags.String("reason", "", "what the rebase did")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *reason == "" {
+		dependencies.complain("the rebase history line needs a goal and a reason; run: metasystem goal sync")
+		return 2
+	}
+	req, err := syncReqWithProofAtWithDependencies("rebase", *root, "", "", nil, commandNow, dependencies)
+	if err != nil {
+		dependencies.complain(err)
+		return 1
+	}
+	result, err := goal.RecordRebase(req, *id, *reason)
+	return dependencies.publish(result, err)
+}
+
 func readItemsFile(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
