@@ -20,6 +20,9 @@ type Closure struct {
 	Module     string
 	Changed    []string
 	Dependents []string
+	// Unowned holds repository-relative changed paths no language unit owns.
+	// These paths do not contribute to Units or Contains.
+	Unowned []string
 }
 
 // Units returns the changed and dependent units, each once, in order.

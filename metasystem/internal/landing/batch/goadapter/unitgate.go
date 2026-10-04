@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 )
 
 // UnitPackages is the package closure that one stacked unit must gate.
@@ -36,28 +35,6 @@ func unitGateModuleRoot(root string) string {
 		return nested
 	}
 	return ""
-}
-
-// SelectUnitPackages computes the changed packages and their transitive
-// reverse dependencies against one exact candidate tree.
-func SelectUnitPackages(moduleRoot, base, tree string) (UnitPackages, error) {
-	workspace := gittree.Workspace{Dir: moduleRoot}
-	return selectUnitPackagesWithSnapshot(workspace, base, tree, func(tree string) (string, func() error, error) {
-		detached, err := workspace.NewDetachedWorktree(tree)
-		if err != nil {
-			return "", nil, err
-		}
-		return detached.Workspace().Dir, detached.Close, nil
-	})
-}
-
-func selectUnitPackagesWithSnapshot(workspace gittree.Workspace, base, tree string, openSnapshot func(string) (string, func() error, error)) (UnitPackages, error) {
-	selected, err := gopackages.SelectWithWorkspaceSnapshot(workspace, base, tree, nil, os.Environ(), openSnapshot)
-	if err != nil {
-		return UnitPackages{}, err
-	}
-	return UnitPackages{Tree: selected.Tree, ModulePath: selected.ModulePath,
-		Changed: selected.Changed, Dependents: selected.Dependents}, nil
 }
 
 // SelectWorkingUnitPackages compares base with the current module worktree.
