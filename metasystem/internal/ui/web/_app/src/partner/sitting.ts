@@ -624,11 +624,24 @@ export function answered(source: string, mark: string, answer: string): string |
  * first. Null where the record does not carry the finding and there is no
  * entry to write.
  */
-export function decidedSource(source: string, mark: string, answer: string, entry: Entry | undefined): string | null {
+export function decidedSource(source: string, mark: string, answer: string, entry: Entry | undefined, unmarkedText = ""): string | null {
   if (recordedIn(source).has(mark)) {
     return answered(source, mark, answer);
   }
   if (entry === undefined) {
+    if (unmarkedText !== "" && mark !== "") {
+      const lines = source.split("\n");
+      let section = "";
+      for (let at = 0; at < lines.length; at += 1) {
+        const heading = /^#{1,6}\s+(.*)$/.exec(lines[at]);
+        if (heading !== null) { section = heading[1].trim(); }
+        const one = section === "Findings" ? entriesIn(`## Findings\n${lines[at]}`)[0] : undefined;
+        if (one?.mark === "" && one.text === unmarkedText) {
+          lines[at] = `${lines[at].trimEnd()}${markOf(mark)}`;
+          return answered(lines.join("\n"), mark, answer);
+        }
+      }
+    }
     return null;
   }
   return appended(source, { ...entry, mark, answer }, "finding");

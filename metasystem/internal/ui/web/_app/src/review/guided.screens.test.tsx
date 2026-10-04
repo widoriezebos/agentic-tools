@@ -254,6 +254,13 @@ describe("a review of an older version than would land", () => {
   });
 });
 
+it("offers enabled decisions on a finding written by hand", () => {
+  const source = SOURCE.replace("## Findings\n", "## Findings\n\n- The log says nothing.\n");
+  const shown = around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />, held([], source));
+  expect(shown).toContain('class="ms-decide-choice" aria-pressed="false"');
+  expect(shown).not.toMatch(/class="ms-decide-choice[^>]*disabled/u);
+});
+
 describe("a verdict refused because another room added a finding after the person decided (RULING-R-143-m1e of read 0096f159)", () => {
   // The record as this room's verdict wrote it, and as it stands once another
   // room saved a finding that blocks into it.
@@ -269,7 +276,7 @@ describe("a verdict refused because another room added a finding after the perso
     const shown = around(<ReviewView record={RECORD} changes={CURRENT} since={null} row={row()} />,
       { ...held([], theirs), verdictChanged: changedSince(ours, theirs), stranded });
     const text = read(shown);
-    expect(text).toContain("Your verdict was not recorded: this review changed in another room after you decided. " +
+    expect(text).toContain("Your verdict was not recorded: this review changed after you decided. " +
       "What changed: 1 new finding, \"The retry has no ceiling.\" It shows the review as it stands now; decide again under Your verdict.");
     // At the verdict step, where the person pressed, before the ways.
     expect(text.indexOf("Your verdict was not recorded")).toBeGreaterThan(text.indexOf("4 Your verdict"));

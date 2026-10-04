@@ -147,7 +147,7 @@ import {
   outcomeWithVerdict,
   verdictSource,
   verdictWriteRefused,
-  retippedAfresh,
+  reviewCurrentWrite,
   VERDICT_MOVED,
   VERSION_CHANGED,
   VERSION_MOVED,
@@ -2238,7 +2238,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     }
     const card = depositIn(deposits, id);
     const entry = card === undefined ? undefined : entryOf(card, nameOf(store.human), stampOf(new Date()));
-    const outcome = await held.rewrite(into, (source) => decidedSource(source, id, answer, entry), NOT_A_FINDING);
+    const text = id.startsWith("Findings|") ? id.slice("Findings|".length) : "";
+    const mark = text === "" ? id : `${LOCAL}${mintLocal()}`;
+    const outcome = await held.rewrite(into, (source) => decidedSource(source, mark, answer, entry, text), NOT_A_FINDING);
     if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
       setReading(outcome.reading);
     }
@@ -2261,8 +2263,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       const card = depositIn(deposits, id);
       return card === undefined ? [] : [entryOf(card, who, when)];
     });
-    const outcome = await held.rewrite(into, (source) => retippedAfresh(source, current, unsaved),
-      "This review names no version of a goal waiting to land, so there is no current version to move to.");
+    const outcome = await reviewCurrentWrite(held, into, current, unsaved, () => walk(WALK_AGAIN));
     if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
       setReading(outcome.reading);
     }
@@ -2270,7 +2271,6 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       return outcome.reason;
     }
     setVerdictChanged("");
-    await walk(WALK_AGAIN);
     return "";
   }, [walk, deposits, store.human]);
 
