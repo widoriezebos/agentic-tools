@@ -398,6 +398,7 @@ export type BoardLine = { machine: string; text: string };
  */
 export type BoardGoal = {
   goal: string;
+  landed?: number;
   stage?: string;
   round?: { n: number; max: number | null };
   proof?: { attempt: string; done: number; planned: number };
