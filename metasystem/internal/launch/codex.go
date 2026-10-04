@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
@@ -85,8 +86,16 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if value := readString(record.AdapterData, "effort"); value != "" {
 		effort = value
 	}
+	// The record carries the selected installation's launch.codex.sandbox,
+	// resolved at admission; a record without one runs workspace-write.
+	sandbox := config.CodexSandboxWorkspaceWrite
+	if value := readString(record.AdapterData, "sandbox"); value != "" {
+		if sandbox, err = config.ParseCodexSandbox(value); err != nil {
+			return Command{}, err
+		}
+	}
 	args := []string{"exec", "-m", model, "-c", "model_reasoning_effort=" + effort, "-C", directory,
-		"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt")}
+		"-s", sandbox, "-o", filepath.Join(stateDir, "last-message.txt")}
 	if window > 0 {
 		args = append(args, "-c", fmt.Sprintf("model_auto_compact_token_limit=%d", window))
 	}

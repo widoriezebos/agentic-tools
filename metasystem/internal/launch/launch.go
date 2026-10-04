@@ -193,6 +193,12 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	setString(record.AdapterData, "model", model)
 	setString(record.AdapterData, "effort", effort)
 	setInt64(record.AdapterData, "window", window)
+	if adapterName == "codex-exec" {
+		// The sandbox is the selected installation's, resolved here: the
+		// supervisor process's engine may sit in another installation or a
+		// steward pin, so it reads the mode from the record, never its own.
+		setString(record.AdapterData, "sandbox", settings.CodexSandbox)
+	}
 	if spec.Page != "" {
 		setString(record.AdapterData, "page", spec.Page)
 	}

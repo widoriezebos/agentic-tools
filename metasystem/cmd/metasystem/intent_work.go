@@ -2099,6 +2099,11 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done",
 			next:    inv.publicArgv("settings", "set", "KEY", "VALUE"), nextReason: "a key without spaces or '=', and a one-line value"})
 	}
+	if problem := config.SettingValueProblem(key, value); problem != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "setting", ID: key}},
+			Summary: problem.Error() + "; nothing was done",
+			next:    inv.publicArgv("settings", "set", key, "VALUE"), nextReason: "VALUE is one of the values named"})
+	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
