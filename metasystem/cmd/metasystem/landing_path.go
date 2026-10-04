@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -155,6 +156,15 @@ func landingPathObserve(request landpath.ObserveRequest) (landing.Observation, i
 		RootJob: request.RootJob, TestReceipt: request.TestReceipt, Recertification: request.Recertification,
 		Carried: request.Carried, ProjectTree: request.ProjectTree, LedgerTip: request.LedgerTip, Judge: request.Judge,
 		LiveFailure: request.LiveFailure, CarriedBy: request.CarriedBy, Now: now,
+	}
+	if request.Goal != "" {
+		inv, designErr := landingDesignInvocation(root, os.Stderr)
+		params.DesignFacts = func() landing.DesignFacts {
+			if designErr != nil {
+				return landing.DesignFacts{Facts: designgate.Facts{Goal: request.Goal, Error: designErr}}
+			}
+			return inv.landingDesignFacts(root, request.Goal)
+		}
 	}
 	params.BindAttested = func(commit, snapshot, base, goal, beforeTree, afterTree string) (landing.AttestedUnit, error) {
 		bound, err := goalbranch.BindLandedUnit(root, snapshot, base, goal, commit, beforeTree, afterTree)
@@ -550,10 +560,21 @@ func landingPathOwners() landpath.Owners {
 			_, err := os.Stat(path)
 			return err == nil
 		},
-		Verify:         landingPathVerify,
-		SelectLanding:  landingPathSelect,
-		SelectCode:     landingPathSelectCode,
-		Live:           landingPathLiveJudge,
+		Verify:        landingPathVerify,
+		SelectLanding: landingPathSelect,
+		SelectCode:    landingPathSelectCode,
+		Live:          landingPathLiveJudge,
+		RecordDesign: func(root, goalID string, design *landing.DesignObservation, stderr io.Writer) {
+			if goalID == "" || design == nil || design.Pair[0] == "" {
+				return
+			}
+			inv, err := landingDesignInvocation(root, stderr)
+			if err != nil {
+				landingDesignDigestWarning(stderr, err)
+				return
+			}
+			inv.recordLandingDesign(goalID, design, time.Now())
+		},
 		BuildBaseJudge: landingPathBaseJudge,
 		Held: func(root, base, commit, remote, ref string, stdout, stderr io.Writer) int {
 			return landingHeldTo(stdout, stderr, cleanOwnerRoot(root), base, commit, remote, ref)

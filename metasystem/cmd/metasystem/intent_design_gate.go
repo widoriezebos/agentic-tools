@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,7 +17,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 type designGateOwners struct {
@@ -26,19 +31,19 @@ type designGateOwners struct {
 }
 
 type designGateRecord struct {
-	Schema         int                 `json:"schema"`
-	LedgerIdentity string              `json:"ledgerIdentity"`
-	Goal           string              `json:"goal"`
-	Unit           string              `json:"unit"`
-	Worktree       string              `json:"worktree"`
-	Tier           uint8               `json:"tier"`
-	Mode           string              `json:"mode"`
-	Verdict        string              `json:"verdict"`
-	WouldRefuse    bool                `json:"wouldRefuse"`
-	Person         bool                `json:"person"`
-	GovernedBy     string              `json:"governedBy"`
-	Time           time.Time           `json:"time"`
-	Designs        []designgate.Design `json:"designs"`
+	Schema         int                    `json:"schema"`
+	LedgerIdentity string                 `json:"ledgerIdentity"`
+	Goal           string                 `json:"goal"`
+	Unit           string                 `json:"unit"`
+	Worktree       string                 `json:"worktree"`
+	Tier           uint8                  `json:"tier"`
+	Mode           string                 `json:"mode"`
+	Verdict        string                 `json:"verdict"`
+	WouldRefuse    bool                   `json:"wouldRefuse"`
+	Person         bool                   `json:"person"`
+	GovernedBy     string                 `json:"governedBy"`
+	Time           time.Time              `json:"time"`
+	Designs        []landing.DesignRecord `json:"designs"`
 }
 
 func (inv *intentInvocation) designGate() designGateOwners {
@@ -136,13 +141,21 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 	o := inv.designGate()
 	now := time.Now().UTC()
 	r := designGateRecord{Schema: 1, Goal: f.Goal, Unit: unit, Worktree: worktree, Tier: f.Tier, Mode: result.Mode,
-		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, Time: now, Designs: []designgate.Design{}}
+		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, Time: now, Designs: []landing.DesignRecord{}}
+	var bodyErr error
 	for _, d := range f.Designs {
 		if d.Status == "accepted" {
-			r.Designs = append(r.Designs, d)
+			body, err := inv.designBodyDigest(d)
+			if err != nil {
+				bodyErr = err
+			}
+			r.Designs = append(r.Designs, landing.DesignRecord{Design: d, BodySHA256: body})
 		}
 	}
 	identity, err := o.identity(inv.stateRoot)
+	if bodyErr != nil {
+		err = bodyErr
+	}
 	if err == nil && !designGateIdentity.MatchString(identity) {
 		err = fmt.Errorf("the goal ledger identity is not 26 Crockford base32 characters")
 	}
@@ -185,4 +198,143 @@ func (inv *intentInvocation) designGateWriteWarning(err error) string {
 	line := fmt.Sprintf("warning: the design check's record could not be written (%s); the build goes on", strings.ReplaceAll(err.Error(), "\n", " "))
 	fmt.Fprintln(inv.stderr, line+"\nnothing to do: the landing check runs without it")
 	return line
+}
+
+func (inv *intentInvocation) designBodyDigest(d designgate.Design) (string, error) {
+	path := filepath.FromSlash(d.Path)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(inv.layout.GitRoot, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != d.SHA256 {
+		return "", fmt.Errorf("the design %s changed while its facts were read", d.Path)
+	}
+	record, _, declared := project.ParseRecord(d.Path, string(data))
+	if !declared || len(record.Head) == 0 {
+		return "", fmt.Errorf("the design %s cannot be read", d.Path)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	body := lines[record.Head[len(record.Head)-1].Line:]
+	if len(body) > 0 && strings.TrimSpace(body[0]) == "" {
+		body = body[1:]
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(body, "\n")))), nil
+}
+
+func (inv *intentInvocation) landingDesignFacts(root, id string) landing.DesignFacts {
+	if id == "" {
+		return landing.DesignFacts{Facts: designgate.Facts{Tier: 1}}
+	}
+	f := landing.DesignFacts{Facts: inv.designGateFacts(root, id), Digests: map[string]string{}}
+	if designgate.Check(f.Facts).Verdict != "ok" {
+		return f
+	}
+	for _, d := range f.Designs {
+		if d.Status == "accepted" {
+			digest, err := inv.designBodyDigest(d)
+			if err != nil {
+				f.Error = err
+				return f
+			}
+			f.Digests[d.ID] = digest
+		}
+	}
+	f.Recorded, f.RecordError = inv.readDesignGateRecords(id)
+	return f
+}
+
+func (inv *intentInvocation) readDesignGateRecords(id string) ([]landing.DesignRecord, error) {
+	identity, err := inv.designGate().identity(inv.stateRoot)
+	if err != nil || !designGateIdentity.MatchString(identity) {
+		return nil, nil
+	}
+	if id == "" || id == "." || id == ".." || strings.ContainsAny(id, `/\`) {
+		return nil, fmt.Errorf("the goal id is not one plain path segment")
+	}
+	runner := inv.work().units(inv.layout)
+	store := runner.Root
+	if store == "" {
+		launchRoot := runner.Manager.Store.Root
+		if launchRoot == "" {
+			launchRoot, err = launch.DefaultRoot()
+			if err != nil {
+				return nil, err
+			}
+		}
+		store = filepath.Join(filepath.Dir(launchRoot), "unit")
+	}
+	directory := filepath.Join(store, ".design-gate", identity, id)
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var designs []landing.DesignRecord
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		var record designGateRecord
+		if err == nil {
+			err = json.Unmarshal(data, &record)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if record.Schema != 1 || record.LedgerIdentity != identity || record.Goal != id || record.Unit+".json" != entry.Name() {
+			return nil, fmt.Errorf("the design record %s does not belong to this goal and unit", entry.Name())
+		}
+		work, err := runner.NamedWork(record.Worktree, id)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, unit := range work {
+			if unit.Unit == record.Unit && unit.Run != "" && unit.Record != nil {
+				for _, d := range record.Designs {
+					if d.BodySHA256 != "" {
+						designs = append(designs, d)
+					}
+				}
+				break
+			}
+		}
+	}
+	return designs, nil
+}
+
+func landingDesignInvocation(root string, stderr io.Writer) (*intentInvocation, error) {
+	inv := &intentInvocation{owners: defaultIntentOwners(), cwd: root, stderr: stderr}
+	layout, err := inv.owners.resolver.ResolveLayout(root)
+	if err == nil {
+		inv.layout = layout
+		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+	}
+	return inv, err
+}
+
+func (inv *intentInvocation) recordLandingDesign(id string, design *landing.DesignObservation, now time.Time) {
+	if id == "" || design == nil || design.Pair[0] == "" {
+		return
+	}
+	tip, err := inv.work().git(inv.layout.InstallationRoot, "rev-parse", "HEAD")
+	if err == nil {
+		err = inv.designGate().digest(inv.stateRoot, narratordigest.Entry{Kind: "lowlight", Text: design.Pair[0],
+			SourceType: "design-gate-landing", SourceID: id + "@" + strings.TrimSpace(string(tip))}, now)
+	}
+	if err != nil {
+		landingDesignDigestWarning(inv.stderr, err)
+	}
+}
+
+func landingDesignDigestWarning(stderr io.Writer, err error) {
+	fmt.Fprintf(stderr, "warning: the design check's digest could not be written (%s); the landing goes on\nnothing to do: the landing check's verdict still stands\n", strings.ReplaceAll(err.Error(), "\n", " "))
 }

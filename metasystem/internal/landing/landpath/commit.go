@@ -479,6 +479,7 @@ type decision struct {
 	refusesAgent                             bool
 	goalRevision                             string
 	carried                                  *landing.CarriedBinding
+	design                                   *landing.DesignObservation
 }
 
 func decisionOf(observed observationView) (decision, bool) {
@@ -488,7 +489,7 @@ func decisionOf(observed observationView) (decision, bool) {
 		return decision{}, false
 	}
 	out := decision{provenance: observed.Provenance, verdict: observed.VerdictTrailer, code: observed.Code,
-		mode: observed.Mode, refusal: observed.Refusal, refusesAgent: refuses, carried: observed.Carried}
+		mode: observed.Mode, refusal: observed.Refusal, refusesAgent: refuses, carried: observed.Carried, design: observed.Design}
 	if observed.GoalRevision > 0 {
 		out.goalRevision = strconv.FormatUint(observed.GoalRevision, 10)
 	}
@@ -505,6 +506,7 @@ type observationView struct {
 	Refusal        string
 	GoalRevision   uint64
 	Carried        *landing.CarriedBinding
+	Design         *landing.DesignObservation
 }
 
 func (b *boundary) observeRequest(tree, settledTree, actor string) ObserveRequest {
@@ -591,6 +593,12 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 			decided = read
 		}
 	}
+	if decided.design != nil && decided.design.Pair[0] != "" && !decided.design.RefusesAgent {
+		fmt.Fprintln(b.stderr, decided.design.Pair[0]+"\n"+decided.design.Pair[1])
+	}
+	if b.agent && decided.code == "LANDING_DESIGN_NOT_STANDING" && decided.design != nil {
+		return b.stop(3, decided.design.Pair[0], []string{"metasystem", "goal", "allow", request.Goal, "build-without-design", "--reason", "TEXT"}, "")
+	}
 	if request.Carried != "" && decided.mode == "refuse" {
 		details := []string{"verdict: " + decided.verdict}
 		if decided.refusal != "" {
@@ -610,11 +618,15 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 		return status
 	}
 	carried.judge = judgeTrailer
-	return b.commit(decided, carried, actor)
+	status = b.commit(decided, carried, actor)
+	if status == 0 && request.Goal != "" && decided.design != nil && decided.design.Pair[0] != "" && b.owners.RecordDesign != nil {
+		b.owners.RecordDesign(request.Root, request.Goal, decided.design, b.stderr)
+	}
+	return status
 }
 
 func view(observed landing.Observation) observationView {
 	return observationView{Mode: observed.Mode, RefusesAgent: observed.RefusesAgent, Code: observed.Code,
 		Provenance: observed.Provenance, VerdictTrailer: observed.VerdictTrailer, Refusal: observed.Refusal,
-		GoalRevision: observed.GoalRevision, Carried: observed.Carried}
+		GoalRevision: observed.GoalRevision, Carried: observed.Carried, Design: observed.Design}
 }

@@ -267,6 +267,7 @@ var Rows = []Row{
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Question, H1: StandingInput},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Question, H1: StandingInput},
 	{Code: "evaluator-unavailable", Owner: "internal/landing/landpath", Site: "commit.go#boundary.decideAndCommit", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "LANDING_DESIGN_NOT_STANDING", Owner: "internal/landing", Site: "observe.go#observeWithFacts", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go#observeWithReader", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go#nonBehaviorClassError", Shape: Agent, Override: CarriedLanding, Commands: 1},

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -61,6 +62,15 @@ func runLandingObserve(args []string, stdout, stderr io.Writer) int {
 		DirectFix: *directFix, RevertOf: *revertOf, Goal: *goal, Actor: *actor,
 		RootJob: *rootJob, TestReceipt: *testReceipt, Recertification: *recertification,
 		Carried: *carried, ProjectTree: *projectTree, LedgerTip: *ledgerTip, Judge: *judge, LiveFailure: *liveFailure, CarriedBy: *carriedBy, Now: now,
+	}
+	if *goal != "" {
+		inv, designErr := landingDesignInvocation(*root, stderr)
+		params.DesignFacts = func() landing.DesignFacts {
+			if designErr != nil {
+				return landing.DesignFacts{Facts: designgate.Facts{Goal: *goal, Error: designErr}}
+			}
+			return inv.landingDesignFacts(*root, *goal)
+		}
 	}
 	params.BindAttested = func(commit, snapshot, base, goal, beforeTree, afterTree string) (landing.AttestedUnit, error) {
 		bound, err := goalbranch.BindLandedUnit(*root, snapshot, base, goal, commit, beforeTree, afterTree)
