@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "card-clock2",
+  "subject": {
+    "commit": "18298742ab15a990f4d5282afc5fe84c49efa1ed",
+    "parent": "0d29a1effaca60ffd4d5339d2bc2bfa931a031cf",
+    "tree": "c594f0b9d0087ca8c8154ff4464b398b4b8384e9",
+    "patchDigest": "86e5305562238347875f7c0413b152a5b394801d49325d25e9ad036ae085d0bb",
+    "unitDigest": "55cc626e185ba982e94cde7771d048efbee3899d5368a3e7e28744185058051d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c76107b3170f9c101a70d134",
+    "round": 1,
+    "closureSha256": "a8bd96d40f9fa4dc8aa88c1bd0c57c3bf76e2ae1acb217c4d3a5ddd8a57761f5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "c594f0b9d0087ca8c8154ff4464b398b4b8384e9",
+    "runId": "goal-read-gate-20261004t223128z-1fbab1b70fec86a4"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "648e2001eae12d6c97d1cc1adc72429e06a7c20f",
+      "digest": "589c2f7b6633ee3d1776943fbfe80a1857db079617a4e22bb2ce9dd02d48a96d"
+    },
+    {
+      "kind": "read",
+      "commit": "a97bb056c0d6a0ce08d1210816f9a9408edac88c",
+      "digest": "4edcae5438bbe618c99a2214a7758f9defba7e12a7ad18cbd8f78526254c16fc"
+    },
+    {
+      "kind": "read",
+      "commit": "51ebe4d8b07042b0b82cccf326cae2703f92dd64",
+      "digest": "94de7c2e9c80be7229361efdc842c6f87580e936dda547ead4267aa64ee1eeea"
+    },
+    {
+      "kind": "read",
+      "commit": "b386d615fe04c8b8a1346d89eda5d565cd458a43",
+      "digest": "44a471cd99fd7097779c1f6148eedbbd1a3d488c42e3dd660233c150ae6da526"
+    },
+    {
+      "kind": "read",
+      "commit": "945d19e8a895ea66b9539b4ff7ba7121f619410a",
+      "digest": "afa109fe743d428a5a39f113b57246aa5916532f6d685751d09135c004c59fb3"
+    },
+    {
+      "kind": "read",
+      "commit": "0d29a1effaca60ffd4d5339d2bc2bfa931a031cf",
+      "digest": "4233b220a4f665b6235804cde2cfc805a5834b38543b0f02dda47a042b2d55d9"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/board/card_test.go",
+      "readerWord": "reviewed by critic root code-critic-c76107b3170f9c101a70d134"
+    }
+  ],
+  "sha256": "bbff5dfbe3b9c4d32c3c2cbd4da528e2fb93195081d23f1a86574f061491ac46"
+}
