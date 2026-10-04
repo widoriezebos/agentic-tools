@@ -1,6 +1,6 @@
 # landing-deploys-the-engine
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: Fix unit (reopened 2026-10-04 06:33 by m1e in Wido word): internal/deploy TestEveryEndOfARunOrAnActIsOneLine hangs: its stalled helper (ends_test.go:151-154) runs a Runner whose call blocks on a pipe from a helper process with no deadline (runner.go:160); it held the lane proof of rosters-are-configuration-items 46 minutes until aborted by pid. Give the helper read a deadline from the test clock (or an injected seam) and make the proof-side wait bounded; one unit, one critic (Claude Opus 5.5), hand in from the primary. Steps 2 and 3 stay deferred.
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 59
+- Revision: 60
 - Pinned: m1h
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -20,6 +20,8 @@
 - AcceptedRisk: finding=F-ADAPTER-EXIT-64 chain=code-critic-3f7cafef37776cdf502bc693 by=Wido opid=NT3QSVTAFFK50ESW21FKVTC7A7-m1e-718ba0eb
 - AcceptedRisk: finding=F-1 chain=code-critic-c37dcad364f65af4e4054b9b by=Wido opid=AS9GNCBKN8PH1PQCM3W8FF9TG4-m1e-718ba0eb
 - AcceptedRisk: finding=F-1 chain=code-critic-7f310906bee9baf0f3132b61 by=Wido opid=EADM8HG11EKR06H0F21K495K6K-m1e-718ba0eb
+- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T06:27:22Z revision=60 accountingRevision=60 episodeAt=2026-10-04T06:27:22Z episodeRevision=60
+- StopCapability: generation=60 revision=60 machine=m1h claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-01T15:20:49Z VFWZW80FZ53PQW3JTWNRYTDB40-m1e-528c72bf open actor=human:Wido targets=landing-deploys-the-engine
@@ -81,4 +83,5 @@ History:
 - 2026-10-04T04:34:45Z 317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb approve actor=human:Wido targets=landing-deploys-the-engine
 - 2026-10-04T04:34:59Z F2S98KHZABD7846154QRRM262V-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=landing-deploys-the-engine from=2:21 to=1:4 requested-sequence=4
 - 2026-10-04T04:35:24Z QDDGD7KNKP26TJ6CG2ZMAE59PE-m1e-718ba0eb set-pin actor=human:Wido targets=landing-deploys-the-engine
-Integrity: sha256=0ae42b24b6b7518713a7be30594b3f76cc63b5766aa39e579d2fcaeabe64b6ad
+- 2026-10-04T06:27:22Z XMM21TV6NXXNBKY7PECY9BCJ1Y-m1h-71c5cb39 claim actor=m1h+steward-seat targets=landing-deploys-the-engine
+Integrity: sha256=daef914e9cdf6904961d006ec6a91482a55941a0d4f6ba5b71932eb624344cf2
