@@ -94,9 +94,9 @@ func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
 		usage: []string{"metasystem landing prove [--wait]"},
-		details: []string{"Runs the shell command set as landing.prove.command in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
+		details: []string{"Runs the shell command set as landing.prove.command in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full or scoped, LANDING_PROOF_BASE naming the base tree (empty for full), and LANDING_PROOF_GROUPS naming space-separated group ids (empty for full); exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
-			"A tree already proven green, or one that differs from a green tree only in goal ledger files, is reported at once and nothing starts, so landing push can follow in the same turn.",
+			"A tree already proven green is reported at once. After main moves under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--wait proves in this command and says the result. Refused while the lane is stopped."},
 		flags: []intentFlag{{name: "wait", usage: "prove here and wait for the result"},

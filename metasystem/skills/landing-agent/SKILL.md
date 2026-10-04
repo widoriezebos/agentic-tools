@@ -43,8 +43,7 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    and its log size; `landing stop` ends it. Regeneration is never proof.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
    check out the new main, merge the same shas the green proof covered, in the same order, and
-   `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
-   the same turn. Lines that began waiting meanwhile are not added: proven work is pushed first, and
+   `landing prove`. When the batch's full proof is under an hour old, this proof runs only the test groups that read what main gained; push when it ends. Lines that began waiting meanwhile are not added: proven work is pushed first, and
    they are the next batch.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
 7. **The proof won't run** (`running_proof.state` is `died`, or the command fails before testing

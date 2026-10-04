@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,12 @@ import (
 // fails with addErr), a remove deletes it, and a diff between two trees
 // answers the paths changed between them.
 type stubGit struct {
-	commit, tree string
-	addErr       error
-	changed      map[[2]string]string
+	commit, tree     string
+	addErr           error
+	changed          map[[2]string]string
+	batches          map[string]string
+	shows            map[string]string
+	diffErr, showErr error
 }
 
 func (g stubGit) run(dir string, args ...string) (string, error) {
@@ -36,8 +40,12 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 		return "", os.RemoveAll(args[3])
 	case len(args) >= 2 && args[0] == "worktree" && (args[1] == "list" || args[1] == "prune"):
 		return "", nil
-	case len(args) == 5 && args[0] == "diff":
-		return g.changed[[2]string{args[3], args[4]}], nil
+	case len(args) == 5 && strings.Join(args[:3], " ") == "diff --name-only --no-renames":
+		return g.changed[[2]string{args[3], args[4]}], g.diffErr
+	case len(args) == 4 && args[0] == "rev-list" && args[1] == "--no-merges" && args[3] == "^origin/main":
+		return g.batches[args[2]], nil
+	case len(args) == 2 && args[0] == "show":
+		return g.shows[args[1]], g.showErr
 	}
 	return "", fmt.Errorf("git %s is not stubbed", strings.Join(args, " "))
 }
@@ -52,7 +60,7 @@ func proveStubbed(t *testing.T, install string, git stubGit, command string) Res
 		t.Fatalf("prove: %v (%s)", err, output.String())
 	}
 	last, ok, err := LastResult(install)
-	if err != nil || !ok || last != result {
+	if err != nil || !ok || !reflect.DeepEqual(last, result) {
 		t.Fatalf("the result recorded is not the result returned: %+v %v %v, returned %+v", last, ok, err, result)
 	}
 	return result
@@ -84,25 +92,6 @@ func TestARedProofRecordsWhyItIsRed(t *testing.T) {
 				t.Fatalf("want %s with reason %q, got %+v", each.result, each.reason, result)
 			}
 		})
-	}
-}
-
-// A tree that differs from a green tree only in goal ledger files inherits
-// that green, and says so (703ecb830): the red reason is set only where the
-// proof command ran and failed, so it never replaces this one, and the
-// command does not run.
-func TestAnInheritedGreenKeepsItsReason(t *testing.T) {
-	t.Parallel()
-	install := t.TempDir()
-	first := stubGit{commit: "c1c1c1c1c1c1c1c1", tree: "a1a1a1a1a1a1a1a1a1"}
-	if result := proveStubbed(t, install, first, "exit 0"); result.Result != Green || result.Reason != "" {
-		t.Fatalf("the first proof: %+v", result)
-	}
-	ledgerOnly := stubGit{commit: "c2c2c2c2c2c2c2c2", tree: "b2b2b2b2b2b2b2b2b2",
-		changed: map[[2]string]string{{first.tree, "b2b2b2b2b2b2b2b2b2"}: "metasystem/plans/goals/goal-a.md"}}
-	result := proveStubbed(t, install, ledgerOnly, "exit 1")
-	if result.Result != Green || result.Reason != "inherits green from tree a1a1a1a1a1a1: only goal ledger files changed since" {
-		t.Fatalf("the ledger-only tree: %+v", result)
 	}
 }
 

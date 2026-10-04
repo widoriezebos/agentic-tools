@@ -22,6 +22,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 // The results a proof ends with.
@@ -53,9 +54,15 @@ type Result struct {
 	Attempt string `json:"attempt,omitempty"`
 	// Reason is why the result is what it is, in one sentence: for red,
 	// how the proving command ended ("the proving command exited 1") or why it
-	// could not run; for an inherited green, the tree it inherits from. An
-	// ordinary green has none.
-	Reason string `json:"reason,omitempty"`
+	// could not run. A green has none.
+	Reason      string   `json:"reason,omitempty"`
+	Scope       string   `json:"scope,omitempty"`
+	ScopeReason string   `json:"scopeReason,omitempty"`
+	Base        string   `json:"base,omitempty"`
+	FullTree    string   `json:"fullTree,omitempty"`
+	FullAt      string   `json:"fullAt,omitempty"`
+	Ran         []string `json:"ran,omitempty"`
+	Environment string   `json:"environment,omitempty"`
 }
 
 // ProveSeams are a proof's effects.
@@ -71,6 +78,10 @@ type ProveSeams struct {
 	NewID func() string
 	// Git runs git in a directory for a proof run (Run); nil is Git.
 	Git func(dir string, args ...string) (string, error)
+	// Closure names language units changed between the two trees; nil detects
+	// the checkout's adapter. Command runs the prepared proof; nil runs it.
+	Closure func(root, base, tree string) (adapter.Closure, error)
+	Command func(*exec.Cmd) error
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -206,15 +217,10 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	return started, already, err
 }
 
-// Settled is HEAD's tree already proven green: the green recorded for that
-// exact tree, or the green it inherits from a tree that differs from it only
-// in goal ledger files, recorded here as Run would record it. Neither needs a
-// proof in the background, whose instant result would end inside the
-// caller's own turn and leave nobody to push it. A tree whose own last
-// result is red, or a running proof, settles nothing: Start reports or
-// starts the proof.
+// Settled reuses the green recorded for HEAD's exact tree. A tree whose own
+// last result is red, or a running proof, settles nothing.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
-	commit, tree, err := Head(checkout)
+	_, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return Result{}, false, err
 	}
@@ -229,14 +235,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			settled, found = result, ok && result.Result == Green
 			return err
 		}
-		from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, tree)
-		if !ok {
-			return nil
-		}
-		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
-			Reason: "inherits green from tree " + Short(from) + ": only goal ledger files changed since"}
-		found = true
-		return appendLine(resultsPath(install), settled)
+		return nil
 	})
 	return settled, found, err
 }
@@ -289,18 +288,36 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil {
 		return Result{}, err
 	}
+	decision := decideScope(install, checkout, running, seams)
+	observed := &proofOutput{output: io.Discard}
+	runErr := proveInWorktree(seams, install, checkout, command, running, decision, output, observed)
+	observed.finish()
+	if runErr == nil && decision.Scope == "scoped" && (observed.environment == "" || decision.base.Environment == "" || observed.environment != decision.base.Environment) {
+		decision.Scope, decision.ScopeReason = "full", fmt.Sprintf("the proof environment changed from %q to %q", decision.base.Environment, observed.environment)
+		decision.Base = ""
+		observed = &proofOutput{output: io.Discard}
+		runErr = proveInWorktree(seams, install, checkout, command, running, decision, output, observed)
+		observed.finish()
+	}
 	outcome, reason := Green, ""
-	if from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree); ok {
-		reason = "inherits green from tree " + Short(from) + ": only goal ledger files changed since"
-		fmt.Fprintf(output, "landing prove: %s\n", reason)
-	} else if runErr := proveInWorktree(seams.git, install, checkout, command, running, output); runErr != nil {
+	if runErr != nil {
 		// The proof command ran and failed, or could not run: its own
 		// exit is the reason, read from nothing but runErr.
 		outcome, reason = Red, runErr.Error()
 		fmt.Fprintf(output, "\nlanding prove: %v\n", runErr)
 	}
 	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt, Reason: reason}
+	result.Scope, result.ScopeReason, result.Base = decision.Scope, decision.ScopeReason, decision.Base
+	result.Ran, result.Environment = observed.ran, observed.environment
+	if decision.Scope == "scoped" {
+		result.FullTree, result.FullAt = decision.base.FullTree, decision.base.FullAt
+	} else if outcome == Green {
+		result.FullTree, result.FullAt = result.Tree, result.At
+	}
 	err = withLock(install, func() error {
+		if err := decision.writeRecord(install, result, observed); err != nil {
+			return err
+		}
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err
 		}
@@ -310,58 +327,6 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return nil
 	})
 	return result, err
-}
-
-// ledgerPaths are the goal ledger paths goal verbs rewrite, which
-// docs/project-rules.md excludes from delivery content: a tree that
-// differs from a green tree only in them needs no new proof. With seats
-// publishing goal acts every few minutes, re-proving each such tree means
-// a proof never finishes before main moves again, and nothing lands.
-var ledgerPaths = []string{
-	"metasystem/plans/goals/", "metasystem/plans/goals.md", "metasystem/plans/goals-accepted.json",
-	"metasystem/records/goals/", "metasystem/records/counselor/",
-	"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log",
-}
-
-func ledgerPath(path string) bool {
-	for _, ledger := range ledgerPaths {
-		if path == ledger || strings.HasSuffix(ledger, "/") && strings.HasPrefix(path, ledger) {
-			return true
-		}
-	}
-	return false
-}
-
-// ledgerOnlySinceGreen names a recent green tree from which tree differs
-// only in goal ledger files.
-func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, checkout, tree string) (string, bool) {
-	results, err := Results(install)
-	if err != nil {
-		return "", false
-	}
-	checked := 0
-	for index := len(results) - 1; index >= 0 && checked < 10; index-- {
-		green := results[index]
-		if green.Result != Green || green.Tree == tree {
-			continue
-		}
-		checked++
-		changed, err := git(checkout, "diff", "--name-only", "--no-renames", green.Tree, tree)
-		if err != nil || changed == "" {
-			continue
-		}
-		ledgerOnly := true
-		for _, path := range strings.Split(changed, "\n") {
-			if !ledgerPath(path) {
-				ledgerOnly = false
-				break
-			}
-		}
-		if ledgerOnly {
-			return green.Tree, true
-		}
-	}
-	return "", false
 }
 
 // Results are every recorded result, oldest first.
@@ -421,7 +386,8 @@ func Git(dir string, args ...string) (string, error) {
 // worktree after. Worktrees a crashed proof left are removed first. Only
 // this process proves (it holds running.json), so every worktree under
 // proofTrees is a leftover.
-func proveInWorktree(git func(string, ...string) (string, error), install, checkout, command string, running Running, output io.Writer) error {
+func proveInWorktree(seams ProveSeams, install, checkout, command string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput) error {
+	git := seams.git
 	trees := proofTrees(install)
 	removeProofTrees(git, checkout, trees, output)
 	if err := os.MkdirAll(trees, 0o755); err != nil {
@@ -442,9 +408,26 @@ func proveInWorktree(git func(string, ...string) (string, error), install, check
 	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
-	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit)
-	shell.Stdin, shell.Stdout, shell.Stderr = nil, output, output
-	if err := shell.Run(); err != nil {
+	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit,
+		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+decision.Base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
+	shell.Stdin = nil
+	shell.Stdout = output
+	shell.Stderr = output
+	run := seams.Command
+	if run == nil {
+		run = (*exec.Cmd).Run
+	}
+	offset := int64(-1)
+	if file, ok := output.(*os.File); ok {
+		if info, err := file.Stat(); err == nil && info.Mode().IsRegular() {
+			if position, err := file.Seek(0, io.SeekCurrent); err == nil {
+				offset = position
+			}
+		}
+	}
+	err := run(shell)
+	observed.readLog(output, offset)
+	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.Exited() {
 			return fmt.Errorf("the proving command exited %d", exit.ExitCode())

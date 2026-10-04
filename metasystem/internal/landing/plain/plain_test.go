@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -589,87 +590,37 @@ func TestANewHandInSupersedesTheOlderWaitingLine(t *testing.T) {
 	}
 }
 
-// Seats publish goal acts on main every few minutes; a lane that re-proved
-// each such tree never finished a proof before main moved again. A tree that
-// differs from a green tree only in goal ledger files inherits that green;
-// any other change runs the command.
-func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
+// Ledger paths are ordinary declared inputs: their readers run after a tip move.
+func TestALedgerOnlyMoveRunsItsReaders(t *testing.T) {
 	t.Parallel()
-	b := newBed(t)
-	b.seat("seat-a", "goal-a")
-	b.merge("goal-a")
-	ran := filepath.Join(b.root, "ran.txt")
-	script := "echo ran >> \"" + ran + "\"\n"
-	if result := b.prove(script); result.Result != Green || result.Reason != "" {
-		t.Fatalf("first proof: %+v", result)
+	b := newScopeBed(t)
+	path := "metasystem/plans/goals/goal-a.md"
+	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = path
+	if _, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || ok {
+		t.Fatalf("a moved ledger tree settled without proof: %v %v", ok, err)
 	}
-	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "a goal act\n")
-	b.git(b.checkout, "add", "-A")
-	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
-	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
-	result := b.prove(script)
-	if result.Result != Green || result.Tree != ledgerTree || !strings.Contains(result.Reason, "only goal ledger files changed") {
-		t.Fatalf("a ledger-only change did not inherit green: %+v", result)
+	result := b.run(t)
+	if result.Result != Green || result.Scope != "scoped" || result.Reason != "" || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_GROUPS") != "plans shared" {
+		t.Fatalf("ledger readers did not run: %+v, calls %d", result, len(b.calls))
 	}
-	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 1 {
-		t.Fatalf("the command ran for a ledger-only change: %q", data)
-	}
-	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
-	b.git(b.checkout, "add", "-A")
-	b.git(b.checkout, "commit", "--quiet", "-m", "code")
-	if result := b.prove(script); result.Result != Green || result.Reason != "" {
-		t.Fatalf("a code change: %+v", result)
-	}
-	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 2 {
-		t.Fatalf("the command did not run for a code change: %q", data)
-	}
-	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "another act\n")
-	b.git(b.checkout, "add", "-A")
-	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit again")
-	if result := b.prove("exit 1\n"); result.Result != Green || result.Reason == "" {
-		t.Fatalf("the ledger-only change after a green code proof: %+v", result)
+	if got := b.record(t); !reflect.DeepEqual(got.Groups[0].Why, []string{path}) {
+		t.Fatalf("ledger reason: %+v", got)
 	}
 }
 
-// A tree already proven green, or one that differs from a green tree only in
-// goal ledger files, is settled at once, with no proof in the background: a
-// background proof that ends inside the agent's own turn leaves nobody to
-// push. A code change, or a tree whose own last result is red, settles
-// nothing, so its proof runs.
+// Only an exact tree's own latest green settles it without a background proof.
 func TestAKnownGreenSettlesWithoutABackgroundProof(t *testing.T) {
 	t.Parallel()
-	b := newBed(t)
-	b.seat("seat-a", "goal-a")
-	b.merge("goal-a")
-	seams := ProveSeams{Now: func() time.Time { return bedNow }}
-	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
+	b := newScopeBed(t)
+	if _, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || ok {
 		t.Fatalf("an unproven tree settled: %v %v", ok, err)
 	}
-	green := b.prove(b.greenScript)
-	if settled, ok, err := Settled(b.install, b.checkout, seams); err != nil || !ok || settled.Tree != green.Tree || settled.Attempt != green.Attempt {
+	green := b.run(t)
+	if settled, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || !ok || !reflect.DeepEqual(settled, green) {
 		t.Fatalf("the proven tree: %+v %v %v", settled, ok, err)
 	}
-	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "a goal act\n")
-	b.git(b.checkout, "add", "-A")
-	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
-	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
-	settled, ok, err := Settled(b.install, b.checkout, seams)
-	if err != nil || !ok || settled.Tree != ledgerTree || settled.Result != Green || !strings.Contains(settled.Reason, "only goal ledger files changed") {
-		t.Fatalf("a ledger-only change: %+v %v %v", settled, ok, err)
-	}
-	if recorded, found, err := ResultFor(b.install, ledgerTree); err != nil || !found || recorded.Attempt != settled.Attempt {
-		t.Fatalf("the inherited green is recorded for push: %+v %v %v", recorded, found, err)
-	}
-	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
-	b.git(b.checkout, "add", "-A")
-	b.git(b.checkout, "commit", "--quiet", "-m", "code")
-	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
-		t.Fatalf("a code change settled: %v %v", ok, err)
-	}
-	if red := b.prove("exit 1\n"); red.Result != Red {
-		t.Fatalf("the red proof: %+v", red)
-	}
-	if _, ok, err := Settled(b.install, b.checkout, seams); err != nil || ok {
+	b.save(t, Result{Tree: green.Tree, Result: Red})
+	if _, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || ok {
 		t.Fatalf("a tree whose own last result is red settled: %v %v", ok, err)
 	}
 }
