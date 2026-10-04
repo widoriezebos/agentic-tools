@@ -9,14 +9,15 @@
 - Origin: main
 - Next step: Tier-2 design: one row per standing red (cause, fix / retire / automatic remedy, owner), the no-remedy escalation rule, per-checkout-kind role sets; Astra critique; build. Evidence: health.json of the eight checkouts at 2026-10-03 11:20 CEST. FOLDED IN 2026-10-03 from stop-hook-health-cost: the stop-hook-duration red needs its root cause found (is the health call still the largest share of the Stop hook's time, per the unexplained 20-42 s regression of 2026-09-16, df5c833f0) and a real fix or automatic remedy, not a standing red. Added 2026-10-03 21:08 (m1e, from Wido's question "m1k, m1l and UI are stalled"): the Fleet page called the ui seat 'stalled' for two hours while its builder ran, because a goal the seat holds (fleet-page-redesign) stayed at 'ready to land' after the lane had landed both its steps (a5d4d6895, b41fa0ee8) and a held card that stops moving wins over running work in the Doing column. Two facts to make true: (1) a card leaves 'ready to land' the moment the lane pushes the hand-in it names (the goal's stage follows the lane's push record, not a seat act); (2) a seat with a running builder, critic or proof is never 'stalled', whatever an idle card beside it says; the idle card is its own Needs-you item. Same class: m1h and m1j read 'installation X is not the armed checkout Y' when X is the goal worktree or the repository root of the armed seat. Cause, read 21:25 (m1e): a board card is a file the seat's launch and dispatch code writes at each stage (internal/board/card.go Write, called from internal/launch/unit_run.go, launch.go, internal/dispatch/record.go, internal/proofrun/launcher.go); no writer runs when the lane pushes a hand-in, so a land-ready card keeps its 16:49 stamp, and internal/board/board.go unknownReason marks any progressing stage older than the stall window 'stalled'. Setting the goal's next step (87d8e8860) does not touch the card. Fix: the lane's push (or the seat's steward on seeing the push record) writes the card as landed, and a card's stall clock runs only while a process of the seat should be moving it. Unit 2 added 2026-10-04 17:00 CEST by m1e on Wido's order ('this better end up as machinery too'): THE STUCK DETECTOR. Today the coordinator runs a script (scratchpad/seat-watch.py) every three minutes: for every running unit run it reads the newest launch's kind and start time and the round count, and raises WRESTLING when a build step runs over 45 minutes, a check over 30, a read over 35, or the round count reaches 3. The steward's health pass does the same for its seat from the same records, raises one alert line naming seat, goal, unit, step, age and the remedy (stop the step, cut the unit, land with notes), closes it when the condition clears (item AK), and the fleet page shows it on the card. Limits are settings with these defaults. Generic: it reads unit runs and launches, not any adopter's code.
 - OpenedAt: 2026-10-03T09:22:09Z
-- Revision: 50
+- Revision: 51
 - Pinned: m1l
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T09:22:21Z revision=2 opid=BYJBY67DBZ6Y6YKATXB10BCZE2-m1e-718ba0eb authority=proven digest=60b72b96e20792b1826e865de3c0f2a5fbd4ffdfd7909664c7639bce70d5737e episode=2
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=50
+- Approved: by=human:Wido at=2026-10-04T15:00:09Z revision=51 opid=N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb authority=proven digest=6a4d004a6d67338ab0e0855b5a4cec42fa1e435472ccde6af5b359901f9c038d episode=51
 - Sliced: machine=m1l lineage=steward-seat revision=48 at=2026-10-04T14:54:42Z
-- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T14:33:15Z revision=48 accountingRevision=48 episodeAt=2026-10-04T14:33:15Z episodeRevision=48
-- StopCapability: generation=48 revision=48 machine=m1l claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1l lineage=steward-seat at=2026-10-04T15:00:09Z revision=51 accountingRevision=51 episodeAt=2026-10-04T14:33:15Z episodeRevision=48
+- StopCapability: generation=51 revision=51 machine=m1l claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T09:22:09Z YF6TX22AGCF2X3HD0MT1F7VVPN-m1e-718ba0eb open actor=human:Wido targets=health-is-green-when-the-seat-is-healthy
@@ -69,4 +70,5 @@ History:
 - 2026-10-04T14:33:15Z HP519BBW4CWV0BCAJ4XKS71CT9-m1l-71c5cb39 claim actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
 - 2026-10-04T14:54:42Z XACAP7CXTSFK91J2Q9QZE5X500-m1l-71c5cb39 slice-start actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
 - 2026-10-04T14:59:38Z F4J6GCK71PKY8Q6WEHC6N3KVG2-m1e-718ba0eb edit actor=human:Wido targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T14:33:15Z
-Integrity: sha256=fc1d42b6f657982eba074f9b8a16752f07cba37f639e07dda61e06dd4c0c19ab
+- 2026-10-04T15:00:09Z N5GYHX1NEEQ4TPC50A8T14HWKA-m1e-718ba0eb set-budget actor=human:Wido targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T14:33:15Z
+Integrity: sha256=a9284072111b8561175c67ee948447c084fb52c25bf0876c683889a56a267785
