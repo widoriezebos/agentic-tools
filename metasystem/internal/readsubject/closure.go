@@ -242,6 +242,28 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 	return clean, landable, risks, nil
 }
 
+// UnboundReturnFindingID is the identifier of the register finding a fold
+// files for a round of roundJob, in a chain of role, whose return does not
+// bind the round's persisted subject.
+func UnboundReturnFindingID(role, roundJob string) string {
+	data, _ := json.Marshal([]any{"unbound_return", role, roundJob})
+	sum := sha256.Sum256(data)
+	return "synthetic-" + hex.EncodeToString(sum[:])
+}
+
+// AcceptsUnboundReturn says whether accepted risks name the unbound-return
+// finding of roundJob's round: a person accepted that the round's return
+// names other work, so the read closes on the round's persisted subject.
+func AcceptsUnboundReturn(risks []AcceptedRisk, role, roundJob string) bool {
+	id := UnboundReturnFindingID(role, roundJob)
+	for _, risk := range risks {
+		if risk.FindingID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func ReturnBindsSubject(subject ReadSubject, result map[string]any) bool {
 	switch subject.Kind {
 	case SubjectLive:
@@ -391,7 +413,7 @@ func ReadClosedClosure(agents string, root map[string]any, members []map[string]
 	if stringValue(result["jobId"]) != selectedJob || !roundOK || returnedRound != closure.Round {
 		return closure, true, fmt.Errorf("closure return does not name selected member %s at round %d", selectedJob, closure.Round)
 	}
-	if !ReturnBindsSubject(persisted, result) {
+	if !ReturnBindsSubject(persisted, result) && !AcceptsUnboundReturn(closure.AcceptedRisks, role, selectedJob) {
 		return closure, true, fmt.Errorf("closure return for %s does not bind persisted subject %s", selectedJob, persisted.Digest())
 	}
 	return closure, true, nil
