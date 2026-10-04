@@ -1,0 +1,26 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing resolve",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "the lane tree has no unresolved paths; nothing was changed",
+  "data": {
+    "goal": "",
+    "sha": "",
+    "command": null,
+    "exit": 0,
+    "log": "",
+    "outcome": "",
+    "at": "",
+    "held": true
+  }
+}
+
+--

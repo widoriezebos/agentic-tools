@@ -361,6 +361,7 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 }
 
 func init() {
+	registerIdempotency("landing resolve", idemStateful, "the tree is already resolved: success, nothing written", witnessLandingResolveRepeat)
 	registerIdempotency("landing prove", idemStateful, "the same tree's proof runs: success, nothing started", witnessLandingProveRepeat)
 	registerIdempotency("landing push", idemStateful, "main already is the proven HEAD: success, nothing pushed", witnessLandingPushRepeat)
 	registerIdempotency("landing return", idemStateful, "the goal is already returned: success, nothing written", witnessLandingReturnRepeat)
