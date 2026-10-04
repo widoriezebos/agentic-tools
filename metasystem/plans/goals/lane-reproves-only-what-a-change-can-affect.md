@@ -12,14 +12,14 @@ Open read items (fix unit code-critic-0307a94ac7cc3aa909bf837b): 2
 - ReadItem: id=code-critic-0307a94ac7cc3aa909bf837b-1 read=code-critic-0307a94ac7cc3aa909bf837b state=open addedAt=2026-10-04T14:38:00Z changedAt=- closingReference="" text="N-1 (unit 1): the Go adapter's Closure for the working tree (HEAD) still widens an unowned path to every package and leaves Unowned empty; safe (re-proves more), and the lane only asks about exact trees."
 - ReadItem: id=code-critic-0307a94ac7cc3aa909bf837b-2 read=code-critic-0307a94ac7cc3aa909bf837b state=open addedAt=2026-10-04T14:38:00Z changedAt=- closingReference="" text="N-2 (unit 1): the Go adapter finds a nested module only at <root>/metasystem (unitGateModuleRoot names it literally), so an adopter with go.mod in another subdirectory gets no adapter and a full proof; step 2 should find the module root generically."
 - OpenedAt: 2026-10-03T08:54:48Z
-- Revision: 54
+- Revision: 55
 - Pinned: m1f
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T08:55:02Z revision=2 opid=D97PHF51W9HGHC3CPQRSJ1ZVWZ-m1e-718ba0eb authority=proven digest=d49831747d574b76d851f3f2d590e73b0f5ea1aaaa00772b0108ead25970ff84 episode=2
+- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-10-04T15:37:28Z revision=55 opid=CGWKBFEVQK93VSW2XSMEZPSJVN-m1e-718ba0eb authority=proven digest=83bf39bf6e1e576d377738e845549ba1748393a997e30d71532ca6e1cb729b71 episode=55
 - Sliced: machine=m1f lineage=steward-seat revision=51 at=2026-10-04T12:10:22Z
-- Claimed: machine=m1f lineage=steward-seat at=2026-10-04T08:22:27Z revision=51 accountingRevision=51 episodeAt=2026-10-04T08:22:27Z episodeRevision=51
-- StopCapability: generation=51 revision=51 machine=m1f claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1f lineage=steward-seat at=2026-10-04T15:37:28Z revision=55 accountingRevision=55 episodeAt=2026-10-04T08:22:27Z episodeRevision=51
+- StopCapability: generation=55 revision=55 machine=m1f claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T08:54:48Z 74YXV0DW10Q79JHYTRMM2DV8M3-m1e-718ba0eb open actor=human:Wido targets=lane-reproves-only-what-a-change-can-affect
@@ -76,4 +76,5 @@ History:
 - 2026-10-04T12:10:22Z VXXJM44QR1CXRC0YE1RBR7REVJ-m1f-71c5cb39 slice-start actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect
 - 2026-10-04T14:15:09Z D6Y5NRYZ7K7BJ780F8EVC87EWB-m1e-718ba0eb done actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,codex-jobs-run-unsandboxed-on-a-trusted-host,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order from=1:5 to=1:4
 - 2026-10-04T14:38:00Z CM6RZ1CE1DBTV4J6C526XQ1T3W-m1f-71c5cb39 read-items-add actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect
-Integrity: sha256=e8c70c2bbe2c475cf93ad55fc730d28a7345782f72c9ccde159131bade8f54fa
+- 2026-10-04T15:37:28Z CGWKBFEVQK93VSW2XSMEZPSJVN-m1e-718ba0eb set-budget actor=human:Wido targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T08:22:27Z
+Integrity: sha256=369f69aa36c337f05bd480b13f4965b40b9586e4eecbbf2cd0d0d2296cc93443
