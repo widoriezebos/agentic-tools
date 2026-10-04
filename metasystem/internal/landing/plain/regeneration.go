@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -77,7 +78,7 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 		return err
 	}
 	if run == nil {
-		run = runRegenerationArgv
+		run = conflict.RunRegenerationArgv
 	}
 	err = run(argv, dir, log, started)
 	removeErr := os.Remove(regenerationRunningPath(install))
@@ -85,21 +86,6 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 		removeErr = nil
 	}
 	return errors.Join(err, removeErr)
-}
-
-func runRegenerationArgv(argv []string, dir string, log *os.File, started func(int64) error) error {
-	command := exec.Command(argv[0], argv[1:]...)
-	command.Dir, command.Stdout, command.Stderr = dir, log, log
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := command.Start(); err != nil {
-		return err
-	}
-	if err := started(int64(command.Process.Pid)); err != nil {
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		_ = command.Wait()
-		return err
-	}
-	return command.Wait()
 }
 
 func commandExit(err error) int {
