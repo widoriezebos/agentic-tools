@@ -151,7 +151,7 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 			}
 			journal = &existing
 			_, err := setPauseLocked(home, by, now)
-			return err
+			return written(err)
 		}
 		record, ok, err := Read(home)
 		if ok && record.Root != "" {
@@ -203,11 +203,11 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 		at := now.UTC().Format(time.RFC3339)
 		journal = &UnsetJournal{By: by, At: at, Root: record.Root, Install: install, CustodyEpoch: record.CustodyEpoch, Steps: []UnsetStep{{Step: StepFenced, At: at}}}
 		fresh = !fenced
-		if err := writeJSON(home, unsetPath(home), *journal); err != nil {
+		if err := written(writeJSON(home, unsetPath(home), *journal)); err != nil {
 			return err
 		}
 		_, err = setPauseLocked(home, by, now)
-		return err
+		return written(err)
 	})
 	if err != nil {
 		return nil, false, "", err
@@ -243,7 +243,7 @@ func journalStep(home, step string, now time.Time) error {
 		if !journal.Done(step) {
 			journal.Steps = append(journal.Steps, UnsetStep{Step: step, At: now.UTC().Format(time.RFC3339)})
 		}
-		return writeJSON(home, unsetPath(home), journal)
+		return written(writeJSON(home, unsetPath(home), journal))
 	})
 }
 
