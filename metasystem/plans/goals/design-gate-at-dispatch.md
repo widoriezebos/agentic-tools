@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 4
+- Sequence: 5
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A new refusal where every seat starts a design-bearing build; a wrong check stalls legitimate builds across the fleet or lets a build skip its design; visible and reversible, so severity 2; the place to check must first be found on the live machinery"
 - Tier: 2
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
@@ -18,7 +18,7 @@ Open read items (fix unit gate2-preliminary-r5): 1
 Open read items (fix unit switch-preliminary-r3): 1
 - ReadItem: id=switch-preliminary-r3-1 read=switch-preliminary-r3 state=open addedAt=2026-10-03T21:57:50Z changedAt=- closingReference="" text="Under design.gate.mode=refuse the build refusal prints an empty governed-by= (cmd/metasystem/intent_work.go:602-608) and the dispatch record's GovernedBy is empty (intent_design_gate.go:138-139), because the ruling ids come with unit governance (refusal.GovernedBy, design section 7 unit 5). Unit governance must fill both from the map, omit the detail when no id is known, and assert a non-empty id in intent_design_gate_switch_test.go:78."
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 64
+- Revision: 65
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -93,4 +93,5 @@ History:
 - 2026-10-03T22:34:44Z DZ5FVHZ81W6K49A7VYY044B7CA-m1e-718ba0eb set-priority actor=human:Wido targets=commit-goal-binding,design-gate-at-dispatch,first-headless-run,goal-worktree-dispatch-uses-the-primary,lane-records-flakes-and-routes-their-fix,lane-reproves-only-what-a-change-can-affect,seat-works-without-a-person reason=priority-order subject=goal-worktree-dispatch-uses-the-primary from=1:3 to=1:4 requested-sequence=2
 - 2026-10-04T01:03:24Z 3Q85KFT487SJ1SG74Y8KHNZB6W-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T22:10:47Z
 - 2026-10-04T03:12:59Z 4QJHQBSHSY1ASMJ7QW14G5R320-m1e-718ba0eb set-budget actor=human:Wido targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T01:03:24Z
-Integrity: sha256=25eaceeb7c9236475fdbd6cf6cbe955d1ce8a6a4448eb707ef898c615e8a2849
+- 2026-10-04T04:34:59Z F2S98KHZABD7846154QRRM262V-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=landing-deploys-the-engine from=1:4 to=1:5 requested-sequence=4
+Integrity: sha256=d9632e7142861229c25d988711df1c1125b5f27c47c2c37f39e6fd941dc283b4

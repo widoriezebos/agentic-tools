@@ -1,15 +1,15 @@
 # landing-deploys-the-engine
 
 - State: approved
-- Priority: 2
-- Sequence: 21
+- Priority: 1
+- Sequence: 4
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Changes how every seat gets its engine; design first"
 - Tier: 2
 - Intent: What: after a successful landing push, the lane runs the project's deploy step on the pushed commit. For the metasystem itself: build the engine from that commit into ~/.metasystem/engines/<sha>/, atomically repoint ~/.metasystem/bin/metasystem (on PATH) to it, seats pick it up at their next safe point and their hooks call the central binary; deploy rollback repoints to the previous engine. Other apps supply their own deploy step (docker, kubernetes) at that extension point. Why: Wido 2026-10-01 - per-checkout rebuild/restart caused today's stale engines, generation mismatches and refused proofs; one place with the newest proven engine removes that class. Pros: one engine everywhere, hard cutover, instant rollback. Cons: must replace or feed the per-checkout engine pins; a bad landing reaches every seat at once; skills/docs still come by pull.
 - Origin: human
 - Next step: Fix unit (reopened 2026-10-04 06:33 by m1e in Wido word): internal/deploy TestEveryEndOfARunOrAnActIsOneLine hangs: its stalled helper (ends_test.go:151-154) runs a Runner whose call blocks on a pipe from a helper process with no deadline (runner.go:160); it held the lane proof of rosters-are-configuration-items 46 minutes until aborted by pid. Give the helper read a deadline from the test clock (or an injected seam) and make the proof-side wait bounded; one unit, one critic (Claude Opus 5.5), hand in from the primary. Steps 2 and 3 stay deferred.
 - OpenedAt: 2026-10-01T15:20:49Z
-- Revision: 57
+- Revision: 58
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 4
 - NormApproval: approvedRef=317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb minutes=1200 reviewRounds=20 goalRevision=56
@@ -78,4 +78,5 @@ History:
 - 2026-10-04T04:33:25Z JGGCAQ15SHHCFWKY7Y6FQ1JD83-m1e-718ba0eb reopen actor=human:Wido targets=landing-deploys-the-engine reason=priority-order from=2:1 to=2:21
 - 2026-10-04T04:33:41Z YXVWXD83P27TDH42K0A89Q7ZBF-m1e-718ba0eb edit actor=human:Wido targets=landing-deploys-the-engine
 - 2026-10-04T04:34:45Z 317CBV9JRYQ4YFM1RRWG7TB5TE-m1e-718ba0eb approve actor=human:Wido targets=landing-deploys-the-engine
-Integrity: sha256=8d28f9d1459afae721e7a9872fefcfd5d3683545c90d1296578cb60b67b077ac
+- 2026-10-04T04:34:59Z F2S98KHZABD7846154QRRM262V-m1e-718ba0eb set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,design-gate-at-dispatch,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,landing-deploys-the-engine,lane-records-flakes-and-routes-their-fix,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,review-findings-read-as-decisions,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=landing-deploys-the-engine from=2:21 to=1:4 requested-sequence=4
+Integrity: sha256=577b2614fc34fd4e03bee216d218df4dccd0409f96b45ecfd132f61f2871d033
