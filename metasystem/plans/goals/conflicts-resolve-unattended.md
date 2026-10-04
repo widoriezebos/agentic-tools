@@ -27,14 +27,14 @@ Open read items (fix unit seat-verify-3b-i): 2
 - ReadItem: id=seat-verify-3b-i-1 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="work rebase prints 'review: metasystem work review G --work U' under each carried unit, which reads as if a carried unit still needs a review; only units in needsReview should print a review command"
 - ReadItem: id=seat-verify-3b-i-2 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="each rebase replays the earlier Read commits as they are, so a goal rebased N times carries N stale Read commits per unit (seen live: one per rebase); harmless to the range rules, but the branch grows"
 - OpenedAt: 2026-10-03T07:50:15Z
-- Revision: 62
+- Revision: 63
 - Pinned: m1h
-- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 2
-- Approved: by=human:Wido at=2026-10-04T13:00:29Z revision=57 opid=J1H8T8ZG0ZS4X6WVESV46K0RP7-m1e-718ba0eb authority=proven digest=8a4d18b682a67c19dadb008725828fa8f4675c9f50c71456035fa3ecd596761b episode=57
+- Budget: elapsedLimit=5d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 3
+- Approved: by=human:Wido at=2026-10-04T20:12:57Z revision=63 opid=WBWE5Y7QR3C0RR241HDM845VT5-m1e-718ba0eb authority=proven digest=e146973e1e4b7ada4998e8000de8f3aba232993520c7783e1c32fdfd0fd8a329 episode=63
 - Sliced: machine=m1h lineage=steward-seat revision=48 at=2026-10-03T21:06:09Z
-- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T13:00:29Z revision=57 accountingRevision=57 episodeAt=2026-10-03T21:05:59Z episodeRevision=48 idleSeconds=5403
-- StopCapability: generation=57 revision=57 machine=m1h claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1h lineage=steward-seat at=2026-10-04T20:12:57Z revision=63 accountingRevision=63 episodeAt=2026-10-03T21:05:59Z episodeRevision=48 idleSeconds=5403
+- StopCapability: generation=63 revision=63 machine=m1h claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-10-03T07:50:15Z VCKGVG2T8BVYFDGSX7F3AB9RN3-m1e-718ba0eb open actor=human:Wido targets=conflicts-resolve-unattended
@@ -99,4 +99,5 @@ History:
 - 2026-10-04T15:40:01Z FBNJZFH98SSN6B55JAQYAAG7XB-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
 - 2026-10-04T15:58:10Z 1F264EVVTMH8HE6JVY21VPGZDZ-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
 - 2026-10-04T20:00:25Z MEQ56K5SP2BNHVGT9GC11YP8X1-m1h-71c5cb39 read-items-add actor=m1h+steward-seat targets=conflicts-resolve-unattended
-Integrity: sha256=72038ba6e166b7223b9dd09180b78857dc92c1a71ef49a96579decad182204b9
+- 2026-10-04T20:12:57Z WBWE5Y7QR3C0RR241HDM845VT5-m1e-718ba0eb set-budget actor=human:Wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T13:00:29Z
+Integrity: sha256=1793e39364ad5d9de1f3b2031ac49b78b72db7b972ad640a7c25ed33bad0bac3
