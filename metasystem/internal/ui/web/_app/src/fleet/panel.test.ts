@@ -837,6 +837,17 @@ describe("the Doing column", () => {
     expect(doingOf(machine({ machine: "m1g", holds: [] }), undefined, [entry()], now)).toEqual({ words: "waiting to land", active: false, source: "lane" });
   });
 
+  it("shows landed units on a held idle card and lets a running job win", () => {
+    const landed = seatOf([{ goal: "one-folder", stage: "claimed-idle", landed: 3 }]);
+    expect(doingOf(machine({ holds: [held1] }), landed, [], now)).toEqual({ words: "3 units landed", active: false, source: "board" });
+    expect(doingOf(machine({ holds: [held1], working: [working()] }), landed, [], now).words).toBe("building · 42 min");
+    expect(doingOf(machine({ holds: [] }), landed, [], now).words).toBe("idle");
+    const empty = seatOf([{ goal: "one-folder", stage: "claimed-idle" }]);
+    expect(doingOf(machine({ holds: [held1] }), empty, [], now).words).toBe("idle");
+    const one = seatOf([{ goal: "one-folder", stage: "claimed-idle", landed: 1 }]);
+    expect(doingOf(machine({ holds: [held1] }), one, [], now).words).toBe("1 unit landed");
+  });
+
   it("prefers work in hand to a card that only waits", () => {
     const joined = seatOf([{ goal: "one-folder", stage: "joined", since: at(-4) }]);
 
