@@ -47,7 +47,7 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				install := layout.InstallationRoot
+				install := string(layout.InstallationRoot)
 				for _, goal := range []string{bed.id, "already-on-main", "not-in-head"} {
 					if _, _, err := plain.HandIn(install, plain.Line{Goal: goal, SHA: goal, At: laneTestNow.Format(time.RFC3339)}); err != nil {
 						t.Fatal(err)

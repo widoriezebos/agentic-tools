@@ -349,7 +349,8 @@ func landingDesignInvocation(root string, stderr io.Writer) (*intentInvocation, 
 	layout, err := inv.owners.resolver.ResolveLayout(root)
 	if err == nil {
 		inv.layout = layout
-		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		stateRoot, rootErr := inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
+		inv.stateRoot, err = string(stateRoot), rootErr
 	}
 	return inv, err
 }
@@ -358,7 +359,7 @@ func (inv *intentInvocation) recordLandingDesign(id string, design *landing.Desi
 	if id == "" || design == nil || design.Pair[0] == "" {
 		return
 	}
-	tip, err := inv.work().git(inv.layout.InstallationRoot, "rev-parse", "HEAD")
+	tip, err := inv.work().git(string(inv.layout.InstallationRoot), "rev-parse", "HEAD")
 	if err == nil {
 		err = inv.designGate().digest(inv.stateRoot, narratordigest.Entry{Kind: "lowlight", Text: design.Pair[0],
 			SourceType: "design-gate-landing", SourceID: id + "@" + strings.TrimSpace(string(tip))}, now)

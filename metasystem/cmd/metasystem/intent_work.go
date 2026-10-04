@@ -597,7 +597,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		problem.Targets = targets
 		return inv.render(*problem)
 	}
-	gateFacts := inv.designGateFacts(inv.layout.InstallationRoot, id)
+	gateFacts := inv.designGateFacts(string(inv.layout.InstallationRoot), id)
 	gateResult := designgate.Check(gateFacts)
 	person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
 	if gateResult.Mode == "refuse" && gateResult.WouldRefuse {

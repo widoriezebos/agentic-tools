@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,11 @@ func TestLandingDesignCheckDigestOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolve := func(string) (stateroot.Layout, error) {
-		return stateroot.Layout{InstallationRoot: fixture.root, GitRoot: fixture.root}, nil
+		layout := stateroot.Layout{GitRoot: fixture.root}
+		// InstallationRoot is a plain string before main typed the roots and a
+		// typed root after; setting it by reflection compiles on both.
+		reflect.ValueOf(&layout.InstallationRoot).Elem().SetString(fixture.root)
+		return layout, nil
 	}
 	appendDigest := func(root string, entries []narratordigest.Entry, now time.Time) error {
 		return narratordigest.AppendWithLayoutReader(root, entries, now, resolve)
