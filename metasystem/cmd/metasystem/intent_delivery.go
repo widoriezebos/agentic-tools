@@ -149,7 +149,7 @@ func intentDeliveryCommands() []intentCommand {
 		},
 		{
 			object: "work", action: "land", laidOut: true, primary: true, audience: "both", summary: "land a goal's reviewed work",
-			usage: []string{"metasystem work land G [--through COMMIT] [--delivered TEXT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
+			usage: []string{"metasystem work land G [--through COMMIT] [--delivered TEXT]", "metasystem work land G --records PATH... [--delivered TEXT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
 				"metasystem work land G --using-exception ID",
 				"metasystem work land [G] --message FILE (--staged | --path P...) [--chain J | --direct-fix CLASS ...]"},
@@ -170,6 +170,7 @@ func intentDeliveryCommands() []intentCommand {
 				"While this computer has a landing lane it is refused, as is work land j2:J, except with --local or --recertification.",
 			},
 			flags: append([]intentFlag{
+				{name: "records", value: "PATH", repeat: true, usage: "commit these record files on the goal branch, publish it and hand it in; repeat for each path, relative to the checkout top"},
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
 				{name: "delivered", value: "TEXT", usage: "one plain sentence of what this delivers, posted to the channel when it reaches main"},
@@ -1628,6 +1629,14 @@ func runIntentLand(inv *intentInvocation) int {
 	if refused := inv.deliveredRefusal(); refused != nil {
 		return inv.render(*refused)
 	}
+	if inv.input.has("records") {
+		for _, option := range []string{"through", "queue-only", "message", "exception", "using-exception"} {
+			if inv.input.has(option) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2,
+					Summary: "--records takes no --" + option + "; nothing was done", next: inv.typedArgvLess(option)})
+			}
+		}
+	}
 	if inv.input.has("message") {
 		return runIntentLandStaged(inv)
 	}
@@ -1646,6 +1655,10 @@ func runIntentLand(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if ref.kind == refJ2 {
+		if inv.input.has("records") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--records names a goal, so nothing was done",
+				next: inv.publicArgv("work", "land", "G", "--records", "PATH")})
+		}
 		if inv.input.switched("queue-only") || inv.input.has("lineage") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--queue-only and --lineage are for a goal, and a job lands whole; nothing was done",
 				next: inv.typedArgvLess("queue-only", "lineage"), nextReason: "lands the job"})
@@ -1695,6 +1708,9 @@ func runIntentLand(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s only goes with an exceptional landing (--exception); nothing was done", other),
 				next: inv.typedArgvLess(other), nextReason: "an ordinary landing"})
 		}
+	}
+	if inv.input.has("records") {
+		return inv.render(inv.landRecords(args[0]))
 	}
 	return inv.render(inv.landGoal(args[0], inv.input.text("through")))
 }
@@ -2097,6 +2113,9 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			next:    []string{"metasystem", "work", "review", "--commit", units[index].Commit, "--goal", goalID}, nextReason: "reads that unit"}
 	}
 	if len(units) == 0 {
+		if through == "" && slices.ContainsFunc(state.Status.Commits, func(commit branch.Commit) bool { return commit.Kind == branch.Plan }) {
+			return state.BranchTip, 0, nil
+		}
 		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("goal/%s has no committed work to land", goalID),
 			Decision: "nothing to do; build and review the goal's work first"}
 	}

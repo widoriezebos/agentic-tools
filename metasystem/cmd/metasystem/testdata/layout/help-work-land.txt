@@ -1,6 +1,7 @@
 metasystem work land · land a goal's reviewed work
 
   usage   metasystem work land G [--through COMMIT] [--delivered TEXT]
+          metasystem work land G --records PATH... [--delivered TEXT]
           metasystem work land G --queue-only
           metasystem work land j2:J
           metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]
@@ -35,46 +36,48 @@ MetaSystem administration
   metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]
 
 Options  before or after the target; -- ends them
-  --through COMMIT           land a human-approved prefix ending at this unit commit
-  --queue-only               only mark the held goal waiting to land, for a later work land G
-  --delivered TEXT           one plain sentence of what this delivers, posted to the channel when it
-                             reaches main
-  --message FILE             land a hand-made change with this commit message (- reads it from
-                             standard input)
-  --staged                   with --message: land exactly the staged set
-  --path PATH (repeatable)   with --message: stage and land these paths (relative to the
-                             installation)
-  --repo PATH                the repository, or any directory or file inside it (default: the
-                             current directory) (also --root)
-  --json                     print one JSON result instead of text
+  --records PATH (repeatable)   commit these record files on the goal branch, publish it and hand it
+                                in; repeat for each path, relative to the checkout top
+  --through COMMIT              land a human-approved prefix ending at this unit commit
+  --queue-only                  only mark the held goal waiting to land, for a later work land G
+  --delivered TEXT              one plain sentence of what this delivers, posted to the channel when
+                                it reaches main
+  --message FILE                land a hand-made change with this commit message (- reads it from
+                                standard input)
+  --staged                      with --message: land exactly the staged set
+  --path PATH (repeatable)      with --message: stage and land these paths (relative to the
+                                installation)
+  --repo PATH                   the repository, or any directory or file inside it (default: the
+                                current directory) (also --root)
+  --json                        print one JSON result instead of text
 
 Advanced
-  --exception CODE           a person's exception: the one refusal code or group:NAME this landing
-                             is carried past
-  --reason TEXT              with --exception: why
-  --by NAME                  with --exception: the person deciding, at the enrolled terminal
-  --expires DURATION         with --exception: how long it stays usable (default 2h, at most 4h)
-  --replace-exception ID     with --exception: the unused exception this one replaces
-  --transfer                 with --replace-exception: take over an exception recorded on another
-                             seat
-  --upgrade-goals            with --exception: raise the goal ledger's format in the same act
-  --using-exception ID       land under this already recorded exception (local or answered through
-                             the channel)
-  --lineage LINEAGE          the acting agent session, as its launcher named it in
-                             METASYSTEM_OWNER_LINEAGE (default: that variable)
-  --chain J                  with --message: the reviewed implementation chain the change lands
-  --recertification RECORD   with --chain: the canonical recertification record
-  --test-receipt PATH        with --chain or --direct-fix tier-1: the receipt for this exact
-                             candidate
-  --direct-fix CLASS         with --message: register-carriage, exact-revert or tier-1
-  --revert-of COMMIT         with --direct-fix exact-revert: the commit reverted
-  --root-job J               with --direct-fix tier-1: the root implementer job
-  --tests COMMAND            with --direct-fix tier-1: the legacy test command a receipt is made
-                             from
-  --allow-new-plan           with --message: the landing deliberately adds a new plan file
-  --skip-transport           with --message: do not mirror origin to the transport remote
-  --local                    with --message --staged: commit the staged set through the commit
-                             boundary only; nothing is fetched or pushed
+  --exception CODE              a person's exception: the one refusal code or group:NAME this
+                                landing is carried past
+  --reason TEXT                 with --exception: why
+  --by NAME                     with --exception: the person deciding, at the enrolled terminal
+  --expires DURATION            with --exception: how long it stays usable (default 2h, at most 4h)
+  --replace-exception ID        with --exception: the unused exception this one replaces
+  --transfer                    with --replace-exception: take over an exception recorded on another
+                                seat
+  --upgrade-goals               with --exception: raise the goal ledger's format in the same act
+  --using-exception ID          land under this already recorded exception (local or answered
+                                through the channel)
+  --lineage LINEAGE             the acting agent session, as its launcher named it in
+                                METASYSTEM_OWNER_LINEAGE (default: that variable)
+  --chain J                     with --message: the reviewed implementation chain the change lands
+  --recertification RECORD      with --chain: the canonical recertification record
+  --test-receipt PATH           with --chain or --direct-fix tier-1: the receipt for this exact
+                                candidate
+  --direct-fix CLASS            with --message: register-carriage, exact-revert or tier-1
+  --revert-of COMMIT            with --direct-fix exact-revert: the commit reverted
+  --root-job J                  with --direct-fix tier-1: the root implementer job
+  --tests COMMAND               with --direct-fix tier-1: the legacy test command a receipt is made
+                                from
+  --allow-new-plan              with --message: the landing deliberately adds a new plan file
+  --skip-transport              with --message: do not mirror origin to the transport remote
+  --local                       with --message --staged: commit the staged set through the commit
+                                boundary only; nothing is fetched or pushed
 
 Examples
   metasystem work land verbs-match-intent

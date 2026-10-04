@@ -29,6 +29,7 @@ import (
 type manualCapture struct {
 	source   string   // the caller's checkout top level
 	head     string   // the source HEAD the changes are against
+	tree     string   // the frozen private index, including the selected files
 	patch    []byte   // the exact binary patch
 	paths    []string // the captured paths (implicit changes only)
 	omitted  []string // system records and the named brief left in the source
@@ -489,7 +490,7 @@ func captureManualAt(cwd, patchPath, briefPath string) (manualCapture, error) {
 	return captureCheckoutChanges(top, capture.head, briefPath)
 }
 
-func captureCheckoutChanges(top, head, briefPath string) (manualCapture, error) {
+func captureCheckoutChanges(top, head, briefPath string, paths ...string) (manualCapture, error) {
 	capture := manualCapture{source: top, head: head}
 	scratch, done, err := diskstore.ScratchDir("metasystem-manual-capture-")
 	if err != nil {
@@ -511,7 +512,10 @@ func captureCheckoutChanges(top, head, briefPath string) (manualCapture, error) 
 	if _, err := private("read-tree", head); err != nil {
 		return manualCapture{}, err
 	}
-	if _, err := private("add", "-A", "--", "."); err != nil {
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+	if _, err := private(append([]string{"add", "-A", "--"}, paths...)...); err != nil {
 		return manualCapture{}, err
 	}
 	changed, err := private("diff", "--cached", "--name-only", "-z", "--no-renames", head)
@@ -541,6 +545,11 @@ func captureCheckoutChanges(top, head, briefPath string) (manualCapture, error) 
 	if capture.patch, err = private("diff", "--cached", "--binary", "--full-index", "--no-renames", head); err != nil {
 		return manualCapture{}, err
 	}
+	tree, err := private("write-tree")
+	if err != nil {
+		return manualCapture{}, err
+	}
+	capture.tree = strings.TrimSpace(string(tree))
 	return capture, nil
 }
 
@@ -557,7 +566,11 @@ type manualStaging struct{ undo func() error }
 // clean, or already hold exactly this candidate staged; git apply --index
 // --binary with no three-way merge changes index and files together, so a
 // refusal leaves both untouched.
-func stageManual(git func(string, ...string) ([]byte, error), worktree string, same bool, capture manualCapture) (manualStaging, error) {
+func stageManual(git func(string, ...string) ([]byte, error), worktree string, same bool, capture manualCapture, apply ...func(string, []byte, bool) error) (manualStaging, error) {
+	applyIndex := gitApplyIndex
+	if len(apply) > 0 && apply[0] != nil {
+		applyIndex = apply[0]
+	}
 	cached := func() ([]byte, error) {
 		return git(worktree, "diff", "--cached", "--binary", "--full-index", "--no-renames", "HEAD")
 	}
@@ -630,10 +643,10 @@ func stageManual(git func(string, ...string) ([]byte, error), worktree string, s
 			return manualStaging{}, fmt.Errorf("the goal worktree %s has uncommitted changes to %s; it must be clean to receive this work", worktree, path)
 		}
 	}
-	if err := gitApplyIndex(worktree, capture.patch, false); err != nil {
+	if err := applyIndex(worktree, capture.patch, false); err != nil {
 		return manualStaging{}, fmt.Errorf("the change does not apply to the goal branch at %s: %v", worktree, err)
 	}
-	return manualStaging{undo: func() error { return gitApplyIndex(worktree, capture.patch, true) }}, nil
+	return manualStaging{undo: func() error { return applyIndex(worktree, capture.patch, true) }}, nil
 }
 
 func gitApplyIndex(dir string, patch []byte, reverse bool) error {
