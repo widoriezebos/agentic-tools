@@ -5,11 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type Entry struct {
@@ -68,6 +72,87 @@ func unitDigestWithGit(repo, commit string, gitRead func(string, ...string) ([]b
 func digestRawEntries(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// changeDigestWithReads keeps a build's edits and nearby context while ignoring
+// base-dependent locations, blob names and declared generated outputs.
+func changeDigestWithReads(r attestationReads, repo, commit string) (string, error) {
+	patch, err := r.ChangePatch(repo, commit)
+	if err != nil {
+		return "", err
+	}
+	prefix, err := r.Prefix(repo)
+	if err != nil {
+		return "", err
+	}
+	entry, err := r.TreeEntry(repo, commit, "testing.json")
+	if err != nil {
+		return "", err
+	}
+	var policy struct {
+		Generated []testpolicy.Generated `json:"generated"`
+	}
+	if entry != "" {
+		data, err := r.SnapshotFile(repo, commit, prefix+"testing.json")
+		if err != nil {
+			return "", err
+		}
+		if err := json.Unmarshal(data, &policy); err != nil {
+			return "", fmt.Errorf("cannot read generated files in testing.json at %s:\n%w", commit, err)
+		}
+	}
+	normalized, err := normalizeChangePatch(patch, func(path string) bool {
+		return conflict.GeneratedBy(policy.Generated, prefix, path)
+	})
+	if err != nil {
+		return "", err
+	}
+	return digestRawEntries(normalized), nil
+}
+
+func normalizeChangePatch(patch []byte, generated func(string) bool) ([]byte, error) {
+	var kept bytes.Buffer
+	skip, header := false, false
+	for _, line := range bytes.SplitAfter(patch, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("diff --git ")) {
+			paths := strings.TrimSuffix(string(line[len("diff --git "):]), "\n")
+			half := len(paths) / 2
+			if len(paths)%2 != 1 || paths[half] != ' ' {
+				return nil, fmt.Errorf("git listed a changed file in a form this engine can't read")
+			}
+			path := paths[:half]
+			if strings.HasPrefix(path, `"`) {
+				var err error
+				path, err = strconv.Unquote(path)
+				if err != nil {
+					return nil, fmt.Errorf("cannot read a changed file's path: %w", err)
+				}
+			}
+			if !strings.HasPrefix(path, "a/") {
+				return nil, fmt.Errorf("git listed a changed file without its source prefix")
+			}
+			skip, header = generated(strings.TrimPrefix(path, "a/")), true
+		} else if header {
+			if bytes.HasPrefix(line, []byte("index ")) {
+				continue
+			}
+			if bytes.HasPrefix(line, []byte("--- ")) || bytes.HasPrefix(line, []byte("+++ ")) || bytes.HasPrefix(line, []byte("GIT binary patch")) {
+				header = false
+			}
+		}
+		if skip {
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("@@ ")) {
+			kept.WriteString("@@")
+			if bytes.HasSuffix(line, []byte("\n")) {
+				kept.WriteByte('\n')
+			}
+		} else {
+			kept.Write(line)
+		}
+	}
+	return kept.Bytes(), nil
 }
 
 func RawEntries(repo, commit string) ([]Entry, error) {

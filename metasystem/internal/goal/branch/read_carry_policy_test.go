@@ -3,6 +3,7 @@ package branch
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
@@ -204,7 +205,7 @@ type readCarryFixture struct {
 	endpoint string
 }
 
-func newReadCarryFixture(t *testing.T, twoUnits bool) readCarryFixture {
+func newReadCarryFixture(t *testing.T, twoUnits, readFold bool) readCarryFixture {
 	t.Helper()
 	f := newAttestationPolicyFixture(t, "metasystem/code.go", true)
 	oldRange := f.rangeFacts()
@@ -217,8 +218,15 @@ func newReadCarryFixture(t *testing.T, twoUnits bool) readCarryFixture {
 			{ID: policyID("2"), Kind: Plan}, {ID: f.unit, Kind: Unit, Unit: "u2", Units: []string{"u2"}}}
 		f.subject.Parent = policyID("2")
 	}
+	if readFold {
+		read := policyID("0")
+		f.raw[read] = policyRaw("metasystem/records/reads/earlier.json", policyID("1"), policyID("2"))
+		oldRange = append(oldRange[:len(oldRange)-1], Commit{ID: read, Kind: Read}, oldRange[len(oldRange)-1])
+		f.subject.Parent = read
+	}
 	f.ranges[f.base+":"+f.unit] = oldRange
 	f.subjects[f.unit] = f.subject
+	f.patches[f.unit] = []byte("diff --git a/metasystem/code.go b/metasystem/code.go\nindex old..new 100644\n--- a/metasystem/code.go\n+++ b/metasystem/code.go\n@@ -1 +1 @@ old function\n-old\n+new\n")
 	f.writeReaderRecord()
 	req := f.request(false)
 	req.Unit, req.OpID, req.GateRunID = f.unitName, "carry-old", "fast-old"
@@ -245,12 +253,22 @@ func (c *readCarryFixture) rebase(changedPath string) {
 		newRange = append(newRange, Commit{ID: newFirstUnit, Kind: Unit, Unit: "u1", Units: []string{"u1"}}, Commit{ID: newSecondPlan, Kind: Plan})
 		parent = newSecondPlan
 	}
+	for _, commit := range c.oldRange {
+		if commit.Kind == Read {
+			read := policyID("3")
+			f.raw[read] = policyRaw("metasystem/records/reads/earlier.json", policyID("4"), policyID("5"))
+			newRange = append(newRange, Commit{ID: read, Kind: Read})
+			parent = read
+		}
+	}
 	if changedPath == "metasystem/plans/goal-a.md" || changedPath == "metasystem/plans/p1.md" {
 		f.raw[newPlan] = policyRaw(changedPath, policyID("1"), policyID("0"))
 	}
 	f.raw[newUnit] = append([]byte(nil), f.raw[c.oldUnit]...)
+	f.patches[newUnit] = []byte(strings.ReplaceAll(strings.ReplaceAll(string(f.patches[c.oldUnit]), "old..new", "rebased..blobs"), "@@ -1 +1 @@ old function", "@@ -20 +20 @@ new function"))
 	if changedPath == "metasystem/code.go" {
 		f.raw[newUnit] = policyRaw(changedPath, policyID("3"), policyID("0"))
+		f.patches[newUnit] = []byte(strings.ReplaceAll(string(f.patches[newUnit]), "+new\n", "+different\n"))
 	}
 	newRange = append(newRange, Commit{ID: newUnit, Kind: Unit, Unit: f.unitName, Units: []string{f.unitName}})
 	f.ranges[c.endpoint+":"+c.oldUnit] = c.oldRange
@@ -271,14 +289,31 @@ func (c *readCarryFixture) expectRead(publish bool) {
 	f := c.f
 	expectReadFacts(f, f.root, c.endpoint, f.unit, f.unit, c.newRange)
 	expectPriorRead(f, f.root, c.endpoint, c.oldUnit, c.oldRange)
+	c.expectChanges()
 	if publish {
 		expectReadPublication(f, f.root, f.unit, "", false)
 	}
 }
 
+func (c *readCarryFixture) expectChanges() {
+	for _, commit := range []string{c.oldUnit, c.f.unit} {
+		c.f.expect("ChangePatch", c.f.root, commit)
+		c.f.expect("Prefix", c.f.root)
+		c.f.expect("TreeEntry", c.f.root, commit, "testing.json")
+	}
+}
+
+func (c *readCarryFixture) expectValidation() {
+	f := c.f
+	expectLocalReadValidation(f, f.root, c.endpoint, f.unit, c.newRange, "")
+	f.expect("CommitExists", f.root, c.oldUnit)
+	expectPriorRead(f, f.root, c.endpoint, c.oldUnit, c.oldRange)
+	c.expectChanges()
+}
+
 func TestAttestationCarryPreservesUnitAndFoldBytes(t *testing.T) {
 	t.Parallel()
-	c := newReadCarryFixture(t, false)
+	c := newReadCarryFixture(t, false, false)
 	c.rebase("unrelated.txt")
 	c.expectRead(true)
 	_, att, err := commitRead(c.request("carry-new"), c.f, c.f.effects())
@@ -293,6 +328,125 @@ func TestAttestationCarryPreservesUnitAndFoldBytes(t *testing.T) {
 	}
 	if !bytes.Equal(c.f.snapshots[c.f.tip][attestationPath("goal-a", c.f.unit)], c.f.generated[attestationPath("goal-a", c.f.unit)]) {
 		t.Fatal("carried attestation bytes differ from published bytes")
+	}
+	c.expectValidation()
+	if _, err := validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAttestationCarrySurvivesChangedBaseAndEarlierRead(t *testing.T) {
+	t.Parallel()
+	c := newReadCarryFixture(t, false, true)
+	c.rebase("unrelated.txt")
+	c.f.raw[c.f.unit] = policyRaw("metasystem/code.go", policyID("5"), policyID("6"))
+	if digestRawEntries(c.f.raw[c.oldUnit]) == digestRawEntries(c.f.raw[c.f.unit]) {
+		t.Fatal("rebased unit must have different raw entries")
+	}
+	c.expectRead(true)
+	_, att, err := commitRead(c.request("carry-base-and-read"), c.f, c.f.effects())
+	if err != nil || att.Carry == nil {
+		t.Fatalf("carried read = %+v, %v", att, err)
+	}
+	c.expectValidation()
+	if _, err := validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	// A carried review still records every earlier review on its own branch.
+	c.f.raw[policyID("3")] = policyRaw("metasystem/records/reads/earlier.json", policyID("5"), policyID("6"))
+	c.f.expect("TopLevel", c.f.root)
+	c.f.expect("ReadSubject", c.f.root, c.f.unit)
+	c.f.expect("RawEntries", c.f.root, c.f.unit)
+	c.f.expect("Range", c.f.root, c.endpoint, c.f.unit, "goal-a")
+	c.f.expect("RawEntries", c.f.root, policyID("9"))
+	c.f.expect("RawEntries", c.f.root, policyID("3"))
+	_, err = validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{})
+	var refusal *OpError
+	if !errors.As(err, &refusal) || refusal.Code != ReadInvalidCode {
+		t.Fatalf("changed own review fold = %v", err)
+	}
+}
+
+func TestAttestationCarryValidationRefusesChangedPatch(t *testing.T) {
+	t.Parallel()
+	c := newReadCarryFixture(t, false, false)
+	c.rebase("unrelated.txt")
+	c.expectRead(true)
+	if _, _, err := commitRead(c.request("carry-then-change"), c.f, c.f.effects()); err != nil {
+		t.Fatal(err)
+	}
+	c.f.patches[c.f.unit] = []byte(strings.ReplaceAll(string(c.f.patches[c.f.unit]), "+new\n", "+changed\n"))
+	c.expectValidation()
+	_, err := validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{})
+	var refusal *OpError
+	if !errors.As(err, &refusal) || refusal.Code != ReadStaleCode {
+		t.Fatalf("changed carried patch = %v", err)
+	}
+}
+
+func TestAttestationCarryMissingPriorBuild(t *testing.T) {
+	t.Parallel()
+	c := newReadCarryFixture(t, false, false)
+	c.rebase("unrelated.txt")
+	c.expectRead(true)
+	if _, _, err := commitRead(c.request("carry-missing"), c.f, c.f.effects()); err != nil {
+		t.Fatal(err)
+	}
+	c.f.missingCommit = c.oldUnit
+	expectLocalReadValidation(c.f, c.f.root, c.endpoint, c.f.unit, c.newRange, "")
+	c.f.expect("CommitExists", c.f.root, c.oldUnit)
+	_, err := validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{})
+	var refusal *OpError
+	if !errors.As(err, &refusal) || refusal.Code != ReadInvalidCode ||
+		!strings.Contains(err.Error(), "the build the review carries over from is not in this repository\nrun: metasystem work status goal-a") {
+		t.Fatalf("missing prior build = %v", err)
+	}
+}
+
+func TestAttestationCarryReturnsPatchErrors(t *testing.T) {
+	t.Parallel()
+	for _, validation := range []bool{false, true} {
+		for _, prior := range []bool{false, true} {
+			t.Run(fmt.Sprintf("validation=%t/prior=%t", validation, prior), func(t *testing.T) {
+				t.Parallel()
+				c := newReadCarryFixture(t, false, false)
+				c.rebase("unrelated.txt")
+				if validation {
+					c.expectRead(true)
+					if _, _, err := commitRead(c.request("carry-before-error"), c.f, c.f.effects()); err != nil {
+						t.Fatal(err)
+					}
+					expectLocalReadValidation(c.f, c.f.root, c.endpoint, c.f.unit, c.newRange, "")
+					c.f.expect("CommitExists", c.f.root, c.oldUnit)
+				} else {
+					expectReadFacts(c.f, c.f.root, c.endpoint, c.f.unit, c.f.unit, c.newRange)
+				}
+				expectPriorRead(c.f, c.f.root, c.endpoint, c.oldUnit, c.oldRange)
+				bad := c.f.unit
+				if prior {
+					bad = c.oldUnit
+				} else {
+					c.f.expect("ChangePatch", c.f.root, c.oldUnit)
+					c.f.expect("Prefix", c.f.root)
+					c.f.expect("TreeEntry", c.f.root, c.oldUnit, "testing.json")
+				}
+				cause := errors.New("cannot read commit patch")
+				c.f.patchErrors[bad] = cause
+				c.f.expect("ChangePatch", c.f.root, bad)
+				var err error
+				if validation {
+					_, err = validateAttestation(c.f, c.f.root, "", c.endpoint, "goal-a", c.f.unitName, c.f.unit, map[string]bool{})
+				} else {
+					_, _, err = commitRead(c.request("carry-error"), c.f, c.f.effects())
+					if _, statErr := os.Stat(filepath.Join(c.f.root, filepath.FromSlash(attestationPath("goal-a", c.f.unit)))); !os.IsNotExist(statErr) {
+						t.Fatalf("failed carry published a review: %v", statErr)
+					}
+				}
+				if !errors.Is(err, cause) {
+					t.Fatalf("patch error = %v, want %v", err, cause)
+				}
+			})
+		}
 	}
 }
 
@@ -318,7 +472,7 @@ func TestAttestationCarryRefusesChangedUnitOrFold(t *testing.T) {
 		changed := changed
 		t.Run(filepath.Base(changed), func(t *testing.T) {
 			t.Parallel()
-			c := newReadCarryFixture(t, false)
+			c := newReadCarryFixture(t, false, false)
 			c.rebase(changed)
 			c.expectRead(false)
 			_, _, err := commitRead(c.request("carry-refuse"), c.f, c.f.effects())
@@ -345,7 +499,7 @@ func TestAttestationCarryChecksEveryEarlierFold(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			c := newReadCarryFixture(t, true)
+			c := newReadCarryFixture(t, true, false)
 			c.rebase(test.changedPath)
 			c.expectRead(!test.wantStale)
 			_, att, err := commitRead(c.request("carry-all-folds"), c.f, c.f.effects())
