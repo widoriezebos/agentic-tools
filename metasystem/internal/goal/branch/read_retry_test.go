@@ -3,10 +3,16 @@ package branch_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 // TestIntentReviewRetryAuthority: a retry of a failed examination is refused
@@ -85,5 +91,109 @@ func TestIntentReviewRetryAuthority(t *testing.T) {
 	}
 	if _, err := retry(5); err == nil || !strings.Contains(err.Error(), "not the newest") {
 		t.Fatalf("a retry of a round that does not exist: %v", err)
+	}
+}
+
+// retryProcessTable is the whole process table a retry's death check reads:
+// the round's recorded process, in its group while live, and nothing else.
+type retryProcessTable struct {
+	process identity.Exact
+	pgid    int64
+	live    bool
+}
+
+func (f *retryProcessTable) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
+	if !f.live || pid != f.process.Pid {
+		return identity.Exact{}, identity.Dead, nil
+	}
+	return f.process, identity.Alive, nil
+}
+
+func (f *retryProcessTable) ReadArgv(pid int64) ([]string, bool) {
+	if !f.live || pid != f.process.Pid {
+		return nil, false
+	}
+	return []string{"owned", "critic-tag"}, true
+}
+
+func (f *retryProcessTable) Pids() ([]int64, error) {
+	if !f.live {
+		return nil, nil
+	}
+	return []int64{f.process.Pid}, nil
+}
+
+func (f *retryProcessTable) Group(pid int64) (int64, error) {
+	if !f.live || pid != f.process.Pid {
+		return 0, unix.ESRCH
+	}
+	return f.pgid, nil
+}
+
+func (f *retryProcessTable) Session(pid int64) (int64, error) { return f.Group(pid) }
+
+func (f *retryProcessTable) Parent(int64) (int64, bool) { return 0, false }
+
+// TestIntentReviewRetryProvesRecordedProcessDead: a failed round that
+// recorded its process, and no group-death time, is retried once the custody
+// owner's dependencies show that process and its group dead, and is refused
+// while they show it alive.
+func TestIntentReviewRetryProvesRecordedProcessDead(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	unit := r.unit
+	r.expectStart()
+	r.expectGateAndBrief()
+	r.expectStart()
+	r.expectStart()
+	input := filepath.Join(t.TempDir(), "accepted-design.md")
+	os.WriteFile(input, []byte("Accepted design.\n"), 0o644)
+	primary := identity.Exact{Pid: 4242, StartedAt: time.UnixMicro(100_000_001)}
+	if runtime.GOOS == "linux" {
+		primary = identity.Exact{Pid: 4242, StartedAt: time.Unix(100, 0), StartTicks: 7001, BootID: "boot-a"}
+	}
+	table := &retryProcessTable{process: primary, pgid: 4242, live: true}
+	matches := func(argv []string, tag string) bool { return len(argv) == 2 && argv[0] == "owned" && argv[1] == tag }
+	followUps := 0
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, Repository: r, BriefPath: input,
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		NewID: func(string) (string, error) { return "retry-gate", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			writeReadJobWithSubject(t, r.root, "critic", unit, "running", false, r.readSubject())
+			return "critic", nil
+		},
+		FollowUp: func(rootJob, brief string) (string, error) {
+			followUps++
+			return "critic-r2", nil
+		},
+		CustodyDeath: dispatch.CustodyDeathDependencies{Reader: table, Processes: table, MatchesTag: matches,
+			TaggedScan: func(tag string) census.TaggedProcessCensus {
+				return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{Processes: table, Reader: table,
+					Signal: func(int64) error { return nil }, MatchesTag: matches})
+			}},
+	}
+	if _, err := branch.RunBranchRead(request); err != nil {
+		t.Fatal(err)
+	}
+	record := map[string]any{"jobId": "critic", "role": "code-critic", "round": 1, "status": "failed",
+		"error": "protocol_error", "runnerClosed": false, "reviews": "commit:" + unit, "goalId": "goal-a",
+		"findingRegister": []any{}, "instanceTag": "critic-tag", "pgid": 4242}
+	ref := primary.Ref()
+	record["pid"], record["pidStartedAt"] = ref.Pid, ref.StartedAtSec
+	if ref.StartTicks > 0 {
+		record["pidStartTicks"], record["bootId"] = ref.StartTicks, ref.BootID
+	} else {
+		record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+	}
+	writeJSONFixture(t, r.root, "artifacts/agents/jobs/critic.json", record)
+	retried := request
+	retried.BriefPath, retried.Retry = "", 1
+	if _, err := branch.RunBranchRead(retried); err == nil || !strings.Contains(err.Error(), "may still be running") || followUps != 0 {
+		t.Fatalf("a round whose recorded process is alive was retried: %v %d", err, followUps)
+	}
+	table.live = false
+	if result, err := branch.RunBranchRead(retried); err != nil || result.State != "dispatched" || result.Retry != "critic-r2" || followUps != 1 {
+		t.Fatalf("a round whose recorded process and group are dead: %+v %v %d", result, err, followUps)
 	}
 }
