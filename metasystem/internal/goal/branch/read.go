@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
@@ -48,6 +49,10 @@ type BranchReadRequest struct {
 	Commit     func(CommitReadRequest) (string, Attestation, error)
 	NewID      func(string) (string, error)
 	Repository BranchReadRepository
+	// CustodyDeath is the custody owner's death-proof dependencies for a
+	// retry of a round with a recorded process; zero means the
+	// installation's own process-tag matcher.
+	CustodyDeath dispatch.CustodyDeathDependencies
 }
 
 type BranchReadResult struct {
@@ -812,7 +817,11 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 	if newest == nil || newestRound != request.Retry {
 		return result, operationRefusal(ReadInvalidCode, "round %d is not the newest round of this review; the newest is %d\nrun: metasystem work review %s --retry %d", request.Retry, newestRound, request.GoalID, newestRound)
 	}
-	if err := dispatch.ExaminationRetryAdmissible(request.Repo, newest); err != nil {
+	deps := request.CustodyDeath
+	if deps.MatchesTag == nil {
+		deps.MatchesTag = dispatchproc.PositionedJobTagAt(request.Repo)
+	}
+	if err := dispatch.ExaminationRetryAdmissibleWith(request.Repo, newest, deps); err != nil {
 		return result, operationRefusal(ReadInvalidCode, "%v", err)
 	}
 	if request.FollowUp == nil || record.Brief == "" {
