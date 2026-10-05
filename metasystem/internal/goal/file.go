@@ -227,6 +227,7 @@ type ReadItem struct {
 	ID               string `json:"id"`
 	Read             string `json:"read"`
 	Text             string `json:"text"`
+	Material         *bool  `json:"material,omitempty"`
 	State            string `json:"state"`
 	ClosingReference string `json:"closingReference,omitempty"`
 	AddedAt          string `json:"addedAt"`
@@ -1209,7 +1210,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			addProblem("ReadItem: closingReference= %v", err)
 			return
 		}
-		rec, err := parseKVRecord(without, []string{"id", "read", "state", "addedAt", "changedAt"}, nil, "")
+		rec, err := parseKVRecord(without, []string{"id", "read", "state", "addedAt", "changedAt"}, []string{"material"}, "")
 		if err != nil {
 			addProblem("ReadItem: %v", err)
 			return
@@ -1218,7 +1219,16 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		if changed == "-" {
 			changed = ""
 		}
-		f.ReadItems = append(f.ReadItems, ReadItem{ID: rec["id"], Read: rec["read"], Text: text, State: rec["state"], ClosingReference: closing, AddedAt: rec["addedAt"], ChangedAt: changed})
+		var material *bool
+		if value, present := rec["material"]; present {
+			if value != "true" && value != "false" {
+				addProblem("ReadItem: material must be true or false")
+				return
+			}
+			parsed := value == "true"
+			material = &parsed
+		}
+		f.ReadItems = append(f.ReadItems, ReadItem{ID: rec["id"], Read: rec["read"], Text: text, Material: material, State: rec["state"], ClosingReference: closing, AddedAt: rec["addedAt"], ChangedAt: changed})
 	case "State":
 		f.State = value
 	case "Tier":
