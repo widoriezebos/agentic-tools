@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -23,6 +24,14 @@ type RebaseRequest struct {
 	CheckClaim                        func() error
 	Gate                              func(string) (string, error)
 	Transport                         PushTransport
+	Resolve                           func(RebaseResolution) (string, error)
+	Answer                            func(string) (string, error)
+}
+
+// RebaseResolution asks the unit runner to correct one stopped replay.
+type RebaseResolution struct {
+	Unit, Commit, Worktree, Base, Conflicts, MainTip string
+	Paths                                            []string
 }
 
 type RebaseResult struct {
@@ -136,7 +145,18 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 	if err != nil {
 		return result, err
 	}
+	var resolved []string
 	if !onMain {
+		resolve := req.Resolve
+		if resolve != nil {
+			req.Resolve = func(stop RebaseResolution) (string, error) {
+				record, err := resolve(stop)
+				if err == nil {
+					resolved = append(resolved, stop.Paths...)
+				}
+				return record, err
+			}
+		}
 		onMain, err = rebaseLedgerOnly(req, local, d.git)
 		if err != nil {
 			return result, err
@@ -176,6 +196,7 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 			return result, moveErr
 		}
 		result.NewTip, result.State, result.Regenerated = next, "rebased", regenerated
+		result.Resolved = resolved
 	}
 	commits, err := r.facts.Range(req.Repo, req.EndpointTip, result.NewTip, req.GoalID)
 	if err != nil {
@@ -265,6 +286,11 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		result.State = "held"
 		if len(result.Carried) != 0 {
 			result.State = "carried"
+		}
+	}
+	if len(result.Resolved) > 0 {
+		if err := os.Remove(filepath.Join(req.Repo, "artifacts", "agents", "goals", req.GoalID, "conflict.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return result, err
 		}
 	}
 	return result, nil

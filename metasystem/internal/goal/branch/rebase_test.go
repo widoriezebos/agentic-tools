@@ -142,7 +142,7 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 					return nil, f.replayErr
 				}
 				return nil, nil
-			case "diff --no-ext-diff --no-textconv --binary HEAD":
+			case "diff --no-ext-diff --no-textconv --no-renames --binary HEAD":
 				if f.sourceChanged && len(f.commands) > 0 {
 					return []byte("diff --git a/source b/source\n--- a/source\n+++ b/source\n@@ -1 +1 @@\n-before\n+changed\n"), nil
 				}

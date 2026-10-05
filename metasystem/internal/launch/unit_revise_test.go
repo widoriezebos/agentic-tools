@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,88 @@ import (
 	"strings"
 	"testing"
 )
+
+type rebaseFixtureGit struct {
+	GitRunner
+	source, worktree string
+	baseSeen         bool
+}
+
+func (git *rebaseFixtureGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if dir == git.worktree {
+		if strings.Join(args, " ") == "rev-parse --verify HEAD" {
+			return []byte("new-base"), nil
+		}
+		if strings.Join(args, " ") == "rev-parse --verify REBASE_HEAD" {
+			return []byte("stopped-unit"), nil
+		}
+		dir = git.source
+	}
+	if len(args) > 3 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" {
+		git.baseSeen = args[3] == "new-base"
+		args = append([]string(nil), args...)
+		args[3] = "base"
+	}
+	return git.GitRunner.Run(dir, env, args...)
+}
+
+func TestRevisionOnStoppedRebase(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "round", "round")
+	first, err := fixture.runner.AdvanceNamed(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree := t.TempDir()
+	git := &rebaseFixtureGit{GitRunner: fixture.git, source: fixture.worktree, worktree: worktree}
+	fixture.runner.Git = git
+	fixture.starter.onStart = func(record Record) error {
+		if record.Kind == "read" {
+			t.Fatal("resolve round launched a read")
+		}
+		if record.Kind == "build" && record.WorkingDirectory != worktree {
+			t.Fatalf("build directory %s", record.WorkingDirectory)
+		}
+		if record.Kind == "build" {
+			data, err := os.ReadFile(record.Inputs[0].Path)
+			if err != nil || !strings.Contains(string(data), "Declared size: 2 changed lines") || !strings.Contains(string(data), "resolve hunks") {
+				t.Fatalf("resolve brief %s %v", data, err)
+			}
+		}
+		if record.Kind == "proof" {
+			data, err := os.ReadFile(record.Inputs[0].Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var proof PlainBrief
+			if err := json.Unmarshal(data, &proof); err != nil || proof.Dir != worktree {
+				t.Fatalf("proof %s %v", data, err)
+			}
+		}
+		return nil
+	}
+	request := UnitRevisionRequest{Run: first.Record.ID, Brief: []byte("Declared size: 1 changed lines\nresolve hunks\n"), Rebase: &UnitRebasePlan{Worktree: worktree, Base: "new-base", Commit: "stopped-unit"}}
+	fixture.runner.BeforeModelLaunch = func(UnitRunRecord, StartSpec) error { return errors.New("interrupted before launch") }
+	if _, err := fixture.runner.Revise(request); err == nil {
+		t.Fatal("the interrupted correction passed")
+	}
+	fixture.runner.BeforeModelLaunch = nil
+	got, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID})
+	if err != nil || got.Round != 2 || got.Record.Rounds[1].Outcome != "green" || !git.baseSeen {
+		t.Fatalf("resolve %+v %v base seen %v", got, err, git.baseSeen)
+	}
+	launched := len(fixture.starter.order)
+	again, err := fixture.runner.Revise(request)
+	if err != nil || !again.Rejoined || len(fixture.starter.order) != launched {
+		t.Fatalf("repeat %+v %v", again, err)
+	}
+	fixture.starter.failKind = "proof"
+	request.Brief = []byte("resolve hunks that remain\n")
+	red, err := fixture.runner.Revise(request)
+	if err != nil || red.Record.Rounds[red.Round-1].Outcome != "proof-red" {
+		t.Fatalf("red resolve %+v %v", red, err)
+	}
+}
 
 // TestRevisionRequestReplay: a correction request is retained before its
 // attempt launches, so an interrupted request, a lost response and a busy

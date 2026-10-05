@@ -133,7 +133,8 @@ type UnitRunner struct {
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
 	// run records it.
-	options UnitOptions
+	options   UnitOptions
+	resolving bool
 }
 
 func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
@@ -192,8 +193,23 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 	}
 	if request.Resume != "" && (request.FollowUp != "" || record.State != "awaiting-judgement") {
-		if err := runner.requireGoalBranch(plan); err != nil {
-			return UnitResult{}, err
+		if request.FollowUp == "" {
+			for _, revision := range record.Revisions {
+				if revision.Attempt == len(record.Rounds) && revision.Rebase != nil {
+					plan, err = runner.rebasePlan(plan, revision.Rebase)
+					if err != nil {
+						return UnitResult{}, err
+					}
+					bound := *runner
+					bound.resolving = true
+					runner = &bound
+				}
+			}
+		}
+		if !runner.resolving {
+			if err := runner.requireGoalBranch(plan); err != nil {
+				return UnitResult{}, err
+			}
 		}
 	}
 	if request.FollowUp != "" {
@@ -420,6 +436,15 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 	}
 	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
+	if runner.resolving {
+		if len(moved) != 0 {
+			return runner.finish(record, round, "proof-wrote")
+		}
+		if red {
+			return runner.finish(record, round, "proof-red")
+		}
+		return runner.finish(record, round, "green")
+	}
 	if round.FollowUp == "" {
 		readInputs = readInputs[:len(readInputs)-1]
 	}

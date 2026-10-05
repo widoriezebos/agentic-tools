@@ -2,6 +2,7 @@ package branch
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 type RebaseConflict struct {
 	*OpError
 	MainTip string
+	Base    string
 	Unit    string
 	Paths   []rebaseJudgementPath
 }
@@ -88,23 +90,88 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d reb
 		refusal.Unit = name
 	}
 	var descriptions []string
+	var sourcesToResolve, generated []string
+	var brief strings.Builder
+	brief.WriteString("\n## Conflicts to resolve\n\nresolve exactly these hunks; touch no other path\n")
+	var answers struct {
+		Paths []struct{ Path, Original, Main, Goal, Resolution, Question string }
+	}
+	answerPath := filepath.Join(req.Repo, "artifacts", "agents", "goals", req.GoalID, "conflict.json")
+	if data, err := os.ReadFile(answerPath); err == nil {
+		if err := json.Unmarshal(data, &answers); err != nil {
+			return abort(err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return abort(err)
+	}
 	for _, item := range classified {
 		descriptions = append(descriptions, fmt.Sprintf("%s: %s", item.Path, item.Class))
+		if item.Class == conflict.Generated {
+			generated = append(generated, item.Path)
+			continue
+		}
 		if item.Class == conflict.Judgement {
 			detail, err := rebaseJudgement(req, local, git, item.Path)
 			if err != nil {
 				return abort(err)
 			}
-			refusal.Paths = append(refusal.Paths, detail)
+			for _, answer := range answers.Paths {
+				if answer.Path == detail.Path && answer.Original == detail.Original && answer.Main == detail.Main && answer.Goal == detail.Goal {
+					item.Resolution = answer.Resolution
+					if item.Resolution == "" && answer.Question != "" && req.Answer != nil {
+						item.Resolution, err = req.Answer(answer.Question)
+						if err != nil {
+							return abort(err)
+						}
+					}
+				}
+			}
+			if item.Resolution == "" {
+				refusal.Paths = append(refusal.Paths, detail)
+			}
 		}
+		sourcesToResolve = append(sourcesToResolve, item.Path)
+		fmt.Fprintf(&brief, "\n### %s\n\nWritten resolution: %s\n", item.Path, item.Resolution)
 	}
 	message := fmt.Sprintf("rebase stopped at %s; main is at %.7s; nothing was changed\npaths:\n%s\nrun: metasystem work status %s", name, req.EndpointTip, strings.Join(descriptions, "\n"), req.GoalID)
 	if len(refusal.Paths) > 0 {
+		refusal.Base, err = d.repository.facts.Head(dir)
+		if err != nil {
+			return abort(err)
+		}
 		refusal.Message = message
 		return abort(refusal)
 	}
-	if slices.ContainsFunc(classified, func(path conflict.Path) bool { return path.Class != conflict.Generated }) {
+	if len(sourcesToResolve) > 0 && (req.Resolve == nil || kind.Kind != Unit) {
 		return abort(&OpError{Code: RebaseConflictCode, Message: message})
+	}
+	if len(generated) > 0 {
+		if err := conflict.TakeMain(git, dir, generated); err != nil {
+			return abort(err)
+		}
+	}
+	if len(sourcesToResolve) > 0 {
+		if err := rebaseResolveHunks(git, dir, sourcesToResolve, &brief); err != nil {
+			return abort(err)
+		}
+		allowed := func(path string) bool { return slices.Contains(sourcesToResolve, path) }
+		before, err := rebaseSources(git, allowed, sourcesToResolve...)
+		if err != nil {
+			return abort(err)
+		}
+		base, err := d.repository.facts.Head(dir)
+		if err != nil {
+			return abort(err)
+		}
+		record, roundErr := req.Resolve(RebaseResolution{Unit: kind.Unit, Commit: fields[0], Worktree: dir, Base: base, Conflicts: brief.String(), Paths: sourcesToResolve, MainTip: req.EndpointTip})
+		after, err := rebaseSources(git, allowed, sourcesToResolve...)
+		head, headErr := d.repository.facts.Head(dir)
+		if roundErr != nil || err != nil || headErr != nil || head != base || !bytes.Equal(before, after) {
+			return abort(errors.Join(operationRefusal(RebaseConflictCode, "resolve round for %s failed or changed another path; nothing was changed\nrecord: %s\nrun: metasystem work status %s", kind.Unit, record, req.GoalID), roundErr, err, headErr))
+		}
+		if _, err := git(append([]string{"add", "-A", "--"}, sourcesToResolve...)...); err != nil {
+			return abort(err)
+		}
 	}
 	if log == nil {
 		logPath := rebaseRegenerationLog(req)
@@ -126,9 +193,6 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d reb
 	outputs := func(path string) bool { return conflict.GeneratedBy(matching, installation, path) }
 	// During a rebase HEAD contains main and the commits already replayed.
 	// Its generated files are rebuilt from those merged sources.
-	if err := conflict.TakeMain(git, dir, paths); err != nil {
-		return abort(err)
-	}
 	sources, err := rebaseSources(git, outputs)
 	if err != nil {
 		return abort(err)
@@ -171,17 +235,76 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d reb
 	if remaining != "" {
 		return abort(operationRefusal(RebaseConflictCode, "rebase command %q exited 0 but left conflicts; nothing was changed\nlog: %s\nrun: metasystem work status %s", last, log.Name(), req.GoalID))
 	}
-	return paths, log, nil
+	return generated, log, nil
 }
 
-func rebaseSources(git conflict.Git, outputs func(string) bool) ([]byte, error) {
-	patch, err := git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD")
+func rebaseResolveHunks(git conflict.Git, dir string, paths []string, brief *strings.Builder) error {
+	for _, path := range paths {
+		if _, err := git("checkout", "--conflict=diff3", "--", path); err != nil {
+			stages, readErr := git("ls-files", "--unmerged", "-z", "--", path)
+			if readErr != nil {
+				return readErr
+			}
+			versions := map[string]string{}
+			for _, entry := range strings.Split(stages, "\x00") {
+				fields := strings.Fields(strings.SplitN(entry, "\t", 2)[0])
+				if len(fields) == 3 {
+					versions[fields[2]], readErr = git("show", fields[1])
+					if readErr != nil {
+						return readErr
+					}
+				}
+			}
+			fmt.Fprintf(brief, "\nDiff3 versions for %s (a missing stage is empty):\n<<<<<<< main\n%s||||||| base\n%s=======\n%s>>>>>>> goal\n", path, versions["2"], versions["1"], versions["3"])
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(brief, "\nDiff3 hunks for %s:\n", path)
+		inHunk, found := false, false
+		for _, line := range strings.Split(string(data), "\n") {
+			switch {
+			case strings.HasPrefix(line, "<<<<<<< "):
+				inHunk = true
+				found = true
+				line = "<<<<<<< main"
+			case inHunk && strings.HasPrefix(line, "||||||| "):
+				line = "||||||| base"
+			case inHunk && strings.HasPrefix(line, ">>>>>>> "):
+				brief.WriteString(">>>>>>> goal\n")
+				inHunk = false
+			}
+			if inHunk {
+				brief.WriteString(line + "\n")
+			}
+		}
+		if !found || inHunk {
+			return fmt.Errorf("cannot read diff3 conflict hunks for %s", path)
+		}
+	}
+	return nil
+}
+
+func rebaseSources(git conflict.Git, outputs func(string) bool, excluded ...string) ([]byte, error) {
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary", "HEAD"}
+	if len(excluded) > 0 {
+		args = append(args, "--", ".")
+		for _, path := range excluded {
+			args = append(args, ":(exclude,literal)"+path)
+		}
+	}
+	patch, err := git(args...)
 	if err != nil {
 		return nil, err
 	}
-	sources, err := normalizeChangePatch([]byte(patch), outputs)
-	if err != nil {
-		return nil, err
+	sources := []byte(patch)
+	if len(excluded) == 0 {
+		sources, err = normalizeChangePatch(sources, outputs)
+		if err != nil {
+			return nil, err
+		}
 	}
 	untracked, err := git("ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {

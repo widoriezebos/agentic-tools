@@ -1,12 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func intentWorkRebaseCommand() intentCommand {
@@ -100,7 +106,17 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 	err = conn.section(root, func(_ func(func() error) error) error {
 		var err error
 		result, err = conn.rebase(branch.RebaseRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: mainTip,
-			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport})
+			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id),
+			Answer: func(question string) (string, error) {
+				q, err := channel.ReadQuestion(inv.layout.InstallationRoot.Path(), question)
+				if err != nil {
+					return "", err
+				}
+				if q.Answer != nil {
+					return q.Answer.Text, nil
+				}
+				return "", nil
+			}})
 		return err
 	})
 	if err != nil {
@@ -118,6 +134,60 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 		}
 	}
 	return result, nil, nil
+}
+
+func (inv *intentInvocation) resolveRebaseRound(id string) func(branch.RebaseResolution) (string, error) {
+	return func(stop branch.RebaseResolution) (string, error) {
+		runner := inv.unitRunner()
+		work, problem := inv.goalWork(id)
+		if problem != nil {
+			return "", errors.New(problem.Summary)
+		}
+		for _, unit := range work {
+			if unit.Unit != stop.Unit || unit.Record == nil {
+				continue
+			}
+			owners := inv.delivery()
+			laneRoot, configured, err := owners.laneRoot(inv.layout.InstallationRoot.Path(), owners.now())
+			if err != nil {
+				return unit.Record.Plan, err
+			}
+			if configured {
+				install, err := inv.laneInstallOf(laneRoot)
+				if err != nil {
+					return unit.Record.Plan, err
+				}
+				entry, ok, err := inv.latestLaneEntry(install, id, stop.MainTip)
+				if err != nil {
+					return unit.Record.Plan, err
+				}
+				if ok && entry.Conflict != nil && entry.Conflict.Main == stop.MainTip {
+					for _, path := range entry.Conflict.Paths {
+						if slices.Contains(stop.Paths, path.Path) && path.Resolution != "" {
+							stop.Conflicts += fmt.Sprintf("\nWritten resolution from the lane for %s: %s\n", path.Path, path.Resolution)
+						}
+					}
+				}
+			}
+			request := launch.UnitRevisionRequest{Run: unit.Run, Brief: []byte(stop.Conflicts + fmt.Sprintf("\nResolve-round base: %s. Build in %s.\n", stop.Base, stop.Worktree)),
+				Rebase: &launch.UnitRebasePlan{Worktree: stop.Worktree, Base: stop.Base, Commit: stop.Commit}}
+			for {
+				result, err := runner.Revise(request)
+				record := filepath.Join(filepath.Dir(unit.Record.Plan), "run.json")
+				if err != nil {
+					return record, err
+				}
+				if result.Capped {
+					continue
+				}
+				if result.Record.Rounds[result.Round-1].Outcome != "green" {
+					return record, fmt.Errorf("resolve round ended %s", result.Record.Rounds[result.Round-1].Outcome)
+				}
+				return record, nil
+			}
+		}
+		return "", fmt.Errorf("build %s has no retained unit brief and check; run: metasystem work status %s", stop.Unit, id)
+	}
 }
 
 func (inv *intentInvocation) hasGoalWorktree(id string) (bool, error) {
@@ -171,6 +241,12 @@ func productionRecordRebase(inv *intentInvocation, id string, rebase branch.Reba
 }
 
 func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branch.RebaseConflict) intentResult {
+	file := filepath.Join(inv.goalBranchInstallation(id), "artifacts", "agents", "goals", id, "conflict.json")
+	var previous struct{ Paths []map[string]string }
+	if data, err := os.ReadFile(file); err == nil {
+		_ = json.Unmarshal(data, &previous)
+	}
+	recorded := previous.Paths
 	result := intentResult{Targets: []intentTarget{{Kind: "goal", ID: id}}, Outcome: intentRefused, code: 1,
 		Summary: fmt.Sprintf("rebase needs your choice; main is at %s; nothing was changed", shortCommit(conflict.MainTip)),
 		Data:    map[string]any{"code": conflict.Code}, next: inv.publicArgv("work", "status", id),
@@ -192,6 +268,9 @@ func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branc
 			fmt.Sprintf("Blobs: original %s, main %s, goal %s.", path.Original, path.Main, path.Goal)},
 			Options: []string{"keep main's: " + mainImpact, "keep the goal's: " + goalImpact, "write a third: " + thirdImpact}}
 		asked, warnings, code, err := inv.connection().askRebase(inv.layout.InstallationRoot.Path(), in)
+		recorded = slices.DeleteFunc(recorded, func(item map[string]string) bool { return item["path"] == path.Path })
+		recorded = append(recorded, map[string]string{"path": path.Path, "original": path.Original, "main": path.Main, "goal": path.Goal,
+			"class": "judgement", "resolution": "", "question": asked.ID, "impact": in.Facts[1]})
 		result.text = append(result.text, warnings...)
 		if asked.ID != "" {
 			result.text = append(result.text, "question "+asked.ID+": "+path.Path,
@@ -204,6 +283,13 @@ func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branc
 		if err != nil || code != 0 || asked.ID == "" {
 			result.text = append(result.text, "the question could not be sent:", question)
 		}
+	}
+	data, err := json.Marshal(map[string]any{"base": conflict.Base, "main": conflict.MainTip, "paths": recorded})
+	if err == nil {
+		_, err = atomicfile.WriteText(file, string(data)+"\n", "")
+	}
+	if err != nil {
+		result.text = append(result.text, "the conflict question's blob binding could not be kept: "+err.Error())
 	}
 	return result
 }
