@@ -109,7 +109,8 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	worktree, original := record.Worktree, inv.layout.InstallationRoot
 	install := inv.goalWorktreeInstallation(worktree)
 	data := map[string]any{"run": record.ID, "unit": unit, "goal": goalID, "round": review.Round.Number,
-		"outcome": review.Round.Outcome, "worktree": worktree, "expectedParent": review.Head}
+		"outcome": review.Round.Outcome, "worktree": worktree, "expectedParent": review.Head, "carried": []string{}}
+	var carriedLines []string
 	// refuse says what stopped the commit in plain words and runs next;
 	// the owner's own account, codes included, is the detail.
 	retry := inv.sameCommand()
@@ -269,6 +270,19 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	targets = append(targets, intentTarget{Kind: "commit", ID: subject.Commit})
 	if subject.Published == "" {
 		base, err := tip()
+		if err == nil && subject.Amends != "" {
+			var carried branch.CarryResult
+			err = conn.commitToken(install, func() error {
+				var carryErr error
+				carried, carryErr = conn.carry(branch.CarryRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
+					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport})
+				return carryErr
+			})
+			data["carried"] = carried.Carried
+			for _, name := range carried.Carried {
+				carriedLines = append(carriedLines, "review carried: "+name)
+			}
+		}
 		if err == nil {
 			var pushed branch.PushResult
 			pushed, err = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
@@ -279,7 +293,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			}
 		}
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
+			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data, text: carriedLines,
 				Summary: fmt.Sprintf("unit %s is committed as %s but not published: %v", unit, subject.Commit, err),
 				next:    inv.sameCommand(), nextReason: "the same command publishes this commit; it never makes another"}
 		}
@@ -356,6 +370,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		data["readNotPromoted"] = reason
 	}
 	result := inv.commitReview(targets, install, goalID, subject.Commit, args, criticArgs)
+	result.text = append(result.text, carriedLines...)
 	if merged, ok := result.Data.(map[string]any); ok && merged["readNotPromoted"] != nil {
 		bundle = nil
 		delete(data, "readLaunch")

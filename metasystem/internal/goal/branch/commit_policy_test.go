@@ -197,6 +197,10 @@ func (f *policyFixture) repository() commitRepository {
 			return append([]commitWorktree(nil), f.worktrees...), nil
 		},
 	}, effects: commitEffects{
+		KeepTip: func(repo, goal, tip string) error {
+			f.args(repo == f.root && goal == "goal-a" && tip == f.local, "KeepTip", repo, goal, tip)
+			return nil
+		},
 		ClearFetch: func(repo, ref string) error {
 			f.step("clear")
 			f.args(repo == f.root && ref == fetchRef(f.op), "ClearFetch", repo, ref)
