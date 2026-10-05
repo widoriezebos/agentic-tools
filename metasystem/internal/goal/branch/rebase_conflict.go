@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -94,7 +95,9 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d reb
 	var brief strings.Builder
 	brief.WriteString("\n## Conflicts to resolve\n\nresolve exactly these hunks; touch no other path\n")
 	var answers struct {
-		Paths []struct{ Path, Original, Main, Goal, Resolution, Question string }
+		Base  string              `json:"base"`
+		Main  string              `json:"main"`
+		Paths []map[string]string `json:"paths"`
 	}
 	answerPath := filepath.Join(req.Repo, "artifacts", "agents", "goals", req.GoalID, "conflict.json")
 	if data, err := os.ReadFile(answerPath); err == nil {
@@ -116,12 +119,22 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d reb
 				return abort(err)
 			}
 			for _, answer := range answers.Paths {
-				if answer.Path == detail.Path && answer.Original == detail.Original && answer.Main == detail.Main && answer.Goal == detail.Goal {
-					item.Resolution = answer.Resolution
-					if item.Resolution == "" && answer.Question != "" && req.Answer != nil {
-						item.Resolution, err = req.Answer(answer.Question)
-						if err != nil {
+				if answer["path"] == detail.Path && answer["original"] == detail.Original && answer["main"] == detail.Main && answer["goal"] == detail.Goal {
+					item.Resolution = answer["resolution"]
+					if item.Resolution == "" && answer["question"] != "" && req.Answer != nil {
+						item.Resolution, err = req.Answer(answer["question"])
+						if err != nil && !errors.Is(err, os.ErrNotExist) {
 							return abort(err)
+						}
+						if item.Resolution != "" {
+							answer["resolution"] = item.Resolution
+							data, err := json.Marshal(answers)
+							if err == nil {
+								_, err = atomicfile.WriteText(answerPath, string(data)+"\n", "")
+							}
+							if err != nil {
+								return abort(err)
+							}
 						}
 					}
 				}

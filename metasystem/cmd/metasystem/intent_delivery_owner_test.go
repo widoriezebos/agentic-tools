@@ -432,16 +432,6 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	owners.delivery = delivery
 	run := func(verb string) intentResult {
 		t.Helper()
-		// Accept the fixture's ledger update before exercising branch replay.
-		// The public command still fetches; its Stop deadline does not measure
-		// this fixture's validation of the preceding history publication.
-		endpoint, err := branch.MainEndpoint(f.mainRoot)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := goal.FetchAdvance(endpoint); err != nil {
-			t.Fatal(err)
-		}
 		command, _ := findIntentCommand("work " + verb)
 		var stdout, stderr bytes.Buffer
 		code := runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
