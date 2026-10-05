@@ -31,8 +31,11 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
-	StaleTicks  int
-	MaxRevivals int
+	// WorkStateRoot selects the host unit and launch stores; empty uses the
+	// registry's production default.
+	WorkStateRoot string
+	StaleTicks    int
+	MaxRevivals   int
 	// Now is set only by fixture-authorized command boundaries. A zero value
 	// keeps each tick operation on the wall clock.
 	Now time.Time
@@ -361,6 +364,7 @@ func defaultTickContinuationDependencies() tickContinuationDependencies {
 		openWork: openWorkDependencies{
 			NewWorld:                  goal.NewWorld,
 			ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+			Busy:                      seatBusyReader(""),
 			HandoffProber:             identity.KernelProber{},
 		},
 		resolveMachine: goal.ResolveMachine,
@@ -626,6 +630,10 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // the seat ladder's to decide.
 func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
 	cfg = cfg.withDefaults()
+	dependencies.Now = cfg.now
+	if cfg.WorkStateRoot != "" {
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot)
+	}
 	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, nil, "", err

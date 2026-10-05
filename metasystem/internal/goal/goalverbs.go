@@ -61,6 +61,8 @@ type Store struct {
 	projectionDeps  projectionDependencies
 	registryWriter  sessionStopRegistryWriterFunc
 	ResolveIdleSeat func() (Actor, int64, error)
+	// ObserveIdleSeat reads the seat's work and identity before idle counting.
+	ObserveIdleSeat func(ClaimableBudgetedWork) (busy bool, source string, err error)
 	// ClaimIdleGoal exposes the external claim boundary for tests and callers
 	// that audit it. TurnVerdict must never cross this boundary: the steward
 	// tick owns any claim required by a seat-idle continuation.

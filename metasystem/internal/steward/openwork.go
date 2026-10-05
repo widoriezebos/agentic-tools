@@ -9,6 +9,7 @@ package steward
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +26,8 @@ type openWorkDependencies struct {
 	// HandoffProber reads a seat handoff's predecessor; nil reads the
 	// kernel.
 	HandoffProber identity.Prober
+	Busy          func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int)
+	Now           func() time.Time
 }
 
 func readOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
@@ -54,12 +57,41 @@ func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDep
 	} else if present && attention.LastOutcome == "failed" {
 		return WorkDegraded, fmt.Sprintf("fresh canonical ledger read failed: %s", attention.LastFailure), nil, nil
 	}
-	work, err := dependencies.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	now := time.Now()
+	if dependencies.Now != nil {
+		now = dependencies.Now()
+	}
+	work, err := dependencies.ReadClaimableBudgetedWork(repoRoot, now)
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("fresh canonical ledger unreadable: %v", err), nil, nil
 	}
+	var busyReason string
+	if dependencies.Busy != nil {
+		busy, reason, _ := dependencies.Busy(repoRoot, work, now)
+		if busy {
+			return WorkInFlight, reason, &work, nil
+		}
+		busyReason = reason
+	}
 	answer, reason, err := classifySharedBacklog(work)
+	if busyReason != "" {
+		reason += "; " + busyReason
+	}
 	return answer, reason, &work, err
+}
+
+func seatBusyReader(home string) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
+	return func(root string, work goal.ClaimableBudgetedWork, now time.Time) (bool, string, int) {
+		selected := home
+		if selected == "" {
+			var err error
+			selected, err = HomeStateRoot()
+			if err != nil {
+				return false, "unreadable records: 1", 1
+			}
+		}
+		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now})
+	}
 }
 
 func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, error) {
