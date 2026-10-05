@@ -657,6 +657,8 @@ func wakeWords(reasons []string) string {
 			reason = "queued work"
 		case plain.WakeProofFinished:
 			reason = "a finished test run"
+		case plain.WakeFullDue:
+			reason = "a full test run is due"
 		}
 		words = append(words, reason)
 	}

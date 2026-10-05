@@ -237,6 +237,50 @@ func TestAScopedChainOlderThanAnHourIsFull(t *testing.T) {
 	}
 }
 
+func TestAStaleScopedGreenDoesNotSettleItsTree(t *testing.T) {
+	t.Parallel()
+	for _, each := range []struct {
+		name, scope, fullAt string
+		settled             bool
+	}{
+		{"61 minutes", "scoped", bedNow.Add(-61 * time.Minute).Format(time.RFC3339), false},
+		{"59 minutes", "scoped", bedNow.Add(-59 * time.Minute).Format(time.RFC3339), true},
+		{"exactly one hour", "scoped", bedNow.Add(-time.Hour).Format(time.RFC3339), true},
+		{"unreadable time", "scoped", "bad time", false},
+		{"full green", "full", bedNow.Add(-2 * time.Hour).Format(time.RFC3339), true},
+		{"legacy green", "", "", true},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			// HEAD is origin/main: rev-list names no batch to keep green.
+			b.git.batches[b.git.commit] = ""
+			green := Result{Tree: b.git.tree, Commit: b.git.commit, Result: Green, Scope: each.scope,
+				At: bedNow.Add(-time.Minute).Format(time.RFC3339), FullAt: each.fullAt, FullTree: b.base.Tree}
+			data, err := json.Marshal(green)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeProofRecords(t, b.install, []string{string(data)}, "")
+			got, settled, err := Settled(b.install, b.checkout, b.seams)
+			if err != nil || settled != each.settled || !reflect.DeepEqual(got, green) {
+				t.Fatalf("settled = %+v, %v, want %v: %v", got, settled, each.settled, err)
+			}
+			if settled {
+				return
+			}
+			result := b.run(t)
+			if result.Result != Green || result.Scope != "full" || result.FullTree != b.git.tree || result.FullAt != result.At ||
+				len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
+				t.Fatalf("main's owed proof = %+v, commands %d", result, len(b.calls))
+			}
+			if paid, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || !ok || paid.Scope != "full" {
+				t.Fatalf("the full green did not settle main: %+v, %v, %v", paid, ok, err)
+			}
+		})
+	}
+}
+
 func TestSelectionFailureIsAFullProof(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"diff error", "no paths", "contract unreadable", "contract invalid", "contract changed", "adapter error", "code unit", "dependent unit", "uncovered path", "template path"} {

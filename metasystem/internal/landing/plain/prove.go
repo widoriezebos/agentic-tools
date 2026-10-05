@@ -218,7 +218,8 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 }
 
 // Settled reuses the green recorded for HEAD's exact tree. A tree whose own
-// last result is red, or a running proof, settles nothing.
+// last result is red, or a running proof, settles nothing. A scoped green
+// settles its tree only while its full proof is at most an hour old.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 	_, tree, err := head(seams.git, checkout)
 	if err != nil {
@@ -233,6 +234,10 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		if result, ok, err := ResultFor(install, tree); err != nil || ok {
 			settled, found = result, ok && result.Result == Green
+			if found && result.Scope == "scoped" {
+				fullAt, parseErr := time.Parse(time.RFC3339, result.FullAt)
+				found = parseErr == nil && seams.now().Sub(fullAt) <= time.Hour
+			}
 			return err
 		}
 		return nil
