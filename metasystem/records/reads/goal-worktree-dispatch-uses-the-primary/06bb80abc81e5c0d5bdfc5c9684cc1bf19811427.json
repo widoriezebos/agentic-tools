@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "goal": "goal-worktree-dispatch-uses-the-primary",
+  "unit": "u4",
+  "subject": {
+    "commit": "06bb80abc81e5c0d5bdfc5c9684cc1bf19811427",
+    "parent": "b398b2a4498c3b33f71b5dded9caadb6ec67e6ae",
+    "tree": "0172013ab8d3cdd69c0e98876ebd259f1692a72f",
+    "patchDigest": "9be59f00ce4f2363a96e3335df9914190c5ec97b69f4d5a4f5607d5acfb88cf6",
+    "unitDigest": "3f352abf74b08e153c7782aafd8b79f63ab6e39e9857fa4e01fa7f2af345e5c3"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d4303a597c4b68f0f64bd6e7",
+    "round": 1,
+    "closureSha256": "31088811dc05c21576e83d7c7fc36368f7cf69ae8e5c3fbb901423a301c8e073"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0172013ab8d3cdd69c0e98876ebd259f1692a72f",
+    "runId": "goal-read-gate-20261005t043006z-156ec56e64667f24"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/goal_branch_real_delegate_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/review_start_matrix_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/internal/delegation/brief_authority_internal_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/internal/dispatch/brief_authority_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/read_build_brief_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/read_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_review_subject_test.go",
+      "readerWord": "reviewed by critic root code-critic-d4303a597c4b68f0f64bd6e7"
+    }
+  ],
+  "sha256": "ddb8dea9912be94e8c96e480f69c19780e888ceed2eb9619a6a25e3c359ffaed"
+}
