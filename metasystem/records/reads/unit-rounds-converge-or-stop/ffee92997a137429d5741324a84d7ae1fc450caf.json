@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "goal": "unit-rounds-converge-or-stop",
+  "unit": "proof",
+  "subject": {
+    "commit": "ffee92997a137429d5741324a84d7ae1fc450caf",
+    "parent": "92c3b6ac47d1cc3f23c4da02f16ca27462221493",
+    "tree": "522901bfc29f37e0f1592c3f6b9c3f2818a26446",
+    "patchDigest": "d592e4731e81a093e36374ccf63eafdfddfa3f17de666ca2bd307bc02f084d6e",
+    "unitDigest": "553c3109220ed0a7cd8545ae6bcecc9431dbad2851a3c321cc0ec893547ea592"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-79c41daa37beba42642b7f31",
+    "round": 1,
+    "closureSha256": "2216d9b02e90c36acc1aebb56c2b882958a79fe4054fdaacfd5b7578eac67152"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "522901bfc29f37e0f1592c3f6b9c3f2818a26446",
+    "runId": "goal-read-gate-20261005t130654z-658cb47cac0b699f"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f8078d477dd83997b63c95d00214760b37788289",
+      "digest": "fe1ddae0f68d577298fb5fb739c0f80a319e2bcbb6e45edb6d9a34738d5685a9"
+    },
+    {
+      "kind": "read",
+      "commit": "177636963000de73efcf1b4e2e3460a42d9be1cf",
+      "digest": "042f7f43608364bd351419dfebbbb18326caa84772fe817a1aa733ccc6a47f0a"
+    },
+    {
+      "kind": "read",
+      "commit": "2a1b8d08c63415fab373e6d5a62b48edcb7468e2",
+      "digest": "92c065f6e2776f15140cdeec844fea2f4b95c5f99ac190390a217597b2d497c5"
+    },
+    {
+      "kind": "read",
+      "commit": "92c3b6ac47d1cc3f23c4da02f16ca27462221493",
+      "digest": "94c0b80385f554ecdd4368e0427a843c84cc221ae6bb7c0e9ce919f5560c4200"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-79c41daa37beba42642b7f31"
+    },
+    {
+      "path": "metasystem/internal/landing/batch/goadapter/adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-79c41daa37beba42642b7f31"
+    },
+    {
+      "path": "metasystem/internal/testpolicy/adapter/adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-79c41daa37beba42642b7f31"
+    }
+  ],
+  "sha256": "bed0d04fd51a8c727efd9e94d12777c5d3e06e55cac46b89493b1a140b436be0"
+}
