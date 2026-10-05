@@ -9,13 +9,14 @@
 - Origin: human
 - Next step: Design first, tier 2: a records hand-in (the seat names the goal and the record files; the engine makes the commit on the goal branch with a token, as it does for scratch commits) and its lane proof (only the record audits, not the full suite, since no code changed: the lane's ledger-only inheritance generalised to records-only trees); the plan-class rule becomes two rules (a build commit touches no plan files; a records commit touches only them); accepted design pages and rulings land this way, with the status change in the same hand-in. Done when: a seat hands in an accepted design page or a ruling and it is on main through the lane without any person's push, and the record audits ran on it.
 - OpenedAt: 2026-10-03T15:40:34Z
-- Revision: 50
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-03T15:40:42Z revision=2 opid=NJS36AW1ER3YVT8BSA92RQPSEB-m1e-718ba0eb authority=proven digest=c40c08b0845fb352da6d4ce17f90b7dc8cc611a48f875e8dd552e71226e97756 episode=2
+- Revision: 51
+- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=D2C76EEFWGC8HT9STHF63ZJ10A-ui-c7f5fe80 minutes=1200 reviewRounds=20 goalRevision=50
+- Approved: by=human:Wido at=2026-10-05T00:14:22Z revision=51 opid=D2C76EEFWGC8HT9STHF63ZJ10A-ui-c7f5fe80 authority=proven digest=109651c1c234641a0dbe32b19a131b3c1527713a12e19af1ae6e1d045b2a35d4 episode=51
 - Sliced: machine=ui lineage=steward-seat revision=49 at=2026-10-04T21:33:12Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-04T21:13:12Z revision=49 accountingRevision=49 episodeAt=2026-10-04T21:13:12Z episodeRevision=49
-- StopCapability: generation=49 revision=49 machine=ui claimEpoch=3 fenceEpoch=0
+- Claimed: machine=ui lineage=steward-seat at=2026-10-05T00:14:22Z revision=51 accountingRevision=51 episodeAt=2026-10-04T21:13:12Z episodeRevision=49
+- StopCapability: generation=51 revision=51 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-03T15:40:34Z VM3PBQ2A8EPE1R7R1BDWAQ92QX-m1e-718ba0eb open actor=human:Wido targets=records-land-through-the-lane
@@ -68,4 +69,5 @@ History:
 - 2026-10-04T21:13:01Z 4JE3DC2VJJ7M6VDDEE3R24M30J-ui-f456f182 release actor=ui+main-1790454088-93948-21671b targets=records-land-through-the-lane reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
 - 2026-10-04T21:13:12Z 19SCN56KZ6VW0QM0G6X9G40802-ui-71c5cb39 claim actor=ui+steward-seat targets=records-land-through-the-lane
 - 2026-10-04T21:33:12Z EZG12FYJVAJ269081SSM2RVRRS-ui-71c5cb39 slice-start actor=ui+steward-seat targets=records-land-through-the-lane
-Integrity: sha256=f77ef7cd432a355567f7cf6c7afb15f0277ac8ac62ce7d85b55e45c744cb9f41
+- 2026-10-05T00:14:22Z D2C76EEFWGC8HT9STHF63ZJ10A-ui-c7f5fe80 set-budget actor=human:Wido targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T21:13:12Z
+Integrity: sha256=cfabdc2385a48f5ce6123be93eeaef4c922c3fc0f35fe13c61df334c36628e69
