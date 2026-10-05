@@ -274,6 +274,8 @@ type intentDeliveryOwners struct {
 	// recordLanded writes the holder's landed line after a confirmed
 	// publication; nil selects the ledger's own act.
 	recordLanded func(inv *intentInvocation, goalID string) error
+	// recordHandIn records the queue state on the claim; nil uses the ledger.
+	recordHandIn func(inv *intentInvocation, goalID string, returned bool) error
 	foldUnitHook func(inv *intentInvocation, run string) int
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.

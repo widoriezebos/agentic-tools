@@ -9,6 +9,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
@@ -43,6 +46,31 @@ func runIntentLandingReturn(inv *intentInvocation, admitted laneAdmitted) int {
 			next:    inv.publicArgv("landing", "status"), nextReason: "shows the queue", Details: []string{err.Error()}})
 	case err != nil:
 		return inv.render(landingLaneFailure(targets, "the return of "+goalID+" could not be recorded: "+oneLine(err.Error()), err))
+	}
+	if record := admitted.owners.returnClaim; record != nil {
+		err = record(admitted.installation, goalID)
+	} else {
+		endpoint := admitted.owners.mainEndpoint
+		if endpoint == nil {
+			endpoint = branch.MainEndpoint
+		}
+		var e goal.Endpoint
+		e, err = endpoint(admitted.installation)
+		if err == nil {
+			var machine, ulid string
+			machine, err = admitted.owners.machine(admitted.installation)
+			if err == nil {
+				ulid, err = goalUlid()
+			}
+			if err == nil {
+				err = recordClaimHandIn(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: admitted.owners.now()}, goalID, true)
+			}
+		}
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets,
+			Summary: "the lane returned " + goalID + ", but its claim could not be reopened",
+			next:    inv.sameCommand(), nextReason: "retries the claim update", Details: []string{err.Error()}})
 	}
 	if !changed {
 		summary := goalID + " is already returned: " + entry.Reason

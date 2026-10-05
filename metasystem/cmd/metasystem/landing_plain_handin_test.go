@@ -9,10 +9,117 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+func TestLandingPlainHandInLeavesQuotaAndReturnReopensIt(t *testing.T) {
+	t.Parallel()
+	b := &deliveryBed{intentBed: newIntentBed(t, false, nil)}
+	b.facts.root = realpath.Resolve(b.root())
+	b.lineage = "m1"
+	announceProofFixtureHolder(t, b.root())
+	b.install = b.root()
+	install := b.root()
+	now := func() time.Time { at, _ := b.commandNow(b.root()); return at }
+	state := readBranch(2, "critic-root", "critic-root")
+	state.EndpointTip = ""
+	b.owners = &intentDeliveryOwners{
+		now:         now,
+		laneRoot:    func(string, time.Time) (string, bool, error) { return "/landing", true, nil },
+		laneInstall: func(string) (string, error) { return install, nil },
+		branchState: func(string, string) (intentBranchState, error) { return state, nil },
+		landingGate: func(*intentInvocation, string, string) (string, error) { return "allowed", nil },
+	}
+	other := *b.goalFile(bedGoal)
+	other.Id, other.State, other.Claimed, other.StopCapability = "next-work", goal.StateApproved, nil, nil
+	for i := range other.History {
+		other.History[i].Targets = []string{other.Id}
+	}
+	b.addGoal(&other)
+	code, result := b.do("work", "land", bedGoal)
+	expectOutcome(t, "hand-in", code, result, intentConfirmed)
+	code, result = b.do("goal", "claim", other.Id, "--lineage", "m1")
+	expectOutcome(t, "claim after hand-in", code, result, intentConfirmed)
+	t.Log(result.Summary)
+	owners := b.intentBed.owners()
+	r, err := syncReqWithProofAtWithDependencies("land-ready", b.root(), "", "", nil, b.commandNow, owners.dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := goal.LandReady(r, bedGoal); err != nil || res.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("land-ready before return: %+v %v", res, err)
+	}
+	owners.landing = laneVerbOwners{
+		mainEndpoint: b.dependencies().endpoint,
+		machine:      func(string) (string, error) { return "lane", nil },
+		now:          now,
+	}
+	var stdout, stderr strings.Builder
+	command, _ := findIntentCommand("landing return")
+	command.run = func(inv *intentInvocation) int {
+		return runIntentLandingReturn(inv, laneAdmitted{owners: owners.landing, installation: install})
+	}
+	if code := runIntentIn(command, []string{bedGoal, "--reason", "fix it"}, &stdout, &stderr, b.root(), owners); code != 0 {
+		t.Fatalf("return: %d %s %s", code, &stdout, &stderr)
+	}
+	code, result = b.do("goal", "release", other.Id, "--lineage", "m1", "--reason", "return to the earlier work")
+	expectOutcome(t, "release next claim", code, result, intentConfirmed)
+	code, result = b.do("goal", "claim", other.Id, "--lineage", "m1")
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, bedGoal) {
+		t.Fatalf("returned work must hold the quota: %d %+v", code, result)
+	}
+	t.Log(result.Summary)
+	state.BranchTip = strings.Repeat("3", 40)
+	code, result = b.do("work", "land", bedGoal)
+	expectOutcome(t, "hand-in after return", code, result, intentConfirmed)
+	code, result = b.do("goal", "claim", other.Id, "--lineage", "m1")
+	expectOutcome(t, "claim after handing in again", code, result, intentConfirmed)
+}
+
+func TestLandingPlainHandInRefusesBeforeQueueWhenSlotIsTaken(t *testing.T) {
+	t.Parallel()
+	b := &deliveryBed{intentBed: newIntentBed(t, false, nil)}
+	b.facts.root, b.lineage, b.install = realpath.Resolve(b.root()), "m1", b.root()
+	announceProofFixtureHolder(t, b.root())
+	install := t.TempDir()
+	state := readBranch(2, "critic-root", "critic-root")
+	state.EndpointTip = ""
+	b.owners = &intentDeliveryOwners{
+		now:         func() time.Time { at, _ := b.commandNow(b.root()); return at },
+		laneRoot:    func(string, time.Time) (string, bool, error) { return "/landing", true, nil },
+		laneInstall: func(string) (string, error) { return install, nil },
+		branchState: func(string, string) (intentBranchState, error) { return state, nil },
+		landingGate: func(*intentInvocation, string, string) (string, error) { return "allowed", nil },
+	}
+	other := *b.goalFile(bedGoal)
+	other.Id, other.State, other.Claimed, other.StopCapability = "next-work", goal.StateApproved, nil, nil
+	for i := range other.History {
+		other.History[i].Targets = []string{other.Id}
+	}
+	b.addGoal(&other)
+	code, result := b.do("work", "land", bedGoal)
+	expectOutcome(t, "first hand-in", code, result, intentConfirmed)
+	queue := filepath.Join(plain.Dir(install), "queue.jsonl")
+	before, err := os.ReadFile(queue)
+	if err != nil || strings.Count(string(before), "\n") != 1 || !b.goalFile(bedGoal).HandedIn() {
+		t.Fatalf("first hand-in must queue and record: %q %v", before, err)
+	}
+	code, result = b.do("goal", "claim", other.Id, "--lineage", "m1")
+	expectOutcome(t, "next claim", code, result, intentConfirmed)
+	code, result = b.do("work", "land", other.Id)
+	after, err := os.ReadFile(queue)
+	if err != nil || string(after) != string(before) || b.goalFile(other.Id).HandedIn() {
+		t.Fatalf("refused hand-in changed the queue or claim: %q %v", after, err)
+	}
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary+strings.Join(result.Details, " "), "one landing slot per machine") {
+		t.Fatalf("second hand-in must return the ledger refusal: %d %+v", code, result)
+	}
+	t.Log(result.Summary)
+}
 
 func TestLandingStatusSaysRecords(t *testing.T) {
 	t.Parallel()

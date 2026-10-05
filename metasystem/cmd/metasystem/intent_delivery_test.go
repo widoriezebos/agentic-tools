@@ -55,6 +55,7 @@ func newDeliveryBedAmended(t *testing.T, amend func(*goal.GoalFile)) *deliveryBe
 	// production gate over the ledger (intent_landing_gate_test.go).
 	bed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
 	bed.owners.recordLanded = func(*intentInvocation, string) error { return nil }
+	bed.owners.recordHandIn = func(*intentInvocation, string, bool) error { return nil }
 	return bed
 }
 

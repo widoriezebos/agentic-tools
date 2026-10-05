@@ -314,10 +314,10 @@ func ReadGate(f *GoalFile, s GateSettings, now time.Time) GateReading {
 			read.Landed = true
 		}
 	}
-	if read.WaitsForHuman || len(read.HeldBy) > 0 || f.Landing == nil {
+	if read.WaitsForHuman || len(read.HeldBy) > 0 || !f.IsLandingClaim() {
 		return read
 	}
-	start, err := time.Parse(time.RFC3339, f.Landing.At)
+	start, err := time.Parse(time.RFC3339, f.landingRecord().At)
 	if err != nil {
 		return read
 	}
@@ -343,7 +343,7 @@ func ReadGate(f *GoalFile, s GateSettings, now time.Time) GateReading {
 // it is worth taking, so a word that a standing sitting or a moved tip keeps
 // from landing is taken and its refusal shown, for the human to resolve.
 func LandingDue(f *GoalFile, s GateSettings, now time.Time) (due bool, why string) {
-	if f == nil || !f.IsLandingClaim() {
+	if f.IsFencedClaim() || !f.IsLandingClaim() {
 		return false, ""
 	}
 	read := ReadGate(f, s, now)

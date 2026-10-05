@@ -928,12 +928,14 @@ func (s *Store) CurrentProjection() (id, intent string, ok bool) {
 	return ledger.Current.Id, ledger.Current.Intent, true
 }
 
-// currentClaimOf is the machine's current goal: its working claim, or, when
+// currentClaimOf is the machine's current goal: its newest working claim, or, when
 // the machine holds nothing else, the claim waiting to land. A
 // breach-stopped goal is waiting on a human and must not keep the machine
 // from taking the next item, so it is never current.
 func currentClaimOf(t *TreeGoals, machine string) *GoalFile {
-	var landing *GoalFile
+	var current, landing *GoalFile
+	var latest time.Time
+	var latestOpid string
 	for _, goalID := range OrderedOpenGoalIDs(t.Live) {
 		f := t.Live[goalID]
 		if f.State != StateClaimed || f.Claimed == nil || f.Claimed.Machine != machine || f.IsFencedClaim() {
@@ -945,7 +947,23 @@ func currentClaimOf(t *TreeGoals, machine string) *GoalFile {
 			}
 			continue
 		}
-		return f
+		at, _ := time.Parse(time.RFC3339, f.Claimed.At)
+		// Claim operation IDs order claims made within the same recorded
+		// second. A later hand-in or return does not start a newer claim.
+		var opid string
+		for i := len(f.History) - 1; i >= 0; i-- {
+			h := f.History[i]
+			if h.Verb == "claim" || h.Verb == "steal" || h.Verb == "resume" {
+				opid = h.Opid
+				break
+			}
+		}
+		if current == nil || at.After(latest) || at.Equal(latest) && opid > latestOpid {
+			current, latest, latestOpid = f, at, opid
+		}
+	}
+	if current != nil {
+		return current
 	}
 	return landing
 }

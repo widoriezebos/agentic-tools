@@ -14,6 +14,285 @@ func landingReqFor(endpoint Endpoint, ulid, machine string, at time.Time) VerbRe
 	return r
 }
 
+func TestLandReadyAfterReturnLeavesQuotaAndRetakesLandingSlot(t *testing.T) {
+	t.Parallel()
+	for _, readyBeforeHandIn := range []bool{false, true} {
+		t.Run(fmt.Sprint(readyBeforeHandIn), func(t *testing.T) {
+			t.Parallel()
+			endpoint, _ := fakeGoalEndpoint(t)
+			r := verbReqFor(endpoint, "01J5X00000000000000000RX00", "mac-a")
+			if res, err := openClaimForTest(t, r, "aaa", "Exercise landing capacity.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("claim aaa: %+v %v", res, err)
+			}
+			r.Ulid = "01J5X00000000000000000RX10"
+			if res, err := Open(r, "bbb", "Exercise the next claim.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("open bbb: %+v %v", res, err)
+			}
+			approveGoalForTest(t, r, "bbb", testBudget())
+			if readyBeforeHandIn {
+				r.Ulid = "01J5X00000000000000000RX20"
+				if res, err := LandReady(r, "aaa"); err != nil || res.Outcome != OutcomeConfirmed {
+					t.Fatalf("initial land-ready: %+v %v", res, err)
+				}
+			}
+			r.Ulid = "01J5X00000000000000000RX30"
+			if res, err := RecordHandIn(r, "aaa", false); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("hand-in: %+v %v", res, err)
+			}
+			lane := verbReqFor(endpoint, "01J5X00000000000000000RX40", "lane")
+			if res, err := RecordHandIn(lane, "aaa", true); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("return: %+v %v", res, err)
+			}
+			r.Ulid, r.Now = "01J5X00000000000000000RX50", r.Now.Add(time.Minute)
+			if res, err := LandReady(r, "aaa"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("land-ready after return: %+v %v", res, err)
+			}
+			r.Ulid = "01J5X00000000000000000RX60"
+			if res, err := Claim(r, "bbb"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("claim after land-ready: %+v %v", res, err)
+			}
+			tree, _ := acceptedTreeForEndpoint(t, endpoint)
+			if !tree.Live["aaa"].IsLandingClaim() || currentClaimOf(tree, "mac-a").Id != "bbb" {
+				t.Fatal("land-ready must leave aaa in the landing slot and bbb as the working claim")
+			}
+			humanLine(tree.Live["aaa"], r.stamp(), r.opid(), "review", "reviewed verdict=clear-to-land tip="+reviewedTip+" record="+reviewPath+" by=Wido")
+			if due, why := LandingDue(tree.Live["aaa"], gateSettings, r.Now); !due {
+				t.Fatalf("ready landing must become due: %s", why)
+			}
+			r.Ulid = "01J5X00000000000000000RX70"
+			if res, err := LandReady(r, "bbb"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
+				t.Fatalf("aaa must hold the landing slot: %+v %v", res, err)
+			}
+		})
+	}
+}
+
+func TestCurrentClaimAfterHandInAndReturnIsNewestWorkingClaim(t *testing.T) {
+	t.Parallel()
+	for _, gap := range []time.Duration{0, time.Minute} {
+		t.Run(gap.String(), func(t *testing.T) {
+			t.Parallel()
+			endpoint, _ := fakeGoalEndpoint(t)
+			r := verbReqFor(endpoint, "01J5X00000000000000000RW00", "mac-a")
+			for i, id := range []string{"aaa-returned", "zzz-next", "third-work"} {
+				r.Ulid = fmt.Sprintf("01J5X00000000000000000RW%d0", i)
+				if res, err := Open(r, id, "Exercise claim selection.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+					t.Fatalf("open %s: %+v %v", id, res, err)
+				}
+				approveGoalForTest(t, r, id, testBudget())
+			}
+			r.Ulid = "01J5X00000000000000000RW30"
+			if res, err := Claim(r, "aaa-returned"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("claim first work: %+v %v", res, err)
+			}
+			r.Ulid = "01J5X00000000000000000RW40"
+			if res, err := RecordHandIn(r, "aaa-returned", false); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("hand-in: %+v %v", res, err)
+			}
+			r.Ulid, r.Now = "01J5X00000000000000000RW50", r.Now.Add(gap)
+			if res, err := Claim(r, "zzz-next"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("claim newer work: %+v %v", res, err)
+			}
+			for _, returned := range []bool{false, true} {
+				if returned {
+					lane := verbReqFor(endpoint, "01J5X00000000000000000RW60", "lane")
+					if res, err := RecordHandIn(lane, "aaa-returned", true); err != nil || res.Outcome != OutcomeConfirmed {
+						t.Fatalf("lane return: %+v %v", res, err)
+					}
+				}
+				tree, _ := acceptedTreeForEndpoint(t, endpoint)
+				if current := currentClaimOf(tree, "mac-a"); current == nil || current.Id != "zzz-next" {
+					t.Errorf("current claim (returned=%t) = %+v, want zzz-next", returned, current)
+				}
+				if !returned {
+					if lines := LandingClaimLines([]*GoalFile{tree.Live["aaa-returned"]}, r.Now, nil); len(lines) != 1 || !strings.Contains(lines[0], tree.Live["aaa-returned"].History[len(tree.Live["aaa-returned"].History)-1].At) {
+						t.Errorf("handed-in claim must render its landing timestamp: %v", lines)
+					}
+				}
+			}
+			r.Ulid = "01J5X00000000000000000RW70"
+			if res, err := Claim(r, "third-work"); err != nil || res.Outcome != OutcomeRejected || res.Code != ClaimQuotaCode || !strings.Contains(res.Detail, "aaa-returned") {
+				t.Fatalf("third claim must refuse naming returned work: %+v %v", res, err)
+			}
+			r.Ulid = "01J5X00000000000000000RW80"
+			if res, err := Release(r, "zzz-next"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("release newer work: %+v %v", res, err)
+			}
+			tree, _ := acceptedTreeForEndpoint(t, endpoint)
+			if current := currentClaimOf(tree, "mac-a"); current == nil || current.Id != "aaa-returned" {
+				t.Fatalf("returned work alone must be current: %+v", current)
+			}
+		})
+	}
+}
+
+func TestHandedInClaimOccupiesLandingSlot(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	r := verbReqFor(endpoint, "01J5X00000000000000000RV00", "mac-a")
+	for i, id := range []string{"first-work", "second-work"} {
+		r.Ulid = fmt.Sprintf("01J5X00000000000000000RV%d0", i)
+		if res, err := Open(r, id, "Exercise landing capacity.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		approveGoalForTest(t, r, id, testBudget())
+		r.Ulid = fmt.Sprintf("01J5X00000000000000000RV%d1", i)
+		if res, err := Claim(r, id); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim %s: %+v %v", id, res, err)
+		}
+		r.Ulid = fmt.Sprintf("01J5X00000000000000000RV%d2", i)
+		before := acceptedTipForEndpoint(t, endpoint)
+		res, err := RecordHandIn(r, id, false)
+		if i == 0 {
+			if err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("first hand-in: %+v %v", res, err)
+			}
+		} else if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") || acceptedTipForEndpoint(t, endpoint) != before {
+			t.Fatalf("second hand-in must refuse without moving the ledger: %+v %v", res, err)
+		}
+	}
+	r.Ulid = "01J5X00000000000000000RV30"
+	if res, err := LandReady(r, "second-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
+		t.Fatalf("land-ready must share the hand-in's landing slot: %+v %v", res, err)
+	}
+}
+
+func TestReturnBesideWorkingClaimAllowsForeignClaimAndValidatedRead(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	for i, id := range []string{"returned-work", "next-work", "third-work", "foreign-work"} {
+		r := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000RS%d0", i), "mac-a")
+		if res, err := Open(r, id, "Exercise a lane return.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		approveGoalForTest(t, r, id, testBudget())
+	}
+	r := verbReqFor(endpoint, "01J5X00000000000000000RS40", "mac-a")
+	if res, err := Claim(r, "returned-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim returned work: %+v %v", res, err)
+	}
+	r.Ulid = "01J5X00000000000000000RS50"
+	if res, err := LandReady(r, "returned-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("land-ready: %+v %v", res, err)
+	}
+	r.Ulid = "01J5X00000000000000000RS60"
+	if res, err := RecordHandIn(r, "returned-work", false); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("hand-in: %+v %v", res, err)
+	}
+	r.Ulid = "01J5X00000000000000000RS70"
+	if res, err := Claim(r, "next-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim after hand-in: %+v %v", res, err)
+	}
+	lane := verbReqFor(endpoint, "01J5X00000000000000000RS80", "lane")
+	if res, err := RecordHandIn(lane, "returned-work", true); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("lane return beside working claim: %+v %v", res, err)
+	}
+	foreign := verbReqFor(endpoint, "01J5X00000000000000000RS90", "mac-b")
+	if res, err := Claim(foreign, "foreign-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("other machine must claim after the return: %+v %v", res, err)
+	}
+	tip := acceptedTipForEndpoint(t, endpoint)
+	if err := validateCommitFor(endpoint, tip); err != nil {
+		t.Fatalf("validated read after return: %v", err)
+	}
+	projection, err := projectFetched(endpoint, r.Now)
+	if err != nil {
+		t.Fatalf("fetch and read after return: %v", err)
+	}
+	frontier, err := Next(projection, "mac-a")
+	if err != nil || !strings.Contains(strings.Join(frontier.Claimed, ","), "returned-work") ||
+		strings.Contains(strings.Join(frontier.Landing, ","), "returned-work") {
+		t.Fatalf("returned work must be work to finish: %+v %v", frontier, err)
+	}
+	for i, verb := range []string{"claim", "steal", "arc claim"} {
+		r.Ulid = fmt.Sprintf("01J5X00000000000000000RT%d0", i)
+		var res PublishResult
+		var err error
+		switch verb {
+		case "claim":
+			res, err = Claim(r, "third-work")
+		case "steal":
+			human := r
+			human.Actor.Human = "Wido"
+			res, err = StealWithReason(human, "foreign-work", "Take over.")
+		case "arc claim":
+			res, err = ClaimArc(r, "third-work")
+		}
+		if err != nil || res.Outcome != OutcomeRejected || res.Code != ClaimQuotaCode ||
+			!strings.Contains(res.Detail, "returned-work") || !strings.Contains(res.Detail, "hand it in again or release it") {
+			t.Fatalf("%s must refuse naming returned work: %+v %v", verb, res, err)
+		}
+		if acceptedTipForEndpoint(t, endpoint) != tip {
+			t.Fatalf("refused %s moved the ledger", verb)
+		}
+	}
+}
+
+func TestReturnedClaimRefusesStealUntilHandedInAgain(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	for i, id := range []string{"returned-work", "foreign-work"} {
+		r := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000RQ%d0", i), []string{"mac-a", "mac-b"}[i])
+		if res, err := openClaimForTest(t, r, id, "Exercise returned work.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim %s: %+v %v", id, res, err)
+		}
+	}
+	r := verbReqFor(endpoint, "01J5X00000000000000000RQ20", "mac-a")
+	if res, err := LandReady(r, "returned-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("land-ready: %+v %v", res, err)
+	}
+	for i, returned := range []bool{false, true} {
+		r.Ulid = fmt.Sprintf("01J5X00000000000000000RQ%d0", i+3)
+		if res, err := RecordHandIn(r, "returned-work", returned); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("hand-in/return: %+v %v", res, err)
+		}
+	}
+	r.Ulid, r.Actor.Human = "01J5X00000000000000000RQ50", "Wido"
+	before := acceptedTipForEndpoint(t, endpoint)
+	if res, err := StealWithReason(r, "foreign-work", "Take over."); err != nil || res.Outcome != OutcomeRejected || res.Code != ClaimQuotaCode || !strings.Contains(res.Detail, "returned-work") || !strings.Contains(res.Detail, "hand it in again or release it") {
+		t.Fatalf("returned claim must refuse steal by name: %+v %v", res, err)
+	}
+	if acceptedTipForEndpoint(t, endpoint) != before {
+		t.Fatal("refused steal moved the ledger")
+	}
+	r.Ulid = "01J5X00000000000000000RQ60"
+	if res, err := RecordHandIn(r, "returned-work", false); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("hand-in again: %+v %v", res, err)
+	}
+	r.Ulid = "01J5X00000000000000000RQ70"
+	if res, err := Steal(r, "foreign-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("steal after hand-in: %+v %v", res, err)
+	}
+}
+
+func TestReturnedClaimRefusesResumeOnOwnersMachine(t *testing.T) {
+	t.Parallel()
+	endpoint, budget, _, stopped, r := fencedSetBudgetBed(t, StopBatchComplete)
+	claim := verbReqFor(endpoint, "01J5X00000000000000000RR00", "mac-a")
+	if res, err := openClaimForTest(t, claim, "returned-work", "Exercise returned work.", OriginMain, "Work.", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim returned work: %+v %v", res, err)
+	}
+	claim.Ulid = "01J5X00000000000000000RR10"
+	if res, err := LandReady(claim, "returned-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("land-ready: %+v %v", res, err)
+	}
+	for i, returned := range []bool{false, true} {
+		claim.Ulid = fmt.Sprintf("01J5X00000000000000000RR%d0", i+2)
+		if res, err := RecordHandIn(claim, "returned-work", returned); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("hand-in/return: %+v %v", res, err)
+		}
+	}
+	r.Actor.Machine, r.Actor.Human = "mac-b", "Wido"
+	resume := ResumeRequest{VerbRequest: r, GoalID: stopped.Id, Budget: budget, Authority: testHumanAuthority(t, endpoint.Root, r.Now)}
+	before := acceptedTipForEndpoint(t, endpoint)
+	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeRejected || res.Code != ClaimQuotaCode || !strings.Contains(res.Detail, "returned-work") || !strings.Contains(res.Detail, "hand it in again or release it") {
+		t.Fatalf("returned work must refuse resume on the owner's machine: %+v %v", res, err)
+	}
+	if acceptedTipForEndpoint(t, endpoint) != before {
+		t.Fatal("refused resume moved the ledger")
+	}
+}
+
 func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	t.Parallel()
 	a, b := fakeGoalEndpointPair(t)

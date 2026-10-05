@@ -98,12 +98,56 @@ func (f *GoalFile) IsFencedClaim() bool {
 	return f != nil && f.State == StateClaimed && f.Claimed != nil && f.StopFence != nil
 }
 
-// IsLandingClaim reports a claim whose work waits to land (goal land-ready):
-// it keeps its claim for receipts and the landing, but it is not the
-// machine's one working claim, and it is not fenced. A fenced landing claim
-// is fenced first.
+// HandedIn reports a claim waiting in the landing lane. Its history keeps
+// the mark until a return or a new claim; ownership and budgets stay intact.
+func (f *GoalFile) HandedIn() bool { return f.handInState() == "hand-in" }
+
+func (f *GoalFile) holdsClaimQuota() bool {
+	return f != nil && f.State == StateClaimed && f.Claimed != nil &&
+		!f.Claimed.HandedOver.present() && !f.IsFencedClaim() && !f.IsLandingClaim()
+}
+
+func (f *GoalFile) handInState() string {
+	if f == nil || f.State != StateClaimed || f.Claimed == nil {
+		return ""
+	}
+	for i := len(f.History) - 1; i >= 0; i-- {
+		switch verb := f.History[i].Verb; verb {
+		case "hand-in", "landing-return", "land-ready":
+			return verb
+		case "claim", "steal", "release":
+			return ""
+		}
+	}
+	return ""
+}
+
+// IsLandingClaim reports built work waiting to land, marked by land-ready
+// or hand-in. A return makes it a working claim again even with a Landing record.
+// A fenced landing claim keeps its slot, but readers handle its fence first.
 func (f *GoalFile) IsLandingClaim() bool {
-	return f != nil && f.State == StateClaimed && f.Claimed != nil && f.Landing != nil && f.StopFence == nil
+	if f == nil || f.State != StateClaimed || f.Claimed == nil {
+		return false
+	}
+	mark := f.handInState()
+	return mark != "landing-return" && (f.Landing != nil || mark == "hand-in")
+}
+
+// landingRecord reads the landing's timestamp and operation without adding
+// a stored record to a claim handed straight to the lane.
+func (f *GoalFile) landingRecord() *LandingRecord {
+	if !f.IsLandingClaim() {
+		return nil
+	}
+	if f.Landing != nil {
+		return f.Landing
+	}
+	for i := len(f.History) - 1; i >= 0; i-- {
+		if h := f.History[i]; h.Verb == "hand-in" {
+			return &LandingRecord{At: h.At, Opid: h.Opid}
+		}
+	}
+	return nil
 }
 
 type RiskRecord struct {

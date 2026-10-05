@@ -225,6 +225,26 @@ func TestQuotaIsOneClaimPerMachine(t *testing.T) {
 	}
 }
 
+func TestReturnedClaimsBesideWorkingClaimValidate(t *testing.T) {
+	t.Parallel()
+	returned, working := vGoal("returned-work", StateClaimed), vGoal("working", StateClaimed)
+	for _, verb := range []string{"hand-in", "landing-return"} {
+		touch(returned, verbReq("", "01J5X00000000000000000RQ00", "mac-a"), verb, []string{returned.Id})
+		for _, landing := range []*LandingRecord{nil, {At: returned.Claimed.At, Opid: returned.History[0].Opid}} {
+			returned.Landing = landing
+			problems := problemsOf(vTree(vRoot(), []*GoalFile{returned, working}, nil))
+			if len(problems) != 0 {
+				t.Fatalf("%s beside working claim must validate (landing=%v): %v", verb, landing, problems)
+			}
+		}
+	}
+	secondReturn := vGoal("another-return", StateClaimed)
+	touch(secondReturn, verbReq("", "01J5X00000000000000000RQ10", "mac-a"), "landing-return", []string{secondReturn.Id})
+	if problems := problemsOf(vTree(vRoot(), []*GoalFile{returned, secondReturn, working}, nil)); len(problems) != 0 {
+		t.Fatalf("multiple returned claims beside working claim must validate: %v", problems)
+	}
+}
+
 func TestGoalFreeExcludesQueuedAndClaimed(t *testing.T) {
 	t.Parallel()
 	root := vRoot()

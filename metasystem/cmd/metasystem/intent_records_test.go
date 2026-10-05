@@ -160,10 +160,11 @@ func newRecordsBed(t *testing.T) *recordsBed {
 		},
 	}
 	b.owners.delivery = &intentDeliveryOwners{
-		now:         func() time.Time { return time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC) },
-		laneRoot:    func(string, time.Time) (string, bool, error) { return b.lane, true, nil },
-		laneInstall: func(string) (string, error) { return b.lane, nil },
-		landingGate: func(*intentInvocation, string, string) (string, error) { return "records", nil },
+		recordHandIn: func(*intentInvocation, string, bool) error { return nil },
+		now:          func() time.Time { return time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC) },
+		laneRoot:     func(string, time.Time) (string, bool, error) { return b.lane, true, nil },
+		laneInstall:  func(string) (string, error) { return b.lane, nil },
+		landingGate:  func(*intentInvocation, string, string) (string, error) { return "records", nil },
 		branchState: func(string, string) (intentBranchState, error) {
 			return intentBranchState{BranchTip: b.published, Status: branch.Status{Commits: []branch.Commit{{ID: b.published, Kind: branch.Plan}}}}, nil
 		},

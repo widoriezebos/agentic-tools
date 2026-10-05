@@ -355,7 +355,7 @@ func reviewRequest(r VerbRequest, id string, act ReviewAct, head ReviewRecordHea
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if f.State != StateClaimed || f.Claimed == nil || f.Landing == nil {
+			if !f.IsLandingClaim() {
 				return nil, fmt.Errorf("goal %s is not waiting to land (it is %s); a verdict is recorded on a goal in the Review lane", id, f.State)
 			}
 			// Create-only, decided on this tip: the same bytes are a replay,
@@ -498,11 +498,12 @@ func ReviewLinesOf(f *GoalFile) []ReviewLine {
 // landingIndex is where on the history the goal's standing Landing was
 // written, or -1 where it stands on no line this history carries.
 func landingIndex(f *GoalFile) int {
-	if f == nil || f.Landing == nil {
+	landing := f.landingRecord()
+	if landing == nil {
 		return -1
 	}
 	for index := len(f.History) - 1; index >= 0; index-- {
-		if f.History[index].Opid == f.Landing.Opid {
+		if f.History[index].Opid == landing.Opid {
 			return index
 		}
 	}
@@ -528,7 +529,7 @@ type Verdicts struct {
 // land-ready puts the goal back in Review with no verdict on it.
 func VerdictsOf(f *GoalFile) Verdicts {
 	read := Verdicts{}
-	if f == nil || f.Landing == nil {
+	if !f.IsLandingClaim() {
 		return read
 	}
 	since := landingIndex(f)

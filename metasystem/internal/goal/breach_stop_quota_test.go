@@ -160,7 +160,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 		GoalID: "fenced-a", Budget: budget,
 	}
 	resume.Authority = testHumanAuthority(t, endpoint.Root, resume.Now)
-	wantRefusal := "goal resume fenced-a refused: machine mac-a already holds live claim working-b; conclude, park or release working-b first, then resume fenced-a"
+	wantRefusal := "machine mac-a already claims working-b, and a machine holds one claim at a time\nrun: metasystem goal release working-b, then metasystem goal claim fenced-a"
 	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeRejected || result.Detail != wantRefusal {
 		t.Fatalf("resume with another live claim mismatch: %+v %v", result, err)
 	}

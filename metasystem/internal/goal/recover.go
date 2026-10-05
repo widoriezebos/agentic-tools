@@ -553,6 +553,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return releaseRequestWithReason(r, target, in.Args["reason"]), nil
 	case "land-ready":
 		return landReadyRequest(r, target), nil
+	case "hand-in", "landing-return":
+		return handInRequest(r, target, in.Verb), nil
 	case LandedVerb:
 		return landedRequest(r, target, in.Args["reason"]), nil
 	case sendBackVerb:

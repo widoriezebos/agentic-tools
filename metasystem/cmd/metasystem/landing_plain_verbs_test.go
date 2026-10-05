@@ -66,6 +66,7 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	bed.main = bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	registerLane(t, bed.home, bed.checkout, "Wido", laneTestNow)
 	bed.owners = bed.laneVerbBed.owners()
+	bed.owners.landing.returnClaim = func(string, string) error { return nil }
 	bed.owners.resolver = stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
 	return bed
 }

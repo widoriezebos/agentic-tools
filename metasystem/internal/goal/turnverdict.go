@@ -1758,7 +1758,7 @@ func FencedClaimLines(files []*GoalFile) []string {
 func LandingClaimLines(files []*GoalFile, now time.Time, overdue func(*GoalFile, time.Time) (past, known bool)) []string {
 	lines := make([]string, 0, len(files))
 	for _, file := range files {
-		if !file.IsLandingClaim() {
+		if file.IsFencedClaim() || !file.IsLandingClaim() {
 			continue
 		}
 		past, known := false, false
@@ -1768,11 +1768,11 @@ func LandingClaimLines(files []*GoalFile, now time.Time, overdue func(*GoalFile,
 		if past && known {
 			lines = append(lines, fmt.Sprintf(
 				"LANDING OVERDUE %s: land-ready since %s and past its elapsed box; land it; the queue is open",
-				file.Id, file.Landing.At,
+				file.Id, file.landingRecord().At,
 			))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("LANDING %s: land-ready since %s; the queue is open", file.Id, file.Landing.At))
+		lines = append(lines, fmt.Sprintf("LANDING %s: land-ready since %s; the queue is open", file.Id, file.landingRecord().At))
 	}
 	return lines
 }

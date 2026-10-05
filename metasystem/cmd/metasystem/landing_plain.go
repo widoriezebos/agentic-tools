@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -48,6 +49,13 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 	if !ok || (sha != "" && entry.SHA != sha) {
 		return nil
 	}
+	if entry.State == plain.StateWaiting || entry.State == plain.StateReturned {
+		if err := inv.recordHandIn(goalID, entry.State == plain.StateReturned); err != nil {
+			return &intentResult{Targets: targets, Outcome: intentPartial, code: 1,
+				Summary: "the lane has goal " + goalID + ", but its claim could not be updated",
+				next:    inv.sameCommand(), nextReason: "retries the claim update", Details: []string{err.Error()}}
+		}
+	}
 	data := map[string]any{"route": "lane", "queue": entry}
 	subject := "goal " + goalID
 	if entry.Records {
@@ -71,13 +79,18 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 // gates passed before it. The branch is read at origin, so it is already
 // pushed. A repeat at the same sha appends nothing.
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
+	if err := inv.recordHandIn(goalID, false); err != nil {
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: "goal " + goalID + " was not handed in: " + oneLine(err.Error()),
+			next:    inv.sameCommand(), nextReason: "after the claim can be updated, tries again", Details: []string{err.Error()}}
+	}
 	now := inv.delivery().now()
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	_, added, err := plain.HandIn(install, line)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
-			Summary: "the landing lane's queue can't be written, so nothing was handed in",
+		return intentResult{Targets: targets, Outcome: intentPartial, code: 1,
+			Summary: "goal " + goalID + "'s hand-in was recorded, but the landing lane's queue could not be written",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if !added {
@@ -93,4 +106,23 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
 		Summary: fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha)),
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
+}
+
+func (inv *intentInvocation) recordHandIn(goalID string, returned bool) error {
+	if record := inv.delivery().recordHandIn; record != nil {
+		return record(inv, goalID, returned)
+	}
+	r, err := syncReqWithProofAtWithDependencies("hand-in", inv.layout.InstallationRoot.Path(), "", "", nil, inv.owners.commandNow, inv.owners.dependencies)
+	if err != nil {
+		return err
+	}
+	return recordClaimHandIn(r, goalID, returned)
+}
+
+func recordClaimHandIn(r goal.VerbRequest, goalID string, returned bool) error {
+	result, err := goal.RecordHandIn(r, goalID, returned)
+	if err == nil && result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeConfirmedLate && !result.Unchanged {
+		err = fmt.Errorf("%s", result.Detail)
+	}
+	return err
 }

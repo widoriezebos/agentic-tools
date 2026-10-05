@@ -58,8 +58,10 @@ type laneVerbOwners struct {
 	pause func(home, by, reason string, now time.Time) (bool, error)
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
-	plainProve       plain.ProveSeams
-	mainEndpoint     func(string) (goal.Endpoint, error)
+	plainProve   plain.ProveSeams
+	mainEndpoint func(string) (goal.Endpoint, error)
+	// returnClaim reopens the returned goal's quota; nil uses the ledger.
+	returnClaim      func(installation, goalID string) error
 	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error

@@ -20,6 +20,35 @@ func legacyBudgetApprovalDigest(intent string, budget goal.Budget) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte("intent="+intent+"\n"+"budget="+record+"\n")))
 }
 
+func TestGoalAdmissionIgnoresBreachedHandedInClaim(t *testing.T) {
+	t.Parallel()
+	bed := newGoalAdmissionBed(t, 2)
+	first, problems := goal.ParseFile(bed.repository.files["plans/goals/bounded.md"])
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	working, _ := goal.ParseFile(goal.RenderFile(first))
+	working.Id, working.Claimed.At = "zzz-next", "2026-08-30T10:00:00Z"
+	for i := range working.History {
+		working.History[i].Targets = []string{working.Id}
+		working.History[i].At = working.Claimed.At
+		working.History[i].Opid = goal.Opid(fmt.Sprintf("01ARZ3NDEKTSV4RRFFQ69G5FB%d", i+1), "bed-m1", "working")
+	}
+	first.History = append(first.History, goal.HistoryLine{
+		At: "2026-08-28T10:01:00Z", Verb: "hand-in", Actor: "bed-m1+coordinator",
+		Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB0", "bed-m1", "coordinator"), Targets: []string{first.Id}, Keep: -1,
+	})
+	bed.repository.files["plans/goals/bounded.md"] = goal.RenderFile(first)
+	bed.repository.files["plans/goals/zzz-next.md"] = goal.RenderFile(working)
+	now := time.Date(2026, 8, 30, 10, 30, 0, 0, time.UTC)
+	if budget := ProjectBudget(bed.root, first, now); len(budgetAdmissionBreaches(budget)) == 0 {
+		t.Fatalf("handed-in claim must have a breached budget: %+v", budget)
+	}
+	if verdict, err := bed.admission("coordinator", now); err != nil || verdict.Refused() {
+		t.Fatalf("handed-in budget must not close working claim admission: %+v %v", verdict, err)
+	}
+}
+
 func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 	t.Run("attempt-only refusal", func(t *testing.T) {
 		bed := newBudgetReceiptBed(t, 1, 10000, 10)

@@ -433,15 +433,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 		if f.State == StateClaimed && f.Claimed != nil && f.Claimed.HandedOver.present() {
 			continue
 		}
-		if f.State == StateClaimed && f.Claimed != nil && f.Landing != nil {
+		if f.IsLandingClaim() {
 			// A fenced landing claim keeps its slot: the resume restores it.
 			landingByMachine[f.Claimed.Machine] = append(landingByMachine[f.Claimed.Machine], id)
 			continue
 		}
-		if f.IsFencedClaim() {
-			continue
-		}
-		if f.State == StateClaimed && f.Claimed != nil {
+		// A return can arrive beside newer work. It blocks the next claim
+		// through claimQuotaRefusal without invalidating the shared tree.
+		if f.holdsClaimQuota() && f.handInState() != "landing-return" {
 			claimsByMachine[f.Claimed.Machine] = append(claimsByMachine[f.Claimed.Machine], f)
 		}
 	}

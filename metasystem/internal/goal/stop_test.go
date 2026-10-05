@@ -347,7 +347,7 @@ func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
 	before := RenderFile(beforeTree.Live[stopped.Id])
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, otherID) ||
-		!strings.Contains(result.Detail, "already holds live claim") {
+		result.Code != ClaimQuotaCode {
 		t.Fatalf("other live claim refusal omitted the conflict: %+v %v", result, err)
 	}
 	afterTree, loadErr := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))

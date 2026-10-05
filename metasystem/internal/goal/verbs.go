@@ -1389,21 +1389,63 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 
 func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) error {
 	target := t.Live[id]
-	var held []string
+	var held, returned []string
 	for _, heldID := range sortedGoalIds(t.Live) {
 		file := t.Live[heldID]
-		if heldID == id || file.State != StateClaimed || file.Claimed == nil || file.Claimed.Machine != r.Actor.Machine ||
-			file.Claimed.HandedOver.present() || file.Landing != nil || file.IsFencedClaim() ||
-			target.Arc != "" && file.Arc == target.Arc {
+		if heldID == id || !file.holdsClaimQuota() || file.Claimed.Machine != r.Actor.Machine {
+			continue
+		}
+		if file.handInState() == "landing-return" {
+			returned = append(returned, heldID)
+		} else if target.Arc != "" && file.Arc == target.Arc {
 			continue
 		}
 		held = append(held, heldID)
+	}
+	if len(returned) > 0 {
+		return coded(ClaimQuotaCode, fmt.Errorf("machine %s has returned work %s; hand it in again or release it\nrun: metasystem goal release %s, then metasystem goal claim %s",
+			r.Actor.Machine, strings.Join(returned, ", "), returned[0], id))
 	}
 	if len(held) == 0 {
 		return nil
 	}
 	return coded(ClaimQuotaCode, fmt.Errorf("machine %s already claims %s, and a machine holds one claim at a time\nrun: metasystem goal release %s, then metasystem goal claim %s",
 		r.Actor.Machine, strings.Join(held, ", "), held[0], id))
+}
+
+// RecordHandIn keeps the lane's hand-in or return on the current claim.
+// The holder records a hand-in; the admitted landing lane records a return.
+func RecordHandIn(r VerbRequest, id string, returned bool) (PublishResult, error) {
+	verb := "hand-in"
+	if returned {
+		verb = "landing-return"
+	}
+	return Publish(r.Endpoint, handInRequest(r, id, verb))
+}
+
+func handInRequest(r VerbRequest, id, verb string) PublishRequest {
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: verb, Targets: []string{id}, Args: intentArgs(r, nil)}, Message: "goal " + verb + " " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTreeFor(r.Endpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil || f.Claimed == nil || f.handInState() == verb || verb == "landing-return" && !f.IsLandingClaim() {
+				return nil, AlreadyHolds{Reason: "goal " + id + " needs no claim change"}
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if verb == "hand-in" && !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s is not this seat's claim; only its holder hands it in", id)
+			}
+			touch(f, r, verb, []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		}, Validate: func(commit string) error {
+			return validateCommitFor(r.Endpoint, commit)
+		}}
 }
 
 // Handover transfers one claim from its current holder to one authenticated
@@ -2260,13 +2302,13 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 			if f.StopFence != nil {
 				return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume, a human act, clears the fence", id, f.StopFence.StopID)
 			}
-			if f.Landing != nil {
+			if f.Landing != nil && f.IsLandingClaim() {
 				return nil, AlreadyHolds{Reason: "goal " + id + " is already queued to land (since " + f.Landing.At + ")"}
 			}
 			for _, other := range t.Live {
 				// A fenced landing claim still holds the slot: the resume
 				// restores it, and two slots would then refuse the resume.
-				if other.Id != id && other.State == StateClaimed && other.Claimed != nil && other.Landing != nil && other.Claimed.Machine == r.Actor.Machine {
+				if other.Id != id && other.IsLandingClaim() && other.Claimed.Machine == r.Actor.Machine {
 					return nil, fmt.Errorf("goal %s already waits to land on machine %s; one landing slot per machine: land it before entering %s", other.Id, r.Actor.Machine, id)
 				}
 			}
@@ -4067,6 +4109,9 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 			if ownPair(f.Claimed, r.Actor) {
 				return nil, AlreadyHolds{Reason: "goal " + id + " is already claimed by this session (" + f.Claimed.Machine + "+" + f.Claimed.Lineage + ", since " + f.Claimed.At + ")"}
 			}
+			if refusal := claimQuotaRefusal(t, r, id); refusal != nil {
+				return nil, refusal
+			}
 			// Steal follows the selected old pair across the arc. Other
 			// independently claimed, parked, or queued members neither move
 			// nor lend their fence, pin, or budget to this preflight.
@@ -4396,6 +4441,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				budget, err := requireApprovedForClaim(r.Endpoint.Root, t, m, r.Now, "arc claim")
 				if err != nil {
 					return nil, err
+				}
+				if refusal := claimQuotaRefusal(t, r, m.Id); refusal != nil {
+					return nil, refusal
 				}
 				m.State = StateClaimed
 				m.Budget = &budget

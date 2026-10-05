@@ -414,22 +414,8 @@ func checkFenceLiftForRebudget(root string, t *TreeGoals, f *GoalFile, verb stri
 		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; finish stop %s with metasystem work stop %s",
 			verb, f.Id, fence.StopID, err, fence.StopID, f.Id)
 	}
-	machine := f.Claimed.Machine
-	for _, otherID := range OrderedOpenGoalIDs(t.Live) {
-		other := t.Live[otherID]
-		// A breach-stopped goal is waiting on a human and a landing claim is
-		// waiting on integration; neither is another live working claim.
-		if otherID == f.Id || other.State != StateClaimed || other.Claimed == nil ||
-			other.Claimed.Machine != machine || other.IsFencedClaim() || other.IsLandingClaim() {
-			continue
-		}
-		if f.Arc != "" && other.Arc == f.Arc {
-			continue
-		}
-		return "", fmt.Errorf(
-			"goal %s %s refused: machine %s already holds live claim %s; conclude, park or release %s first, then %s %s",
-			verb, f.Id, machine, otherID, otherID, verb, f.Id,
-		)
+	if refusal := claimQuotaRefusal(t, VerbRequest{Actor: Actor{Machine: f.Claimed.Machine}}, f.Id); refusal != nil {
+		return "", refusal
 	}
 	return fence.StopID, nil
 }
