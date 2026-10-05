@@ -43,7 +43,7 @@ func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmi
 			if err != nil {
 				return landing.DesignFacts{Facts: designgate.Facts{Goal: id, Error: err}}
 			}
-			return reader.landingDesignFacts(reader.stateRoot, id)
+			return reader.landingDesignFacts(reader.layout.InstallationRoot.Path(), id)
 		}
 	}
 	if o.record == nil {

@@ -17,6 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func landingGateInvocation(t *testing.T, bed *workBed, stderr *bytes.Buffer) *intentInvocation {
@@ -37,7 +39,7 @@ func TestLandingDesignCheckRecords(t *testing.T) {
 			bed := newDesignGateBed(t, 2)
 			path, data := designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)\n")
 			designGateBuild(t, bed, "u")
-			identity, _ := bed.designGate.identity(bed.stateRoot())
+			identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 			_, record := designGateRead(t, bed, identity, "u")
 			wantBody := fmt.Sprintf("%x", sha256.Sum256([]byte("Build the gate.\n")))
 			if len(record.Designs) != 1 || record.Designs[0].SHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) || record.Designs[0].BodySHA256 != wantBody {
@@ -76,7 +78,7 @@ func TestLandingDesignCheckRecords(t *testing.T) {
 				}
 				compared = false
 			case "identity failure":
-				bed.designGate.identity = func(string) (string, error) { return "", errors.New("unavailable") }
+				bed.designGate.identity = func(stateroot.Installation) (string, error) { return "", errors.New("unavailable") }
 				compared = false
 			case "reserved":
 				var output bytes.Buffer
