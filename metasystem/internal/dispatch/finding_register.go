@@ -62,6 +62,9 @@ type registerFinding struct {
 	// AcceptedDigest is the readsubject.AcceptedFindingDigest a person's
 	// accepted risk covers; set only on an accepted-risk entry.
 	AcceptedDigest string
+
+	// PlaceholderRound names the attempt that returned no review evidence.
+	PlaceholderRound int64
 }
 
 // acceptanceDigest is the digest an acceptance of f must carry: its content
@@ -283,6 +286,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 				}
 			}
+			if completedSubjectBound {
+				if err := supersedePlaceholders(state, rootJob, advanced, completedSubject, round); err != nil {
+					return err
+				}
+			}
 			reopenChangedAcceptances(advanced)
 			if conflictErr := refuseCrossRootClassConflict(state, rootJob, advanced); conflictErr != nil {
 				return conflictErr
@@ -392,15 +400,44 @@ func foldProtocolError(register []registerFinding, role, roundJob string, roundR
 			return advanced
 		}
 	}
+	round, _ := numInt(roundRecord["round"])
 	advanced = append(advanced, registerFinding{
 		FindingID: id, Critic: roundJob, RigorClass: critiqueModel.Unproven,
-		Grain:       "invariant",
-		FactsDigest: digestJSON(nil), Status: "open",
+		PlaceholderRound: round,
+		Grain:            "invariant",
+		FactsDigest:      digestJSON(nil), Status: "open",
 		EvidenceDigest: digestJSON(map[string]any{
 			"error": roundRecord["error"], "phase": roundRecord["phase"], "protocolError": roundRecord["protocolError"],
 		}), Multiplicity: 1,
 	})
 	return advanced
+}
+
+func supersedePlaceholders(state critiqueState, rootJob string, register []registerFinding, subject ReadSubject, round int64) error {
+	if subject.Kind != SubjectCommit || subject.Commit == "" {
+		return nil
+	}
+	for i := range register {
+		f := &register[i]
+		if f.Status != "open" && f.Status != "disputed" {
+			continue
+		}
+		if f.PlaceholderRound == 0 && state.chainRoot(f.Critic) == rootJob &&
+			f.FindingID == syntheticProtocolFindingID(asString(state.records[rootJob]["role"]), f.Critic) {
+			f.PlaceholderRound, _ = numInt(state.records[f.Critic]["round"])
+		}
+		if f.PlaceholderRound < 1 || f.PlaceholderRound >= round {
+			continue
+		}
+		prior, present, err := readsubject.ReadRoundSubject(state.agents, rootJob, f.PlaceholderRound)
+		if err != nil {
+			return fmt.Errorf("cannot read placeholder round %d: %w", f.PlaceholderRound, err)
+		}
+		if present && prior.Kind == SubjectCommit && prior.Commit == subject.Commit {
+			f.Status, f.Resolution = "resolved", fmt.Sprintf("superseded by round %d", round)
+		}
+	}
+	return nil
 }
 
 func syntheticProtocolFindingID(role, roundJob string) string {
@@ -1280,12 +1317,22 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 	register := make([]registerFinding, 0, len(items))
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
-		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14 && len(entry) != 15 && len(entry) != 16) {
+		fieldCount := len(entry)
+		var placeholderRound int64
+		if value, marked := entry["placeholderRound"]; marked {
+			var roundOK bool
+			placeholderRound, roundOK = numInt(value)
+			if !roundOK || placeholderRound < 1 {
+				return nil, fmt.Errorf("entry %d has an invalid placeholder round", index)
+			}
+			fieldCount--
+		}
+		if !ok || (fieldCount != 7 && fieldCount != 13 && fieldCount != 14 && fieldCount != 15 && fieldCount != 16) {
 			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
 		}
 		// The sixteenth field binds an accepted risk to the content accepted.
 		acceptedDigest, acceptedDigestPresent := entry["acceptedDigest"]
-		if (len(entry) == 16) != acceptedDigestPresent {
+		if (fieldCount == 16) != acceptedDigestPresent {
 			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
 		}
 		if acceptedDigestPresent {
@@ -1309,13 +1356,14 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			EvidenceDigest: asString(entry["evidenceDigest"]),
 			AcceptedDigest: asString(acceptedDigest),
 		}
-		if len(entry) >= 14 {
+		finding.PlaceholderRound = placeholderRound
+		if fieldCount >= 14 {
 			finding.Grain = asString(entry["grain"])
 		}
-		if len(entry) >= 15 {
+		if fieldCount >= 15 {
 			finding.Fixture = asString(entry["fixture"])
 		}
-		if len(entry) == 7 && finding.Status == "resolved" {
+		if fieldCount == 7 && finding.Status == "resolved" {
 			finding.Resolution = "withdrawn"
 		}
 		finding.Multiplicity, ok = numInt(entry["multiplicity"])
@@ -1325,7 +1373,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk") {
 			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
 		}
-		if len(entry) >= 13 {
+		if fieldCount >= 13 {
 			unresolved := finding.Status == "open" || finding.Status == "disputed"
 			if unresolved && (finding.Resolution != "" || finding.DecisionOpID != "") {
 				return nil, fmt.Errorf("entry %d carries a resolution while unresolved", index)
@@ -1334,7 +1382,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 				return nil, fmt.Errorf("entry %d is non-open without a resolution", index)
 			}
 			validResolution := finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope" ||
-				finding.Resolution == "refuted" || finding.Resolution == "accepted") ||
+				finding.Resolution == "refuted" || finding.Resolution == "accepted" || readsubject.SupersededPlaceholder(entry)) ||
 				finding.Status == "deferred" && finding.Resolution == "deferred" && finding.DecisionOpID != "" ||
 				finding.Status == "accepted-risk" && finding.Resolution == "accepted-risk" && finding.DecisionOpID != ""
 			if !unresolved && !validResolution {
@@ -1382,6 +1430,9 @@ func encodeFindingRegister(register []registerFinding) []any {
 		}
 		if finding.Status == "accepted-risk" && finding.AcceptedDigest != "" {
 			entry["acceptedDigest"] = finding.AcceptedDigest
+		}
+		if finding.PlaceholderRound > 0 {
+			entry["placeholderRound"] = finding.PlaceholderRound
 		}
 		items[index] = entry
 	}
