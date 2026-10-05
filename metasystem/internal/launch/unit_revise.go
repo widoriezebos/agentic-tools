@@ -151,6 +151,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if record.MaxRounds > 0 && current >= record.MaxRounds {
 			return UnitRevisionResult{Current: current}, roundLimit(record, current)
 		}
+		if err := runner.countedCap(record); err != nil {
+			return UnitRevisionResult{Current: current}, err
+		}
 		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
 			RequestedAtUnixSec: runner.Manager.Now().Unix()}
 		directory := filepath.Join(runner.runDir(record.ID), "revisions")

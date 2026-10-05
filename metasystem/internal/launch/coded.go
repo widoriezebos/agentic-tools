@@ -32,5 +32,48 @@ func roundLimit(record UnitRunRecord, rounds int) error {
 		fmt.Errorf("unit %s has used all %d review rounds the goal approved; another round needs a larger budget", record.Unit, record.MaxRounds))
 }
 
+// UnitRoundCapError carries the next command as arguments, keeping names intact.
+type UnitRoundCapError struct {
+	*CodedError
+	Next []string
+}
+
+func (err *UnitRoundCapError) Unwrap() error { return err.CodedError }
+
+func (runner *UnitRunner) countedCap(record UnitRunRecord) error {
+	counted, machinery := countedRounds(record)
+	capReached := counted >= record.CountedCap
+	if record.CountedCap <= 0 || !capReached {
+		return nil
+	}
+	var newest UnitRound
+	for _, round := range record.Rounds {
+		if round.Cause == "" {
+			newest = round
+		}
+	}
+	material, err := runner.roundMaterial(record, newest)
+	if err != nil {
+		return err
+	}
+	committed := false
+	for _, subject := range record.Subjects {
+		committed = committed || subject.Commit != ""
+	}
+	next := fmt.Sprintf("metasystem work review %s --work %s", record.Goal, record.Unit)
+	nextArgs := []string{"work", "review", record.Goal, "--work", record.Unit}
+	outcome := fmt.Sprintf("Keep the remaining findings as follow-ups with metasystem goal notes %s --read %s --add TEXT.", record.Goal, record.ID)
+	if material > 0 {
+		next = fmt.Sprintf("metasystem work build %s --work NEW --brief FILE --check ...", record.Goal)
+		nextArgs = []string{"work", "build", record.Goal, "--work", "NEW", "--brief", "FILE", "--check", "..."}
+		outcome = "Split the unit; the new work builds from the worktree as it stands."
+		if committed {
+			outcome = fmt.Sprintf("Split on top; only a person's metasystem goal accept-risk %s --finding F naming NEW closes it.", record.Goal)
+		}
+	}
+	return &UnitRoundCapError{CodedError: &CodedError{Code: "UNIT_ROUND_CAP", Facts: unitFacts(record.Unit, record.Goal, fmt.Sprintf("run=%s counted=%d cap=%d machinery=%d", record.ID, counted, record.CountedCap, machinery)),
+		Reason: fmt.Errorf("unit %s has used its %d counted rounds; nothing was started. %s", record.Unit, record.CountedCap, outcome), Run: next}, Next: nextArgs}
+}
+
 // IsCode says whether err carries the refusal code.
 func IsCode(err error, code string) bool { return ErrorCode(err) == code }

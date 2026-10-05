@@ -123,8 +123,9 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	}
 	binding := reviewBinding{Goal: work.goal, Work: work.work, Attempt: work.attempt, Subject: commit, Examination: rootJob, Round: round, Return: digest}
 	data["binding"], data["verdict"], data["findings"] = binding.line(), verdict, findings
-	if work.subject != nil && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round) {
+	if work.subject != nil && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round || work.subject.ExaminationReturnPath != returnPath) {
 		work.subject.Examination, work.subject.ExaminationRound = rootJob, round
+		work.subject.ExaminationReturnPath = returnPath
 		if err := work.retain(*work.subject); err != nil {
 			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
 				Summary: "the review can't be recorded with the work", next: again, nextReason: "the same command records it", Details: []string{err.Error()}}
