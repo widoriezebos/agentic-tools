@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-reproves-only-what-a-change-can-affect",
+  "unit": "affected-and-closure",
+  "subject": {
+    "commit": "11da6197384a80fe0c365d10473e228ed97582b8",
+    "parent": "86f6c944137a95e5aa6dafe10d4752d6facc1868",
+    "tree": "cdee959a9f9f74e898c05731d4dffc57f0aeb20a",
+    "patchDigest": "35237f227b7b18bca7b02fd71861781fe05256d43f6bd043f2b6aa82d1cdcf64",
+    "unitDigest": "492f1f556ad7ebf25aefd4f445d25de3f2a95fec9df5ea2b1d38aede4a8ee33b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0307a94ac7cc3aa909bf837b",
+    "round": 1,
+    "closureSha256": "19bc23e39ea6412e94bf512864f3f89429ffb1ad0ddc835f30455791e1cd30dd"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "cdee959a9f9f74e898c05731d4dffc57f0aeb20a",
+    "runId": "goal-read-gate-20261005t050025z-1d377b03ecbc4dad"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "9ac10be12e3caf058b74f1e9991ea5ebeaab08ee",
+    "fromTree": "603ee81d02f5fedbc2e109a28530415008816c16",
+    "toCommit": "11da6197384a80fe0c365d10473e228ed97582b8",
+    "toTree": "cdee959a9f9f74e898c05731d4dffc57f0aeb20a"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/gopackages/select_test.go",
+      "readerWord": "reviewed by critic root code-critic-0307a94ac7cc3aa909bf837b"
+    },
+    {
+      "path": "metasystem/internal/landing/batch/goadapter/adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-0307a94ac7cc3aa909bf837b"
+    },
+    {
+      "path": "metasystem/internal/landing/batch/goadapter/unitgate_test.go",
+      "readerWord": "reviewed by critic root code-critic-0307a94ac7cc3aa909bf837b"
+    }
+  ],
+  "sha256": "288bd1302adb1c4e84cba62420bf638d2fc716cbcf5e4a8d7c3020a1b3c6dd4d"
+}
