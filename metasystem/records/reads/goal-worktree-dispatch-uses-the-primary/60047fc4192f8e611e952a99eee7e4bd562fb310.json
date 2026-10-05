@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "goal": "goal-worktree-dispatch-uses-the-primary",
+  "unit": "u2e",
+  "subject": {
+    "commit": "60047fc4192f8e611e952a99eee7e4bd562fb310",
+    "parent": "52426f8f64e53fd5aa92f2e393ed83ba8723916c",
+    "tree": "930f996ef4f147ae13d3500255a7535ef86025bd",
+    "patchDigest": "b7dd757ff3afe41a2eaaa44f79e79e1e8be2b79392d452f307c0c0d5b978ec54",
+    "unitDigest": "112cd72af2a53e49742b6980137785425fe999a7b5f9a0dafb2b40366a66da50"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a8aa72deeb7d314e8d0195ae",
+    "round": 1,
+    "closureSha256": "45361e8144d46ca379ca8da293aa0e518b9f1f545399a54c740a98f9a5dd7ba7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "930f996ef4f147ae13d3500255a7535ef86025bd",
+    "runId": "goal-read-gate-20261005t010703z-6787f8727f00be9b"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "c43cc42cd27f95988bf1c3dab5be75ff20d000e0",
+      "digest": "d94b61dd7592a05aa3e72cbac745a0af028eb9aa0d5f926a5d71b364a8df0e7a"
+    },
+    {
+      "kind": "read",
+      "commit": "857fd31a19f51eb6d7796a9124c9976d819fb93d",
+      "digest": "d6cf22f9d7659eebb30b29bb11d43b272ace8f9dc0cafb8746b13408777a4ff9"
+    },
+    {
+      "kind": "read",
+      "commit": "c5440d8f5302a842cdf49e9060b4b58e5a328e51",
+      "digest": "5426206e23e88096da603ccf54861a8f9f6f043f103fcff8e18575c2024de8bd"
+    },
+    {
+      "kind": "read",
+      "commit": "532e56395bc5a0de1e4a5a14db5d8722dc21d337",
+      "digest": "67699ea7c4ae43470cc447b26510e93f56ed35f6c2acd2260f51286d7e4e65fc"
+    },
+    {
+      "kind": "read",
+      "commit": "34f512dcc1ac4d867ef34d15e696a60a617b8e1f",
+      "digest": "4b161492dd5680a7cab809bb18fcea03b2a2e7f2f0d6535a6933e5436d5c42f5"
+    },
+    {
+      "kind": "read",
+      "commit": "52426f8f64e53fd5aa92f2e393ed83ba8723916c",
+      "digest": "587891f9bea1d7c24632462c59bf21671015a6c48eaac7fd17112a42dd3f0814"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/dispatch/codexsandbox_test.go",
+      "readerWord": "reviewed by critic root code-critic-a8aa72deeb7d314e8d0195ae"
+    }
+  ],
+  "sha256": "493a000cb86d118ce32c22d7ccf7e91867588c3dadbea27d5fada8433f36f49f"
+}
