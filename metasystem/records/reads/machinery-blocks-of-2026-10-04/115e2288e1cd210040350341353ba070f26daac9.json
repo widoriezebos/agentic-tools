@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "steward-idle-by-lineage",
+  "subject": {
+    "commit": "115e2288e1cd210040350341353ba070f26daac9",
+    "parent": "34bcbe6f9ad27a405183693a05594744cc191efe",
+    "tree": "df35eb23a4a432e528b8510b14d3d2d72083bb77",
+    "patchDigest": "b05fdbdc5bb3a9c15abd2283ffe31a7e9f0cf0fcc63daf05236c61b164550b8b",
+    "unitDigest": "4eaaefe7a2586234d613c69fe37650a0484166662ea3b085ce904d27115dc39e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-624349aff0992a9111178ece",
+    "round": 1,
+    "closureSha256": "e089b440f3e3736a5f2012dd739f9626c95bf6c29d102ecffffdf0b67fa91af3"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "df35eb23a4a432e528b8510b14d3d2d72083bb77",
+    "runId": "goal-read-gate-20261005t035524z-86f54e999a3ebe30"
+  },
+  "folds": null,
+  "carry": {
+    "fromCommit": "d61823c38272959d6407d059edc4696dd6ac71bf",
+    "fromTree": "a0b873bfd24145cd98037cb09d0bf950cb9ab90b",
+    "toCommit": "115e2288e1cd210040350341353ba070f26daac9",
+    "toTree": "df35eb23a4a432e528b8510b14d3d2d72083bb77"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/steward_seat_tick_test.go",
+      "readerWord": "reviewed by critic root code-critic-624349aff0992a9111178ece"
+    }
+  ],
+  "sha256": "4e02e5152f430e1fbacf35201c536cdf75422edeec6364bd9ef041ea6b8ad8bd"
+}
