@@ -401,7 +401,7 @@ func TestWakeReasonsAreQueuedAndProofFinished(t *testing.T) {
 	b := newBed(t)
 	reasons := func(launch time.Time) string {
 		t.Helper()
-		got, err := WakeReasons(b.install, b.checkout, launch)
+		got, err := WakeReasons(b.install, b.checkout, launch, bedNow)
 		if err != nil {
 			t.Fatal(err)
 		}

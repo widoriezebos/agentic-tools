@@ -17,9 +17,13 @@ import (
 // fails with addErr), a remove deletes it, and a diff between two trees
 // answers the paths changed between them.
 type stubGit struct {
-	commit, tree string
-	addErr       error
-	changed      map[[2]string]string
+	commit, tree     string
+	addErr           error
+	changed          map[[2]string]string
+	batches          map[string]string
+	shows            map[string]string
+	diffErr, showErr error
+	installPrefix    string
 }
 
 func (g stubGit) run(dir string, args ...string) (string, error) {
@@ -32,13 +36,17 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 		if g.addErr != nil {
 			return "", g.addErr
 		}
-		return "", os.MkdirAll(args[3], 0o755)
+		return "", os.MkdirAll(filepath.Join(args[3], g.installPrefix), 0o755)
 	case len(args) == 4 && args[0] == "worktree" && args[1] == "remove":
 		return "", os.RemoveAll(args[3])
 	case len(args) >= 2 && args[0] == "worktree" && (args[1] == "list" || args[1] == "prune"):
 		return "", nil
-	case len(args) == 5 && args[0] == "diff":
-		return g.changed[[2]string{args[3], args[4]}], nil
+	case len(args) == 5 && strings.Join(args[:3], " ") == "diff --name-only --no-renames":
+		return g.changed[[2]string{args[3], args[4]}], g.diffErr
+	case len(args) == 4 && args[0] == "rev-list" && args[1] == "--no-merges" && args[3] == "^origin/main":
+		return g.batches[args[2]], nil
+	case len(args) == 2 && args[0] == "show":
+		return g.shows[args[1]], g.showErr
 	}
 	return "", fmt.Errorf("git %s is not stubbed", strings.Join(args, " "))
 }

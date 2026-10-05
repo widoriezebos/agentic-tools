@@ -47,7 +47,10 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    check out the new main, merge the same shas the green proof covered, in the same order, and
    `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
    the same turn. A recorded flake moves main by its record; merging the new main inherits the
-   green and its reason, naming the flaky unit and its fix goal.
+   green and its reason, naming the flaky unit and its fix goal. When other files moved and
+   the batch's full proof is under an hour old, this proof runs only the test groups that read
+   what main gained; push when it ends. An inherited or scoped green older than an hour
+   needs a full proof.
    Lines that began waiting meanwhile are not added: proven work is pushed first, and
    they are the next batch.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
@@ -55,7 +58,10 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
    `metasystem landing prove` once more and end your turn. A refusal or a second red returns
    the waiting goals with what you saw as the reason; say it in your final message.
-8. **Blocked outside cases 1-7:** ask with `--about lane`, then end your turn; the keeper holds you
+8. **Full proof owed** (woken with `full-due` and nothing waiting): fetch, check out `origin/main`,
+   and `landing prove`. A green needs no push. A red is main's: ask with `--about lane`, naming
+   the failing tests.
+9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you
    until it is answered.
 
 Never end your session with a `waiting` line you could act on: push it, return it, or have a
