@@ -40,11 +40,11 @@ func rebaseRegenerationLog(req RebaseRequest) string {
 	return filepath.Join(req.Repo, "artifacts", "agents", "goals", req.GoalID, "rebase-regenerate.log")
 }
 
-func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d rebaseDependencies, stopped error) ([]string, error) {
+func resolveRebaseStop(req RebaseRequest, local, dir string, log *os.File, d rebaseDependencies, stopped error) ([]string, *os.File, error) {
 	git := func(args ...string) (string, error) { out, err := d.git(dir, args...); return string(out), err }
-	abort := func(cause error) ([]string, error) {
+	abort := func(cause error) ([]string, *os.File, error) {
 		_, err := git("rebase", "--abort")
-		return nil, errors.Join(cause, err)
+		return nil, log, errors.Join(cause, err)
 	}
 	listed, err := git("diff", "--name-only", "--diff-filter=U", "-z")
 	if err != nil {
@@ -106,7 +106,7 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d re
 	if slices.ContainsFunc(classified, func(path conflict.Path) bool { return path.Class != conflict.Generated }) {
 		return abort(&OpError{Code: RebaseConflictCode, Message: message})
 	}
-	if *log == nil {
+	if log == nil {
 		logPath := rebaseRegenerationLog(req)
 		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 			return abort(err)
@@ -115,7 +115,7 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d re
 		if err != nil {
 			return abort(err)
 		}
-		*log = opened
+		log = opened
 	}
 	var matching []testpolicy.Generated
 	for _, set := range sets {
@@ -140,7 +140,7 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d re
 				continue
 			}
 			last = argv
-			err := d.run(argv, filepath.Join(dir, installation, set.Cwd), *log, func(int64) error { return nil })
+			err := d.run(argv, filepath.Join(dir, installation, set.Cwd), log, func(int64) error { return nil })
 			if err != nil {
 				exit := -1
 				var status *exec.ExitError
@@ -150,14 +150,14 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d re
 						exit = 128 + int(wait.Signal())
 					}
 				}
-				return abort(operationRefusal(RebaseConflictCode, "rebase command %q exited %d; nothing was changed\nlog: %s\nrun: metasystem work status %s", argv, exit, (*log).Name(), req.GoalID))
+				return abort(operationRefusal(RebaseConflictCode, "rebase command %q exited %d; nothing was changed\nlog: %s\nrun: metasystem work status %s", argv, exit, log.Name(), req.GoalID))
 			}
 			after, err := rebaseSources(git, outputs)
 			if err != nil {
 				return abort(err)
 			}
 			if !bytes.Equal(sources, after) {
-				return abort(operationRefusal(RebaseConflictCode, "rebase command %q changed sources; nothing was changed\nlog: %s\nrun: metasystem work status %s", last, (*log).Name(), req.GoalID))
+				return abort(operationRefusal(RebaseConflictCode, "rebase command %q changed sources; nothing was changed\nlog: %s\nrun: metasystem work status %s", last, log.Name(), req.GoalID))
 			}
 		}
 	}
@@ -169,9 +169,9 @@ func resolveRebaseStop(req RebaseRequest, local, dir string, log **os.File, d re
 		return abort(err)
 	}
 	if remaining != "" {
-		return abort(operationRefusal(RebaseConflictCode, "rebase command %q exited 0 but left conflicts; nothing was changed\nlog: %s\nrun: metasystem work status %s", last, (*log).Name(), req.GoalID))
+		return abort(operationRefusal(RebaseConflictCode, "rebase command %q exited 0 but left conflicts; nothing was changed\nlog: %s\nrun: metasystem work status %s", last, log.Name(), req.GoalID))
 	}
-	return paths, nil
+	return paths, log, nil
 }
 
 func rebaseSources(git conflict.Git, outputs func(string) bool) ([]byte, error) {
