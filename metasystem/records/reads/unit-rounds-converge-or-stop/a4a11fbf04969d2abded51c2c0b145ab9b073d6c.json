@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "goal": "unit-rounds-converge-or-stop",
+  "unit": "design-gate-tests",
+  "subject": {
+    "commit": "a4a11fbf04969d2abded51c2c0b145ab9b073d6c",
+    "parent": "316a51d89a3afa3d3320ba98ef3caa94f2ae48d2",
+    "tree": "0c635fed76bfb72f225f732b688988959e818823",
+    "patchDigest": "df6a16f86b9858f7916f210d1e53c5fffa3533c43dcd3d050c7f9f636077fb88",
+    "unitDigest": "6ebcafeb3ad5425ce7b78bb7a8300b3e02086d36963c21f4cadd2ad9d6aef5f2"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-82a4380fb507d368937329e4",
+    "round": 1,
+    "closureSha256": "82334f2c5b5ebaff91272e1424c8c152be01ee03eb7c5b9e1eba96087de5d6f6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0c635fed76bfb72f225f732b688988959e818823",
+    "runId": "goal-read-gate-20261005t030131z-f7a63a64ff4df73c"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "3dbb017d60873e1ebd9a379cb56585bedf5f3d6d",
+      "digest": "b6dff5f76ad5240a90f023e1c9bdd0a3b3d83a5c7b9bffe7d81fd785fd45e352"
+    },
+    {
+      "kind": "read",
+      "commit": "6b81fac2b10307d8b520bfaa2547860716f40293",
+      "digest": "9dbaacbbd448a5981da3cc2e086e97dce563ed95e0305c0751e6454cc75ab3bb"
+    },
+    {
+      "kind": "read",
+      "commit": "b2abc7e8c4c8aedbd7e8b7458ff678a3ac1d87a7",
+      "digest": "1d5c2b65516c672b017d39096e2704b22a9773fcc0a31830c38bbfe1e461c926"
+    }
+  ],
+  "carry": {
+    "fromCommit": "0ffc26297ea2bdcd3837670ca732cf85523edbfb",
+    "fromTree": "b8a6badb6b30237b56e0a59231ae3840620fd84f",
+    "toCommit": "a4a11fbf04969d2abded51c2c0b145ab9b073d6c",
+    "toTree": "0c635fed76bfb72f225f732b688988959e818823"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_gate_switch_test.go",
+      "readerWord": "reviewed by critic root code-critic-82a4380fb507d368937329e4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_gate_test.go",
+      "readerWord": "reviewed by critic root code-critic-82a4380fb507d368937329e4"
+    }
+  ],
+  "sha256": "d82d3fbe7cc8f65c76851b496d4b191183166ecf398651f2eab2c6fed8ed6f35"
+}
