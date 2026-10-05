@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 2
+- Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="changes how every critic and builder is dispatched from a goal worktree, a path every seat uses many times a day; a wrong rule blocks reviews fleet-wide, a right one removes four of tonight's six person-needing refusals"
 - Tier: 2
 - Intent: Every dispatch made from a goal worktree (a critic read, a commit read, a builder round, a review close) runs with the seat's armed primary engine and the primary's runtime registry and settings; the worktree is only the tree under review, never the tool. A brief the build admitted is never refused at review, and a review of a frozen unit can take a corrected brief without a builder round. Generic: holds for any adopter checkout layout; nothing names this repository.
@@ -29,7 +29,7 @@ Open read items (fix unit u2-preliminary-reads): 4
 - ReadItem: id=u2-preliminary-reads-3 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: dispatch.InLinkedWorktree walks the path lexically (no symbolic-link resolution); an installation reached through a link from outside its worktree serves itself."
 - ReadItem: id=u2-preliminary-reads-4 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: a mutation reader's scratch copy briefly held a copy of the repository's metasystem.conf.local (deleted unread); readers that copy the tree should exclude the local layer."
 - OpenedAt: 2026-10-03T21:24:10Z
-- Revision: 31
+- Revision: 32
 - Pinned: m1g
 - Budget: elapsedLimit=2d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=2 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -72,4 +72,5 @@ History:
 - 2026-10-04T21:11:52Z BFW272P4H50MTYFKGSWTW9RB3W-m1g-71c5cb39 claim actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-05T00:14:22Z 6K38KQFYREC4QX9RBMG3DRJ1MS-m1g-df39a949 set-budget actor=human:wido targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T21:11:52Z
 - 2026-10-05T00:48:08Z GAJMT9JG3JNG2RTJAP4HNA17D3-m1g-df39a949 accept-risk actor=human:wido targets=goal-worktree-dispatch-uses-the-primary reason=F-2 (Codex sandbox admission reads the worktree root settings) is fixed by unit u2e sandbox-from-serving on the same branch before the hand-in; u2 is not the tip, so the fix is a unit on top; Wido via m1e under grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1g-goal-worktree-dispatch-uses-the-primary/metasystem)
-Integrity: sha256=623798405dc397900128c267cc58c13699f9b05b25a53c673a6fde39bd233592
+- 2026-10-05T08:33:11Z MY6D8NE86YHENXFQW351N6KWV0-m1h-eeef9375 done actor=human:wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,conflicts-resolve-unattended,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,goal-worktree-dispatch-uses-the-primary,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,unit-rounds-converge-or-stop,units-are-sized-from-a-measured-inventory reason=priority-order from=1:2 to=1:1
+Integrity: sha256=25d608c9412089e1f8c895837fa5fc1f9fd69fcb5438e6d0df90f9d685668a90
