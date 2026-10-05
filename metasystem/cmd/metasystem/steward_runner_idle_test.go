@@ -56,7 +56,7 @@ func TestStewardRunPublicVerbSleepsAndLogsATick(t *testing.T) {
 		for j := range registered[i].verbs {
 			if registered[i].verbs[j].name == "run" {
 				registered[i].verbs[j].run = func(args []string, stdout, stderr io.Writer) int {
-					return runStewardRunWithDependencies(args, stdout, stderr, clock, func(string) int { return 1 })
+					return runStewardRunWithDependencies(args, stdout, stderr, clock, func(string) int { return 1 }, nil)
 				}
 			}
 		}

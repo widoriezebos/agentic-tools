@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -419,6 +420,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 			if owner.RetryHint != nil && len(owner.Fix) == 0 {
 				section.Text("to fix: " + *owner.RetryHint)
 			}
+		}
+		if line := steward.RearmDeferredLine(*view.Root); line != "" {
+			page.Section("Engine", "").Text(line)
 		}
 		if !page.Verbose() {
 			return

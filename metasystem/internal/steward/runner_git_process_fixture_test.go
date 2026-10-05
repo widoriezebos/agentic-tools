@@ -1,10 +1,12 @@
 package steward
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -40,6 +42,16 @@ type processGitConfig struct {
 
 func newProcessGitFixture(t *testing.T) string {
 	t.Helper()
+	root, environment := newProcessGitFixtureEnvironment(t)
+	for _, entry := range environment {
+		key, value, _ := strings.Cut(entry, "=")
+		t.Setenv(key, value)
+	}
+	return root
+}
+
+func newProcessGitFixtureEnvironment(t *testing.T) (string, []string) {
+	t.Helper()
 	rawRoot := t.TempDir()
 	root := canonicalPath(rawRoot)
 	logDir := os.Getenv("STEWARD_PROCESS_GIT_PROOF_DIR")
@@ -63,7 +75,6 @@ func newProcessGitFixture(t *testing.T) string {
 	if err := testexec.WriteFile(filepath.Join(denyDir, "git"), []byte(deny), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", denyDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +158,101 @@ func newProcessGitFixture(t *testing.T) string {
 	if err := testexec.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(processGitConfigEnv, configPath)
-	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Logf("Git fixture root raw=%q canonical=%q", rawRoot, root)
 	t.Cleanup(func() { checkProcessGitFixture(t, config, denied) })
-	return root
+	return root, []string{processGitConfigEnv + "=" + configPath,
+		"PATH=" + strings.Join([]string{shimDir, denyDir, os.Getenv("PATH")}, string(os.PathListSeparator))}
+}
+
+func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
+	t.Parallel()
+	root, environment := newProcessGitFixtureEnvironment(t)
+	bin, err := filepath.Abs("../../bin/metasystem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(filepath.Dir(bin)) == root {
+		t.Fatal("the enrolled binary must belong to a different installation")
+	}
+	for _, path := range []string{"go.mod", "cmd/devgate/main.go", "cmd/metasystem/main.go"} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("package main\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configPath := filepath.Join(root, "git-replies.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config processGitConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := []string{"-C", root, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	for _, reply := range []struct {
+		args   []string
+		output string
+	}{
+		{[]string{"config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref"}, "refs/remotes/origin/main\n"},
+		{[]string{"fetch", "--progress", "origin", "main"}, ""},
+		{[]string{"rev-parse", "--verify", "refs/remotes/origin/main^{commit}"}, processGitHead + "\n"},
+		{[]string{"rev-parse", "--verify", "HEAD^{commit}"}, processGitHead + "\n"},
+		{[]string{"merge-base", "--is-ancestor", processGitHead, processGitHead}, ""},
+		{[]string{"diff", "--name-only", "--no-renames", "--no-relative", "-z", "HEAD", "--"}, ""},
+		{[]string{"ls-files", "--others", "--exclude-standard", "--full-name", "-z"}, ""},
+		{[]string{"diff", "--name-only", "--no-renames", "--no-relative", "-z", processGitHead, processGitHead, "--"}, ""},
+	} {
+		config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: append(append([]string(nil), pins...), reply.args...), Stdout: []byte(reply.output)})
+	}
+	config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: []string{"-C", root, "config", "--get", "metasystem.steward.rearm-resolve-seconds"}, Exit: 1})
+	data, err = json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := installDigest(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{RepoIdentity: root, Generation: 1, InstallPath: bin,
+		InstallDigest: digest, EngineBuild: processGitHead, LandedCommit: processGitHead, MintedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := NoteDeferredRearm(root, processGitHead, "old", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	command := exec.Command(bin, "steward", "run", "--repo", root)
+	command.Env = append(os.Environ(), environment...)
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := stopRunnerLoop(root); err != nil {
+			t.Error(err)
+		}
+		if err := command.Wait(); err != nil {
+			t.Errorf("runner exit: %v\n%s", err, output.String())
+		}
+	})
+	testenv.Await(t, "the served checkout's fetch to clear its stale deferral", func() bool {
+		calls, err := os.ReadFile(config.Unexpected)
+		if err != nil || len(calls) != 0 {
+			t.Fatalf("boundary refresh made an undeclared Git call: %s %v", calls, err)
+		}
+		return RearmDeferredLine(root) == ""
+	})
 }
 
 func appendProcessGitEvent(path, line string) error {

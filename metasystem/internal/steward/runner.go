@@ -345,6 +345,15 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 			continue
 		}
+		if cfg.RearmAtBoundary != nil {
+			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
+				if logErr := NoteRearmFailure(top, refreshErr, deps.Now()); logErr != nil {
+					fmt.Fprintf(os.Stderr, "engine refresh log: %v\n", logErr)
+				}
+			} else if replaced {
+				return nil
+			}
+		}
 		// The landing lane's keeper wakes the lane's landing agent when the
 		// lane has work; at the helm, above, it does not run.
 		keeping.run()
@@ -647,12 +656,17 @@ func humanMintDecision(mintedBy, word, reviewBy, enrollment string) mintDecision
 
 // ReArmRebuiltEngine replaces an enrolled engine only when the build stamp
 // read from its changed bytes resolves to the installation's configured
-// remote-tracking history. Caller identity is deliberately irrelevant.
+// remote-tracking history and matches checkout HEAD. Caller identity is
+// deliberately irrelevant.
 func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
 	return reArmRebuiltEngineWithDeps(defaultRearmResolverDeps(), repoRoot, installationRoot, invokingBinary)
 }
 
-func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
+func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string, clocks ...func() time.Time) (ReArmOutcome, error) {
+	now := time.Now
+	if len(clocks) > 0 {
+		now = clocks[0]
+	}
 	decision := func(prior InstallIdentity, priorErr error, bytes enrolledBytes) (mintPlan, error) {
 		if priorErr != nil {
 			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, priorErr)
@@ -688,11 +702,17 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			}
 			return mintPlan{}, fmt.Errorf("resolve landed source at checkout HEAD: %w", err)
 		}
+		if sourceCommit != landedCommit {
+			return mintPlan{}, deferRearm(repoRoot, sourceCommit, landedCommit, now())
+		}
 		if err := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("verify enrollment build source: %w", err)
 			}
 			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
+		}
+		if err := ClearDeferredRearm(repoRoot); err != nil {
+			return mintPlan{}, err
 		}
 		witnessed, witnessedAt := prior.HumanWitnessedGeneration, prior.HumanWitnessedAt
 		if prior.MintedBy == "" {

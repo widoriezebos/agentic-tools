@@ -70,6 +70,9 @@ type TickConfig struct {
 	// it; nil keeps nothing. RunLoop calls it once per cycle outside the
 	// helm, and between cycles every laneRecheck while the lane waits.
 	KeepLandingLane func() lane.AgentRun
+	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
+	// A true result ends this runner so its replacement can take the lock.
+	RearmAtBoundary func() (bool, error)
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// Stopping reports that the resident runner received a stop signal:
