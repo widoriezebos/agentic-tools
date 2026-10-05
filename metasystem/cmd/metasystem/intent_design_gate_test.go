@@ -12,9 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func newDesignGateBed(t *testing.T, tier uint8) *workBed {
@@ -63,6 +66,45 @@ func designGateRead(t *testing.T, bed *workBed, identity, unit string) ([]byte, 
 	return data, record
 }
 
+func TestDesignGateIdentityFallbackUsesStateOwner(t *testing.T) {
+	t.Parallel()
+	bed := newDesignGateBed(t, 2)
+	root, err := filepath.EvalSymlinks(bed.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bed.facts.root = root
+	bed.config = func(key, path string) (string, string, int, error) {
+		value, code, err := config.Get(config.GetParams{Key: key, ConfPath: path, LookupEnv: func(string) (string, bool) { return "", false }})
+		return value, "fixture", code, err
+	}
+	endpoint := goal.Endpoint{Root: bed.root(), Repository: bed.repo}
+	want := goal.ExistingLedgerIdentityAtEndpoint(endpoint)
+	if want == "" {
+		t.Fatal("the fixture has no ledger identity")
+	}
+	bed.designGate.identity = nil
+	designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)")
+	designGateBuild(t, bed, "u")
+	_, record := designGateRead(t, bed, want, "u")
+	if record.LedgerIdentity != want || record.Verdict != "ok" {
+		t.Fatalf("public build identity record = %+v", record)
+	}
+	delete(bed.repo.commit(bed.repo.accepted).files, "plans/goals/backlog.md")
+	installation := stateroottest.Installation(t, filepath.Join(bed.root(), "vendor", "metasystem"))
+	owners := bed.workOwners()
+	owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		if root != installation.Path() {
+			t.Fatalf("identity endpoint root = %q; want installation %q", root, installation.Path())
+		}
+		return endpoint, nil
+	}
+	inv := intentInvocation{owners: owners}
+	if got, err := inv.designGate().identity(installation); err != nil || got != want {
+		t.Fatalf("state ledger identity = %q, %v; want %q", got, err, want)
+	}
+}
+
 func TestDesignGateRecordAnchorsFirstWriteAtStore(t *testing.T) {
 	t.Parallel()
 	bed := newDesignGateBed(t, 2)
@@ -71,7 +113,7 @@ func TestDesignGateRecordAnchorsFirstWriteAtStore(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("the unit store is not empty: entries=%v err=%v", entries, err)
 	}
-	identity, _ := bed.designGate.identity(bed.stateRoot())
+	identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 	wantPath := filepath.Join(bed.unitRoot, ".design-gate", identity, bed.id, "u.json")
 	write := (&intentInvocation{}).designGate().record
 	writes := 0
@@ -103,7 +145,7 @@ func TestDesignGateWarnsAndStillBuilds(t *testing.T) {
 	if output != want {
 		t.Fatalf("warning pair: got %q want %q", output, want)
 	}
-	identity, _ := bed.designGate.identity(bed.stateRoot())
+	identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 	before, record := designGateRead(t, bed, identity, "u")
 	if record.Schema != 1 || record.LedgerIdentity != identity || record.Goal != bed.id || record.Unit != "u" || record.Worktree != bed.worktree || record.Tier != 2 || record.Mode != "warn" || record.Verdict != "no-accepted-design" || !record.WouldRefuse || record.Time.IsZero() {
 		t.Fatalf("dispatch record: %+v", record)
@@ -176,7 +218,7 @@ func TestDesignGateStandingEvidence(t *testing.T) {
 				page, data = designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)\n")
 			}
 			result, output := designGateBuild(t, bed, "u")
-			identity, _ := bed.designGate.identity(bed.stateRoot())
+			identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 			_, record := designGateRead(t, bed, identity, "u")
 			want := "ok"
 			if tier == 1 {
@@ -215,9 +257,9 @@ func TestDesignGateNeverStallsWhenItBreaks(t *testing.T) {
 				bed.designGate.chains = func(string, string, string) ([]designgate.Chain, error) { return nil, problem }
 				want = "warning: the design check could not run (fixture failure); this build was not checked\nmetasystem design list --goal " + bed.id + "\n"
 			case "identity":
-				bed.designGate.identity = func(string) (string, error) { return "", problem }
+				bed.designGate.identity = func(stateroot.Installation) (string, error) { return "", problem }
 			case "invalid identity":
-				bed.designGate.identity = func(string) (string, error) { return "../../escape", nil }
+				bed.designGate.identity = func(stateroot.Installation) (string, error) { return "../../escape", nil }
 				want = "warning: the design check's record could not be written (the goal ledger identity is not 26 Crockford base32 characters); the build goes on\nnothing to do: the landing check runs without it\n"
 			case "record":
 				bed.designGate.record = func(string, string, string) (bool, error) { return false, problem }
@@ -229,7 +271,7 @@ func TestDesignGateNeverStallsWhenItBreaks(t *testing.T) {
 				t.Fatalf("failure pair absent: %q", output)
 			}
 			if failure == "chain" {
-				identity, _ := bed.designGate.identity(bed.stateRoot())
+				identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 				_, record := designGateRead(t, bed, identity, "u")
 				if record.Verdict != "unchecked" || record.WouldRefuse || resultData(t, result)["designGate"].(map[string]any)["verdict"] != "unchecked" {
 					t.Fatalf("broken check: %+v", record)
@@ -267,7 +309,7 @@ func TestDesignGateMalformedJobStillBuilds(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "warning: the design check could not run (") || !strings.Contains(lines[0], path) || !strings.HasSuffix(lines[0], "); this build was not checked") || lines[1] != "metasystem design list --goal "+bed.id {
 		t.Fatalf("broken job warning pair: %q", output)
 	}
-	identity, _ := bed.designGate.identity(bed.stateRoot())
+	identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 	_, record := designGateRead(t, bed, identity, "u")
 	gate := resultData(t, result)["designGate"].(map[string]any)
 	if record.Verdict != "unchecked" || record.WouldRefuse || record.Mode != "warn" || gate["verdict"] != "unchecked" || gate["wouldRefuse"] != false || gate["mode"] != "warn" {
@@ -287,7 +329,7 @@ func TestDesignGateRecordsStayApartByProject(t *testing.T) {
 	for _, identity := range []string{identities[0], identities[1], identities[0]} {
 		bed := newDesignGateBed(t, 2)
 		bed.unitRoot = store
-		bed.designGate.identity = func(string) (string, error) { return identity, nil }
+		bed.designGate.identity = func(stateroot.Installation) (string, error) { return identity, nil }
 		designGateBuild(t, bed, "main")
 		beds = append(beds, bed)
 		for index, id := range identities[:min(len(beds), 2)] {
@@ -313,7 +355,7 @@ func TestDesignGateRecordRejectsUnsafePathSegments(t *testing.T) {
 				facts, unit := designgate.Facts{Goal: bed.id}, "u"
 				switch part {
 				case "goal ledger identity":
-					bed.designGate.identity = func(string) (string, error) { return value, nil }
+					bed.designGate.identity = func(stateroot.Installation) (string, error) { return value, nil }
 				case "goal id":
 					facts.Goal = value
 				case "work name":
