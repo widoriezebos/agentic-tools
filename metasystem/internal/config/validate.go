@@ -95,8 +95,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 
 	// The .local override contributes capability floors here. Budget settings
-	// are checked with the other numeric knobs below; other keys are the
-	// developer's own and not template invariants.
+	// are checked with the other numeric knobs below. Every local key must
+	// be declared by the settings registry.
 	localPath := confPath + ".local"
 	if isFile(localPath) {
 		localContent, localErr := os.ReadFile(localPath)
@@ -104,6 +104,15 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			add("cannot read metasystem local configuration: %s: %v", localPath, localErr)
 		}
 		localSeen := map[string]bool{}
+		parseSettings(string(localContent), func(_ int, key, _ string, ok bool) {
+			if ok && !localSeen[key] {
+				if problem := SettingKeyProblem(key); problem != nil {
+					add("%s: %v", localPath, problem)
+				}
+				localSeen[key] = true
+			}
+		})
+		localSeen = map[string]bool{}
 		for number, raw := range strings.Split(string(localContent), "\n") {
 			lineNo := number + 1
 			line := strings.TrimSpace(raw)

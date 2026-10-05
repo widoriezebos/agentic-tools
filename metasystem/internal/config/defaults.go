@@ -1,6 +1,9 @@
 package config
 
 import (
+	"cmp"
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -438,6 +441,53 @@ func compiledSetting(key string) (Setting, bool) {
 		return Setting{}, false
 	}
 	return compiledSettings[position], true
+}
+
+//go:generate go test -count=1 -timeout 30m -run ^TestEveryReadSettingIsDeclared$ -update-read-settings
+
+// SettingKeyProblem refuses undeclared keys and names three declared keys,
+// ranked by longest common prefix, then alphabetically for stable ties.
+func SettingKeyProblem(key string) error {
+	keys := append([]string(nil), readSettingKeys...)
+	for _, setting := range compiledSettings {
+		keys = append(keys, setting.Key)
+	}
+	for _, setting := range diskSettings {
+		if _, compiled := compiledSetting(setting.Key); !compiled {
+			keys = append(keys, setting.Key)
+		}
+	}
+	role := roleComponentKey.FindStringSubmatch(key)
+	if scoped := modeComponentKey.FindStringSubmatch(key); scoped != nil {
+		role = scoped[1:]
+	}
+	family := false
+	for _, pattern := range readSettingFamilies {
+		family = family || pattern.MatchString(key)
+	}
+	_, priceProblem := parseSpendPriceKey(key)
+	if role != nil {
+		family = family && (role[1] == "default" || roleRows[role[1]] != "")
+	}
+	if slices.Contains(keys, key) || family || priceProblem == nil || (role != nil && (role[1] == "default" || roleRows[role[1]] != "")) || tierKeyPattern.MatchString(key) || maximalModelsKey.MatchString(key) || modelAliasKey.MatchString(key) {
+		return nil
+	}
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+	prefix := func(candidate string) int {
+		i := 0
+		for i < len(key) && i < len(candidate) && key[i] == candidate[i] {
+			i++
+		}
+		return i
+	}
+	slices.SortFunc(keys, func(a, b string) int {
+		if order := cmp.Compare(prefix(b), prefix(a)); order != 0 {
+			return order
+		}
+		return strings.Compare(a, b)
+	})
+	return fmt.Errorf("%s is not a setting; nearest: %s", key, strings.Join(keys[:3], ", "))
 }
 
 // CompiledDefault returns key's static compiled default without judging its
