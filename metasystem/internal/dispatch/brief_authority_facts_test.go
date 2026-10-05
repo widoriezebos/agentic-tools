@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -109,6 +110,68 @@ func (f *fakeBriefTreeFacts) Directories(root, treeish string) (map[string]bool,
 		}
 	}
 	return result, nil
+}
+
+func TestBriefAuthorityAdmitsARuntimePathOfTheServingInstallation(t *testing.T) {
+	t.Parallel()
+	for _, prefix := range []string{"metasystem", "tools/engine"} {
+		t.Run(prefix, func(t *testing.T) {
+			t.Parallel()
+			repo := newBriefAuthorityRepo(t)
+			repo.facts.prefix = prefix
+			repo.facts.commitPaths(prefix + "/plans/.keep")
+			primary := t.TempDir()
+			_, serving, _ := ResolveTool(repo.root, func(root string) (string, string) {
+				if root != repo.root {
+					t.Fatalf("serving root = %q, want %q", root, repo.root)
+				}
+				return filepath.Join(primary, prefix), primary
+			}, func(string) (string, bool) { return "", false })
+			git := func(root string, args ...string) (string, error) {
+				switch args[0] {
+				case "rev-parse":
+					if args[1] == "--show-prefix" {
+						return prefix + "/", nil
+					}
+					return repo.facts.BaseCommit(root)
+				case "ls-tree":
+					if strings.Contains(args[len(args)-1], ":") {
+						return "plans", nil
+					}
+					return "plans\n" + strings.Split(prefix, "/")[0], nil
+				case "check-ignore":
+					if strings.HasSuffix(args[len(args)-1], "plans/goals/g.md") {
+						return "", nil
+					}
+				}
+				return "", fmt.Errorf("unsupported Git facts: %v", args)
+			}
+			for _, cited := range []string{"artifacts/agents/handoff/state.json", prefix + "/artifacts/agents/handoff/state.json", "plans/goals/g.md"} {
+				state := filepath.Join(primary, filepath.FromSlash(cited))
+				writeSeatFile(t, state, "{}\n")
+				brief := writeBriefAuthorityFile(t, repo.root, "continuation.md", "Working Mode: build\nRead `"+cited+"` first.\n")
+				admit := func() error {
+					_, err := ReadReviewBriefAdmissionWithServingCheckout(brief, repo.root, repo.root, repo.root, "", serving, git)
+					return err
+				}
+				if err := admit(); err != nil {
+					t.Fatalf("the serving installation's runtime state was refused: %v", err)
+				}
+				if err := os.Remove(state); err != nil {
+					t.Fatal(err)
+				}
+				var refusal *BriefAuthorityRefusal
+				if err := admit(); !errors.As(err, &refusal) {
+					t.Fatalf("missing runtime state must refuse: %v", err)
+				}
+				for _, detail := range []string{cited, "runtime path", repo.root, primary} {
+					if !strings.Contains(refusal.Error(), detail) {
+						t.Errorf("runtime refusal omits %q: %v", detail, refusal)
+					}
+				}
+			}
+		})
+	}
 }
 
 func (f *fakeBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {

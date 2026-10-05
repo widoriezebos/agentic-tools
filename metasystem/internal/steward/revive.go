@@ -25,6 +25,9 @@ import (
 // dispatcher; fixtures supply an observable fake.
 type LaunchSeam func(Intent) error
 
+// AdmitSeam checks the continuation's inputs before its authorization is spent.
+type AdmitSeam func(Intent) error
+
 // SeatIdleClaimSeam performs the claim deferred by a bounded Stop verdict.
 // It runs in the steward critical section, never in the Stop hook child.
 type SeatIdleClaimSeam func(Intent) error
@@ -93,13 +96,13 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // CompleteRevival runs the critical section for a live intent. The intent
 // survives a crash until it launches or cancels, without waking the operator
 // merely to announce work that the machinery can do itself.
-func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
-	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, openWorkDependencies{
+func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
+	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, admit, openWorkDependencies{
 		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork, HandoffProber: identity.KernelProber{},
 	}, claimOption...)
 }
 
-func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, dependencies openWorkDependencies, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
+func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, dependencies openWorkDependencies, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	// The critical section: fence, verdict, consume, launch, stamp.
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
@@ -194,6 +197,11 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 		}
 	}
 	if it.Reason == seatHandoffReason {
+		if admit != nil {
+			if err := admit(*it); err != nil {
+				return holdHandoff(repoRoot, *it, fmt.Sprintf("handoff %s held: %s", it.Nonce, err))
+			}
+		}
 		if err := clearPendingNotification(repoRoot, handoffNoticeNonce(it.Nonce)); err != nil {
 			return ReviveOutcome{}, fmt.Errorf("handoff %s launch refused because its hold notice could not be cleared: %w", it.Nonce, err)
 		}

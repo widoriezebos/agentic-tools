@@ -610,7 +610,8 @@ func isReviewRole(role string) bool {
 // briefAuthority checks citations against the reviewed commit and the
 // dispatcher's HEAD. The admission reader owns the frozen section's exemption.
 func (s *session) briefAuthority(brief, baseTree, role, reviews string) error {
-	_, err := dispatch.ReadReviewBriefAdmission(brief, s.root, baseTree, s.repoScope, reviews, func(root string, args ...string) (string, error) {
+	_, serving := s.supervisedInstallation()
+	_, err := dispatch.ReadReviewBriefAdmissionWithServingCheckout(brief, s.root, baseTree, s.repoScope, reviews, serving, func(root string, args ...string) (string, error) {
 		bound := boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local)
 		ctx, cancel := context.WithTimeout(s.ctx, bound.Limit)
 		defer cancel()
