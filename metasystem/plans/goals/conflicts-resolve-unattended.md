@@ -27,7 +27,7 @@ Open read items (fix unit seat-verify-3b-i): 2
 - ReadItem: id=seat-verify-3b-i-1 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="work rebase prints 'review: metasystem work review G --work U' under each carried unit, which reads as if a carried unit still needs a review; only units in needsReview should print a review command"
 - ReadItem: id=seat-verify-3b-i-2 read=seat-verify-3b-i state=open addedAt=2026-10-04T15:58:10Z changedAt=- closingReference="" text="each rebase replays the earlier Read commits as they are, so a goal rebased N times carries N stale Read commits per unit (seen live: one per rebase); harmless to the range rules, but the branch grows"
 - OpenedAt: 2026-10-03T07:50:15Z
-- Revision: 69
+- Revision: 70
 - Pinned: m1h
 - Budget: elapsedLimit=5d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=20
 - BudgetExceptions: 4
@@ -35,6 +35,7 @@ Open read items (fix unit seat-verify-3b-i): 2
 - Sliced: machine=m1h lineage=steward-seat revision=48 at=2026-10-03T21:06:09Z
 - AcceptedRisk: finding=F-2-RENAME-BREAKS-GENERATED-RESOLUTION chain=code-critic-21ce0a13a271d22f09228249 by=wido opid=43EB571DTNCDEXGKCEFMQ6RG85-m1h-eeef9375
 - AcceptedRisk: finding=F-1-ACCEPTED-RENAME-RISK-PREMISE-NO-LONGER-HOLDS chain=code-critic-3d7f3210a7bfc786d5b5f2d7 by=wido opid=BP0ZXZREJQ6NHKPBJ0HGG21B0J-m1h-eeef9375
+- AcceptedRisk: finding=F-1-ANSWER-KEYED-BY-CHECKOUT chain=code-critic-dcf742557dda69f9acefcac2 by=wido opid=GCY4WKHBERBKVND0PP14W06GR9-m1h-eeef9375
 - Claimed: machine=m1h lineage=steward-seat at=2026-10-05T01:02:13Z revision=67 accountingRevision=67 episodeAt=2026-10-04T21:12:08Z episodeRevision=66
 - StopCapability: generation=67 revision=67 machine=m1h claimEpoch=1 fenceEpoch=0
 
@@ -108,4 +109,5 @@ History:
 - 2026-10-05T01:02:13Z ENT2KKSBN5D2R7FJ4TAKW057JS-m1h-eeef9375 set-budget actor=human:wido targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T21:12:08Z
 - 2026-10-05T01:44:18Z 43EB571DTNCDEXGKCEFMQ6RG85-m1h-eeef9375 accept-risk actor=human:wido targets=conflicts-resolve-unattended reason=a generated-only rebase stop whose unit also renames a file aborts because the source-unchanged diff runs without --no-renames; fixed in unit resolve-round (4b) on this branch, which owns rebase_conflict.go and adds --no-renames with a real-Git rename test; rebase-conflicts is not the tip; Wido via m1e under grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h-conflicts-resolve-unattended/metasystem)
 - 2026-10-05T03:48:21Z BP0ZXZREJQ6NHKPBJ0HGG21B0J-m1h-eeef9375 accept-risk actor=human:wido targets=conflicts-resolve-unattended reason=a generated-only rebase stop whose unit also renames a file to a name of another length aborts with a message naming no path and no next command; no data changes. Unit resolve-round (4b), the next unit on this branch, owns rebase_conflict.go and adds --no-renames with a real-Git rename test (its brief carries this decision); it builds right after this hand-in. Wido via m1e under grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h-conflicts-resolve-unattended/metasystem)
-Integrity: sha256=4b72ad9a082a0434376ef13b522984f898383e00e796f72d6759912c30ec190a
+- 2026-10-05T07:24:03Z GCY4WKHBERBKVND0PP14W06GR9-m1h-eeef9375 accept-risk actor=human:wido targets=conflicts-resolve-unattended reason=Accepted as a defect; corrected by unit resolve-answer on this branch (the answer lives in conflict.json, a missing question asks again). The goal integrates only with that unit read-clean. Wido via m1e. (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1h-conflicts-resolve-unattended/metasystem)
+Integrity: sha256=8c8985b61b374628eb66af98a00e78cd8bd9c5664ca50a27422cdf19bd25d1bf
