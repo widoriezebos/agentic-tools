@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
 
@@ -61,6 +62,20 @@ func designGateRead(t *testing.T, bed *workBed, identity, unit string) ([]byte, 
 		t.Fatal(err)
 	}
 	return data, record
+}
+
+func designGateLaunchInputs(t *testing.T, result intentResult) []string {
+	t.Helper()
+	data := resultData(t, result)
+	plan, err := launch.ReadUnitPlan(data["plan"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{filepath.Join(data["inputs"].(string), "request.json"), plan.Path, plan.Build.Brief}
+	if plan.HasRead() {
+		paths = append(paths, plan.Read.Brief)
+	}
+	return paths
 }
 
 func TestDesignGateRecordAnchorsFirstWriteAtStore(t *testing.T) {
@@ -240,10 +255,9 @@ func TestDesignGateNeverStallsWhenItBreaks(t *testing.T) {
 					t.Fatalf("a failed record writer left gate records: %v", err)
 				}
 			}
-			inputs := resultData(t, result)["inputs"].(string)
-			for _, name := range []string{"request.json", "plan.json", "build-brief.md", "read-brief.md"} {
-				if _, err := os.Stat(filepath.Join(inputs, name)); err != nil {
-					t.Fatalf("gate failure damaged launch inputs: %s: %v", name, err)
+			for _, path := range designGateLaunchInputs(t, result) {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("gate failure damaged launch inputs: %s: %v", path, err)
 				}
 			}
 		})
