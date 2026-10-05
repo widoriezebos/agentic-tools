@@ -168,6 +168,48 @@ func newWorkBed(t *testing.T) *workBed {
 	return newWorkBedWith(t, workApprovedBox)
 }
 
+func TestReadBriefAsksForTheRule(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("rule.md", "Read each round: yes\nBuild the rule.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "rule", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: %+v", built)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := os.ReadFile(plan.Read.Brief)
+	if err != nil || !strings.Contains(string(read), "A finding that is one instance of a rule names every sibling place; the fix is the rule.") {
+		t.Fatalf("brief: %s %v", read, err)
+	}
+}
+
+func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("revise.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "decisions", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: %+v", built)
+	}
+	run := resultData(t, built)["run"].(string)
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := bed.brief("return.json", `{"findings":[{"id":"F-1","material":true}]}`)
+	record.Subjects = []launch.UnitSubject{{Round: 1, Examination: "critic", ExaminationReturnPath: filepath.Join(bed.root(), report)}}
+	writeQuestionFixture(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+	launched := len(bed.starter.launched())
+	code, refused, _ := bed.work("work", "revise", bed.id, "--work", "decisions", "--brief", brief)
+	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding F-1 of round 1 has no decision; nothing was started" ||
+		!strings.Contains(resultWords(refused), "UNIT_REVISE_UNDECIDED") || refused.Next == nil || !slices.Contains(refused.Next.Argv, "1") || !strings.Contains(refused.Next.Reason, "Decisions on round") || len(bed.starter.launched()) != launched {
+		t.Fatalf("revise: %+v", refused)
+	}
+}
+
 // newWorkBedWith is the work bed with its goal record shaped by amend.
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()

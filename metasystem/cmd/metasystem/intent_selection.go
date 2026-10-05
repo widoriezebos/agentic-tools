@@ -739,6 +739,9 @@ func runIntentRevise(inv *intentInvocation) int {
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_REVISE_UNDECIDED"):
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain, Details: details,
+				next: again, nextReason: "add each material finding's fixed, refuted or follow-up row under Decisions on round N in the brief"})
 		case errors.Is(err, launch.ErrUnitRevisionStale):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Details: details,
 				Summary:    "the correction follows an attempt that is no longer the newest; nothing was launched",

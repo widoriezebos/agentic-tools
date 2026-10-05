@@ -285,7 +285,7 @@ func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, t
 // supplied prose declares none (docs/working-modes.md: implement is the default).
 const branchReadDefaultMode = "Working Mode: implement"
 
-func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte) (string, error) {
+func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied, packet []byte) (string, error) {
 	commits, err := repository.Range(repo, endpoint, commit, goal)
 	if err != nil {
 		return "", err
@@ -296,6 +296,7 @@ func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoi
 		"Review against the goal's accepted requirements and the unit's actual behavior. " +
 		"Report correctness, safety, contract, test, and compatibility defects that should refuse this commit. " +
 		"Close the finding register cleanly only when no refusal-worthy defect remains.\n"
+	brief += string(packet)
 	for _, fold := range commits {
 		if fold.Kind != Plan {
 			continue
@@ -739,7 +740,14 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		effectiveRuntime, effectiveModel = record.Runtime, record.Model
 	} else {
-		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied)
+		var packet []byte
+		if request.Join && filepath.Base(request.BriefPath) == "follow-up.md" {
+			packet, err = os.ReadFile(filepath.Join(filepath.Dir(request.BriefPath), "read-context.md"))
+			if err != nil && !os.IsNotExist(err) {
+				return result, err
+			}
+		}
+		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied, packet)
 		if err != nil {
 			return result, err
 		}

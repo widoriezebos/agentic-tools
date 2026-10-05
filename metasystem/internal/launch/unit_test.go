@@ -171,6 +171,21 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+		case "warm":
+			verify := isolatedGitEnvironment(fixture.worktree, objects, false)
+			check := func(call testgit.Call) error {
+				if call.Args[0] == "read-tree" {
+					if err := os.WriteFile(strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE="), []byte("index"), 0o600); err != nil {
+						return err
+					}
+				}
+				return verify(call)
+			}
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			add(fixture.worktree, "", check, "read-tree", "base")
+			add(fixture.worktree, "previous-tree\n", check, "write-tree")
+			add(fixture.worktree, "", check, "read-tree", "base")
+			add(fixture.worktree, "+fixed line\n", check, "diff", "--cached", "--binary", "previous-tree", "--", ".")
 		default:
 			t.Fatalf("unknown Git fixture event %q", event)
 		}
@@ -702,7 +717,8 @@ func TestResumedSplitReadsWaitForTheRunningRead(t *testing.T) {
 }
 
 func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
-	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round", "warm")
 	output := filepath.Join(t.TempDir(), "read.out")
 	os.WriteFile(output, []byte("done"), 0o600)
 	fixture.starter.readOutput = output

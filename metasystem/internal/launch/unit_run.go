@@ -447,6 +447,22 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		return runner.finish(record, round, "proof-red")
 	}
+	packet, err := runner.warmRead(*record, *round)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if packet != "" && plan.HasRead() {
+		brief, err := os.ReadFile(plan.Read.Brief)
+		if err != nil {
+			return UnitResult{}, err
+		}
+		brief = []byte(strings.Replace(string(brief), "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1))
+		path := filepath.Join(round.Directory, "read-brief.md")
+		if _, err := atomicfile.WriteText(path, string(brief)+packet, runner.root()); err != nil {
+			return UnitResult{}, err
+		}
+		sequence.spec.Brief = path
+	}
 	if !plan.HasRead() {
 		return runner.finish(record, round, "green")
 	}

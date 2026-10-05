@@ -1,13 +1,18 @@
 package launch
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // UnitRevision is one retained correction request of a run: the attempt it
@@ -157,6 +162,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if err := runner.roundDivergent(record); err != nil {
 			return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
 		}
+		if err := runner.reviseDecided(record, record.Rounds[after-1], request.Brief); err != nil {
+			return UnitRevisionResult{Current: current, Revision: UnitRevision{After: after}}, err
+		}
 		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
 			RequestedAtUnixSec: runner.Manager.Now().Unix()}
 		directory := filepath.Join(runner.runDir(record.ID), "revisions")
@@ -231,4 +239,184 @@ func (runner *UnitRunner) continueRunning(record *UnitRunRecord, plan UnitPlan) 
 	}
 	deadline := runner.Manager.Now().Add(time.Duration(settings.WaitCapSeconds) * time.Second)
 	return runner.advanceRunning(record, plan, deadline)
+}
+
+func decisionsSection(brief []byte, round int) string {
+	lines := strings.Split(string(brief), "\n")
+	for start, line := range lines {
+		if strings.TrimSpace(line) != fmt.Sprintf("## Decisions on round %d", round) {
+			continue
+		}
+		end := start + 1
+		for end < len(lines) && !strings.HasPrefix(lines[end], "## ") && !strings.HasPrefix(lines[end], "# ") {
+			end++
+		}
+		return strings.Join(lines[start:end], "\n")
+	}
+	return ""
+}
+
+var fixedLocation = regexp.MustCompile(`\S+:[0-9]+(?:-[0-9]+)?`)
+
+func (runner *UnitRunner) readFindings(record UnitRunRecord, round UnitRound) (string, []string, error) {
+	for _, subject := range record.Subjects {
+		if subject.Round == round.Number && subject.ExaminationReturnPath != "" {
+			data, err := os.ReadFile(subject.ExaminationReturnPath)
+			if err != nil {
+				return "", nil, err
+			}
+			var result struct {
+				Findings []struct {
+					ID       string
+					Material bool
+				}
+			}
+			if err := json.Unmarshal(data, &result); err != nil {
+				return "", nil, err
+			}
+			var ids []string
+			for index, finding := range result.Findings {
+				if finding.Material {
+					id := choose(finding.ID, strconv.Itoa(index+1))
+					ids = append(ids, id)
+				}
+			}
+			return string(data), ids, nil
+		}
+	}
+	var text string
+	var ids []string
+	for _, step := range round.Steps {
+		if !strings.HasPrefix(step.Name, "read") || !unitStepVerdictCounts(step) || step.LaunchID == "" {
+			continue
+		}
+		launch, err := runner.Manager.Store.Read(step.LaunchID)
+		if err != nil {
+			return "", nil, err
+		}
+		count := measuredMaterialCount(launch)
+		for _, output := range launch.Outputs {
+			data, err := os.ReadFile(output.Path)
+			if err != nil {
+				return "", nil, err
+			}
+			text += string(data)
+		}
+		if count != nil {
+			for number := 1; number <= *count; number++ {
+				ids = append(ids, strconv.Itoa(number))
+			}
+		}
+	}
+	return text, ids, nil
+}
+
+func (runner *UnitRunner) reviseDecided(record UnitRunRecord, round UnitRound, brief []byte) error {
+	_, findings, err := runner.readFindings(record, round)
+	if err != nil {
+		return err
+	}
+	decided := map[string]int{}
+	for _, row := range strings.Split(decisionsSection(brief, round.Number), "\n") {
+		cells := strings.Split(strings.Trim(row, " |\t"), "|")
+		if len(cells) < 3 {
+			continue
+		}
+		id, decision, evidence := strings.Trim(cells[0], " `\t"), strings.TrimSpace(cells[1]), strings.TrimSpace(strings.Join(cells[2:], "|"))
+		if decision == "fixed" && fixedLocation.MatchString(evidence) || (decision == "refuted" || decision == "follow-up") && evidence != "" {
+			decided[id]++
+		}
+	}
+	for _, finding := range findings {
+		if decided[finding] != 1 {
+			return coded("UNIT_REVISE_UNDECIDED", fmt.Sprintf("run=%s round=%d finding=%s", record.ID, round.Number, finding),
+				fmt.Errorf("finding %s of round %d has no decision; nothing was started", finding, round.Number))
+		}
+	}
+	return nil
+}
+
+// warmRead retains the evidence a reader needs before checking corrections.
+// With no readable predecessor it creates nothing and keeps the cold brief.
+func (runner *UnitRunner) warmRead(record UnitRunRecord, round UnitRound) (string, error) {
+	path := filepath.Join(round.Directory, "read-context.md")
+	if data, err := os.ReadFile(path); !os.IsNotExist(err) {
+		return string(data), err
+	}
+	for index := round.Number - 2; index >= 0; index-- {
+		previous := record.Rounds[index]
+		findings, _, err := runner.readFindings(record, previous)
+		if err != nil {
+			return "", err
+		}
+		if findings == "" {
+			continue
+		}
+		var decisions string
+		for _, correction := range record.Rounds[index+1 : round.Number] {
+			brief, err := os.ReadFile(correction.FollowUp)
+			if err != nil {
+				return "", err
+			}
+			decisions += decisionsSection(brief, previous.Number)
+		}
+		diff, err := runner.diffSince(record, previous, round)
+		if err != nil {
+			return "", err
+		}
+		var proof []UnitStep
+		for _, step := range round.Steps {
+			if strings.HasPrefix(step.Name, "proof:") {
+				proof = append(proof, step)
+			}
+		}
+		result, _ := json.MarshalIndent(proof, "", "  ")
+		packet := fmt.Sprintf("\n## Follow-up read of round %d\n\nCheck every fold first, citing the line that proves it; a fold that does not hold is the first finding. Never re-raise a refuted finding without new evidence. Seek new defects in the changed lines only. Label each finding's relation: `new`, `fold-not-holding`, or `same-rule-as N`.\n\n### Previous findings (verbatim)\n\n%s\n\n%s\n\n### Diff since round %d's tree\n\n```diff\n%s\n```\n\n### Proof result of round %d\n\n```json\n%s\n```\n", previous.Number, findings, decisions, previous.Number, diff, round.Number, result)
+		_, err = atomicfile.WriteText(path, packet, runner.root())
+		return packet, err
+	}
+	return "", nil
+}
+
+func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current UnitRound) ([]byte, error) {
+	directory, done, err := diskstore.ScratchDir("metasystem-unit-fold.")
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	git := runner.Git
+	if git == nil {
+		git = OSGitRunner{}
+	}
+	objects, err := git.Run(record.Worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(filepath.Join(directory, "objects"), 0o700); err != nil {
+		return nil, err
+	}
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(directory, "index"), "GIT_OBJECT_DIRECTORY=" + filepath.Join(directory, "objects"), "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strings.TrimSpace(string(objects))}
+	var tree []byte
+	for _, round := range []UnitRound{previous, current} {
+		if _, err := git.Run(record.Worktree, env, "read-tree", record.Base); err != nil {
+			return nil, err
+		}
+		path := filepath.Join(round.Directory, "worktree.diff")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > 0 {
+			if _, err := git.Run(record.Worktree, env, "apply", "--cached", "--binary", path); err != nil {
+				return nil, err
+			}
+		}
+		if round.Number == previous.Number {
+			tree, err = git.Run(record.Worktree, env, "write-tree")
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return git.Run(record.Worktree, env, "diff", "--cached", "--binary", strings.TrimSpace(string(tree)), "--", ".")
 }

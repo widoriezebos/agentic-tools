@@ -45,6 +45,10 @@ func (m *Manager) CheckPack(spec StartSpec) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Historical findings can cite code a correction removed.
+	if packet, err := os.ReadFile(filepath.Join(filepath.Dir(spec.Brief), "read-context.md")); spec.Kind == "read" && err == nil && len(packet) > 0 && bytes.HasSuffix(brief, packet) {
+		brief = brief[:len(brief)-len(packet)]
+	}
 	if kept := keptPlaceholders(template, brief); len(kept) > 0 {
 		var lines []string
 		for _, item := range kept {
