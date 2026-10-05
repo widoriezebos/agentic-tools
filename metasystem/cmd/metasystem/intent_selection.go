@@ -730,6 +730,9 @@ func runIntentRevise(inv *intentInvocation) int {
 			return inv.render(*problem)
 		}
 	}
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
+	}
 	runner := inv.unitRunner()
 	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions})
 	again := inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))

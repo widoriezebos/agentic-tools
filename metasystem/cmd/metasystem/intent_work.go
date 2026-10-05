@@ -35,6 +35,7 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -66,11 +67,12 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	designGate designGateOwners
-	adapter    func(string) (adapter.Adapter, error)
-	units      func(layout stateroot.Layout) *launch.UnitRunner
-	git        func(dir string, args ...string) ([]byte, error)
-	wait       func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
+	engineStamp string
+	designGate  designGateOwners
+	adapter     func(string) (adapter.Adapter, error)
+	units       func(layout stateroot.Layout) *launch.UnitRunner
+	git         func(dir string, args ...string) ([]byte, error)
+	wait        func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -470,6 +472,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ 
 // build
 
 func runIntentBuild(inv *intentInvocation) int {
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
+	}
 	if inv.input.has("plan") {
 		return runIntentBuildPlan(inv)
 	}
@@ -503,6 +508,48 @@ func runIntentBuild(inv *intentInvocation) int {
 		}
 	}
 	return runIntentBuildUnit(inv)
+}
+
+// buildEngineAdmission refuses to start work when main changed machinery
+// after this engine was built. Without source or a comparable stamp, or
+// when Git cannot establish the changes, admission stays open.
+func (inv *intentInvocation) buildEngineAdmission() *intentResult {
+	stamp := inv.work().engineStamp
+	if stamp == "" {
+		stamp = supervise.BuildStamp
+	}
+	if stamp == "dev" || strings.HasPrefix(stamp, "dev-") || strings.HasPrefix(stamp, "witness-") {
+		return nil
+	}
+	if inv.resolveLayout() != nil {
+		return nil
+	}
+	root := inv.layout.InstallationRoot.Path()
+	if source, err := os.Stat(filepath.Join(root, "cmd", "metasystem")); err != nil || !source.IsDir() {
+		return nil
+	}
+	git := inv.work().git
+	output, err := git(root, "log", "--format=", "--name-only", stamp+"..origin/main", "--", "internal", "cmd")
+	if err != nil {
+		return nil
+	}
+	paths := 0
+	for _, path := range strings.Split(string(output), "\n") {
+		if strings.TrimSpace(path) != "" {
+			paths++
+		}
+	}
+	if paths == 0 {
+		return nil
+	}
+	tip, err := git(root, "rev-parse", "origin/main")
+	if err != nil {
+		return nil
+	}
+	return &intentResult{Outcome: intentRefused, code: 1,
+		Summary: "main changed the build machinery after this engine was built; nothing was started",
+		next:    []string{"go", "run", "./cmd/devgate", "build"}, nextReason: "rebuild in " + root + ", then repeat this command",
+		Details: []string{fmt.Sprintf("BUILD_ENGINE_STALE engine=%s main=%s paths=%d", stamp, strings.TrimSpace(string(tip)), paths)}}
 }
 
 func runIntentBuildPlan(inv *intentInvocation) int {
@@ -1335,6 +1382,9 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "revising a run needs the correction brief; nothing was done",
 			next:    inv.publicArgv("work", "revise", unitRunPrefix+run, "--brief", "FILE"), nextReason: "FILE says what to correct"})
+	}
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()

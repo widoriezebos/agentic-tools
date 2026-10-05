@@ -119,6 +119,7 @@ func TestPortP2FollowUpIntegrationPublishesTheChangedDesignSubject(t *testing.T)
 	outputs := b.designPage()
 	requireExit(t, b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "design-critic", "--outputs", outputs,
 		"--design", fixtureDesign, "--brief", brief, "--job-id", "happy", "--wait"), 0, b.stderr.String())
+	b.p5WriteJSON("artifacts/agents/happy/rounds/1/return.json", b.criticalDesignReturn("happy"))
 
 	subject := func(round string) map[string]any {
 		t.Helper()

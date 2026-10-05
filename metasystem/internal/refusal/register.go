@@ -55,6 +55,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "BUILD_ENGINE_STALE", Owner: "cmd/metasystem", Site: "intent_work.go#intentInvocation.buildEngineAdmission", Shape: Question, H1: StandingInput},
 	{Code: "BUILD_DESIGN_NOT_ACCEPTED", Owner: "cmd/metasystem", Site: "intent_work.go#runIntentBuildUnit", Shape: Warning, Override: "goal allow G build-without-design --reason TEXT", Commands: 1, H1: StandingAgent},
 	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "internal/testrun", Site: "worker.go#ErrWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go#Manager.Supervise", Shape: Question, H1: StandingInput},

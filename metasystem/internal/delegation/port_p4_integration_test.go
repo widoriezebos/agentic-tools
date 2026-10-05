@@ -441,6 +441,22 @@ func criticReturn(job string, round int) string {
   "gaps":[],"findings":[],"rigor":[],"verdictMaterialCount":0}`
 }
 
+// criticalDesignReturn permits a second examination of the recorded subject.
+func (b *bed) criticalDesignReturn(job string) map[string]any {
+	b.t.Helper()
+	var result map[string]any
+	if err := json.Unmarshal([]byte(criticReturn(job, 1)), &result); err != nil {
+		b.t.Fatal(err)
+	}
+	result["reviewedCommit"] = b.p5ReadSubjectFile(job, 1).ReviewedCommit
+	result["findings"] = []any{map[string]any{
+		"id": "DESIGN-1", "severity": "critical", "material": true,
+		"claim": "the design cannot be built without the missing admission rule", "evidence": "the fixture design omits the rule",
+	}}
+	result["verdictMaterialCount"] = 1
+	return result
+}
+
 // dispatchCritic starts one design-critic round of the shipped role page.
 func (b *bed) dispatchCritic(job string) {
 	b.t.Helper()
@@ -477,7 +493,7 @@ func TestFollowUpIntegrationCriticChains(t *testing.T) {
 	if parent["design"] != "plans/designs/p4-design.md" || parent["launchMode"] != "shared-checkout" || requested["network"] != "deny" {
 		t.Fatalf("the critic dispatch lost its design, launch mode or network denial: design %v launch %v permissions %v", parent["design"], parent["launchMode"], parent["permissions"])
 	}
-	b.writeFile("artifacts/agents/happy/rounds/1/return.json", criticReturn("happy", 1))
+	b.p5WriteJSON("artifacts/agents/happy/rounds/1/return.json", b.criticalDesignReturn("happy"))
 	b.conclude("happy", "running", "completed", `{"phase":"validation","error":null}`)
 	before := b.p4ReadJSON("artifacts/agents/happy/rounds/1/subject.json")["contentDigest"]
 	revised := b.writeFile("plans/designs/p4-design.md", "# A design under review\n\nThe second revision.\n")

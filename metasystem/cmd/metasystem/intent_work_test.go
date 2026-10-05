@@ -53,7 +53,8 @@ type workBed struct {
 	testingAdapter adapter.Adapter
 	// primary, when set, is the main tree git worktree list names first;
 	// otherwise that is the bed's root.
-	primary string
+	primary        string
+	workOwnersHook func(*intentWorkOwners)
 }
 
 type workClock struct {
@@ -171,6 +172,101 @@ func (g workGit) Run(directory string, _ []string, args ...string) ([]byte, erro
 func newWorkBed(t *testing.T) *workBed {
 	t.Helper()
 	return newWorkBedWith(t, workApprovedBox)
+}
+
+func TestBuildRefusesAStaleEngine(t *testing.T) {
+	t.Parallel()
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	for _, row := range []struct {
+		name, stamp, paths, failure string
+		noSource, stale             bool
+		logCalls, tipCalls          int
+	}{
+		{name: "stale", stamp: commit, paths: "\ninternal/has spaces.go\n\n", stale: true, logCalls: 1, tipCalls: 1},
+		{name: "empty", stamp: commit, paths: "\n\n", logCalls: 1},
+		{name: "dev", stamp: "dev"},
+		{name: "dirty", stamp: "dev-" + commit + "-dirty"},
+		{name: "witness", stamp: "witness-abcdef012345"},
+		{name: "no-source", stamp: commit, noSource: true},
+		{name: "log-failure", stamp: commit, paths: "internal/changed.go\n", failure: "log", logCalls: 1},
+		{name: "tip-failure", stamp: commit, paths: "cmd/metasystem/main.go\n", failure: "tip", logCalls: 1, tipCalls: 1},
+	} {
+		for _, verb := range []string{"build", "revise-goal", "revise-run"} {
+			t.Run(row.name+"/"+verb, func(t *testing.T) {
+				t.Parallel()
+				bed := newWorkBed(t)
+				brief := bed.brief("engine.md", "Build the unit.\n")
+				args := append([]string{"work", "build", bed.id, "engine", "--brief", brief, "--lines", "5"}, workCheck...)
+				if verb != "build" {
+					code, built, _ := bed.work(args...)
+					if code != 0 {
+						t.Fatalf("seed build: %d %+v", code, built)
+					}
+					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief}
+					if verb == "revise-run" {
+						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief}
+					}
+				}
+				layout, err := bed.owners().resolver.ResolveLayout(bed.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				root := layout.InstallationRoot.Path()
+				if !row.noSource {
+					if err := os.MkdirAll(filepath.Join(root, "cmd", "metasystem"), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				logCalls, tipCalls := 0, 0
+				bed.workOwnersHook = func(owners *intentWorkOwners) {
+					owners.engineStamp = row.stamp
+					git := owners.git
+					owners.git = func(dir string, argv ...string) ([]byte, error) {
+						stage, output := "", ""
+						switch {
+						case len(argv) > 0 && argv[0] == "log":
+							logCalls++
+							stage, output = "log", row.paths
+							if !slices.Equal(argv, []string{"log", "--format=", "--name-only", row.stamp + "..origin/main", "--", "internal", "cmd"}) {
+								t.Fatalf("git log arguments: %q", argv)
+							}
+						case slices.Equal(argv, []string{"rev-parse", "origin/main"}):
+							tipCalls++
+							stage, output = "tip", "main-tip\n"
+						default:
+							return git(dir, argv...)
+						}
+						if dir != root {
+							t.Fatalf("engine check ran in %s, want installation %s", dir, root)
+						}
+						if stage == row.failure {
+							return []byte(output), errors.New("git unavailable")
+						}
+						return []byte(output), nil
+					}
+				}
+				launched := len(bed.starter.launched())
+				code, result, stderr := bed.work(args...)
+				wantStderr := ""
+				if verb == "build" {
+					wantStderr = "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+				}
+				if logCalls != row.logCalls || tipCalls != row.tipCalls {
+					t.Fatalf("Git calls: log=%d tip=%d, want %d %d", logCalls, tipCalls, row.logCalls, row.tipCalls)
+				}
+				if row.stale {
+					if code != 1 || result.Outcome != intentRefused || !slices.Equal(result.Details, []string{"BUILD_ENGINE_STALE engine=" + commit + " main=main-tip paths=1"}) ||
+						result.Next == nil || !slices.Equal(result.Next.Argv, []string{"go", "run", "./cmd/devgate", "build"}) || !strings.Contains(result.Next.Reason, root) ||
+						len(bed.starter.launched()) != launched {
+						t.Fatalf("stale engine: %d %+v", code, result)
+					}
+					t.Logf("public %s refused before launch: %v; next: %v", verb, result.Details, result.Next)
+				} else if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" || len(bed.starter.launched()) <= launched || stderr != wantStderr {
+					t.Fatalf("unknown or fresh engine: %d %+v stderr=%s", code, result, stderr)
+				}
+			})
+		}
+	}
 }
 
 func TestReadBriefAsksForTheRule(t *testing.T) {
@@ -306,6 +402,9 @@ func (b *workBed) workOwners() intentOwners {
 			}
 			return nil, errors.New("unexpected git " + joined)
 		},
+	}
+	if b.workOwnersHook != nil {
+		b.workOwnersHook(&owners.work)
 	}
 	return owners
 }
