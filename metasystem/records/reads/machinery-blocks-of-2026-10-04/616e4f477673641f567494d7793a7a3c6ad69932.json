@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "runner-idles",
+  "subject": {
+    "commit": "616e4f477673641f567494d7793a7a3c6ad69932",
+    "parent": "742446c98b715a9b0b3bf425c3bf15332c508b36",
+    "tree": "4b716be206dd65331fed392a5587f80671e5bdb9",
+    "patchDigest": "51854f0d69d15c1407851b3b23a313de927e151d708570cd42bf2ed12d7069dc",
+    "unitDigest": "234e466ad74a91a173f6024baf91ca808af10bbf184d9225c6114c985557938e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-df9f386d9fd026082a6fc761",
+    "round": 1,
+    "closureSha256": "7734bb20f2b68ce0eb3fab7f2e4460fcee2453dda7351ade565fbd34cd32e615"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4b716be206dd65331fed392a5587f80671e5bdb9",
+    "runId": "goal-read-gate-20261005t210505z-b7a99ca5b81beddf"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "18c8c335651fa35390e0561dc15b70c1f7b0ca49",
+      "digest": "10099df0f6b990e153fc485f863084a6e7ad0d88f4efa03a5ebd7a0f1325fb12"
+    },
+    {
+      "kind": "read",
+      "commit": "0c957f8f8bff664d9f922a30d1664203e3fb10f6",
+      "digest": "5bb79a82a34f7bb4299b64eb65aec409b2040f78b4719486460a8549fb6dfc4f"
+    },
+    {
+      "kind": "read",
+      "commit": "b1f17456e194787e3488e8a2e7fdda885ed05d3e",
+      "digest": "ea3d74e5cfd71072a62be9d8bb206da58b2016818793fff8067ad948ba56bab1"
+    },
+    {
+      "kind": "read",
+      "commit": "39cb784d3e98def150d65b9b0d5020c2d9a36b67",
+      "digest": "f778f6ccba73d47a6b2b7eb018e6a481cea5931e041741cc1a1a77a29cd197b7"
+    },
+    {
+      "kind": "read",
+      "commit": "f17c05a37b60a1894f1e62f5ba714a30ec977361",
+      "digest": "ed49fdbde5b43d3a26f772b748e59e4eca73b73262d16ae56a27a67a537550a4"
+    },
+    {
+      "kind": "read",
+      "commit": "ea318dd60dd1c0975f2eed3bf15fd1d29477247c",
+      "digest": "6e8cd4ca8a63459c415aa353650aa27a775183816704987c8bbaeb5df501bf68"
+    },
+    {
+      "kind": "read",
+      "commit": "742446c98b715a9b0b3bf425c3bf15332c508b36",
+      "digest": "56c156c4c5d8340423942c3cf474246d2f55780fce2465a20ee08fdfb3689bfb"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-df9f386d9fd026082a6fc761"
+    }
+  ],
+  "sha256": "9eb95d5c02f0c7b87ac2281f89dd9f4c57cc028187818aecfac00613422bbbca"
+}
