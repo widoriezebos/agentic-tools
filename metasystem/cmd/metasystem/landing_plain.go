@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // laneInstallOf is the installation of the lane checkout at root, where
@@ -70,10 +71,35 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 // handIn appends the goal's branch at sha to the lane's queue: the seat's
 // gates passed before it. The branch is read at origin, so it is already
 // pushed. A repeat at the same sha appends nothing.
-func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
+func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha string, state intentBranchState) intentResult {
 	now := inv.delivery().now()
-	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
+	registrant := inv.delivery().laneRegistrant
+	if registrant == nil {
+		registrant = batchowner.LandingLaneRegistrant
+	}
+	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: registrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered"))}
+	work, problem := inv.goalWork(goalID)
+	if problem != nil {
+		return *problem
+	}
+	for _, one := range work {
+		unit := handInUnitRounds(one)
+		if state.ReadsWaived {
+			unit.Read = "waived"
+		}
+		for index, committed := range state.Status.Units {
+			if committed.Unit == one.Unit && index < len(state.Sources) {
+				switch state.Sources[index] {
+				case "unit-read":
+					unit.Read = "promoted"
+				case "critic-root", "reader-record":
+					unit.Read = "critic"
+				}
+			}
+		}
+		line.Units = append(line.Units, unit)
+	}
 	_, added, err := plain.HandIn(install, line)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
@@ -81,7 +107,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if !added {
-		if result := inv.laneQueueState(targets, install, goalID, sha, main); result != nil {
+		if result := inv.laneQueueState(targets, install, goalID, sha, state.EndpointTip); result != nil {
 			return *result
 		}
 	}
@@ -93,4 +119,30 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
 		Summary: fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha)),
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
+}
+
+func handInUnitRounds(work launch.NamedWork) plain.UnitRounds {
+	unit := plain.UnitRounds{Unit: work.Unit, Machinery: map[string]int{}, Proof: []string{"check"}, Read: "none"}
+	if work.Record == nil {
+		return unit
+	}
+	for _, round := range work.Record.Rounds {
+		if round.Cause == "" {
+			unit.Counted++
+		} else {
+			unit.Machinery[round.Cause]++
+		}
+	}
+	if rounds := work.Record.Rounds; len(rounds) > 0 {
+		var proof []string
+		for _, step := range rounds[len(rounds)-1].Steps {
+			if name, ok := strings.CutPrefix(step.Name, "proof:"); ok {
+				proof = append(proof, name)
+			}
+		}
+		if len(proof) > 0 {
+			unit.Proof = proof
+		}
+	}
+	return unit
 }

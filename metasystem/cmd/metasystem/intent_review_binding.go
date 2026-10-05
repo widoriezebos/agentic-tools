@@ -225,6 +225,11 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 					next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 			}
 		}
+		if _, err := dispatchcore.CritiqueRegisterAdvance(root, rootJob, recordText(newest, "jobId")); err != nil {
+			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
+				Summary: "the review's findings can't be recorded, so nothing was closed",
+				next:    again, nextReason: "the same review retries the register fold", Details: []string{err.Error()}}
+		}
 		if len(accepted) > 0 {
 			data["accepted"] = accepted
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,

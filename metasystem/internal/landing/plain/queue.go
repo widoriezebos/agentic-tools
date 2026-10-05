@@ -61,7 +61,17 @@ type Line struct {
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
 	// the work reaches main.
-	Delivered string `json:"delivered,omitempty"`
+	Delivered string       `json:"delivered,omitempty"`
+	Units     []UnitRounds `json:"units,omitempty"`
+}
+
+// UnitRounds records a named unit's attempts and the proof and read used at hand-in.
+type UnitRounds struct {
+	Unit      string         `json:"unit"`
+	Counted   int            `json:"counted"`
+	Machinery map[string]int `json:"machinery,omitempty"`
+	Proof     []string       `json:"proof"`
+	Read      string         `json:"read"`
 }
 
 // Entry is one hand-in and what became of it.
@@ -76,7 +86,8 @@ type Entry struct {
 	Reason   string           `json:"reason,omitempty"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
-	Delivered string `json:"delivered,omitempty"`
+	Delivered string       `json:"delivered,omitempty"`
+	Units     []UnitRounds `json:"units,omitempty"`
 	// ReturnedAt is when it was returned.
 	ReturnedAt string `json:"returned_at,omitempty"`
 	// LandedAt is when a landed hand-in reached main: the time of the push
@@ -179,7 +190,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered})
+				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -264,7 +275,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}
-		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered}, true
+		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err

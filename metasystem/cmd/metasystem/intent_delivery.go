@@ -226,6 +226,8 @@ type intentProcessResult struct {
 // intentDeliveryOwners are the owners the delivery commands call. Production
 // uses defaultIntentDeliveryOwners; tests give each invocation its own.
 type intentDeliveryOwners struct {
+	rebindBudget   func(string, string) *intentResult
+	laneRegistrant func(string) string
 	// draftPaths finds cited files missing from the design's source tree;
 	// nil reads Git through the dispatch owner.
 	draftPaths func([]byte, string) ([]string, error)
@@ -1120,6 +1122,9 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 // raised then takes effect without a separate step; a rebind that fails is
 // refused in its own words, and nothing is continued or closed.
 func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root string) *intentResult {
+	if rebind := inv.delivery().rebindBudget; rebind != nil {
+		return rebind(inv.layout.InstallationRoot.Path(), root)
+	}
 	rebind := inv.delivery().rebind
 	if rebind == nil {
 		rebind = dispatchcore.CritiqueChainBudgetRebind
@@ -1934,7 +1939,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		return *refused
 	}
 	if configured {
-		return inv.handIn(targets, laneInstall, goalID, subject, state.EndpointTip)
+		return inv.handIn(targets, laneInstall, goalID, subject, state)
 	}
 	return inv.landByHand(targets, goalID, through, subject, state, base)
 }

@@ -5,14 +5,101 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+func TestHandInCarriesUnitRounds(t *testing.T) {
+	t.Parallel()
+	testHandInUnitRounds(t, readBranch(2, "unit-read", "critic-root"), [2]string{"promoted", "critic"})
+}
+
+func TestHandInTierOneReadsAreWaived(t *testing.T) {
+	t.Parallel()
+	state := readBranch(0)
+	state.ReadsWaived = true
+	testHandInUnitRounds(t, state, [2]string{"waived", "waived"})
+}
+
+func TestHandInUnreadUnitHasNoRead(t *testing.T) {
+	t.Parallel()
+	testHandInUnitRounds(t, readBranch(1, "critic-root"), [2]string{"critic", "none"}, "--through", strings.Repeat("1", 40))
+}
+
+func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string, args ...string) {
+	t.Helper()
+	w := newWorkBed(t)
+	for _, name := range []string{"u1", "u2"} {
+		code, built, _ := w.work(append([]string{"work", "build", w.id, name, "--brief", w.brief(name+".md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+		expectOutcome(t, "build "+name, code, built, intentConfirmed)
+		run := resultData(t, built)["run"].(string)
+		record, err := (&launch.UnitRunner{Root: w.unitRoot}).Status(run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "u1" {
+			record.Rounds = []launch.UnitRound{{Number: 1}, {Number: 2, Cause: "provider-limit"}, {Number: 3, Cause: "sandbox-denied"}, {Number: 4, Cause: "provider-limit"},
+				{Number: 5, Outcome: "green", Steps: []launch.UnitStep{{Name: "proof:static"}, {Name: "proof:unit"}, {Name: "proof:check"}}}}
+		} else {
+			record.Rounds[0].Steps = nil
+		}
+		writeQuestionFixture(t, filepath.Join(w.unitRoot, run, "run.json"), record)
+	}
+	if state.ReadsWaived {
+		file := w.goalFile(w.id)
+		file.Tier, file.Budget.ReviewRoundLimit = 1, 0
+		file.Risk.Severity, file.Risk.Novelty = 1, 1
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		w.addGoal(file)
+	}
+	l := &laneVerbBed{cwd: w.root(), home: t.TempDir(), landingA: t.TempDir(), pid: 4242, helmed: true}
+	install := filepath.Join(l.landingA, "metasystem")
+	b := &deliveryBed{intentBed: w.intentBed, install: w.root(), owners: &intentDeliveryOwners{now: func() time.Time { return laneTestNow }}}
+	b.writeFile(filepath.Join(install, "metasystem.conf"), "")
+	b.writeJSON(lane.RecordPath(l.home), lane.Record{Root: l.landingA, Install: install, CustodyEpoch: 1, RegisteredBy: "Wido", At: laneTestNow.Format(time.RFC3339)})
+	landing := &landingOwners{status: state}
+	landing.install(b)
+	b.owners.laneRegistrant = func(string) string { return "seat" }
+	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return l.landingA, true, nil }
+	b.owners.laneInstall = func(string) (string, error) { return install, nil }
+	b.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
+	owners := w.workOwners()
+	owners.delivery = b.owners
+	code, result := w.runJSON(owners, append([]string{"work", "land", w.id}, args...)...)
+	expectOutcome(t, "hand-in", code, result, intentConfirmed)
+	entries, err := plain.Entries(install)
+	want := []plain.UnitRounds{
+		{Unit: "u1", Counted: 2, Machinery: map[string]int{"provider-limit": 2, "sandbox-denied": 1}, Proof: []string{"static", "unit", "check"}, Read: reads[0]},
+		{Unit: "u2", Counted: 1, Proof: []string{"check"}, Read: reads[1]},
+	}
+	if err != nil || len(entries) != 1 || !reflect.DeepEqual(entries[0].Units, want) {
+		t.Fatalf("queued unit rounds: %+v %v; want %+v", entries, err, want)
+	}
+	statusOwners := l.owners()
+	statusOwners.ownEngine = w.owners().ownEngine
+	statusOwners.landing.view = func(string) lane.View { return lane.View{Root: &l.landingA, Summary: "The landing lane is idle."} }
+	statusOwners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if args[0] == "cat-file" {
+			return "", os.ErrNotExist
+		}
+		return strings.Repeat("e", 40), nil
+	}
+	code, out, stderr := w.run(statusOwners, "landing", "status")
+	words := oneSpaced(out)
+	for _, part := range []string{"u1 2 counted rounds; machinery rounds provider-limit=2, sandbox-denied=1; proof static, unit, check; read " + reads[0], "u2 1 counted rounds; proof check; read " + reads[1]} {
+		if code != 0 || !strings.Contains(words, part) {
+			t.Fatalf("landing status lacks %q: code=%d %s %s", part, code, out, stderr)
+		}
+	}
+}
 
 func TestLandingStatusSaysRecords(t *testing.T) {
 	t.Parallel()

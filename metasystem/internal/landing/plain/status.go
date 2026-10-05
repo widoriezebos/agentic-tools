@@ -3,6 +3,7 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -72,14 +73,29 @@ type laneGit struct {
 }
 
 // checkoutGit answers laneGit from the lane checkout at dir.
-func checkoutGit(dir string) laneGit {
+func checkoutGit(dir string, seams ProveSeams) laneGit {
 	return laneGit{
 		main: func() (string, error) {
-			return Git(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+			return seams.git(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
 		},
-		contains: func(main, sha string) (bool, error) { return ContainedIn(dir, main)(sha) },
+		contains: func(main, sha string) (bool, error) {
+			if seams.Git == nil {
+				return ContainedIn(dir, main)(sha)
+			}
+			for _, commit := range []string{main, sha} {
+				if _, err := seams.git(dir, "cat-file", "-e", commit+"^{commit}"); err != nil {
+					return false, nil
+				}
+			}
+			_, err := seams.git(dir, "merge-base", "--is-ancestor", sha, main)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return false, nil
+			}
+			return err == nil, err
+		},
 		brought: func(old, commit string) ([]string, error) {
-			listed, err := Git(dir, "rev-list", old+".."+commit)
+			listed, err := seams.git(dir, "rev-list", old+".."+commit)
 			if err != nil || listed == "" {
 				return nil, err
 			}
@@ -93,7 +109,7 @@ func checkoutGit(dir string) laneGit {
 // check and its clock).
 func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams) Status {
 	layout, _ := record.Layout()
-	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout)))
+	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams))
 }
 
 func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) Status {
