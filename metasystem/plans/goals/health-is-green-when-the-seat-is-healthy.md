@@ -21,13 +21,14 @@ Open read items (fix unit stuck-detector-review-r1): 3
 - ReadItem: id=stuck-detector-review-r1-2 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-2-ONE-BAD-RUN-FREEZES-ALL (review code-critic-fa0262e1ba7a51f5b35d447b, not material): one unparsable run.json anywhere in the host-wide unit store makes every stuck-unit observation Unknown and removes every stuck stamp from /api/board until the file is repaired; scope an unreadable run to its own goal and unit when its name can be read."
 - ReadItem: id=stuck-detector-review-r1-3 read=stuck-detector-review-r1 state=open addedAt=2026-10-04T18:37:19Z changedAt=- closingReference="" text="N-3-SECOND-LEDGER-READ (review code-critic-fa0262e1ba7a51f5b35d447b, not material): the stuck-unit pass reads the claimed-goal ledger a second time each tick and reads Unknown on a seat whose ledger is not yet the new world; share the delivery role's read."
 - OpenedAt: 2026-10-03T09:22:09Z
-- Revision: 60
+- Revision: 61
 - Pinned: m1l
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=20
 - BudgetExceptions: 2
 - NormApproval: approvedRef=8QG5Y5MZQTEEA3YJ4GB1AVNF4Y-m1l-927ecfdd minutes=1200 reviewRounds=20 goalRevision=59
 - Approved: by=human:wido at=2026-10-05T01:08:37Z revision=60 opid=8QG5Y5MZQTEEA3YJ4GB1AVNF4Y-m1l-927ecfdd authority=proven digest=2557b34c0cd606c583a04ea9e16c5a20a9ad5c25821530ce294bee48d315fa65 episode=60
 - Sliced: machine=m1l lineage=steward-seat revision=48 at=2026-10-04T14:54:42Z
+- AcceptedRisk: finding=MOVED-EFFECTS-STANDING-NOTICE chain=design-critic-33b212e1cd19505db69c369f by=wido opid=SDTAB5RAYWXTX2CHQARC1YYBF6-m1l-927ecfdd
 - Claimed: machine=m1l lineage=steward-seat at=2026-10-05T01:08:37Z revision=60 accountingRevision=60 episodeAt=2026-10-04T21:12:40Z episodeRevision=59
 - StopCapability: generation=60 revision=60 machine=m1l claimEpoch=1 fenceEpoch=0
 
@@ -92,4 +93,5 @@ History:
 - 2026-10-04T21:12:29Z ZTS4VBANDN3BEDSPG7MXCPE5GY-m1l-f456f182 release actor=m1l+main-1790454088-93948-21671b targets=health-is-green-when-the-seat-is-healthy reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
 - 2026-10-04T21:12:40Z 908Q5E3FCRE22MM2XZERZ7QR1Z-m1l-71c5cb39 claim actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy
 - 2026-10-05T01:08:37Z 8QG5Y5MZQTEEA3YJ4GB1AVNF4Y-m1l-927ecfdd set-budget actor=human:wido targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T21:12:40Z
-Integrity: sha256=b231bcfbd53d138e6e5a90e006d71a21098b25187645d9af7b7b14bbbb2afb9a
+- 2026-10-05T05:23:38Z SDTAB5RAYWXTX2CHQARC1YYBF6-m1l-927ecfdd accept-risk actor=human:wido targets=health-is-green-when-the-seat-is-healthy reason=round 2 residual folded into the page: the standing role leaves the health episode key set in the tick that opens its defect, so no second notice stays open for the same failure; critique stop rule (6 material in round 1, 1 residual on a folded item in round 2); the build witness is the handoff test named in moved-effects row 4; Wido via m1e under grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb
+Integrity: sha256=370e352433cbbf0439e676df14093fb9ce0847f7e6cf3df7e96e0e25b62b30a4
