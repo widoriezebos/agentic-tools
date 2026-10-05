@@ -35,6 +35,8 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -65,10 +67,12 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	designGate designGateOwners
-	units      func(layout stateroot.Layout) *launch.UnitRunner
-	git        func(dir string, args ...string) ([]byte, error)
-	wait       func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
+	engineStamp string
+	designGate  designGateOwners
+	adapter     func(string) (adapter.Adapter, error)
+	units       func(layout stateroot.Layout) *launch.UnitRunner
+	git         func(dir string, args ...string) ([]byte, error)
+	wait        func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -104,6 +108,9 @@ func unitLaunchSettings(layout stateroot.Layout, serving func(string) (string, s
 
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
+	if owners.adapter == nil {
+		owners.adapter = adapter.Detect
+	}
 	if owners.inspectRead == nil {
 		owners.inspectRead = branch.InspectBranchRead
 	}
@@ -430,7 +437,28 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	runner := inv.work().units(inv.layout)
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
+	runner.PlanProof = inv.unitProof
 	return runner
+}
+
+func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofCommand, error) {
+	bound, err := inv.work().adapter(plan.Worktree)
+	if err != nil || bound == nil {
+		return nil, nil
+	}
+	closure, err := bound.Closure(plan.Worktree, plan.Base, "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("cannot plan the round's tests: %w", err)
+	}
+	directory := closure.Root
+	if directory == "" {
+		directory = plan.Worktree
+	}
+	proof := []launch.ProofCommand{}
+	for _, step := range bound.TestSteps(closure) {
+		proof = append(proof, launch.ProofCommand{Name: step.Name, Dir: directory, Argv: append([]string{}, step.Args...), Env: []string{}})
+	}
+	return append(proof, plan.Proof...), nil
 }
 
 // unitLaunchAuthority is asked before every build or read launch of a unit
@@ -449,6 +477,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ 
 // build
 
 func runIntentBuild(inv *intentInvocation) int {
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
+	}
 	if inv.input.has("plan") {
 		return runIntentBuildPlan(inv)
 	}
@@ -482,6 +513,48 @@ func runIntentBuild(inv *intentInvocation) int {
 		}
 	}
 	return runIntentBuildUnit(inv)
+}
+
+// buildEngineAdmission refuses to start work when main changed machinery
+// after this engine was built. Without source or a comparable stamp, or
+// when Git cannot establish the changes, admission stays open.
+func (inv *intentInvocation) buildEngineAdmission() *intentResult {
+	stamp := inv.work().engineStamp
+	if stamp == "" {
+		stamp = supervise.BuildStamp
+	}
+	if stamp == "dev" || strings.HasPrefix(stamp, "dev-") || strings.HasPrefix(stamp, "witness-") {
+		return nil
+	}
+	if inv.resolveLayout() != nil {
+		return nil
+	}
+	root := inv.layout.InstallationRoot.Path()
+	if source, err := os.Stat(filepath.Join(root, "cmd", "metasystem")); err != nil || !source.IsDir() {
+		return nil
+	}
+	git := inv.work().git
+	output, err := git(root, "log", "--format=", "--name-only", stamp+"..origin/main", "--", "internal", "cmd")
+	if err != nil {
+		return nil
+	}
+	paths := 0
+	for _, path := range strings.Split(string(output), "\n") {
+		if strings.TrimSpace(path) != "" {
+			paths++
+		}
+	}
+	if paths == 0 {
+		return nil
+	}
+	tip, err := git(root, "rev-parse", "origin/main")
+	if err != nil {
+		return nil
+	}
+	return &intentResult{Outcome: intentRefused, code: 1,
+		Summary: "main changed the build machinery after this engine was built; nothing was started",
+		next:    []string{"go", "run", "./cmd/devgate", "build"}, nextReason: "rebuild in " + root + ", then repeat this command",
+		Details: []string{fmt.Sprintf("BUILD_ENGINE_STALE engine=%s main=%s paths=%d", stamp, strings.TrimSpace(string(tip)), paths)}}
 }
 
 func runIntentBuildPlan(inv *intentInvocation) int {
@@ -1139,6 +1212,15 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
+			var divergence *launch.CodedError
+			if errors.As(err, &divergence) {
+				plain = divergence.Reason.Error()
+			}
+			goalID, unit := record.Goal, record.Unit
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				next:       inv.publicArgv("work", "build", goalID, "--work", "NEW", "--brief", "FILE", "--check", "..."),
+				nextReason: fmt.Sprintf("take-a-step-back; or land with metasystem work review %s --work %s", goalID, unit)}
 		case launch.IsCode(err, "UNIT_ROUND_CAP"):
 			var cap *launch.UnitRoundCapError
 			if errors.As(err, &cap) {
@@ -1180,6 +1262,15 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		verdict = strings.Join(verdicts, "; ")
 	}
 	text := []string{line}
+	for _, step := range round.Steps {
+		if strings.HasPrefix(step.Name, "proof:") && (data["plan"] != record.Plan || step.State == launch.StepFailed) {
+			line := step.Name + ": " + string(step.State)
+			if step.Reason != "" {
+				line += ": " + step.Reason
+			}
+			text = append(text, line)
+		}
+	}
 	if round.ReadModel == "" {
 		text = append(text, "No read ran this round; work review asks the committed read.")
 	} else if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
@@ -1256,6 +1347,10 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	data["round"], data["outcome"], data["steps"], data["directory"] = round.Number, round.Outcome, round.Steps, round.Directory
+	path := filepath.Join(round.Directory, "plan.json")
+	if _, err := os.Stat(path); err == nil {
+		data["plan"] = path
+	}
 	verdicts, findings := []string{}, []string{}
 	clean := false
 	for index, step := range round.Steps {
@@ -1292,6 +1387,9 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "revising a run needs the correction brief; nothing was done",
 			next:    inv.publicArgv("work", "revise", unitRunPrefix+run, "--brief", "FILE"), nextReason: "FILE says what to correct"})
+	}
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 
 // laneVerbOwners are the landing verbs' seams; the zero value is production.
 type laneVerbOwners struct {
+	view func(string) lane.View
 	home func() (string, error)
 	// probe reads whether the lane's landing agent runs.
 	probe    func(root string) (lane.OwnerProbe, error)
@@ -259,6 +261,9 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
+	if owners.view != nil {
+		return owners.view(home)
+	}
 	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: plain.KeeperWake(home)})
 }
 
@@ -338,6 +343,22 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 				branch += " records"
 			}
 			rows = append(rows, [2]string{entry.Goal, branch + " at " + shortLandingID(entry.SHA) + " from " + entry.Seat + " · " + state})
+			for _, unit := range entry.Units {
+				causes := make([]string, 0, len(unit.Machinery))
+				for cause := range unit.Machinery {
+					causes = append(causes, cause)
+				}
+				slices.Sort(causes)
+				machinery := []string{}
+				for _, cause := range causes {
+					machinery = append(machinery, fmt.Sprintf("%s=%d", cause, unit.Machinery[cause]))
+				}
+				words := fmt.Sprintf("%d counted rounds", unit.Counted)
+				if len(machinery) > 0 {
+					words += "; machinery rounds " + strings.Join(machinery, ", ")
+				}
+				rows = append(rows, [2]string{unit.Unit, words + "; proof " + strings.Join(unit.Proof, ", ") + "; read " + unit.Read})
+			}
 		}
 		if len(rows) > 0 {
 			table := page.Section("Queue", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})

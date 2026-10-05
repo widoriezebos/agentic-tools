@@ -235,6 +235,39 @@ func TestGLEBranchReadFreezesSuppliedBriefAndRejectsConflictingRetry(t *testing.
 	}
 }
 
+func TestFollowUpReadIsToldThePreviousDecisions(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	r.expectStart()
+	r.expectGateAndBrief()
+	input := filepath.Join(t.TempDir(), "follow-up.md")
+	packet := "## Follow-up read of round 1\nCheck every fold first, citing the line that proves it\n1. Result is lost\n## Decisions on round 1\n| 1 | fixed | file.go:12 |\nDiff since round 1's tree\n+fixed line\nProof result of round 2: passed\n"
+	if err := os.WriteFile(input, []byte("Build the fold.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(input), "read-context.md"), []byte(packet), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := branch.BranchReadRequest{Repo: r.root, EndpointTip: r.base, BranchTip: r.unit, GoalID: "goal-a", UnitCommit: r.unit,
+		Repository: r, BriefPath: input, Join: true, CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		NewID: func(string) (string, error) { return "warm-gate", nil },
+		Delegate: func(brief, _, _, _, _ string) (string, error) {
+			data, err := os.ReadFile(brief)
+			supplied := strings.Index(string(data), "# Supplied accepted")
+			if supplied < 0 {
+				supplied = strings.Index(string(data), "# Corrected implementation brief")
+			}
+			if err != nil || !strings.Contains(string(data), packet) || supplied < 0 || strings.Index(string(data), packet) > supplied {
+				t.Fatalf("header lost packet: %s %v", data, err)
+			}
+			return "warm-critic", nil
+		},
+	}
+	if result, err := branch.RunBranchRead(request); err != nil || result.State != "dispatched" {
+		t.Fatalf("read: %+v %v", result, err)
+	}
+}
+
 func TestGLEBranchReadMissingBriefRefusesBeforeGateAndDefaultNamesPlanFold(t *testing.T) {
 	t.Parallel()
 	r := newReadFactRepository(t, true)

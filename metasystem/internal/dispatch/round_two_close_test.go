@@ -94,6 +94,7 @@ func TestRoundTwoCloseTableIsDesignRoundTwoOnly(t *testing.T) {
 	t.Run("design_round_one_dispatches_next_round", func(t *testing.T) {
 		findings := []registerFinding{closeFinding("round-one", "mechanical", "fixture text", "title text", critiqueModel.Bounded)}
 		repo, root, _ := writeCloseRoot(t, "design-critic", 1, findings, materialHistory(1, 0), 2, 1)
+		writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", root, "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "critical"}}})
 		outcome, err := CritiqueRegisterClose(repo, root)
 		check(t, outcome == "closed" && err != nil && strings.Contains(err.Error(), "dispatch the next round"), "design round one did not retain generic budget behavior: outcome=%q err=%v", outcome, err)
 	})

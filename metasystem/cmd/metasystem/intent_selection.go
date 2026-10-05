@@ -785,6 +785,9 @@ func runIntentRevise(inv *intentInvocation) int {
 			return inv.render(*problem)
 		}
 	}
+	if problem := inv.buildEngineAdmission(); problem != nil {
+		return inv.render(*problem)
+	}
 	runner := inv.unitRunner()
 	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions})
 	again := inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))
@@ -794,6 +797,9 @@ func runIntentRevise(inv *intentInvocation) int {
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_REVISE_UNDECIDED"):
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain, Details: details,
+				next: again, nextReason: "add each material finding's fixed, refuted or follow-up row under Decisions on round N in the brief"})
 		case errors.Is(err, launch.ErrUnitRevisionStale):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Details: details,
 				Summary:    "the correction follows an attempt that is no longer the newest; nothing was launched",
@@ -809,7 +815,7 @@ func runIntentRevise(inv *intentInvocation) int {
 		case launch.IsCode(err, "UNIT_ROUND_LIMIT"):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain + "; nothing was launched", Details: details,
 				next: inv.publicArgv("goal", "budget", id, "BOX"), nextReason: "metasystem goal budget gives the goal a larger budget, such as 1d/10/720m/1/5"})
-		case launch.IsCode(err, "UNIT_ROUND_CAP"):
+		case launch.IsCode(err, "UNIT_ROUND_CAP"), launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
 			return inv.render(inv.unitOutcome(runner, revised.UnitResult, err, targets, again))
 		}
 	}

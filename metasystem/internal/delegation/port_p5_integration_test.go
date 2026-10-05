@@ -407,8 +407,9 @@ func TestPortP5DispatchIntegrationCriticRoundsPersistTheirReadSubject(t *testing
 }
 
 // redundant-follow-up and changed-design-follow-up (3364-3413): a follow-up
-// of a folded clean design read over an unchanged page refuses before the
-// review budget, the round namespace or a launch authorization advances;
+// of a design read whose critical finding was refuted refuses over an
+// unchanged page before the review budget, round namespace or launch
+// authorization advances;
 // once the page changes, the same follow-up launches round two over the
 // changed subject at the same reviewed commit.
 func TestPortP5DispatchIntegrationRedundantFollowUpRefusesUntilTheDesignChanges(t *testing.T) {
@@ -424,11 +425,12 @@ func TestPortP5DispatchIntegrationRedundantFollowUpRefusesUntilTheDesignChanges(
 	if first.ReviewedCommit != commit {
 		t.Fatalf("round one reviews %s, not the commit holding its page %s", first.ReviewedCommit, commit)
 	}
-	b.p5Complete("redundant-follow-up", "redundant-follow-up", 1, map[string]any{
-		"reviewedCommit": commit, "findings": []any{}, "rigor": []any{}, "verdictMaterialCount": 0,
-	})
+	b.p5Complete("redundant-follow-up", "redundant-follow-up", 1, b.criticalDesignReturn("redundant-follow-up"))
 	if _, err := dispatch.CritiqueRegisterAdvance(b.root, "redundant-follow-up", "redundant-follow-up"); err != nil {
 		t.Fatalf("fold round one: %v", err)
+	}
+	if err := dispatch.CritiqueRegisterApplyDecisions(b.root, "redundant-follow-up", map[string]string{"DESIGN-1": "refuted"}); err != nil {
+		t.Fatalf("refute the critical finding: %v", err)
 	}
 	record := b.record("redundant-follow-up")
 	payload := filepath.Join(b.root, "artifacts", "agents", "redundant-follow-up")
@@ -549,68 +551,86 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheRoundPastThe
 	}
 }
 
-// design_round_two_fixture_obligations (3804-3864), lifecycle half: a
-// design critic freezes the five-round cap (Wido 2026-10-01); after the
-// round-five fold, the round-six follow-up refuses with the typed exhaustion
-// exit before any successor record exists.
-func TestPortP5DispatchIntegrationDesignRoundSixRefusesAtTheFiveRoundLimit(t *testing.T) {
+// A design critic admits a second examination only for a critical finding
+// in the first return. A critical second return admits no third examination,
+// and the chain never exceeds its frozen review budget.
+func TestPortP5DispatchIntegrationDesignRoundsRequireCriticalAndRespectTheFrozenLimit(t *testing.T) {
 	t.Parallel()
-	b := newDispatchBed(t)
-	page := "metasystem/fixture-admission/design-round-two.md"
-	b.p5DesignPage(page, "# Design round two fixture\n")
-	outputs := b.writeFile("artifacts/briefs/outputs.md", p5Outputs)
-	brief := b.brief("artifacts/briefs/design.md", "design", "Critique the design.")
-	root := "design-round-two-fixture"
-	requireExit(t, b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "design-critic", "--outputs", outputs,
-		"--design", page, "--brief", brief, "--runtime", "fake", "--job-id", root), 0, b.stderr.String())
-	if limit := fmt.Sprint(b.record(root)["reviewRoundLimit"]); limit != "5" {
-		t.Fatalf("design critic froze reviewRoundLimit=%s, want 5", limit)
-	}
-	commit := b.p5ReadSubjectFile(root, 1).ReviewedCommit
-	facts := map[string]any{"local": true, "recoverable": true, "proofBoundaryCrossed": false, "authorityBoundaryCrossed": false,
-		"secretsBoundaryCrossed": false, "irreversibleDataBoundaryCrossed": false, "externalSideEffectBoundaryCrossed": false}
-	bounded := func(id, fixture string) map[string]any {
-		return map[string]any{"findingId": id, "rigorClass": "bounded", "facts": facts, "reopeningTrigger": "if " + id + " recurs",
-			"artifact": "metasystem/internal/dispatch/build.go", "grain": "mechanical", "behaviour": id, "fixture": fixture}
-	}
-	finding := func(id, severity string, material bool) map[string]any {
-		return map[string]any{"id": id, "severity": severity, "material": material, "claim": id, "evidence": "read"}
-	}
-	b.p5Complete(root, root, 1, map[string]any{
-		"reviewedCommit": commit, "verdictMaterialCount": 2,
-		"findings": []any{finding("ROUND1-A", "medium", true), finding("ROUND1-B", "medium", true)},
-		"rigor":    []any{bounded("ROUND1-A", "go test ./old-a"), bounded("ROUND1-B", "go test ./old-b")},
-	})
-	if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, root); err != nil {
-		t.Fatalf("fold round one: %v", err)
-	}
-	workspace := b.record(root)["workspaceRoot"].(string)
-	message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: design\n\nLook again.\n")
-	parent := root
-	for round := 2; round <= 5; round++ {
-		b.writeFileAbs(filepath.Join(workspace, page), fmt.Sprintf("# Design round two fixture\n\nRound %d changes the page.\n", round))
-		requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message), 0, b.stderr.String())
-		parent = fmt.Sprintf("%s-r%d", root, round)
-		id := fmt.Sprintf("ROUND%d-FIXTURE", round)
-		b.p5Complete(parent, root, round, map[string]any{
-			"reviewedCommit": commit, "verdictMaterialCount": 1,
-			"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding(id, "medium", true)},
-			"rigor":    []any{bounded(id, "go test ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures")},
+	for _, row := range []struct {
+		name, severity string
+		frozen, rounds int
+	}{
+		{"without-critical", "medium", 5, 1},
+		{"with-critical", "critical", 5, 2},
+		{"critical-with-one-round-budget", "critical", 1, 1},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newDispatchBed(t)
+			b.setConf(fmt.Sprintf("metasystem.budget.review-round-max=%d\n", row.frozen))
+			page := "metasystem/fixture-admission/design-round-two.md"
+			b.p5DesignPage(page, "# Design round two fixture\n")
+			outputs := b.writeFile("artifacts/briefs/outputs.md", p5Outputs)
+			brief := b.brief("artifacts/briefs/design.md", "design", "Critique the design.")
+			root := "design-round-two-fixture"
+			requireExit(t, b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "design-critic", "--outputs", outputs,
+				"--design", page, "--brief", brief, "--runtime", "fake", "--job-id", root), 0, b.stderr.String())
+			if limit := fmt.Sprint(b.record(root)["reviewRoundLimit"]); limit != strconv.Itoa(row.frozen) {
+				t.Fatalf("design critic froze reviewRoundLimit=%s, want %d", limit, row.frozen)
+			}
+			commit := b.p5ReadSubjectFile(root, 1).ReviewedCommit
+			facts := map[string]any{"local": true, "recoverable": true, "proofBoundaryCrossed": false, "authorityBoundaryCrossed": false,
+				"secretsBoundaryCrossed": false, "irreversibleDataBoundaryCrossed": false, "externalSideEffectBoundaryCrossed": false}
+			bounded := func(id, fixture string) map[string]any {
+				return map[string]any{"findingId": id, "rigorClass": "bounded", "facts": facts, "reopeningTrigger": "if " + id + " recurs",
+					"artifact": "metasystem/internal/dispatch/build.go", "grain": "mechanical", "behaviour": id, "fixture": fixture}
+			}
+			finding := func(id, severity string, material bool) map[string]any {
+				return map[string]any{"id": id, "severity": severity, "material": material, "claim": id, "evidence": "read"}
+			}
+			b.p5Complete(root, root, 1, map[string]any{
+				"reviewedCommit": commit, "verdictMaterialCount": 2,
+				"findings": []any{finding("ROUND1-A", row.severity, true), finding("ROUND1-B", "medium", true)},
+				"rigor":    []any{bounded("ROUND1-A", "go test -timeout 30m ./old-a"), bounded("ROUND1-B", "go test -timeout 30m ./old-b")},
+			})
+			if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, root); err != nil {
+				t.Fatalf("fold round one: %v", err)
+			}
+			workspace := b.record(root)["workspaceRoot"].(string)
+			message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: design\n\nLook again.\n")
+			parent := root
+			trajectory := `[{"material":2,"round":1}]`
+			b.writeFileAbs(filepath.Join(workspace, page), "# Design round two fixture\n\nRound two changes the page.\n")
+			if row.rounds == 2 {
+				requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message), 0, b.stderr.String())
+				parent = root + "-r2"
+				b.p5Complete(parent, root, 2, map[string]any{
+					"reviewedCommit": commit, "verdictMaterialCount": 1,
+					"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding("ROUND2-FIXTURE", "critical", true)},
+					"rigor":    []any{bounded("ROUND2-FIXTURE", "go test -timeout 30m ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures")},
+				})
+				if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, parent); err != nil {
+					t.Fatalf("fold round two: %v", err)
+				}
+				trajectory = `[{"material":2,"round":1},{"material":1,"round":2}]`
+				b.writeFileAbs(filepath.Join(workspace, page), "# Design round two fixture\n\nRound three changes the page.\n")
+			}
+			if got, _ := json.Marshal(b.record(root)["materialByRound"]); string(got) != trajectory {
+				t.Fatalf("material trajectory %s, want %s", got, trajectory)
+			}
+			result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
+			requireExit(t, result, 10, b.stderr.String())
+			if strings.Contains(b.stderr.String(), "cap-exhausted-human-raise") || !strings.Contains(b.stderr.String(), "the review-round limit is exhausted") {
+				t.Fatalf("stderr %q", b.stderr.String())
+			}
+			next := strconv.Itoa(row.rounds + 1)
+			if exists(b.recordPath(root+"-r"+next)) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", next)) {
+				t.Fatalf("the round-%s refusal created a successor record or payload", next)
+			}
+			if limit := fmt.Sprint(b.record(root)["reviewRoundLimit"]); limit != strconv.Itoa(row.frozen) {
+				t.Fatalf("the chain changed its frozen review budget to %s", limit)
+			}
 		})
-		if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, parent); err != nil {
-			t.Fatalf("fold round %d: %v", round, err)
-		}
-	}
-	if trajectory, _ := json.Marshal(b.record(root)["materialByRound"]); string(trajectory) != `[{"material":2,"round":1},{"material":1,"round":2},{"material":1,"round":3},{"material":1,"round":4},{"material":1,"round":5}]` {
-		t.Fatalf("material trajectory %s", trajectory)
-	}
-	result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
-	requireExit(t, result, 10, b.stderr.String())
-	if strings.Contains(b.stderr.String(), "cap-exhausted-human-raise") || !strings.Contains(b.stderr.String(), "the review-round limit is exhausted") {
-		t.Fatalf("stderr %q", b.stderr.String())
-	}
-	if exists(b.recordPath(root+"-r6")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "6")) {
-		t.Fatal("the round-six refusal created a successor record or payload")
 	}
 }
 
@@ -644,7 +664,7 @@ func TestPortP5DispatchIntegrationRepeatedFollowUpClaimsTheLiveRound(t *testing.
 		"secretsBoundaryCrossed": false, "irreversibleDataBoundaryCrossed": false, "externalSideEffectBoundaryCrossed": false}
 	b.p5Complete(root, root, 1, map[string]any{
 		"reviewedCommit": commit,
-		"findings":       []any{map[string]any{"id": "R-1", "severity": "medium", "material": true, "claim": "r1", "evidence": "read"}},
+		"findings":       []any{map[string]any{"id": "R-1", "severity": "critical", "material": true, "claim": "r1", "evidence": "read"}},
 		"rigor": []any{map[string]any{"findingId": "R-1", "rigorClass": "bounded", "facts": facts, "reopeningTrigger": "if it recurs",
 			"artifact": "metasystem/internal/dispatch/build.go"}},
 	})

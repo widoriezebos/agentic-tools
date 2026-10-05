@@ -19,6 +19,52 @@ const (
 const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding open; only a person can go on"
 const boundedExhaustionRefused = "the review-round limit is exhausted with bounded findings; close the critique register to defer them"
 
+// DesignRoundLimit admits a second examination only for a critical finding
+// in the first return, within the frozen review budget. Failed rounds without
+// a return do not consume an examination.
+func DesignRoundLimit(repoRoot, rootJob string, frozenLimit int64) int64 {
+	if frozenLimit < 1 {
+		frozenLimit = reviewRoundCeiling(repoRoot)
+	}
+	first, result := firstDesignReturn(repoRoot, rootJob, frozenLimit)
+	if first == 0 {
+		return frozenLimit
+	}
+	limit := first
+	findings, _ := result["findings"].([]any)
+	for _, raw := range findings {
+		finding, _ := raw.(map[string]any)
+		if asString(finding["severity"]) == "critical" {
+			limit++
+			break
+		}
+	}
+	state := loadCritiqueState(repoRoot)
+	for round := first + 1; round <= limit && round < frozenLimit; round++ {
+		for id, record := range state.records {
+			if state.chainRoot(id) != rootJob || asString(record["status"]) == "completed" || !TerminalStatus(asString(record["status"])) {
+				continue
+			}
+			if n, _ := numInt(record["round"]); n == round {
+				if _, err := readObject(filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")); os.IsNotExist(err) {
+					limit++
+					break
+				}
+			}
+		}
+	}
+	return min(limit, frozenLimit)
+}
+
+func firstDesignReturn(repoRoot, rootJob string, limit int64) (int64, map[string]any) {
+	for round := int64(1); round <= limit; round++ {
+		if result, err := readObject(filepath.Join(repoRoot, "artifacts", "agents", rootJob, "rounds", fmt.Sprint(round), "return.json")); err == nil {
+			return round, result
+		}
+	}
+	return 0, nil
+}
+
 // critiqueState is the record table one critique decision reads: every
 // parseable job record whose file name matches its own job identifier.
 type critiqueState struct {
@@ -152,6 +198,9 @@ func readCritiqueCapState(repoRoot string, records critiqueState, rootJob string
 	accounting, err := critiqueRoundAccounting(repoRoot, records, rootJob, root)
 	if err != nil {
 		return critiqueCapState{}, malformedRoundAccounting(rootJob, err)
+	}
+	if asString(root["role"]) == "design-critic" {
+		accounting.limit = DesignRoundLimit(repoRoot, rootJob, accounting.limit)
 	}
 	if accounting.consumed < accounting.limit {
 		return state, nil

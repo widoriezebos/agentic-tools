@@ -9,8 +9,88 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func TestRefusedCloseFoldsItsRound(t *testing.T) {
+	t.Parallel()
+	w := newWorkBed(t)
+	code, built, _ := w.work(append([]string{"work", "build", w.id, "records", "--brief", w.brief("records.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	expectOutcome(t, "build", code, built, intentConfirmed)
+	run := resultData(t, built)["run"].(string)
+	commit := strings.Repeat("d", 40)
+	if err := (&launch.UnitRunner{Root: w.unitRoot}).ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		return retain(launch.UnitSubject{Round: 1, Commit: commit, Tip: commit, Published: commit, DiffDigest: review.DiffDigest})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b := &deliveryBed{intentBed: w.intentBed, install: w.worktree}
+	conf, err := os.ReadFile(filepath.Join(w.root(), "metasystem.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.writeFile(filepath.Join(b.install, "metasystem.conf"), string(conf))
+	b.writeFile(filepath.Join(b.install, "plans", "goals", "backlog.md"), "# Backlog\n")
+	b.writeJob(map[string]any{"jobId": "critic", "goalId": w.id, "role": "code-critic", "status": "completed", "round": 1, "reviewRoundLimit": 20, "findingRegister": []any{}})
+	b.writeJSON(filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1", "return.json"), map[string]any{
+		"jobId": "critic", "round": 1, "verdict": "1 finding",
+		"findings": []any{map[string]any{"id": "F1", "material": true, "claim": "a case is missing", "evidence": "records_test.go:12"}},
+		"rigor":    []any{map[string]any{"findingId": "F1", "artifact": "metasystem/records.go", "rigorClass": "unproven"}},
+	})
+	closed := 0
+	owners := w.workOwners()
+	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
+		return branch.BranchReadResult{RootJob: "critic"}, nil
+	}
+	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return "main", nil }
+	owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
+		if top, err := fakeTop(w.worktree)(path); err == nil {
+			return top, nil
+		}
+		return fakeTop(w.root())(path)
+	}, noExecutable)
+	owners.connection.sameRepository = func(string, string) bool { return true }
+	owners.delivery = &intentDeliveryOwners{
+		rebindBudget: func(string, string) *intentResult { return nil },
+		recordWriter: humanRecordWriter,
+		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+			if slices.Contains(args, "--collect") {
+				return branch.BranchReadResult{State: "collected", RootJob: "critic", AttestationCommit: "attestation"}, 0, nil
+			}
+			return branch.BranchReadResult{State: "closed", RootJob: "critic"}, 0, nil
+		},
+		publishRead: func(string, string, string) (branch.PublishReadResult, error) { return branch.PublishReadResult{}, nil },
+		closeOwner: func(string, []string) intentProcessResult {
+			closed++
+			job := b.job("critic")
+			job["chainClosed"], job["closure"] = true, map[string]any{}
+			b.writeJob(job)
+			return intentProcessResult{}
+		},
+	}
+	code, review := w.runJSON(owners, "work", "review", w.id, "--work", "records")
+	expectOutcome(t, "decisions template", code, review, intentInProgress)
+	path := resultData(t, review)["template"].(string)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.writeFile(path, strings.Replace(string(content), "| F1 | DECIDE | | |", "| F1 | accepted | the case is real | successor |", 1))
+	code, refused := w.runJSON(owners, "work", "review", w.id, "--work", "records", "--dispositions", path)
+	expectOutcome(t, "risk required", code, refused, intentRefused)
+	if closed != 0 || b.job("critic")["findingRegisterRound"] != float64(1) {
+		t.Fatalf("the refused close must fold before any close owner runs: %v closed=%d", b.job("critic"), closed)
+	}
+	code, accepted := w.runJSON(owners, "goal", "accept-risk", w.id, "--finding", "F1", "--review", "critic", "--reason", "successor will cover it", "--repo", w.worktree)
+	expectOutcome(t, "accepted risk finds the folded finding", code, accepted, intentConfirmed)
+	code, review = w.runJSON(owners, "work", "review", w.id, "--work", "records", "--dispositions", path)
+	expectOutcome(t, "close after accepted risk", code, review, intentConfirmed)
+	if closed != 1 {
+		t.Fatalf("close owner ran %d times", closed)
+	}
+}
 
 // TestIntentGoalReviewCompletion drives build G, review G and revise G on
 // the physical-Git connection bed: the unit runner, branch commit, push,

@@ -504,7 +504,7 @@ func TestFollowUpIntegrationDesignCriticReadsTheChangedPageAndHostCloseIsNotRunn
 		first["contentDigest"] != p6SHA256Hex("# Close/follow-up race design\n") {
 		t.Fatalf("the design critic subject was not persisted from its reviewed workspace: %v", first)
 	}
-	b.p6CompleteReturn("close-race", "close-race", 1, map[string]any{"schemaVersion": 3, "jobId": "close-race", "round": 1, "findings": []any{}, "rigor": []any{}, "reviewedCommit": commit})
+	b.p6CompleteReturn("close-race", "close-race", 1, b.criticalDesignReturn("close-race"))
 
 	changed := "# Close/follow-up race design\n\nFixture design revision for close-race.\n"
 	b.writeFile(page, changed)
@@ -514,7 +514,11 @@ func TestFollowUpIntegrationDesignCriticReadsTheChangedPageAndHostCloseIsNotRunn
 		second["contentDigest"] == first["contentDigest"] {
 		t.Fatalf("the follow-up did not read the changed design page: %v", second)
 	}
-	b.p6CompleteReturn("close-race", "close-race-r2", 2, map[string]any{"schemaVersion": 3, "jobId": "close-race-r2", "round": 2, "findings": []any{}, "rigor": []any{}, "reviewedCommit": commit})
+	b.p6CompleteReturn("close-race", "close-race-r2", 2, map[string]any{
+		"schemaVersion": 3, "jobId": "close-race-r2", "round": 2, "rigor": []any{}, "reviewedCommit": commit,
+		"findings": []any{map[string]any{"id": "DESIGN-1", "severity": "low", "material": false,
+			"claim": "the missing admission rule is supplied", "evidence": "the changed design page"}},
+	})
 	requireExit(t, b.run("__critique-register-advance", "--root-job", "close-race", "--round-job", "close-race-r2"), 0, b.stderr.String())
 
 	requireExit(t, b.run("close", "--job", "close-race"), 0, b.stderr.String())

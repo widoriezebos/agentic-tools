@@ -21,17 +21,15 @@ import (
 // decision, and the design gains its Dispositions section, one row per
 // finding per round, when the chain closes.
 
-// designRoundLimit is the round limit the dispatch owner froze on the chain's
-// root; a root that carries none has metasystem.budget.review-round-max
-// rounds, a backstop. A frozen root keeps its own limit, as the register
-// close does.
+// designRoundLimit uses the dispatch owner's design admission rule within
+// the chain's frozen review budget.
 func (inv *intentInvocation) designRoundLimit(root string) int64 {
 	if record, err := inv.jobRecord(root); err == nil {
 		if limit := recordInt(record, "reviewRoundLimit"); limit >= 1 {
-			return limit
+			return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, limit)
 		}
 	}
-	return reviewRoundCeiling(inv.stateRoot)
+	return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, reviewRoundCeiling(inv.stateRoot))
 }
 
 // reviewRoundCeiling is metasystem.budget.review-round-max in the
@@ -84,14 +82,19 @@ type answeredRound struct {
 }
 
 // answeredDesignRounds reads every round of the chain that has a complete
-// decisions file of its own, oldest first. A round whose file is still a
-// template, or does not join its return, is not an answered round.
+// decisions file of its own, oldest first. Rounds without a return are skipped.
+// A round whose file is still a template, or does not join its return, is not
+// an answered round.
 func (inv *intentInvocation) answeredDesignRounds(root string) []answeredRound {
 	var rounds []answeredRound
-	for round := int64(1); ; round++ {
+	newest, err := inv.newestRound(root)
+	if err != nil {
+		return rounds
+	}
+	for round := int64(1); round <= recordRound(newest); round++ {
 		returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), root, round)
 		if _, err := os.Stat(returnPath); err != nil {
-			return rounds
+			continue
 		}
 		own := roundDecisionsPath(returnPath)
 		if violations := validate.CritiqueClosed(returnPath, own); len(violations) > 0 {
@@ -103,6 +106,7 @@ func (inv *intentInvocation) answeredDesignRounds(root string) []answeredRound {
 		}
 		rounds = append(rounds, answeredRound{round: round, findings: roundClaims(returnPath), rows: rows})
 	}
+	return rounds
 }
 
 // roundClaims is each finding's claim, first line, from the round's return.
@@ -137,11 +141,13 @@ func roundClaims(returnPath string) map[string]string {
 // A refutation and an out-of-scope stand from any round. An acceptance stands
 // only from an earlier round, whose amendment the follow-up examined without
 // raising the finding again; the answered round's own acceptances are left
-// open, so the close classifies them.
+// open for classification, except acceptances at a one-examination close,
+// which are recorded as folded.
 func (inv *intentInvocation) registerDecisions(root string, answering int64) map[string]string {
 	latest := map[string]string{}
 	from := map[string]int64{}
-	for _, round := range inv.answeredDesignRounds(root) {
+	rounds := inv.answeredDesignRounds(root)
+	for _, round := range rounds {
 		if round.round > answering {
 			break
 		}
@@ -154,6 +160,8 @@ func (inv *intentInvocation) registerDecisions(root string, answering int64) map
 		switch {
 		case disposition == "refuted" || disposition == "out-of-scope":
 			decisions[id] = disposition
+		case disposition == "accepted" && len(rounds) == 1 && inv.designRoundLimit(root) == answering:
+			decisions[id] = "folded"
 		case disposition == "accepted" && from[id] < answering:
 			decisions[id] = disposition
 		}

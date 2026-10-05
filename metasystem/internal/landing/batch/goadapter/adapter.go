@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"strings"
 )
 
 // GateStep, GateStepResult and GateRed are the lane's neutral gate types.
@@ -45,7 +46,9 @@ func (Adapter) Closure(root, base, tree string) (adapter.Closure, error) {
 			return adapter.Closure{}, fmt.Errorf("no Go module under %s", root)
 		}
 		selection, err := SelectWorkingUnitPackages(moduleRoot, base)
-		return closureOf(selection), err
+		closure := closureOf(selection)
+		closure.Root = moduleRoot
+		return closure, err
 	}
 	return closureWithWorkspaceSnapshot(gittree.Workspace{Dir: root}, base, tree, nil)
 }
@@ -74,12 +77,22 @@ func closureWithWorkspaceSnapshot(workspace gittree.Workspace, base, tree string
 	if err != nil {
 		return adapter.Closure{}, err
 	}
-	closure := adapter.Closure{Tree: selected.Tree, Module: selected.ModulePath,
+	closure := adapter.Closure{Tree: selected.Tree, Module: selected.ModulePath, Root: moduleRoot,
 		Changed: selected.Changed, Dependents: selected.Dependents}
 	for _, path := range selected.Unowned {
 		closure.Unowned = append(closure.Unowned, filepath.ToSlash(filepath.Join(prefix, filepath.FromSlash(path))))
 	}
 	return closure, nil
+}
+
+// TestSteps runs each changed package whole; dependents remain the lane's proof.
+func (Adapter) TestSteps(closure adapter.Closure) []adapter.GateStep {
+	steps := make([]adapter.GateStep, 0, len(closure.Changed))
+	for index, unit := range closure.Changed {
+		steps = append(steps, adapter.GateStep{Name: fmt.Sprintf("package-%d", index+1),
+			Args: []string{"go", "test", "-count=1", "-timeout", "30m", strings.TrimRight(unit, "/") + "/"}})
+	}
+	return steps
 }
 
 // OwnerUnit maps test2json's package import path to the closure's relative package.

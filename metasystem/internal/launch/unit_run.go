@@ -71,6 +71,7 @@ type UnitRound struct {
 	Cause            string `json:"cause,omitempty"`
 	// Material is -1 when the examination has no readable return.
 	Material   int        `json:"material"`
+	Repeats    int        `json:"repeats,omitempty"`
 	BuildModel string     `json:"buildModel"`
 	ReadModel  string     `json:"readModel"`
 	Steps      []UnitStep `json:"steps"`
@@ -130,6 +131,9 @@ type UnitRunner struct {
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// PlanProof selects proof after the build. A nil result retains the
+	// caller's commands; selected commands are frozen for this round's retries.
+	PlanProof func(UnitPlan) ([]ProofCommand, error)
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
@@ -219,6 +223,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 		if err := runner.countedCap(record); err != nil {
 			return UnitResult{}, err
+		}
+		if err := runner.roundDivergent(record); err != nil {
+			return UnitResult{Record: record}, err
 		}
 		if err := admitFollowUp(record, request.FollowUp); err != nil {
 			return UnitResult{}, err
@@ -403,6 +410,18 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return runner.finish(record, round, "build-failed")
 		}
 	}
+	planned, err := runner.roundProofPlan(plan, round.Directory, len(round.Steps) > buildCount)
+	if err != nil {
+		round.Steps = append(round.Steps, UnitStep{Name: "proof:plan", State: StepFailed, Reason: err.Error()})
+		for _, command := range proofCommands(plan) {
+			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "proof-red"})
+		}
+		if plan.HasRead() {
+			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "proof-red", Model: round.ReadModel})
+		}
+		return runner.finish(record, round, "proof-red")
+	}
+	plan = planned
 	if len(round.Steps) == buildCount {
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
@@ -479,6 +498,22 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		return runner.finish(record, round, "proof-red")
 	}
+	packet, err := runner.warmRead(*record, *round)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if packet != "" && plan.HasRead() {
+		brief, err := os.ReadFile(plan.Read.Brief)
+		if err != nil {
+			return UnitResult{}, err
+		}
+		brief = []byte(strings.Replace(string(brief), "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1))
+		path := filepath.Join(round.Directory, "read-brief.md")
+		if _, err := atomicfile.WriteText(path, string(brief)+packet, runner.root()); err != nil {
+			return UnitResult{}, err
+		}
+		sequence.spec.Brief = path
+	}
 	if !plan.HasRead() {
 		return runner.finish(record, round, "green")
 	}
@@ -490,6 +525,32 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return runner.result(*record, round, &round.Steps[stop], capped), err
 	}
 	return runner.finish(record, round, outcome)
+}
+
+func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool) (UnitPlan, error) {
+	path := filepath.Join(directory, "plan.json")
+	if _, err := os.Stat(path); err == nil {
+		return ReadUnitPlan(path)
+	} else if !os.IsNotExist(err) {
+		return plan, err
+	}
+	if runner.PlanProof == nil || proofPlanned {
+		return plan, nil
+	}
+	commands, err := runner.PlanProof(plan)
+	if err != nil || commands == nil {
+		return plan, err
+	}
+	plan.Proof = commands
+	if err := plan.resolveAndValidate(directory); err != nil {
+		return plan, err
+	}
+	data, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return plan, err
+	}
+	_, err = atomicfile.WriteText(path, string(data)+"\n", directory)
+	return plan, err
 }
 
 // readSequence is the round's reads under the shared read partition policy.
@@ -638,6 +699,20 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 		return UnitResult{}, err
 	}
 	round.Material = material
+	// Keep relations before a later read replaces the findings file.
+	round.Repeats = 0
+	for _, step := range round.Steps {
+		if !strings.HasPrefix(step.Name, "read") || !unitStepVerdictCounts(step) || step.LaunchID == "" {
+			continue
+		}
+		if read, err := runner.Manager.Store.Read(step.LaunchID); err == nil {
+			for _, output := range read.Outputs {
+				if data, err := os.ReadFile(output.Path); err == nil {
+					round.Repeats += measuredReadRepeats(string(data))
+				}
+			}
+		}
+	}
 	if err := runner.save(*record); err != nil {
 		return UnitResult{}, err
 	}
@@ -702,31 +777,42 @@ func countedRounds(record UnitRunRecord) (counted, machinery int) {
 }
 
 func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (int, error) {
+	material, _, err := runner.roundFindings(record, round)
+	return material, err
+}
+
+func (runner *UnitRunner) roundFindings(record UnitRunRecord, round UnitRound) (int, int, error) {
 	for _, subject := range record.Subjects {
 		if subject.Round != round.Number || subject.Examination == "" {
 			continue
 		}
 		path := subject.ExaminationReturnPath
 		if path == "" {
-			return -1, nil
+			return -1, 0, nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return -1, err
+			return -1, 0, err
 		}
 		var result struct {
-			Findings []struct{ Material bool } `json:"findings"`
+			Findings []struct {
+				Material bool
+				Relation string
+			} `json:"findings"`
 		}
 		if err := json.Unmarshal(data, &result); err != nil {
-			return -1, fmt.Errorf("read examination return %s: %w", path, err)
+			return -1, 0, fmt.Errorf("read examination return %s: %w", path, err)
 		}
-		material := 0
+		material, repeats := 0, 0
 		for _, finding := range result.Findings {
 			if finding.Material {
 				material++
 			}
+			if repeatedRelation(finding.Relation) {
+				repeats++
+			}
 		}
-		return material, nil
+		return material, repeats, nil
 	}
 	material := 0
 	for _, step := range round.Steps {
@@ -736,7 +822,7 @@ func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (
 			}
 		}
 	}
-	return material, nil
+	return material, round.Repeats, nil
 }
 
 func (runner *UnitRunner) result(record UnitRunRecord, round *UnitRound, step *UnitStep, capped bool) UnitResult {

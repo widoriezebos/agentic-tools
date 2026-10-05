@@ -755,11 +755,11 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 // open or disputed findings are decided here: one the critic withdrew or the
 // close deferred keeps its resolution, and an id the register does not carry
 // (a finding that was never material) has nothing to decide. The final round's
-// own accepted findings are not passed here, so the close still classifies
-// them.
+// own accepted findings stay open for classification, except non-severe
+// acceptances folded at a one-examination design close.
 func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[string]string) error {
 	for id, resolution := range decisions {
-		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" {
+		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" && resolution != "folded" {
 			return fmt.Errorf("finding %s: %q is not a decision the register records; it records refuted, accepted and out-of-scope", id, resolution)
 		}
 	}
@@ -778,6 +778,17 @@ func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[stri
 				resolution, decided := decisions[register[i].FindingID]
 				if !decided || (register[i].Status != "open" && register[i].Status != "disputed") {
 					continue
+				}
+				if resolution == "folded" {
+					round, _ := numInt(root[findingRegisterRoundField])
+					limit, _ := numInt(root[reviewRoundLimitField])
+					first, _ := firstDesignReturn(repoRoot, rootJob, max(limit, round))
+					if asString(root["role"]) != "design-critic" || round != first || DesignRoundLimit(repoRoot, rootJob, limit) != round {
+						return fmt.Errorf("finding %s can only be folded at a one-examination design close", register[i].FindingID)
+					}
+					if register[i].RigorClass == critiqueModel.Severe {
+						continue
+					}
 				}
 				if resolution == "out-of-scope" && (register[i].RigorClass == critiqueModel.Severe || register[i].RigorClass == critiqueModel.Unproven) {
 					return fmt.Errorf("finding %s is %s and cannot be resolved out-of-scope", register[i].FindingID, register[i].RigorClass)
@@ -930,15 +941,14 @@ func deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage
 	return goal.Opid(req.Ulid, machine, lineage), nil
 }
 
-// designFinalRound reports whether a design critique's folded round is its
-// last: the limit frozen on the chain root, else the goal's review-round
-// member under metasystem.budget.review-round-max, else that ceiling.
+// designFinalRound reports whether the folded design has used its allowed
+// examinations within the frozen review budget.
 func designFinalRound(repoRoot string, state critiqueState, rootJob string, root map[string]any, foldedRound int64) bool {
 	if asString(root["role"]) != "design-critic" {
 		return false
 	}
 	if account, err := critiqueRoundAccounting(repoRoot, state, rootJob, root); err == nil {
-		return foldedRound >= account.limit
+		return foldedRound >= DesignRoundLimit(repoRoot, rootJob, account.limit)
 	}
 	return foldedRound >= reviewRoundCeiling(repoRoot)
 }
@@ -1334,7 +1344,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 				return nil, fmt.Errorf("entry %d is non-open without a resolution", index)
 			}
 			validResolution := finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope" ||
-				finding.Resolution == "refuted" || finding.Resolution == "accepted") ||
+				finding.Resolution == "refuted" || finding.Resolution == "accepted" || finding.Resolution == "folded") ||
 				finding.Status == "deferred" && finding.Resolution == "deferred" && finding.DecisionOpID != "" ||
 				finding.Status == "accepted-risk" && finding.Resolution == "accepted-risk" && finding.DecisionOpID != ""
 			if !unresolved && !validResolution {

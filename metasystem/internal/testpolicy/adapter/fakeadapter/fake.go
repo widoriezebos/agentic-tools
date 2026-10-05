@@ -14,6 +14,7 @@ const Tool = "fakebuild"
 // Adapter scripts a closure, an owner map and identities.
 type Adapter struct {
 	Scripted adapter.Closure
+	Steps    []adapter.GateStep
 	// Owners maps a failing test's classname to the unit that owns it.
 	Owners map[string]string
 	// Unidentified names failures (classname#name) that carry no identity.
@@ -53,6 +54,11 @@ func (a *Adapter) Closure(_, _, tree string) (adapter.Closure, error) {
 		closure.Tree = tree
 	}
 	return closure, nil
+}
+
+func (a *Adapter) TestSteps(adapter.Closure) []adapter.GateStep {
+	a.record("TestSteps")
+	return a.Steps
 }
 
 // OwnerUnit looks the classname up in the owner map.

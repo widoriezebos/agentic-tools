@@ -55,6 +55,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "BUILD_ENGINE_STALE", Owner: "cmd/metasystem", Site: "intent_work.go#intentInvocation.buildEngineAdmission", Shape: Question, H1: StandingInput},
 	{Code: "BUILD_DESIGN_NOT_ACCEPTED", Owner: "cmd/metasystem", Site: "intent_work.go#runIntentBuildUnit", Shape: Warning, Override: "goal allow G build-without-design --reason TEXT", Commands: 1, H1: StandingAgent},
 	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "internal/testrun", Site: "worker.go#ErrWorkerPolicyUnsupported", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go#Manager.Supervise", Shape: Question, H1: StandingInput},
@@ -72,16 +73,19 @@ var Rows = []Row{
 	{Code: "READ_REQUEST_INVALID", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "record-writer-refused", Owner: "cmd/metasystem", Site: "intent_delivery.go#recordWriterAdmits", Shape: Agent, Override: "review --dispositions", Commands: 1},
 	{Code: "UNIT_REVISION_CONFLICT", Owner: "cmd/metasystem", Site: "intent_selection.go#runIntentRevise", Shape: Question, H1: StandingInput},
+	{Code: "UNIT_REVISE_UNDECIDED", Owner: "internal/launch", Site: "unit_revise.go#UnitRunner.reviseDecided", Shape: Question, H1: StandingInput},
 	{Code: "READ_INPUT_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_RETRY_RUNNING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.rejoinRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_RETRY_UNKNOWN", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_PATCH_UNREADABLE", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_ROUND_LIMIT", Owner: "cmd/metasystem", Site: "intent_selection.go#runIntentRevise", Shape: Agent, Override: "budget", Commands: 1, H1: StandingGuide, Forward: "goal budget"},
 	{Code: "UNIT_ROUND_CAP", Owner: "internal/launch", Site: "coded.go#UnitRunner.countedCap", Shape: Agent, Override: "split", Commands: 1, H1: StandingGuide, Forward: "work build"},
+	{Code: "UNIT_ROUND_DIVERGENT", Owner: "internal/launch", Site: "coded.go#UnitRunner.roundDivergent", Shape: Agent, Override: "split", Commands: 1, H1: StandingGuide, Forward: "work build"},
 	{Code: "carried-receipt-refused", Owner: "internal/landing", Site: "carried_prepare.go#carriedReceiptLine", Shape: Question, H1: StandingInput},
 	{Code: "READ_BUSY", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.readLock", Shape: Question, H1: StandingInput},
 	{Code: "READ_CHECKOUT_UNAVAILABLE", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "DESIGN_CHAIN_OPEN", Owner: "internal/dispatch", Site: "read_admission.go#CritiqueReadAdmissionForGoal", Shape: Question, H1: StandingInput},
+	{Code: "DESIGN_ROUND_ONE", Owner: "cmd/metasystem", Site: "intent_design_review.go#designRoundOneRefused", Shape: Question, H1: StandingInput},
 	{Code: "READ_BRIEF_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_RUN_BUSY", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_LOCK_FAILED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},

@@ -3,6 +3,7 @@ package goadapter
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,20 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
+
+func TestGoAdapterTestStepsWholeChangedPackages(t *testing.T) {
+	t.Parallel()
+	closure := adapter.Closure{Changed: []string{"./cmd/tool", "./internal/lib/", "."}, Dependents: []string{"./dependent"}}
+	steps := (Adapter{}).TestSteps(closure)
+	want := []adapter.GateStep{
+		{Name: "package-1", Args: []string{"go", "test", "-count=1", "-timeout", "30m", "./cmd/tool/"}},
+		{Name: "package-2", Args: []string{"go", "test", "-count=1", "-timeout", "30m", "./internal/lib/"}},
+		{Name: "package-3", Args: []string{"go", "test", "-count=1", "-timeout", "30m", "./"}},
+	}
+	if !reflect.DeepEqual(steps, want) || len((Adapter{}).TestSteps(adapter.Closure{})) != 0 {
+		t.Fatalf("steps=%+v want=%+v", steps, want)
+	}
+}
 
 func TestGoAdapterIsBoundToTheGoGroups(t *testing.T) {
 	t.Parallel()

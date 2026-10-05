@@ -27,6 +27,9 @@ func TestCommandAndSectionAdaptersAnswerMinimally(t *testing.T) {
 		if err != nil || closure.Tree != "tree" || len(closure.Units()) != 0 {
 			t.Fatalf("%+v closure=%+v err=%v", tc.group, closure, err)
 		}
+		if len(bound.TestSteps(closure)) != 0 {
+			t.Fatalf("%+v planned tests without changed units", tc.group)
+		}
 		if unit, ok := bound.OwnerUnit(failure, closure); ok {
 			t.Fatalf("%+v owned the failure by %q", tc.group, unit)
 		}

@@ -396,13 +396,13 @@ func TestDispatchIntegrationAWritableReviewRoleIsQuarantined(t *testing.T) {
 	requireWritableWorktree("review-worktree")
 }
 
-// followCritic completes a critic round with a clean return, commits a
+// followCritic completes a critic round with a critical finding, commits a
 // revision of its design page, and follows it up with the shipped message
 // template.
 func (b *bed) followCritic(job, design string) delegation.Result {
 	b.t.Helper()
 	b.complete(job)
-	b.writeFile("artifacts/agents/"+job+"/rounds/1/return.json", `{"schemaVersion":4,"jobId":"`+job+`","round":1,"findings":[],"rigor":[]}`)
+	b.p5WriteJSON("artifacts/agents/"+job+"/rounds/1/return.json", b.criticalDesignReturn(job))
 	b.writeFile("plans/designs/"+design, "# "+design+"\n\nFollow-up revision.\n")
 	b.git("add", "-A")
 	b.git("commit", "-qm", "revise "+design)

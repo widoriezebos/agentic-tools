@@ -56,6 +56,12 @@ Inside that file, number findings from most severe to least severe. Each
 finding names the file, rule, and concrete failure it causes. If there are no
 material findings, record AGREE and any non-gating observations there.
 
+A finding that is one instance of a rule names every sibling place; the fix is the rule.
+
+Give each finding its own line: `RELATION: new`, `RELATION: fold-not-holding`,
+or `RELATION: same-rule-as N` (N is the previous read's finding number).
+An omitted relation means `new`.
+
 Return only these two lines; never return the findings themselves:
 
 ```text

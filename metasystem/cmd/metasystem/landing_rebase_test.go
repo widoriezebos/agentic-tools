@@ -56,6 +56,9 @@ func newLandRebaseBed(t *testing.T) *landRebaseBed {
 	b.owners = b.intentBed.owners()
 	b.owners.delivery = b.deliveryBed.owners
 	b.owners.work.git = func(_ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") == "rev-parse --verify -q refs/heads/goal/standing-validation" {
+			return []byte(b.landing.status.BranchTip + "\n"), nil
+		}
 		if strings.Join(args, " ") != "worktree list --porcelain" {
 			t.Fatalf("unexpected Git read: %v", args)
 		}

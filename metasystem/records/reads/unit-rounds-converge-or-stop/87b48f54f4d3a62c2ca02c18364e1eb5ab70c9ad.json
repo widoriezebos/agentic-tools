@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "goal": "unit-rounds-converge-or-stop",
+  "unit": "engine",
+  "subject": {
+    "commit": "87b48f54f4d3a62c2ca02c18364e1eb5ab70c9ad",
+    "parent": "44f9ab72eebd90c6f70bf00fa25fbc95f62c7fb5",
+    "tree": "912197899f0b73e80db58d3431d2a3162554de79",
+    "patchDigest": "89f47fc3debb5107709b66a26fabf2d2dc70d48da73075c5396bcedc8cb24ba0",
+    "unitDigest": "461807c5d83769f97739df1791d38648f440432ca976aebbab4ddc9cc76e9294"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-fd73093406b7d38d17688066",
+    "round": 1,
+    "closureSha256": "166263dfa916f181f932eab5e68d38d4f7733c589939b2e8b05d8ebbc97d3047"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "912197899f0b73e80db58d3431d2a3162554de79",
+    "runId": "goal-read-gate-20261005t142614z-398433aed2a2777b"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f8078d477dd83997b63c95d00214760b37788289",
+      "digest": "fe1ddae0f68d577298fb5fb739c0f80a319e2bcbb6e45edb6d9a34738d5685a9"
+    },
+    {
+      "kind": "read",
+      "commit": "177636963000de73efcf1b4e2e3460a42d9be1cf",
+      "digest": "042f7f43608364bd351419dfebbbb18326caa84772fe817a1aa733ccc6a47f0a"
+    },
+    {
+      "kind": "read",
+      "commit": "2a1b8d08c63415fab373e6d5a62b48edcb7468e2",
+      "digest": "92c065f6e2776f15140cdeec844fea2f4b95c5f99ac190390a217597b2d497c5"
+    },
+    {
+      "kind": "read",
+      "commit": "92c3b6ac47d1cc3f23c4da02f16ca27462221493",
+      "digest": "94c0b80385f554ecdd4368e0427a843c84cc221ae6bb7c0e9ce919f5560c4200"
+    },
+    {
+      "kind": "read",
+      "commit": "44f9ab72eebd90c6f70bf00fa25fbc95f62c7fb5",
+      "digest": "3486a9c0bfd2a17017b1aeae14ac2dc62a6626ce9785667b967fa6dd8d858c4e"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p2_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p3_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p4_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p5_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    },
+    {
+      "path": "metasystem/internal/delegation/port_p6_test.go",
+      "readerWord": "reviewed by critic root code-critic-fd73093406b7d38d17688066"
+    }
+  ],
+  "sha256": "a00ced4cf43ed1c72a4fb253c9914904c1aa8b1fdb0987f538885d70a2ec6215"
+}

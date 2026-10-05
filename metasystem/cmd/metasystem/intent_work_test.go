@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +26,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -42,13 +46,15 @@ type workBed struct {
 	ledger       sync.Mutex
 	// readDirs are the read-findings directories this bed's builds created
 	// under the temporary root, found through each result's plan.
-	readDirsMu sync.Mutex
-	readDirs   map[string]bool
-	designGate designGateOwners
-	config     func(key, confPath string) (value, source string, code int, err error)
+	readDirsMu     sync.Mutex
+	readDirs       map[string]bool
+	designGate     designGateOwners
+	config         func(key, confPath string) (value, source string, code int, err error)
+	testingAdapter adapter.Adapter
 	// primary, when set, is the main tree git worktree list names first;
 	// otherwise that is the bed's root.
-	primary string
+	primary        string
+	workOwnersHook func(*intentWorkOwners)
 }
 
 type workClock struct {
@@ -168,6 +174,143 @@ func newWorkBed(t *testing.T) *workBed {
 	return newWorkBedWith(t, workApprovedBox)
 }
 
+func TestBuildRefusesAStaleEngine(t *testing.T) {
+	t.Parallel()
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	for _, row := range []struct {
+		name, stamp, paths, failure string
+		noSource, stale             bool
+		logCalls, tipCalls          int
+	}{
+		{name: "stale", stamp: commit, paths: "\ninternal/has spaces.go\n\n", stale: true, logCalls: 1, tipCalls: 1},
+		{name: "empty", stamp: commit, paths: "\n\n", logCalls: 1},
+		{name: "dev", stamp: "dev"},
+		{name: "dirty", stamp: "dev-" + commit + "-dirty"},
+		{name: "witness", stamp: "witness-abcdef012345"},
+		{name: "no-source", stamp: commit, noSource: true},
+		{name: "log-failure", stamp: commit, paths: "internal/changed.go\n", failure: "log", logCalls: 1},
+		{name: "tip-failure", stamp: commit, paths: "cmd/metasystem/main.go\n", failure: "tip", logCalls: 1, tipCalls: 1},
+	} {
+		for _, verb := range []string{"build", "revise-goal", "revise-run"} {
+			t.Run(row.name+"/"+verb, func(t *testing.T) {
+				t.Parallel()
+				bed := newWorkBed(t)
+				brief := bed.brief("engine.md", "Build the unit.\n")
+				args := append([]string{"work", "build", bed.id, "engine", "--brief", brief, "--lines", "5"}, workCheck...)
+				if verb != "build" {
+					code, built, _ := bed.work(args...)
+					if code != 0 {
+						t.Fatalf("seed build: %d %+v", code, built)
+					}
+					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief}
+					if verb == "revise-run" {
+						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief}
+					}
+				}
+				layout, err := bed.owners().resolver.ResolveLayout(bed.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				root := layout.InstallationRoot.Path()
+				if !row.noSource {
+					if err := os.MkdirAll(filepath.Join(root, "cmd", "metasystem"), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				logCalls, tipCalls := 0, 0
+				bed.workOwnersHook = func(owners *intentWorkOwners) {
+					owners.engineStamp = row.stamp
+					git := owners.git
+					owners.git = func(dir string, argv ...string) ([]byte, error) {
+						stage, output := "", ""
+						switch {
+						case len(argv) > 0 && argv[0] == "log":
+							logCalls++
+							stage, output = "log", row.paths
+							if !slices.Equal(argv, []string{"log", "--format=", "--name-only", row.stamp + "..origin/main", "--", "internal", "cmd"}) {
+								t.Fatalf("git log arguments: %q", argv)
+							}
+						case slices.Equal(argv, []string{"rev-parse", "origin/main"}):
+							tipCalls++
+							stage, output = "tip", "main-tip\n"
+						default:
+							return git(dir, argv...)
+						}
+						if dir != root {
+							t.Fatalf("engine check ran in %s, want installation %s", dir, root)
+						}
+						if stage == row.failure {
+							return []byte(output), errors.New("git unavailable")
+						}
+						return []byte(output), nil
+					}
+				}
+				launched := len(bed.starter.launched())
+				code, result, stderr := bed.work(args...)
+				wantStderr := ""
+				if verb == "build" {
+					wantStderr = "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+				}
+				if logCalls != row.logCalls || tipCalls != row.tipCalls {
+					t.Fatalf("Git calls: log=%d tip=%d, want %d %d", logCalls, tipCalls, row.logCalls, row.tipCalls)
+				}
+				if row.stale {
+					if code != 1 || result.Outcome != intentRefused || !slices.Equal(result.Details, []string{"BUILD_ENGINE_STALE engine=" + commit + " main=main-tip paths=1"}) ||
+						result.Next == nil || !slices.Equal(result.Next.Argv, []string{"go", "run", "./cmd/devgate", "build"}) || !strings.Contains(result.Next.Reason, root) ||
+						len(bed.starter.launched()) != launched {
+						t.Fatalf("stale engine: %d %+v", code, result)
+					}
+					t.Logf("public %s refused before launch: %v; next: %v", verb, result.Details, result.Next)
+				} else if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" || len(bed.starter.launched()) <= launched || stderr != wantStderr {
+					t.Fatalf("unknown or fresh engine: %d %+v stderr=%s", code, result, stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestReadBriefAsksForTheRule(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("rule.md", "Read each round: yes\nBuild the rule.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "rule", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: %+v", built)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := os.ReadFile(plan.Read.Brief)
+	if err != nil || !strings.Contains(string(read), "A finding that is one instance of a rule names every sibling place; the fix is the rule.") {
+		t.Fatalf("brief: %s %v", read, err)
+	}
+}
+
+func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("revise.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "decisions", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: %+v", built)
+	}
+	run := resultData(t, built)["run"].(string)
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := bed.brief("return.json", `{"findings":[{"id":"F-1","material":true}]}`)
+	record.Subjects = []launch.UnitSubject{{Round: 1, Examination: "critic", ExaminationReturnPath: filepath.Join(bed.root(), report)}}
+	writeQuestionFixture(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+	launched := len(bed.starter.launched())
+	code, refused, _ := bed.work("work", "revise", bed.id, "--work", "decisions", "--brief", brief)
+	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding F-1 of round 1 has no decision; nothing was started" ||
+		!strings.Contains(resultWords(refused), "UNIT_REVISE_UNDECIDED") || refused.Next == nil || !slices.Contains(refused.Next.Argv, "1") || !strings.Contains(refused.Next.Reason, "Decisions on round") || len(bed.starter.launched()) != launched {
+		t.Fatalf("revise: %+v", refused)
+	}
+}
+
 // newWorkBedWith is the work bed with its goal record shaped by amend.
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
@@ -233,6 +376,7 @@ func (b *workBed) workOwners() intentOwners {
 		claimCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
 	}
 	owners.work = intentWorkOwners{
+		adapter:    func(string) (adapter.Adapter, error) { return b.testingAdapter, nil },
 		designGate: b.designGate,
 		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
@@ -259,7 +403,209 @@ func (b *workBed) workOwners() intentOwners {
 			return nil, errors.New("unexpected git " + joined)
 		},
 	}
+	if b.workOwnersHook != nil {
+		b.workOwnersHook(&owners.work)
+	}
 	return owners
+}
+
+type workTestingAdapter struct {
+	*fakeadapter.Adapter
+	closure func(string, string, string) (adapter.Closure, error)
+}
+
+func (a workTestingAdapter) Closure(root, base, tree string) (adapter.Closure, error) {
+	return a.closure(root, base, tree)
+}
+
+func TestAdapterStepsComeBeforeTheCheck(t *testing.T) {
+	t.Parallel()
+	for _, withAdapter := range []bool{true, false} {
+		for _, reviseRun := range []bool{true, false} {
+			t.Run(fmt.Sprintf("adapter=%t/run=%t", withAdapter, reviseRun), func(t *testing.T) {
+				t.Parallel()
+				bed := newWorkBed(t)
+				fake := fakeadapter.New()
+				fake.Steps = []adapter.GateStep{{Name: "payments", Args: []string{"fakebuild", "whole", "payments"}}, {Name: "ledger", Args: []string{"fakebuild", "whole", "ledger"}}}
+				fake.Scripted.Root = t.TempDir()
+				calls := 0
+				if withAdapter {
+					bed.testingAdapter = workTestingAdapter{fake, func(root, base, tree string) (adapter.Closure, error) {
+						calls++
+						launched := bed.starter.launched()
+						if root != bed.worktree || base != bed.head || tree != "HEAD" || launched[len(launched)-1] != "build" {
+							t.Fatalf("closure before build or wrong inputs: %s %s %s %v", root, base, tree, launched)
+						}
+						return fake.Scripted, nil
+					}}
+				}
+				brief := bed.brief("proof.md", "Build the unit.\n")
+				code, result, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+				for round := 1; round <= 2; round++ {
+					if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" {
+						t.Fatalf("round %d: %d %+v", round, code, result)
+					}
+					data := resultData(t, result)
+					plan, err := launch.ReadUnitPlan(data["plan"].(string))
+					want := []launch.ProofCommand{}
+					if withAdapter {
+						for _, step := range fake.Steps {
+							want = append(want, launch.ProofCommand{Name: step.Name, Dir: fake.Scripted.Root, Argv: step.Args, Env: []string{}})
+						}
+					}
+					want = append(want, launch.ProofCommand{Name: "check", Dir: bed.worktree, Argv: workArgv, Env: []string{}})
+					if err != nil || !reflect.DeepEqual(plan.Proof, want) || withAdapter && calls != round {
+						t.Fatalf("round %d: proof=%+v want=%+v calls=%d err=%v", round, plan.Proof, want, calls, err)
+					}
+					steps := data["steps"].([]any)
+					for index, command := range want {
+						step := steps[index+1].(map[string]any)
+						if step["name"] != "proof:"+command.Name || step["state"] != "passed" {
+							t.Fatalf("proof report: %+v", result)
+						}
+					}
+					if withAdapter {
+						command, rest, _ := resolveIntentArgv([]string{"work", "build", "run:" + data["run"].(string)})
+						var output bytes.Buffer
+						if code := runIntentIn(command, rest, &output, io.Discard, bed.root(), bed.workOwners()); code != 0 {
+							t.Fatalf("plain report: %d %s", code, &output)
+						}
+						for _, step := range want {
+							if !strings.Contains(output.String(), "proof:"+step.Name+": passed") {
+								t.Fatalf("plain report omitted %s: %s", step.Name, &output)
+							}
+						}
+					}
+					if round == 1 {
+						correction := bed.brief("correction.md", "Correct the unit.\n")
+						if reviseRun {
+							code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", correction)
+						} else {
+							code, result, _ = bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestIntentWorkAdapterProofRetainedOnResume(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	fake := fakeadapter.New()
+	fake.Steps = []adapter.GateStep{{Name: "whole", Args: []string{"fakebuild", "whole"}}}
+	bed.testingAdapter = fake
+	bed.starter.hold = "proof"
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	code, held, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 3 {
+		t.Fatalf("held proof: %d %+v", code, held)
+	}
+	data := resultData(t, held)
+	step := data["steps"].([]any)[1].(map[string]any)
+	if _, err := bed.manager.Store.Update(step["launchId"].(string), func(record *launch.Record) error {
+		code := 0
+		record.State, record.ExitCode = launch.Completed, &code
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bed.starter.hold, bed.starter.fail["proof"] = "", true
+	fake.Steps = []adapter.GateStep{{Name: "changed", Args: []string{"different"}}}
+	code, resumed, _ := bed.work("work", "wait", "run:"+data["run"].(string))
+	steps := resultData(t, resumed)["steps"].([]any)
+	if code != 0 || resultData(t, resumed)["outcome"] != "proof-red" || !slices.Equal(*fake.Calls, []string{"Closure", "TestSteps"}) ||
+		steps[1].(map[string]any)["name"] != "proof:whole" || steps[1].(map[string]any)["state"] != "passed" || steps[2].(map[string]any)["state"] != "failed" {
+		t.Fatalf("resume: %d %+v calls=%v", code, resumed, *fake.Calls)
+	}
+}
+
+func TestIntentWorkAdapterPlanningFailureEndsRoundRed(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, reason string
+		closureError error
+		steps        []adapter.GateStep
+	}{
+		{name: "closure", reason: "reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'",
+			closureError: errors.New("reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'")},
+		{name: "invalid-steps", reason: "proof[0].argv", steps: []adapter.GateStep{{Name: "broken"}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newWorkBed(t)
+			fake := fakeadapter.New()
+			fake.Steps = row.steps
+			bed.testingAdapter = workTestingAdapter{fake, func(string, string, string) (adapter.Closure, error) {
+				return fake.Scripted, row.closureError
+			}}
+			brief := bed.brief("proof.md", "Read each round: yes\nBuild the unit.\n")
+			code, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+			data := resultData(t, failed)
+			if code != 0 || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
+				t.Fatalf("planning failure: %d %+v", code, failed)
+			}
+			steps := data["steps"].([]any)
+			if len(steps) != 4 || steps[0].(map[string]any)["state"] != "passed" ||
+				steps[1].(map[string]any)["name"] != "proof:plan" || steps[1].(map[string]any)["state"] != "failed" ||
+				!strings.Contains(steps[1].(map[string]any)["reason"].(string), row.reason) ||
+				steps[2].(map[string]any)["name"] != "proof:check" || steps[2].(map[string]any)["state"] != "skipped" ||
+				steps[3].(map[string]any)["name"] != "read" || steps[3].(map[string]any)["state"] != "skipped" {
+				t.Fatalf("round report: %+v", failed)
+			}
+			run := data["run"].(string)
+			code, waited, _ := bed.work("work", "wait", "run:"+run)
+			if code != 0 || !reflect.DeepEqual(resultData(t, waited)["steps"], steps) || !slices.Equal(bed.starter.launched(), []string{"build"}) {
+				t.Fatalf("wait repeated planning: %d %+v launches=%v", code, waited, bed.starter.launched())
+			}
+			command, rest, _ := resolveIntentArgv([]string{"work", "build", "run:" + run})
+			var output bytes.Buffer
+			if code := runIntentIn(command, rest, &output, io.Discard, bed.root(), bed.workOwners()); code != 0 || !strings.Contains(strings.Join(strings.Fields(output.String()), " "), row.reason) {
+				t.Fatalf("plain round report: %d %s", code, &output)
+			}
+			correction := bed.brief("correction.md", "Correct the unit.\n")
+			code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+			if code != 0 || resultData(t, revised)["run"] != run || resultData(t, revised)["round"] != float64(2) ||
+				resultData(t, revised)["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
+				t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
+			}
+		})
+	}
+}
+
+func TestIntentWorkAdapterClosureFailureAdmitsRevise(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.testingAdapter = workTestingAdapter{fakeadapter.New(), func(string, string, string) (adapter.Closure, error) {
+		return adapter.Closure{}, errors.New("reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'")
+	}}
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	_, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	correction := bed.brief("correction.md", "Correct the unit.\n")
+	code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+	data := resultData(t, revised)
+	if code != 0 || data["run"] != resultData(t, failed)["run"] || data["round"] != float64(2) ||
+		data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
+		t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
+	}
+}
+
+func TestIntentWorkNoAdapterProofRetainedOnResume(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.starter.hold = "proof"
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	code, held, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 3 {
+		t.Fatalf("held proof: %d %+v", code, held)
+	}
+	fake := fakeadapter.New()
+	bed.testingAdapter = fake
+	code, resumed, _ := bed.work("work", "wait", "run:"+resultData(t, held)["run"].(string))
+	if code != 3 || len(*fake.Calls) != 0 || resultData(t, resumed)["plan"] != resultData(t, held)["plan"] {
+		t.Fatalf("check-only proof was replanned: %d %+v calls=%v", code, resumed, *fake.Calls)
+	}
 }
 
 // work runs one public command with --json placed before any --check, so
@@ -874,6 +1220,39 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 			!strings.Contains(refused.Summary, "unit capped unit has used its 1 counted rounds; nothing was started") ||
 			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "capped unit"}) || len(bed.starter.launched()) != launched {
 			t.Fatalf("cap refusal: code=%d %+v launches=%v", code, refused, bed.starter.launched())
+		}
+	}
+}
+
+func TestIntentReviseHonoursDivergence(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("stop.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "stopped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	runner := &launch.UnitRunner{Root: bed.unitRoot}
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	record.MaxRounds = 20
+	record.Rounds = []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}},
+		{Number: 2, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}}}
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launched := len(bed.starter.launched())
+	for _, args := range [][]string{{"work", "revise", bed.id, "--work", "stopped unit", "--brief", brief}, {"work", "revise", "run:" + run, "--brief", brief}} {
+		code, refused, _ := bed.work(args...)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_DIVERGENT") ||
+			refused.Summary != "the last two reads of stopped unit found 3, then 3 material findings, 0 of them repeats; nothing was started" ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "build", bed.id, "--work", "NEW", "--brief", "FILE", "--check", "..."}) || len(bed.starter.launched()) != launched {
+			t.Fatalf("divergence refusal: code=%d %+v", code, refused)
 		}
 	}
 }

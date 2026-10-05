@@ -359,13 +359,16 @@ const deliveryDispositionsHeader = "| Finding id | Disposition | Reasoning and e
 // caller HUMAN (a person's close, whose held commands run directly). The
 // brain fence, the record owner, the chain register, the mirror and the close
 // check are the real ones.
-func realCloseOwner(t *testing.T, b *deliveryBed) {
+func realCloseOwner(t *testing.T, b *deliveryBed, amend ...func(*delegation.Ports)) {
 	t.Helper()
 	b.owners.closeOwner = func(root string, args []string) intentProcessResult {
 		b.calls = append(b.calls, append([]string{"close-owner"}, args...))
 		ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: filepath.Join(root, "bin", "metasystem"), Host: engineHost{}})
 		if err != nil {
 			t.Fatal(err)
+		}
+		for _, apply := range amend {
+			apply(&ports)
 		}
 		ports.Lease = &fake.Lease{
 			Log: &fake.Log{},
