@@ -22,6 +22,9 @@ import (
 type Selection struct {
 	Tree, ModulePath              string
 	Changed, Dependents, Packages []string
+	// Unowned holds module-relative paths when selection reports paths without
+	// a package owner instead of widening to the complete inventory.
+	Unowned []string
 	// InputDirs contains each runnable package's transitive in-module import
 	// directories, including imports from test and build-tagged files.
 	InputDirs map[string][]string
@@ -35,8 +38,9 @@ type selectionWorkspace interface {
 }
 
 type selector struct {
-	workspace    selectionWorkspace
-	openSnapshot func(string) (string, func() error, error)
+	workspace     selectionWorkspace
+	openSnapshot  func(string) (string, func() error, error)
+	reportUnowned bool
 }
 
 // Select follows changed packages and their transitive consumers, including
@@ -69,6 +73,13 @@ func SelectWithEnvironment(moduleRoot, base, tree string, buildTags, environment
 // same package selection logic as the native detached-worktree path.
 func SelectWithWorkspaceSnapshot(workspace gittree.Workspace, base, tree string, buildTags, environment []string, openSnapshot func(string) (string, func() error, error)) (selection Selection, err error) {
 	owner := selector{workspace: workspace, openSnapshot: openSnapshot}
+	return owner.selectPackages(base, tree, buildTags, environment)
+}
+
+// SelectOwnedWithWorkspaceSnapshot reports unowned paths without selecting
+// packages for them. Module manifests still select the complete inventory.
+func SelectOwnedWithWorkspaceSnapshot(workspace gittree.Workspace, base, tree string, buildTags, environment []string, openSnapshot func(string) (string, func() error, error)) (Selection, error) {
+	owner := selector{workspace: workspace, openSnapshot: openSnapshot, reportUnowned: true}
 	return owner.selectPackages(base, tree, buildTags, environment)
 }
 
@@ -139,8 +150,11 @@ func (s selector) selectPackages(base, tree string, buildTags, environment []str
 		}
 	}
 	for _, path := range paths {
-		if full {
+		if full && !s.reportUnowned {
 			break
+		}
+		if path == "go.mod" || path == "go.sum" {
+			continue
 		}
 		_, before := beforeEntries[path]
 		_, after := afterEntries[path]
@@ -164,6 +178,10 @@ func (s selector) selectPackages(base, tree string, buildTags, environment []str
 			owner = nearestPackageOwner(path, imports, baseImports)
 		}
 		if owner == "" {
+			if s.reportUnowned {
+				selection.Unowned = append(selection.Unowned, path)
+				continue
+			}
 			// An asset with no local owner can still be opened by a test.
 			// Conservatively include the current inventory, which can reuse
 			// individual package results whose real inputs did not change.
