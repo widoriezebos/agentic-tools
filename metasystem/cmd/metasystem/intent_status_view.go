@@ -2,12 +2,14 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -233,7 +235,7 @@ func (b statusBoard) drawLane(page *textui.Page, env textui.Env) {
 			table.Row(textui.Marked(textui.Alert, "owner"), textui.Plain(b.lane.Summary))
 		case owner.State == lane.OwnerIdle:
 			if page.Verbose() {
-				table.Row(textui.Marked(textui.Idle, "owner"), textui.Plain("idle; its agent starts when there is work"))
+				table.Row(textui.Marked(textui.Idle, "owner"), textui.Plain(b.lane.AgentSummary(b.lane.Wake != nil && slices.Contains(b.lane.Wake.Reasons, plain.WakeQueued))))
 			}
 		case page.Verbose():
 			detail := "running"

@@ -169,5 +169,6 @@ func landingLaneStatus(home func() (string, error), now time.Time) plain.Status 
 // LandingLaneViewSources are the production reads of the lane's view as the
 // board shows it.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady, Wake: plain.KeeperWake(laneHome)}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady, Wake: plain.KeeperWake(laneHome),
+		Fingerprint: plain.KeeperFingerprint}
 }

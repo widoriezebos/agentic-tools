@@ -14,6 +14,7 @@ const (
 	OwnerRunning = "running"
 	OwnerStopped = "stopped"
 	OwnerIdle    = "idle"
+	OwnerHeld    = "held"
 	OwnerUnready = "unready"
 )
 
@@ -45,6 +46,7 @@ type View struct {
 // the lane's "owner".
 type OwnerView struct {
 	State     string  `json:"state"`
+	Barren    int     `json:"barren,omitempty"`
 	PID       *int64  `json:"pid"`
 	Since     *string `json:"since"`
 	LastExit  *string `json:"last_exit"`
@@ -79,6 +81,8 @@ type ViewSources struct {
 	// Ready says whether the lane can run at root (a *Refusal naming the
 	// fix when it cannot); asked only when no agent runs. nil asks nothing.
 	Ready func(root string) error
+	// Fingerprint reads the lane as the keeper's barren hold does.
+	Fingerprint func(root string) (string, error)
 	// Wake are the reads of the keeper's wake, shown as the view's wake.
 	Wake WakeSources
 }
@@ -109,7 +113,7 @@ func BuildView(sources ViewSources) View {
 		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
 	}
 	view.Wake = &wake
-	view.Summary = summary(record.Root, view)
+	view.Summary = view.SummaryWithWaiting(len(wake.Reasons) > 0)
 	return view
 }
 
@@ -151,6 +155,24 @@ func ownerView(sources ViewSources, root string) OwnerView {
 		notReady(&owner, sources.Ready(root))
 	}
 	if owner.LastExit == nil && owner.RetryHint == nil {
+		state, err := ReadAgentState(sources.Home)
+		if err != nil {
+			owner.Unread = UnreadableAgentRecord(sources.Home)
+			owner.LastExit = text(owner.Unread)
+			return owner
+		}
+		if state.Barren >= barrenLimit && sources.Fingerprint != nil {
+			fingerprint, err := sources.Fingerprint(root)
+			if err != nil {
+				owner.Unread = "whether the lane changed after its held runs is unknown: " + err.Error()
+				owner.LastExit = text(owner.Unread)
+				return owner
+			}
+			if fingerprint == state.BarrenFingerprint {
+				owner.State, owner.Barren = OwnerHeld, state.Barren
+				return owner
+			}
+		}
 		owner.State = OwnerIdle
 	}
 	return owner
@@ -170,7 +192,13 @@ func notReady(owner *OwnerView, err error) {
 	owner.LastExit, owner.RetryHint, owner.Fix = text(refusal.Message), text(refusal.Fix), refusal.Argv
 }
 
-func summary(root string, view View) string {
+// SummaryWithWaiting says the lane's state with the waiting work read by the caller.
+func (view View) SummaryWithWaiting(waiting bool) string {
+	return "landing lane " + *view.Root + ": " + view.AgentSummary(waiting)
+}
+
+// AgentSummary is the agent's state as every lane reader says it.
+func (view View) AgentSummary(waiting bool) string {
 	agent := "landing agent " + view.Owner.State
 	switch view.Owner.State {
 	case OwnerRunning:
@@ -185,6 +213,11 @@ func summary(root string, view View) string {
 		agent += "; metasystem landing start resumes it"
 	case OwnerIdle:
 		agent = "idle; its landing agent starts when there is work"
+		if waiting {
+			agent = fmt.Sprintf("idle; its agent starts within one tick (%d s)", int(AgentTick/time.Second))
+		}
+	case OwnerHeld:
+		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person's metasystem landing run starts it", view.Owner.Barren)
 	default:
 		// Why the lane cannot run and the one fix, in the one line (summary
 		// by default).
@@ -196,5 +229,5 @@ func summary(root string, view View) string {
 			agent += "; to fix: " + *view.Owner.RetryHint
 		}
 	}
-	return "landing lane " + root + ": " + agent
+	return agent
 }

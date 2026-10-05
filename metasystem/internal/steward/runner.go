@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -379,7 +380,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 // lane's keeper again while the lane waits on something that ends by
 // itself or on a hand-in: the agent wakes within it of a proof's end or of
 // a hand-in to an idle lane, not at the next cycle.
-const laneRecheck = 15 * time.Second
+const laneRecheck = lane.AgentTick
 
 // limitProbe is the cadence for checking whether a provider limit ended.
 const limitProbe = 2 * time.Minute
@@ -390,6 +391,7 @@ const limitProbe = 2 * time.Minute
 // does not wait; its keeper is stepped once per cycle.
 type laneKeeping struct {
 	step    func() lane.AgentRun
+	log     io.Writer
 	line    string
 	waiting bool
 }
@@ -401,7 +403,11 @@ func (k *laneKeeping) run() {
 	}
 	run := k.step()
 	if run.Line != k.line {
-		fmt.Fprintln(os.Stderr, run.Line)
+		output := k.log
+		if output == nil {
+			output = os.Stderr
+		}
+		fmt.Fprintln(output, run.Line)
 		k.line = run.Line
 	}
 	switch run.Outcome {

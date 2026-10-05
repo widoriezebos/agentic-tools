@@ -41,6 +41,9 @@ type AgentState struct {
 // before the keeper starts no more by itself.
 const barrenLimit = 2
 
+// AgentTick is the keeper cadence while the landing lane waits for work or a hold.
+const AgentTick = 15 * time.Second
+
 func agentStatePath(home string) string {
 	return filepath.Join(HostDir(home), "landing-agent-keeper.json")
 }
@@ -86,6 +89,8 @@ type AgentKeeper struct {
 	// Explicit is a start asked for by name (landing run), not the keeper's
 	// own: barren runs do not hold it, and it clears their count.
 	Explicit bool
+	// Waiting counts waiting lines in the registered installation for the start log.
+	Waiting func(install, checkout string) (int, error)
 }
 
 // startClaim bounds a start in progress that another step honours: a start
@@ -164,6 +169,14 @@ func (k AgentKeeper) Run() AgentRun {
 		}
 		return agentRun(AgentIdle, root, line)
 	}
+	waiting := 0
+	if k.Waiting != nil {
+		var err error
+		waiting, err = k.Waiting(registered.Install, registered.Root)
+		if err != nil {
+			return agentRun(AgentHeld, root, "the landing agent cannot read its waiting lines: "+err.Error())
+		}
+	}
 	// Claim the start under the flock, re-checking what may have changed
 	// while the wake was read.
 	claimed := false
@@ -214,7 +227,7 @@ func (k AgentKeeper) Run() AgentRun {
 		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Fingerprint: fingerprint,
 			Barren: current.Barren, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
 		result = AgentRun{Outcome: AgentStarted, Launch: id, Root: root, Reasons: wake.Reasons,
-			Line: fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))}
+			Line: fmt.Sprintf("lane agent started by the keeper: %d waiting line(s); %s at %s: %s", waiting, id, root, strings.Join(wake.Reasons, ", "))}
 		// A pause that came while it started ends it at once.
 		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
 			result.Outcome = AgentPaused
