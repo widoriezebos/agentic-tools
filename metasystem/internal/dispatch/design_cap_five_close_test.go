@@ -1,7 +1,7 @@
 package dispatch
 
 import (
-	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,9 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// The design critique's cap is five rounds, a backstop (Wido 2026-10-01): the
-// human raise and the fixture exit fire at the chain's frozen limit, never at
-// round two of a five-round chain.
+// A wider review budget cannot admit more than two design examinations.
 
 func fiveRoundHistory(materials ...int64) []any {
 	history := make([]any, 0, len(materials))
@@ -21,24 +19,24 @@ func fiveRoundHistory(materials ...int64) []any {
 	return history
 }
 
-func TestDesignCapFiveRoundTwoResidueDispatchesNextRound(t *testing.T) {
+func TestDesignCapFiveRoundTwoResidueDefersFixtures(t *testing.T) {
 	t.Parallel()
 	findings := []registerFinding{closeFinding("mechanical", "mechanical", "go test ./m", "title", critiqueModel.Bounded)}
 	repo, root, _ := writeCloseRoot(t, "design-critic", 2, findings, materialHistory(3, 2), 5, 2)
+	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", root, "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "critical"}}})
 	var got []goal.ReviewObligation
-	_, err := critiqueRegisterClose(repo, root, captureObligations(&got))
-	check(t, err != nil && strings.Contains(err.Error(), "dispatch the next round") && len(got) == 0,
-		"round two of a five-round design chain did not ask for the next round: obligations=%+v err=%v", got, err)
+	outcome, err := critiqueRegisterClose(repo, root, captureObligations(&got))
+	check(t, err == nil && outcome == "deferred" && len(got) == 1,
+		"terminal design residue did not defer: obligations=%+v err=%v", got, err)
 }
 
-func TestDesignCapFiveRoundTwoBlockerIsNotTheHumanRaise(t *testing.T) {
+func TestDesignCapFiveRoundTwoBlockerRaisesTheHuman(t *testing.T) {
 	t.Parallel()
 	findings := []registerFinding{closeFinding("severe", "mechanical", "go test ./s", "title", critiqueModel.Severe)}
 	repo, root, _ := writeCloseRoot(t, "design-critic", 2, findings, materialHistory(2, 1), 5, 2)
+	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", root, "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "critical"}}})
 	_, err := critiqueRegisterClose(repo, root, captureObligations(new([]goal.ReviewObligation)))
-	var opErr *OpError
-	check(t, err != nil && !errors.As(err, &opErr) && strings.Contains(err.Error(), "blocks close"),
-		"a blocker at round two of five raised the cap-exhausted refusal: %v", err)
+	assertHumanRaise(t, err, "severe")
 }
 
 func TestDesignCapFiveFinalRoundFallingMechanicalDefersFixtures(t *testing.T) {

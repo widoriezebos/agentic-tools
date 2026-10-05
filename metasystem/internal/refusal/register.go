@@ -84,6 +84,7 @@ var Rows = []Row{
 	{Code: "READ_BUSY", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.readLock", Shape: Question, H1: StandingInput},
 	{Code: "READ_CHECKOUT_UNAVAILABLE", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "DESIGN_CHAIN_OPEN", Owner: "internal/dispatch", Site: "read_admission.go#CritiqueReadAdmissionForGoal", Shape: Question, H1: StandingInput},
+	{Code: "DESIGN_ROUND_ONE", Owner: "cmd/metasystem", Site: "intent_design_review.go#designRoundOneRefused", Shape: Question, H1: StandingInput},
 	{Code: "READ_BRIEF_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_RUN_BUSY", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_LOCK_FAILED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},

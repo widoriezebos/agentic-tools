@@ -226,6 +226,9 @@ type intentProcessResult struct {
 // intentDeliveryOwners are the owners the delivery commands call. Production
 // uses defaultIntentDeliveryOwners; tests give each invocation its own.
 type intentDeliveryOwners struct {
+	// draftPaths finds cited files missing from the design's source tree;
+	// nil reads Git through the dispatch owner.
+	draftPaths func([]byte, string) ([]string, error)
 	// recordWriter asks the record-writer authority owner whether this
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
@@ -862,7 +865,8 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		path = filepath.Join(inv.cwd, path)
 	}
 	target := []intentTarget{{Kind: "design", ID: file}}
-	roots, err := project.ResolveRoots(inv.layout.InstallationRoot.Path())
+	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	roots := project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot}
 	if err != nil {
 		return intentResult{Targets: target, Outcome: intentRefused, code: 1, Summary: "the project's design folders can't be read, so nothing was reviewed",
 			next: inv.publicArgv("settings", "check"), nextReason: "checks the project's configuration", Details: []string{err.Error()}}
@@ -925,7 +929,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	// The critic reviews the design as the seat has it now: the page and the
 	// uncommitted drafts it cites are frozen into the review's inputs, and
 	// the admission checks the brief against HEAD plus those copies.
-	drafts := freezeDesignDrafts(git, dir, gitRel, data, data)
+	drafts := inv.freezeDesignDrafts(git, dir, gitRel, data, data)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself (where it states none: our own agents and operators make mistakes, nobody attacks), and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),

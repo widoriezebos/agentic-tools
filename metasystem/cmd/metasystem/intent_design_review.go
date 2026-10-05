@@ -132,6 +132,8 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		// Dispositions section, if the first close could not write it, is
 		// written now.
 		return inv.designCritiqueClosed(plan, chain, intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged})
+	case chain.Closed && chain.NewestRound == 1 && dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), chain.Root, 2) == 1:
+		return designRoundOneRefused(plan)
 	case chain.Closed && (inv.input.has("dispositions") || inv.input.has("retry")):
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("design %s's critique is closed and is never continued; nothing was requested", plan.recordID),
@@ -180,6 +182,12 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	return &intentResult{Targets: plan.targets, Outcome: intentInProgress, code: 1, Data: map[string]any{"template": template, "examination": chain.NewestRound},
 		Summary: fmt.Sprintf("design %s changed since review %d; decide its %d finding(s) first", plan.recordID, chain.NewestRound, len(findings)),
 		next:    append(inv.sameCommand(), "--dispositions", template), nextReason: "after deciding every finding in " + template}
+}
+
+func designRoundOneRefused(plan designReviewPlan) *intentResult {
+	reason := fmt.Sprintf("round 1 of %s found no critical finding; its findings are folded and recorded; no second round was started", plan.recordID)
+	return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "DESIGN_ROUND_ONE", "reason": reason}, text: []string{reason},
+		Summary: "no second design examination was started", Decision: "nothing to do; the critique is complete"}
 }
 
 // continueDesignChain requests, or rejoins, the one follow-up examination of
@@ -242,7 +250,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	followUp := filepath.Join(filepath.Dir(inv.designReviewEntryPath(plan.recordID)), operation+"-brief.md")
 	if _, statErr := os.Stat(followUp); statErr != nil {
 		// Drafts the decisions cite are frozen as the page's were.
-		drafts := freezeDesignDrafts(inv.layout.GitRoot, filepath.Dir(plan.brief), "", nil, content)
+		drafts := inv.freezeDesignDrafts(inv.layout.GitRoot, filepath.Dir(plan.brief), "", nil, content)
 		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", bound.Round, bound.Round) + string(content) + drafts.section()
 		if err := writeIntentInputs(filepath.Dir(plan.brief), drafts.files); err != nil {
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
@@ -326,11 +334,9 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 		request.Child = outcome.JobID
 	}
 	entry.Requests[index] = request
-	if request.Kind == "continue" {
-		if record, err := inv.jobRecord(request.Child); err == nil {
-			if round := recordRound(record); round > 0 {
-				entry.Subjects[strconv.FormatInt(round, 10)] = request.SubjectSHA256
-			}
+	if record, err := inv.jobRecord(request.Child); err == nil {
+		if round := recordRound(record); round > 0 {
+			entry.Subjects[strconv.FormatInt(round, 10)] = request.SubjectSHA256
 		}
 	}
 	if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
@@ -522,7 +528,11 @@ type designDrafts struct {
 // else is left to the admission, which refuses a path it cannot find. When
 // HEAD can't be read, no cited draft is frozen and the admission refuses as
 // before.
-func freezeDesignDrafts(git, dir, pageRel string, page []byte, texts ...[]byte) designDrafts {
+func (inv *intentInvocation) freezeDesignDrafts(git, dir, pageRel string, page []byte, texts ...[]byte) designDrafts {
+	draftPaths := dispatchcore.BriefDraftPaths
+	if inv.owners.delivery != nil && inv.owners.delivery.draftPaths != nil {
+		draftPaths = inv.owners.delivery.draftPaths
+	}
 	drafts := designDrafts{files: map[string]string{}}
 	frozen := map[string]bool{}
 	freeze := func(rel string, content []byte) string {
@@ -538,7 +548,7 @@ func freezeDesignDrafts(git, dir, pageRel string, page []byte, texts ...[]byte) 
 		drafts.pageCopy = freeze(pageRel, page)
 	}
 	for _, text := range texts {
-		cited, err := dispatchcore.BriefDraftPaths(text, git)
+		cited, err := draftPaths(text, git)
 		if err != nil {
 			continue
 		}

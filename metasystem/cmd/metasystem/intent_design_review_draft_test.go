@@ -35,6 +35,7 @@ func frozenCopies(t *testing.T, brief string) map[string]string {
 func TestDesignReviewFreezesTheSeatsDraft(t *testing.T) {
 	t.Parallel()
 	b := newDesignReviewBed(t)
+	b.owners.draftPaths = dispatchcore.BriefDraftPaths
 	root, err := filepath.EvalSymlinks(b.root())
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +48,7 @@ func TestDesignReviewFreezesTheSeatsDraft(t *testing.T) {
 		}
 	}
 	// HEAD holds the plans folder but neither draft.
+	git("init", "-q")
 	designs := filepath.Dir(b.design)
 	keep := filepath.Join(designs, ".keep")
 	b.writeFile(keep, "")
@@ -106,7 +108,7 @@ func TestDesignReviewFreezesTheSeatsDraft(t *testing.T) {
 
 	// Round 1's finding is answered by a revision whose decisions cite a
 	// second draft brief; the follow-up is admitted with it frozen.
-	b.finish("rev1", 1, "completed", map[string]any{"id": "F1", "material": true})
+	b.finish("rev1", 1, "completed", map[string]any{"id": "F1", "severity": "critical", "material": true})
 	review()
 	b.writeFile(b.design, strings.Replace(page, "First version", "Second version, F1 addressed", 1))
 	template, _ := review().Data.(map[string]any)["template"].(string)

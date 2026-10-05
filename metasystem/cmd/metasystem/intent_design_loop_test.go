@@ -158,7 +158,9 @@ func TestDesignLoopRefutedFindingClosesUnchangedDesign(t *testing.T) {
 func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[string]any, decisions map[string]string) intentResult {
 	t.Helper()
 	b.review()
-	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	critical := finding("F1", true, "the reader forgets the page")
+	critical["severity"] = "critical"
+	b.finish("rev1", 1, "completed", critical)
 	root := b.job("rev1")
 	root["reviewRoundLimit"] = 2
 	b.writeJob(root)
@@ -175,18 +177,18 @@ func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[
 	return b.review("--dispositions", second, "--after", "2")
 }
 
-// TestDesignLoopRoundTwoOfFiveIsNotFinal: a design chain whose root froze
-// no limit has metasystem.budget.review-round-max rounds (five by default, a
-// backstop), so round 2 is requested as an ordinary round, not the final one.
-func TestDesignLoopRoundTwoOfFiveIsNotFinal(t *testing.T) {
+// A critical finding permits one final examination within the budget.
+func TestDesignLoopRoundTwoOfFiveIsFinal(t *testing.T) {
 	t.Parallel()
 	b := newDesignLoopBed(t)
 	b.review()
-	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	critical := finding("F1", true, "the reader forgets the page")
+	critical["severity"] = "critical"
+	b.finish("rev1", 1, "completed", critical)
 	first := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2 names the page"})
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	requested := b.review("--dispositions", first, "--after", "1")
-	if len(b.followUps) != 1 || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested") || strings.Contains(requested.Summary, "the final round") {
+	if len(b.followUps) != 1 || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested, the final round") {
 		t.Fatalf("round 2 of a five-round design chain: %+v", requested)
 	}
 }
@@ -251,7 +253,9 @@ func TestDesignLoopAcceptedMaterialOnAnEarlierRoundStillRefuses(t *testing.T) {
 	t.Parallel()
 	b := newDesignLoopBed(t)
 	b.review()
-	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	critical := finding("F1", true, "the reader forgets the page")
+	critical["severity"] = "critical"
+	b.finish("rev1", 1, "completed", critical)
 	b.register(1, 2, []int64{1}, map[string]any{"findingId": "F1"})
 	template := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2"})
 	if result := b.review("--dispositions", template, "--after", "1"); result.Outcome != intentRefused || b.closes != 0 {
@@ -272,7 +276,9 @@ func TestDesignLoopUnfrozenRootTakesTheCeiling(t *testing.T) {
 	existing, _ := os.ReadFile(conf)
 	b.writeFile(conf, string(existing)+"metasystem.budget.review-round-max=2\n")
 	b.review()
-	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	critical := finding("F1", true, "the reader forgets the page")
+	critical["severity"] = "critical"
+	b.finish("rev1", 1, "completed", critical)
 	first := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2 names the page"})
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	requested := b.review("--dispositions", first, "--after", "1")

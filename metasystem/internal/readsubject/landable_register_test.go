@@ -2,6 +2,17 @@ package readsubject
 
 import "testing"
 
+func TestFoldedRegisterIsCleanAndLandable(t *testing.T) {
+	t.Parallel()
+	register := []any{modernRegisterEntry("resolved", "folded")}
+	if clean, err := CleanRegister(register); err != nil || !clean {
+		t.Fatalf("folded register = clean %v, error %v", clean, err)
+	}
+	if landable, risks, err := LandableRegister(register); err != nil || !landable || risks != nil {
+		t.Fatalf("folded register = landable %v, risks %v, error %v", landable, risks, err)
+	}
+}
+
 // TestLandableRegister: a register whose entries are withdrawn, ruled
 // out-of-scope (bounded) or accepted as a risk by a person's recorded act
 // yields the landing's read and names its accepted risks; it is still not a

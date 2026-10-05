@@ -263,6 +263,7 @@ func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 		makeFinding("U-2", "metasystem/two.go", critiqueModel.Unproven),
 	})
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", root)
+	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "critical"}}})
 	for name, err := range map[string]error{
 		"register close": func() error { _, err := CritiqueRegisterClose(repo, "critic"); return err }(),
 		"close check":    CloseCheck(repo, "critic"),
