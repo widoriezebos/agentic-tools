@@ -29,13 +29,14 @@ Open read items (fix unit u2-preliminary-reads): 4
 - ReadItem: id=u2-preliminary-reads-3 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: dispatch.InLinkedWorktree walks the path lexically (no symbolic-link resolution); an installation reached through a link from outside its worktree serves itself."
 - ReadItem: id=u2-preliminary-reads-4 read=u2-preliminary-reads state=open addedAt=2026-10-04T19:37:27Z changedAt=- closingReference="" text="u2: a mutation reader's scratch copy briefly held a copy of the repository's metasystem.conf.local (deleted unread); readers that copy the tree should exclude the local layer."
 - OpenedAt: 2026-10-03T21:24:10Z
-- Revision: 30
+- Revision: 31
 - Pinned: m1g
 - Budget: elapsedLimit=2d4h attemptLimit=20 reservedJobMinutesLimit=1500 activeJobLimit=2 reviewRoundLimit=20
 - BudgetExceptions: 4
 - NormApproval: approvedRef=6K38KQFYREC4QX9RBMG3DRJ1MS-m1g-df39a949 minutes=1500 reviewRounds=20 goalRevision=29
 - Approved: by=human:wido at=2026-10-05T00:14:22Z revision=30 opid=6K38KQFYREC4QX9RBMG3DRJ1MS-m1g-df39a949 authority=proven digest=09162be502dd667d131f52b828bb568ff386c58d6a573adaa4a68d943bc64170 episode=30
 - Sliced: machine=m1g lineage=steward-seat revision=14 at=2026-10-04T07:25:06Z
+- AcceptedRisk: finding=F-2 chain=code-critic-842df3c16ab0b546299fe59a by=wido opid=GAJMT9JG3JNG2RTJAP4HNA17D3-m1g-df39a949
 - Claimed: machine=m1g lineage=steward-seat at=2026-10-05T00:14:22Z revision=30 accountingRevision=30 episodeAt=2026-10-04T21:11:52Z episodeRevision=29
 - StopCapability: generation=30 revision=30 machine=m1g claimEpoch=1 fenceEpoch=0
 
@@ -70,4 +71,5 @@ History:
 - 2026-10-04T21:11:41Z R5J0SAZQK7WZN8F79K2PRFGRQR-m1g-f456f182 release actor=m1g+main-1790454088-93948-21671b targets=goal-worktree-dispatch-uses-the-primary reason=Wido 22:25: m1e finishes the goal; re-claimed under the seat lineage so the installation's work verbs match
 - 2026-10-04T21:11:52Z BFW272P4H50MTYFKGSWTW9RB3W-m1g-71c5cb39 claim actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary
 - 2026-10-05T00:14:22Z 6K38KQFYREC4QX9RBMG3DRJ1MS-m1g-df39a949 set-budget actor=human:wido targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T21:11:52Z
-Integrity: sha256=516f62531989e0b9ee864439af6effb30105baa5440fe65d3fa387504659941c
+- 2026-10-05T00:48:08Z GAJMT9JG3JNG2RTJAP4HNA17D3-m1g-df39a949 accept-risk actor=human:wido targets=goal-worktree-dispatch-uses-the-primary reason=F-2 (Codex sandbox admission reads the worktree root settings) is fixed by unit u2e sandbox-from-serving on the same branch before the hand-in; u2 is not the tip, so the fix is a unit on top; Wido via m1e under grant EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1g-goal-worktree-dispatch-uses-the-primary/metasystem)
+Integrity: sha256=623798405dc397900128c267cc58c13699f9b05b25a53c673a6fde39bd233592
