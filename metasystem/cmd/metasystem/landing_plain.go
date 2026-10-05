@@ -102,7 +102,7 @@ func (inv *intentInvocation) writeJoinedCard(goal string) []string {
 	if err == nil {
 		card, live := board.LiveCard(home, goal)
 		if !live {
-			return []string{"the hand-in card for " + goal + " was not written: no single live card holds the goal"}
+			return nil
 		}
 		err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
 			if current.Goal == "" || current.Stage.Terminal() || current.Stage.ProcessBound() {
