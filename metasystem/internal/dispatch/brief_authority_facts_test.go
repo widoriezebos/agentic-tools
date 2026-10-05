@@ -129,3 +129,13 @@ func (f *fakeBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
 	}
 	return false, nil
 }
+
+func (f *fakeBriefTreeFacts) ResolveCommit(root, revision string) (string, error) {
+	if err := f.checkRoot(root); err != nil {
+		return "", err
+	}
+	if _, ok := f.snapshots[revision]; !ok {
+		return "", fmt.Errorf("unknown reviewed commit %s", revision)
+	}
+	return revision, nil
+}

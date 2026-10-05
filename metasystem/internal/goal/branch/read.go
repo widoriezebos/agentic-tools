@@ -31,6 +31,7 @@ const ReadDispatchFailed = "goal branch read could not dispatch its critic"
 type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
+	BuildBriefSHA256                                         string
 	Collect                                                  bool
 	UnitRead                                                 []byte
 	// Join has BriefPath start a read only: a read of this build already
@@ -91,14 +92,13 @@ type branchReadRecord struct {
 	RootJob           string `json:"rootJob,omitempty"`
 	Brief             string `json:"brief,omitempty"`
 	BriefInputSHA256  string `json:"briefInputSha256,omitempty"`
+	BriefInputPath    string `json:"briefInputPath,omitempty"`
 	Runtime           string `json:"runtime,omitempty"`
 	Model             string `json:"model,omitempty"`
 	DispatchPending   bool   `json:"dispatchPending,omitempty"`
 	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
 	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
-	// BriefFromBuild: the composed brief carries the unit's build brief,
-	// which the build ran with, so the critic's dispatch does not re-check
-	// its cited paths.
+	// BriefFromBuild marks supplied bytes that match the build's digest.
 	BriefFromBuild bool `json:"briefFromBuild,omitempty"`
 	// Retries maps a failed examination round to the round its retry
 	// admitted ("pending" before the follow-up reported it).
@@ -286,7 +286,7 @@ func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, t
 // supplied prose declares none (docs/working-modes.md: implement is the default).
 const branchReadDefaultMode = "Working Mode: implement"
 
-func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte) (string, error) {
+func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte, buildDigest string) (string, error) {
 	commits, err := repository.Range(repo, endpoint, commit, goal)
 	if err != nil {
 		return "", err
@@ -311,7 +311,12 @@ func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoi
 		}
 	}
 	if len(supplied) != 0 {
-		brief += "\n# Supplied accepted implementation brief (frozen at dispatch)\n\n" + string(supplied) + "\n"
+		heading := "Corrected implementation brief (given at review)"
+		sum := sha256.Sum256(supplied)
+		if buildDigest != "" && hex.EncodeToString(sum[:]) == buildDigest {
+			heading = "Supplied accepted implementation brief (frozen at dispatch)"
+		}
+		brief += "\n# " + heading + "\n\n" + string(supplied) + "\n"
 	}
 	// Dispatch admits a critic brief only with exactly one filled Working
 	// Mode header. Headerless prose reads in the default implement mode; a
@@ -608,7 +613,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	restart := record.RootJob == "" && record.DispatchRetryable && (inputSHA256 != "" || request.Runtime != "" || request.Model != "")
 	if !restart && record.RootJob != "" && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
 		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
-		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
+		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model in critic job %s\nrun: metasystem work review %s", record.RootJob, request.GoalID)
 	}
 	if restart {
 		record.DispatchRetryable = false
@@ -740,7 +745,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		effectiveRuntime, effectiveModel = record.Runtime, record.Model
 	} else {
-		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied)
+		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied, request.BuildBriefSHA256)
 		if err != nil {
 			return result, err
 		}
@@ -755,10 +760,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			return result, operationRefusal(ReadDispatchPendingCode, "the review brief may not be saved to disk, so no reviewer was started\nrun: metasystem work review %s", request.GoalID)
 		}
 		record.Brief, record.BriefInputSHA256 = briefPath, inputSHA256
+		record.BriefInputPath = request.BriefPath
 		record.Runtime, record.Model = effectiveRuntime, effectiveModel
 		sum := sha256.Sum256([]byte(brief))
 		record.FrozenBriefSHA256 = hex.EncodeToString(sum[:])
-		record.BriefFromBuild = request.Join && supplied != nil
+		record.BriefFromBuild = inputSHA256 != "" && inputSHA256 == request.BuildBriefSHA256
 	}
 	record.DispatchPending, record.DispatchRetryable = true, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {

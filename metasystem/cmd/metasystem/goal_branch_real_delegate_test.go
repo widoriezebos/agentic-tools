@@ -94,7 +94,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 
 			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
-					"--brief", brief, "--selected-installation", selected}, goalBranchReadDependencies{
+					"--brief", brief, "--build-brief-sha256", fmt.Sprintf("%x", sha256.Sum256([]byte(c.brief))), "--selected-installation", selected}, goalBranchReadDependencies{
 					Gate: func(string) (string, error) { return "green", nil },
 				}, stdout, stderr)
 			})

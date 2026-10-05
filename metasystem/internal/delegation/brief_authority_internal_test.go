@@ -1,20 +1,24 @@
 package delegation
 
 import (
-	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
 // writeGoalReadBrief writes a goal read's composed brief citing a file the
 // feature creates at runtime, which no tree or disk holds, and its record,
 // marked as carrying the unit's build brief when marked is set.
-func writeGoalReadBrief(t *testing.T, marked bool) (brief, commit string) {
+func writeGoalReadBrief(t *testing.T, marked, before bool) (brief, commit string) {
 	t.Helper()
 	commit = strings.Repeat("b", 40)
 	dir := filepath.Join(t.TempDir(), ".git", "metasystem", "goal-reads", "goal-a")
@@ -23,7 +27,10 @@ func writeGoalReadBrief(t *testing.T, marked bool) (brief, commit string) {
 	}
 	brief = filepath.Join(dir, commit+".md")
 	body := "Working Mode: implement\n\n# Supplied accepted implementation brief (frozen at dispatch)\n\n" +
-		"Write `plans/handoff-project-partner.md` when the partner hands off.\n"
+		"Read `plans/handoff-project-partner.md` when the partner hands off.\n"
+	if before {
+		body = "Read `plans/handoff-project-partner.md`.\n" + body
+	}
 	if err := os.WriteFile(brief, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -39,31 +46,47 @@ func writeGoalReadBrief(t *testing.T, marked bool) (brief, commit string) {
 	return brief, commit
 }
 
-// TestBriefAuthorityAdmitsAGoalReadsBuildBrief: a code critic of a commit
-// whose brief a goal read recorded as carrying the unit's build brief is
-// admitted without its cited paths being read against any tree; the same
-// brief unmarked, or under another role or review, is checked as before.
-func TestBriefAuthorityAdmitsAGoalReadsBuildBrief(t *testing.T) {
-	t.Parallel()
-	marked, commit := writeGoalReadBrief(t, true)
-	reviews := "commit:" + commit
-	// The base tree is no repository: only a skipped path check admits.
-	s := &session{root: t.TempDir(), repoScope: t.TempDir(), stderr: &bytes.Buffer{}}
-	if err := s.briefAuthority(marked, filepath.Join(t.TempDir(), "absent"), "code-critic", reviews); err != nil {
-		t.Fatalf("the build brief of a goal read was refused: %v", err)
+func admittedBuildBriefSession(t *testing.T, before bool) (*session, string, string, *scriptedGit) {
+	t.Helper()
+	brief, commit := writeGoalReadBrief(t, true, before)
+	if !branch.BuildBriefAdmitted(brief) {
+		t.Fatal("fixture is not an admitted build brief")
 	}
-	unmarked, _ := writeGoalReadBrief(t, false)
-	for name, c := range map[string]struct{ brief, role, reviews string }{
-		"unmarked brief":      {unmarked, "code-critic", reviews},
-		"implementer role":    {marked, "implementer", reviews},
-		"review of a job":     {marked, "code-critic", "implementer-job"},
-		"brief outside reads": {filepath.Join(t.TempDir(), commit+".md"), "code-critic", reviews},
-	} {
-		if buildBriefAdmitted(c.brief, c.role, c.reviews) {
-			t.Errorf("%s: the path check is skipped", name)
+	git := &scriptedGit{answers: map[string]scriptedAnswer{
+		"rev-parse --verify HEAD^{commit}":                            {stdout: "head"},
+		"rev-parse --verify --end-of-options " + commit + "^{commit}": {stdout: commit},
+		"ls-tree -d --name-only head":                                 {stdout: "plans"},
+		"ls-tree -d --name-only " + commit:                            {stdout: "plans"},
+		"rev-parse --show-prefix":                                     {},
+	}}
+	s := rebaseSession(git)
+	s.ctx = context.Background()
+	s.root, s.repoScope = t.TempDir(), t.TempDir()
+	return s, brief, commit, git
+}
+
+func TestBriefAuthorityRefusesMissingPathBeforeTheFrozenBuildBrief(t *testing.T) {
+	t.Parallel()
+	s, brief, commit, git := admittedBuildBriefSession(t, true)
+	err := s.briefAuthority(brief, s.repoScope, "code-critic", "commit:"+commit)
+	var refusal *dispatch.BriefAuthorityRefusal
+	if !errors.As(err, &refusal) || len(refusal.MissingPaths) != 1 || refusal.MissingPaths[0] != "plans/handoff-project-partner.md" {
+		t.Fatalf("citation before frozen heading must refuse: %v; Git calls %v", err, git.calls)
+	}
+}
+
+func TestBriefAuthorityAdmitsMissingPathOnlyInTheFrozenBuildBrief(t *testing.T) {
+	t.Parallel()
+	s, brief, commit, git := admittedBuildBriefSession(t, false)
+	if err := s.briefAuthority(brief, s.repoScope, "code-critic", "commit:"+commit); err != nil {
+		t.Fatalf("frozen citation refused: %v", err)
+	}
+	for _, call := range git.calls {
+		if strings.HasPrefix(call, "cat-file") {
+			t.Fatalf("checked frozen citation: %v", git.calls)
 		}
 	}
-	if !buildBriefAdmitted(marked, "code-critic", reviews) {
-		t.Fatal("the marked brief's path check is not skipped")
+	if len(git.calls) == 0 {
+		t.Fatal("admission did not inspect the reviewed tree")
 	}
 }

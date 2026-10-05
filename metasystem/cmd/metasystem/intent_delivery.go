@@ -1205,6 +1205,25 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	}
 	if inv.input.has("brief") {
 		args = append(args, "--brief", inv.callerPath(inv.input.text("brief")))
+		if worktree, problem := inv.goalWorktree(goalID); problem == nil {
+			work, _ := inv.unitRunner().NamedWork(worktree, goalID)
+			for _, item := range work {
+				record := item.Record
+				if record == nil {
+					continue
+				}
+				for _, subject := range record.Subjects {
+					if subject.Commit != unit {
+						continue
+					}
+					for _, round := range record.Rounds {
+						if round.Number == subject.Round {
+							args = append(args, "--build-brief-sha256", round.BuildBriefSHA256)
+						}
+					}
+				}
+			}
+		}
 	}
 	if inv.input.has("model") {
 		args = append(args, "--model", inv.input.text("model"))

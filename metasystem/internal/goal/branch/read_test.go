@@ -812,7 +812,7 @@ func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
 // critic started binds nothing, so a request with a corrected brief starts
 // the review with it (runtime and model as it names them); once a critic
 // was dispatched, the review stays bound to that brief.
-func TestBranchReadRefusedDispatchBindsNothing(t *testing.T) {
+func TestReviewWithABriefNeverJoins(t *testing.T) {
 	t.Parallel()
 	r := newReadFactRepository(t, false)
 	unit := r.unit
@@ -855,8 +855,13 @@ func TestBranchReadRefusedDispatchBindsNothing(t *testing.T) {
 		t.Fatalf("corrected brief after a refused dispatch=%+v err=%v dispatched=%v", result, err, dispatched)
 	}
 	request.BriefPath = refused
-	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || len(dispatched) != 1 {
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || !strings.Contains(err.Error(), "critic-corrected") || len(dispatched) != 1 {
 		t.Fatalf("another brief after a dispatch=%v dispatched=%v", err, dispatched)
+	}
+	r.expectStart()
+	writeReadJobWithSubject(t, r.root, "critic-corrected", unit, "completed", false, r.readSubject())
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || !strings.Contains(err.Error(), "critic-corrected") || len(dispatched) != 1 {
+		t.Fatalf("another brief after examination=%v dispatched=%v", err, dispatched)
 	}
 }
 

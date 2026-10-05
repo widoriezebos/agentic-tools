@@ -60,10 +60,11 @@ type UnitReview struct {
 	DiffDigest   string
 	// Legacy marks a snapshot retained before full object ids and exact
 	// path bytes; only its retained diff is compared exactly.
-	Legacy     bool
-	BuildBrief string
-	Subject    *UnitSubject
-	Prior      *UnitSubject
+	Legacy           bool
+	BuildBrief       string
+	BuildBriefSHA256 string
+	Subject          *UnitSubject
+	Prior            *UnitSubject
 }
 
 // UnitReviewReadyOutcomes are the round outcomes whose proof passed and
@@ -131,6 +132,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
 	}
 	review.BuildBrief, review.Base = plan.Build.Brief, plan.Base
+	review.BuildBriefSHA256 = round.BuildBriefSHA256
 	if round.FollowUp != "" {
 		// A corrected attempt was built from its correction brief alone, so
 		// it is reviewed against that brief.

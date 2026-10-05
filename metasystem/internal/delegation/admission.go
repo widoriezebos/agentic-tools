@@ -12,12 +12,12 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/capability"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -607,25 +607,20 @@ func isReviewRole(role string) bool {
 	return role == "code-critic" || role == "design-critic" || role == "warden"
 }
 
-// briefAuthority is brief_authority. A brief that reviews a commit is also
-// read against that commit's tree, which the critic reads. A code critic's
-// brief that a goal read composed around the unit's build brief has its
-// headers and bounds checked but not its cited paths: the build ran with it.
+// briefAuthority checks citations against the reviewed commit and the
+// dispatcher's HEAD. The admission reader owns the frozen section's exemption.
 func (s *session) briefAuthority(brief, baseTree, role, reviews string) error {
-	if buildBriefAdmitted(brief, role, reviews) {
-		baseTree = ""
-	}
-	_, err := dispatch.ReadReviewBriefAdmission(brief, s.root, baseTree, s.repoScope, reviews)
+	_, err := dispatch.ReadReviewBriefAdmission(brief, s.root, baseTree, s.repoScope, reviews, func(root string, args ...string) (string, error) {
+		bound := boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local)
+		ctx, cancel := context.WithTimeout(s.ctx, bound.Limit)
+		defer cancel()
+		out, _, err := s.l.ports.Git.Run(ctx, root, args...)
+		return strings.TrimSuffix(string(out), "\n"), err
+	})
 	if err != nil {
 		s.noteRefusal(err)
 	}
 	return err
-}
-
-// buildBriefAdmitted: a code critic of a commit whose brief is a goal read's,
-// recorded as carrying the unit's build brief.
-func buildBriefAdmitted(brief, role, reviews string) bool {
-	return role == "code-critic" && strings.HasPrefix(reviews, "commit:") && branch.BuildBriefAdmitted(brief)
 }
 
 // appendReturnPathForm is append_return_path_form.

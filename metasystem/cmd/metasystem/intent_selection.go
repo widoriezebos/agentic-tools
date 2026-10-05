@@ -488,7 +488,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 				next:    inv.typedArgvWith("--finding", "FINDING"), nextReason: "names the finding it resolves"})
 		}
 	}
-	for _, other := range []string{"brief", "tool-calls", "effort", "goal"} {
+	for _, other := range []string{"tool-calls", "effort", "goal"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("--%s is not for reviewing a goal's work; nothing was done", other),
@@ -557,6 +557,9 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		item := manual[0]
 		install := inv.goalWorktreeInstallation(item.Worktree)
 		args := []string{"--root", install, "--goal", id, "--unit", item.Commit}
+		if inv.input.has("brief") {
+			args = append(args, "--brief", inv.callerPath(inv.input.text("brief")))
+		}
 		if retry > 0 {
 			args = append(args, "--retry", strconv.FormatInt(retry, 10))
 		}

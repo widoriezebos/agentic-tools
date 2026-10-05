@@ -46,8 +46,8 @@ type reviewStartRow struct {
 // critic. It goes through readDelegate, so outcomes are classified as in
 // production. The admission is the delegate's own call: the brief is read
 // against the commit under review and the dispatching checkout's HEAD,
-// except a goal read's brief recorded as carrying the build brief, whose
-// headers and bounds alone are checked.
+// with the supplied build section exempt when its bytes match the build's
+// recorded digest.
 func reviewStartDelegate(c *connectionBed, install string) func(string, string, string, string, string) (string, error) {
 	return func(brief, goalID, commit, runtime, model string) (string, error) {
 		caller := func(_ delegateRequest, stdout, _ io.Writer) int {
@@ -60,9 +60,6 @@ func reviewStartDelegate(c *connectionBed, install string) func(string, string, 
 				base = c.root()
 			}
 			tree := base
-			if branch.BuildBriefAdmitted(brief) {
-				tree = ""
-			}
 			if _, err := dispatchcore.ReadReviewBriefAdmission(brief, base, tree, base, "commit:"+commit); err != nil {
 				emit(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: "brief authority admission refused: " + err.Error()})
 				return 1
@@ -190,7 +187,8 @@ func runReviewStartRow(t *testing.T, row reviewStartRow, via string) {
 		if len(subjects) != 1 || subjects[0].Commit == "" {
 			t.Fatalf("no unit commit to review: %+v", subjects)
 		}
-		request = []string{"work", "review", "--commit", subjects[0].Commit, "--goal", c.id, "--brief", filepath.Join(c.root(), brief)}
+		commitBrief := c.brief("commit-brief.md", text+"\nReview this commit against these requirements.\n")
+		request = []string{"work", "review", "--commit", subjects[0].Commit, "--goal", c.id, "--brief", filepath.Join(c.root(), commitBrief)}
 		if via == "commit-in-worktree" {
 			request = append(request, "--repo", c.worktree)
 		}

@@ -146,13 +146,19 @@ func ReadBriefAdmissionAtRoot(briefPath, installRoot, baseTree, diskRoot string,
 // ("commit:<sha>", the unit under review, which may hold files main does
 // not), and the dispatcher's HEAD, whose checkout is the critic's
 // workspace. A cited path either tree holds is admitted; a reviewed commit
-// the repository does not hold refuses.
-func ReadReviewBriefAdmission(briefPath, installRoot, baseTree, diskRoot, reviews string) (BriefAdmission, error) {
+// the repository does not hold refuses. With a reviewed commit, citations
+// in the frozen build section are exempt. An optional Git reader keeps
+// admission on the caller's repository port.
+func ReadReviewBriefAdmission(briefPath, installRoot, baseTree, diskRoot, reviews string, git ...func(string, ...string) (string, error)) (BriefAdmission, error) {
 	reviewed, named := strings.CutPrefix(reviews, "commit:")
 	if !named {
 		reviewed = ""
 	}
-	return readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, reviewed, false, gitBriefTreeFacts{})
+	facts := gitBriefTreeFacts{}
+	if len(git) > 0 {
+		facts.run = git[0]
+	}
+	return readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, reviewed, false, facts)
 }
 
 // briefTreeFacts supplies the repository facts used by one admission. The
@@ -165,19 +171,33 @@ type briefTreeFacts interface {
 	HasPath(root, commit, name string) (bool, error)
 }
 
-type gitBriefTreeFacts struct{}
+type gitBriefTreeFacts struct {
+	run func(string, ...string) (string, error)
+}
 
-func (gitBriefTreeFacts) InstallPrefix(root string) (string, error) {
+func (f gitBriefTreeFacts) output(root string, args ...string) (string, error) {
+	if f.run != nil {
+		return f.run(root, args...)
+	}
+	return gitOutput(root, args...)
+}
+
+func (f gitBriefTreeFacts) InstallPrefix(root string) (string, error) {
+	if f.run != nil {
+		prefix, err := f.output(root, "rev-parse", "--show-prefix")
+		return strings.TrimSuffix(prefix, "/"), err
+	}
 	return projectInstallPrefix(root)
 }
-func (gitBriefTreeFacts) BaseCommit(root string) (string, error) {
-	return gitOutput(root, "rev-parse", "--verify", "HEAD^{commit}")
+func (f gitBriefTreeFacts) BaseCommit(root string) (string, error) {
+	return f.output(root, "rev-parse", "--verify", "HEAD^{commit}")
 }
-func (gitBriefTreeFacts) Directories(root, treeish string) (map[string]bool, error) {
-	return treeDirectories(root, treeish)
+func (f gitBriefTreeFacts) Directories(root, treeish string) (map[string]bool, error) {
+	output, err := f.output(root, "ls-tree", "-d", "--name-only", treeish)
+	return briefTreeDirectories(output), err
 }
-func (gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
-	_, err := gitOutput(root, "cat-file", "-e", commit+":"+name)
+func (f gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
+	_, err := f.output(root, "cat-file", "-e", commit+":"+name)
 	return err == nil, nil
 }
 
@@ -381,7 +401,17 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 		prefix, _ = installPrefix()
 	}
 
-	candidates := extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories)
+	authorityText := string(data)
+	if reviewed != "" {
+		lines := strings.Split(authorityText, "\n")
+		for i, line := range lines {
+			if line == "# Supplied accepted implementation brief (frozen at dispatch)" {
+				authorityText = strings.Join(lines[:i], "\n")
+				break
+			}
+		}
+	}
+	candidates := extractBriefAuthorityPaths(authorityText, bounds, topDirectories, nestedDirectories)
 	frozen := briefFrozenInputs(data)
 	missing := make([]string, 0)
 	for _, candidate := range candidates {
@@ -430,13 +460,17 @@ func treeDirectories(baseTree, treeish string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	return briefTreeDirectories(output), nil
+}
+
+func briefTreeDirectories(output string) map[string]bool {
 	directories := map[string]bool{}
 	for _, name := range strings.Split(output, "\n") {
 		if name != "" {
 			directories[name] = true
 		}
 	}
-	return directories, nil
+	return directories
 }
 
 type briefAuthorityCitation struct {
@@ -625,8 +659,8 @@ type briefCommitFacts interface {
 	ResolveCommit(root, revision string) (string, error)
 }
 
-func (gitBriefTreeFacts) ResolveCommit(root, revision string) (string, error) {
-	return gitOutput(root, "rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
+func (f gitBriefTreeFacts) ResolveCommit(root, revision string) (string, error) {
+	return f.output(root, "rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
 }
 
 // briefIgnoreFacts says whether Git ignores a path in a checkout. Facts
@@ -635,8 +669,8 @@ type briefIgnoreFacts interface {
 	Ignored(root, name string) bool
 }
 
-func (gitBriefTreeFacts) Ignored(root, name string) bool {
-	_, err := gitOutput(root, "check-ignore", "-q", "--", name)
+func (f gitBriefTreeFacts) Ignored(root, name string) bool {
+	_, err := f.output(root, "check-ignore", "-q", "--", name)
 	return err == nil
 }
 
