@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "U3c-stop",
+  "subject": {
+    "commit": "e191b1ca1039ccc51145061977bc29d05b24e2cc",
+    "parent": "d16fedc0096c7787d5e53243851ffb223b3795e8",
+    "tree": "97717e591723482fd45a826544c618c0bd55700e",
+    "patchDigest": "e345984f5050409b55d2f891dae32e252d1e440477e576574d9937b70e506cc3",
+    "unitDigest": "8c738500a0984616299cc1f38f299ed32a79ea6fd22ce268febf40829fec4da0"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-7c6a72e08a5c6bf2994b948e",
+    "round": 1,
+    "closureSha256": "c25068cf7888c02e865c72faf4261eb40ad191706acd27e6893e45bdd046878b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "97717e591723482fd45a826544c618c0bd55700e",
+    "runId": "goal-read-gate-20261005t112256z-45e8c6c3f90ff7e9"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e874e76f080329e7bf48b02dc59f1f37e260bd34",
+      "digest": "b024bb81c57581cce12984f830822a0904fb9bdf78c16aad80605fba80913e87"
+    },
+    {
+      "kind": "read",
+      "commit": "1ff9f2f1952a0cfb5fa90046e16d7ce8c4815c4b",
+      "digest": "57f411e862c4dc4bc97a0d217b4c5f9fd4ecd0cce60814fc8f8f3d73c4f8bf9e"
+    },
+    {
+      "kind": "read",
+      "commit": "d16fedc0096c7787d5e53243851ffb223b3795e8",
+      "digest": "72d3cdb21e51b4881b0335a19feba1a6b8efcc5258c269ae10e1d39a7ecceb28"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/hooks/runtime_hook_harness_test.go",
+      "readerWord": "reviewed by critic root code-critic-7c6a72e08a5c6bf2994b948e"
+    },
+    {
+      "path": "metasystem/internal/steward/health_test.go",
+      "readerWord": "reviewed by critic root code-critic-7c6a72e08a5c6bf2994b948e"
+    }
+  ],
+  "sha256": "b270da6e8f28214b78221b1faf051b0862bcf897e0ab559fdddb152204e7ea7c"
+}

@@ -9,9 +9,29 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
+
+func TestReceiptStatusReportsRetroDebt(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, "governed-42", time.Date(2025, 8, 29, 10, 0, 0, 0, time.Local)); err != nil {
+		t.Fatal(err)
+	}
+	ledger := filepath.Join(root, "memory", "receipts.log")
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return receiptStatus([]string{"--root", root, "--file", ledger}, stdout, stderr)
+	})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "governed-42: retro owed since 2025-08-29") {
+		t.Fatalf("open debt: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
 
 func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())

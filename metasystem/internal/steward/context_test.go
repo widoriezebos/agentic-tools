@@ -32,8 +32,8 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		{105001, HealthAlive, "105 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
 		{120000, HealthAlive, "120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
 		{200000, HealthAlive, "200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
-		{200001, HealthDead, "200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum"},
-		{210000, HealthDead, "210 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum"},
+		{200001, HealthAlive, "200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
+		{210000, HealthAlive, "210 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
 	} {
 		for _, diagnostic := range []bool{true, false} {
 			name := fmt.Sprintf("tokens-%d", test.tokens)
@@ -61,13 +61,9 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 				}
 				handoff := "metasystem session handoff --root " + root + " --note <configured-note-path> --no-delegates"
 				switch {
-				case test.status == HealthDead && diagnostic:
-					if !role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "session handoff --status") || strings.Contains(role.Remedy, "transcript") {
-						t.Fatalf("diagnostic ceiling breach has a lawful automatic remedy: %+v", role)
-					}
-				case test.status == HealthDead:
-					if !role.NoAutomaticRemedy || role.Remedy != handoff {
-						t.Fatalf("live ceiling breach must name the handoff: %+v", role)
+				case diagnostic:
+					if role.NoAutomaticRemedy || role.Remedy != "" || strings.Contains(role.Reason, "; over the trigger: run ") {
+						t.Fatalf("diagnostics must not advise handing off the live session: %+v", role)
 					}
 				case test.tokens > config.DefaultContextCeilingTokens-config.DefaultContextHandoffMarginTokens && !diagnostic:
 					if !strings.Contains(role.Reason, "; over the trigger: run "+handoff) {
@@ -266,15 +262,18 @@ func TestContextVerdictOverTriggerIsAliveWithTheRemedy(t *testing.T) {
 	}
 }
 
-func TestContextVerdictOverProofMaximumIsDead(t *testing.T) {
-	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: ProofMaxTokens + 1}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, "/root", false)
-	if role.Status != HealthDead || !role.NoAutomaticRemedy || role.Remedy != "metasystem session handoff --root /root --note <configured-note-path> --no-delegates" || !strings.HasSuffix(role.Reason, "; over the proof maximum") {
+func TestContextOverTheProofMaximumReadsAlive(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: ProofMaxTokens + 1}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, root, false)
+	if role.Status != HealthAlive || role.NoAutomaticRemedy || !strings.Contains(role.Reason, "200 thousand tokens this call") || !strings.Contains(role.Line(), contextHandoffRemedy(root)) {
 		t.Fatalf("over-proof-maximum verdict = %+v", role)
 	}
 }
 
 func TestHealthLineCarriesContextBudget(t *testing.T) {
 	root := t.TempDir()
+	registerHealthFixtureHooks(t, root)
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +302,7 @@ func TestHealthLineCarriesContextBudget(t *testing.T) {
 	for index, candidate := range roles {
 		if candidate.Role == RoleContext {
 			contextIndex = index
-			if index == 0 || roles[index-1].Role != RoleStopHookDuration || candidate.DurationMillis < 1 || candidate.Status != HealthDead {
+			if index == 0 || roles[index-1].Role != RoleStopHookDuration || candidate.DurationMillis < 1 || candidate.Status != HealthAlive {
 				t.Fatalf("timed context check has wrong integration result: index=%d role=%+v", index, candidate)
 			}
 			break
@@ -318,9 +317,9 @@ func TestHealthLineCarriesContextBudget(t *testing.T) {
 	if contextRole.Role != RoleContext {
 		t.Fatalf("context role moved from health order: index=%d role=%+v", contextIndex, contextRole)
 	}
-	if !strings.Contains(verdict.Line(), "context-budget=dead (200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
-		!verdict.ShouldAlert || contextRole.FailureEscalation != NoLawfulRemedy {
-		t.Fatalf("health line did not carry immediate context escalation: %+v line=%s", verdict, verdict.Line())
+	if !strings.Contains(verdict.Line(), "context-budget=alive (200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger: run metasystem session handoff") ||
+		contextRole.ConsecutiveFailures != 0 || contextRole.FailureEscalation != "" {
+		t.Fatalf("health line lost the context count or handoff advice: %+v line=%s", verdict, verdict.Line())
 	}
 }
 
@@ -564,7 +563,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 	}}
 	liveOpts := ContextOptions{Home: home, Toplevel: root}
 	role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, root), now, liveOpts, probe)
-	if err != nil || role.Status != HealthDead || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || reading.NewSamples != 1 {
+	if err != nil || role.Status != HealthAlive || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || reading.NewSamples != 1 {
 		t.Fatalf("seed health read = role %+v reading %+v err %v", role, reading, err)
 	}
 	original := snapshotContextEvidence(t, root)
@@ -597,7 +596,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 		assertContextEvidence(t, root, original)
 
 		role, reading, err = contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(2*time.Minute), liveOpts, probe)
-		if err != nil || role.Status != HealthDead || reading.Latest == nil || reading.Latest.PromptTokens != 210001 ||
+		if err != nil || role.Status != HealthAlive || reading.Latest == nil || reading.Latest.PromptTokens != 210001 ||
 			reading.NewSamples != 0 || reading.NewMarkers != 0 {
 			t.Fatalf("health after override %s = role %+v reading %+v err %v", diagnostic.path, role, reading, err)
 		}
@@ -614,7 +613,7 @@ func TestContextTranscriptOverridePreservesTheNextHealthRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	role, reading, err = contextBudgetLineWithProber(stateroottest.Installation(t, root), now.Add(3*time.Minute), liveOpts, probe)
-	if err != nil || role.Status != HealthDead || reading.NewSamples != 1 || reading.NewMarkers != 0 {
+	if err != nil || role.Status != HealthAlive || reading.NewSamples != 1 || reading.NewMarkers != 0 {
 		t.Fatalf("appended health read = role %+v reading %+v err %v", role, reading, err)
 	}
 	samples, markers, err := usagepkg.Calls(root, "claude", session, time.Time{})

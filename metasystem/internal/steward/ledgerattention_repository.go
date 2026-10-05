@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // ledgerAttentionRepository is the set of goal repository operations used by
@@ -22,6 +23,7 @@ type ledgerAttentionRepository struct {
 	ValidateCommit    func(string, string) error
 	AdvanceAccepted   func(string, string) error
 	IsAncestor        func(string, string, string) (bool, error)
+	ResolveLayout     func(string) (stateroot.Layout, error)
 }
 
 func defaultLedgerAttentionRepository() *ledgerAttentionRepository {
@@ -39,5 +41,6 @@ func defaultLedgerAttentionRepository() *ledgerAttentionRepository {
 		ValidateCommit:    goal.ValidateCommit,
 		AdvanceAccepted:   goal.AdvanceAccepted,
 		IsAncestor:        goal.IsAncestor,
+		ResolveLayout:     stateroot.ResolveLayout,
 	}
 }

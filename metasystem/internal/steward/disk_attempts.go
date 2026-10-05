@@ -277,13 +277,16 @@ func LandingAttemptNamers(installation string, keep time.Duration) []proofrun.At
 }
 
 // landingLaneRoots are the landing lane's checkout, resolved through the
-// host lane resolver the command layer binds (LandingLaneRoot: the seat's
+// host lane resolver the command layer binds (AttemptLandingLaneRoot: the seat's
 // setting against the host's one lane record, U12), and its installation,
 // whose landing batches can name this checkout's attempts; none when the
 // host has no lane for this seat.
 func landingLaneRoots(installation string, now time.Time) ([]string, error) {
-	return landingLaneRootsWith(LandingLaneRoot, installation, now)
+	return landingLaneRootsWith(AttemptLandingLaneRoot, installation, now)
 }
+
+// AttemptLandingLaneRoot resolves the lane whose records can name attempts.
+var AttemptLandingLaneRoot func(string, time.Time) (string, bool, error)
 
 // landingLaneRootsWith fails closed: an unbound resolver, an unresolvable
 // lane, or a configured lane without a root is an error, never "no lane".

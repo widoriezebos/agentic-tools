@@ -98,22 +98,21 @@ func newTickContinuationFixture(t *testing.T, bed *attentionPolicyBed, refuseBas
 }
 
 func (f *tickContinuationFixture) run(t *testing.T) (TickResult, bool, error) {
+	return f.runAs(t, identity.Ref{Pid: 1234, StartedAtSec: 1234}, 1)
+}
+
+func (f *tickContinuationFixture) runAs(t *testing.T, process identity.Ref, generation int) (TickResult, bool, error) {
 	t.Helper()
 	lock, err := AcquireArbitration(f.bed.root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer lock.Release()
-	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("self process identity: state=%v err=%v", state, err)
-	}
-	const generation = 1
-	attempt, err := beginComponentAttempt(f.bed.root, "steward-tick", generation, exact.Ref(), f.cfg.now())
+	attempt, err := beginComponentAttempt(f.bed.root, "steward-tick", generation, process, f.cfg.now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return runTickAfterCustodial(f.bed.root, f.cfg, fakeCensus{}, generation, exact.Ref(), attempt.AttemptSeq, nil, f.dependencies)
+	return runTickAfterCustodial(f.bed.root, f.cfg, fakeCensus{}, generation, process, attempt.AttemptSeq, nil, f.dependencies)
 }
 
 func TestTickAfterCustodialDegradedReturnRemainsIncomplete(t *testing.T) {

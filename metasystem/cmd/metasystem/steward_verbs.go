@@ -7,6 +7,7 @@ package main
 // itself lands with the dispatch continuation mode.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
@@ -70,11 +72,19 @@ func stewardFixtureNow(root string) (time.Time, bool, error) {
 }
 
 func stewardFixtureTickConfig(repo, root string) (steward.TickConfig, error) {
-	now, ok, err := stewardFixtureNow(stewardClockRoot(root, repo))
-	if err != nil || !ok {
+	clockRoot := stewardClockRoot(root, repo)
+	now, ok, err := stewardFixtureNow(clockRoot)
+	if err != nil {
 		return steward.TickConfig{}, err
 	}
-	return steward.TickConfig{Now: now}, nil
+	config := steward.TickConfig{}
+	if ok || fixtureauth.FixtureModeRoot(repo) || fixtureauth.FixtureModeRoot(clockRoot) {
+		config.ProbeRuntime = func(string, string) error { return errors.New("fixture: no probe") }
+	}
+	if ok {
+		config.Now = now
+	}
+	return config, nil
 }
 
 func stewardRunClockRoot(repo string) string {
@@ -318,6 +328,22 @@ func admitStewardContinuation(root string, it steward.Intent, git func(string, .
 // runStewardRun is the runner's body — normally spawned by arm,
 // callable directly by any external ticker the operator provides.
 func runStewardRun(args []string, stdout, stderr io.Writer) int {
+	return runStewardRunWith(args, stdout, stderr, steward.RunLoop, probeStewardRuntime)
+}
+
+func probeStewardRuntime(root, runtime string) error {
+	engine, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	return delegation.ProbeRuntime(ctx, root, engine, runtime)
+}
+
+func runStewardRunWith(args []string, stdout, stderr io.Writer,
+	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
+	probeRuntime func(string, string) error) int {
 	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
@@ -342,6 +368,9 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "steward run: fixture clock:", clockErr)
 		return 2
 	}
+	if tickConfig.ProbeRuntime == nil {
+		tickConfig.ProbeRuntime = probeRuntime
+	}
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
@@ -357,7 +386,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
-	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
+	err := runLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)
 		if err != nil {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))

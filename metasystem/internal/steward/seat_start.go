@@ -377,18 +377,27 @@ func seatProgress(repoRoot string, record SeatRecord, projection goal.Projection
 // ladder's: today's ladder decides.
 func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
+	return seatDecision(repoRoot, cfg, work, shared, workers, providerOutage, dependencies, state)
+}
+
+// seatDecision owns the start guards for both the tick and its health reading.
+func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
+	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned
 	if work != WorkClaimable && !owned {
 		return Decision{}, nil, false
 	}
 	// A seat is opt-in per seat and the landing lane never starts one
 	// (Amendment 1): while none may start, the ladder is today's.
-	allowed, _, err := dependencies.Launcher.SeatAllowed(repoRoot)
+	if dependencies.Launcher == nil {
+		return Decision{VerdictHealthy, ActNone, "this process has no seat launcher"}, nil, false
+	}
+	allowed, reason, err := dependencies.Launcher.SeatAllowed(repoRoot)
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, "whether this installation starts a seat cannot be read: " + err.Error()}, nil, true
 	}
 	if !allowed {
-		return Decision{}, nil, false
+		return Decision{VerdictHealthy, ActNone, reason}, nil, false
 	}
 	doubt := !workers.CensusComplete || workers.Untracked > 0 || workers.Unprovable > 0
 	if owned {

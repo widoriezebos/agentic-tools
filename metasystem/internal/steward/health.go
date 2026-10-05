@@ -10,21 +10,24 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -75,7 +78,6 @@ var healthRoleOrder = []HealthRole{
 	RoleRepoWatcher,
 	RoleCensusFreshness,
 	RoleNarratorFreshness,
-	RoleRetroDebt,
 	RoleSessionMain,
 	RoleHookFreshness,
 	RoleStopHookDuration,
@@ -111,6 +113,8 @@ type RoleVerdict struct {
 	Role                HealthRole   `json:"role"`
 	Status              HealthStatus `json:"status"`
 	Reason              string       `json:"reason"`
+	Cause               string       `json:"cause,omitempty"`
+	Standing            bool         `json:"standing,omitempty"`
 	Remedy              string       `json:"remedy,omitempty"`
 	DurationMillis      int64        `json:"durationMillis,omitempty"`
 	ConsecutiveUnknown  int          `json:"consecutiveUnknown,omitempty"`
@@ -165,6 +169,7 @@ type HealthObservationState struct {
 	ObservedAt      time.Time                  `json:"observedAt"`
 	UnknownCounts   map[HealthRole]int         `json:"unknownCounts"`
 	FailureCounts   map[HealthRole]int         `json:"failureCounts"`
+	FailureCauses   map[HealthRole]string      `json:"failureCauses,omitempty"`
 	FailureEpisodes map[HealthRole][]time.Time `json:"failureEpisodes,omitempty"`
 }
 
@@ -258,6 +263,42 @@ func HealthRecordPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "health.json")
 }
 
+// FreshHookHealthPreviewAt checks the installation's fence before reading the
+// tick's verdict. Only the Stop's own roles are evaluated; the tick's record
+// and observation clock stay unchanged. An unusable record requires a preview.
+func FreshHookHealthPreviewAt(repoRoot, metasystemRoot string, now time.Time, git func(...string) (string, error)) (HookHealthPreview, bool) {
+	if stopped, err := healthStopped(metasystemRoot, repoRoot, now.UTC(), nil, SpendObservation{}, HealthObservationState{}); err != nil {
+		return HookHealthPreview{}, false
+	} else if stopped != nil {
+		return NewHookHealthPreview(*stopped), true
+	}
+	record, err := loadHealthRecord(HealthRecordPath(repoRoot))
+	if err != nil || record.Verdict.ObservedAt.After(now) {
+		return HookHealthPreview{}, false
+	}
+	age := now.Sub(record.Verdict.ObservedAt).Seconds()
+	if age >= 2*float64(tickSecondsWithGit(repoRoot, git)) {
+		return HookHealthPreview{}, false
+	}
+	switch record.Verdict.Aggregate {
+	case "healthy", "unhealthy", "unknown":
+		for index, role := range record.Verdict.Roles {
+			switch role.Role {
+			case RoleHookFreshness:
+				record.Verdict.Roles[index] = checkHookFreshnessAt(repoRoot, now.UTC(), true)
+			case RoleStopHookDuration:
+				record.Verdict.Roles[index] = checkStopHookDuration(repoRoot)
+			}
+		}
+		record.Verdict.Roles = standingRoles(record.State, record.Verdict.Roles)
+		record.Verdict.Aggregate, record.Verdict.ShouldAlert = healthSummary(record.Verdict.Roles)
+		record.Verdict.FindingDigest = healthFindingDigest(record.Verdict.Roles)
+		return NewHookHealthPreview(record.Verdict), true
+	default:
+		return HookHealthPreview{}, false
+	}
+}
+
 func healthLockPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "health.flock")
 }
@@ -318,6 +359,9 @@ func (v RoleVerdict) Line() string {
 	}
 	if v.ConsecutiveFailures > 0 {
 		item += fmt.Sprintf(" [failure %d/%d; %s]", v.ConsecutiveFailures, healthFailureLimit, strings.ToLower(strings.ReplaceAll(v.FailureEscalation, "_", " ")))
+	}
+	if v.Standing {
+		item += " [standing defect]"
 	}
 	return item
 }
@@ -396,25 +440,26 @@ func PreviewInstalledHealth(stateRoot, installation string, now time.Time, probe
 type spendMeasureFunc func(string, string, time.Time) (spend.Ledger, error)
 
 func previewHealthAtWithMeasure(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, measure spendMeasureFunc) HealthVerdict {
+	return previewHealthAtWithEvaluation(repoRoot, metasystemRoot, now, prober,
+		func(repo, installation string, at time.Time, probe identity.Prober, currentHook bool) ([]RoleVerdict, SpendObservation) {
+			return evaluateHealthRolesWithMeasure(repo, runRoot, installation, at, probe, currentHook, measure)
+		})
+}
+
+func previewHealthAtWithEvaluation(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, evaluate healthRoleEvaluator) HealthVerdict {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles, spendObservation := evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot, now.UTC(), prober, true, measure)
+	roles, spendObservation := evaluate(repoRoot, metasystemRoot, now.UTC(), prober, true)
 	if stopped, err := healthStopped(metasystemRoot, repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
 		return *stopped
 	}
-	aggregate := "healthy"
-	for _, role := range roles {
-		if role.Status == HealthDead {
-			aggregate = "unhealthy"
-			break
-		}
-		if role.Status == HealthUnknown {
-			aggregate = "unknown"
-		}
-	}
+	record, _ := loadHealthRecord(HealthRecordPath(repoRoot))
+	roles = standingRoles(record.State, roles)
+	aggregate, alert := healthSummary(roles)
 	return HealthVerdict{
-		Schema: 1, ObservedAt: now.UTC(), Aggregate: aggregate,
+		Schema: 1, ObservedAt: now.UTC(), Observation: record.State.Sequence,
+		Aggregate: aggregate, ShouldAlert: alert, State: record.State,
 		Roles: roles, FindingDigest: healthFindingDigest(roles), Spend: spendObservation,
 	}
 }
@@ -469,6 +514,30 @@ func evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot string, no
 	return evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot, now, prober, currentHookAttempt, measure, newHealthLedger(repoRoot, now))
 }
 
+// roleApplies keeps session checks only where the ladder seats a session.
+// Steward and ledger duties belong to every checkout with a tick.
+func roleApplies(role HealthRole, checkout string) bool {
+	switch role {
+	case RoleSessionMain, RoleContext, RoleHookFreshness, RoleStopHookDuration:
+		home, err := board.Home()
+		if err == nil {
+			record, registered, readErr := lane.Read(home)
+			if readErr == nil && registered && lane.OwnsLane(checkout, record) {
+				return false
+			}
+		}
+		if role == RoleHookFreshness || role == RoleStopHookDuration {
+			// Template stewards keep state in their nested installation;
+			// its checkout owns the hook registration files.
+			if filepath.Base(checkout) == "metasystem" && config.TemplateMode(checkout) {
+				checkout = filepath.Dir(checkout)
+			}
+			return len(runtimereg.RegisteredRuntimes(checkout)) > 0
+		}
+	}
+	return true
+}
+
 // evaluateHealthRolesWithLedger reads the roles kept wholly in run state under
 // runRoot; the roles that also read the goal ledger or registers use repoRoot.
 func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc, ledger *healthLedger) ([]RoleVerdict, SpendObservation) {
@@ -476,37 +545,42 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
-	timed := func(check func() RoleVerdict) RoleVerdict {
+	timed := func(name HealthRole, check func() RoleVerdict) RoleVerdict {
+		if !roleApplies(name, runRoot) {
+			return RoleVerdict{}
+		}
 		started := time.Now()
 		role := check()
 		role.DurationMillis = elapsedRoleMillis(started)
 		return role
 	}
-	return []RoleVerdict{
-		timed(func() RoleVerdict { return checkStewardRunner(runRoot, now, prober) }),
-		timed(func() RoleVerdict { return checkSupervisionOwner(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
-		timed(func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
-		timed(func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
-		timed(func() RoleVerdict { return checkRetroDebt(repoRoot) }),
-		timed(func() RoleVerdict { return checkSessionMain(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
-		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
-		timed(func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
-		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
-		timed(func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
-		timed(func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
+	roles := []RoleVerdict{
+		timed(RoleStewardRunner, func() RoleVerdict { return checkStewardRunner(runRoot, now, prober) }),
+		timed(RoleSupervisionOwner, func() RoleVerdict { return checkSupervisionOwner(runRoot, prober) }),
+		timed(RoleRepoWatcher, func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
+		timed(RoleCensusFreshness, func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
+		timed(RoleNarratorFreshness, func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
+		timed(RoleSessionMain, func() RoleVerdict {
+			return checkSessionMainWithLedger(repoRoot, runRoot, now, prober, ledger, defaultSeatDependencies(HealthSeatLauncher))
+		}),
+		timed(RoleHookFreshness, func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
+		timed(RoleStopHookDuration, func() RoleVerdict { return checkStopHookDuration(runRoot) }),
+		timed(RoleContext, func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
+		timed(RoleLedgerAttention, func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
+		timed(RoleSeatPresence, func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
+		timed(RoleClaimedGoalBudget, func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
+		timed(RoleStopCapabilityEpoch, func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
+		timed(RoleClaimedGoalDelivery, func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
+		timed(RoleTrunkRed, func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
 		spendRole,
-		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
-		timed(func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
-		timed(func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
-		timed(func() RoleVerdict { return checkDisk(runRoot) }),
-	}, spendObservation
+		timed(RoleGovernedObligations, func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
+		timed(RoleNonterminalJobs, func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
+		timed(RoleProofAttempts, func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
+		timed(RoleProofAdmission, func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
+		timed(RoleCapabilitySnapshots, func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
+		timed(RoleDisk, func() RoleVerdict { return checkDisk(runRoot) }),
+	}
+	return slices.DeleteFunc(roles, func(role RoleVerdict) bool { return role.Role == "" }), spendObservation
 }
 
 func elapsedRoleMillis(started time.Time) int64 {
@@ -518,6 +592,9 @@ func elapsedRoleMillis(started time.Time) int64 {
 }
 
 var measureSpend = spend.Measure
+
+// HealthSeatLauncher is the command layer's seat launcher, also read by health.
+var HealthSeatLauncher SeatLauncher
 
 func checkSpendFence(repoRoot string, now time.Time) (RoleVerdict, SpendObservation) {
 	return checkSpendFenceWithMeasure(repoRoot, now, measureSpend)
@@ -595,24 +672,6 @@ func checkSpendFenceWithMeasureAndMachine(repoRoot string, now time.Time, measur
 	return role, SpendObservation{Valid: true, Crossings: crossings}
 }
 
-func checkRetroDebt(repoRoot string) RoleVerdict {
-	open, err := retrodebt.Open(repoRoot)
-	remedy := "record the retro receipt with metasystem receipt add --type retro --outcome shipped --verify clean --note \"<what changed>\""
-	if err != nil {
-		return roleUnknown(RoleRetroDebt, "the durable retro debt record is unreadable: "+err.Error(), remedy)
-	}
-	if len(open) == 0 {
-		return roleAlive(RoleRetroDebt, "no retro receipt is owed")
-	}
-	sources := make([]string, 0, len(open))
-	for _, entry := range open {
-		sources = append(sources, entry.Kind+":"+entry.Source)
-	}
-	role := roleDead(RoleRetroDebt, "RETRO DEBT awaits a receipt after "+strings.Join(sources, ", "), remedy)
-	role.NoAutomaticRemedy = true
-	return role
-}
-
 func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 	return checkHookFreshnessAt(repoRoot, now, false)
 }
@@ -641,7 +700,11 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
 		return roleUnknown(RoleHookFreshness, "the hook completion is waiting for durability proof", remedy)
 	}
-	if currentAttempt && (record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt)) {
+	openAttempt := record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt)
+	if openAttempt && now.Sub(record.LastAttempt) >= stopHookBudgetSeconds*time.Second {
+		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion past the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
+	}
+	if currentAttempt && openAttempt {
 		if len(record.AttemptHistory) == 0 {
 			return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending with no prior completed turn", record.Generation), remedy)
 		}
@@ -649,10 +712,10 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 		if prior.Result == ComponentOK && prior.Outcome == "EMITTED" {
 			return roleAlive(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending; prior generation %d completed as OK/EMITTED", record.Generation, prior.Generation))
 		}
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), remedy)
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), remedy)
 	}
-	if record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt) {
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion", record.Generation), remedy)
+	if openAttempt {
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending within the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
 	}
 	if record.Result != ComponentOK || record.Outcome != "EMITTED" ||
 		record.SuccessAttemptSeq != record.AttemptSeq || !record.LastSuccess.Equal(record.LastCompletion) {
@@ -668,6 +731,10 @@ const stopHookBudgetSeconds = 60
 var defaultStopHookSlowSeconds = config.MustIntDefault("steward.stop-slow-sec")
 
 func checkStopHookDuration(repoRoot string) RoleVerdict {
+	return checkStopHookDurationWithMachine(repoRoot, goal.ResolveMachine)
+}
+
+func checkStopHookDurationWithMachine(repoRoot string, machineName func(string) (string, error)) RoleVerdict {
 	reread := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
@@ -683,6 +750,7 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 
 	outcome := record.Outcome
 	elapsed := record.LastStopElapsedSec
+	generation, attemptSeq := record.Generation, record.AttemptSeq
 	if record.Outcome == "ATTEMPTING" {
 		outcome = ""
 		elapsed = nil
@@ -690,14 +758,18 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 			latest := record.AttemptHistory[size-1]
 			outcome = latest.Outcome
 			elapsed = latest.StopElapsedSec
+			generation, attemptSeq = latest.Generation, latest.AttemptSeq
 		}
 	}
 	if elapsed == nil {
 		return roleAlive(RoleStopHookDuration, "the last Stop carried no measurement")
 	}
+	if stopRearmedEngine(repoRoot, generation, attemptSeq) {
+		return roleAlive(RoleStopHookDuration, fmt.Sprintf("the last Stop took %ds and re-armed the rebuilt engine", *elapsed))
+	}
 
 	machine := "this machine"
-	if enrolled, machineErr := goal.ResolveMachine(repoRoot); machineErr == nil {
+	if enrolled, machineErr := machineName(repoRoot); machineErr == nil {
 		machine = enrolled
 	}
 	remedy := fmt.Sprintf("fix the expensive hook under goal stop-hook-health-cost, then run %s to re-read", reread)
@@ -718,6 +790,25 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 		fmt.Sprintf("the last Stop took %ds of the %ds budget", *elapsed, stopHookBudgetSeconds))
 }
 
+// A re-arm belongs only to the Stop named by its arming record, including
+// when a later attempt is open and health reads the completed history.
+func stopRearmedEngine(repoRoot string, generation int, attemptSeq int64) bool {
+	file, err := os.Open(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "arming.log"))
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	want := fmt.Sprintf("stop-re-armed %d %d", generation, attemptSeq)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		_, event, ok := strings.Cut(scanner.Text(), " ")
+		if ok && event == want {
+			return true
+		}
+	}
+	return false
+}
+
 func applyHealthObservation(repoRoot string, previous HealthObservationState, roles []RoleVerdict, now time.Time) HealthVerdict {
 	unknownCounts := make(map[HealthRole]int, len(healthRoleOrder))
 	for key, value := range previous.UnknownCounts {
@@ -726,6 +817,10 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 	failureCounts := make(map[HealthRole]int, len(healthRoleOrder))
 	for key, value := range previous.FailureCounts {
 		failureCounts[key] = value
+	}
+	failureCauses := make(map[HealthRole]string, len(healthRoleOrder))
+	for key, value := range previous.FailureCauses {
+		failureCauses[key] = value
 	}
 	failureEpisodes := make(map[HealthRole][]time.Time, len(healthRoleOrder))
 	for key, values := range previous.FailureEpisodes {
@@ -749,8 +844,6 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 			}
 		}
 	}
-	aggregate := "healthy"
-	alert := false
 	for index := range ordered {
 		role := &ordered[index]
 		roleEpisodes := failureEpisodes[role.Role][:0]
@@ -762,18 +855,15 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 		failureEpisodes[role.Role] = roleEpisodes
 		if role.Status == HealthUnknown {
 			unknownCounts[role.Role]++
-			role.ConsecutiveUnknown = unknownCounts[role.Role]
-			if unknownCounts[role.Role] >= 2 {
-				alert = true
-			}
-			if aggregate == "healthy" {
-				aggregate = "unknown"
-			}
 			continue
 		}
 		unknownCounts[role.Role] = 0
 		if role.Status == HealthDead {
-			aggregate = "unhealthy"
+			cause := healthCause(*role)
+			if !hasLawfulAutomaticRemedy(*role, ordered) && failureCauses[role.Role] != cause {
+				failureCounts[role.Role] = 0
+			}
+			failureCauses[role.Role] = cause
 			if failureCounts[role.Role] == 0 {
 				failureEpisodes[role.Role] = append(failureEpisodes[role.Role], observedAt)
 			}
@@ -781,34 +871,123 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 			if failureCounts[role.Role] >= healthFailureLimit {
 				failureCounts[role.Role] = healthFailureLimit
 			}
-			switch {
-			case !hasLawfulAutomaticRemedy(*role, ordered):
-				role.FailureEscalation = NoLawfulRemedy
-				alert = true
-			case failureCounts[role.Role] >= healthFailureLimit:
-				role.FailureEscalation = AutoHealEnded
-				alert = true
-			case len(failureEpisodes[role.Role]) >= healthFlapLimit:
-				role.FailureEscalation = HealingFlapping
-				alert = true
-			default:
-				role.FailureEscalation = AutoHealEligible
-			}
-			role.ConsecutiveFailures = failureCounts[role.Role]
 			continue
 		}
 		failureCounts[role.Role] = 0
+		delete(failureCauses, role.Role)
 	}
 	state := HealthObservationState{
 		Sequence: previous.Sequence + 1, ObservedAt: observedAt,
-		UnknownCounts: unknownCounts, FailureCounts: failureCounts, FailureEpisodes: failureEpisodes,
+		UnknownCounts: unknownCounts, FailureCounts: failureCounts, FailureCauses: failureCauses, FailureEpisodes: failureEpisodes,
 	}
+	ordered = standingRoles(state, ordered)
+	aggregate, alert := healthSummary(ordered)
 	verdict := HealthVerdict{
 		Schema: 1, ObservedAt: observedAt, Observation: state.Sequence,
 		Aggregate: aggregate, Roles: ordered, ShouldAlert: alert, State: state,
 	}
 	verdict.FindingDigest = healthFindingDigest(ordered)
 	return verdict
+}
+
+// healthCause keeps diagnostic ages, counts and identities out of a failure's
+// identity. Checks can supply a cause when words alone cannot distinguish it.
+func healthCause(role RoleVerdict) string {
+	if role.Cause != "" {
+		return role.Cause
+	}
+	words := strings.Fields(role.Reason)
+	kept := words[:0]
+	for _, word := range words {
+		if strings.IndexFunc(word, unicode.IsDigit) < 0 {
+			kept = append(kept, word)
+		}
+	}
+	return strings.Join(kept, " ")
+}
+
+// standingRoles projects the tick's counters without advancing them. A role
+// keeps its dead diagnostic when its failure belongs to a standing defect.
+func standingRoles(state HealthObservationState, roles []RoleVerdict) []RoleVerdict {
+	projected := append([]RoleVerdict(nil), roles...)
+	for index := range projected {
+		role := &projected[index]
+		role.Standing, role.ConsecutiveFailures, role.ConsecutiveUnknown, role.FailureEscalation = false, 0, 0, ""
+		if role.Status == HealthUnknown {
+			role.ConsecutiveUnknown = state.UnknownCounts[role.Role]
+		}
+		if role.Status != HealthDead {
+			continue
+		}
+		lawful := hasLawfulAutomaticRemedy(*role, roles)
+		if lawful || state.FailureCauses[role.Role] == healthCause(*role) {
+			role.ConsecutiveFailures = state.FailureCounts[role.Role]
+		}
+		switch {
+		case !lawful:
+			role.FailureEscalation = NoLawfulRemedy
+			role.Standing = role.ConsecutiveFailures >= healthFailureLimit
+		case role.ConsecutiveFailures >= healthFailureLimit:
+			role.FailureEscalation = AutoHealEnded
+			switch role.Role {
+			case RoleCapabilitySnapshots:
+				role.Remedy = "run the affected runtime's login (for Claude: claude auth login), then retry its adapter probe"
+			case RoleLedgerAttention:
+				role.Remedy = "metasystem goal sync"
+			}
+		case len(state.FailureEpisodes[role.Role]) >= healthFlapLimit:
+			role.FailureEscalation = HealingFlapping
+		default:
+			role.FailureEscalation = AutoHealEligible
+		}
+	}
+	return projected
+}
+
+func healthSummary(roles []RoleVerdict) (string, bool) {
+	aggregate, alert := "healthy", false
+	for _, role := range roles {
+		if role.Standing {
+			continue
+		}
+		switch role.Status {
+		case HealthDead:
+			aggregate = "unhealthy"
+			alert = alert || role.FailureEscalation != AutoHealEligible
+		case HealthUnknown:
+			if aggregate == "healthy" {
+				aggregate = "unknown"
+			}
+			alert = alert || role.ConsecutiveUnknown >= 2
+		}
+	}
+	return aggregate, alert
+}
+
+func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, deliver func(string, string) error) error {
+	standing := make(map[HealthRole]RoleVerdict)
+	for _, role := range health.Roles {
+		if role.Standing {
+			standing[role.Role] = role
+		}
+	}
+	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver,
+		Step: func([]byte) ([]byte, []PatternRun, error) {
+			observations := make([]PatternObservation, 0, len(healthRoleOrder))
+			for _, name := range healthRoleOrder {
+				observation := PatternObservation{Kind: ObsClear, Work: string(name)}
+				if role, ok := standing[name]; ok {
+					observation.Kind = ObsFinding
+					observation.Since = now.UTC()
+					observation.Message = fmt.Sprintf("The %s role has a standing health defect: %s; remedy: %s", name, role.Reason, role.Remedy)
+					observation.Evidence = []AlertEvidence{{Record: HealthRecordPath(repoRoot), At: now.UTC().Format(time.RFC3339Nano),
+						Fact: role.Reason + "; remedy: " + role.Remedy}}
+				}
+				observations = append(observations, observation)
+			}
+			return nil, []PatternRun{{Pattern: "health-standing-red", Observations: observations}}, nil
+		}})
+	return err
 }
 
 func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
@@ -821,12 +1000,10 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		return false
 	}
 	switch role.Role {
-	case RoleStewardRunner:
+	case RoleStewardRunner, RoleSessionMain, RoleCapabilitySnapshots, RoleLedgerAttention:
 		return true
 	case RoleRepoWatcher:
-		return strings.Contains(role.Reason, "recorded pid") ||
-			strings.Contains(role.Reason, "lastSuccess is stale") ||
-			strings.Contains(role.Reason, "latest attempt passed its deadline")
+		return watcherRepairable(role)
 	case RoleCensusFreshness:
 		// A failed census prevents the watcher pass from completing, so the
 		// watcher's owner replaces the producer that owns this evidence.
@@ -1067,14 +1244,24 @@ func componentFreshness(repoRoot, component string, role HealthRole, generation 
 		}
 		return roleUnknown(role, "the component success evidence is unreadable", remedy)
 	}
-	if record.Generation != generation {
+	if record.LastSuccess.After(now) || record.LastCompletion.After(now) || record.LastAttempt.After(now) {
+		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", remedy)
+	}
+	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
+		return roleUnknown(role, "the latest completion is waiting for durability proof", remedy)
+	}
+	if role == RoleRepoWatcher && record.Outcome != "ATTEMPTING" && record.Result != ComponentOK {
+		reason := "the latest watcher pass failed: " + record.Outcome
+		if record.LastFailure != "" {
+			reason += ": " + record.LastFailure
+		}
+		return roleDead(role, reason, remedy)
+	}
+	if record.Generation != generation && role != RoleNarratorFreshness {
 		return roleDead(role, fmt.Sprintf("component generation %d does not match installation generation %d", record.Generation, generation), remedy)
 	}
 	if record.LastSuccess.IsZero() {
 		return roleDead(role, "the current generation has no successful completion", remedy)
-	}
-	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
-		return roleUnknown(role, "the latest completion is waiting for durability proof", remedy)
 	}
 	if expectedSuccess != nil {
 		success := identity.Ref{Pid: record.SuccessPid, StartedAtSec: record.SuccessPidStartedAt, StartTicks: record.SuccessPidStartTicks, BootID: record.SuccessBootID}
@@ -1082,16 +1269,77 @@ func componentFreshness(repoRoot, component string, role HealthRole, generation 
 			return roleDead(role, fmt.Sprintf("lastSuccess belongs to pid %d, not resident runner pid %d", success.Pid, expectedSuccess.Pid), remedy)
 		}
 	}
-	if record.LastSuccess.After(now) || record.LastCompletion.After(now) || record.LastAttempt.After(now) {
-		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", remedy)
-	}
 	if record.Outcome == "ATTEMPTING" && now.Sub(record.LastAttempt) >= window {
 		return roleDead(role, "the latest attempt passed its deadline without completion", remedy)
 	}
 	if now.Sub(record.LastSuccess) >= window {
 		return roleDead(role, fmt.Sprintf("lastSuccess is stale at %s", now.Sub(record.LastSuccess).Round(time.Second)), remedy)
 	}
+	if record.Generation != generation && role == RoleNarratorFreshness {
+		return roleAlive(role, fmt.Sprintf("narrator generation %d success is fresh; waiting for the first pass of installation generation %d", record.Generation, generation))
+	}
 	return roleAlive(role, aliveReason)
+}
+
+// watcherRepairable names the failures the supervision owner can repair by
+// replacing its current watcher, including a replacement whose pass failed.
+func watcherRepairable(role RoleVerdict) bool {
+	return strings.Contains(role.Reason, "recorded pid") ||
+		strings.Contains(role.Reason, "lastSuccess is stale") ||
+		strings.Contains(role.Reason, "latest attempt passed its deadline") ||
+		strings.HasPrefix(role.Reason, "the latest watcher pass failed:")
+}
+
+func checkSessionMainWithLedger(repoRoot, runRoot string, now time.Time, prober identity.Prober, ledger *healthLedger, dependencies seatDependencies) RoleVerdict {
+	return checkSessionMainForSeat(runRoot, prober, func(records []SeatRecord) (Decision, *SeatSelection, error) {
+		if !ledger.read().newWorld {
+			return Decision{}, nil, nil
+		}
+		if ledger.endpointErr != nil {
+			return Decision{}, nil, ledger.endpointErr
+		}
+		if ledger.projectionErr != nil {
+			return Decision{}, nil, ledger.projectionErr
+		}
+		machine, err := dependencies.Machine(repoRoot)
+		if err != nil {
+			return Decision{}, nil, err
+		}
+		work, err := goal.ClaimableWorkFromProjection(ledger.projection, machine, prober)
+		if err != nil {
+			return Decision{}, nil, err
+		}
+		kind, _, _ := classifySharedBacklog(work)
+		dependencies.Project = func(string, time.Time) (goal.Projection, error) { return ledger.projection, nil }
+		_, providerOutage := standingProviderOutage(repoRoot, now, nil)
+		decision, selection, _ := seatDecision(repoRoot, (TickConfig{Now: now}).withDefaults(), kind, work,
+			Workers{CensusComplete: true}, providerOutage, dependencies, seatTickState{Records: records})
+		if decision.Verdict == VerdictDegraded || decision.Verdict == VerdictUnknown {
+			return decision, nil, errors.New(decision.Reason)
+		}
+		return decision, selection, nil
+	})
+}
+
+// checkSessionMainForSeat judges the need for a successor through the seat
+// ladder. The announcement reader also serves cleanup's process proof.
+func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func([]SeatRecord) (Decision, *SeatSelection, error)) RoleVerdict {
+	role := checkSessionMain(runRoot, prober)
+	if role.Status != HealthDead {
+		return role
+	}
+	records, err := readSeatRecords(runRoot)
+	if err != nil {
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its launches: "+err.Error(), role.Remedy)
+	}
+	decision, selection, err := decide(records)
+	if err != nil {
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), role.Remedy)
+	}
+	if selection == nil {
+		return roleAlive(RoleSessionMain, "no seat step is due; "+decision.Reason)
+	}
+	return roleDead(RoleSessionMain, decision.Reason, role.Remedy)
 }
 
 func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
@@ -1522,25 +1770,35 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 }
 
 func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) RoleVerdict {
+	role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, exec.LookPath)
+	return role
+}
+
+func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lookPath func(string) (string, error)) (RoleVerdict, []string) {
 	runtimeValue, _, err := config.Get(config.GetParams{
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
 	}
 	if runtimeValue == "none" {
-		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
+		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured"), nil
 	}
 	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", config.MustIntDefault("capability.snapshot-max-age-days"))
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
 	var dead []string
 	var unknown []string
+	seen := make(map[string]bool)
 	for _, runtimeName := range runtimes {
 		runtimeName = strings.TrimSpace(runtimeName)
+		if seen[runtimeName] {
+			continue
+		}
+		seen[runtimeName] = true
 		if runtimeName == "" {
 			unknown = append(unknown, "empty-runtime")
 			continue
@@ -1549,6 +1807,11 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 		if !supported || !declaration.HasAdapter {
 			unknown = append(unknown, runtimeName+":NO_ADAPTER")
 			continue
+		}
+		if declaration.Executable != "" {
+			if _, err := lookPath(declaration.Executable); err != nil {
+				continue
+			}
 		}
 		var newest time.Time
 		malformed := false
@@ -1574,6 +1837,11 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 			if captured.After(newest) {
 				newest = captured
 			}
+		}
+		if probe, _, err := loadComponentEvidenceForHealth(repoRoot, "capability-probe-"+runtimeName); err == nil &&
+			probe.Result == ComponentError && !newest.After(probe.LastCompletion) {
+			dead = append(dead, runtimeName)
+			continue
 		}
 		if newest.IsZero() {
 			if malformed {
@@ -1606,19 +1874,46 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 			probed = append(probed, name)
 		}
 		if len(probed) > 0 {
-			// A delegated job's admission probes a runtime whose snapshot is
-			// missing or stale and records a fresh one.
-			commands = append(commands, "the next delegated job for "+strings.Join(probed, ", ")+" probes the runtime and records a fresh snapshot")
+			commands = append(commands, "the steward tick probes "+strings.Join(probed, ", ")+" and records a fresh snapshot")
 		}
 		return strings.Join(commands, "; ")
 	}
 	if len(dead) > 0 {
-		return roleDead(RoleCapabilitySnapshots, "missing or stale capability snapshots: "+strings.Join(dead, ","), remedyFor(dead))
+		reason := "missing or stale capability snapshots: " + strings.Join(dead, ",")
+		for _, runtime := range dead {
+			reason = healthRemedyReason(repoRoot, "capability-probe-"+runtime, reason)
+		}
+		return roleDead(RoleCapabilitySnapshots, reason, remedyFor(dead)), dead
 	}
 	if len(unknown) > 0 {
-		return roleUnknown(RoleCapabilitySnapshots, "capability snapshot ages are unreadable: "+strings.Join(unknown, ","), remedyFor(unknown))
+		return roleUnknown(RoleCapabilitySnapshots, "capability snapshot ages are unreadable: "+strings.Join(unknown, ","), remedyFor(unknown)), nil
 	}
-	return roleAlive(RoleCapabilitySnapshots, "the newest configured runtime snapshots are within their age limit")
+	return roleAlive(RoleCapabilitySnapshots, "runtimes on PATH have fresh capability snapshots"), nil
+}
+
+func healthRemedyReason(root, component, reason string) string {
+	if record, _, err := loadComponentEvidenceForHealth(root, component); err == nil && record.Result == ComponentError {
+		return reason + "; " + component + ": " + record.LastFailure
+	}
+	return reason
+}
+
+func saveRemediedHealth(root string, verdict HealthVerdict) error {
+	held, err := lock.File(healthLockPath(root), 0o644, lock.Exclusive)
+	if err != nil {
+		return err
+	}
+	defer held.Release()
+	record, err := loadHealthRecord(HealthRecordPath(root))
+	if err != nil {
+		return err
+	}
+	// A later observation already owns the cached verdict.
+	if record.State.Sequence != verdict.Observation {
+		return nil
+	}
+	record.Verdict = verdict
+	return saveHealthRecord(root, HealthRecordPath(root), record)
 }
 
 func roleAlive(role HealthRole, reason string) RoleVerdict {
@@ -1912,7 +2207,7 @@ func healthInt(value any) (int64, bool) {
 func healthFindingDigest(roles []RoleVerdict) string {
 	var fields []string
 	for _, role := range roles {
-		if role.Status != HealthAlive {
+		if role.Status != HealthAlive && !role.Standing {
 			fields = append(fields, string(role.Role)+"="+string(role.Status))
 		}
 	}
@@ -1938,6 +2233,12 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	for _, role := range healthRoleOrder {
 		validRoles[role] = true
 	}
+	// A retired check cannot invalidate the observation clock or the other
+	// roles' breaker counts kept by an installed steward.
+	delete(record.State.UnknownCounts, RoleRetroDebt)
+	delete(record.State.FailureCounts, RoleRetroDebt)
+	delete(record.State.FailureCauses, RoleRetroDebt)
+	delete(record.State.FailureEpisodes, RoleRetroDebt)
 	for role, count := range record.State.UnknownCounts {
 		if !validRoles[role] || count < 0 {
 			return healthRecord{}, fmt.Errorf("health observation record has an invalid unknown counter")
@@ -1949,6 +2250,11 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	for role, count := range record.State.FailureCounts {
 		if !validRoles[role] || count < 0 || count > healthFailureLimit {
 			return healthRecord{}, fmt.Errorf("health observation record has an invalid failure counter")
+		}
+	}
+	for role := range record.State.FailureCauses {
+		if !validRoles[role] {
+			return healthRecord{}, fmt.Errorf("health observation record has an invalid failure cause role")
 		}
 	}
 	if record.State.FailureEpisodes == nil {

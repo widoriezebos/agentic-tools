@@ -200,19 +200,7 @@ func RegisteredRuntimes(repository string) []string { return registeredRuntimes(
 // registeredRuntimes are the adoptable runtimes whose hook settings file this
 // checkout already carries; the switch registers no new runtime.
 func registeredRuntimes(repository string) []string {
-	var selected []string
-	for _, runtime := range runtimes.Adoptable() {
-		for _, row := range runtimes.RegistrationRows(runtime) {
-			if row.Operation != runtimes.OpCopyFile && row.Operation != runtimes.OpJSONStripKey {
-				continue
-			}
-			if info, err := os.Lstat(filepath.Join(repository, filepath.FromSlash(row.Destination))); err == nil && info.Mode().IsRegular() {
-				selected = append(selected, runtime)
-				break
-			}
-		}
-	}
-	return selected
+	return runtimes.RegisteredRuntimes(repository)
 }
 
 func ensureFence(installation stateroot.Installation, deps Deps) (string, string, error) {

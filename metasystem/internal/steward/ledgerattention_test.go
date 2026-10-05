@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -332,7 +333,7 @@ func TestLedgerAttentionSurfacesMovementOnceAndAdvancesAccepted(t *testing.T) {
 	if err := PersistLedgerAttentionMark(bed.root, []string{report.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	again := bed.run(bed.now.Add(5*time.Minute), "endpoint accepted machine entries capture sync accepted validate cleanup")
+	again := bed.run(bed.now.Add(5*time.Minute), "endpoint accepted machine capture sync accepted validate cleanup")
 	if len(again.Pending) != 0 {
 		t.Fatalf("surfaced change replayed after its mark: %+v", again)
 	}
@@ -349,8 +350,8 @@ func TestLedgerAttentionFirstPassBaselinesBeforeFetchingMovedRemote(t *testing.T
 		t.Fatalf("first pass erased a pre-existing remote movement: %+v", report)
 	}
 	state := bed.state()
-	if state.ExaminedTip != "base" || state.RemoteTip != "remote-moved" || state.MovedAt == "" {
-		t.Fatalf("first pass did not retain the pre-fetch examination frontier: %+v", state)
+	if state.ExaminedTip != "remote-moved" || state.RemoteTip != "remote-moved" || state.MovedAt != "" || !strings.Contains(attentionDigest(t, bed.root), "first-pass-movement") {
+		t.Fatalf("first pass did not examine its narrated move: %+v", state)
 	}
 }
 
@@ -592,7 +593,7 @@ func TestLedgerAttentionRewindUsesDirectTransitionAndFreshEventIdentity(t *testi
 	bed.accepted, bed.remote = "base", "base"
 	bed.entries = append(bed.entries, goal.Entry{Opid: "repair-rewind", Intent: goal.Intent{Verb: "repair-accept-remote", Args: map[string]string{"newTip": "base"}}, Phase: goal.PhaseTerminal, Outcome: goal.OutcomeConfirmed})
 	bed.repairBaseline = []string{"repair-rewind"}
-	rewound := bed.run(bed.now.Add(4*time.Minute), "endpoint accepted machine entries project:forward changes:forward>base project:base entries capture sync accepted validate entries cleanup")
+	rewound := bed.run(bed.now.Add(4*time.Minute), "endpoint accepted machine entries project:forward changes:forward>base project:base capture sync accepted validate entries cleanup")
 	if len(rewound.Pending) != 1 || rewound.Pending[0].Tip != "base" || !strings.Contains(rewound.Pending[0].SourceID, "-epoch-1") {
 		t.Fatalf("sanctioned rewind was not one direct, epoch-qualified transition: %+v", rewound)
 	}
@@ -790,8 +791,16 @@ func TestLedgerAttentionJournalClearsBeforeOfflineFetch(t *testing.T) {
 	_ = bed.run(bed.now, attentionBaselineCalls())
 	bed.move("examine-tip", attentionWorld(queuedAttentionGoal("examine-me")), "base")
 	moved := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "examine-tip"))
-	if moved.Tip != "examine-tip" || moved.MovedAt.IsZero() {
-		t.Fatalf("movement did not start the examination clock: %+v", moved)
+	if moved.Tip != "examine-tip" || !moved.MovedAt.IsZero() {
+		t.Fatalf("movement was not automatically examined: %+v", moved)
+	}
+	// Restore an older installation's unexamined frontier to exercise the
+	// journaling owner's recovery while the endpoint remains offline.
+	legacy := bed.state()
+	legacy.ExaminedTip = "base"
+	legacy.MovedAt = bed.now.Format(time.RFC3339Nano)
+	if err := saveLedgerAttentionState(bed.root, legacy); err != nil {
+		t.Fatal(err)
 	}
 	opid := "journal-examines-remote"
 	bed.entries = []goal.Entry{{Opid: opid}}
@@ -853,7 +862,7 @@ func TestLedgerAttentionHealthDeadOutranksPersistentFetchFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	verdict := checkLedgerAttention(root, now)
-	if verdict.Status != HealthDead || !verdict.NoAutomaticRemedy || !strings.Contains(verdict.Reason, "47m") || !strings.Contains(verdict.Remedy, "journaling goal verb") {
+	if verdict.Status != HealthDead || verdict.NoAutomaticRemedy || !hasLawfulAutomaticRemedy(verdict, nil) || !strings.Contains(verdict.Reason, "47m") || !strings.Contains(verdict.Remedy, "steward examines") {
 		t.Fatalf("known unexamined movement did not outrank unknown reachability: %+v", verdict)
 	}
 }
@@ -877,5 +886,129 @@ func TestLedgerAttentionFetchFailureMaturesFromAliveToUnknown(t *testing.T) {
 	}
 	if mature := checkLedgerAttention(bed.root, failureAt.Add(30*time.Minute)); mature.Status != HealthUnknown || !strings.Contains(mature.Reason, "unreachable") {
 		t.Fatalf("a persistent fetch failure did not mature to unknown: %+v", mature)
+	}
+}
+
+func attentionDigest(t *testing.T, root string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "records", "narrator-digest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestAttentionPassNarratesAndExaminesTheMove(t *testing.T) {
+	t.Parallel()
+	bed := newAttentionPolicyBed(t)
+	bed.run(bed.now, attentionBaselineCalls())
+	bed.move("moved", attentionWorld(queuedAttentionGoal("goal-one"), queuedAttentionGoal("goal-two")), "base")
+	report := bed.run(bed.now.Add(time.Minute), attentionMovedCalls("base", "moved"))
+	state := bed.state()
+	digest := attentionDigest(t, bed.root)
+	if report.Outcome != "advanced" || state.ExaminedTip != "moved" || state.MovedAt != "" ||
+		!strings.Contains(digest, "moved goals: goal-one, goal-two") || strings.Count(digest, "\n") != 1 {
+		t.Fatalf("move was not narrated before examination: report=%+v state=%+v digest=%q", report, state, digest)
+	}
+	bed.run(bed.now.Add(2*time.Minute), "endpoint accepted machine capture sync accepted validate cleanup")
+	if got := attentionDigest(t, bed.root); got != digest {
+		t.Fatalf("unchanged tip repeated its examination: %q", got)
+	}
+}
+
+type attentionRunnerProber struct{}
+
+func (attentionRunnerProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{Pid: 1234, StartedAt: time.Unix(1234, 0)}, identity.Alive, nil
+}
+
+func TestAttentionRemedyCoversAMovePromotedBeforeInstall(t *testing.T) {
+	t.Parallel()
+	for _, trigger := range []string{"start", "dead tick"} {
+		t.Run(trigger, func(t *testing.T) {
+			t.Parallel()
+			bed := newAttentionPolicyBed(t)
+			bed.root = canonicalPath(bed.root)
+			bed.run(bed.now, attentionBaselineCalls())
+			bed.move("already-promoted", attentionWorld(queuedAttentionGoal("moved-before-install")), "base")
+			bed.accepted = bed.remote
+			state := bed.state()
+			state.RemoteTip, state.DiffedTip = bed.accepted, bed.accepted
+			state.MovedAt = bed.now.Add(-time.Hour).Format(time.RFC3339Nano)
+			if err := saveLedgerAttentionState(bed.root, state); err != nil {
+				t.Fatal(err)
+			}
+			if role := checkLedgerAttention(bed.root, bed.now); role.Status != HealthDead {
+				t.Fatalf("fixture did not have a standing unexamined move: %+v", role)
+			}
+			bed.calls = nil
+			examine := func(root string, now time.Time) error {
+				return examineLedgerMoveWithRepositoryAndWriter(root, now, bed.repository(), atomicfile.WriteText)
+			}
+			switch trigger {
+			case "start":
+				deps := runnerLoopDependencies{Self: attentionRunnerProber{}, ExamineLedger: examine,
+					Now:            func() time.Time { return bed.now },
+					Resumable:      func(string) (string, bool, error) { return "", false, nil },
+					DeliverPending: func(string) (int, error) { return 0, nil },
+					Channel:        func(context.Context, string) (int, error) { return 0, nil },
+					Sleep:          func(time.Duration) {},
+					Tick: func(string, TickConfig, WorkerCensus) (TickResult, error) {
+						// Installation must examine before the first idle tick.
+						if state := bed.state(); state.ExaminedTip != bed.accepted || !strings.Contains(attentionDigest(t, bed.root), "moved-before-install") {
+							t.Fatalf("start skipped the earlier move: %+v", state)
+						}
+						if err := stopRunnerLoop(bed.root); err != nil {
+							t.Fatal(err)
+						}
+						return TickResult{}, nil
+					},
+				}
+				if err := runLoopWithDependencies(bed.root, fakeCensus{}, nil, time.Minute, TickConfig{Now: bed.now}, deps); err != nil {
+					t.Fatal(err)
+				}
+			case "dead tick":
+				var result TickResult
+				deps := tickHealthDependencies{now: func() time.Time { return bed.now }, examineLedger: examine,
+					evaluate: func(root, _ string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
+						return []RoleVerdict{checkLedgerAttention(root, now)}, SpendObservation{}
+					}, deliver: func(string, string) error { return nil },
+				}
+				if err := completeTickHealthWithDependencies(bed.root, &result, 1, healthBedRef(1234), bed.now, deps); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := []string{"machine", "entries", "project:base", "changes:base>already-promoted", "project:already-promoted"}
+			if !reflect.DeepEqual(bed.calls, want) || bed.state().ExaminedTip != bed.accepted || bed.state().MovedAt != "" {
+				t.Fatalf("earlier move was not rebuilt from the examined tip: calls=%v state=%+v", bed.calls, bed.state())
+			}
+			if digest := attentionDigest(t, bed.root); strings.Count(digest, "\n") != 1 || !strings.Contains(digest, "moved-before-install") {
+				t.Fatalf("examination digest = %q", digest)
+			}
+		})
+	}
+}
+
+func TestAttentionDigestFailureLeavesTheMoveUnexamined(t *testing.T) {
+	t.Parallel()
+	bed := newAttentionPolicyBed(t)
+	bed.run(bed.now, attentionBaselineCalls())
+	bed.move("moved", attentionWorld(queuedAttentionGoal("retry-me")), "base")
+	// A directory at the digest's file path refuses the durable write.
+	path := filepath.Join(bed.root, "records", "narrator-digest.log")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bed.stageTime["moved"] = bed.now
+	report := runLedgerAttentionWithRepository(bed.root, bed.now, bed.repository())
+	if report.Outcome != "failed" || bed.state().ExaminedTip != "base" || bed.state().Staged == nil {
+		t.Fatalf("digest failure falsely examined a move: report=%+v state=%+v", report, bed.state())
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	report = runLedgerAttentionWithRepository(bed.root, bed.now.Add(time.Minute), bed.repository())
+	if report.Outcome != "current" || bed.state().ExaminedTip != "moved" || !strings.Contains(attentionDigest(t, bed.root), "retry-me") {
+		t.Fatalf("digest retry did not finish examination: %+v %+v", report, bed.state())
 	}
 }

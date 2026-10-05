@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 type fakeCensus struct {
@@ -409,5 +410,81 @@ func TestDegradedNoticeWaitsForASecondTick(t *testing.T) {
 	}
 	if second := tick(again.Evidence); second.Decision.Verdict != VerdictDegraded || queued() != 1 {
 		t.Fatalf("two degraded ticks in a row: %+v, %d notices; want one notice", second.Decision, queued())
+	}
+}
+
+func TestTickProbesAStaleSnapshotOncePerRuntime(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, "fixture/os", "")
+	bed.writeFile("metasystem.conf", []byte("metasystem.runtimes=claude,claude,codex,devin\ncapability.snapshot-max-age-days=30\n"))
+	writeSnapshot := func(runtime string, at time.Time) {
+		bed.writeJSON("artifacts/agents/capabilities/"+runtime+"-fixture.json", map[string]any{"runtime": runtime, "capturedAt": at.Format(time.RFC3339Nano)})
+	}
+	writeSnapshot("claude", bed.base.Add(-31*24*time.Hour))
+	writeSnapshot("codex", bed.base)
+	path := func(runtime string) (string, error) {
+		if runtime == "devin" {
+			return "", os.ErrNotExist
+		}
+		return filepath.Join(bed.root, "fake-path", runtime), nil
+	}
+	var probes []string
+	deps := tickHealthDependencies{now: func() time.Time { return bed.base }, lookPath: path,
+		evaluate: func(root, install string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
+			role, _ := capabilitySnapshotStatus(root, install, now, path)
+			return []RoleVerdict{role}, SpendObservation{}
+		},
+		probeRuntime: func(root, runtime string) error {
+			if root != bed.root {
+				t.Fatalf("probe root = %q", root)
+			}
+			probes = append(probes, runtime)
+			writeSnapshot(runtime, bed.base)
+			return nil
+		}, deliver: func(string, string) error { return nil },
+	}
+	for tick := range 2 {
+		var result TickResult
+		if err := completeTickHealthWithDependencies(bed.root, &result, 1, bed.runner, bed.base.Add(time.Duration(tick)*time.Minute), deps); err != nil {
+			t.Fatal(err)
+		}
+		if tick == 1 && result.Health.Roles[0].Status != HealthAlive {
+			t.Fatalf("probed runtime did not recover: %+v", result.Health)
+		}
+	}
+	if !reflect.DeepEqual(probes, []string{"claude"}) {
+		t.Fatalf("probe calls = %v, want one stale runtime and no off-PATH or fresh runtime", probes)
+	}
+	if jobs, err := os.ReadDir(filepath.Join(bed.root, "artifacts", "agents", "jobs")); err != nil && !os.IsNotExist(err) || len(jobs) != 0 {
+		t.Fatalf("capability probe created job records: %v %v", jobs, err)
+	}
+}
+
+func TestTickEndsCapabilityProbesAtTheFifthObservation(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, "fixture/os", "")
+	bed.writeFile("metasystem.conf", []byte("metasystem.runtimes=claude\n"))
+	path := func(string) (string, error) { return filepath.Join(bed.root, "fake-path", "claude"), nil }
+	probes := 0
+	deps := tickHealthDependencies{lookPath: path, now: func() time.Time { return bed.base },
+		evaluate: func(root, install string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
+			role, _ := capabilitySnapshotStatus(root, install, now, path)
+			return []RoleVerdict{role}, SpendObservation{}
+		},
+		probeRuntime: func(string, string) error { probes++; return errors.New("fixture login unavailable") },
+		deliver:      func(string, string) error { return nil },
+	}
+	for tick := range 6 {
+		var result TickResult
+		err := completeTickHealthWithDependencies(bed.root, &result, 1, bed.runner, bed.base.Add(time.Duration(tick)*time.Minute), deps)
+		if err != nil || !strings.Contains(result.Health.Roles[0].Reason, "fixture login unavailable") {
+			t.Fatalf("failed probe must stay on its role on observation %d: %+v %v", tick+1, result.Health, err)
+		}
+		if tick >= 4 && (err != nil || result.Health.Roles[0].FailureEscalation != AutoHealEnded) {
+			t.Fatalf("breaker did not end probing: %+v %v", result.Health, err)
+		}
+	}
+	if probes != 4 {
+		t.Fatalf("probes = %d, want four before the fifth observation ends healing", probes)
 	}
 }

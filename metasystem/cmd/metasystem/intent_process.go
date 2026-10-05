@@ -1936,6 +1936,9 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 		}
 		return []string{"metasystem", "session", "start"}, ""
 	case steward.RoleLedgerAttention:
+		if role.FailureEscalation == steward.AutoHealEnded {
+			return strings.Fields(role.Remedy), ""
+		}
 		return []string{"metasystem", "goal", "list"}, ""
 	case steward.RoleNonterminalJobs:
 		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
@@ -1949,7 +1952,10 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 		}
 		return []string{"metasystem", "incident", "list"}, ""
 	case steward.RoleCapabilitySnapshots:
-		return nil, "the next delegated job for each runtime named probes it and records a fresh snapshot; nothing needs doing now"
+		if role.FailureEscalation == steward.AutoHealEnded {
+			return nil, role.Remedy
+		}
+		return nil, "the steward tick probes each runtime on PATH with a missing or stale snapshot and records a fresh snapshot"
 	case steward.RoleSpendFence:
 		return nil, "a person raises the spend ceiling in metasystem.conf"
 	case steward.RoleProofAttempts:

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "U3a-fix",
+  "subject": {
+    "commit": "65a0b7df5eedc5885a83245fa7948c615aaeb589",
+    "parent": "1ff9f2f1952a0cfb5fa90046e16d7ce8c4815c4b",
+    "tree": "04002bbd21aa7b1fa79722b19034f00e69575ff8",
+    "patchDigest": "e7cb867480ac455bc74f646fcc8c31fac018db62315de0e3b42903bd90e30457",
+    "unitDigest": "6cf87b57717f8a76e9f5572ead3b737447c943517ef0984e7370dcc391addec9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c2c821af39fbcaac54b2afd0",
+    "round": 1,
+    "closureSha256": "393efb2b71e2977d826fed108feec34480d87a7c6e43990f88eabab9152b5c32"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "04002bbd21aa7b1fa79722b19034f00e69575ff8",
+    "runId": "goal-read-gate-20261005t093509z-2e637a59b2a8ed80"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e874e76f080329e7bf48b02dc59f1f37e260bd34",
+      "digest": "b024bb81c57581cce12984f830822a0904fb9bdf78c16aad80605fba80913e87"
+    },
+    {
+      "kind": "read",
+      "commit": "1ff9f2f1952a0cfb5fa90046e16d7ce8c4815c4b",
+      "digest": "57f411e862c4dc4bc97a0d217b4c5f9fd4ecd0cce60814fc8f8f3d73c4f8bf9e"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2c821af39fbcaac54b2afd0"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/receipt_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2c821af39fbcaac54b2afd0"
+    },
+    {
+      "path": "metasystem/internal/steward/health_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2c821af39fbcaac54b2afd0"
+    },
+    {
+      "path": "metasystem/internal/steward/role_health_projection_fixture_test.go",
+      "readerWord": "reviewed by critic root code-critic-c2c821af39fbcaac54b2afd0"
+    }
+  ],
+  "sha256": "125e769339187d8e61d84dd3966a93be785d9f352fe15164e2b92700ad343db2"
+}

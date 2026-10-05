@@ -190,7 +190,7 @@ func TestSystemCheckRemediesArePublicActs(t *testing.T) {
 		instruction string
 	}{
 		{steward.RoleVerdict{Role: steward.RoleSessionMain, Reason: "no session main is announced"}, []string{"metasystem", "session", "start"}, ""},
-		{steward.RoleVerdict{Role: steward.RoleCapabilitySnapshots, Reason: "missing or stale capability snapshots: claude"}, nil, "next delegated job"},
+		{steward.RoleVerdict{Role: steward.RoleCapabilitySnapshots, Reason: "missing or stale capability snapshots: claude"}, nil, "the steward tick probes"},
 		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "no deep validation cadence status is recorded"}, []string{"metasystem", "system", "start"}, ""},
 		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "open trunk-red incident inc-1 has no owner"}, []string{"metasystem", "incident", "list"}, ""},
 		{steward.RoleVerdict{Role: steward.RoleStopCapabilityEpoch, Reason: "no machine nickname: run  git config metasystem.goal.machine <nickname>  once on this machine"}, nil, "run the command the reason above names"},

@@ -102,9 +102,16 @@ var runnerAfterRecordPublished func()
 
 // TickSeconds reads the cadence; the default is ten minutes.
 func TickSeconds(repoRoot string) int {
-	out, err := exec.Command("git", "-C", repoRoot, "config", "--get", "metasystem.steward.tick-seconds").Output()
+	return tickSecondsWithGit(repoRoot, func(args ...string) (string, error) {
+		out, err := exec.Command("git", args...).Output()
+		return string(out), err
+	})
+}
+
+func tickSecondsWithGit(repoRoot string, git func(...string) (string, error)) int {
+	out, err := git("-C", repoRoot, "config", "--get", "metasystem.steward.tick-seconds")
 	if err == nil {
-		if n, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil && n > 0 {
+		if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
 			return n
 		}
 	}
@@ -140,12 +147,15 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		TrimCaches: machineCacheTrimmer(nil, ""),
 		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
-		Bridge:      func(top string) bridgeStepper { return newBridgeRole(top) },
-		StopSignals: productionStopSignals(),
+		Bridge:        func(top string) bridgeStepper { return newBridgeRole(top) },
+		StopSignals:   productionStopSignals(),
+		ExamineLedger: examineLedgerMove,
 	})
 }
 
 type runnerLoopDependencies struct {
+	Self           identity.Prober
+	ExamineLedger  func(string, time.Time) error
 	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
 	DeliverPending func(string) (int, error)
 	Resumable      func(string) (string, bool, error)
@@ -222,7 +232,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	defer stopWatching()
 	cfg.Stopping = drain.Requested
 
-	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	prober := deps.Self
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	self, state, err := prober.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		return fmt.Errorf("the runner cannot read its own identity")
 	}
@@ -260,6 +274,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	// runner knows the identity it was enrolled with and the lineage its
 	// arming caller handed it, so only the resident runner publishes presence.
 	cfg.Runner = runnerContext(top, cfg.ArmedLineage)
+	if deps.ExamineLedger != nil {
+		if err := deps.ExamineLedger(top, cfg.now()); err != nil {
+			fmt.Fprintf(os.Stderr, "examine ledger at steward start: %v\n", err)
+		}
+	}
 	var bridge bridgeStepper
 	if deps.Bridge != nil {
 		bridge = deps.Bridge(top)

@@ -20,6 +20,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -351,6 +353,204 @@ func (f *fakeOps) HealthPreview(repo string, metasystemRoot roots.Installation) 
 		return f.health()
 	}
 	return `{"line":"HEALTH healthy — fixture"}` + "\n", 0
+}
+
+func TestStopHealthPhaseReadsTheTickVerdict(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		age    time.Duration
+		data   string
+		cached bool
+	}{
+		{name: "fresh", age: 119 * time.Second, cached: true},
+		{name: "two ticks old", age: 120 * time.Second},
+		{name: "stale", age: 121 * time.Second},
+		{name: "future", age: -time.Second},
+		{name: "missing", data: "missing"},
+		{name: "malformed", data: "{"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			installation := newHookInstallation(t)
+			state := newHookInstallation(t)
+			ops := newFakeOps(t, installation)
+			ops.stateRoot = func(string) (string, int) { return state.root, 0 }
+			plantOpenStopEvidence(t, state.root, now)
+			ops.git = func(args ...string) (string, error) {
+				if strings.HasSuffix(strings.Join(args, " "), "config --get metasystem.steward.tick-seconds") {
+					return "60\n", nil
+				}
+				return ops.ordinaryGit(args...)
+			}
+			observed := now.Add(-test.age)
+			verdict := steward.HealthVerdict{Schema: 1, Observation: 7, ObservedAt: observed, Aggregate: "unhealthy",
+				Roles: []steward.RoleVerdict{
+					{Role: steward.RoleDisk, Status: steward.HealthDead, Reason: "tick fixture"},
+					{Role: steward.RoleHookFreshness, Status: steward.HealthUnknown, Reason: "tick hook fixture"},
+					{Role: steward.RoleStopHookDuration, Status: steward.HealthUnknown, Reason: "tick duration fixture"},
+				}}
+			data, err := json.Marshal(map[string]any{"state": steward.HealthObservationState{
+				Sequence: 7, ObservedAt: observed, UnknownCounts: map[steward.HealthRole]int{}}, "verdict": verdict})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.data != "" {
+				data = []byte(test.data)
+			}
+			path := steward.HealthRecordPath(state.root)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if test.data != "missing" {
+				if err := os.WriteFile(path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			checks := 0
+			ops.health = func() (string, int) {
+				checks++
+				return `{"line":"HEALTH healthy — evaluated fixture"}`, 0
+			}
+			if test.cached {
+				ops.up = func(_ UpRequest, stdout, _ io.Writer) int {
+					fmt.Fprintln(stdout, `up outcome=armed re-armed="generation=4 previous=3"`)
+					return 0
+				}
+			}
+			// Only the Stop's two roles change; the machinery verdict stays cached.
+			verdict.Roles[1] = steward.RoleVerdict{Role: steward.RoleHookFreshness, Status: steward.HealthAlive,
+				Reason: "turn generation 2 is pending; prior generation 1 completed as OK/EMITTED"}
+			verdict.Roles[2] = steward.RoleVerdict{Role: steward.RoleStopHookDuration, Status: steward.HealthAlive,
+				Reason: "the last Stop carried no measurement"}
+			ops.stopInput = func(request StopInputRequest, _ io.Writer) int {
+				if test.cached {
+					captured, err := os.ReadFile(request.HealthFile)
+					var preview steward.HookHealthPreview
+					if err != nil || json.Unmarshal(captured, &preview) != nil || preview.Line != verdict.Line() || preview.ExitCode != 1 || preview.Verdict.Observation != 7 {
+						t.Errorf("cached health capture = %s, error %v", captured, err)
+					}
+				}
+				return writeTestFile(request.OutputFile, `{"notices":"","failures":"","verdict":""}`)
+			}
+			run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"tick-fixture"}`,
+				now: func() time.Time { return now }})
+			wantLine, wantChecks := "HEALTH healthy — evaluated fixture", 1
+			if test.cached {
+				wantLine, wantChecks = verdict.Line(), 0
+			}
+			if run.status != 0 || ops.completion(t).HealthLine != wantLine || checks != wantChecks {
+				t.Fatalf("Stop status %d, health %q, evaluations %d; want %q, %d", run.status, ops.completion(t).HealthLine, checks, wantLine, wantChecks)
+			}
+			if test.cached {
+				arming, err := os.ReadFile(filepath.Join(state.root, "artifacts", "agents", "supervision", "arming.log"))
+				if err != nil || !strings.Contains(string(arming), " stop-re-armed 2 3\n") {
+					t.Fatalf("Stop did not bind its re-arm to its attempt: %s, %v", arming, err)
+				}
+			}
+			if test.data != "missing" {
+				if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, data) {
+					t.Fatalf("Stop rewrote tick health: %s, %v", after, err)
+				}
+			}
+		})
+	}
+}
+
+func plantOpenStopEvidence(t *testing.T, root string, now time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(steward.ComponentEvidencePath(root, "supervision-hook")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	previous := now.Add(-time.Second)
+	data, err := json.Marshal(steward.ComponentEvidence{
+		Component: "supervision-hook", Generation: 2, AttemptSeq: 3, TurnKeyDigest: "fixture-turn",
+		Pid: 4321, PidStartedAt: now.Unix() - 30, Result: steward.ComponentIndeterminate, EvidenceDigest: strings.Repeat("a", 64),
+		LastAttempt: now, LastCompletion: previous, LastSuccess: previous, Outcome: "ATTEMPTING",
+		AttemptHistory: []steward.ComponentAttemptHistory{{Generation: 1, AttemptSeq: 2,
+			AttemptedAt: previous, CompletedAt: previous, Result: steward.ComponentOK, Outcome: "EMITTED", EvidenceDigest: strings.Repeat("b", 64)}},
+	})
+	if err != nil || writeTestFile(steward.ComponentEvidencePath(root, "supervision-hook"), string(data)) != 0 {
+		t.Fatalf("plant Stop evidence: %v", err)
+	}
+}
+
+func TestStopHealthPhaseHonoursFenceAndOwnAttempt(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC)
+	for _, test := range []struct{ name, phase, prefix string }{
+		{"own attempt", "", "HEALTH healthy"},
+		{"stopped", stopfence.PhaseStopped, "HEALTH STOPPED"},
+		{"unfinished", stopfence.PhaseStopping, "HEALTH STOP UNFINISHED"},
+		{"incomplete", stopfence.PhaseStopIncomplete, "HEALTH STOP INCOMPLETE"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			installation, state := newHookInstallation(t), newHookInstallation(t)
+			ops := newFakeOps(t, installation)
+			ops.stateRoot = func(string) (string, int) { return state.root, 0 }
+			plantOpenStopEvidence(t, state.root, now)
+			verdict := steward.HealthVerdict{Schema: 1, Observation: 7, ObservedAt: now, Aggregate: "unknown",
+				Roles: []steward.RoleVerdict{
+					{Role: steward.RoleStewardRunner, Status: steward.HealthAlive, Reason: "tick machinery fixture"},
+					{Role: steward.RoleHookFreshness, Status: steward.HealthUnknown, Reason: "turn generation 2 is pending within the 60s Stop budget"},
+					{Role: steward.RoleStopHookDuration, Status: steward.HealthAlive, Reason: "tick duration fixture"},
+				}}
+			if test.phase != "" {
+				verdict.Aggregate, verdict.Roles[0].Status = "unhealthy", steward.HealthDead
+				if err := stopfence.Write(installation.root, stopfence.Record{State: stopfence.StateClosed,
+					Phase: test.phase, Generation: 4, Checkout: installation.root}); err != nil {
+					t.Fatal(err)
+				}
+				ops.up = func(_ UpRequest, stdout, _ io.Writer) int {
+					fmt.Fprintln(stdout, "up outcome=stopped")
+					return 0
+				}
+			}
+			data, err := json.Marshal(map[string]any{"state": steward.HealthObservationState{Sequence: 7, ObservedAt: now, UnknownCounts: map[steward.HealthRole]int{}}, "verdict": verdict})
+			path := steward.HealthRecordPath(state.root)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err != nil || writeTestFile(path, string(data)) != 0 {
+				t.Fatalf("plant tick health: %v", err)
+			}
+			ops.health = func() (string, int) {
+				t.Error("Stop evaluated all roles despite a usable cache or closed fence")
+				return "", 2
+			}
+			ops.stopInput = func(request StopInputRequest, _ io.Writer) int {
+				captured, err := os.ReadFile(request.HealthFile)
+				var preview steward.HookHealthPreview
+				if err != nil || json.Unmarshal(captured, &preview) != nil || !strings.HasPrefix(preview.Line, test.prefix) || preview.ExitCode != 0 {
+					t.Fatalf("Stop health capture = %s, error %v", captured, err)
+				}
+				if test.phase != "" && (!preview.Verdict.Stopped || strings.Contains(preview.Line, "tick machinery fixture")) {
+					t.Fatalf("closed fence used cached roles: %+v", preview)
+				}
+				for _, intervention := range preview.Interventions {
+					if intervention.SupervisionRepair {
+						t.Errorf("Stop requested repair: %+v", intervention)
+					}
+				}
+				if test.phase == "" && (preview.Verdict.Observation != 7 || len(preview.Verdict.Roles) != 3 || preview.Verdict.Roles[0].Line() != verdict.Roles[0].Line()) {
+					t.Fatalf("Stop changed cached machinery or observation: %+v", preview.Verdict)
+				}
+				if test.phase == "" && preview.Verdict.Roles[2].Reason != "the last Stop carried no measurement" {
+					t.Fatalf("Stop kept its cached duration role: %+v", preview.Verdict.Roles[2])
+				}
+				return writeTestFile(request.OutputFile, `{"notices":"","failures":"","verdict":""}`)
+			}
+			run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"cached-stop"}`, now: func() time.Time { return now }})
+			if run.status != 0 || !strings.HasPrefix(ops.completion(t).HealthLine, test.prefix) {
+				t.Fatalf("Stop = %+v", run)
+			}
+			if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, data) {
+				t.Fatalf("Stop rewrote tick health: %s, %v", after, err)
+			}
+		})
+	}
 }
 
 func (f *fakeOps) DigestPending(repo string) (string, int) {

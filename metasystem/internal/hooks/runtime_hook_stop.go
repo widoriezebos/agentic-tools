@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // lifecycle is one receipt, Stop worker or SessionEnd invocation: the
@@ -550,6 +551,15 @@ func (s *stopRun) arm() {
 	aggregate := lastLine(upOutput)
 	if strings.Contains(aggregate, " re-armed=") {
 		s.upNotice = "Metasystem re-armed the rebuilt engine: " + aggregate
+		// Bind the arming fact to this attempt so overlapping Stops stay distinct.
+		if positiveInteger.MatchString(s.generation) && positiveInteger.MatchString(s.attemptSeq) {
+			path := s.repo.Path("artifacts", "agents", "supervision", "arming.log")
+			_ = os.MkdirAll(filepath.Dir(path), 0o755)
+			line := nowStamp(inv.Now()) + " stop-re-armed " + s.generation + " " + s.attemptSeq + "\n"
+			if appendFile(path, line) != nil {
+				s.recordFailure("the Stop re-arm evidence could not be recorded", "supervision-arming")
+			}
+		}
 	} else if strings.HasPrefix(aggregate, "up outcome=stopped") {
 		component := ""
 		for _, line := range strings.Split(upOutput, "\n") {
@@ -594,7 +604,16 @@ func (s *stopRun) arm() {
 	s.healthCapture = s.workFile("health.json")
 	var health string
 	var healthRC int
-	s.timed("health", func() { health, healthRC = ops.HealthPreview(s.repo.Path(), s.world) })
+	s.timed("health", func() {
+		if preview, fresh := steward.FreshHookHealthPreviewAt(s.repo.Path(), s.world.Path(), inv.Now(), ops.Git); fresh {
+			data, err := json.Marshal(preview)
+			if err == nil {
+				health, healthRC = string(data), preview.ExitCode
+				return
+			}
+		}
+		health, healthRC = ops.HealthPreview(s.repo.Path(), s.world)
+	})
 	_ = os.WriteFile(s.healthCapture, []byte(health), 0o600)
 	s.healthLine = jsonValue(health, "line")
 	if healthRC > 2 || s.healthLine == "" {

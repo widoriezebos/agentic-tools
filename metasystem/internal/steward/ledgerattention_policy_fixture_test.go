@@ -1,16 +1,18 @@
 package steward
 
 import (
+	"bytes"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // attentionPolicyBed owns a declared accepted world and a strict record of
@@ -147,11 +149,33 @@ func (b *attentionPolicyBed) expectedStage(state ledgerAttentionState, tip strin
 		before = after
 	}
 	want.Ready, want.Pinned, want.Queue = before.Ready, before.Pinned, before.Queue
+	want.MovedGoals = []string{}
+	moved := map[string]bool{}
+	previous := b.worlds[b.accepted]
+	for _, change := range changes {
+		current := b.worlds[change.Tip]
+		for _, files := range []map[string][]byte{previous, current} {
+			for path := range files {
+				if path != "plans/goals/backlog.md" && !bytes.Equal(previous[path], current[path]) {
+					moved[strings.TrimSuffix(filepath.Base(path), ".md")] = true
+				}
+			}
+		}
+		previous = current
+	}
+	for id := range moved {
+		want.MovedGoals = append(want.MovedGoals, id)
+	}
+	sort.Strings(want.MovedGoals)
 	return want
 }
 
 func (b *attentionPolicyBed) repository() *ledgerAttentionRepository {
 	return &ledgerAttentionRepository{
+		ResolveLayout: func(root string) (stateroot.Layout, error) {
+			b.checkRoot(root)
+			return stateroot.Layout{GitRoot: root, RepositoryRoot: root}, nil
+		},
 		ResolveEndpoint: func(root string) (goal.Endpoint, error) {
 			b.checkRoot(root)
 			if err := b.call("endpoint"); err != nil {
@@ -356,5 +380,5 @@ func attentionBaselineCalls() string {
 }
 
 func attentionMovedCalls(from string, tips ...string) string {
-	return fmt.Sprintf("endpoint accepted machine entries %s", strings.TrimPrefix(attentionMoveCalls(from, tips...), "endpoint accepted machine "))
+	return attentionMoveCalls(from, tips...)
 }

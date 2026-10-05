@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "U3b-standing-rule",
+  "subject": {
+    "commit": "b8de044c51ab6113696308f7c1284a549a9ddd3b",
+    "parent": "be02b5a7a826c83a9dc66abe40610743baf087a4",
+    "tree": "537f60e00f18c00f883694c96a5bd6abbf69f5d7",
+    "patchDigest": "2eb029d71b47bc1f58e01c87ebb712a5cb8e10e250d3839936773f37ab2a3f9f",
+    "unitDigest": "3b80aecc9b3ffa9d673d66ac2d9fbf1bd5cc20adb4f7c5ae1394e1a1623eb26d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-5ea9e9e40e8b333b55bd263c",
+    "round": 1,
+    "closureSha256": "4916ade74ebe7bb5d29182199c6f4cd56c681708b959d8f407d6ea2397e40a23"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "537f60e00f18c00f883694c96a5bd6abbf69f5d7",
+    "runId": "goal-read-gate-20261005t081248z-eb75c51fd30bef8d"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "d35fd0b70c51f6fe655c7e2e5622493f695ef7ff81826025509c8ac7c2f0197a"
+}

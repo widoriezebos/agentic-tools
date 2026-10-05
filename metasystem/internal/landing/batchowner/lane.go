@@ -56,12 +56,12 @@ func ValidateLandingCheckout(root, seatRoot string, now time.Time) (string, erro
 }
 
 // LandingLaneRoot is the lane installation lands through, for a seat's work
-// land and for a reader alike (helm's report, the steward's trunk-red check).
+// land and for a reader alike (helm's report, the steward's disk check).
 func LandingLaneRoot(installation string, now time.Time) (string, bool, error) {
 	return ProductionLandingLaneSeams().BatchRoot(installation, now)
 }
 
-func init() { steward.LandingLaneRoot = LandingLaneRoot }
+func init() { steward.AttemptLandingLaneRoot = LandingLaneRoot }
 
 // BatchRoot is the lane installation's work joins: the host's registered
 // lane, as lane.Resolve reads it against the seat's own landing.batch-root,

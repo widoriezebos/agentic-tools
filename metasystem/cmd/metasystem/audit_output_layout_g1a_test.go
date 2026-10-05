@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -179,6 +180,9 @@ func checkLayoutBed(t *testing.T) layoutBed {
 	}
 	git := func(args ...string) (string, error) { return systemSetupGit(t, b.root(), args...) }
 	if _, err := contractgit.Register(b.root(), "testing.json", filepath.Join(realpath.Resolve(b.root()), "bin", "metasystem"), git); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: b.root(), Runtimes: []string{"claude"}, HooksOnly: true}, owners.resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
 	// The disk role reads the machine's disk report under the test

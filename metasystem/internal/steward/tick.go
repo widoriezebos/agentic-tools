@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -71,6 +72,9 @@ type TickConfig struct {
 	KeepLandingLane func() lane.AgentRun
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
+	// ProbeRuntime runs the admission owner's capability probe without a job.
+	// The command layer supplies it because delegation depends on the steward.
+	ProbeRuntime func(root, runtime string) error
 	// Stopping reports that the resident runner received a stop signal:
 	// the tick finishes the stop in progress and starts no further one.
 	// Only RunLoop sets it; nil is never stopping.
@@ -239,7 +243,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	defer func() {
 		reportErr := runTickReports(repoRoot, cfg, func() error {
 			if result.Health.Schema == 0 {
-				return completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now)
+				return completeTickHealthWithConfig(repoRoot, &result, generation, selfExact.Ref(), cfg)
 			}
 			return nil
 		})
@@ -402,6 +406,10 @@ func defaultTickContinuationDependencies() tickContinuationDependencies {
 }
 
 func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
+	dependencies.health.probeRuntime = cfg.ProbeRuntime
+	dependencies.health.examineLedger = func(root string, now time.Time) error {
+		return examineLedgerMoveWithRepositoryAndWriter(root, now, dependencies.ledgerRepository, dependencies.ledgerWriter)
+	}
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
@@ -551,12 +559,16 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 // completeTickHealth performs the mandatory end of every tick: one durable
 // health observation, one durable narration line, and a queued alert whenever
 // the observation's dead or persistent-unknown boundary requires one.
-func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time) error {
-	return completeTickHealthWithDependencies(repoRoot, result, generation, process, now, tickHealthDependencies{
-		evaluate: evaluateHealthRoles,
-		now:      tickHealthNow,
-		deliver:  deliver,
-		lane:     hostLaneSilence,
+func completeTickHealthWithConfig(repoRoot string, result *TickResult, generation int, process identity.Ref, cfg TickConfig) error {
+	return completeTickHealthWithDependencies(repoRoot, result, generation, process, cfg.Now, tickHealthDependencies{
+		evaluate:     evaluateHealthRoles,
+		now:          tickHealthNow,
+		deliver:      deliver,
+		lane:         hostLaneSilence,
+		probeRuntime: cfg.ProbeRuntime,
+		examineLedger: func(root string, now time.Time) error {
+			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
+		},
 	})
 }
 
@@ -566,7 +578,10 @@ type tickHealthDependencies struct {
 	deliver  func(string, string) error
 	// lane reads the host landing lane for the lane-silent signal; nil
 	// reads no lane.
-	lane func(string, time.Time) LaneSilence
+	lane          func(string, time.Time) LaneSilence
+	probeRuntime  func(root, runtime string) error
+	lookPath      func(string) (string, error)
+	examineLedger func(string, time.Time) error
 }
 
 func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
@@ -584,6 +599,14 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if err := requestWatcherRepair(repoRoot, health, healthNow()); err != nil {
 		return fmt.Errorf("request watcher repair: %w", err)
 	}
+	remedyErr := remedyHealthRoles(repoRoot, health, generation, process, healthNow, dependencies)
+	health.FindingDigest = healthFindingDigest(health.Roles)
+	if health.FindingDigest != result.Health.FindingDigest {
+		if err := saveRemediedHealth(repoRoot, health); err != nil {
+			return fmt.Errorf("record remedy health: %w", err)
+		}
+	}
+	result.Health = health
 	narratorAttempt, err := beginComponentAttempt(repoRoot, "narrator", generation, process, healthNow())
 	if err != nil {
 		return fmt.Errorf("record narrator attempt: %w", err)
@@ -601,6 +624,9 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
+	if err := fileStandingDefects(repoRoot, health, healthNow(), dependencies.deliver); err != nil {
+		return fmt.Errorf("file standing health defects: %w", err)
+	}
 	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
@@ -610,7 +636,55 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 			return fmt.Errorf("update lane-silent alert episode: %w", err)
 		}
 	}
-	return nil
+	return remedyErr
+}
+
+func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, process identity.Ref, now func() time.Time, dependencies tickHealthDependencies) error {
+	var failures error
+	for index := range health.Roles {
+		role := &health.Roles[index]
+		if role.Status != HealthDead || role.FailureEscalation == AutoHealEnded {
+			continue
+		}
+		switch role.Role {
+		case RoleCapabilitySnapshots:
+			if dependencies.probeRuntime == nil {
+				continue
+			}
+			lookPath := dependencies.lookPath
+			if lookPath == nil {
+				lookPath = exec.LookPath
+			}
+			_, stale := capabilitySnapshotStatus(repoRoot, repoRoot, now(), lookPath)
+			for _, runtime := range stale {
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now,
+					func() error { return dependencies.probeRuntime(repoRoot, runtime) }))
+			}
+		case RoleLedgerAttention:
+			if dependencies.examineLedger != nil {
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "ledger-examination", role, generation, process, now,
+					func() error { return dependencies.examineLedger(repoRoot, now()) }))
+			}
+		}
+	}
+	return failures
+}
+
+// A remedy's result belongs to its health role. Only a failure to record
+// that result prevents the tick from completing its mandatory work.
+func recordHealthRemedy(root, component string, role *RoleVerdict, generation int, process identity.Ref, now func() time.Time, run func() error) error {
+	attempt, err := beginComponentAttempt(root, component, generation, process, now())
+	if err != nil {
+		return err
+	}
+	role.Reason = strings.ReplaceAll(role.Reason, "; "+component+": "+attempt.LastFailure, "")
+	result, outcome, evidence := ComponentOK, "PASS_COMPLETE", "remedy completed"
+	if err := run(); err != nil {
+		result, outcome, evidence = ComponentError, "FAILED", err.Error()
+		role.Reason += "; " + component + ": " + evidence
+	}
+	_, err = completeComponentAttempt(root, component, generation, attempt.AttemptSeq, result, outcome, evidence, nil, now())
+	return err
 }
 
 func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) error {
@@ -621,9 +695,7 @@ func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) 
 		if role.FailureEscalation == AutoHealEnded {
 			return supervise.EndWatcherRestart(repoRoot, "the health breaker ended automatic watcher repair", now)
 		}
-		if !strings.Contains(role.Reason, "recorded pid") &&
-			!strings.Contains(role.Reason, "lastSuccess is stale") &&
-			!strings.Contains(role.Reason, "latest attempt passed its deadline") {
+		if !watcherRepairable(role) {
 			return nil
 		}
 		return supervise.RequestWatcherRestart(repoRoot, role.Reason, now)
