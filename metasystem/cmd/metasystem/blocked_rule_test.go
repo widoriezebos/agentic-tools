@@ -49,7 +49,7 @@ func TestBlockedAgentRuleIsWhereItBelongs(t *testing.T) {
 			}
 		}
 	}
-	if skill := read("skills", "landing-agent", "SKILL.md"); !strings.Contains(skill, "8. **Blocked outside cases 1-7:** ask with `--about lane`, then end your turn; the keeper holds you\n   until it is answered.") {
+	if skill := read("skills", "landing-agent", "SKILL.md"); !strings.Contains(skill, "9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you\n   until it is answered.") {
 		t.Error("the landing-agent skill does not carry case 8")
 	}
 	for _, template := range []string{"brief.md", "design-brief.md"} {
