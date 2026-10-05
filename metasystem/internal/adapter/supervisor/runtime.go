@@ -102,7 +102,7 @@ func resolveRuntime(d Deps, name string) (Runtime, error) {
 
 // registryEntry is a runtime's effective declaration for the installation.
 func registryEntry(d Deps, name string) (external.Entry, error) {
-	root := d.Root
+	root := d.installation()
 	if root != "" && !filepath.IsAbs(root) {
 		absolute, err := filepath.Abs(root)
 		if err != nil {

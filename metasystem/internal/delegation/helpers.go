@@ -200,7 +200,7 @@ func (s *session) mustTemp(dir, prefix string) (string, error) {
 // configGet is `metasystem-config.sh get --key KEY --default DEFAULT`.
 func (s *session) configGet(key, def string) (string, error) {
 	value, code, err := config.Get(config.GetParams{
-		Key: key, Default: def, DefaultSet: true, ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.configLookup(),
+		Key: key, Default: def, DefaultSet: true, ConfPath: s.settingsPath(), LookupEnv: s.configLookup(),
 	})
 	if err != nil {
 		s.eprintln(err.Error())

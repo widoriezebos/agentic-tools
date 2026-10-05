@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// SelectedInstallationEnv carries the caller's registry and settings source
+// to the delegate lifecycle and its adapter processes.
+const SelectedInstallationEnv = "METASYSTEM_DISPATCH_INSTALLATION"
+
 // ResolveTool names the installation serving root, its checkout, and the
 // engine to run. The installation resolver owns the worktree mapping;
 // METASYSTEM_BIN explicitly overrides that installation's engine.
@@ -19,6 +23,24 @@ func ResolveTool(root string, serving func(string) (string, string), lookupEnv f
 		engine = filepath.Join(installation, "bin", "metasystem")
 	}
 	return
+}
+
+// InLinkedWorktree reports whether the nearest .git entry is a file.
+// Only linked worktrees need Git to locate a serving installation.
+func InLinkedWorktree(root string) bool {
+	dir, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	for {
+		if entry, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return entry.Mode().IsRegular()
+		}
+		if filepath.Dir(dir) == dir {
+			return false
+		}
+		dir = filepath.Dir(dir)
+	}
 }
 
 // Filesystem-path facts the dispatch decisions rest on: where a path really

@@ -86,7 +86,7 @@ func prepareFakeHost(t *Turn) (Launch, error) {
 	d := t.Deps()
 	hold := d.Getenv("METASYSTEM_FAKE_HOST_HOLD") == "1"
 	ignoreTerm := d.Getenv("METASYSTEM_FAKE_HOST_IGNORE_TERM") == "1"
-	if (hold || ignoreTerm) && config.ConfValue(filepath.Join(d.Root, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
+	if (hold || ignoreTerm) && config.ConfValue(filepath.Join(d.installation(), "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
 		return Launch{Refusal: &Refusal{Error: "METASYSTEM_FAKE_HOST_HOLD and METASYSTEM_FAKE_HOST_IGNORE_TERM are available only in a fixture-mode root"}}, nil
 	}
 	if hold {

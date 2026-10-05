@@ -95,18 +95,23 @@ func intentConfPath(layout stateroot.Layout) string {
 	return layout.InstallationRoot.Path("metasystem.conf")
 }
 
+func unitLaunchSettings(layout stateroot.Layout, serving func(string) (string, string), lookupEnv func(string) (string, bool)) (launch.Settings, error) {
+	installation, _ := serving(layout.InstallationRoot.Path())
+	return launch.ResolveSettings(filepath.Join(installation, "metasystem.conf"), lookupEnv)
+}
+
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
 	if owners.inspectRead == nil {
 		owners.inspectRead = branch.InspectBranchRead
 	}
 	if owners.units == nil {
-		// The selected installation supplies the templates and the launch
-		// settings; launch and unit records stay the user's own stores.
+		// The serving installation supplies launch settings; launch and unit
+		// records stay the user's own stores.
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
 			manager := launchManager()
 			if layout.InstallationRoot != "" {
-				manager.Settings, manager.SettingsError = launch.ResolveSettings(intentConfPath(layout), launchLookupEnv)
+				manager.Settings, manager.SettingsError = unitLaunchSettings(layout, delegationToolInstallation, launchLookupEnv)
 			}
 			return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
 		}

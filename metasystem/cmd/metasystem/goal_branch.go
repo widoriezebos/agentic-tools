@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"context"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -154,24 +153,29 @@ func readDelegateNeverLaunched(outcome delegateOutcome) bool {
 // streams, returning its status.
 type delegateCaller func(request delegateRequest, stdout, stderr io.Writer) int
 
-// callDelegate runs one delegate request in this process as the former
-// `internal delegate` child ran: the installation is root, the script gets
-// no input, and the extra environment reaches the script. It returns the
-// child's stdout and stderr and, for a nonzero status, the error its exit
-// was.
-func callDelegate(delegate delegateCaller, root string, args []string, environment []string) ([]byte, []byte, error) {
+// callDelegate runs one delegate request; root owns its records and tree files. It returns
+// stdout, stderr, and an error for a nonzero status.
+func callDelegate(delegate delegateCaller, root string, args []string, selected ...string) ([]byte, []byte, error) {
 	if delegate == nil {
 		delegate = runDelegateWith
 	}
 	var stdout, stderr bytes.Buffer
-	status := delegate(delegateRequest{rootOverride: root, args: args, environment: environment}, &stdout, &stderr)
+	request := delegateRequest{rootOverride: root, args: args}
+	if len(selected) > 0 && selected[0] != "" {
+		installation, err := filepath.Abs(selected[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		request.environment = []string{dispatchcore.SelectedInstallationEnv + "=" + installation}
+	}
+	status := delegate(request, &stdout, &stderr)
 	if status != 0 {
 		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("delegate exited with status %d", status)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
 
-func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string, environment ...string) (string, error) {
+func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string, selected ...string) (string, error) {
 	args := []string{"--role", "code-critic", "--reviews", "commit:" + commit,
 		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
 	if runtime != "" {
@@ -180,7 +184,7 @@ func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime,
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	output, stderr, err := callDelegate(delegate, root, args, environment)
+	output, stderr, err := callDelegate(delegate, root, args, selected...)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome != "" {
 		if err == nil && outcome.Outcome == "WON" && outcome.JobID != "" {
@@ -200,8 +204,8 @@ func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime,
 
 // readFollowUp starts one more round of a critic chain through the delegate
 // follow-up and returns the round's job id.
-func readFollowUp(delegate delegateCaller, root, rootJob, brief string, environment ...string) (string, error) {
-	output, stderr, err := callDelegate(delegate, root, []string{"--follow-up", rootJob, "--brief", brief}, environment)
+func readFollowUp(delegate delegateCaller, root, rootJob, brief string, selected ...string) (string, error) {
+	output, stderr, err := callDelegate(delegate, root, []string{"--follow-up", rootJob, "--brief", brief}, selected...)
 	var outcome delegateOutcome
 	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome == "WON" && outcome.JobID != "" && err == nil {
 		return outcome.JobID, nil
@@ -275,11 +279,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	delegate := dependencies.Delegate
 	if delegate == nil {
 		delegate = func(brief, goalID, commit, runtime, model string) (string, error) {
-			environment, err := criticDelegateEnvironment(*selected, *root, brief)
-			if err != nil {
-				return "", &branch.ReadNeverLaunchedError{Err: err}
-			}
-			return readDelegate(dependencies.Delegator, *root, brief, goalID, commit, runtime, model, environment...)
+			return readDelegate(dependencies.Delegator, *root, brief, goalID, commit, runtime, model, *selected)
 		}
 	}
 	var readRepository branch.BranchReadRepository
@@ -303,11 +303,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
-			environment, err := criticDelegateEnvironment(*selected, *root, brief)
-			if err != nil {
-				return "", err
-			}
-			return readFollowUp(dependencies.Delegator, *root, rootJob, brief, environment...)
+			return readFollowUp(dependencies.Delegator, *root, rootJob, brief, *selected)
 		}})
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
@@ -666,51 +662,6 @@ func goalBranchPublishRead(root, goalID, unit string) (branch.PublishReadResult,
 	}
 	return branch.PublishCollectedRead(branch.PublishReadRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: endpointTip,
 		GoalID: goalID, UnitCommit: commit, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint)})
-}
-
-// criticDelegateEnvironment carries the selected installation's configured
-// code-critic roster to a critic dispatched from another installation (a
-// generated goal worktree, whose tracked roster may be a template and which
-// never has the selected checkout's metasystem.conf.local). The roster is
-// resolved by the roster owner in the selected installation for the working
-// mode dispatch reads from the same frozen brief, and is passed as the
-// configuration owner's per-key process settings. Those outrank every file
-// entry, mode-scoped or not, so dispatch resolving that mode in the worktree
-// obtains exactly this pair as its configured default rather than an
-// override: an explicit --runtime/--model still escalates by the unchanged
-// roster policy. The selected installation's maximal-model mapping for that
-// runtime is carried as its exact value (empty when it has none), so the
-// worktree's hazard check admits or refuses the selected model by the
-// selected installation's authorization. An unreadable brief mode or a
-// selected roster that does not resolve is refused before any dispatch.
-func criticDelegateEnvironment(selected, root, brief string) ([]string, error) {
-	if selected == "" || filepath.Clean(selected) == filepath.Clean(root) {
-		return nil, nil
-	}
-	mode, err := dispatchcore.BriefModeOnly(brief)
-	if err != nil {
-		return nil, fmt.Errorf("the critic brief %s has no readable working mode: %w", brief, err)
-	}
-	conf := filepath.Join(selected, "metasystem.conf")
-	resolution, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: mode})
-	if err != nil {
-		return nil, fmt.Errorf("the selected installation's code-critic roster for mode %s does not resolve: %w", mode, err)
-	}
-	runtimes, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: conf})
-	if err != nil {
-		return nil, fmt.Errorf("the selected installation's metasystem.runtimes does not resolve: %w", err)
-	}
-	maximalKey := "runtime." + resolution.RosterRuntime + ".maximal-models"
-	maximal, _, err := config.Get(config.GetParams{Key: maximalKey, ConfPath: conf, Default: "", DefaultSet: true})
-	if err != nil {
-		return nil, fmt.Errorf("the selected installation's %s does not resolve: %w", maximalKey, err)
-	}
-	return []string{
-		config.EnvName("metasystem.runtimes") + "=" + runtimes,
-		config.EnvName("role.code-critic.runtime") + "=" + resolution.RosterRuntime,
-		config.EnvName("role.code-critic.model."+resolution.RosterRuntime) + "=" + resolution.RosterModel,
-		config.EnvName(maximalKey) + "=" + maximal,
-	}, nil
 }
 
 // goalBranchStaticArgv runs the worktree's own static gate, trimmed.

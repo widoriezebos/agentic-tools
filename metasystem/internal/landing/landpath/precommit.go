@@ -279,8 +279,12 @@ func PrimaryInstallation(git func(args ...string) GitResult, root string) (check
 // its own system, and checkout is "". Otherwise a linked worktree's (a goal
 // worktree's) is the same installation in its primary checkout
 // (PrimaryInstallation), with symbolic links resolved. A root git cannot
-// map keeps its own, and checkout is "". git runs in root.
-func SystemInstallation(git func(args ...string) GitResult, root string) (installation, checkout string) {
+// map keeps its own, and checkout is "". An optional selected installation
+// takes precedence for registry and settings, with checkout "". git runs in root.
+func SystemInstallation(git func(args ...string) GitResult, root string, selected ...string) (installation, checkout string) {
+	if len(selected) > 0 && selected[0] != "" {
+		return selected[0], ""
+	}
 	own := filepath.Join(root, "artifacts", "agents", "supervision")
 	for _, name := range []string{"state.json", "last-census.json"} {
 		if _, err := os.Lstat(filepath.Join(own, name)); err == nil {

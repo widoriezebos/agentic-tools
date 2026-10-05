@@ -4,11 +4,16 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
-func TestProcessDepsTakesTheServingInstallationsEngine(t *testing.T) {
+func TestTheSupervisorLoadsTheServingInstallationsRegistry(t *testing.T) {
 	t.Parallel()
-	base := t.TempDir()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	primary, linked := filepath.Join(base, "primary"), filepath.Join(base, "goal")
 	for _, dir := range []string{filepath.Join(primary, ".git"), linked} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -58,15 +63,58 @@ func TestProcessDepsTakesTheServingInstallationsEngine(t *testing.T) {
 				}
 				return git(dir, args...)
 			}
+			installation := filepath.Join(row.serving, row.name, "install")
+			os.MkdirAll(installation, 0o755)
+			mustWrite(t, filepath.Join(installation, "metasystem.conf"), "watch.cap-min=210\n")
+			mustWrite(t, filepath.Join(installation, "metasystem.conf.local"), "watch.cap-min=230\n")
+			installExternalAdapter(t, installation, "newagent", "newagent", 0o700, true)
 			deps := processDeps(root, query, func(key string) (string, bool) {
 				return row.override, key == "METASYSTEM_BIN" && row.override != ""
 			})
+			deps.Environ = nil
+			if _, err := OperationsAt(deps, "newagent"); err != nil {
+				t.Fatalf("serving adapter was not discovered: %v", err)
+			}
+			if value, err := deps.configValue("watch.cap-min", "1"); err != nil || value != "230" {
+				t.Fatalf("serving local setting = %q, %v", value, err)
+			}
+			if row.name == "unarmed worktree" {
+				if _, err := OperationsAt(Deps{Root: root}, "newagent"); err == nil {
+					t.Fatal("the worktree alone must have no external adapter")
+				}
+			}
+
 			want := filepath.Join(row.serving, row.name, "install", "bin", "metasystem")
 			if row.override != "" {
 				want = row.override
 			}
-			if deps.Engine != want || deps.Dispatch.(EngineDispatcher).Engine != want || deps.Root != root {
-				t.Fatalf("dependencies = %+v, want engine %q and root %q", deps, want, root)
+			if deps.Engine != want || deps.Dispatch.(EngineDispatcher).Engine != want || deps.Root != root || deps.ServingInstallation != filepath.Join(row.serving, row.name, "install") {
+				t.Fatalf("engine %q, installation %q, root %q; want engine %q and root %q", deps.Engine, deps.ServingInstallation, deps.Root, want, root)
+			}
+			if row.name == "armed worktree" {
+				selected := t.TempDir()
+				mustWrite(t, filepath.Join(selected, "metasystem.conf"), "watch.cap-min=270\n")
+				mustWrite(t, filepath.Join(selected, "metasystem.conf.local"), "watch.cap-min=280\n")
+				_, selectedLog := installExternalAdapter(t, selected, "newagent", "newagent", 0o700, true)
+				chosen := processDeps(root, query, func(key string) (string, bool) {
+					if key == dispatch.SelectedInstallationEnv {
+						return selected, true
+					}
+					return "", false
+				})
+				chosen.Environ = nil
+				if _, err := OperationsAt(chosen, "newagent"); err != nil {
+					t.Fatalf("selected registry: %v", err)
+				}
+				if _, err := os.Stat(selectedLog); err != nil {
+					t.Fatalf("selected adapter was not called: %v", err)
+				}
+				if value, err := chosen.configValue("watch.cap-min", "1"); err != nil || value != "280" {
+					t.Fatalf("selected local setting = %q, %v", value, err)
+				}
+				if chosen.Engine != want || chosen.Root != root {
+					t.Fatalf("selection changed engine or record root: %q, %q", chosen.Engine, chosen.Root)
+				}
 			}
 		})
 	}

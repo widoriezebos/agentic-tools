@@ -30,9 +30,10 @@ import (
 // its tip (chainHead): a word recorded at it lets the chain land, a word at any
 // other commit refuses naming both.
 
-// landingGateSettings resolves the two settings of the installation at root.
-func landingGateSettings(root string) (goal.GateSettings, error) {
-	return goal.ResolveGateSettings(filepath.Join(root, "metasystem.conf"))
+// landingGateSettings reads the settings of the installation serving root.
+func landingGateSettings(root string, serving func(string) (string, string)) (goal.GateSettings, error) {
+	installation, _ := serving(root)
+	return goal.ResolveGateSettings(filepath.Join(installation, "metasystem.conf"))
 }
 
 // productionIntentLandingGate evaluates the gate for one goal at tip against a
@@ -58,7 +59,7 @@ func freshLandingGate(stateRoot, installationRoot, goalID, tip string, dependenc
 	if err != nil {
 		return "", err
 	}
-	settings, err := landingGateSettings(installationRoot)
+	settings, err := landingGateSettings(installationRoot, delegationToolInstallation)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +223,7 @@ func productionRecordLanded(inv *intentInvocation, goalID string) error {
 	if file == nil {
 		return fmt.Errorf("goal %s is not live", goalID)
 	}
-	settings, err := landingGateSettings(inv.layout.InstallationRoot.Path())
+	settings, err := landingGateSettings(inv.layout.InstallationRoot.Path(), delegationToolInstallation)
 	if err != nil {
 		return err
 	}

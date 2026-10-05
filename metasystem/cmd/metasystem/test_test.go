@@ -1458,6 +1458,9 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = detached.Close() })
+	// This fixture treats the detached candidate's source changes as main-side
+	// history so an engine built from the base commit must refuse them.
+	testingFixtureGit(t, fixture.projectRoot, "update-ref", "refs/heads/main", strings.TrimSpace(testingFixtureGit(t, detached.Workspace().Dir, "rev-parse", "HEAD")))
 	candidateRoot := filepath.Join(detached.Workspace().Dir, "metasystem")
 	installedEngine := filepath.Join(candidateRoot, "bin", "metasystem")
 	data, err := os.ReadFile(built.Path)
