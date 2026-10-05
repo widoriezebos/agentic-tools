@@ -264,9 +264,9 @@ func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
 
 // A limit line that names its reset ends the mark then: on 2026-10-03 a
 // session limit that reset at 3:30 held every seat start until the horizon
-// ran out at 3:47. A reset after the horizon, a zone that does not load, an
-// epoch already past and an overload keep the horizon alone; a later
-// failure's own line replaces an earlier reset.
+// ran out at 3:47. An invalid zone, an epoch already past and an overload
+// keep the horizon alone; a reset over five hours ahead caps the hold, and a
+// later failure's own line replaces an earlier reset.
 func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 	t.Parallel()
 	seen := time.Date(2026, 10, 3, 1, 17, 52, 0, time.UTC)
@@ -295,12 +295,19 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 	local := t.TempDir()
 	m, err = Record(local, ProviderLimit, "5-hour limit reached ∙ resets 3pm", "mission-runner", seen)
 	reset, parseErr := time.Parse(time.RFC3339, m.ResetAt)
-	if err != nil || parseErr != nil || reset.In(time.Local).Hour() != 15 || !reset.After(seen) || reset.Sub(seen) > 24*time.Hour {
-		t.Fatalf("a zoneless reset is the next 3pm on this machine: %+v, %v", m, err)
+	localSeen := seen.In(time.Local)
+	want := time.Date(localSeen.Year(), localSeen.Month(), localSeen.Day(), 15, 0, 0, 0, time.Local)
+	if !want.After(seen) {
+		want = want.AddDate(0, 0, 1)
+	}
+	if want.Sub(seen) > MaxLimitHold {
+		want = seen.Add(MaxLimitHold)
+	}
+	if err != nil || parseErr != nil || !reset.Equal(want) {
+		t.Fatalf("a zoneless reset is the next local 3pm capped at five hours: %+v, %v, want %s", m, err, want)
 	}
 
 	for _, line := range []string{
-		"You've hit your usage limit · resets 11pm (Europe/Amsterdam)",
 		"You've hit your usage limit · resets 3:30am (Nowhere/Atlantis)",
 		"Claude AI usage limit reached|" + strconv.FormatInt(seen.Add(-time.Hour).Unix(), 10),
 	} {
@@ -312,6 +319,14 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 			t.Fatalf("%q must keep the horizon alone", line)
 		}
 	}
+	distant := t.TempDir()
+	m, err = Record(distant, ProviderLimit, "You've hit your usage limit · resets 11pm (Europe/Amsterdam)", "steward-seat", seen)
+	if err != nil || m.ResetAt != seen.Add(MaxLimitHold).UTC().Format(time.RFC3339) {
+		t.Fatalf("a distant reset must cap at five hours: %+v, %v", m, err)
+	}
+	if !stands(t, distant, seen) || !stands(t, distant, seen.Add(MaxLimitHold-time.Second)) || stands(t, distant, seen.Add(MaxLimitHold)) {
+		t.Fatal("a distant reset must hold for five hours and lapse at the cap")
+	}
 	overload := t.TempDir()
 	if m, err := Record(overload, "overloaded", "API Error: 529 Overloaded · resets 1am", "mission-runner", seen); err != nil || m.ResetAt != "" {
 		t.Fatalf("an overload names no reset: %+v, %v", m, err)
@@ -322,5 +337,36 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 	}
 	if !stands(t, root, time.Date(2026, 10, 3, 1, 31, 0, 0, time.UTC)) {
 		t.Fatal("a mark fed by an overload after the limit stands on its horizon")
+	}
+}
+
+func TestSessionResetWindow(t *testing.T) {
+	t.Parallel()
+	zone, err := time.LoadLocation("Europe/Amsterdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "You've hit your session limit · resets 8:50pm (Europe/Amsterdam)"
+	for _, minute := range []int{48, 49, 50, 51, 52, 53} {
+		seen := time.Date(2026, 10, 4, 20, minute, 0, 0, zone)
+		reset, ok := limitReset(ProviderLimit, line, seen)
+		want := time.Date(2026, 10, 4, 20, 50, 0, 0, zone)
+		if minute >= 50 {
+			want = want.AddDate(0, 0, 1)
+		}
+		if !ok || !reset.Equal(want) {
+			t.Fatalf("message at %s: reset=%s, want %s", seen, reset, want)
+		}
+		mark, err := Record(t.TempDir(), ProviderLimit, line, "fixture", seen)
+		if minute >= 50 {
+			want = seen.Add(5 * time.Hour)
+		}
+		if err != nil || mark.ResetAt != want.UTC().Format(time.RFC3339) {
+			t.Fatalf("message at %s: mark=%+v, error=%v, want %s", seen, mark, err, want)
+		}
+		retryAt, retry := ResetRetryAt(ProviderLimit, line, seen)
+		if retry != (minute <= 52) || retry && !retryAt.Equal(time.Date(2026, 10, 4, 20, 50, 0, 0, zone)) {
+			t.Fatalf("message at %s: retry=%v at %s", seen, retry, retryAt)
+		}
 	}
 }

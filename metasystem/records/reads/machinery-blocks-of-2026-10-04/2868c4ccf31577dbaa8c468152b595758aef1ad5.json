@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "outage-mark-reset-window",
+  "subject": {
+    "commit": "2868c4ccf31577dbaa8c468152b595758aef1ad5",
+    "parent": "91c8a6cc7617ecd6051b7ad2101ee72c40ddeaaa",
+    "tree": "0f54ab7debf7de625a1c17672b4d3829d0830e40",
+    "patchDigest": "e0ba3ebaa7f53fc23163ca905d6987edb3aa09506083981325516a6a36f5f010",
+    "unitDigest": "997d71e6e650c9a8f65f14e8d25b4871e35c6db176448e8865e00d57f62b2ba3"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-dc8a183465dd7fac6c4c77e8",
+    "round": 1,
+    "closureSha256": "90c437c30e709367ed4585dec9f2de14201dcd0a2a45e85963ecbd22905e4aac"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0f54ab7debf7de625a1c17672b4d3829d0830e40",
+    "runId": "goal-read-gate-20261005t011553z-a33c88507bc067de"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/steward_seat_test.go",
+      "readerWord": "reviewed by critic root code-critic-dc8a183465dd7fac6c4c77e8"
+    },
+    {
+      "path": "metasystem/internal/outage/outage_test.go",
+      "readerWord": "reviewed by critic root code-critic-dc8a183465dd7fac6c4c77e8"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_ladder_test.go",
+      "readerWord": "reviewed by critic root code-critic-dc8a183465dd7fac6c4c77e8"
+    }
+  ],
+  "sha256": "7aea4ddb5d7a2d1d945a708f13c120cbce96c085cec04c80373c273c591af2d9"
+}
