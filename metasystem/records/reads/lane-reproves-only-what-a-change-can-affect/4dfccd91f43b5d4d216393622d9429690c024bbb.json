@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-reproves-only-what-a-change-can-affect",
+  "unit": "scoped-proof-on-main",
+  "subject": {
+    "commit": "4dfccd91f43b5d4d216393622d9429690c024bbb",
+    "parent": "5bd8d493ee7ff4b1acb4ee99f15b95c634fad786",
+    "tree": "3906708ee9be1cbe4d9d87ac470a44908a8c4ac2",
+    "patchDigest": "516e822d7c9ea02beb801882af480691ca2eb44738919a1c2b3df214d92beb12",
+    "unitDigest": "7702a16b5d501415c099d3a0d60862a224f2b86be041f9d6a82f70de88b787c9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3194b60a47e127cf53a9f03e",
+    "round": 1,
+    "closureSha256": "b7cb8ce31e798af3ed3a82e2af976d36f4cb22bea0742d86edf7343a17f38517"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "3906708ee9be1cbe4d9d87ac470a44908a8c4ac2",
+    "runId": "goal-read-gate-20261005t051610z-83046f5834f03160"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "0b43a814a9375a5eda7e014d5d002bc766501b97",
+      "digest": "386f7137b438c7b934959ac61f3fef43fcd5ddf3a9c07cbb62671b0a80f2034a"
+    },
+    {
+      "kind": "read",
+      "commit": "cd3d4c339b4d892492438e33c4f22606f716986c",
+      "digest": "5e83ab9c086fa5fe516974b6ebb686c306b83df96d0a2f966028cadf9bf37681"
+    },
+    {
+      "kind": "read",
+      "commit": "5bd8d493ee7ff4b1acb4ee99f15b95c634fad786",
+      "digest": "59c8a4159f136b0f9f41bd1c1e3ae2be5e1e56c4b6868fcdde8b6c5b30a7cd36"
+    }
+  ],
+  "carry": {
+    "fromCommit": "95163123ac494cc5471fafb9ef100ca6e634ea8a",
+    "fromTree": "4e1989397037b5544cbb7b0e05cec24a0b4102dc",
+    "toCommit": "4dfccd91f43b5d4d216393622d9429690c024bbb",
+    "toTree": "3906708ee9be1cbe4d9d87ac470a44908a8c4ac2"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/plain/plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-3194b60a47e127cf53a9f03e"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/prove_test.go",
+      "readerWord": "reviewed by critic root code-critic-3194b60a47e127cf53a9f03e"
+    }
+  ],
+  "sha256": "983667515839a7c117d316488d79a8d02ebcad72ffc40947ad744f2eb9437940"
+}
