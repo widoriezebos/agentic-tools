@@ -204,7 +204,6 @@ func (b *healthBed) evaluate(repoRoot, metasystemRoot string, now time.Time, _ i
 		RoleRepoWatcher:         func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, b.probe) },
 		RoleCensusFreshness:     func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) },
 		RoleNarratorFreshness:   func() RoleVerdict { return checkNarratorFreshnessWithCadence(repoRoot, now, cadence) },
-		RoleRetroDebt:           func() RoleVerdict { return checkRetroDebt(repoRoot) },
 		RoleSessionMain:         func() RoleVerdict { return checkSessionMain(repoRoot, b.probe) },
 		RoleHookFreshness:       func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHook) },
 		RoleStopHookDuration:    func() RoleVerdict { return checkStopHookDuration(repoRoot) },

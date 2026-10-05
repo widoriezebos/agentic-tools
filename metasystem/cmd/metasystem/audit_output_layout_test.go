@@ -397,8 +397,11 @@ func TestAuditOutputLayout(t *testing.T) {
 				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 					t.Fatal(err)
 				}
-			} else if want, err := os.ReadFile(path); (err != nil || got != string(want)) && layoutBytesCompared(t, c) {
-				t.Errorf("%s printed:\n%s\nthe golden %s holds:\n%s (%v)", c.name, got, path, want, err)
+			} else {
+				want, err := os.ReadFile(path)
+				if (err != nil || got != string(want)) && layoutBytesCompared(t, c) {
+					t.Errorf("%s printed:\n%s\nthe golden %s holds:\n%s (%v)", c.name, got, path, want, err)
+				}
 			}
 			problems := layoutProblems(got, textui.MaxWidth, bed.replace)
 			if mode := layoutModeOf(t, c); mode == auditEnforce {

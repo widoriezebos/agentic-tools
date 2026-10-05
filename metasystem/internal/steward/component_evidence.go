@@ -55,6 +55,7 @@ type ComponentEvidence struct {
 	Result               ComponentResult           `json:"result"`
 	Outcome              string                    `json:"outcome"`
 	EvidenceDigest       string                    `json:"evidenceDigest"`
+	LastFailure          string                    `json:"lastFailure,omitempty"`
 	AttemptHistory       []ComponentAttemptHistory `json:"attemptHistory,omitempty"`
 }
 
@@ -385,6 +386,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 	record.Result = result
 	record.Outcome = outcome
 	record.EvidenceDigest = evidenceDigest(evidence)
+	record.LastFailure = evidence
 	if component == "supervision-hook" {
 		appendAttemptHistory(&record, completion, result, outcome, evidence, stopElapsedSec)
 	}

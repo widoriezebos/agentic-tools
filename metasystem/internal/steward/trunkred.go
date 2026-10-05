@@ -2,15 +2,11 @@ package steward
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
-
-const cadenceHealthInterval = 6 * time.Hour
 
 // LandingLaneRoot resolves the landing lane a checkout lands through (U12:
 // its own landing.batch-root against the host's one lane, never
@@ -31,32 +27,6 @@ func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) Rol
 func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {
 	if projectionErr != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
-	}
-	cadenceRoot := repoRoot
-	if laneRoot != nil {
-		if root, configured, laneErr := laneRoot(repoRoot, now); laneErr == nil && configured {
-			cadenceRoot = root
-		}
-	} else if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
-		cadenceRoot = configured
-	}
-	// The landing lane's agent runs the deep validation cadence (landing
-	// validate) when it is due, so a missing, overdue or red cadence is
-	// repaired by the lane running.
-	remedy := fmt.Sprintf("the landing lane runs the deep validation cadence when it is due; keep its checkout running with metasystem system start --repo %q", cadenceRoot)
-	if projection.Tree.Cadence == nil {
-		return roleDead(RoleTrunkRed, "no deep validation cadence status is recorded", remedy)
-	}
-	cadence := projection.Tree.Cadence
-	window, cadenceErr := time.Parse(time.RFC3339, cadence.ForcedWindowStart)
-	if cadenceErr != nil {
-		return roleUnknown(RoleTrunkRed, "the cadence window is unreadable: "+cadenceErr.Error(), remedy)
-	}
-	if !now.UTC().Before(window.Add(cadenceHealthInterval + time.Minute)) {
-		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is overdue at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
-	}
-	if !cadence.Green() {
-		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is non-green at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
 
 	var open []goal.TrunkRedEntry

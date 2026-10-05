@@ -24,7 +24,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -75,7 +74,6 @@ var healthRoleOrder = []HealthRole{
 	RoleRepoWatcher,
 	RoleCensusFreshness,
 	RoleNarratorFreshness,
-	RoleRetroDebt,
 	RoleSessionMain,
 	RoleHookFreshness,
 	RoleStopHookDuration,
@@ -488,8 +486,9 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
 		timed(func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
 		timed(func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
-		timed(func() RoleVerdict { return checkRetroDebt(repoRoot) }),
-		timed(func() RoleVerdict { return checkSessionMain(runRoot, prober) }),
+		timed(func() RoleVerdict {
+			return checkSessionMainWithLedger(repoRoot, runRoot, now, prober, ledger, defaultSeatDependencies(nil))
+		}),
 		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
 		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
 		timed(func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
@@ -595,24 +594,6 @@ func checkSpendFenceWithMeasureAndMachine(repoRoot string, now time.Time, measur
 	return role, SpendObservation{Valid: true, Crossings: crossings}
 }
 
-func checkRetroDebt(repoRoot string) RoleVerdict {
-	open, err := retrodebt.Open(repoRoot)
-	remedy := "record the retro receipt with metasystem receipt add --type retro --outcome shipped --verify clean --note \"<what changed>\""
-	if err != nil {
-		return roleUnknown(RoleRetroDebt, "the durable retro debt record is unreadable: "+err.Error(), remedy)
-	}
-	if len(open) == 0 {
-		return roleAlive(RoleRetroDebt, "no retro receipt is owed")
-	}
-	sources := make([]string, 0, len(open))
-	for _, entry := range open {
-		sources = append(sources, entry.Kind+":"+entry.Source)
-	}
-	role := roleDead(RoleRetroDebt, "RETRO DEBT awaits a receipt after "+strings.Join(sources, ", "), remedy)
-	role.NoAutomaticRemedy = true
-	return role
-}
-
 func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 	return checkHookFreshnessAt(repoRoot, now, false)
 }
@@ -641,7 +622,11 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
 		return roleUnknown(RoleHookFreshness, "the hook completion is waiting for durability proof", remedy)
 	}
-	if currentAttempt && (record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt)) {
+	openAttempt := record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt)
+	if openAttempt && now.Sub(record.LastAttempt) >= stopHookBudgetSeconds*time.Second {
+		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion past the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
+	}
+	if currentAttempt && openAttempt {
 		if len(record.AttemptHistory) == 0 {
 			return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending with no prior completed turn", record.Generation), remedy)
 		}
@@ -649,10 +634,10 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 		if prior.Result == ComponentOK && prior.Outcome == "EMITTED" {
 			return roleAlive(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending; prior generation %d completed as OK/EMITTED", record.Generation, prior.Generation))
 		}
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), remedy)
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), remedy)
 	}
-	if record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt) {
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion", record.Generation), remedy)
+	if openAttempt {
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending within the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
 	}
 	if record.Result != ComponentOK || record.Outcome != "EMITTED" ||
 		record.SuccessAttemptSeq != record.AttemptSeq || !record.LastSuccess.Equal(record.LastCompletion) {
@@ -821,12 +806,10 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		return false
 	}
 	switch role.Role {
-	case RoleStewardRunner:
+	case RoleStewardRunner, RoleSessionMain:
 		return true
 	case RoleRepoWatcher:
-		return strings.Contains(role.Reason, "recorded pid") ||
-			strings.Contains(role.Reason, "lastSuccess is stale") ||
-			strings.Contains(role.Reason, "latest attempt passed its deadline")
+		return watcherRepairable(role)
 	case RoleCensusFreshness:
 		// A failed census prevents the watcher pass from completing, so the
 		// watcher's owner replaces the producer that owns this evidence.
@@ -1067,14 +1050,24 @@ func componentFreshness(repoRoot, component string, role HealthRole, generation 
 		}
 		return roleUnknown(role, "the component success evidence is unreadable", remedy)
 	}
-	if record.Generation != generation {
+	if record.LastSuccess.After(now) || record.LastCompletion.After(now) || record.LastAttempt.After(now) {
+		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", remedy)
+	}
+	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
+		return roleUnknown(role, "the latest completion is waiting for durability proof", remedy)
+	}
+	if role == RoleRepoWatcher && record.Outcome != "ATTEMPTING" && record.Result != ComponentOK {
+		reason := "the latest watcher pass failed: " + record.Outcome
+		if record.LastFailure != "" {
+			reason += ": " + record.LastFailure
+		}
+		return roleDead(role, reason, remedy)
+	}
+	if record.Generation != generation && role != RoleNarratorFreshness {
 		return roleDead(role, fmt.Sprintf("component generation %d does not match installation generation %d", record.Generation, generation), remedy)
 	}
 	if record.LastSuccess.IsZero() {
 		return roleDead(role, "the current generation has no successful completion", remedy)
-	}
-	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
-		return roleUnknown(role, "the latest completion is waiting for durability proof", remedy)
 	}
 	if expectedSuccess != nil {
 		success := identity.Ref{Pid: record.SuccessPid, StartedAtSec: record.SuccessPidStartedAt, StartTicks: record.SuccessPidStartTicks, BootID: record.SuccessBootID}
@@ -1082,16 +1075,79 @@ func componentFreshness(repoRoot, component string, role HealthRole, generation 
 			return roleDead(role, fmt.Sprintf("lastSuccess belongs to pid %d, not resident runner pid %d", success.Pid, expectedSuccess.Pid), remedy)
 		}
 	}
-	if record.LastSuccess.After(now) || record.LastCompletion.After(now) || record.LastAttempt.After(now) {
-		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", remedy)
-	}
 	if record.Outcome == "ATTEMPTING" && now.Sub(record.LastAttempt) >= window {
 		return roleDead(role, "the latest attempt passed its deadline without completion", remedy)
 	}
 	if now.Sub(record.LastSuccess) >= window {
 		return roleDead(role, fmt.Sprintf("lastSuccess is stale at %s", now.Sub(record.LastSuccess).Round(time.Second)), remedy)
 	}
+	if record.Generation != generation && role == RoleNarratorFreshness {
+		return roleAlive(role, fmt.Sprintf("narrator generation %d success is fresh; waiting for the first pass of installation generation %d", record.Generation, generation))
+	}
 	return roleAlive(role, aliveReason)
+}
+
+// watcherRepairable names the failures the supervision owner can repair by
+// replacing its current watcher, including a replacement whose pass failed.
+func watcherRepairable(role RoleVerdict) bool {
+	return strings.Contains(role.Reason, "recorded pid") ||
+		strings.Contains(role.Reason, "lastSuccess is stale") ||
+		strings.Contains(role.Reason, "latest attempt passed its deadline") ||
+		strings.HasPrefix(role.Reason, "the latest watcher pass failed:")
+}
+
+func checkSessionMainWithLedger(repoRoot, runRoot string, now time.Time, prober identity.Prober, ledger *healthLedger, dependencies seatDependencies) RoleVerdict {
+	return checkSessionMainForSeat(runRoot, prober, func() (SeatWorld, error) {
+		if !ledger.read().newWorld {
+			return SeatWorld{}, nil
+		}
+		if ledger.endpointErr != nil {
+			return SeatWorld{}, ledger.endpointErr
+		}
+		if ledger.projectionErr != nil {
+			return SeatWorld{}, ledger.projectionErr
+		}
+		machine, err := dependencies.Machine(repoRoot)
+		if err != nil {
+			return SeatWorld{}, err
+		}
+		work, err := goal.ClaimableWorkFromProjection(ledger.projection, machine, prober)
+		if err != nil {
+			return SeatWorld{}, err
+		}
+		work.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
+		settings, err := dependencies.Gate(repoRoot)
+		if err != nil {
+			return SeatWorld{}, err
+		}
+		tips, err := dependencies.Tips(repoRoot, work.Landing)
+		if err != nil {
+			return SeatWorld{}, err
+		}
+		return SeatWorldFrom(work, ledger.projection.Tree.Live, settings, tips, now), nil
+	})
+}
+
+// checkSessionMainForSeat judges the need for a successor through the seat
+// ladder. The announcement reader also serves cleanup's process proof.
+func checkSessionMainForSeat(runRoot string, prober identity.Prober, world func() (SeatWorld, error)) RoleVerdict {
+	role := checkSessionMain(runRoot, prober)
+	if role.Status != HealthDead {
+		return role
+	}
+	seatWorld, err := world()
+	if err != nil {
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), role.Remedy)
+	}
+	records, err := readSeatRecords(runRoot)
+	if err != nil {
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its launches: "+err.Error(), role.Remedy)
+	}
+	decision, selection := PlanSeat(seatWorld, records, TickConfig{}.withDefaults().MaxRevivals, false)
+	if selection == nil {
+		return roleAlive(RoleSessionMain, "no seat step is due; "+decision.Reason)
+	}
+	return roleDead(RoleSessionMain, decision.Reason, role.Remedy)
 }
 
 func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
@@ -1938,6 +1994,11 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	for _, role := range healthRoleOrder {
 		validRoles[role] = true
 	}
+	// A retired check cannot invalidate the observation clock or the other
+	// roles' breaker counts kept by an installed steward.
+	delete(record.State.UnknownCounts, RoleRetroDebt)
+	delete(record.State.FailureCounts, RoleRetroDebt)
+	delete(record.State.FailureEpisodes, RoleRetroDebt)
 	for role, count := range record.State.UnknownCounts {
 		if !validRoles[role] || count < 0 {
 			return healthRecord{}, fmt.Errorf("health observation record has an invalid unknown counter")

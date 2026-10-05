@@ -615,9 +615,7 @@ func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) 
 		if role.FailureEscalation == AutoHealEnded {
 			return supervise.EndWatcherRestart(repoRoot, "the health breaker ended automatic watcher repair", now)
 		}
-		if !strings.Contains(role.Reason, "recorded pid") &&
-			!strings.Contains(role.Reason, "lastSuccess is stale") &&
-			!strings.Contains(role.Reason, "latest attempt passed its deadline") {
+		if !watcherRepairable(role) {
 			return nil
 		}
 		return supervise.RequestWatcherRestart(repoRoot, role.Reason, now)

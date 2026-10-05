@@ -50,22 +50,137 @@ func TestHealthExitCodeArms(t *testing.T) {
 	}
 }
 
-func TestRetroDebtIsDeadUntilRetroReceiptLands(t *testing.T) {
-	root := t.TempDir()
-	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, "governed-42", time.Now()); err != nil {
+func TestOpenRetroDebtLeavesTheSeatHealthy(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, EnrollmentFixture, "")
+	root := bed.root
+	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, "governed-42", bed.base); err != nil {
 		t.Fatal(err)
 	}
-	dead := checkRetroDebt(root)
-	if dead.Status != HealthDead || !dead.NoAutomaticRemedy || !strings.Contains(dead.Reason, "RETRO DEBT") ||
-		!strings.Contains(dead.Remedy, "--type retro") {
-		t.Fatalf("open retro debt was not a dead receipt-gated condition: %+v", dead)
+	previous := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{
+		roleDead(RoleRetroDebt, "retro receipt is owed", "receipt status"),
+	}, bed.base)
+	if err := saveHealthRecord(root, HealthRecordPath(root), healthRecord{State: previous.State, Verdict: previous}); err != nil {
+		t.Fatal(err)
+	}
+	verdict := bed.health(bed.base.Add(time.Millisecond))
+	bed.requireHealthy("open retro debt", verdict)
+	if verdict.Observation != previous.Observation+1 {
+		t.Fatalf("retiring the role reset the observation sequence: %d", verdict.Observation)
+	}
+	if KnownHealthRole(RoleRetroDebt) || strings.Contains(verdict.Line(), "retro-debt=") {
+		t.Fatalf("retro debt remains a health role: %s", verdict.Line())
+	}
+	if open, err := retrodebt.Open(root); err != nil || len(open) != 1 {
+		t.Fatalf("the receipt reader lost the open debt: %v %v", open, err)
 	}
 	receipts := filepath.Join(root, "memory", "receipts.log")
 	if err := os.WriteFile(receipts, []byte("1|2026-08-29T10:00:00Z|RECEIPT|type=retro|outcome=shipped|note=landed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if alive := checkRetroDebt(root); alive.Status != HealthAlive {
-		t.Fatalf("retro receipt did not clear the health condition: %+v", alive)
+	if open, err := retrodebt.Open(root); err != nil || len(open) != 0 {
+		t.Fatalf("retro receipt did not clear its debt: %v %v", open, err)
+	}
+}
+
+func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		goals []*goal.GoalFile
+		want  HealthStatus
+	}{
+		{"empty", nil, HealthAlive},
+		{"ready", []*goal.GoalFile{seatReadyGoal("ready", "Build it.")}, HealthDead},
+		{"human word", []*goal.GoalFile{seatReadyGoal("ready", "WAITING ON THE HUMAN: decide.")}, HealthAlive},
+		{"landing waits", []*goal.GoalFile{seatLandingGoal("held", 2, time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC))}, HealthAlive},
+		{"held step", []*goal.GoalFile{seatClaimedGoal("held", SeatLineage)}, HealthDead},
+		{"foreign claim", []*goal.GoalFile{seatClaimedGoal("held", "coordinator")}, HealthAlive},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newSeatBed(t, test.goals...)
+			bed.now = time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+			ledger := newHealthLedger(bed.root, bed.now)
+			ledger.readWorld = func(string) bool { return true }
+			ledger.readEndpoint = func(string) (goal.Endpoint, error) { return goal.Endpoint{}, nil }
+			ledger.project = func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return bed.projection(bed.now), nil }
+			role := checkSessionMainWithLedger(bed.root, bed.root, bed.now, healthProbe{}, ledger, *bed.seatDependencies())
+			if role.Status != test.want {
+				t.Fatalf("seat health = %+v, want %s", role, test.want)
+			}
+			if test.want == HealthDead && (!hasLawfulAutomaticRemedy(role, []RoleVerdict{role}) || role.Remedy != supervisionRemedy(bed.root)) {
+				t.Fatalf("a due step needs the lawful seat remedy: %+v", role)
+			}
+		})
+	}
+	if role := checkSessionMainForSeat(t.TempDir(), healthProbe{}, func() (SeatWorld, error) {
+		return SeatWorld{}, errors.New("fixture ledger unreadable")
+	}); role.Status != HealthUnknown {
+		t.Fatalf("an unreadable ladder must not read alive: %+v", role)
+	}
+}
+
+func TestNarratorWaitsForTheFirstPassOfANewGeneration(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, EnrollmentFixture, "")
+	if err := MintIdentity(RepoIdentityPath(bed.root), InstallIdentity{
+		RepoIdentity: bed.root, Generation: bed.generation + 1, InstallPath: "/fixture/metasystem",
+		MintedAt: bed.base.Format(time.RFC3339), Enrollment: EnrollmentFixture,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		age  time.Duration
+		want HealthStatus
+	}{
+		{time.Second, HealthAlive}, {2 * time.Second, HealthDead},
+		{-time.Second, HealthUnknown},
+	} {
+		role := checkNarratorFreshnessWithCadence(bed.root, bed.base.Add(test.age), func(string) int { return 1 })
+		if role.Status != test.want {
+			t.Errorf("narrator at age %s = %+v, want %s", test.age, role, test.want)
+		}
+		if test.want == HealthAlive && !strings.Contains(role.Reason, "waiting for the first pass") {
+			t.Errorf("narrator must name the generation it awaits: %+v", role)
+		}
+	}
+}
+
+func TestHookFreshnessReadsAnOpenAttemptAsPending(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+	if _, err := BeginHookAttempt(root, healthBedRef(51), "first-stop", now); err != nil {
+		t.Fatal(err)
+	}
+	for _, current := range []bool{false, true} {
+		for _, test := range []struct {
+			age  time.Duration
+			want HealthStatus
+		}{
+			{59 * time.Second, HealthUnknown}, {60 * time.Second, HealthDead},
+			{61 * time.Second, HealthDead}, {-time.Second, HealthUnknown},
+		} {
+			role := checkHookFreshnessAt(root, now.Add(test.age), current)
+			if role.Status != test.want || (test.age == 59*time.Second && !strings.Contains(role.Reason, "pending")) {
+				t.Errorf("current=%t age=%s: %+v, want %s", current, test.age, role, test.want)
+			}
+		}
+	}
+	attempt, err := loadComponentEvidence(ComponentEvidencePath(root, "supervision-hook"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CompleteHookAttempt(root, attempt.Generation, attempt.AttemptSeq,
+		ComponentError, "EMIT_FAILED", "", "fixture emission failed", nil, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BeginHookAttempt(root, healthBedRef(51), "next-stop", now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if role := checkHookFreshnessAt(root, now.Add(3*time.Second), true); role.Status != HealthUnknown || !strings.Contains(role.Reason, "pending") {
+		t.Fatalf("an open attempt after a failure is still pending: %+v", role)
 	}
 }
 
@@ -795,8 +910,8 @@ func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if role := checkHookFreshness(root, now.Add(time.Millisecond)); role.Status != HealthDead || !strings.Contains(role.Reason, "attempt") {
-		t.Fatalf("an attempt without completion is service-dead: %+v", role)
+	if role := checkHookFreshness(root, now.Add(time.Millisecond)); role.Status != HealthUnknown || !strings.Contains(role.Reason, "pending") {
+		t.Fatalf("an attempt within the Stop budget is pending: %+v", role)
 	}
 	if role := checkHookFreshnessAt(root, now.Add(time.Millisecond), true); role.Status == HealthDead {
 		t.Fatalf("the current hook line must treat its own in-flight attempt as pending: %+v", role)

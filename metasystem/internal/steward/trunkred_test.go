@@ -9,18 +9,20 @@ import (
 )
 
 func TestTrunkRedRoleVerdicts(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
-	t.Run("none is not green", func(t *testing.T) {
+	t.Run("none is alive without cadence", func(t *testing.T) {
 		bed := newRoleTrunkRedBed(t, now, nil, nil)
 		role := bed.trunkRedWithoutBatch()
-		if role.Status != HealthDead || !strings.Contains(role.Reason, "no deep validation cadence") || (!strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal")) {
+		if role.Status != HealthAlive || role.Reason != "no open trunk red" {
 			t.Fatalf("no entries: %+v", role)
 		}
 	})
 	t.Run("owned is alive with age", func(t *testing.T) {
+		t.Parallel()
 		bed := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now.Add(-2*time.Hour))}, healthCadence(now, "passed"))
 		role := bed.trunkRedWithoutBatch()
-		if role.Status != HealthAlive || role.Reason != "1 open, all owned; oldest 2h0m0s" {
+		if role.Status != HealthAlive || role.Reason != "1 open, all owned; oldest 2h0m0s" || role.Remedy != "" {
 			t.Fatalf("owned entry: %+v", role)
 		}
 	})
@@ -47,21 +49,31 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	}
 }
 
-func TestTrunkRedHealthReportsOverdueAndNonGreenCadence(t *testing.T) {
+func TestTrunkRedIgnoresAnOverdueCadence(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
-		name, groupStatus, reason string
-		window                    time.Time
+		name, groupStatus string
+		window            time.Time
 	}{
-		{name: "overdue", groupStatus: "passed", reason: "overdue", window: now.Add(-6*time.Hour - time.Minute)},
-		{name: "non-green", groupStatus: "failed", reason: "non-green", window: now},
+		{name: "missing", window: now},
+		{name: "overdue", groupStatus: "passed", window: now.Add(-6*time.Hour - time.Minute)},
+		{name: "non-green", groupStatus: "failed", window: now},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			status := healthCadence(test.window, test.groupStatus)
+			t.Parallel()
+			var status *goal.CadenceStatus
+			if test.groupStatus != "" {
+				status = healthCadence(test.window, test.groupStatus)
+			}
 			bed := newRoleTrunkRedBed(t, now, nil, status)
 			role := bed.trunkRedWithoutBatch()
-			if role.Status != HealthDead || !strings.Contains(role.Reason, test.reason) || !strings.Contains(role.Reason, status.TrunkCommit) || (!strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal")) {
+			if role.Status != HealthAlive || role.Reason != "no open trunk red" {
 				t.Fatalf("cadence health=%+v", role)
+			}
+			bed = newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now)}, status)
+			if role := bed.trunkRedWithoutBatch(); role.Status != HealthAlive || role.Remedy != "" {
+				t.Fatalf("an owned trunk red stays alive independently of cadence: %+v", role)
 			}
 		})
 	}

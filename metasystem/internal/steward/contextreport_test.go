@@ -739,11 +739,11 @@ func TestContextReportExcludesTranscriptDiagnostics(t *testing.T) {
 	diagnostic := filepath.Join(t.TempDir(), "diagnostic.jsonl")
 	reportTestWrite(t, diagnostic, reportClaudeCall("diagnostic-high", 210001, weekStart.Add(2*time.Hour))+reportClaudeMarker(weekStart.Add(3*time.Hour)))
 	role, reading, err := ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Transcript: diagnostic})
-	if err != nil || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || role.Status != HealthDead {
+	if err != nil || reading.Latest == nil || reading.Latest.PromptTokens != 210001 || role.Status != HealthAlive {
 		t.Fatalf("inferred diagnostic = role=%+v reading=%+v err=%v", role, reading, err)
 	}
 	role, _, err = ContextBudgetLine(stateroottest.Installation(t, root), now, ContextOptions{Runtime: "claude", Session: "absent", Transcript: diagnostic})
-	if err != nil || role.Status != HealthDead {
+	if err != nil || role.Status != HealthAlive {
 		t.Fatalf("absent-session diagnostic = role=%+v err=%v", role, err)
 	}
 	_, _, report, err := WriteContextReport(root, weekStart, now)

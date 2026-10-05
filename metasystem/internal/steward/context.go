@@ -353,15 +353,6 @@ func contextVerdict(reading usage.Reading, budget config.Budget, installationRoo
 	display := contextThousands(tokens)
 	reason := fmt.Sprintf("%d thousand tokens this call, trigger %d, proof line %d, proof maximum %d, ceiling %d",
 		display, budget.Trigger/1000, ProofP95Tokens/1000, ProofMaxTokens/1000, budget.Ceiling/1000)
-	if tokens > ProofMaxTokens {
-		remedy := contextHandoffRemedy(installationRoot)
-		if diagnostic {
-			remedy = statusRemedy
-		}
-		verdict := roleDead(RoleContext, reason+"; over the proof maximum", remedy)
-		verdict.NoAutomaticRemedy = true
-		return labelContextDiagnostic(verdict, diagnostic)
-	}
 	if tokens > budget.Trigger {
 		if diagnostic {
 			reason += "; over the trigger"

@@ -1,15 +1,101 @@
 package steward
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
+
+func TestFailedPassKeepsItsText(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+	attempt, err := BeginComponentAttempt(root, "repo-watcher", 1, healthBedRef(51), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const failure = "census failed: fixture registry unreadable\nrun assessment: missing record"
+	if _, err := CompleteComponentAttempt(root, "repo-watcher", 1, attempt.AttemptSeq,
+		ComponentError, "PASS_FAILED", failure, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(ComponentEvidencePath(root, "repo-watcher"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		LastFailure string `json:"lastFailure"`
+	}
+	if err := json.Unmarshal(data, &record); err != nil || record.LastFailure != failure {
+		t.Fatalf("failed pass text was lost: %+v %v", record, err)
+	}
+}
+
+func TestRepoWatcherNamesTheFailingPass(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, EnrollmentFixture, "")
+	state, err := readHealthObject(filepath.Join(bed.root, "artifacts/agents/supervision/state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := bed.base.Add(121 * time.Second)
+	stale := checkRepoWatcher(bed.root, now, state, nil, bed.probe)
+	if stale.Status != HealthDead || !strings.Contains(stale.Reason, "stale") {
+		t.Fatalf("first watcher needs repair: %+v", stale)
+	}
+	if err := requestWatcherRepair(bed.root, HealthVerdict{Roles: []RoleVerdict{stale}}, now); err != nil {
+		t.Fatal(err)
+	}
+	path := "artifacts/agents/supervision/watcher-restart-request.json"
+	request, err := readHealthObject(filepath.Join(bed.root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request["completed"] = true
+	bed.writeJSON(path, request)
+	replacement := healthBedRef(51005)
+	bed.alive(replacement)
+	state["components"] = map[string]any{"watcher": map[string]any{
+		"pid": replacement.Pid, "pidStartedAt": replacement.StartedAtSec, "instanceTag": "replacement",
+	}}
+	bed.writeJSON("artifacts/agents/supervision/state.json", state)
+	attempt, err := BeginComponentAttempt(bed.root, "repo-watcher", 1, replacement, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const failure = "census failed: fixture registry unreadable"
+	if _, err := CompleteComponentAttempt(bed.root, "repo-watcher", 1, attempt.AttemptSeq,
+		ComponentError, "PASS_FAILED", failure, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	failed := checkRepoWatcher(bed.root, now.Add(time.Second), state, nil, bed.probe)
+	if failed.Status != HealthDead || !strings.Contains(failed.Reason, failure) || strings.Contains(failed.Reason, "lastSuccess belongs to pid") {
+		t.Errorf("the replacement's failing pass must be the reason: %+v", failed)
+	}
+	health := applyHealthObservation(bed.root, HealthObservationState{}, []RoleVerdict{failed}, now.Add(time.Second))
+	if health.Roles[0].FailureEscalation != AutoHealEligible {
+		t.Errorf("a failed replacement must remain repairable: %+v", health.Roles[0])
+	}
+	if err := requestWatcherRepair(bed.root, health, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(bed.root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second supervise.WatcherRestartRequest
+	if err := json.Unmarshal(data, &second); err != nil || second.Completed || second.Pid != replacement.Pid || !strings.Contains(second.Reason, failure) {
+		t.Fatalf("failed replacement received no second repair: %+v %v", second, err)
+	}
+}
 
 func TestComponentEvidenceHealthReadIsBoundedWhenWriterIsBusy(t *testing.T) {
 	root := t.TempDir()
