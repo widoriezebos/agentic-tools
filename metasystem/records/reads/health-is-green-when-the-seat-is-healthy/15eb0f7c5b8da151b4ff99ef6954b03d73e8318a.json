@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "card-clock2",
+  "subject": {
+    "commit": "15eb0f7c5b8da151b4ff99ef6954b03d73e8318a",
+    "parent": "88957550366bd04989367c240734bb42581f62ec",
+    "tree": "06ce46e20a19a3c172bf64bd9a7ddb995ab2da72",
+    "patchDigest": "86e5305562238347875f7c0413b152a5b394801d49325d25e9ad036ae085d0bb",
+    "unitDigest": "55cc626e185ba982e94cde7771d048efbee3899d5368a3e7e28744185058051d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c76107b3170f9c101a70d134",
+    "round": 1,
+    "closureSha256": "a8bd96d40f9fa4dc8aa88c1bd0c57c3bf76e2ae1acb217c4d3a5ddd8a57761f5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "06ce46e20a19a3c172bf64bd9a7ddb995ab2da72",
+    "runId": "goal-read-gate-20261005t011428z-c1cd1314bbed5480"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "7328ded5ca0322e9df50f4eafc612cede11e853e",
+      "digest": "589c2f7b6633ee3d1776943fbfe80a1857db079617a4e22bb2ce9dd02d48a96d"
+    },
+    {
+      "kind": "read",
+      "commit": "a8719716bc37edbcac80ff55074956e1644ee097",
+      "digest": "4edcae5438bbe618c99a2214a7758f9defba7e12a7ad18cbd8f78526254c16fc"
+    },
+    {
+      "kind": "read",
+      "commit": "6202c0dd93b15f934bffe1b6650a23a8b6af124f",
+      "digest": "94de7c2e9c80be7229361efdc842c6f87580e936dda547ead4267aa64ee1eeea"
+    },
+    {
+      "kind": "read",
+      "commit": "1575fe27f640429880b274a2363896a96b7cc941",
+      "digest": "44a471cd99fd7097779c1f6148eedbbd1a3d488c42e3dd660233c150ae6da526"
+    },
+    {
+      "kind": "read",
+      "commit": "60697abd0e38b219c0e4d989617d559910b92d26",
+      "digest": "afa109fe743d428a5a39f113b57246aa5916532f6d685751d09135c004c59fb3"
+    },
+    {
+      "kind": "read",
+      "commit": "88957550366bd04989367c240734bb42581f62ec",
+      "digest": "4233b220a4f665b6235804cde2cfc805a5834b38543b0f02dda47a042b2d55d9"
+    }
+  ],
+  "carry": {
+    "fromCommit": "18298742ab15a990f4d5282afc5fe84c49efa1ed",
+    "fromTree": "c594f0b9d0087ca8c8154ff4464b398b4b8384e9",
+    "toCommit": "15eb0f7c5b8da151b4ff99ef6954b03d73e8318a",
+    "toTree": "06ce46e20a19a3c172bf64bd9a7ddb995ab2da72"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/board/card_test.go",
+      "readerWord": "reviewed by critic root code-critic-c76107b3170f9c101a70d134"
+    }
+  ],
+  "sha256": "1274f94763ce2a69529d086f9f119b8e112b97b08738abb68f3e0518844e6b21"
+}
