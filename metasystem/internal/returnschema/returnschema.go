@@ -213,14 +213,24 @@ func materialize(role, source string, data []byte, version int, outputPath strin
 			return err
 		}
 	}
-	if role == "code-critic" && version >= 4 {
-		addFindingRelation(schema)
-	}
+	applyRoleMembers(role, int64(version), schema)
 	encoded, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(outputPath, append(encoded, '\n'), 0o644)
+}
+
+// applyRoleMembers adds the members a role's schema gains at a version after
+// the version transforms, so the schema the runtime is handed and the schema
+// the return is validated against are built the same way.
+func applyRoleMembers(role string, version int64, schema map[string]any) {
+	if schema == nil {
+		return
+	}
+	if role == "code-critic" && version >= 4 {
+		addFindingRelation(schema)
+	}
 }
 
 // addFindingRelation gives a code critic's finding its relation to the

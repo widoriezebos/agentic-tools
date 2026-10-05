@@ -220,6 +220,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 					schema = upgraded
 				}
 			}
+			applyRoleMembers(role, v, schema)
 		}
 	}
 

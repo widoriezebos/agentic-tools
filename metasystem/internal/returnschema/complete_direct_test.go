@@ -281,6 +281,32 @@ func TestReturnCompleteRoleVersionFourRequiresCanonicalArtifact(t *testing.T) {
 	}
 }
 
+func TestReturnCompleteRoleVersionFourCodeCriticFindingRelation(t *testing.T) {
+	t.Parallel()
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	finding := `[{"id":"F1","severity":"high","material":true,"relation":"new","claim":"claim","evidence":"read"}]`
+	row := `[{"findingId":"F1","rigorClass":"bounded","facts":` + v3Facts() + `,"reopeningTrigger":"reopen","artifact":"metasystem/a.go"}]`
+	design := strings.Replace(v3CriticReturn(finding, row, 1), `"schemaVersion": 3`, `"schemaVersion": 4`, 1)
+	// A code critic reviews a tree, not a commit.
+	value := strings.Replace(design, `"reviewedCommit"`, `"reviewedTree"`, 1)
+	os.WriteFile(path, []byte(value), 0o644)
+	// The schema the critic is handed requires relation; the validator reads the same schema.
+	if violations := ReturnCompleteRole(root, "code-critic", path); len(violations) != 0 {
+		t.Fatalf("lawful version-four code-critic return with relation = %v", violations)
+	}
+	missing := strings.Replace(value, `"relation":"new",`, "", 1)
+	os.WriteFile(path, []byte(missing), 0o644)
+	if violations := strings.Join(ReturnCompleteRole(root, "code-critic", path), "\n"); !strings.Contains(violations, "relation is required") {
+		t.Fatalf("missing relation refusal = %s", violations)
+	}
+	// Other critic roles keep their shape: relation is not theirs.
+	os.WriteFile(path, []byte(design), 0o644)
+	if violations := strings.Join(ReturnCompleteRole(root, "design-critic", path), "\n"); !strings.Contains(violations, "relation") {
+		t.Fatalf("design-critic accepted a relation member: %s", violations)
+	}
+}
+
 func TestReturnCompleteRoleVersionThreeRefusesUnjoinableRigor(t *testing.T) {
 	t.Parallel()
 	root := returnRoot(t)
