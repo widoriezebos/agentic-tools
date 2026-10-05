@@ -21,6 +21,7 @@ type stubGit struct {
 	addErr           error
 	changed          map[[2]string]string
 	batches          map[string]string
+	onMain           map[string]bool
 	shows            map[string]string
 	diffErr, showErr error
 	installPrefix    string
@@ -45,6 +46,11 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 		return g.changed[[2]string{args[3], args[4]}], g.diffErr
 	case len(args) == 4 && args[0] == "rev-list" && args[1] == "--no-merges" && args[3] == "^origin/main":
 		return g.batches[args[2]], nil
+	case len(args) == 4 && args[0] == "merge-base" && args[1] == "--is-ancestor" && args[3] == "origin/main":
+		if g.onMain[args[2]] {
+			return "", nil
+		}
+		return "", errors.New("commit is not on main")
 	case len(args) == 2 && args[0] == "show":
 		return g.shows[args[1]], g.showErr
 	}
