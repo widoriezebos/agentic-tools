@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "goal": "records-land-through-the-lane",
+  "unit": "records-status",
+  "subject": {
+    "commit": "d98169084cfcf38e5877c354a1d7c8b77f91b86e",
+    "parent": "057d240f5cdc8556535f3451724af12b6fee72b2",
+    "tree": "63b4c4c21589e3e095294032f6f184d726413d13",
+    "patchDigest": "4f0a14959406a9975af941ff917b7faebb0dae81f0d4a2789444df3a54444685",
+    "unitDigest": "cbd73fabc5dafd0497e89c44a9f64b2428bb6792a3235a280b556027d5f667d0"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-617dbb87fa5ba40b7148b951",
+    "round": 1,
+    "closureSha256": "1e8fc216638bbda844e3ad5ad0a69ddf83784d34b997d0a70f182f1e87925ec7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "63b4c4c21589e3e095294032f6f184d726413d13",
+    "runId": "goal-read-gate-20261005t000334z-d6ceebb3769d5a15"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g1b_test.go",
+      "readerWord": "reviewed by critic root code-critic-617dbb87fa5ba40b7148b951"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_records_test.go",
+      "readerWord": "reviewed by critic root code-critic-617dbb87fa5ba40b7148b951"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_handin_test.go",
+      "readerWord": "reviewed by critic root code-critic-617dbb87fa5ba40b7148b951"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/message_modes_landing_test.go",
+      "readerWord": "reviewed by critic root code-critic-617dbb87fa5ba40b7148b951"
+    }
+  ],
+  "sha256": "6c2ef3ef80bb26ee53fa91570b23f6552b44cfc91717eab6ede6a0ad8ed7a90e"
+}
