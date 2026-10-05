@@ -21,30 +21,77 @@ const (
 	// WakeProofFinished: a proof ended after the agent's last launch and
 	// queued work remains.
 	WakeProofFinished = "proof-finished"
+	// WakeFullDue: the newest scoped push still owes its hourly full proof.
+	WakeFullDue = "full-due"
 )
 
 // WakeReasons are why the landing agent would run now: WakeQueued while a
 // hand-in is pending (Pending), and WakeProofFinished besides when a result
-// line ended after lastLaunch (zero: never launched).
-func WakeReasons(install, checkout string, lastLaunch time.Time) ([]string, error) {
+// line ended after lastLaunch (zero: never launched). WakeFullDue also wakes
+// an idle lane when a scoped push's full proof is more than an hour old.
+func WakeReasons(install, checkout string, lastLaunch, now time.Time) ([]string, error) {
 	pending, err := Pending(install, checkout)
 	if err != nil {
 		return nil, err
 	}
-	if len(pending) == 0 {
-		return []string{}, nil
+	return wakeReasons(install, len(pending) > 0, lastLaunch, now)
+}
+
+func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]string, error) {
+	reasons := []string{}
+	if queued {
+		reasons = append(reasons, WakeQueued)
+		last, ok, err := LastResult(install)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			if at, err := time.Parse(time.RFC3339, last.At); err == nil && at.After(lastLaunch) {
+				reasons = append(reasons, WakeProofFinished)
+			}
+		}
 	}
-	reasons := []string{WakeQueued}
-	last, ok, err := LastResult(install)
+	due, err := fullProofDue(install, now)
 	if err != nil {
 		return nil, err
 	}
-	if ok {
-		if at, err := time.Parse(time.RFC3339, last.At); err == nil && at.After(lastLaunch) {
-			reasons = append(reasons, WakeProofFinished)
-		}
+	if due {
+		reasons = append(reasons, WakeFullDue)
 	}
 	return reasons, nil
+}
+
+// fullProofDue reads only the newest push. Any later full green pays its
+// debt, including a batch proof, because every lane tree contains main.
+func fullProofDue(install string, now time.Time) (bool, error) {
+	push, ok, err := LastPush(install)
+	if err != nil || !ok {
+		return false, err
+	}
+	result, ok, err := ResultFor(install, push.Tree)
+	if err != nil || !ok || result.Result != Green || result.Scope != "scoped" {
+		return false, err
+	}
+	fullAt, err := time.Parse(time.RFC3339, result.FullAt)
+	if err != nil || now.Sub(fullAt) <= time.Hour {
+		return false, nil
+	}
+	pushedAt, err := time.Parse(time.RFC3339, push.At)
+	if err != nil {
+		return false, nil
+	}
+	results, err := Results(install)
+	if err != nil {
+		return false, err
+	}
+	for _, proof := range results {
+		if proof.Scope == "full" && proof.Result == Green {
+			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(pushedAt) {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
 }
 
 // ProofHold is why the keeper holds the agent's start: running.json names
@@ -71,7 +118,7 @@ func KeeperWake(home string) lane.WakeSources {
 			return nil, err
 		}
 		launched, _ := time.Parse(time.RFC3339, state.StartedAt)
-		return WakeReasons(string(layout.Install), string(layout.Checkout), launched)
+		return WakeReasons(string(layout.Install), string(layout.Checkout), launched, time.Now())
 	}}
 }
 
