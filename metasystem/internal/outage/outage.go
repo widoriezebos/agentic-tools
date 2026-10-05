@@ -32,9 +32,12 @@ import (
 )
 
 // Horizon is how long a standing outage survives without a new failure
-// feeding it. Provider retries and steward-tick revival probes arrive
-// well inside this window during a real outage.
+// feeding it, unless a provider limit names a bounded reset. Provider retries
+// and steward-tick revival probes arrive well inside this window.
 const Horizon = 30 * time.Minute
+
+// MaxLimitHold bounds every provider limit even when its next reset is tomorrow.
+const MaxLimitHold = 5 * time.Hour
 
 // ProviderLimit is the class of a provider's usage or rate limit: the
 // Claude CLI's usage-limit line, the API's rate_limit_error, an HTTP 429.
@@ -54,7 +57,7 @@ type Mark struct {
 	Since               string `json:"since"`
 	LastAt              string `json:"lastAt"`
 	// ResetAt is when the last failure's limit line says the limit resets;
-	// the mark lapses then when that comes before the horizon.
+	// a provider-limit mark stands until then, for at most MaxLimitHold.
 	ResetAt string `json:"resetAt,omitempty"`
 }
 
@@ -78,26 +81,44 @@ func Read(repoRoot string) (Mark, bool) {
 	return m, true
 }
 
+// ResetDefect rejects a reset that could hold work beyond the limit window.
+func (m Mark) ResetDefect(now time.Time) string {
+	if reset, err := time.Parse(time.RFC3339, m.ResetAt); err == nil && reset.Sub(now) > MaxLimitHold {
+		return fmt.Sprintf("mark resetAt %s is more than 5h ahead of now; ignored", m.ResetAt)
+	}
+	return ""
+}
+
 // StandingAt is Read with the horizon applied: a mark whose last
-// feeding is older than Horizon has lapsed. A LastAt that does not
+// feeding is older than Horizon has lapsed, unless a provider limit names
+// a reset bounded by MaxLimitHold. A LastAt that does not
 // parse lapses too — an unreadable age must not stand forever — and
 // so does one more than Horizon in the FUTURE: a clock correction or
 // a corrupt stamp must not pause the clocks beyond the same bound the
 // horizon promises. A limit whose named reset has come lapses then,
-// even inside the horizon: the provider takes work again.
+// even inside the horizon. A reset more than five hours ahead is ignored.
 func StandingAt(repoRoot string, now time.Time) (Mark, bool) {
 	m, ok := Read(repoRoot)
 	if !ok {
 		return Mark{}, false
 	}
+	if m.ResetDefect(now) != "" {
+		return m, false
+	}
 	last, err := time.Parse(time.RFC3339, m.LastAt)
 	if err != nil {
 		return Mark{}, false
 	}
-	if age := now.Sub(last); age > Horizon || age < -Horizon {
-		return Mark{}, false
+	horizon := Horizon
+	if reset, err := time.Parse(time.RFC3339, m.ResetAt); err == nil {
+		if !now.Before(reset) {
+			return Mark{}, false
+		}
+		if m.LastClass == ProviderLimit {
+			horizon = MaxLimitHold
+		}
 	}
-	if reset, err := time.Parse(time.RFC3339, m.ResetAt); err == nil && !now.Before(reset) {
+	if age := now.Sub(last); age > horizon || age < -Horizon {
 		return Mark{}, false
 	}
 	return m, true
@@ -163,6 +184,9 @@ func Record(repoRoot, class, detail, source string, now time.Time) (Mark, error)
 	m.Source = source
 	m.ResetAt = ""
 	if reset, ok := limitReset(class, detail, now); ok {
+		if reset.Sub(now) > MaxLimitHold {
+			reset = now.Add(MaxLimitHold)
+		}
 		m.ResetAt = reset.UTC().Format(time.RFC3339)
 	}
 	if stamp := now.UTC().Format(time.RFC3339); !standing || m.LastAt < stamp {
@@ -268,6 +292,17 @@ func limitReset(class, detail string, at time.Time) (time.Time, bool) {
 		reset = reset.AddDate(0, 0, 1)
 	}
 	return reset, true
+}
+
+// ResetRetryAt finds a reset within two minutes on either side of the
+// message. A clock already passed today still permits one immediate retry.
+func ResetRetryAt(class, detail string, at time.Time) (time.Time, bool) {
+	reset, ok := limitReset(class, detail, at.Add(-2*time.Minute-time.Nanosecond))
+	if !ok {
+		return time.Time{}, false
+	}
+	distance := reset.Sub(at)
+	return reset, distance >= -2*time.Minute && distance <= 2*time.Minute
 }
 
 // classifyLine names a line of provider-error evidence: an overload, a

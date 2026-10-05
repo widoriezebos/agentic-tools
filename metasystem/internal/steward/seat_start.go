@@ -44,6 +44,7 @@ type SeatLaunchState struct {
 	Terminal   bool
 	State      string
 	ResultPath string
+	FinishedAt string
 }
 
 // SeatLauncher starts and reads seat launches; the command layer supplies the
@@ -79,6 +80,8 @@ type SeatRecord struct {
 	LaunchState  string            `json:"launchState,omitempty"`
 	Outcome      string            `json:"outcome,omitempty"`
 	Evidence     string            `json:"evidence,omitempty"`
+	RetryAfter   string            `json:"retryAfter,omitempty"`
+	ResetRetry   bool              `json:"resetRetry,omitempty"`
 }
 
 // seatStartedAtLayout is fixed-width, so the records' start times order
@@ -177,6 +180,7 @@ func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 		},
 		Classify: outage.ClassifyProviderResult,
 		Now:      time.Now,
+		Sleep:    time.Sleep,
 	}
 }
 
@@ -209,7 +213,8 @@ type seatTickState struct {
 }
 
 // reapSeatLaunches closes every seat record whose launch has ended (D-retry):
-// a provider-limit ending feeds the outage mark and never counts; otherwise
+// a provider-limit ending retries once at the reset edge before feeding the
+// outage mark, and never counts; otherwise
 // the seat made progress when a recorded goal branch tip moved or appeared,
 // or when the seat lineage wrote land-ready or done on this machine since the
 // seat started.
@@ -241,7 +246,19 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 		default:
 			if class, evidence, ok := dependencies.Classify(launch.ResultPath); ok {
 				record.Outcome, record.Evidence = SeatProviderLimit, class+": "+evidence
-				if _, err := outage.Record(repoRoot, class, evidence, SeatLineage, now); err != nil {
+				seen, err := time.Parse(time.RFC3339Nano, launch.FinishedAt)
+				if err != nil {
+					record.Evidence += "; the launch ending has no readable message time; no outage mark was written"
+					break
+				}
+				if reset, retry := outage.ResetRetryAt(class, evidence, seen); retry && !record.ResetRetry {
+					record.RetryAfter = reset.UTC().Format(time.RFC3339)
+					if wait := reset.Sub(dependencies.Now()); wait > 0 && wait <= 2*time.Minute {
+						dependencies.Sleep(wait)
+					}
+					break
+				}
+				if _, err := outage.Record(repoRoot, class, evidence, SeatLineage, seen); err != nil {
 					record.Evidence += "; the outage mark was not fed: " + err.Error()
 				}
 				break
@@ -527,6 +544,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
 		Machine: machine, Tips: tips, StartedAt: dependencies.Now().UTC().Format(seatStartedAtLayout)}
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].Goal == selection.Goal {
+			record.ResetRetry = records[i].RetryAfter != ""
+			break
+		}
+	}
 	if err := writeSeatRecord(repoRoot, record); err != nil {
 		return SeatRecord{}, err
 	}
@@ -560,6 +583,8 @@ type seatDependencies struct {
 	Fence    func(root string) (closed bool, reason string, err error)
 	Classify func(path string) (class, evidence string, ok bool)
 	Now      func() time.Time
+	Sleep    func(time.Duration)
+	Log      func(string)
 	// OpenQuestions reads the open channel questions; a goal one names is
 	// left to the person, like a goal waiting on a human word. Nil reads none.
 	OpenQuestions func(root string) []goal.OpenQuestion
@@ -573,7 +598,19 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
-	_, providerOutage := outage.StandingAt(repoRoot, cfg.now())
+	_, providerOutage := standingProviderOutage(repoRoot, cfg.now(), nil)
 	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, Evidence{}, providerOutage, openWork, &seatTickState{Records: records})
 	return d, selection, err
+}
+
+func standingProviderOutage(repoRoot string, now time.Time, log func(string)) (outage.Mark, bool) {
+	mark, standing := outage.StandingAt(repoRoot, now)
+	if defect := mark.ResetDefect(now); defect != "" {
+		if log != nil {
+			log(defect)
+		} else {
+			fmt.Fprintln(os.Stderr, defect)
+		}
+	}
+	return mark, standing
 }

@@ -277,12 +277,12 @@ func TestStewardSeatLauncherStartsTheSeatKindInTheCheckout(t *testing.T) {
 	if err != nil || state.Found {
 		t.Fatalf("a launch with no record is not found: %+v %v", state, err)
 	}
-	if err := store.Create(launch.Record{ID: spec.ID, Kind: "seat", State: launch.Completed, WorkingDirectory: "/checkout"}); err != nil {
+	if err := store.Create(launch.Record{ID: spec.ID, Kind: "seat", State: launch.Completed, WorkingDirectory: "/checkout", FinishedAt: "2026-10-04T18:49:00Z"}); err != nil {
 		t.Fatal(err)
 	}
 	state, err = launcher.SeatLaunch(spec.ID)
 	dir, _ := store.StateDir(spec.ID)
-	if err != nil || !state.Found || !state.Terminal || state.State != "completed" || state.ResultPath != filepath.Join(dir, "result.json") {
+	if err != nil || !state.Found || !state.Terminal || state.State != "completed" || state.ResultPath != filepath.Join(dir, "result.json") || state.FinishedAt != "2026-10-04T18:49:00Z" {
 		t.Fatalf("an ended launch reads terminal with its result document: %+v %v", state, err)
 	}
 }

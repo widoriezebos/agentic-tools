@@ -160,7 +160,7 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 		return steward.SeatLaunchState{}, err
 	}
 	return steward.SeatLaunchState{Found: true, Terminal: record.State.Terminal(), State: string(record.State),
-		ResultPath: filepath.Join(dir, "result.json")}, nil
+		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt}, nil
 }
 
 // wireStewardSeat arms the runner's tick with the seat launcher: the
