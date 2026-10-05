@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -109,6 +110,8 @@ type RoleVerdict struct {
 	Role                HealthRole   `json:"role"`
 	Status              HealthStatus `json:"status"`
 	Reason              string       `json:"reason"`
+	Cause               string       `json:"cause,omitempty"`
+	Standing            bool         `json:"standing,omitempty"`
 	Remedy              string       `json:"remedy,omitempty"`
 	DurationMillis      int64        `json:"durationMillis,omitempty"`
 	ConsecutiveUnknown  int          `json:"consecutiveUnknown,omitempty"`
@@ -163,6 +166,7 @@ type HealthObservationState struct {
 	ObservedAt      time.Time                  `json:"observedAt"`
 	UnknownCounts   map[HealthRole]int         `json:"unknownCounts"`
 	FailureCounts   map[HealthRole]int         `json:"failureCounts"`
+	FailureCauses   map[HealthRole]string      `json:"failureCauses,omitempty"`
 	FailureEpisodes map[HealthRole][]time.Time `json:"failureEpisodes,omitempty"`
 }
 
@@ -317,6 +321,9 @@ func (v RoleVerdict) Line() string {
 	if v.ConsecutiveFailures > 0 {
 		item += fmt.Sprintf(" [failure %d/%d; %s]", v.ConsecutiveFailures, healthFailureLimit, strings.ToLower(strings.ReplaceAll(v.FailureEscalation, "_", " ")))
 	}
+	if v.Standing {
+		item += " [standing defect]"
+	}
 	return item
 }
 
@@ -394,25 +401,26 @@ func PreviewInstalledHealth(stateRoot, installation string, now time.Time, probe
 type spendMeasureFunc func(string, string, time.Time) (spend.Ledger, error)
 
 func previewHealthAtWithMeasure(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, measure spendMeasureFunc) HealthVerdict {
+	return previewHealthAtWithEvaluation(repoRoot, metasystemRoot, now, prober,
+		func(repo, installation string, at time.Time, probe identity.Prober, currentHook bool) ([]RoleVerdict, SpendObservation) {
+			return evaluateHealthRolesWithMeasure(repo, runRoot, installation, at, probe, currentHook, measure)
+		})
+}
+
+func previewHealthAtWithEvaluation(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, evaluate healthRoleEvaluator) HealthVerdict {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles, spendObservation := evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot, now.UTC(), prober, true, measure)
+	roles, spendObservation := evaluate(repoRoot, metasystemRoot, now.UTC(), prober, true)
 	if stopped, err := healthStopped(metasystemRoot, repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
 		return *stopped
 	}
-	aggregate := "healthy"
-	for _, role := range roles {
-		if role.Status == HealthDead {
-			aggregate = "unhealthy"
-			break
-		}
-		if role.Status == HealthUnknown {
-			aggregate = "unknown"
-		}
-	}
+	record, _ := loadHealthRecord(HealthRecordPath(repoRoot))
+	roles = standingRoles(record.State, roles)
+	aggregate, alert := healthSummary(roles)
 	return HealthVerdict{
-		Schema: 1, ObservedAt: now.UTC(), Aggregate: aggregate,
+		Schema: 1, ObservedAt: now.UTC(), Observation: record.State.Sequence,
+		Aggregate: aggregate, ShouldAlert: alert, State: record.State,
 		Roles: roles, FindingDigest: healthFindingDigest(roles), Spend: spendObservation,
 	}
 }
@@ -712,6 +720,10 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 	for key, value := range previous.FailureCounts {
 		failureCounts[key] = value
 	}
+	failureCauses := make(map[HealthRole]string, len(healthRoleOrder))
+	for key, value := range previous.FailureCauses {
+		failureCauses[key] = value
+	}
 	failureEpisodes := make(map[HealthRole][]time.Time, len(healthRoleOrder))
 	for key, values := range previous.FailureEpisodes {
 		failureEpisodes[key] = append([]time.Time(nil), values...)
@@ -734,8 +746,6 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 			}
 		}
 	}
-	aggregate := "healthy"
-	alert := false
 	for index := range ordered {
 		role := &ordered[index]
 		roleEpisodes := failureEpisodes[role.Role][:0]
@@ -747,18 +757,15 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 		failureEpisodes[role.Role] = roleEpisodes
 		if role.Status == HealthUnknown {
 			unknownCounts[role.Role]++
-			role.ConsecutiveUnknown = unknownCounts[role.Role]
-			if unknownCounts[role.Role] >= 2 {
-				alert = true
-			}
-			if aggregate == "healthy" {
-				aggregate = "unknown"
-			}
 			continue
 		}
 		unknownCounts[role.Role] = 0
 		if role.Status == HealthDead {
-			aggregate = "unhealthy"
+			cause := healthCause(*role)
+			if !hasLawfulAutomaticRemedy(*role, ordered) && failureCauses[role.Role] != cause {
+				failureCounts[role.Role] = 0
+			}
+			failureCauses[role.Role] = cause
 			if failureCounts[role.Role] == 0 {
 				failureEpisodes[role.Role] = append(failureEpisodes[role.Role], observedAt)
 			}
@@ -766,34 +773,117 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 			if failureCounts[role.Role] >= healthFailureLimit {
 				failureCounts[role.Role] = healthFailureLimit
 			}
-			switch {
-			case !hasLawfulAutomaticRemedy(*role, ordered):
-				role.FailureEscalation = NoLawfulRemedy
-				alert = true
-			case failureCounts[role.Role] >= healthFailureLimit:
-				role.FailureEscalation = AutoHealEnded
-				alert = true
-			case len(failureEpisodes[role.Role]) >= healthFlapLimit:
-				role.FailureEscalation = HealingFlapping
-				alert = true
-			default:
-				role.FailureEscalation = AutoHealEligible
-			}
-			role.ConsecutiveFailures = failureCounts[role.Role]
 			continue
 		}
 		failureCounts[role.Role] = 0
+		delete(failureCauses, role.Role)
 	}
 	state := HealthObservationState{
 		Sequence: previous.Sequence + 1, ObservedAt: observedAt,
-		UnknownCounts: unknownCounts, FailureCounts: failureCounts, FailureEpisodes: failureEpisodes,
+		UnknownCounts: unknownCounts, FailureCounts: failureCounts, FailureCauses: failureCauses, FailureEpisodes: failureEpisodes,
 	}
+	ordered = standingRoles(state, ordered)
+	aggregate, alert := healthSummary(ordered)
 	verdict := HealthVerdict{
 		Schema: 1, ObservedAt: observedAt, Observation: state.Sequence,
 		Aggregate: aggregate, Roles: ordered, ShouldAlert: alert, State: state,
 	}
 	verdict.FindingDigest = healthFindingDigest(ordered)
 	return verdict
+}
+
+// healthCause keeps diagnostic ages, counts and identities out of a failure's
+// identity. Checks can supply a cause when words alone cannot distinguish it.
+func healthCause(role RoleVerdict) string {
+	if role.Cause != "" {
+		return role.Cause
+	}
+	words := strings.Fields(role.Reason)
+	kept := words[:0]
+	for _, word := range words {
+		if strings.IndexFunc(word, unicode.IsDigit) < 0 {
+			kept = append(kept, word)
+		}
+	}
+	return strings.Join(kept, " ")
+}
+
+// standingRoles projects the tick's counters without advancing them. A role
+// keeps its dead diagnostic when its failure belongs to a standing defect.
+func standingRoles(state HealthObservationState, roles []RoleVerdict) []RoleVerdict {
+	projected := append([]RoleVerdict(nil), roles...)
+	for index := range projected {
+		role := &projected[index]
+		role.Standing, role.ConsecutiveFailures, role.ConsecutiveUnknown, role.FailureEscalation = false, 0, 0, ""
+		if role.Status == HealthUnknown {
+			role.ConsecutiveUnknown = state.UnknownCounts[role.Role]
+		}
+		if role.Status != HealthDead {
+			continue
+		}
+		lawful := hasLawfulAutomaticRemedy(*role, roles)
+		if lawful || state.FailureCauses[role.Role] == healthCause(*role) {
+			role.ConsecutiveFailures = state.FailureCounts[role.Role]
+		}
+		switch {
+		case !lawful:
+			role.FailureEscalation = NoLawfulRemedy
+			role.Standing = role.ConsecutiveFailures >= healthFailureLimit
+		case role.ConsecutiveFailures >= healthFailureLimit:
+			role.FailureEscalation = AutoHealEnded
+		case len(state.FailureEpisodes[role.Role]) >= healthFlapLimit:
+			role.FailureEscalation = HealingFlapping
+		default:
+			role.FailureEscalation = AutoHealEligible
+		}
+	}
+	return projected
+}
+
+func healthSummary(roles []RoleVerdict) (string, bool) {
+	aggregate, alert := "healthy", false
+	for _, role := range roles {
+		if role.Standing {
+			continue
+		}
+		switch role.Status {
+		case HealthDead:
+			aggregate = "unhealthy"
+			alert = alert || role.FailureEscalation != AutoHealEligible
+		case HealthUnknown:
+			if aggregate == "healthy" {
+				aggregate = "unknown"
+			}
+			alert = alert || role.ConsecutiveUnknown >= 2
+		}
+	}
+	return aggregate, alert
+}
+
+func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, deliver func(string, string) error) error {
+	standing := make(map[HealthRole]RoleVerdict)
+	for _, role := range health.Roles {
+		if role.Standing {
+			standing[role.Role] = role
+		}
+	}
+	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver,
+		Step: func([]byte) ([]byte, []PatternRun, error) {
+			observations := make([]PatternObservation, 0, len(healthRoleOrder))
+			for _, name := range healthRoleOrder {
+				observation := PatternObservation{Kind: ObsClear, Work: string(name)}
+				if role, ok := standing[name]; ok {
+					observation.Kind = ObsFinding
+					observation.Since = now.UTC()
+					observation.Message = fmt.Sprintf("The %s role has a standing health defect: %s; remedy: %s", name, role.Reason, role.Remedy)
+					observation.Evidence = []AlertEvidence{{Record: HealthRecordPath(repoRoot), At: now.UTC().Format(time.RFC3339Nano),
+						Fact: role.Reason + "; remedy: " + role.Remedy}}
+				}
+				observations = append(observations, observation)
+			}
+			return nil, []PatternRun{{Pattern: "health-standing-red", Observations: observations}}, nil
+		}})
+	return err
 }
 
 func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
@@ -1968,7 +2058,7 @@ func healthInt(value any) (int64, bool) {
 func healthFindingDigest(roles []RoleVerdict) string {
 	var fields []string
 	for _, role := range roles {
-		if role.Status != HealthAlive {
+		if role.Status != HealthAlive && !role.Standing {
 			fields = append(fields, string(role.Role)+"="+string(role.Status))
 		}
 	}
@@ -1998,6 +2088,7 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	// roles' breaker counts kept by an installed steward.
 	delete(record.State.UnknownCounts, RoleRetroDebt)
 	delete(record.State.FailureCounts, RoleRetroDebt)
+	delete(record.State.FailureCauses, RoleRetroDebt)
 	delete(record.State.FailureEpisodes, RoleRetroDebt)
 	for role, count := range record.State.UnknownCounts {
 		if !validRoles[role] || count < 0 {
@@ -2010,6 +2101,11 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	for role, count := range record.State.FailureCounts {
 		if !validRoles[role] || count < 0 || count > healthFailureLimit {
 			return healthRecord{}, fmt.Errorf("health observation record has an invalid failure counter")
+		}
+	}
+	for role := range record.State.FailureCauses {
+		if !validRoles[role] {
+			return healthRecord{}, fmt.Errorf("health observation record has an invalid failure cause role")
 		}
 	}
 	if record.State.FailureEpisodes == nil {

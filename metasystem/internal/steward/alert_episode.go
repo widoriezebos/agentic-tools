@@ -370,6 +370,18 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 }
 
 func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, deliver func(string, string) error) (AlertEpisode, error) {
+	active := health
+	active.Roles = nil
+	for _, role := range health.Roles {
+		if !role.Standing {
+			active.Roles = append(active.Roles, role)
+		}
+	}
+	if len(active.Roles) != len(health.Roles) {
+		// Narration keeps every diagnostic; the health notice carries only
+		// findings that have not moved to a standing-defect episode.
+		message = active.Line()
+	}
 	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
 		return AlertEpisode{}, err

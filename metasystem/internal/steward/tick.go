@@ -595,6 +595,9 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
+	if err := fileStandingDefects(repoRoot, health, healthNow(), dependencies.deliver); err != nil {
+		return fmt.Errorf("file standing health defects: %w", err)
+	}
 	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
