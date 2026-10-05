@@ -236,6 +236,59 @@ func TestUnitRunStartsOnGoalBranch(t *testing.T) {
 	}
 }
 
+func TestPlanWithoutReadIsAdmitted(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "")
+	body, _ := os.ReadFile(fixture.plan)
+	for _, form := range []string{"absent", "null", "missing brief"} {
+		var raw map[string]any
+		json.Unmarshal(body, &raw)
+		switch form {
+		case "absent":
+			delete(raw, "read")
+		case "null":
+			raw["read"] = nil
+		default:
+			delete(raw["read"].(map[string]any), "brief")
+		}
+		changed, _ := json.Marshal(raw)
+		os.WriteFile(fixture.plan, changed, 0o600)
+		plan, err := ReadUnitPlan(fixture.plan)
+		if form == "missing brief" {
+			if err == nil || !strings.Contains(ErrorDetail(err), "field=read.brief") {
+				t.Fatalf("%s: %v", form, err)
+			}
+		} else if err != nil || plan.HasRead() || plan.Read.Brief != "" {
+			t.Fatalf("%s: plan=%+v err=%v", form, plan, err)
+		}
+	}
+}
+
+func TestRoundWithoutReadEndsGreen(t *testing.T) {
+	t.Parallel()
+	for _, fail := range []string{"", "build", "proof"} {
+		fixture := newUnitFixture(t, "")
+		fixture.starter.failKind = fail
+		plan, _ := ReadUnitPlan(fixture.plan)
+		plan.Read = UnitReadPlan{}
+		body, _ := json.Marshal(plan)
+		os.WriteFile(fixture.plan, body, 0o600)
+		result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+		if err != nil {
+			t.Fatal(err)
+		}
+		round := result.Record.Rounds[0]
+		want := map[string]string{"": "green", "build": "build-failed", "proof": "proof-red"}[fail]
+		launches := []string{"build", "proof"}
+		if fail == "build" {
+			launches = launches[:1]
+		}
+		if round.Outcome != want || round.ReadModel != "" || !slices.Equal(fixture.starter.order, launches) || len(round.Steps) != 2 {
+			t.Fatalf("%s: round=%+v launches=%v", fail, round, fixture.starter.order)
+		}
+	}
+}
+
 func TestUnitRunRefusesMainBranch(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", "main")
@@ -359,6 +412,54 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 			if row.want == "read-failed" && !slices.Contains(fixture.starter.order, "proof") {
 				t.Fatalf("order=%v", fixture.starter.order)
 			}
+		})
+	}
+}
+
+func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
+	t.Parallel()
+	t.Run("uncopied-findings", func(t *testing.T) {
+		t.Parallel()
+		m, _, _, _ := manager(t)
+		read := Record{State: Failed, AdapterData: map[string]json.RawMessage{}}
+		setStrings(read.AdapterData, "declaredOutputs", []string{brief(t)})
+		round := UnitRound{Steps: []UnitStep{{Name: "read"}}}
+		stepDriver{manager: m, round: &round}.endStep(0, read)
+		require(t, round.Steps[0].Cause != "", "existing findings were classified as missing: %+v", round.Steps[0])
+	})
+	for _, row := range []struct {
+		name, fail, hold, output, cause, stepCause string
+		counts                                     bool
+	}{
+		{"lost-build", "build", "build", "", "process-lost", "process-lost", false},
+		{"red-proof", "proof", "proof", "", "", "process-lost", false},
+		{"no-findings", "read", "", "", "read-no-findings", "read-no-findings", false},
+		{"findings", "read", "", "report", "", "", false},
+		{"counted-read", "read", "", "", "", "read-no-findings", true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "")
+			fixture.starter.failKind, fixture.starter.holdKind = row.fail, row.hold
+			fixture.starter.readCounts = []bool{row.counts}
+			if row.output != "" {
+				fixture.starter.readOutput = brief(t)
+			}
+			if row.hold != "" {
+				probe := fixture.manager.Prober.(*fakeProber)
+				probe.states[10], probe.states[20] = identity.Dead, identity.Dead
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			require(t, err != nil, "advance: %v", err)
+			round := result.Record.Rounds[0]
+			require(t, round.Cause != row.cause || result.Record.State != "awaiting-judgement", "round=%+v", round)
+			for _, step := range round.Steps {
+				if step.State == StepFailed {
+					require(t, step.Cause != row.stepCause, "step=%+v", step)
+				}
+			}
+			stored, err := fixture.runner.Status(result.Record.ID)
+			require(t, err != nil || stored.Rounds[0].Cause != row.cause, "stored=%+v err=%v", stored, err)
 		})
 	}
 }
@@ -1061,4 +1162,172 @@ func runGitInput(t *testing.T, dir, input string, args ...string) string {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
 	return string(out)
+}
+
+func TestCountedCapRefusesTheNextRound(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round", "branch")
+	fixture.manager.Settings.UnitCountedRounds = 2
+	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || first.Record.CountedCap != 2 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	fixture.manager.Settings.UnitCountedRounds = 9
+	second, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)})
+	if err != nil || second.Record.CountedCap != 2 {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	assertCapAdmissions(t, fixture, second.Record, "UNIT_ROUND_CAP")
+}
+
+// A refused admission leaves the retained record, round directories and launches alone.
+func assertCapAdmissions(t *testing.T, fixture unitFixture, record UnitRunRecord, code string) {
+	t.Helper()
+	path := filepath.Join(fixture.runner.runDir(record.ID), "run.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(fixture.runner.runDir(record.ID))
+	launched := len(fixture.starter.ids)
+	_, followErr := fixture.runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)})
+	_, reviseErr := fixture.runner.Revise(UnitRevisionRequest{Run: record.ID, Brief: []byte("Declared size: 1 changed lines\n")})
+	for _, err := range []error{followErr, reviseErr} {
+		if !IsCode(err, code) {
+			t.Fatalf("refusal=%v want %s", err, code)
+		}
+	}
+	after, _ := os.ReadFile(path)
+	afterEntries, _ := os.ReadDir(fixture.runner.runDir(record.ID))
+	if string(after) != string(before) || len(afterEntries) != len(entries) || len(fixture.starter.ids) != launched {
+		t.Fatal("a refused admission wrote state or started a launch")
+	}
+}
+
+func TestEnvironmentRoundIsNotCounted(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round", "branch")
+	fixture.manager.Settings.UnitCountedRounds = 1
+	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := first.Record
+	record.MaxRounds, record.Rounds[0].Cause = 2, "provider-limit"
+	if err := fixture.runner.save(record); err != nil {
+		t.Fatal(err)
+	}
+	second, err := fixture.runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)})
+	if err != nil || len(second.Record.Rounds) != 2 {
+		t.Fatalf("environment round consumed the cap: %+v %v", second, err)
+	}
+	counted, machinery := countedRounds(second.Record)
+	if counted != 1 || machinery != 1 {
+		t.Fatalf("counted=%d machinery=%d", counted, machinery)
+	}
+	assertCapAdmissions(t, fixture, second.Record, "UNIT_ROUND_LIMIT")
+}
+
+func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, verdict, examination, next, reason string
+		committed                                bool
+	}{
+		{"material", "fix first (2 material findings)", "", "work build G --work NEW --brief FILE --check ...", "worktree as it stands", false},
+		{"clean", "land", "", "work review G --work U", "goal notes G --read R --add TEXT", false},
+		{"committed", "fix first (2 material findings)", "", "work build G --work NEW", "goal accept-risk G --finding F naming NEW", true},
+		{"examination overrides clean read", "land", `{"findings":[{"material":true},{"material":false}]}`, "work build G --work NEW", "goal accept-risk", true},
+		{"clean examination overrides material read", "fix first (2 material findings)", `{"findings":[]}`, "work review G --work U", "goal notes", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "", []string{}...)
+			yes := true
+			record := UnitRunRecord{ID: "R", Unit: "U", Goal: "G", CountedCap: 2,
+				Rounds: []UnitRound{{Number: 1}, {Number: 2, Steps: []UnitStep{{Name: "read", Verdict: test.verdict, VerdictCounts: &yes}}}, {Number: 3, Cause: "provider-limit"}}}
+			if test.committed {
+				record.Subjects = []UnitSubject{{Round: 2, Commit: "commit"}}
+			}
+			if test.examination != "" {
+				fixture.runner.ExaminationRoot = t.TempDir()
+				record.Subjects[0].Examination, record.Subjects[0].ExaminationRound = "critic", 1
+				path := filepath.Join(fixture.runner.ExaminationRoot, "artifacts", "agents", "critic", "rounds", "1", "return.json")
+				record.Subjects[0].ExaminationReturnPath = path
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, path, test.examination)
+			}
+			err := fixture.runner.countedCap(record)
+			var cap *CodedError
+			if !errors.As(err, &cap) || cap.Code != "UNIT_ROUND_CAP" || !strings.Contains(cap.Run, test.next) || !strings.Contains(cap.Reason.Error(), test.reason) ||
+				!strings.Contains(cap.Facts, "run=R counted=2 cap=2 machinery=1") || !strings.HasPrefix(cap.Reason.Error(), "unit U has used its 2 counted rounds; nothing was started") {
+				t.Fatalf("wrong outcome: %v", err)
+			}
+		})
+	}
+}
+
+func TestRunWithoutCountedCapIsNotCapped(t *testing.T) {
+	t.Parallel()
+	for _, revise := range []bool{false, true} {
+		t.Run(fmt.Sprint(revise), func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			record := first.Record
+			record.CountedCap = 0
+			for number := 2; number <= 6; number++ {
+				round := record.Rounds[0]
+				round.Number = number
+				record.Rounds = append(record.Rounds, round)
+			}
+			if err := fixture.runner.save(record); err != nil {
+				t.Fatal(err)
+			}
+			if revise {
+				_, err = fixture.runner.Revise(UnitRevisionRequest{Run: record.ID, Brief: []byte("Declared size: 1 changed lines\n")})
+			} else {
+				_, err = fixture.runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)})
+			}
+			if err != nil {
+				t.Fatalf("zero-cap record was capped: %v", err)
+			}
+			requireRecordedRounds(t, fixture, record.ID, 7)
+			requireLaunchedOnce(t, fixture, 6)
+		})
+	}
+}
+
+func TestRoundMaterialAndJudgement(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", []string{}...)
+	yes, no := true, false
+	record := UnitRunRecord{ID: "round-material", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Steps: []UnitStep{
+		{Name: "read:a", Verdict: "fix first (2 material findings)", VerdictCounts: &yes},
+		{Name: "read:b", Verdict: "VERDICT: fix first (3 material findings)", VerdictCounts: &yes},
+		{Name: "read:c", Verdict: "fix first (9 material findings)", VerdictCounts: &no},
+		{Name: "read:d", Verdict: "land", VerdictCounts: &yes},
+	}}}}
+	finished, err := fixture.runner.finish(&record, &record.Rounds[1], "green")
+	if err != nil || finished.Record.Rounds[1].Material != 5 {
+		t.Fatalf("finish=%+v err=%v", finished, err)
+	}
+	retained := requireRecordedRounds(t, fixture, record.ID, 2)
+	if retained.Rounds[1].Material != 5 {
+		t.Fatal("material was not retained")
+	}
+	card := judgementRound(record, 2)
+	if card.N != 1 || card.Max == nil || *card.Max != 6 {
+		t.Fatalf("judgement=%+v", card)
+	}
+	record.CountedCap = 0
+	card = judgementRound(record, 2)
+	if card.N != 2 || card.Max == nil || *card.Max != 20 {
+		t.Fatalf("legacy judgement=%+v", card)
+	}
 }

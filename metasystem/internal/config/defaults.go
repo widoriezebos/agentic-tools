@@ -409,6 +409,8 @@ var coreSettings = []Setting{
 		Meaning: "the largest brief admitted; no lane imposes a window, so it is sized against the SMALLEST window a lane runs in, Codex at model_context_window=258400: a full brief leaves about 138000 tokens for tool output and the diff"},
 	{Key: "launch.build.max.changed.lines", Default: "1500", ProofInput: true,
 		Meaning: "the most changed lines one build unit may carry"},
+	{Key: "launch.unit.counted.rounds", Default: "6", ProofInput: true,
+		Meaning: "the most rounds a unit may start, excluding rounds ended by the environment; frozen when its run starts"},
 	{Key: "launch.read.split.diff.lines", Default: "1200", ProofInput: true,
 		Meaning: "the diff size above which a read is split"},
 	{Key: "launch.design.baseline.tokens", Default: "2432374", ProofInput: true,

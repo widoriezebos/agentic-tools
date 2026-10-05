@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
@@ -57,6 +58,13 @@ type CodexExec struct {
 	Now                                 func() time.Time
 	Location                            *time.Location
 	Scanner                             ProcessScanner
+}
+
+func (CodexExec) StopCause(_ Record, stateDir string) string {
+	if _, _, ok := outage.ClassifyLogs(filepath.Join(stateDir, "exec.log")); ok {
+		return outage.ProviderLimit
+	}
+	return ""
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {

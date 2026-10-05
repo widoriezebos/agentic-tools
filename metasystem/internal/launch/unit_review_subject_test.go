@@ -15,6 +15,80 @@ import (
 
 const reviewDiff = "diff --git a/code.go b/code.go\nindex 1111111..2222222 100644\n--- a/code.go\n+++ b/code.go\n@@ -1 +1 @@\n-one\n+two\n"
 
+func TestReviewSubjectMaterialUsesRetainedReturnPath(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, reviewDiff)
+	fixture.runner.ExaminationRoot = t.TempDir()
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	returnAt := func(install, content string) string {
+		path := filepath.Join(install, "artifacts", "agents", "critic", "rounds", "1", "return.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, path, content)
+		return path
+	}
+	returnAt(fixture.runner.ExaminationRoot, `{"findings":[{"material":true},{"material":true}]}`)
+	path := returnAt(t.TempDir(), `{"findings":[{"material":true},{"material":false}]}`)
+	err = fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+		return retain(UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest,
+			Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := fixture.runner.Status(result.Record.ID)
+	if err != nil || len(record.Subjects) != 1 || record.Subjects[0].ExaminationReturnPath != path || record.Rounds[0].Material != 1 || len(record.Notes) != 0 {
+		t.Fatalf("the retained examination must count its own return: %+v err=%v", record, err)
+	}
+	material, err := (&UnitRunner{}).roundMaterial(record, record.Rounds[0])
+	if err != nil || material != 1 {
+		t.Fatalf("a later count must use the retained path: material=%d err=%v", material, err)
+	}
+}
+
+func TestReviewSubjectMissingReturnRetainsCountedRound(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"no return", "missing file", "malformed return"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, reviewDiff)
+			fixture.runner.ExaminationRoot = t.TempDir()
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := ""
+			if name != "no return" {
+				path = filepath.Join(t.TempDir(), "return.json")
+			}
+			if name == "malformed return" {
+				writeFile(t, path, "{")
+			}
+			err = fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+				return retain(UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest,
+					Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
+			})
+			if err != nil {
+				t.Fatalf("an unreadable return must not stop retention: %v", err)
+			}
+			record, err := fixture.runner.Status(result.Record.ID)
+			if err != nil || len(record.Subjects) != 1 || record.Subjects[0].Examination != "critic" || record.Subjects[0].ExaminationRound != 1 || record.Rounds[0].Material != -1 {
+				t.Fatalf("retain the examination with an unknown material count: %+v err=%v", record, err)
+			}
+			if counted, environment := countedRounds(record); counted != 1 || environment != 0 {
+				t.Fatalf("missing findings must still count the round: counted=%d environment=%d", counted, environment)
+			}
+			if path != "" && (len(record.Notes) != 1 || !strings.Contains(record.Notes[0], "material count") || !strings.Contains(record.Notes[0], path)) {
+				t.Fatalf("the count failure must be noted on the run: %v", record.Notes)
+			}
+		})
+	}
+}
+
 func reviewNotCalled(t *testing.T) func(UnitReview, func(UnitSubject) error) error {
 	return func(review UnitReview, _ func(UnitSubject) error) error {
 		t.Errorf("bound a round that is not ready: %+v", review.Round)

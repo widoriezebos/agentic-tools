@@ -605,7 +605,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// A failed preliminary read with a passed proof may still request the
 	// committed review.
 	c.edits, c.readFails = map[string]string{"readfail.txt": "read failed, proof passed\n"}, true
-	_, result = c.do(append([]string{"work", "build", c.id, "readfail", "--brief", c.brief("readfail.md", "Read-failed unit.\n"), "--lines", "5"}, workCheck...)...)
+	_, result = c.do(append([]string{"work", "build", c.id, "readfail", "--brief", c.brief("readfail.md", "Read each round: yes\nRead-failed unit.\n"), "--lines", "5"}, workCheck...)...)
 	readFailed := resultData(t, result)["run"].(string)
 	if round := c.runRecord(readFailed).Rounds[0]; round.Outcome != "read-failed" || result.Next == nil || result.Next.Argv[2] != "review" {
 		t.Fatalf("read-failed build: %s %+v", round.Outcome, result)
@@ -814,6 +814,54 @@ func TestReviewCloseAdmitsItsCheckoutThroughParseInstallation(t *testing.T) {
 	}
 }
 
+func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
+	t.Parallel()
+	w := newWorkBed(t)
+	code, built, _ := w.work(append([]string{"work", "build", w.id, "--work", "cap", "--brief", w.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	// Use the review-close bed's files in the work bed's separate checkout.
+	b := &deliveryBed{intentBed: w.intentBed, install: w.worktree}
+	b.writeFile(filepath.Join(b.install, "metasystem.conf"), "")
+	b.writeJob(map[string]any{"jobId": "critic", "role": "code-critic", "status": "completed", "round": 1, "parentJob": nil})
+	path := filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1", "return.json")
+	b.writeJSON(path, map[string]any{"jobId": "critic", "round": 1, "verdict": "1 finding", "findings": []any{
+		map[string]any{"id": "F1", "material": true}, map[string]any{"id": "N1", "material": false}}})
+	owners := w.workOwners()
+	owners.delivery = &intentDeliveryOwners{branchRead: func([]string) (branch.BranchReadResult, int, error) {
+		return branch.BranchReadResult{State: "closed", RootJob: "critic"}, 0, nil
+	}}
+	layout, err := owners.resolver.ResolveLayout(w.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), input: intentInput{values: map[string][]string{}},
+		reviewWork: &reviewWorkContext{goal: w.id, work: "cap", attempt: 1}}
+	runner := inv.unitRunner()
+	if runner.ExaminationRoot == b.install {
+		t.Fatal("the runner's installation must differ from the critic store")
+	}
+	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		subject := launch.UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest, Commit: strings.Repeat("c", 40)}
+		inv.reviewWork.subject, inv.reviewWork.retain = &subject, retain
+		closed := inv.commitReview(nil, b.install, w.id, subject.Commit, nil)
+		if closed.Outcome != intentInProgress || resultData(t, closed)["template"] != filepath.Join(filepath.Dir(path), "decisions.md") {
+			t.Fatalf("review close must retain the examination before asking for decisions: %+v", closed)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := runner.Status(run)
+	if err != nil || len(record.Subjects) != 1 || record.Subjects[0].Examination != "critic" || record.Subjects[0].ExaminationRound != 1 ||
+		record.Subjects[0].ExaminationReturnPath != path || record.Rounds[0].Material != 1 || len(record.Notes) != 0 {
+		t.Fatalf("review close must count the goal worktree's return: %+v err=%v", record, err)
+	}
+}
+
 func promotionFacts() (launch.UnitReview, launch.UnitSubject, launch.Record, launch.Record, []byte, []byte) {
 	yes := true
 	review := launch.UnitReview{Record: launch.UnitRunRecord{ID: "unit-run-a", Goal: "goal-a"}, Base: "base", BuildBrief: "brief",
@@ -931,6 +979,7 @@ func TestUnitReviewRecordsThePromotedRead(t *testing.T) {
 		t.Run(strconv.FormatBool(clean), func(t *testing.T) {
 			t.Parallel()
 			bed, inv, review := newUnitPromotionReview(t, clean)
+			inv.input = intentInput{values: map[string][]string{"model": {"unused-model"}}}
 			reads, publications := 0, 0
 			inv.owners.delivery = &intentDeliveryOwners{
 				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
@@ -960,11 +1009,20 @@ func TestUnitReviewRecordsThePromotedRead(t *testing.T) {
 			if result.Outcome != intentConfirmed || reads != 1 || publications != 1 || !slices.Contains(result.next, "land") {
 				t.Fatalf("result=%+v reads=%d publications=%d", result, reads, publications)
 			}
-			if clean && (!strings.Contains(result.Summary, "read-a by reader-model is the unit's read") || data["readNotPromoted"] != nil) {
+			if clean && (!strings.Contains(result.Summary, "read-a by reader-model is the unit's read") || data["readNotPromoted"] != nil || !strings.Contains(result.Summary, "--model was not used because no critic started")) {
 				t.Fatalf("promotion=%+v", result)
 			}
 			if !clean && !strings.Contains(fmt.Sprint(data["readNotPromoted"]), "different") {
 				t.Fatalf("reason=%+v", result)
+			}
+			if clean {
+				inv.owners.delivery.publishRead = func(string, string, string) (branch.PublishReadResult, error) {
+					return branch.PublishReadResult{}, errors.New("publication unavailable")
+				}
+				result = runUnitPromotionReview(t, bed, inv, review)
+				if result.Outcome != intentPartial || !strings.Contains(result.Summary, "--model was not used because no critic started") {
+					t.Fatalf("unpublished promotion=%+v", result)
+				}
 			}
 		})
 	}
@@ -1010,7 +1068,7 @@ func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
 	t.Parallel()
 	for _, refusal := range []error{
 		&branch.OpError{Code: branch.ReadInvalidCode, Message: "unit read does not bind this commit"},
-		errors.New("unit bundle cannot be recorded"),
+		errors.New("unit bundle cannot be recorded\nrun: metasystem work review --commit commit"),
 	} {
 		t.Run(refusal.Error(), func(t *testing.T) {
 			t.Parallel()
@@ -1036,7 +1094,7 @@ func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
 			}
 			result := runUnitPromotionReview(t, bed, inv, review)
 			data, _ := result.Data.(map[string]any)
-			if result.Outcome != intentConfirmed || reads != 2 || data["readNotPromoted"] != refusal.Error() || data["readLaunch"] != nil || strings.Contains(result.Summary, "build's clean read") || !slices.Contains(result.next, "land") {
+			if result.Outcome != intentConfirmed || reads != 2 || data["readNotPromoted"] != strings.Split(refusal.Error(), "\nrun:")[0] || data["readLaunch"] != nil || strings.Contains(result.Summary, "build's clean read") || !slices.Contains(result.next, "land") {
 				t.Fatalf("result=%+v reads=%d", result, reads)
 			}
 		})
@@ -1093,6 +1151,8 @@ func TestUnitReviewRecordsThePromotedReadReusesBundle(t *testing.T) {
 func TestUnitReviewRecordsThePromotedReadRefusalDoesNotRepeat(t *testing.T) {
 	t.Parallel()
 	bed, inv, review := newUnitPromotionReview(t, true)
+	inv.command = mustIntentCommand(t, "work review")
+	inv.raw = []string{bed.id, "--work", review.Record.Unit}
 	reads := 0
 	inv.owners.delivery = &intentDeliveryOwners{
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
@@ -1111,9 +1171,36 @@ func TestUnitReviewRecordsThePromotedReadRefusalDoesNotRepeat(t *testing.T) {
 	}
 	result := runUnitPromotionReview(t, bed, inv, review)
 	data, _ := result.Data.(map[string]any)
-	want := inv.publicArgv("work", "review", "--commit", "commit", "--goal", bed.id)
-	if result.Outcome != intentRefused || reads != 2 || data["readNotPromoted"] != "bundle refused" || !slices.Equal(result.next, want) || slices.Equal(result.next, inv.sameCommand()) {
+	want := inv.publicArgv("work", "review", bed.id, "--work", review.Record.Unit)
+	if result.Outcome != intentRefused || reads != 2 || data["readNotPromoted"] != "bundle refused" || !slices.Equal(result.next, want) {
 		t.Fatalf("result=%+v reads=%d", result, reads)
+	}
+}
+
+func TestUnitReviewRecordsThePromotedReadAlreadyInstalled(t *testing.T) {
+	t.Parallel()
+	bed, inv, review := newUnitPromotionReview(t, true)
+	inspections, reads, publications := 0, 0, 0
+	inv.owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
+		inspections++
+		if inspections == 1 {
+			return branch.BranchReadResult{}, nil
+		}
+		return branch.BranchReadResult{State: "collected", AttestationCommit: "attestation"}, nil
+	}
+	inv.owners.delivery = &intentDeliveryOwners{
+		branchRead: func([]string) (branch.BranchReadResult, int, error) {
+			reads++
+			return branch.BranchReadResult{}, 1, errors.New("bundle refused")
+		},
+		publishRead: func(string, string, string) (branch.PublishReadResult, error) {
+			publications++
+			return branch.PublishReadResult{State: "current"}, nil
+		},
+	}
+	result := runUnitPromotionReview(t, bed, inv, review)
+	if result.Outcome != intentUnchanged || inspections != 2 || reads != 1 || publications != 1 || resultData(t, result)["attestation"] != "attestation" {
+		t.Fatalf("result=%+v inspections=%d reads=%d publications=%d", result, inspections, reads, publications)
 	}
 }
 

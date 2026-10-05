@@ -583,6 +583,26 @@ func TestSystemStartSaysTheEvidenceRoot(t *testing.T) {
 	})
 }
 
+func TestWorkStatusNamesRoundCause(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	dir := filepath.Join(filepath.Dir(b.launchDir), "unit", "cause")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(launch.UnitRunRecord{ID: "cause", State: "awaiting-judgement", Rounds: []launch.UnitRound{
+		{Number: 1, Outcome: "build-failed", Cause: "process-lost"}, {Number: 2, Outcome: "green"},
+	}})
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := b.run(b.owners(), "work", "status", "run:cause")
+	if code != 0 || !strings.Contains(stdout, "round 1: build-failed cause=process-lost") || !strings.Contains(stdout, "round 2: green\n") || strings.Count(stdout, "cause=") != 1 {
+		t.Fatalf("status=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	t.Log(stdout)
+}
+
 // TestStatusShowsTheBoard (R23, R24, U10d): status prints the board block
 // from a direct read of the fixture host (one line per armed seat, in local
 // time, saying bridge absent with no socket); --verbose adds one line per

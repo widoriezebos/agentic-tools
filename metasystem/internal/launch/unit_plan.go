@@ -17,10 +17,12 @@ type UnitPlan struct {
 	Worktree string         `json:"worktree"`
 	Base     string         `json:"base"`
 	Build    UnitBuildPlan  `json:"build"`
-	Read     UnitReadPlan   `json:"read"`
+	Read     UnitReadPlan   `json:"read,omitzero"`
 	Proof    []ProofCommand `json:"proof"`
 	Path     string         `json:"-"`
 }
+
+func (plan UnitPlan) HasRead() bool { return plan.Read.Brief != "" }
 
 type UnitBuildPlan struct {
 	Brief     string   `json:"brief"`
@@ -110,7 +112,7 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 		missing bool
 	}{
 		{"unit", raw.Unit == nil}, {"goal", raw.Goal == nil}, {"worktree", raw.Worktree == nil}, {"base", raw.Base == nil},
-		{"build", raw.Build == nil}, {"read", raw.Read == nil}, {"proof", raw.Proof == nil},
+		{"build", raw.Build == nil}, {"proof", raw.Proof == nil},
 	}
 	for _, item := range required {
 		if item.missing {
@@ -123,8 +125,7 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 		missing bool
 	}{
 		{"build.brief", build.Brief == nil}, {"build.inputs", build.Inputs == nil}, {"build.outputs", build.Outputs == nil},
-		{"build.unitsPage", build.UnitsPage == nil}, {"build.units", build.Units == nil}, {"read.brief", read.Brief == nil},
-		{"read.inputs", read.Inputs == nil}, {"read.outputs", read.Outputs == nil}, {"read.model", read.Model == nil},
+		{"build.unitsPage", build.UnitsPage == nil}, {"build.units", build.Units == nil},
 	} {
 		if item.missing {
 			return UnitPlan{}, planInvalid(item.name, nil)
@@ -132,7 +133,21 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 	}
 	plan := UnitPlan{Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base,
 		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
-		Read:  UnitReadPlan{*read.Brief, *read.Inputs, *read.Outputs, *read.Model}, Path: abs}
+		Path:  abs}
+	if read != nil {
+		for _, item := range []struct {
+			name    string
+			missing bool
+		}{{"read.brief", read.Brief == nil}, {"read.inputs", read.Inputs == nil}, {"read.outputs", read.Outputs == nil}, {"read.model", read.Model == nil}} {
+			if item.missing {
+				return UnitPlan{}, planInvalid(item.name, nil)
+			}
+		}
+		if *read.Brief == "" {
+			return UnitPlan{}, planInvalid("read.brief", nil)
+		}
+		plan.Read = UnitReadPlan{*read.Brief, *read.Inputs, *read.Outputs, *read.Model}
+	}
 	for index, proof := range *raw.Proof {
 		prefix := fmt.Sprintf("proof[%d]", index)
 		for _, item := range []struct {
@@ -158,7 +173,10 @@ func (plan *UnitPlan) resolveAndValidate(root string) error {
 		}
 		return filepath.Join(root, path)
 	}
-	plan.Worktree, plan.Build.Brief, plan.Build.UnitsPage, plan.Read.Brief = resolve(plan.Worktree), resolve(plan.Build.Brief), resolve(plan.Build.UnitsPage), resolve(plan.Read.Brief)
+	plan.Worktree, plan.Build.Brief, plan.Build.UnitsPage = resolve(plan.Worktree), resolve(plan.Build.Brief), resolve(plan.Build.UnitsPage)
+	if plan.HasRead() {
+		plan.Read.Brief = resolve(plan.Read.Brief)
+	}
 	for index := range plan.Build.Inputs {
 		plan.Build.Inputs[index] = resolve(plan.Build.Inputs[index])
 	}
@@ -174,7 +192,7 @@ func (plan *UnitPlan) resolveAndValidate(root string) error {
 	for index := range plan.Proof {
 		plan.Proof[index].Dir = resolve(plan.Proof[index].Dir)
 	}
-	for _, item := range []struct{ name, value string }{{"unit", plan.Unit}, {"goal", plan.Goal}, {"worktree", plan.Worktree}, {"base", plan.Base}, {"build.brief", plan.Build.Brief}, {"build.unitsPage", plan.Build.UnitsPage}, {"read.brief", plan.Read.Brief}} {
+	for _, item := range []struct{ name, value string }{{"unit", plan.Unit}, {"goal", plan.Goal}, {"worktree", plan.Worktree}, {"base", plan.Base}, {"build.brief", plan.Build.Brief}, {"build.unitsPage", plan.Build.UnitsPage}} {
 		if strings.TrimSpace(item.value) == "" {
 			return planInvalid(item.name, nil)
 		}
@@ -185,7 +203,10 @@ func (plan *UnitPlan) resolveAndValidate(root string) error {
 	if len(plan.Proof) == 0 {
 		return planInvalid("proof", nil)
 	}
-	files := []struct{ name, path string }{{"worktree", plan.Worktree}, {"build.brief", plan.Build.Brief}, {"build.unitsPage", plan.Build.UnitsPage}, {"read.brief", plan.Read.Brief}}
+	files := []struct{ name, path string }{{"worktree", plan.Worktree}, {"build.brief", plan.Build.Brief}, {"build.unitsPage", plan.Build.UnitsPage}}
+	if plan.HasRead() {
+		files = append(files, struct{ name, path string }{"read.brief", plan.Read.Brief})
+	}
 	for index, path := range plan.Build.Inputs {
 		files = append(files, struct{ name, path string }{fmt.Sprintf("build.inputs[%d]", index), path})
 	}

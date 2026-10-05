@@ -27,6 +27,7 @@ const (
 	WaitCapKey                  = "launch.wait.cap.seconds"
 	BriefCapKey                 = "launch.brief.admitted.tokens"
 	BuildLinesCapKey            = "launch.build.max.changed.lines"
+	UnitCountedRoundsKey        = "launch.unit.counted.rounds"
 	ReadSplitLinesKey           = "launch.read.split.diff.lines"
 	DesignBaselineTokensKey     = "launch.design.baseline.tokens"
 	DesignBaselineRequestsKey   = "launch.design.baseline.requests"
@@ -75,6 +76,7 @@ type Settings struct {
 	ReadRuntime                                       string
 	WaitCapSeconds, BriefCap, BuildLinesCap           int64
 	ReadSplitLines                                    int64
+	UnitCountedRounds                                 int64
 	DesignBaselineTokens, DesignBaselineRequests      int64
 	DesignBaselinePeakTokens                          int64
 	SeatRuntime, SeatModel, SeatEffort                string
@@ -115,6 +117,7 @@ var settingDefaults = []Setting{
 	{Key: LandingEffortKey, Value: config.MustDefault(LandingEffortKey), Source: "default"},
 	// The host's Codex sandbox, one mode for every Codex launch.
 	{Key: CodexSandboxKey, Value: config.MustDefault(CodexSandboxKey), Source: "default"},
+	{Key: UnitCountedRoundsKey, Value: config.MustDefault(UnitCountedRoundsKey), Source: "default"},
 }
 
 // LoadShippedSeatWindow reads the seat window the engine's shipped Claude
@@ -269,8 +272,12 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 	}
 	result.BuildModel, result.BuildEffort = result.Values[4].Value, result.Values[5].Value
 	result.DesignModel, result.ReadModel = result.Values[6].Value, result.Values[7].Value
-	for _, setting := range result.Values {
+	for index, setting := range result.Values {
 		switch setting.Key {
+		case UnitCountedRoundsKey:
+			if result.UnitCountedRounds, err = number(index); err != nil {
+				return Settings{}, err
+			}
 		case CritiqueModelKey:
 			result.CritiqueModel = setting.Value
 		case BuildRuntimeKey:

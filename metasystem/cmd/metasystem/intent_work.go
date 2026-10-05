@@ -60,6 +60,8 @@ const intentMissingDecision = "MISSING DECISION:"
 // read's tool-call budget from; it is the review template's own wording.
 var intentReaderToolCalls = regexp.MustCompile(`(?m)^Maximum reader tool calls:\s*([0-9]+)\s*$`)
 
+var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$`)
+
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
@@ -426,6 +428,7 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
 	runner := inv.work().units(inv.layout)
+	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	return runner
 }
@@ -715,9 +718,14 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			Summary: fmt.Sprintf("the brief %s still has %d missing decision(s), listed above; nothing was built", shellCommand([]string{briefPath}), len(missing)),
 			next:    inv.sameCommand(), nextReason: "after filling each MISSING DECISION line in the brief"}
 	}
-	toolCalls, problem := inv.readToolCalls(brief)
-	if problem != nil {
-		return unitRequest{}, problem
+	readEachRound := intentReadEachRound.Match(brief)
+	var toolCalls int
+	if readEachRound {
+		var problem *intentResult
+		toolCalls, problem = inv.readToolCalls(brief)
+		if problem != nil {
+			return unitRequest{}, problem
+		}
 	}
 	check := inv.input.values["check"]
 	worktree, problem := inv.prepareGoalWorktree(id)
@@ -729,18 +737,24 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
-	readModel, problem := unitReadModel(runner)
-	if problem != nil {
-		return unitRequest{}, problem
+	var readModel string
+	if readEachRound {
+		readModel, problem = unitReadModel(runner)
+		if problem != nil {
+			return unitRequest{}, problem
+		}
 	}
 	templates := runner.Manager.Templates
 	if templates == nil {
 		templates = protocol.Templates()
 	}
-	template, err := fs.ReadFile(templates, "review-brief.md")
-	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the review brief template can't be read, so nothing was built",
-			next: inv.publicArgv("system", "check"), nextReason: "checks the installation", Details: []string{err.Error()}}
+	var template []byte
+	if readEachRound {
+		template, err = fs.ReadFile(templates, "review-brief.md")
+		if err != nil {
+			return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the review brief template can't be read, so nothing was built",
+				next: inv.publicArgv("system", "check"), nextReason: "checks the installation", Details: []string{err.Error()}}
+		}
 	}
 	directory, err := runner.NamedInputDirectory(worktree, id, unit)
 	if err != nil {
@@ -789,12 +803,16 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		// It outlives this command (a later round's read writes into it),
 		// so it is a registered temporary store the unit's named inputs own
 		// (Part B R1), never an unowned TMPDIR entry.
-		findingsDirectory, err := diskstore.CreateTempStore(diskstore.UnitReadFindingsName(filepath.Base(directory)), unitReadFindingsClass,
-			diskstore.Owner{Kind: diskstore.OwnerUnit, Ref: filepath.Base(directory)})
-		if err != nil {
-			return "", fmt.Errorf("cannot create the read's findings directory: %w", err)
+		var findings string
+		if readEachRound {
+			findingsDirectory, err := diskstore.CreateTempStore(diskstore.UnitReadFindingsName(filepath.Base(directory)), unitReadFindingsClass,
+				diskstore.Owner{Kind: diskstore.OwnerUnit, Ref: filepath.Base(directory)})
+			if err != nil {
+				return "", fmt.Errorf("cannot create the read's findings directory: %w", err)
+			}
+			findings = filepath.Join(findingsDirectory, "read-findings.md")
 		}
-		findings, planPath := filepath.Join(findingsDirectory, "read-findings.md"), filepath.Join(directory, "plan.json")
+		planPath := filepath.Join(directory, "plan.json")
 		unitsPage := buildBrief
 		if strings.HasPrefix(sizeSource, "design:") {
 			unitsPage = strings.TrimPrefix(sizeSource, "design:")
@@ -803,15 +821,19 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
-			Read:  launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel},
 			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
+		if readEachRound {
+			plan.Read = launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel}
+			if _, err := atomicfile.WriteText(readBrief, binding.readBrief(template, buildBrief), directory); err != nil {
+				return "", err
+			}
+		}
 		encodedPlan, err := json.MarshalIndent(plan, "", "  ")
 		if err != nil {
 			return "", err
 		}
 		for _, file := range []struct{ path, text string }{
 			{buildBrief, binding.buildBrief(brief)},
-			{readBrief, binding.readBrief(template, buildBrief)},
 			{planPath, string(encodedPlan) + "\n"},
 		} {
 			if _, err := atomicfile.WriteText(file.path, file.text, directory); err != nil {
@@ -822,8 +844,10 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			return "", fmt.Errorf("the generated unit plan is invalid: %w", err)
 		}
 		pack := &launch.Manager{Templates: templates}
-		if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: readBrief, WorkingDirectory: worktree}); err != nil {
-			return "", fmt.Errorf("the generated read brief does not fill the review template: %w", err)
+		if readEachRound {
+			if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: readBrief, WorkingDirectory: worktree}); err != nil {
+				return "", fmt.Errorf("the generated read brief does not fill the review template: %w", err)
+			}
 		}
 		return planPath, nil
 	}
@@ -1115,6 +1139,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_ROUND_CAP"):
+			var cap *launch.UnitRoundCapError
+			if errors.As(err, &cap) {
+				return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: cap.Reason.Error(), Details: details,
+					next: inv.publicArgv(cap.Next...), nextReason: "the counted rounds are used; take this outcome"}
+			}
 		case launch.IsCode(err, "UNIT_RUN_BUSY"):
 			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "another command is advancing this work right now",
 				next: again, nextReason: "the same command continues it", Details: details}
@@ -1150,7 +1180,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		verdict = strings.Join(verdicts, "; ")
 	}
 	text := []string{line}
-	if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
+	if round.ReadModel == "" {
+		text = append(text, "No read ran this round; work review asks the committed read.")
+	} else if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
 		text = append(text, "The build, its checks and the read finished, but the read did not return VERDICT: land; this is not a clean read.")
 	}
 	text = append(text, "A clean read of the build by another model than the builder's is the unit's read; any other read is feedback and work review asks the committed critic. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))

@@ -51,19 +51,25 @@ type UnitRunRecord struct {
 	BuildModel  string `json:"buildModel,omitempty"`
 	BuildEffort string `json:"buildEffort,omitempty"`
 	MaxRounds   int    `json:"maxRounds,omitempty"`
+	// CountedCap limits rounds without an environment cause; zero imposes no cap.
+	CountedCap int `json:"countedCap,omitempty"`
 	// Subjects binds completed rounds to their committed goal-branch
 	// subjects; ReviewSubject is its only writer.
 	Subjects []UnitSubject `json:"subjects,omitempty"`
+	Notes    []string      `json:"notes,omitempty"`
 	// Revisions are the retained correction requests; Revise is their only
 	// writer.
 	Revisions []UnitRevision `json:"revisions,omitempty"`
 }
 
 type UnitRound struct {
-	Number     int        `json:"number"`
-	Directory  string     `json:"directory"`
-	FollowUp   string     `json:"followUp"`
-	Outcome    string     `json:"outcome"`
+	Number    int    `json:"number"`
+	Directory string `json:"directory"`
+	FollowUp  string `json:"followUp"`
+	Outcome   string `json:"outcome"`
+	Cause     string `json:"cause,omitempty"`
+	// Material is -1 when the examination has no readable return.
+	Material   int        `json:"material"`
 	BuildModel string     `json:"buildModel"`
 	ReadModel  string     `json:"readModel"`
 	Steps      []UnitStep `json:"steps"`
@@ -74,6 +80,7 @@ type UnitStep struct {
 	LaunchID      string        `json:"launchId"`
 	State         UnitStepState `json:"state"`
 	Reason        string        `json:"reason"`
+	Cause         string        `json:"cause,omitempty"`
 	StartedAt     string        `json:"startedAt"`
 	FinishedAt    string        `json:"finishedAt"`
 	Model         string        `json:"model"`
@@ -112,10 +119,12 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
-	Manager    *Manager
-	Git        GitRunner
-	Root       string
-	AfterWrite func(UnitRunRecord) error
+	Manager *Manager
+	Git     GitRunner
+	Root    string
+	// ExaminationRoot is the caller's installation; each examination carries its own return path.
+	ExaminationRoot string
+	AfterWrite      func(UnitRunRecord) error
 	// BeforeModelLaunch, when set, is asked before each new build or read
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
@@ -190,6 +199,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	if request.FollowUp != "" {
 		if record.MaxRounds > 0 && len(record.Rounds) >= record.MaxRounds {
 			return UnitResult{}, roundLimit(record, len(record.Rounds))
+		}
+		if err := runner.countedCap(record); err != nil {
+			return UnitResult{}, err
 		}
 		if err := admitFollowUp(record, request.FollowUp); err != nil {
 			return UnitResult{}, err
@@ -290,8 +302,11 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 		return UnitRunRecord{}, err
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
-		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds}
-	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel)}
+		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds, CountedCap: int(settings.UnitCountedRounds)}
+	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel)}
+	if plan.HasRead() {
+		round.ReadModel = choose(plan.Read.Model, settings.ReadModel)
+	}
 	if err := os.MkdirAll(round.Directory, 0o700); err != nil {
 		return UnitRunRecord{}, err
 	}
@@ -312,8 +327,12 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 	}
 	settings, _ := runner.Manager.resolvedSettings()
 	record.State = "running"
-	record.Rounds = append(record.Rounds, UnitRound{Number: number, Directory: directory, FollowUp: target,
-		BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: choose(record.BuildModel, settings.BuildModel)}}})
+	round := UnitRound{Number: number, Directory: directory, FollowUp: target,
+		BuildModel: choose(record.BuildModel, settings.BuildModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: choose(record.BuildModel, settings.BuildModel)}}}
+	if plan.HasRead() {
+		round.ReadModel = choose(plan.Read.Model, settings.ReadModel)
+	}
+	record.Rounds = append(record.Rounds, round)
 	return runner.save(*record)
 }
 
@@ -351,7 +370,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			for _, command := range proofCommands(plan) {
 				round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "build-failed"})
 			}
-			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
+			if plan.HasRead() {
+				round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
+			}
 			return runner.finish(record, round, "build-failed")
 		}
 	}
@@ -403,9 +424,12 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		readInputs = readInputs[:len(readInputs)-1]
 	}
 	sequence := runner.readSequence(record, round, plan, readInputs, diffPath)
-	readStart, err := sequence.plan()
-	if err != nil {
-		return UnitResult{}, err
+	readStart := len(round.Steps)
+	if plan.HasRead() {
+		readStart, err = sequence.plan()
+		if err != nil {
+			return UnitResult{}, err
+		}
 	}
 	if len(moved) != 0 {
 		if err := runner.skipAfter(record, round, readStart, "proof-wrote:"+strings.Join(moved, ",")); err != nil {
@@ -418,6 +442,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		return runner.finish(record, round, "proof-red")
+	}
+	if !plan.HasRead() {
+		return runner.finish(record, round, "green")
 	}
 	outcome, stop, capped, err := sequence.advance(readStart, deadline)
 	if err != nil || capped {
@@ -569,11 +596,31 @@ func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, fro
 
 func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcome string) (UnitResult, error) {
 	round.Outcome, record.State = outcome, "awaiting-judgement"
+	round.Cause = roundCause(round.Steps)
+	material, err := runner.roundMaterial(*record, *round)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	round.Material = material
 	if err := runner.save(*record); err != nil {
 		return UnitResult{}, err
 	}
 	runner.publishJudgement(*record, round.Number)
 	return UnitResult{Record: *record, Round: round.Number}, nil
+}
+
+// A red proof or a counting read judges the code, even if a launch was lost.
+func roundCause(steps []UnitStep) string {
+	cause := ""
+	for _, step := range steps {
+		if strings.HasPrefix(step.Name, "proof:") && step.State == StepFailed || strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
+			return ""
+		}
+		if cause == "" {
+			cause = step.Cause
+		}
+	}
+	return cause
 }
 
 // publishJudgement puts the finished round on the board as judgement: the
@@ -585,17 +632,75 @@ func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
 		return
 	}
 	card := board.Card{Seat: runner.Manager.Seat, Goal: record.Goal, Stage: board.StageJudgement,
-		Round: &board.Round{N: number}, Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
+		Round: judgementRound(record, number), Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
 	if runner.Manager.Now != nil {
 		card.Writer.At = runner.Manager.Now()
-	}
-	if record.MaxRounds > 0 {
-		limit := record.MaxRounds
-		card.Round.Max = &limit
 	}
 	if err := board.Write(card); err != nil {
 		fmt.Fprintf(os.Stderr, "unit run %s: the board card was not written: %v\n", record.ID, err)
 	}
+}
+
+func judgementRound(record UnitRunRecord, number int) *board.Round {
+	round := &board.Round{N: number}
+	if record.CountedCap > 0 {
+		round.N, _ = countedRounds(record)
+		limit := record.CountedCap
+		round.Max = &limit
+	} else if record.MaxRounds > 0 {
+		limit := record.MaxRounds
+		round.Max = &limit
+	}
+	return round
+}
+
+func countedRounds(record UnitRunRecord) (counted, machinery int) {
+	for _, round := range record.Rounds {
+		if round.Cause == "" {
+			counted++
+		} else {
+			machinery++
+		}
+	}
+	return
+}
+
+func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (int, error) {
+	for _, subject := range record.Subjects {
+		if subject.Round != round.Number || subject.Examination == "" {
+			continue
+		}
+		path := subject.ExaminationReturnPath
+		if path == "" {
+			return -1, nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return -1, err
+		}
+		var result struct {
+			Findings []struct{ Material bool } `json:"findings"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			return -1, fmt.Errorf("read examination return %s: %w", path, err)
+		}
+		material := 0
+		for _, finding := range result.Findings {
+			if finding.Material {
+				material++
+			}
+		}
+		return material, nil
+	}
+	material := 0
+	for _, step := range round.Steps {
+		if strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
+			if count := measuredMaterialCount(Record{Kind: "read", Measurement: Measurement{Verdict: "VERDICT: " + strings.TrimPrefix(step.Verdict, "VERDICT: ")}}); count != nil {
+				material += *count
+			}
+		}
+	}
+	return material, nil
 }
 
 func (runner *UnitRunner) result(record UnitRunRecord, round *UnitRound, step *UnitStep, capped bool) UnitResult {

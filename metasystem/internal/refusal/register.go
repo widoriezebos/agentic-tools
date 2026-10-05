@@ -77,6 +77,7 @@ var Rows = []Row{
 	{Code: "READ_RETRY_UNKNOWN", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_PATCH_UNREADABLE", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_ROUND_LIMIT", Owner: "cmd/metasystem", Site: "intent_selection.go#runIntentRevise", Shape: Agent, Override: "budget", Commands: 1, H1: StandingGuide, Forward: "goal budget"},
+	{Code: "UNIT_ROUND_CAP", Owner: "internal/launch", Site: "coded.go#UnitRunner.countedCap", Shape: Agent, Override: "split", Commands: 1, H1: StandingGuide, Forward: "work build"},
 	{Code: "carried-receipt-refused", Owner: "internal/landing", Site: "carried_prepare.go#carriedReceiptLine", Shape: Question, H1: StandingInput},
 	{Code: "READ_BUSY", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.readLock", Shape: Question, H1: StandingInput},
 	{Code: "READ_CHECKOUT_UNAVAILABLE", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},

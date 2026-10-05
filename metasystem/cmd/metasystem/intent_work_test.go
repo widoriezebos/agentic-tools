@@ -364,7 +364,7 @@ func workApprovedBox(file *goal.GoalFile) {
 func TestIntentBuildConcurrentRepeat(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("brief.md", "Build the unit.\n\n| Unit | Lines |\n| --- | --- |\n| u1 | 40 |\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n\n| Unit | Lines |\n| --- | --- |\n| u1 | 40 |\n")
 	args := append([]string{"work", "build", bed.id, "u1", "--brief", brief}, workCheck...)
 	var wait sync.WaitGroup
 	results := make([]intentResult, 4)
@@ -445,7 +445,7 @@ func TestIntentBuildSizeInput(t *testing.T) {
 func TestIntentGeneratedUnitPlan(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("brief.md", "Build the unit.\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	args := append([]string{"work", "build", bed.id, "planned", "--brief", brief, "--lines", "30"}, workCheck...)
 	code, result, _ := bed.work(args...)
 	if code != 0 || result.Outcome != intentConfirmed {
@@ -518,7 +518,7 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.Contains(string(buildBrief), `["go","test","-count=1","-run","TestA|TestB","./..."]`) || !strings.HasSuffix(string(buildBrief), "Build the unit.\n") {
+	if !strings.Contains(string(buildBrief), `["go","test","-count=1","-run","TestA|TestB","./..."]`) || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
 		t.Fatalf("build brief:\n%s", buildBrief)
 	}
 	before := map[string][]byte{}
@@ -535,13 +535,56 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	}
 }
 
+func TestBriefLineAsksForTheRead(t *testing.T) {
+	t.Parallel()
+	for _, line := range []string{"", "Read each round: yes\n", "read each round: yes\n", "Quoted Read each round: yes\n"} {
+		bed := newWorkBed(t)
+		wantsRead := line == "Read each round: yes\n"
+		if !wantsRead {
+			for index := range bed.manager.Settings.Values {
+				if bed.manager.Settings.Values[index].Key == launch.ReadModelKey {
+					bed.manager.Settings.Values[index].Value = ""
+				}
+			}
+		}
+		brief := bed.brief("brief.md", line+"Build the unit.\n")
+		args := append([]string{"work", "build", bed.id, "optional", "--brief", brief, "--lines", "5"}, workCheck...)
+		code, result, _ := bed.work(args...)
+		if code != 0 {
+			t.Fatalf("%q: code=%d %+v", line, code, result)
+		}
+		data := resultData(t, result)
+		plan, err := launch.ReadUnitPlan(data["plan"].(string))
+		if err != nil || plan.HasRead() != wantsRead || (len(plan.Read.Outputs) > 0) != wantsRead {
+			t.Fatalf("%q: plan=%+v err=%v", line, plan, err)
+		}
+		retainedInputs(t, data["inputs"].(string))
+		registryPath, _ := registry.DefaultPath()
+		stores, _ := diskstore.MachineRegistry(filepath.Dir(registryPath)).Inventory()
+		registered := false
+		for _, store := range stores {
+			registered = registered || store.Class == unitReadFindingsClass && store.Owner.Ref == filepath.Base(data["inputs"].(string))
+		}
+		if registered != wantsRead || !wantsRead && !slices.Equal(bed.starter.launched(), []string{"build", "proof"}) {
+			t.Fatalf("%q: registered=%t result=%+v launches=%v", line, registered, result, bed.starter.launched())
+		}
+		if !wantsRead {
+			command, rest, _ := resolveIntentArgv(args)
+			var stdout, stderr bytes.Buffer
+			if code := runIntentIn(command, rest, &stdout, &stderr, bed.root(), bed.workOwners()); code != 0 || !strings.Contains(stdout.String(), "No read ran this round; work review asks the committed read") {
+				t.Fatalf("code=%d stdout=%s stderr=%s", code, &stdout, &stderr)
+			}
+		}
+	}
+}
+
 // TestIntentBuildResume drives one unit from a red proof through a retry, a
 // resume, a refused changed input, a follow-up round, a capped wait and its
 // continuation, and checks it only ever ends awaiting judgement.
 func TestIntentBuildResume(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("brief.md", "Build the unit.\n")
+	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	args := append([]string{"work", "build", bed.id, "journey", "--brief", brief, "--lines", "20"}, workCheck...)
 	bed.starter.fail["proof"] = true
 	code, result, _ := bed.work(args...)
@@ -559,7 +602,7 @@ func TestIntentBuildResume(t *testing.T) {
 			t.Fatalf("%v: code=%d %+v launches=%v", again, code, repeat, bed.starter.launched())
 		}
 	}
-	bed.brief("brief.md", "Build the unit, changed.\n")
+	bed.brief("brief.md", "Read each round: yes\nBuild the unit, changed.\n")
 	code, result, _ = bed.work(args...)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(resultWords(result), "run="+run) || len(bed.starter.launched()) != 2 {
 		t.Fatalf("changed input: code=%d %+v", code, result)
@@ -809,4 +852,28 @@ func mustIntentArgvCommand(t testing.TB, args []string) intentCommand {
 func intentArgvRest(args []string) []string {
 	_, rest, _ := resolveIntentArgv(args)
 	return rest
+}
+
+func TestIntentReviseHonoursCountedCap(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.manager.Settings.UnitCountedRounds = 1
+	brief := bed.brief("cap.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "capped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	launched := len(bed.starter.launched())
+	for _, args := range [][]string{
+		{"work", "revise", bed.id, "--work", "capped unit", "--brief", brief},
+		{"work", "revise", "run:" + run, "--brief", brief},
+	} {
+		code, refused, _ := bed.work(args...)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_CAP") ||
+			!strings.Contains(refused.Summary, "unit capped unit has used its 1 counted rounds; nothing was started") ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "capped unit"}) || len(bed.starter.launched()) != launched {
+			t.Fatalf("cap refusal: code=%d %+v launches=%v", code, refused, bed.starter.launched())
+		}
+	}
 }

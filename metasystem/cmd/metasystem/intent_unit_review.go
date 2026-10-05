@@ -360,6 +360,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		bundle = nil
 		delete(data, "readLaunch")
 		delete(data, "readModel")
+		if slices.Equal(result.next, inv.sameCommand()) {
+			result.next = inv.workArgv(record, "review")
+		}
 	}
 	if merged, ok := result.Data.(map[string]any); ok {
 		for key, value := range data {
@@ -375,6 +378,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
 		result.next, result.nextReason = inv.publicArgv("work", "land", goalID), "the unit's read is published on the goal branch; landing admits it by its own rules"
+	}
+	if bundle != nil && inv.input.has("model") {
+		result.Summary += "; --model was not used because no critic started"
 	}
 	return result
 }
@@ -607,15 +613,20 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 // chain is not closed yields the author's close and collects nothing; a
 // repeat publishes the same attestation without reading again. review
 // commit and review run share it. A refused unit read uses the supplied
-// critic arguments; if that start also fails, commit review continues it.
+// critic arguments; if that start also fails, the same review continues it.
 func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
 	result, code, err := owners.branchRead(args)
 	if err != nil && slices.Contains(args, "--unit-read") && len(fallback) > 0 {
-		reason := err.Error()
-		args = fallback[0]
-		result, code, err = owners.branchRead(args)
-		fallbackFailed := err != nil
+		reason := strings.SplitN(err.Error(), "\nrun:", 2)[0]
+		installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
+		if inspectErr == nil && installed.RootJob == "" && installed.AttestationCommit != "" && installed.State == "collected" {
+			result, code, err = installed, 0, nil
+			result.State = "already-collected"
+		} else {
+			args = fallback[0]
+			result, code, err = owners.branchRead(args)
+		}
 		defer func() {
 			data, _ := out.Data.(map[string]any)
 			if data == nil {
@@ -623,10 +634,6 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				out.Data = data
 			}
 			data["readNotPromoted"] = reason
-			if fallbackFailed && slices.Equal(out.next, inv.sameCommand()) {
-				out.next = inv.publicArgv("work", "review", "--commit", unit, "--goal", goalID)
-				out.nextReason = "requests the committed critic for this version"
-			}
 		}()
 	}
 	if err == nil && result.State == "closed" {
@@ -809,9 +816,10 @@ func (inv *intentInvocation) commitExamination(store, goalID, commit, rootJob st
 				if review.Subject == nil || review.Subject.Commit != full {
 					return nil
 				}
-				if review.Subject.Examination != rootJob || review.Subject.ExaminationRound != round {
+				if review.Subject.Examination != rootJob || review.Subject.ExaminationRound != round || review.Subject.ExaminationReturnPath != returnPath {
 					subject := *review.Subject
 					subject.Examination, subject.ExaminationRound = rootJob, round
+					subject.ExaminationReturnPath = returnPath
 					if err := retain(subject); err != nil {
 						return err
 					}

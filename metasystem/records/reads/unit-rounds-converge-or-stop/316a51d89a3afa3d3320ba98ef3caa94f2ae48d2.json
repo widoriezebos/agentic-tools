@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "goal": "unit-rounds-converge-or-stop",
+  "unit": "cap",
+  "subject": {
+    "commit": "316a51d89a3afa3d3320ba98ef3caa94f2ae48d2",
+    "parent": "b2abc7e8c4c8aedbd7e8b7458ff678a3ac1d87a7",
+    "tree": "d25d03f1a4fa577d15d29136b46360963f0325ee",
+    "patchDigest": "6a701741e78c98d94e636940c0d4ccde414d70eb7bb6e75a4490bc7028440d0b",
+    "unitDigest": "272d783730d0d4447925a40e985a0573b7d2f964b8ca7e61c80641f511816bee"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c5c4e472c2245461b5a66efd",
+    "round": 1,
+    "closureSha256": "b92aafcfcd3fe7b6a1e9c4c36418e5034d43773b69722a436b2c44ab3e080255"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d25d03f1a4fa577d15d29136b46360963f0325ee",
+    "runId": "goal-read-gate-20261005t025607z-8c327c56cee4e983"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "3dbb017d60873e1ebd9a379cb56585bedf5f3d6d",
+      "digest": "b6dff5f76ad5240a90f023e1c9bdd0a3b3d83a5c7b9bffe7d81fd785fd45e352"
+    },
+    {
+      "kind": "read",
+      "commit": "6b81fac2b10307d8b520bfaa2547860716f40293",
+      "digest": "9dbaacbbd448a5981da3cc2e086e97dce563ed95e0305c0751e6454cc75ab3bb"
+    },
+    {
+      "kind": "read",
+      "commit": "b2abc7e8c4c8aedbd7e8b7458ff678a3ac1d87a7",
+      "digest": "1d5c2b65516c672b017d39096e2704b22a9773fcc0a31830c38bbfe1e461c926"
+    }
+  ],
+  "carry": {
+    "fromCommit": "b5781b7fd49a09c7b76bcda726d067633cf4b539",
+    "fromTree": "82c978f121cccb0d1463928711d9c2affaaae838",
+    "toCommit": "316a51d89a3afa3d3320ba98ef3caa94f2ae48d2",
+    "toTree": "d25d03f1a4fa577d15d29136b46360963f0325ee"
+  },
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/settings-show.json",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/settings-show.txt",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/internal/launch/settings_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_review_subject_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-c5c4e472c2245461b5a66efd"
+    }
+  ],
+  "sha256": "420067991dcf4f238d1fd15bcfbf83c031051878f5d94eb8a496ab84761b12c0"
+}
