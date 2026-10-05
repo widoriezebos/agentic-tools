@@ -68,7 +68,8 @@ type SeatIdleIncident struct {
 }
 
 // AlertEpisode is one finding's durable notification and acknowledgment
-// lifecycle. Cleared episodes remain evidence and a recurrence opens a new id.
+// lifecycle. Episodes cleared by a person or a healthy reading remain evidence
+// and a recurrence opens a new id.
 type AlertEpisode struct {
 	Schema          int                  `json:"schema"`
 	EpisodeID       string               `json:"episodeId"`
@@ -88,6 +89,7 @@ type AlertEpisode struct {
 	ResolvedAt      time.Time            `json:"resolvedAt,omitempty"`
 	Cleared         bool                 `json:"cleared"`
 	ClearedAt       time.Time            `json:"clearedAt,omitempty"`
+	ClosedBy        string               `json:"closedBy,omitempty"`
 	SeatIdle        *SeatIdleIncident    `json:"seatIdle,omitempty"`
 	// Evidence, Suppressed, CleanCount, Standing and ClearedBy belong to the
 	// episodes OpenAlert opens (behaviour patterns, design §1); an older
@@ -391,8 +393,9 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			}
 			// A healthy reading is the condition clearing once: a person's
 			// clear no longer holds the finding back.
-			changed := episodes[index].Suppressed
+			changed := episodes[index].Suppressed || episodes[index].ClosedBy != ""
 			episodes[index].Suppressed = false
+			episodes[index].ClosedBy = ""
 			if !episodes[index].Resolved {
 				episodes[index].Resolved = true
 				episodes[index].ResolvedAt = now.UTC()
@@ -414,6 +417,7 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 		return AlertEpisode{}, nil
 	}
 
+	var suppressed AlertEpisode
 	for index := range episodes {
 		if episodes[index].Owner != "" {
 			continue
@@ -428,17 +432,29 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 		if episodes[index].Suppressed {
 			// A person cleared this finding while it stood: it opens and
 			// notifies nothing until it has cleared once.
-			unlockAlerts(lock)
-			return episodes[index], nil
+			if suppressed.EpisodeID == "" {
+				suppressed = episodes[index]
+			}
+			continue
 		}
-		if !episodes[index].Cleared && episodes[index].Digest != health.FindingDigest && !episodes[index].Resolved {
-			episodes[index].Resolved = true
-			episodes[index].ResolvedAt = now.UTC()
+		if !episodes[index].Cleared && episodes[index].Digest != health.FindingDigest {
+			if !episodes[index].Resolved {
+				episodes[index].Resolved = true
+				episodes[index].ResolvedAt = now.UTC()
+			}
+			episodes[index].Cleared = true
+			episodes[index].ClearedAt = now.UTC()
+			episodes[index].ClosedBy = "condition-changed"
 			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
 				unlockAlerts(lock)
 				return AlertEpisode{}, err
 			}
+			fmt.Fprintf(os.Stderr, "alert %s closed: the condition it reported no longer holds\n", episodes[index].EpisodeID)
 		}
+	}
+	if suppressed.EpisodeID != "" {
+		unlockAlerts(lock)
+		return suppressed, nil
 	}
 	if !validEvidenceDigest(health.FindingDigest) || strings.TrimSpace(message) == "" {
 		unlockAlerts(lock)
@@ -447,9 +463,15 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 
 	var episode AlertEpisode
 	for _, candidate := range episodes {
-		if candidate.Owner == "" && candidate.Digest == health.FindingDigest && !candidate.Cleared {
+		if candidate.Owner != "" || candidate.Digest != health.FindingDigest || candidate.Suppressed {
+			continue
+		}
+		if !candidate.Cleared {
 			episode = candidate
 			break
+		}
+		if candidate.ClosedBy == "condition-changed" && (episode.EpisodeID == "" || candidate.OpenedAt.After(episode.OpenedAt)) {
+			episode = candidate
 		}
 	}
 	if episode.EpisodeID == "" {
@@ -462,6 +484,11 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			unlockAlerts(lock)
 			return AlertEpisode{}, err
 		}
+	}
+	if episode.Cleared {
+		episode.Cleared = false
+		episode.ClearedAt = time.Time{}
+		episode.ClosedBy = ""
 	}
 	if episode.Resolved {
 		episode.Resolved = false

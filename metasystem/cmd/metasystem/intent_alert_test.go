@@ -113,6 +113,36 @@ func alertIDs(t *testing.T, stdout string) []string {
 	return ids
 }
 
+func TestIntentAlertListOmitsClosedHealthEpisodes(t *testing.T) {
+	t.Parallel()
+	base := realpath.Resolve(t.TempDir())
+	bed := alertBed{home: filepath.Join(base, "home"), seat: filepath.Join(base, "seat")}
+	root := bed.store(bed.seat)
+	helmMust(t, os.MkdirAll(filepath.Join(bed.seat, ".git"), 0o755), os.MkdirAll(root, 0o755),
+		os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
+	config := steward.TickConfig{Now: alertTestNow, WorkStateRoot: t.TempDir()}
+	first, err := steward.RunTick(root, config, seatTickLiveMain{})
+	helmMust(t, err)
+	// An unreadable runner record changes the condition from dead to unknown.
+	helmMust(t, os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "runner.json"), []byte("{torn"), 0o644))
+	config.Now = alertTestNow.Add(time.Minute)
+	second, err := steward.RunTick(root, config, seatTickLiveMain{})
+	helmMust(t, err)
+	if first.Health.Aggregate == "healthy" || second.Health.Aggregate == "healthy" || first.Health.FindingDigest == second.Health.FindingDigest {
+		t.Fatalf("ticks did not read different conditions: %+v %+v", first.Health, second.Health)
+	}
+	firstID := "alert-" + first.Health.FindingDigest[:16] + "-1"
+	secondID := "here/alert-" + second.Health.FindingDigest[:16] + "-1"
+	code, stdout, stderr := bed.run(t, bed.seat, "alert", "list")
+	if code != 0 || !strings.Contains(stdout, "1 open alert") || strings.Contains(stdout, firstID) || !strings.Contains(stdout, secondID) {
+		t.Fatalf("alert list = %d %q %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = bed.run(t, bed.seat, "alert", "list", "--all", "--json")
+	if code != 0 || len(alertIDs(t, stdout)) != 2 || !strings.Contains(stdout, "1 open alert; 2 listed with the cleared ones") {
+		t.Fatalf("alert list --all = %d %q %q", code, stdout, stderr)
+	}
+}
+
 // From a seat's checkout the alert verbs read the seat's own store and the
 // host lane's, list each open alert in two lines under its qualified id,
 // and acknowledge and clear the lane's alert; a repeat succeeds and changes
