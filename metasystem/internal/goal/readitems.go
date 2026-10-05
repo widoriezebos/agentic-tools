@@ -53,9 +53,13 @@ func renderReadItem(b *strings.Builder, item ReadItem) {
 	if changed == "" {
 		changed = "-"
 	}
-	fmt.Fprintf(b, "- ReadItem: id=%s read=%s state=%s addedAt=%s changedAt=%s closingReference=%s text=%s\n",
-		item.ID, item.Read, item.State, item.AddedAt, changed, strconv.Quote(item.ClosingReference), strconv.Quote(item.Text))
+	material := " material=" + strconv.FormatBool(item.isMaterial())
+	fmt.Fprintf(b, "- ReadItem: id=%s read=%s state=%s addedAt=%s changedAt=%s%s closingReference=%s text=%s\n",
+		item.ID, item.Read, item.State, item.AddedAt, changed, material, strconv.Quote(item.ClosingReference), strconv.Quote(item.Text))
 }
+
+// Notes without an explicit materiality retain the person's blocking default.
+func (item ReadItem) isMaterial() bool { return item.Material == nil || *item.Material }
 
 func validateReadItem(item ReadItem) error {
 	if !bareReviewID(item.Read) || strings.Contains(item.Read, "=") {
@@ -127,7 +131,14 @@ func nextReadItemID(items []ReadItem, label string) string {
 }
 
 // AddReadItems records a read's non-breaking findings without rewriting NextStep.
-func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResult, error) {
+func AddReadItems(r VerbRequest, id, label string, texts []string, materiality ...bool) (PublishResult, error) {
+	material := true
+	if len(materiality) > 1 {
+		return PublishResult{}, fmt.Errorf("read-items add takes one materiality for its items")
+	}
+	if len(materiality) == 1 {
+		material = materiality[0]
+	}
 	if !bareReviewID(label) || strings.Contains(label, "=") {
 		return PublishResult{}, fmt.Errorf("read label must be one non-empty token")
 	}
@@ -170,7 +181,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResul
 				if duplicate {
 					continue
 				}
-				file.ReadItems = append(file.ReadItems, ReadItem{ID: nextReadItemID(file.ReadItems, label), Read: label, Text: text, State: ReadItemOpen, AddedAt: r.stamp()})
+				file.ReadItems = append(file.ReadItems, ReadItem{ID: nextReadItemID(file.ReadItems, label), Read: label, Text: text, Material: &material, State: ReadItemOpen, AddedAt: r.stamp()})
 				added++
 			}
 			if added == 0 {
@@ -290,7 +301,7 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 					return nil, authErr
 				}
 				original := file.ReadItems[index]
-				target.ReadItems = append(target.ReadItems, ReadItem{ID: nextReadItemID(target.ReadItems, original.Read), Read: original.Read, Text: original.Text + " (moved from " + id + ")", State: ReadItemOpen, AddedAt: r.stamp()})
+				target.ReadItems = append(target.ReadItems, ReadItem{ID: nextReadItemID(target.ReadItems, original.Read), Read: original.Read, Text: original.Text + " (moved from " + id + ")", Material: original.Material, State: ReadItemOpen, AddedAt: r.stamp()})
 				targets = append(targets, reference)
 				touchDisplaced(target, r, "read-items-close", targets, targetDisplaced)
 				changes = append(changes, Change{Path: livePath(reference), Content: RenderFile(target)})
@@ -311,24 +322,32 @@ type DoneReadItemsOpenError struct {
 	ItemIDs []string
 }
 
-// Error is the refusal's words: line 1 names the open findings, line 2 the
+// Error is the refusal's words: line 1 names the blocking open findings, line 2 the
 // command that lists them with how each closes (--fixed, --moved or
 // --accepted). Its code is data (RefusalCode).
 func (e *DoneReadItemsOpenError) Error() string {
 	return fmt.Sprintf("goal %s has open review notes %s, so it can't be concluded yet\nrun: metasystem goal notes %s", e.Goal, strings.Join(e.ItemIDs, ", "), e.Goal)
 }
 
-// DoneReadItemsOpenCode is the refusal code of a conclusion with open notes.
+// DoneReadItemsOpenCode is the refusal code of a conclusion with open material notes.
 const DoneReadItemsOpenCode = "GOAL_DONE_READ_ITEMS_OPEN"
 
 // RefusalCode is the refusal's code, for --verbose, --json and records.
 func (e *DoneReadItemsOpenError) RefusalCode() string { return DoneReadItemsOpenCode }
 
 func refuseOpenReadItems(goalID string, file *GoalFile) error {
+	return refuseReadItems(goalID, file, true)
+}
+
+func refuseAllOpenReadItems(goalID string, file *GoalFile) error {
+	return refuseReadItems(goalID, file, false)
+}
+
+func refuseReadItems(goalID string, file *GoalFile, materialOnly bool) error {
 	var open []string
 	if file != nil {
 		for _, item := range file.ReadItems {
-			if item.State == ReadItemOpen {
+			if item.State == ReadItemOpen && (!materialOnly || item.isMaterial()) {
 				open = append(open, item.ID)
 			}
 		}
@@ -340,8 +359,8 @@ func refuseOpenReadItems(goalID string, file *GoalFile) error {
 }
 
 // ReadItemsForRetro returns the retro's ledger section from the accepted tree.
-// A concluded record always reports zero open items; an impossible open item
-// beside it is separately and loudly reported as a ledger defect.
+// Open non-material notes remain visible on concluded goals. An open material
+// item on a concluded goal is separately reported as a ledger defect.
 func ReadItemsForRetro(root string) ([]string, bool, error) {
 	return readItemsForRetro(Endpoint{Root: root})
 }
@@ -381,7 +400,7 @@ func readItemRetroLines(tree *TreeGoals) []string {
 		file := all[id]
 		open := 0
 		for _, item := range file.ReadItems {
-			if item.State == ReadItemOpen && file.State != StateDone {
+			if item.State == ReadItemOpen && (file.State != StateDone || !item.isMaterial()) {
 				open++
 			}
 		}
@@ -390,7 +409,7 @@ func readItemRetroLines(tree *TreeGoals) []string {
 			if item.State != ReadItemOpen {
 				continue
 			}
-			if file.State == StateDone {
+			if file.State == StateDone && item.isMaterial() {
 				lines = append(lines, fmt.Sprintf("LEDGER DEFECT goal=%s concluded with open read item read=%s id=%s text=%s", id, item.Read, item.ID, strconv.Quote(item.Text)))
 				continue
 			}
