@@ -49,6 +49,7 @@ type completingStarter struct {
 	failKind, holdKind string
 	order, ids         []string
 	readOutput         string
+	readVerdict        string
 	readCounts         []bool
 	onStart            func(Record) error
 }
@@ -80,7 +81,7 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 				yes = starter.readCounts[0]
 				starter.readCounts = starter.readCounts[1:]
 			}
-			current.VerdictCounts, current.Measurement.Verdict = &yes, "pass"
+			current.VerdictCounts, current.Measurement.Verdict = &yes, choose(starter.readVerdict, "pass")
 			if starter.readOutput != "" {
 				current.Outputs = []Output{{Path: starter.readOutput, Bytes: 4}}
 			}

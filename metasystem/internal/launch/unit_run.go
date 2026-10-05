@@ -70,6 +70,7 @@ type UnitRound struct {
 	Cause     string `json:"cause,omitempty"`
 	// Material is -1 when the examination has no readable return.
 	Material   int        `json:"material"`
+	Repeats    int        `json:"repeats,omitempty"`
 	BuildModel string     `json:"buildModel"`
 	ReadModel  string     `json:"readModel"`
 	Steps      []UnitStep `json:"steps"`
@@ -202,6 +203,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 		if err := runner.countedCap(record); err != nil {
 			return UnitResult{}, err
+		}
+		if err := runner.roundDivergent(record); err != nil {
+			return UnitResult{Record: record}, err
 		}
 		if err := admitFollowUp(record, request.FollowUp); err != nil {
 			return UnitResult{}, err
@@ -602,6 +606,20 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 		return UnitResult{}, err
 	}
 	round.Material = material
+	// Keep relations before a later read replaces the findings file.
+	round.Repeats = 0
+	for _, step := range round.Steps {
+		if !strings.HasPrefix(step.Name, "read") || !unitStepVerdictCounts(step) || step.LaunchID == "" {
+			continue
+		}
+		if read, err := runner.Manager.Store.Read(step.LaunchID); err == nil {
+			for _, output := range read.Outputs {
+				if data, err := os.ReadFile(output.Path); err == nil {
+					round.Repeats += measuredReadRepeats(string(data))
+				}
+			}
+		}
+	}
 	if err := runner.save(*record); err != nil {
 		return UnitResult{}, err
 	}
@@ -666,31 +684,42 @@ func countedRounds(record UnitRunRecord) (counted, machinery int) {
 }
 
 func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (int, error) {
+	material, _, err := runner.roundFindings(record, round)
+	return material, err
+}
+
+func (runner *UnitRunner) roundFindings(record UnitRunRecord, round UnitRound) (int, int, error) {
 	for _, subject := range record.Subjects {
 		if subject.Round != round.Number || subject.Examination == "" {
 			continue
 		}
 		path := subject.ExaminationReturnPath
 		if path == "" {
-			return -1, nil
+			return -1, 0, nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return -1, err
+			return -1, 0, err
 		}
 		var result struct {
-			Findings []struct{ Material bool } `json:"findings"`
+			Findings []struct {
+				Material bool
+				Relation string
+			} `json:"findings"`
 		}
 		if err := json.Unmarshal(data, &result); err != nil {
-			return -1, fmt.Errorf("read examination return %s: %w", path, err)
+			return -1, 0, fmt.Errorf("read examination return %s: %w", path, err)
 		}
-		material := 0
+		material, repeats := 0, 0
 		for _, finding := range result.Findings {
 			if finding.Material {
 				material++
 			}
+			if repeatedRelation(finding.Relation) {
+				repeats++
+			}
 		}
-		return material, nil
+		return material, repeats, nil
 	}
 	material := 0
 	for _, step := range round.Steps {
@@ -700,7 +729,7 @@ func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (
 			}
 		}
 	}
-	return material, nil
+	return material, round.Repeats, nil
 }
 
 func (runner *UnitRunner) result(record UnitRunRecord, round *UnitRound, step *UnitStep, capped bool) UnitResult {

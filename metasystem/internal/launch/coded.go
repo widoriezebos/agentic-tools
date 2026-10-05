@@ -75,5 +75,44 @@ func (runner *UnitRunner) countedCap(record UnitRunRecord) error {
 		Reason: fmt.Errorf("unit %s has used its %d counted rounds; nothing was started. %s", record.Unit, record.CountedCap, outcome), Run: next}, Next: nextArgs}
 }
 
+func (runner *UnitRunner) roundDivergent(record UnitRunRecord) error {
+	var reads []UnitRound
+	for _, round := range record.Rounds {
+		read := false
+		for _, step := range round.Steps {
+			if strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
+				count := measuredMaterialCount(Record{Kind: "read", Measurement: Measurement{Verdict: "VERDICT: " + strings.TrimPrefix(step.Verdict, "VERDICT: ")}})
+				read = read || count != nil
+			}
+		}
+		for _, subject := range record.Subjects {
+			if subject.Round == round.Number && subject.Examination != "" {
+				read = subject.ExaminationReturnPath != ""
+			}
+		}
+		if read {
+			reads = append(reads, round)
+		}
+	}
+	if len(reads) < 2 {
+		return nil
+	}
+	newest, repeats, err := runner.roundFindings(record, reads[len(reads)-1])
+	if err != nil || newest <= 0 {
+		return err
+	}
+	previous, _, err := runner.roundFindings(record, reads[len(reads)-2])
+	if err != nil || previous < 0 {
+		return err
+	}
+	if newest >= previous || repeats > 0 {
+		return &CodedError{Code: "UNIT_ROUND_DIVERGENT", Facts: unitFacts(record.Unit, record.Goal, fmt.Sprintf("run=%s previous=%d newest=%d repeats=%d", record.ID, previous, newest, repeats)),
+			Reason:     fmt.Errorf("the last two reads of %s found %d, then %d material findings, %d of them repeats; nothing was started", record.Unit, previous, newest, repeats),
+			Run:        fmt.Sprintf("metasystem work build %s --work NEW --brief FILE --check ...", record.Goal),
+			Background: fmt.Sprintf("take-a-step-back; land with metasystem work review %s --work %s; or split with metasystem work build %s --work NEW --brief FILE --check ...", record.Goal, record.Unit, record.Goal)}
+	}
+	return nil
+}
+
 // IsCode says whether err carries the refusal code.
 func IsCode(err error, code string) bool { return ErrorCode(err) == code }

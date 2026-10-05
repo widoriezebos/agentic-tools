@@ -251,6 +251,19 @@ func RecordLine(record Record, root string) string {
 
 var readFixVerdict = regexp.MustCompile(`^VERDICT: fix first \(([0-9]+) material findings\)$`)
 
+var repeatRelation = regexp.MustCompile(`^(fold-not-holding|same-rule-as [1-9][0-9]*)$`)
+
+func repeatedRelation(relation string) bool { return repeatRelation.MatchString(relation) }
+
+func measuredReadRepeats(report string) (repeats int) {
+	for _, line := range strings.Split(report, "\n") {
+		if relation, ok := strings.CutPrefix(strings.TrimSpace(line), "RELATION: "); ok && repeatedRelation(relation) {
+			repeats++
+		}
+	}
+	return
+}
+
 func measuredMaterialCount(record Record) *int {
 	switch record.Kind {
 	case "critique":

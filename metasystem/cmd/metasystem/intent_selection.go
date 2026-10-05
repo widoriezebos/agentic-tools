@@ -754,7 +754,7 @@ func runIntentRevise(inv *intentInvocation) int {
 		case launch.IsCode(err, "UNIT_ROUND_LIMIT"):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain + "; nothing was launched", Details: details,
 				next: inv.publicArgv("goal", "budget", id, "BOX"), nextReason: "metasystem goal budget gives the goal a larger budget, such as 1d/10/720m/1/5"})
-		case launch.IsCode(err, "UNIT_ROUND_CAP"):
+		case launch.IsCode(err, "UNIT_ROUND_CAP"), launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
 			return inv.render(inv.unitOutcome(runner, revised.UnitResult, err, targets, again))
 		}
 	}

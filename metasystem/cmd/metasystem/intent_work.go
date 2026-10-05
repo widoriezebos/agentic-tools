@@ -1134,6 +1134,15 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
+			var divergence *launch.CodedError
+			if errors.As(err, &divergence) {
+				plain = divergence.Reason.Error()
+			}
+			goalID, unit := record.Goal, record.Unit
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				next:       inv.publicArgv("work", "build", goalID, "--work", "NEW", "--brief", "FILE", "--check", "..."),
+				nextReason: fmt.Sprintf("take-a-step-back; or land with metasystem work review %s --work %s", goalID, unit)}
 		case launch.IsCode(err, "UNIT_ROUND_CAP"):
 			var cap *launch.UnitRoundCapError
 			if errors.As(err, &cap) {

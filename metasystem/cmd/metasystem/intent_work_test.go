@@ -877,3 +877,36 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 		}
 	}
 }
+
+func TestIntentReviseHonoursDivergence(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("stop.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "stopped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	runner := &launch.UnitRunner{Root: bed.unitRoot}
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	record.MaxRounds = 20
+	record.Rounds = []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}},
+		{Number: 2, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}}}
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launched := len(bed.starter.launched())
+	for _, args := range [][]string{{"work", "revise", bed.id, "--work", "stopped unit", "--brief", brief}, {"work", "revise", "run:" + run, "--brief", brief}} {
+		code, refused, _ := bed.work(args...)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_DIVERGENT") ||
+			refused.Summary != "the last two reads of stopped unit found 3, then 3 material findings, 0 of them repeats; nothing was started" ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "build", bed.id, "--work", "NEW", "--brief", "FILE", "--check", "..."}) || len(bed.starter.launched()) != launched {
+			t.Fatalf("divergence refusal: code=%d %+v", code, refused)
+		}
+	}
+}

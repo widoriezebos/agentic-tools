@@ -154,6 +154,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if err := runner.countedCap(record); err != nil {
 			return UnitRevisionResult{Current: current}, err
 		}
+		if err := runner.roundDivergent(record); err != nil {
+			return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
+		}
 		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
 			RequestedAtUnixSec: runner.Manager.Now().Unix()}
 		directory := filepath.Join(runner.runDir(record.ID), "revisions")
