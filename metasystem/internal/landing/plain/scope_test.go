@@ -216,6 +216,117 @@ func TestABatchsFirstProofIsFull(t *testing.T) {
 	}
 }
 
+func TestARecordsOnlyBatchIsProvedScopedOnMainsGreen(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"selected groups", "changed environment", "main moved"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			b.git.batches[b.base.Commit] = ""
+			b.git.onMain = map[string]bool{b.base.Commit: true}
+			paths := "metasystem/plans/page.md\nmetasystem/plans/goals/fix.md"
+			b.git.changed[[2]string{"origin/main", b.git.tree}] = paths
+			if name == "main moved" {
+				paths += "\nmetasystem/plans/README.md"
+			}
+			b.git.changed[[2]string{b.base.Tree, b.git.tree}] = paths
+			// A newer full green that has not reached main cannot be the base.
+			other := b.base
+			other.Commit, other.Tree, other.At = "unlanded", "unlanded-tree", bedNow.Add(-time.Minute).Format(time.RFC3339)
+			b.git.batches[other.Commit] = "other-batch"
+			b.save(t, other)
+			groups := "plans shared"
+			b.seams.Command = func(command *exec.Cmd) error {
+				b.calls = append(b.calls, command)
+				environment := b.base.Environment
+				if name == "changed environment" {
+					environment = "new image toolchain"
+				}
+				fmt.Fprintln(command.Stdout, "landing environment "+environment)
+				for _, group := range strings.Fields(commandEnv(command, "LANDING_PROOF_GROUPS")) {
+					fmt.Fprintf(command.Stdout, "landing group %s green 12\n", group)
+				}
+				fmt.Fprintln(command.Stdout, "LANDING-CHECKED\t0")
+				return nil
+			}
+			result := b.run(t)
+			if len(b.calls) == 0 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "scoped" || commandEnv(b.calls[0], "LANDING_PROOF_BASE") != b.base.Tree || commandEnv(b.calls[0], "LANDING_PROOF_GROUPS") != groups {
+				t.Fatalf("records-only command: %+v, calls %d", result, len(b.calls))
+			}
+			if name == "changed environment" {
+				if result.Result != Green || result.Scope != "full" || !strings.Contains(result.ScopeReason, "environment changed") || result.Base != "" || len(b.calls) != 2 || commandEnv(b.calls[1], "LANDING_PROOF_SCOPE") != "full" {
+					t.Fatalf("environment rerun: %+v, calls %d", result, len(b.calls))
+				}
+				return
+			}
+			if result.Result != Green || result.Scope != "scoped" || !strings.Contains(result.ScopeReason, "records-only batch") || result.Base != b.base.Tree || result.FullTree != b.base.Tree || result.FullAt != b.base.At || strings.Join(result.Ran, " ") != groups || len(b.calls) != 1 {
+				t.Fatalf("records-only proof: %+v, calls %d", result, len(b.calls))
+			}
+			if record := b.record(t); record.Base != b.base.Tree || !reflect.DeepEqual(record.ChangedPaths, strings.Split(paths, "\n")) {
+				t.Fatalf("records-only scope record: %+v", record)
+			}
+			writePushRecords(t, b.install, Pushed{Tree: result.Tree, At: bedNow.Format(time.RFC3339)})
+			if due, err := fullProofDue(b.install, bedNow.Add(51*time.Minute)); err != nil || !due {
+				t.Fatalf("records-only push owes no full proof: %v, %v", due, err)
+			}
+		})
+	}
+}
+
+func TestARecordsOnlyBatchWithoutARecentGreenIsFull(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"missing", "one hour old", "stale", "scoped", "red", "unreadable time", "not on main"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			b.git.batches[b.base.Commit] = ""
+			b.git.onMain = map[string]bool{b.base.Commit: name != "not on main"}
+			b.git.changed[[2]string{"origin/main", b.git.tree}] = "metasystem/plans/page.md"
+			if err := os.Remove(resultsPath(b.install)); err != nil {
+				t.Fatal(err)
+			}
+			switch name {
+			case "one hour old":
+				b.base.At = bedNow.Add(-time.Hour).Format(time.RFC3339)
+			case "stale":
+				b.base.At = bedNow.Add(-61 * time.Minute).Format(time.RFC3339)
+			case "scoped":
+				b.base.Scope = "scoped"
+			case "red":
+				b.base.Result = Red
+			case "unreadable time":
+				b.base.At = "bad time"
+			}
+			if name != "missing" {
+				b.save(t, b.base)
+			}
+			result := b.run(t)
+			if result.Result != Green || result.Scope != "full" || result.Base != "" || !strings.Contains(result.ScopeReason, "records-only batch") || !strings.Contains(result.ScopeReason, "no full green on main under an hour") || result.FullTree != result.Tree || result.FullAt != result.At || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
+				t.Fatalf("records without a recent green: %+v, calls %d", result, len(b.calls))
+			}
+		})
+	}
+}
+
+func TestABatchWithACodePathKeepsItsFullFirstProof(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"metasystem/internal/app.go", "metasystem/plans/README.md", "metasystem/records/README.md", "unknown/file"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			b.git.batches[b.base.Commit] = ""
+			b.git.onMain = map[string]bool{b.base.Commit: true}
+			paths := "metasystem/plans/page.md\n" + path
+			b.git.changed[[2]string{"origin/main", b.git.tree}] = paths
+			b.git.changed[[2]string{b.base.Tree, b.git.tree}] = paths
+			result := b.run(t)
+			if result.Result != Green || result.Scope != "full" || result.ScopeReason != "no green proof of this batch yet" || result.Base != "" || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" || commandEnv(b.calls[0], "LANDING_PROOF_GROUPS") != "" {
+				t.Fatalf("mixed batch's first proof: %+v, calls %d", result, len(b.calls))
+			}
+		})
+	}
+}
+
 func TestAScopedChainOlderThanAnHourIsFull(t *testing.T) {
 	t.Parallel()
 	for _, age := range []time.Duration{time.Hour, 61 * time.Minute} {

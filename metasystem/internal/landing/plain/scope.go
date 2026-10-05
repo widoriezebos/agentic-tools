@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -63,8 +65,32 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 			break
 		}
 	}
+	recordsOnly := false
 	if d.base.Scope == "" {
-		return d
+		changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", "origin/main", running.Tree)
+		if err != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, strings.Split(strings.TrimSpace(changed), "\n")) {
+			return d
+		}
+		recordsOnly = true
+		d.ScopeReason = "records-only batch has no full green on main under an hour old"
+		for i := len(results) - 1; i >= 0; i-- {
+			candidate := results[i]
+			if candidate.Result != Green || candidate.Scope != "full" {
+				continue
+			}
+			at, err := time.Parse(time.RFC3339, candidate.At)
+			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour {
+				continue
+			}
+			if _, err := seams.git(checkout, "merge-base", "--is-ancestor", candidate.Commit, "origin/main"); err == nil {
+				d.base = candidate
+				d.base.FullTree, d.base.FullAt = candidate.Tree, candidate.At
+				break
+			}
+		}
+		if d.base.Scope == "" {
+			return d
+		}
 	}
 	fullAt, err := time.Parse(time.RFC3339, d.base.FullAt)
 	if err != nil {
@@ -142,8 +168,34 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 	default:
 		d.Scope, d.Base = "scoped", d.base.Tree
 		d.ScopeReason = "the batch's full proof is under an hour old; only groups whose inputs cover changed paths run"
+		if recordsOnly {
+			d.ScopeReason = "records-only batch; main's full green is under an hour old; only groups whose inputs cover changed paths run"
+		}
 	}
 	return d
+}
+
+func recordsOnlyPaths(install, checkout string, paths []string) bool {
+	classes, err := pathclass.Load()
+	if err != nil {
+		return false
+	}
+	prefix, err := filepath.Rel(checkout, install)
+	if err != nil {
+		return false
+	}
+	resolver := stateroot.NewResolver(func(string) (string, error) { return checkout, nil }, nil)
+	for _, path := range paths {
+		owner, mode, err := resolver.OwnerForInstallation(install, path)
+		if err != nil {
+			return false
+		}
+		class := classes.ResolveRepositoryPath(pathclass.Mode(mode), owner, filepath.ToSlash(prefix), path).Class
+		if class != pathclass.Record && class != pathclass.Ledger {
+			return false
+		}
+	}
+	return len(paths) != 0
 }
 
 func sameBatch(a, b string) bool {
