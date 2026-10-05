@@ -205,7 +205,7 @@ func (b *seatBed) end(id, state, result string) {
 	if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
-	b.launcher.states[id] = SeatLaunchState{Found: true, Terminal: true, State: state, ResultPath: path}
+	b.launcher.states[id] = SeatLaunchState{Found: true, Terminal: true, State: state, ResultPath: path, FinishedAt: b.now.Format(time.RFC3339Nano)}
 }
 
 func (b *seatBed) records() []SeatRecord {

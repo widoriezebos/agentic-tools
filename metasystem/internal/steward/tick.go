@@ -485,7 +485,11 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		state := reapSeatLaunches(repoRoot, *dependencies.Seat, cfg.now())
 		seat = &state
 	}
-	outageMark, providerOutage := outage.StandingAt(repoRoot, cfg.now())
+	var log func(string)
+	if dependencies.Seat != nil {
+		log = dependencies.Seat.Log
+	}
+	outageMark, providerOutage := standingProviderOutage(repoRoot, cfg.now(), log)
 	if providerOutage && marks == prev.Marks {
 		ev = prev
 	}

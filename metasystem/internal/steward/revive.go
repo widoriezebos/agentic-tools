@@ -302,7 +302,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 		}
 	}
 	now := revivalNow()
-	_, providerOutage := outage.StandingAt(repoRoot, now)
+	_, providerOutage := standingProviderOutage(repoRoot, now, nil)
 	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
