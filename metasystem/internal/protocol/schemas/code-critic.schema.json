@@ -45,7 +45,6 @@
           "id": {"type": "string"},
           "severity": {"enum": ["critical", "high", "medium", "low"]},
           "material": {"type": "boolean"},
-          "relation": {"type": "string", "pattern": "^(new|fold-not-holding|same-rule-as [1-9][0-9]*)$"},
           "claim": {"type": "string"},
           "evidence": {"type": "string"}
         }

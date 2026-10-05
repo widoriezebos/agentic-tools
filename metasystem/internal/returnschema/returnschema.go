@@ -213,9 +213,35 @@ func materialize(role, source string, data []byte, version int, outputPath strin
 			return err
 		}
 	}
+	if role == "code-critic" && version >= 4 {
+		addFindingRelation(schema)
+	}
 	encoded, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(outputPath, append(encoded, '\n'), 0o644)
+}
+
+// addFindingRelation gives a code critic's finding its relation to the
+// previous read: new, a fold that does not hold, or the same rule as an
+// earlier finding (unit-rounds D4). Versions 1 and 2 are frozen byte
+// contracts and structured output requires every property, so the member is
+// added, required, from version 4 on, never in the base schema.
+func addFindingRelation(schema map[string]any) {
+	properties, _ := schema["properties"].(map[string]any)
+	findings, _ := properties["findings"].(map[string]any)
+	items, _ := findings["items"].(map[string]any)
+	row, ok := items["properties"].(map[string]any)
+	if !ok {
+		return
+	}
+	row["relation"] = map[string]any{"type": "string", "pattern": "^(new|fold-not-holding|same-rule-as [1-9][0-9]*)$"}
+	required, _ := items["required"].([]any)
+	for _, name := range required {
+		if name == "relation" {
+			return
+		}
+	}
+	items["required"] = append(required, "relation")
 }
