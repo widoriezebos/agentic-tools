@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "goal": "unit-rounds-converge-or-stop",
+  "unit": "design",
+  "subject": {
+    "commit": "3bce41bc7d13b7b7960b090011511bbd3365ff90",
+    "parent": "177636963000de73efcf1b4e2e3460a42d9be1cf",
+    "tree": "dbfba18f9fccce0d757516d4229adcc61472daa1",
+    "patchDigest": "9ad808c47d4519be77934e4f2f4d88182c936e9013a6d0cc46fd4d4b64ad3376",
+    "unitDigest": "d9f2d0cd49fa13e837baba49b38a1cc606251545b0bec83d48b7d1f6740f9057"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-837a0ef3babf2b7927888dda",
+    "round": 1,
+    "closureSha256": "4a607d29bd2d8393b35713661bbce6f840ab31ae2e2866915763e8bda5f12149"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "dbfba18f9fccce0d757516d4229adcc61472daa1",
+    "runId": "goal-read-gate-20261005t094109z-c4db7b9b58f350b4"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f8078d477dd83997b63c95d00214760b37788289",
+      "digest": "fe1ddae0f68d577298fb5fb739c0f80a319e2bcbb6e45edb6d9a34738d5685a9"
+    },
+    {
+      "kind": "read",
+      "commit": "177636963000de73efcf1b4e2e3460a42d9be1cf",
+      "digest": "042f7f43608364bd351419dfebbbb18326caa84772fe817a1aa733ccc6a47f0a"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_loop_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_review_draft_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_design_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/internal/dispatch/design_cap_five_close_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/internal/dispatch/finding_register_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/internal/dispatch/round_two_close_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/internal/dispatch/severity_tiered_rigor_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    },
+    {
+      "path": "metasystem/internal/readsubject/landable_register_test.go",
+      "readerWord": "reviewed by critic root code-critic-837a0ef3babf2b7927888dda"
+    }
+  ],
+  "sha256": "ae0365c8392dfc145645db399bb85440b0497ddde04376d8b23a6f4492b2f6d3"
+}
