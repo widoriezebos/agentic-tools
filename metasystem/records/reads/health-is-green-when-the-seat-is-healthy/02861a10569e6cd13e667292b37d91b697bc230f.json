@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "stuck-detector",
+  "subject": {
+    "commit": "02861a10569e6cd13e667292b37d91b697bc230f",
+    "parent": "70f3a86610ddc9bddec3b2be8ced8e4134086e53",
+    "tree": "98f8496840b140df15c0dd0f0201d55719b478f2",
+    "patchDigest": "5eb3cb74cd8f2a49c00fe5e39f69370a8fce2615b2db06b4c618ce8eb140d723",
+    "unitDigest": "55b7c3f86008133af0e051353d4f9b775057fe107336a8002a8b14b82a9ab266"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c07e2b150459161cc8386b73",
+    "round": 1,
+    "closureSha256": "0fe17085b4f6efb3f0ef0a693e4ee5fce66fab1a959bdd20f7551c7d1a843b12"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "98f8496840b140df15c0dd0f0201d55719b478f2",
+    "runId": "goal-read-gate-20261005t020400z-02042a8a22591609"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/config/validate_test.go",
+      "readerWord": "reviewed by critic root code-critic-c07e2b150459161cc8386b73"
+    },
+    {
+      "path": "metasystem/internal/steward/pattern_tick_test.go",
+      "readerWord": "reviewed by critic root code-critic-c07e2b150459161cc8386b73"
+    },
+    {
+      "path": "metasystem/internal/ui/httpd/board_test.go",
+      "readerWord": "reviewed by critic root code-critic-c07e2b150459161cc8386b73"
+    }
+  ],
+  "sha256": "df9e2a0270f143333feffa6482534980c5c8d77bafeb9c4ea5f54749a2fac0c9"
+}
