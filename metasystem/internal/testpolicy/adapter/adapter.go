@@ -20,6 +20,9 @@ type Closure struct {
 	Module     string
 	Changed    []string
 	Dependents []string
+	// Root is the directory in which the closure's test steps run.
+	// An adapter that leaves it empty uses the worktree root.
+	Root string
 }
 
 // Units returns the changed and dependent units, each once, in order.
@@ -66,6 +69,8 @@ type Adapter interface {
 	// Closure computes the changed units between base and tree and the units
 	// that depend on them.
 	Closure(root, base, tree string) (Closure, error)
+	// TestSteps tests each changed unit whole, without a test-name selector.
+	TestSteps(closure Closure) []GateStep
 	// OwnerUnit maps a failure to the closure unit that owns its test; ok is
 	// false when no unit of the closure's module owns it.
 	OwnerUnit(failure Failure, closure Closure) (string, bool)
@@ -158,6 +163,8 @@ func Detect(root string) (Adapter, error) {
 type opaque struct{ reportsIdentities bool }
 
 func (opaque) Closure(_, _, tree string) (Closure, error) { return Closure{Tree: tree}, nil }
+
+func (opaque) TestSteps(Closure) []GateStep { return nil }
 
 func (opaque) OwnerUnit(Failure, Closure) (string, bool) { return "", false }
 

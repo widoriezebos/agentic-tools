@@ -130,6 +130,9 @@ type UnitRunner struct {
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// PlanProof selects proof after the build. A nil result retains the
+	// caller's commands; selected commands are frozen for this round's retries.
+	PlanProof func(UnitPlan) ([]ProofCommand, error)
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
@@ -380,6 +383,18 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return runner.finish(record, round, "build-failed")
 		}
 	}
+	planned, err := runner.roundProofPlan(plan, round.Directory, len(round.Steps) > buildCount)
+	if err != nil {
+		round.Steps = append(round.Steps, UnitStep{Name: "proof:plan", State: StepFailed, Reason: err.Error()})
+		for _, command := range proofCommands(plan) {
+			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "proof-red"})
+		}
+		if plan.HasRead() {
+			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "proof-red", Model: round.ReadModel})
+		}
+		return runner.finish(record, round, "proof-red")
+	}
+	plan = planned
 	if len(round.Steps) == buildCount {
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
@@ -474,6 +489,32 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return runner.result(*record, round, &round.Steps[stop], capped), err
 	}
 	return runner.finish(record, round, outcome)
+}
+
+func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool) (UnitPlan, error) {
+	path := filepath.Join(directory, "plan.json")
+	if _, err := os.Stat(path); err == nil {
+		return ReadUnitPlan(path)
+	} else if !os.IsNotExist(err) {
+		return plan, err
+	}
+	if runner.PlanProof == nil || proofPlanned {
+		return plan, nil
+	}
+	commands, err := runner.PlanProof(plan)
+	if err != nil || commands == nil {
+		return plan, err
+	}
+	plan.Proof = commands
+	if err := plan.resolveAndValidate(directory); err != nil {
+		return plan, err
+	}
+	data, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return plan, err
+	}
+	_, err = atomicfile.WriteText(path, string(data)+"\n", directory)
+	return plan, err
 }
 
 // readSequence is the round's reads under the shared read partition policy.

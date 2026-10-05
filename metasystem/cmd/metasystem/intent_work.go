@@ -35,6 +35,7 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -66,6 +67,7 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
 	designGate designGateOwners
+	adapter    func(string) (adapter.Adapter, error)
 	units      func(layout stateroot.Layout) *launch.UnitRunner
 	git        func(dir string, args ...string) ([]byte, error)
 	wait       func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
@@ -99,6 +101,9 @@ func intentConfPath(layout stateroot.Layout) string {
 
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
+	if owners.adapter == nil {
+		owners.adapter = adapter.Detect
+	}
 	if owners.inspectRead == nil {
 		owners.inspectRead = branch.InspectBranchRead
 	}
@@ -425,7 +430,28 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	runner := inv.work().units(inv.layout)
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
+	runner.PlanProof = inv.unitProof
 	return runner
+}
+
+func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofCommand, error) {
+	bound, err := inv.work().adapter(plan.Worktree)
+	if err != nil || bound == nil {
+		return nil, nil
+	}
+	closure, err := bound.Closure(plan.Worktree, plan.Base, "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("cannot plan the round's tests: %w", err)
+	}
+	directory := closure.Root
+	if directory == "" {
+		directory = plan.Worktree
+	}
+	proof := []launch.ProofCommand{}
+	for _, step := range bound.TestSteps(closure) {
+		proof = append(proof, launch.ProofCommand{Name: step.Name, Dir: directory, Argv: append([]string{}, step.Args...), Env: []string{}})
+	}
+	return append(proof, plan.Proof...), nil
 }
 
 // unitLaunchAuthority is asked before every build or read launch of a unit
@@ -1184,6 +1210,15 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		verdict = strings.Join(verdicts, "; ")
 	}
 	text := []string{line}
+	for _, step := range round.Steps {
+		if strings.HasPrefix(step.Name, "proof:") && (data["plan"] != record.Plan || step.State == launch.StepFailed) {
+			line := step.Name + ": " + string(step.State)
+			if step.Reason != "" {
+				line += ": " + step.Reason
+			}
+			text = append(text, line)
+		}
+	}
 	if round.ReadModel == "" {
 		text = append(text, "No read ran this round; work review asks the committed read.")
 	} else if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
@@ -1260,6 +1295,10 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	data["round"], data["outcome"], data["steps"], data["directory"] = round.Number, round.Outcome, round.Steps, round.Directory
+	path := filepath.Join(round.Directory, "plan.json")
+	if _, err := os.Stat(path); err == nil {
+		data["plan"] = path
+	}
 	verdicts, findings := []string{}, []string{}
 	clean := false
 	for index, step := range round.Steps {

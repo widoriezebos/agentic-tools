@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +26,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -42,10 +46,11 @@ type workBed struct {
 	ledger       sync.Mutex
 	// readDirs are the read-findings directories this bed's builds created
 	// under the temporary root, found through each result's plan.
-	readDirsMu sync.Mutex
-	readDirs   map[string]bool
-	designGate designGateOwners
-	config     func(key, confPath string) (value, source string, code int, err error)
+	readDirsMu     sync.Mutex
+	readDirs       map[string]bool
+	designGate     designGateOwners
+	config         func(key, confPath string) (value, source string, code int, err error)
+	testingAdapter adapter.Adapter
 	// primary, when set, is the main tree git worktree list names first;
 	// otherwise that is the bed's root.
 	primary string
@@ -275,6 +280,7 @@ func (b *workBed) workOwners() intentOwners {
 		claimCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
 	}
 	owners.work = intentWorkOwners{
+		adapter:    func(string) (adapter.Adapter, error) { return b.testingAdapter, nil },
 		designGate: b.designGate,
 		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
@@ -302,6 +308,205 @@ func (b *workBed) workOwners() intentOwners {
 		},
 	}
 	return owners
+}
+
+type workTestingAdapter struct {
+	*fakeadapter.Adapter
+	closure func(string, string, string) (adapter.Closure, error)
+}
+
+func (a workTestingAdapter) Closure(root, base, tree string) (adapter.Closure, error) {
+	return a.closure(root, base, tree)
+}
+
+func TestAdapterStepsComeBeforeTheCheck(t *testing.T) {
+	t.Parallel()
+	for _, withAdapter := range []bool{true, false} {
+		for _, reviseRun := range []bool{true, false} {
+			t.Run(fmt.Sprintf("adapter=%t/run=%t", withAdapter, reviseRun), func(t *testing.T) {
+				t.Parallel()
+				bed := newWorkBed(t)
+				fake := fakeadapter.New()
+				fake.Steps = []adapter.GateStep{{Name: "payments", Args: []string{"fakebuild", "whole", "payments"}}, {Name: "ledger", Args: []string{"fakebuild", "whole", "ledger"}}}
+				fake.Scripted.Root = t.TempDir()
+				calls := 0
+				if withAdapter {
+					bed.testingAdapter = workTestingAdapter{fake, func(root, base, tree string) (adapter.Closure, error) {
+						calls++
+						launched := bed.starter.launched()
+						if root != bed.worktree || base != bed.head || tree != "HEAD" || launched[len(launched)-1] != "build" {
+							t.Fatalf("closure before build or wrong inputs: %s %s %s %v", root, base, tree, launched)
+						}
+						return fake.Scripted, nil
+					}}
+				}
+				brief := bed.brief("proof.md", "Build the unit.\n")
+				code, result, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+				for round := 1; round <= 2; round++ {
+					if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" {
+						t.Fatalf("round %d: %d %+v", round, code, result)
+					}
+					data := resultData(t, result)
+					plan, err := launch.ReadUnitPlan(data["plan"].(string))
+					want := []launch.ProofCommand{}
+					if withAdapter {
+						for _, step := range fake.Steps {
+							want = append(want, launch.ProofCommand{Name: step.Name, Dir: fake.Scripted.Root, Argv: step.Args, Env: []string{}})
+						}
+					}
+					want = append(want, launch.ProofCommand{Name: "check", Dir: bed.worktree, Argv: workArgv, Env: []string{}})
+					if err != nil || !reflect.DeepEqual(plan.Proof, want) || withAdapter && calls != round {
+						t.Fatalf("round %d: proof=%+v want=%+v calls=%d err=%v", round, plan.Proof, want, calls, err)
+					}
+					steps := data["steps"].([]any)
+					for index, command := range want {
+						step := steps[index+1].(map[string]any)
+						if step["name"] != "proof:"+command.Name || step["state"] != "passed" {
+							t.Fatalf("proof report: %+v", result)
+						}
+					}
+					if withAdapter {
+						command, rest, _ := resolveIntentArgv([]string{"work", "build", "run:" + data["run"].(string)})
+						var output bytes.Buffer
+						if code := runIntentIn(command, rest, &output, io.Discard, bed.root(), bed.workOwners()); code != 0 {
+							t.Fatalf("plain report: %d %s", code, &output)
+						}
+						for _, step := range want {
+							if !strings.Contains(output.String(), "proof:"+step.Name+": passed") {
+								t.Fatalf("plain report omitted %s: %s", step.Name, &output)
+							}
+						}
+					}
+					if round == 1 {
+						correction := bed.brief("correction.md", "Correct the unit.\n")
+						if reviseRun {
+							code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", correction)
+						} else {
+							code, result, _ = bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestIntentWorkAdapterProofRetainedOnResume(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	fake := fakeadapter.New()
+	fake.Steps = []adapter.GateStep{{Name: "whole", Args: []string{"fakebuild", "whole"}}}
+	bed.testingAdapter = fake
+	bed.starter.hold = "proof"
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	code, held, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 3 {
+		t.Fatalf("held proof: %d %+v", code, held)
+	}
+	data := resultData(t, held)
+	step := data["steps"].([]any)[1].(map[string]any)
+	if _, err := bed.manager.Store.Update(step["launchId"].(string), func(record *launch.Record) error {
+		code := 0
+		record.State, record.ExitCode = launch.Completed, &code
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bed.starter.hold, bed.starter.fail["proof"] = "", true
+	fake.Steps = []adapter.GateStep{{Name: "changed", Args: []string{"different"}}}
+	code, resumed, _ := bed.work("work", "wait", "run:"+data["run"].(string))
+	steps := resultData(t, resumed)["steps"].([]any)
+	if code != 0 || resultData(t, resumed)["outcome"] != "proof-red" || !slices.Equal(*fake.Calls, []string{"Closure", "TestSteps"}) ||
+		steps[1].(map[string]any)["name"] != "proof:whole" || steps[1].(map[string]any)["state"] != "passed" || steps[2].(map[string]any)["state"] != "failed" {
+		t.Fatalf("resume: %d %+v calls=%v", code, resumed, *fake.Calls)
+	}
+}
+
+func TestIntentWorkAdapterPlanningFailureEndsRoundRed(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, reason string
+		closureError error
+		steps        []adapter.GateStep
+	}{
+		{name: "closure", reason: "reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'",
+			closureError: errors.New("reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'")},
+		{name: "invalid-steps", reason: "proof[0].argv", steps: []adapter.GateStep{{Name: "broken"}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newWorkBed(t)
+			fake := fakeadapter.New()
+			fake.Steps = row.steps
+			bed.testingAdapter = workTestingAdapter{fake, func(string, string, string) (adapter.Closure, error) {
+				return fake.Scripted, row.closureError
+			}}
+			brief := bed.brief("proof.md", "Read each round: yes\nBuild the unit.\n")
+			code, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+			data := resultData(t, failed)
+			if code != 0 || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
+				t.Fatalf("planning failure: %d %+v", code, failed)
+			}
+			steps := data["steps"].([]any)
+			if len(steps) != 4 || steps[0].(map[string]any)["state"] != "passed" ||
+				steps[1].(map[string]any)["name"] != "proof:plan" || steps[1].(map[string]any)["state"] != "failed" ||
+				!strings.Contains(steps[1].(map[string]any)["reason"].(string), row.reason) ||
+				steps[2].(map[string]any)["name"] != "proof:check" || steps[2].(map[string]any)["state"] != "skipped" ||
+				steps[3].(map[string]any)["name"] != "read" || steps[3].(map[string]any)["state"] != "skipped" {
+				t.Fatalf("round report: %+v", failed)
+			}
+			run := data["run"].(string)
+			code, waited, _ := bed.work("work", "wait", "run:"+run)
+			if code != 0 || !reflect.DeepEqual(resultData(t, waited)["steps"], steps) || !slices.Equal(bed.starter.launched(), []string{"build"}) {
+				t.Fatalf("wait repeated planning: %d %+v launches=%v", code, waited, bed.starter.launched())
+			}
+			command, rest, _ := resolveIntentArgv([]string{"work", "build", "run:" + run})
+			var output bytes.Buffer
+			if code := runIntentIn(command, rest, &output, io.Discard, bed.root(), bed.workOwners()); code != 0 || !strings.Contains(strings.Join(strings.Fields(output.String()), " "), row.reason) {
+				t.Fatalf("plain round report: %d %s", code, &output)
+			}
+			correction := bed.brief("correction.md", "Correct the unit.\n")
+			code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+			if code != 0 || resultData(t, revised)["run"] != run || resultData(t, revised)["round"] != float64(2) ||
+				resultData(t, revised)["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
+				t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
+			}
+		})
+	}
+}
+
+func TestIntentWorkAdapterClosureFailureAdmitsRevise(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.testingAdapter = workTestingAdapter{fakeadapter.New(), func(string, string, string) (adapter.Closure, error) {
+		return adapter.Closure{}, errors.New("reverse dependents: parse internal/broken.go: expected 'package', found 'EOF'")
+	}}
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	_, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	correction := bed.brief("correction.md", "Correct the unit.\n")
+	code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+	data := resultData(t, revised)
+	if code != 0 || data["run"] != resultData(t, failed)["run"] || data["round"] != float64(2) ||
+		data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
+		t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
+	}
+}
+
+func TestIntentWorkNoAdapterProofRetainedOnResume(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.starter.hold = "proof"
+	brief := bed.brief("proof.md", "Build the unit.\n")
+	code, held, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 3 {
+		t.Fatalf("held proof: %d %+v", code, held)
+	}
+	fake := fakeadapter.New()
+	bed.testingAdapter = fake
+	code, resumed, _ := bed.work("work", "wait", "run:"+resultData(t, held)["run"].(string))
+	if code != 3 || len(*fake.Calls) != 0 || resultData(t, resumed)["plan"] != resultData(t, held)["plan"] {
+		t.Fatalf("check-only proof was replanned: %d %+v calls=%v", code, resumed, *fake.Calls)
+	}
 }
 
 // work runs one public command with --json placed before any --check, so

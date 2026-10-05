@@ -4,6 +4,9 @@
 package goadapter
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -32,6 +35,9 @@ func (Adapter) Detects(root string) bool { return unitGateModuleRoot(root) != ""
 // Closure selects the changed packages and their reverse dependents; tree
 // HEAD compares base with the working tree, untracked files included.
 func (Adapter) Closure(root, base, tree string) (adapter.Closure, error) {
+	if moduleRoot := unitGateModuleRoot(root); moduleRoot != "" {
+		root = moduleRoot
+	}
 	var selection UnitPackages
 	var err error
 	if tree == "HEAD" {
@@ -39,7 +45,19 @@ func (Adapter) Closure(root, base, tree string) (adapter.Closure, error) {
 	} else {
 		selection, err = SelectUnitPackages(root, base, tree)
 	}
-	return closureOf(selection), err
+	closure := closureOf(selection)
+	closure.Root = root
+	return closure, err
+}
+
+// TestSteps runs each changed package whole; dependents remain the lane's proof.
+func (Adapter) TestSteps(closure adapter.Closure) []adapter.GateStep {
+	steps := make([]adapter.GateStep, 0, len(closure.Changed))
+	for index, unit := range closure.Changed {
+		steps = append(steps, adapter.GateStep{Name: fmt.Sprintf("package-%d", index+1),
+			Args: []string{"go", "test", "-count=1", "-timeout", "30m", strings.TrimRight(unit, "/") + "/"}})
+	}
+	return steps
 }
 
 // OwnerUnit maps test2json's package import path to the closure's relative package.
