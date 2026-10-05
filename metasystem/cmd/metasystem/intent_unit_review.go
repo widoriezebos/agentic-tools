@@ -816,9 +816,10 @@ func (inv *intentInvocation) commitExamination(store, goalID, commit, rootJob st
 				if review.Subject == nil || review.Subject.Commit != full {
 					return nil
 				}
-				if review.Subject.Examination != rootJob || review.Subject.ExaminationRound != round {
+				if review.Subject.Examination != rootJob || review.Subject.ExaminationRound != round || review.Subject.ExaminationReturnPath != returnPath {
 					subject := *review.Subject
 					subject.Examination, subject.ExaminationRound = rootJob, round
+					subject.ExaminationReturnPath = returnPath
 					if err := retain(subject); err != nil {
 						return err
 					}

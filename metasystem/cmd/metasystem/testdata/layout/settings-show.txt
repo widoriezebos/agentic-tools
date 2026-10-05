@@ -1,4 +1,4 @@
-27 settings of m1e · 4 configured · 23 defaults
+28 settings of m1e · 4 configured · 24 defaults
 
 launch.brief.admitted.tokens         120000            default
 launch.build.effort                  xhigh             default
@@ -26,4 +26,5 @@ launch.seat.effort                   xhigh             default
 launch.seat.model                    off               default
 launch.seat.runtime                  off               default
 launch.seat.window.tokens            0                 default
+launch.unit.counted.rounds           6                 default
 launch.wait.cap.seconds              240               default

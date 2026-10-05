@@ -5,7 +5,7 @@ exit 0
   "verb": "settings show",
   "targets": [],
   "outcome": "confirmed",
-  "summary": "27 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
+  "summary": "28 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
   "data": {
     "adapters": null,
     "conf": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf",
@@ -143,6 +143,11 @@ exit 0
       {
         "Key": "launch.codex.sandbox",
         "Value": "workspace-write",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.unit.counted.rounds",
+        "Value": "6",
         "Source": "default"
       }
     ]

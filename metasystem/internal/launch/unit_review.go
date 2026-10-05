@@ -42,6 +42,8 @@ type UnitSubject struct {
 	// round with no return never sets them.
 	Examination      string `json:"examination,omitempty"`
 	ExaminationRound int64  `json:"examinationRound,omitempty"`
+	// ExaminationReturnPath is the return in the store the review resolved.
+	ExaminationReturnPath string `json:"examinationReturnPath,omitempty"`
 }
 
 // UnitReview is a completed round as a committed review consumes it.
@@ -157,6 +159,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		}
 		if !replaced {
 			record.Subjects = append(record.Subjects, subject)
+		}
+		if subject.Examination != "" && record.CountedCap > 0 {
+			material, err := runner.roundMaterial(record, round)
+			if err != nil {
+				record.Notes = append(record.Notes, fmt.Sprintf("attempt %d: material count is unknown: %v", round.Number, err))
+			}
+			record.Rounds[len(record.Rounds)-1].Material = material
 		}
 		return runner.save(record)
 	}

@@ -853,3 +853,27 @@ func intentArgvRest(args []string) []string {
 	_, rest, _ := resolveIntentArgv(args)
 	return rest
 }
+
+func TestIntentReviseHonoursCountedCap(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.manager.Settings.UnitCountedRounds = 1
+	brief := bed.brief("cap.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "capped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	launched := len(bed.starter.launched())
+	for _, args := range [][]string{
+		{"work", "revise", bed.id, "--work", "capped unit", "--brief", brief},
+		{"work", "revise", "run:" + run, "--brief", brief},
+	} {
+		code, refused, _ := bed.work(args...)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_CAP") ||
+			!strings.Contains(refused.Summary, "unit capped unit has used its 1 counted rounds; nothing was started") ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "capped unit"}) || len(bed.starter.launched()) != launched {
+			t.Fatalf("cap refusal: code=%d %+v launches=%v", code, refused, bed.starter.launched())
+		}
+	}
+}

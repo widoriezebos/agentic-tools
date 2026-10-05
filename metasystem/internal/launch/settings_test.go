@@ -153,3 +153,22 @@ func TestLaneModelFollowsTheResolvedRuntime(t *testing.T) {
 		t.Fatalf("explicit settings: %+v err=%v", settings, err)
 	}
 }
+
+func TestSettingsUnitCountedRounds(t *testing.T) {
+	t.Parallel()
+	if DefaultSettings().UnitCountedRounds != 6 {
+		t.Fatal("the default counted cap is not six")
+	}
+	for _, value := range []string{"2", "0", "-1", "bad"} {
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		writeFile(t, conf, UnitCountedRoundsKey+"="+value+"\n")
+		settings, err := ResolveSettings(conf, func(string) (string, bool) { return "", false })
+		if value == "2" {
+			if err != nil || settings.UnitCountedRounds != 2 {
+				t.Fatalf("settings=%+v err=%v", settings, err)
+			}
+		} else if !IsCode(err, "LAUNCH_SETTING_INVALID") {
+			t.Fatalf("invalid value %q accepted: %v", value, err)
+		}
+	}
+}

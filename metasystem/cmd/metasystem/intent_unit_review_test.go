@@ -814,6 +814,54 @@ func TestReviewCloseAdmitsItsCheckoutThroughParseInstallation(t *testing.T) {
 	}
 }
 
+func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
+	t.Parallel()
+	w := newWorkBed(t)
+	code, built, _ := w.work(append([]string{"work", "build", w.id, "--work", "cap", "--brief", w.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	// Use the review-close bed's files in the work bed's separate checkout.
+	b := &deliveryBed{intentBed: w.intentBed, install: w.worktree}
+	b.writeFile(filepath.Join(b.install, "metasystem.conf"), "")
+	b.writeJob(map[string]any{"jobId": "critic", "role": "code-critic", "status": "completed", "round": 1, "parentJob": nil})
+	path := filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1", "return.json")
+	b.writeJSON(path, map[string]any{"jobId": "critic", "round": 1, "verdict": "1 finding", "findings": []any{
+		map[string]any{"id": "F1", "material": true}, map[string]any{"id": "N1", "material": false}}})
+	owners := w.workOwners()
+	owners.delivery = &intentDeliveryOwners{branchRead: func([]string) (branch.BranchReadResult, int, error) {
+		return branch.BranchReadResult{State: "closed", RootJob: "critic"}, 0, nil
+	}}
+	layout, err := owners.resolver.ResolveLayout(w.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), input: intentInput{values: map[string][]string{}},
+		reviewWork: &reviewWorkContext{goal: w.id, work: "cap", attempt: 1}}
+	runner := inv.unitRunner()
+	if runner.ExaminationRoot == b.install {
+		t.Fatal("the runner's installation must differ from the critic store")
+	}
+	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		subject := launch.UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest, Commit: strings.Repeat("c", 40)}
+		inv.reviewWork.subject, inv.reviewWork.retain = &subject, retain
+		closed := inv.commitReview(nil, b.install, w.id, subject.Commit, nil)
+		if closed.Outcome != intentInProgress || resultData(t, closed)["template"] != filepath.Join(filepath.Dir(path), "decisions.md") {
+			t.Fatalf("review close must retain the examination before asking for decisions: %+v", closed)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := runner.Status(run)
+	if err != nil || len(record.Subjects) != 1 || record.Subjects[0].Examination != "critic" || record.Subjects[0].ExaminationRound != 1 ||
+		record.Subjects[0].ExaminationReturnPath != path || record.Rounds[0].Material != 1 || len(record.Notes) != 0 {
+		t.Fatalf("review close must count the goal worktree's return: %+v err=%v", record, err)
+	}
+}
+
 func promotionFacts() (launch.UnitReview, launch.UnitSubject, launch.Record, launch.Record, []byte, []byte) {
 	yes := true
 	review := launch.UnitReview{Record: launch.UnitRunRecord{ID: "unit-run-a", Goal: "goal-a"}, Base: "base", BuildBrief: "brief",

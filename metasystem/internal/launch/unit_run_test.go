@@ -16,6 +16,7 @@ func TestUnitRunCarriesRoundsAndEndsInJudgement(t *testing.T) {
 	machine := "m1-unit-run-card"
 	fixture.manager.Seat = board.Seat{Machine: machine, Installation: "/checkouts/m1-unit-run-card/metasystem"}
 	fixture.runner.options.MaxRounds = 3
+	fixture.manager.Settings.UnitCountedRounds = 2
 	var rounds [][2]int
 	var cardsDuringSteps int
 	fixture.starter.onStart = func(record Record) error {
@@ -26,7 +27,7 @@ func TestUnitRunCarriesRoundsAndEndsInJudgement(t *testing.T) {
 		return nil
 	}
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-	if err != nil || result.Record.State != "awaiting-judgement" {
+	if err != nil || result.Record.State != "awaiting-judgement" || result.Record.MaxRounds != 3 || result.Record.CountedCap != 2 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	for _, round := range rounds {
@@ -38,7 +39,7 @@ func TestUnitRunCarriesRoundsAndEndsInJudgement(t *testing.T) {
 		t.Fatalf("launches %d, cards written by step states %d", len(rounds), cardsDuringSteps)
 	}
 	card, ok := cardOf(t, machine, "goal")
-	if !ok || card.Stage != board.StageJudgement || card.Owner != nil || card.Round == nil || card.Round.N != 1 || card.Round.Max == nil || *card.Round.Max != 3 {
+	if !ok || card.Stage != board.StageJudgement || card.Owner != nil || card.Round == nil || card.Round.N != 1 || card.Round.Max == nil || *card.Round.Max != 2 {
 		t.Fatalf("judgement card = %+v (%v)", card, ok)
 	}
 }

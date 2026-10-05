@@ -423,6 +423,7 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
 	runner := inv.work().units(inv.layout)
+	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	return runner
 }
@@ -1133,6 +1134,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_ROUND_CAP"):
+			var cap *launch.UnitRoundCapError
+			if errors.As(err, &cap) {
+				return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: cap.Reason.Error(), Details: details,
+					next: inv.publicArgv(cap.Next...), nextReason: "the counted rounds are used; take this outcome"}
+			}
 		case launch.IsCode(err, "UNIT_RUN_BUSY"):
 			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "another command is advancing this work right now",
 				next: again, nextReason: "the same command continues it", Details: details}
