@@ -14,6 +14,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // A goal's work is the named units the unit runner holds for the goal's own
@@ -50,7 +52,11 @@ func (inv *intentInvocation) goalWork(id string) ([]launch.NamedWork, *intentRes
 }
 
 // workStage is a work item's stage in plain words.
-func workStage(work launch.NamedWork) string {
+func workStage(work launch.NamedWork, readers ...func(string, string, string) (branch.BranchReadResult, error)) string {
+	inspect := branch.InspectBranchRead
+	if len(readers) > 0 {
+		inspect = readers[0]
+	}
 	switch {
 	case work.Record == nil:
 		return "starting"
@@ -63,7 +69,9 @@ func workStage(work launch.NamedWork) string {
 	}
 	if launch.UnitReviewReadyOutcomes[outcome] {
 		if subject := currentSubject(work); subject != nil && subject.Commit != "" {
-			if read, err := branch.InspectBranchRead(work.Record.Worktree, work.Record.Goal, subject.Commit); err == nil && read.State == "collected" && read.Published {
+			if read, err := inspect(work.Record.Worktree, work.Record.Goal, subject.Commit); err == nil && read.State == "review refused" {
+				return "review refused: " + read.DispatchRefusal
+			} else if err == nil && read.State == "collected" && read.Published {
 				return "reviewed; its read is collected and published (attestation " + shortSHA(read.AttestationCommit) + ")"
 			} else if err == nil && read.State == "collected" {
 				return "reviewed; its read is collected but not yet published (attestation " + shortSHA(read.AttestationCommit) + ")"
@@ -111,21 +119,9 @@ func workTargets(id string, work launch.NamedWork) []intentTarget {
 	return []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: work.Unit}}
 }
 
-// workView is the public description of one work item.
-func workView(work launch.NamedWork) map[string]any {
-	view := map[string]any{"work": work.Unit, "stage": workStage(work), "attempt": workAttempt(work)}
-	if work.Record != nil {
-		view["state"] = work.Record.State
-	}
-	return view
-}
-
-func runIntentStatusGoal(inv *intentInvocation, id string) int {
-	if problem := inv.selectRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	work, problem := inv.goalWork(id)
-	var manual []manualWorkItem
+// goalUnitStages is the unit list the status verb and the seat prompt share.
+func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork, manual []manualWorkItem, views []map[string]any, lines []string, units []steward.UnitStage, problem *intentResult) {
+	work, problem = inv.goalWork(id)
 	if problem == nil {
 		work, manual = inv.rangeWork(id, work)
 		if name := inv.input.text("work"); name != "" {
@@ -139,28 +135,57 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	if problem != nil {
-		return inv.render(*problem)
+		return
 	}
-	views, lines := []map[string]any{}, []string{}
+	views, lines, units = []map[string]any{}, []string{}, []steward.UnitStage{}
 	for _, one := range work {
-		views = append(views, workView(one))
+		stage := workStage(one, inv.work().inspectRead)
+		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
+		if one.Record != nil {
+			view["state"] = one.Record.State
+		}
+		views = append(views, view)
 		next, _ := inv.workContinuation(id, one, true)
-		lines = append(lines, fmt.Sprintf("  %s: %s, attempt %d; next: %s", one.Unit, workStage(one), workAttempt(one), shellCommand(next)))
+		lines = append(lines, fmt.Sprintf("  %s: %s, attempt %d; next: %s", one.Unit, stage, workAttempt(one), shellCommand(next)))
+		at := ""
+		if one.Record != nil {
+			for _, round := range one.Record.Rounds {
+				for _, step := range round.Steps {
+					if step.StartedAt > at {
+						at = step.StartedAt
+					}
+				}
+			}
+		}
+		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at})
 	}
 	for _, item := range manual {
-		views = append(views, map[string]any{"work": item.Unit, "stage": item.stage(), "commit": item.Commit, "source": "goal branch"})
+		stage := item.stage(inv.work().inspectRead)
+		views = append(views, map[string]any{"work": item.Unit, "stage": stage, "commit": item.Commit, "source": "goal branch"})
 		next, _ := inv.manualContinuation(id, item)
-		lines = append(lines, fmt.Sprintf("  %s: %s, version %s; next: %s", item.Unit, item.stage(), shortSHA(item.Commit), shellCommand(next)))
+		lines = append(lines, fmt.Sprintf("  %s: %s, version %s; next: %s", item.Unit, stage, shortSHA(item.Commit), shellCommand(next)))
+		units = append(units, steward.UnitStage{Unit: item.Unit, Stage: stage, Line: lines[len(lines)-1]})
+	}
+	return
+}
+
+func runIntentStatusGoal(inv *intentInvocation, id string) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	work, manual, views, lines, units, problem := inv.goalUnitStages(id)
+	if problem != nil {
+		return inv.render(*problem)
 	}
 	if len(manual) > 0 && len(work) == 0 {
 		result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views}}
 		if len(manual) == 1 {
-			result.Summary = fmt.Sprintf("goal %s: work %s is %s", id, manual[0].Unit, manual[0].stage())
+			result.Summary = fmt.Sprintf("goal %s: work %s is %s", id, manual[0].Unit, units[0].Stage)
 			result.next, result.nextReason = inv.manualContinuation(id, manual[0])
 		} else {
 			result.Summary = fmt.Sprintf("goal %s has %d work items", id, len(manual))
 		}
-		return inv.render(result)
+		return inv.renderGoalUnitStatus(result, len(units))
 	}
 	designs := []map[string]any{}
 	var designNext []string
@@ -193,10 +218,26 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		result.Summary = fmt.Sprintf("goal %s has no work yet", id)
 		result.next, result.nextReason = inv.publicArgv("work", "build", id, "--brief", "FILE", "--check", "COMMAND..."), "start the goal's first work"
 	case len(work) == 1 && len(manual) == 0:
-		result.Summary = fmt.Sprintf("goal %s: work %s is %s", id, work[0].Unit, workStage(work[0]))
+		result.Summary = fmt.Sprintf("goal %s: work %s is %s", id, work[0].Unit, units[0].Stage)
 		result.next, result.nextReason = inv.workContinuation(id, work[0], inv.input.has("work"))
 	default:
 		result.Summary = fmt.Sprintf("goal %s has %d work items", id, len(work)+len(manual))
+	}
+	return inv.renderGoalUnitStatus(result, len(units))
+}
+
+// renderGoalUnitStatus keeps the shared unit lines whole in the status page.
+func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
+	if unitCount == 0 {
+		return inv.render(result)
+	}
+	result.view = func(page *textui.Page) {
+		page.Headline(result.Summary)
+		section := page.Section("", "")
+		for _, line := range result.text[:unitCount] {
+			section.Fixed(strings.TrimSpace(line))
+		}
+		page.Legacy(result.text[unitCount:]...)
 	}
 	return inv.render(result)
 }
@@ -214,9 +255,15 @@ func (item manualWorkItem) read() (branch.BranchReadResult, error) {
 	return branch.InspectBranchRead(item.Worktree, item.Goal, item.Commit)
 }
 
-func (item manualWorkItem) stage() string {
-	read, err := item.read()
+func (item manualWorkItem) stage(readers ...func(string, string, string) (branch.BranchReadResult, error)) string {
+	inspect := branch.InspectBranchRead
+	if len(readers) > 0 {
+		inspect = readers[0]
+	}
+	read, err := inspect(item.Worktree, item.Goal, item.Commit)
 	switch {
+	case err == nil && read.State == "review refused":
+		return "review refused: " + read.DispatchRefusal
 	case err == nil && read.State == "collected" && read.Published:
 		return "reviewed; its read is collected and published (attestation " + shortSHA(read.AttestationCommit) + ")"
 	case err == nil && read.State == "collected":
@@ -233,7 +280,7 @@ func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) 
 	if item.ReadsWaived {
 		return inv.publicArgv("work", "land", id), "a tier-1 goal's work lands without a read"
 	}
-	read, err := item.read()
+	read, err := inv.work().inspectRead(item.Worktree, item.Goal, item.Commit)
 	if err == nil && read.State == "collected" && read.Published {
 		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
 	}
@@ -262,7 +309,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 	if err != nil {
 		return work, nil
 	}
-	commits, err := branch.ValidateRange(inv.goalWorktreeInstallation(worktree), base, strings.TrimSpace(string(tip)), id)
+	commits, err := branch.ValidateRangeWithGit(inv.goalWorktreeInstallation(worktree), base, strings.TrimSpace(string(tip)), id, inv.work().git)
 	if err != nil {
 		return work, nil
 	}
@@ -297,12 +344,17 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	if named {
 		suffix = []string{"--work", work.Unit}
 	}
+	read := branch.BranchReadResult{}
+	if subject := currentSubject(work); builtWork(work) && subject != nil && subject.Commit != "" {
+		read, _ = inv.work().inspectRead(work.Record.Worktree, work.Record.Goal, subject.Commit)
+	}
+
 	switch {
 	case work.Running():
 		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the work is running; this waits for it"
-	case builtWork(work) && !unreviewedWork(work) && unpublishedRead(work):
+	case read.State == "collected" && !read.Published:
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the work's read is collected but not published; the same review publishes it"
-	case builtWork(work) && !unreviewedWork(work):
+	case read.State == "collected":
 		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
 	case launch.UnitReviewReadyOutcomes[lastOutcome(work)]:
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the result is built; an independent review examines it"
@@ -488,7 +540,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 				next:    inv.typedArgvWith("--finding", "FINDING"), nextReason: "names the finding it resolves"})
 		}
 	}
-	for _, other := range []string{"brief", "tool-calls", "effort", "goal"} {
+	for _, other := range []string{"tool-calls", "effort", "goal"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("--%s is not for reviewing a goal's work; nothing was done", other),
@@ -557,6 +609,9 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		item := manual[0]
 		install := inv.goalWorktreeInstallation(item.Worktree)
 		args := []string{"--root", install, "--goal", id, "--unit", item.Commit}
+		if inv.input.has("brief") {
+			args = append(args, "--brief", inv.callerPath(inv.input.text("brief")))
+		}
 		if retry > 0 {
 			args = append(args, "--retry", strconv.FormatInt(retry, 10))
 		}

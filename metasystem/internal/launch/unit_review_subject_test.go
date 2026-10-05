@@ -125,6 +125,10 @@ func TestReviewSubjectBindsTheLatestCompletedRound(t *testing.T) {
 		if err := retain(UnitSubject{Round: 2, DiffDigest: wantDigest}); err == nil || !strings.Contains(err.Error(), "latest completed round 1") {
 			t.Fatalf("retain of another round: %v", err)
 		}
+		brief, err := os.ReadFile(review.BuildBrief)
+		if err != nil || review.BuildBriefSHA256 != digestHex(brief) {
+			t.Fatalf("build brief digest=%q err=%v", review.BuildBriefSHA256, err)
+		}
 		return retain(bound)
 	})
 	if err != nil {
@@ -163,6 +167,10 @@ func TestReviewSubjectBindsTheLatestCompletedRound(t *testing.T) {
 		// is reviewed against the same brief.
 		if review.BuildBrief != second.Record.Rounds[1].FollowUp || review.BuildBrief == plan.Build.Brief {
 			t.Fatalf("second round brief=%q, want its correction brief %q", review.BuildBrief, second.Record.Rounds[1].FollowUp)
+		}
+		brief, err := os.ReadFile(review.BuildBrief)
+		if err != nil || review.BuildBriefSHA256 != digestHex(brief) {
+			t.Fatalf("correction brief digest=%q err=%v", review.BuildBriefSHA256, err)
 		}
 		return retain(amend)
 	})

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -22,8 +23,57 @@ func handoffLegacyDependencies(prober identity.Prober) openWorkDependencies {
 	}
 }
 
-func completeHandoffRevival(root string, prober identity.Prober, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam) (ReviveOutcome, error) {
-	return completeRevivalWithDependencies(root, cfg, census, nonce, launch, handoffLegacyDependencies(prober))
+func completeHandoffRevival(root string, prober identity.Prober, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admissions ...AdmitSeam) (ReviveOutcome, error) {
+	var admit AdmitSeam
+	if len(admissions) > 0 {
+		admit = admissions[0]
+	}
+	return completeRevivalWithDependencies(root, cfg, census, nonce, launch, admit, handoffLegacyDependencies(prober))
+}
+
+func TestARefusedContinuationBriefHoldsTheHandoff(t *testing.T) {
+	t.Parallel()
+	root, intent := prepareRevivalHandoff(t, "500000000000000d")
+	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
+	path := "artifacts/agents/handoff/state.json"
+	refusal := &dispatch.BriefAuthorityRefusal{MissingPaths: []string{path}, Details: map[string]string{path: "runtime path; looked in work trees dispatch and primary"}}
+	launches, admissions := 0, 0
+	launch := func(Intent) error { launches++; return nil }
+	admit := func(it Intent) error {
+		admissions++
+		if it.Nonce != intent.Nonce {
+			t.Fatalf("admission checked another handoff: %+v", it)
+		}
+		return refusal
+	}
+	for tick := 0; tick < 2; tick++ {
+		held, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, launch, admit)
+		if err != nil || !held.Held || held.Launched || held.Escalate || launches != 0 {
+			t.Fatalf("refused admission did not hold: %+v %v launches=%d", held, err, launches)
+		}
+		if live, err := LiveIntents(root); err != nil || len(live) != 1 || live[0].Nonce != intent.Nonce {
+			t.Fatalf("refused admission consumed the handoff: %+v %v", live, err)
+		}
+		if ev, err := LoadEvidence(EvidencePath(root)); err != nil || ev.DryRevivals != 0 {
+			t.Fatalf("refused admission counted a revival: %+v %v", ev, err)
+		}
+	}
+	if pending, err := PendingNotifications(root); err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, refusal.Error()) {
+		t.Fatalf("hold notice lost the path or its class: %+v %v", pending, err)
+	}
+	passed, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, launch, func(it Intent) error { admissions++; return nil })
+	if err != nil || !passed.Launched || launches != 1 || admissions != 3 {
+		t.Fatalf("a later admitted tick did not launch: %+v %v launches=%d admissions=%d", passed, err, launches, admissions)
+	}
+	if live, err := LiveIntents(root); err != nil || len(live) != 0 {
+		t.Fatalf("admitted launch left a live intent: %+v %v", live, err)
+	}
+	if ev, err := LoadEvidence(EvidencePath(root)); err != nil || ev.DryRevivals != 1 {
+		t.Fatalf("admitted launch must count once: %+v %v", ev, err)
+	}
+	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
+		t.Fatalf("admitted launch left a hold notice: %+v %v", pending, err)
+	}
 }
 
 func TestHandoffDefaultHasNoExpiry(t *testing.T) {

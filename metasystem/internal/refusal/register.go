@@ -364,6 +364,8 @@ var Rows = []Row{
 }
 
 var Exclusions = []Exclusion{
+	{Pattern: "job-refused", Reason: "a delegation event name in events.jsonl; its summary carries the refusal message"},
+	{Pattern: "dispatch-refused", Reason: "a failed job record's error value identifying dispatch setup failure; its refusal message is stored separately"},
 	{Pattern: "AUTO_MERGE", Reason: "a git state file name, not a refusal"},
 	{Pattern: "MERGE_HEAD", Reason: "a git state file name, not a refusal"},
 	{Pattern: "budget-malformed", Reason: "a typed health remedy cause name rather than a refusal returned to a caller"},

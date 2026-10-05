@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -255,6 +256,14 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 				return fmt.Errorf("delegate revival: %v", err)
 			}
 			return nil
+		}, func(it steward.Intent) error {
+			return admitStewardContinuation(repo, it, func(root string, args ...string) (string, error) {
+				result := landingPathGit(landpath.GitCall{Dir: root, Args: args})
+				if result.Code != 0 {
+					return "", fmt.Errorf("continuation admission cannot read Git facts: %s", result.Stderr)
+				}
+				return strings.TrimSpace(string(result.Stdout)), nil
+			})
 		})
 	if err != nil {
 		fmt.Fprintf(stderr, "steward revive: %v\n", err)
@@ -278,6 +287,32 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	return 0
+}
+
+func admitStewardContinuation(root string, it steward.Intent, git func(string, ...string) (string, error)) error {
+	checkout, err := git(root, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	if resolved, err := filepath.EvalSymlinks(checkout); err == nil {
+		checkout = resolved
+	}
+	base := filepath.Join(root, "artifacts", "agents", "worktrees", it.JobId)
+	if entry, err := os.Stat(base); err != nil || !entry.IsDir() {
+		base = checkout
+	}
+	_, serving, _ := dispatchpkg.ResolveTool(root, func(root string) (string, string) {
+		return landpath.SystemInstallation(func(args ...string) landpath.GitResult {
+			out, err := git(root, args...)
+			code := 0
+			if err != nil {
+				code = 1
+			}
+			return landpath.GitResult{Stdout: []byte(out), Code: code}
+		}, root)
+	}, func(string) (string, bool) { return "", false })
+	_, err = dispatchpkg.ReadReviewBriefAdmissionWithServingCheckout(steward.BriefPath(root, it.Nonce), root, base, checkout, "", serving, git)
+	return err
 }
 
 // runStewardRun is the runner's body — normally spawned by arm,

@@ -63,11 +63,12 @@ type UnitRunRecord struct {
 }
 
 type UnitRound struct {
-	Number    int    `json:"number"`
-	Directory string `json:"directory"`
-	FollowUp  string `json:"followUp"`
-	Outcome   string `json:"outcome"`
-	Cause     string `json:"cause,omitempty"`
+	BuildBriefSHA256 string `json:"buildBriefSha256,omitempty"`
+	Number           int    `json:"number"`
+	Directory        string `json:"directory"`
+	FollowUp         string `json:"followUp"`
+	Outcome          string `json:"outcome"`
+	Cause            string `json:"cause,omitempty"`
 	// Material is -1 when the examination has no readable return.
 	Material   int        `json:"material"`
 	BuildModel string     `json:"buildModel"`
@@ -367,6 +368,16 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	buildCount, err := runner.ensureBuildSteps(record, round, plan, brief)
 	if err != nil {
 		return UnitResult{}, err
+	}
+	if round.BuildBriefSHA256 == "" && round.Steps[0].LaunchID == "" {
+		data, err := os.ReadFile(brief)
+		if err != nil {
+			return UnitResult{}, err
+		}
+		round.BuildBriefSHA256 = digestHex(data)
+		if err := runner.save(*record); err != nil {
+			return UnitResult{}, err
+		}
 	}
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	for index := 0; index < buildCount; index++ {

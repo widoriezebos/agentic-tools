@@ -261,10 +261,11 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: install, Remote: "origin",
 				EndpointTip: c.endpointTip(), BranchTip: tip, GoalID: goalID, UnitCommit: flagValue(args, "--unit"),
 				Collect: slices.Contains(args, "--collect"), Join: slices.Contains(args, "--join"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
-				CheckClaim: func() error { return nil },
-				Gate:       func(string) (string, error) { return "gate-run-1", nil },
-				Delegate:   delegate,
-				Retry:      retry,
+				BuildBriefSHA256: flagValue(args, "--build-brief-sha256"),
+				CheckClaim:       func() error { return nil },
+				Gate:             func(string) (string, error) { return "gate-run-1", nil },
+				Delegate:         delegate,
+				Retry:            retry,
 				// The follow-up transport is the fixture's: it records the next
 				// round of the same chain, as dispatch's follow-up would.
 				FollowUp: func(rootJob, brief string) (string, error) {

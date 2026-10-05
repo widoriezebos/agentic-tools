@@ -51,7 +51,7 @@ func newRevivalFixture(t *testing.T, wantWorld, wantWork int32) *revivalFixture 
 }
 
 func (f *revivalFixture) complete(cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claims ...SeatIdleClaimSeam) (ReviveOutcome, error) {
-	return completeRevivalWithDependencies(f.root, cfg, census, nonce, launch, f.dependencies, claims...)
+	return completeRevivalWithDependencies(f.root, cfg, census, nonce, launch, nil, f.dependencies, claims...)
 }
 
 func (f *revivalFixture) decide(cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent) (Decision, string, error) {

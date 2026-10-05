@@ -299,14 +299,18 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
 	}
 	criticArgs := slices.Clone(args)
-	if review.BuildBrief != "" {
+	if inv.input.has("brief") {
+		criticArgs = append(criticArgs, "--brief", inv.callerPath(inv.input.text("brief")), "--build-brief-sha256", review.BuildBriefSHA256)
+	} else if review.BuildBrief != "" {
 		// The work's brief starts its read; an existing critic is joined.
-		criticArgs = append(criticArgs, "--brief", review.BuildBrief, "--join")
+		criticArgs = append(criticArgs, "--brief", review.BuildBrief, "--build-brief-sha256", review.BuildBriefSHA256, "--join")
 	}
 	var bundle *branch.UnitReadBundle
 	var reason string
 	read, inspectErr := inv.work().inspectRead(install, goalID, subject.Commit)
 	switch {
+	case inv.input.has("brief"):
+		reason = "the supplied review brief requires a critic"
 	case inspectErr != nil:
 		reason = "the branch read record could not be inspected: " + inspectErr.Error()
 	case read.RootJob != "":

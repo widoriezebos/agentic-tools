@@ -1,7 +1,9 @@
 package branch_test
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +33,7 @@ func TestBuildBriefAdmittedMarksOnlyTheWorkFormsBuildBrief(t *testing.T) {
 	var frozen string
 	admitted := []bool{}
 	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit,
-		GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: writeBuildBrief(t), Join: true,
+		GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: writeBuildBrief(t), Join: true, BuildBriefSHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("Build brief: cites plans/handoff-created-at-runtime.md\n"))),
 		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(brief, _, _, _, _ string) (string, error) {
 			frozen = brief
@@ -87,7 +89,7 @@ func TestBuildBriefAdmittedMarksOnlyTheWorkFormsBuildBrief(t *testing.T) {
 }
 
 // TestBuildBriefAdmittedRefusesTheCommitFormsBrief: a brief a person hands to
-// the commit form is never marked, even when it restarts a refused work-form
+// the commit form as a correction is never marked, even when it restarts a refused work-form
 // start.
 func TestBuildBriefAdmittedRefusesTheCommitFormsBrief(t *testing.T) {
 	t.Parallel()
@@ -98,7 +100,7 @@ func TestBuildBriefAdmittedRefusesTheCommitFormsBrief(t *testing.T) {
 	r.expect(readFactCall{method: "Range", args: []string{r.root, r.base, r.unit, "goal-a"}, commits: r.rangeFacts()})
 	admitted := []bool{}
 	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit,
-		GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: writeBuildBrief(t), Join: true,
+		GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: writeBuildBrief(t), Join: true, BuildBriefSHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("Build brief: cites plans/handoff-created-at-runtime.md\n"))),
 		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(brief, _, _, _, _ string) (string, error) {
 			admitted = append(admitted, branch.BuildBriefAdmitted(brief))
