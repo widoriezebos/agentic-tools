@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "goal": "health-is-green-when-the-seat-is-healthy",
+  "unit": "U3e-applies",
+  "subject": {
+    "commit": "56171bb75a012f3af10da2efc780427aa4d29f03",
+    "parent": "fe9aeaed8c142fc1187407b194166d81cef9959b",
+    "tree": "9e067e47913f4002292936540f00ae48f12e3444",
+    "patchDigest": "0cd92a7b346158507506f85a239d4add466c79dd56f1b77d4a1ca9d97155fb8c",
+    "unitDigest": "d97a86e42c29b4ac0fb2f982913f014b7314761565ccbe8330565cfa2ce46687"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-79231543c1cfcb81d4990342",
+    "round": 1,
+    "closureSha256": "e3bb0e6e2aac302e9ea126d419650172e5ef2d034b9f6144d33b7f4f4b844b0a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "9e067e47913f4002292936540f00ae48f12e3444",
+    "runId": "goal-read-gate-20261005t172356z-d6739105d8d6a2fb"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e874e76f080329e7bf48b02dc59f1f37e260bd34",
+      "digest": "b024bb81c57581cce12984f830822a0904fb9bdf78c16aad80605fba80913e87"
+    },
+    {
+      "kind": "read",
+      "commit": "1ff9f2f1952a0cfb5fa90046e16d7ce8c4815c4b",
+      "digest": "57f411e862c4dc4bc97a0d217b4c5f9fd4ecd0cce60814fc8f8f3d73c4f8bf9e"
+    },
+    {
+      "kind": "read",
+      "commit": "d16fedc0096c7787d5e53243851ffb223b3795e8",
+      "digest": "72d3cdb21e51b4881b0335a19feba1a6b8efcc5258c269ae10e1d39a7ecceb28"
+    },
+    {
+      "kind": "read",
+      "commit": "4bd5630554af293b48ddabe6c0b8b044924993b0",
+      "digest": "e85a1ad4d88ab839b8111f59d391992a51ff56267969b22606be25cdec81bb21"
+    },
+    {
+      "kind": "read",
+      "commit": "fe9aeaed8c142fc1187407b194166d81cef9959b",
+      "digest": "6d6fcd38694a5dec7550e673b79727b8d69c3fa2562a1951c238f7414acc3b3f"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g1a_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_probe_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    },
+    {
+      "path": "metasystem/internal/steward/context_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    },
+    {
+      "path": "metasystem/internal/steward/health_cost_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    },
+    {
+      "path": "metasystem/internal/steward/health_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    },
+    {
+      "path": "metasystem/internal/steward/health_test.go",
+      "readerWord": "reviewed by critic root code-critic-79231543c1cfcb81d4990342"
+    }
+  ],
+  "sha256": "e9800ed46bfb14c441a2f4596f5d9b9307d13cfa06b307633826fc69df1e3f76"
+}
