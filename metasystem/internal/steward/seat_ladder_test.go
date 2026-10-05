@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
@@ -118,6 +120,14 @@ func (b *seatBed) projection(now time.Time) goal.Projection {
 func (b *seatBed) seatDependencies() *seatDependencies {
 	return &seatDependencies{
 		Launcher: b.launcher,
+		Units:    func(string, string) ([]UnitStage, error) { return nil, nil },
+		Lane:     func(string, string) (plain.Entry, bool, error) { return plain.Entry{}, false, nil },
+		Main:     func(string) (string, error) { return "main", nil },
+		Contains: func(string, string, string) (bool, error) { return false, nil },
+		Jobs:     func(string) ([]map[string]any, error) { return nil, nil },
+		Refusals: func() ([]launch.Refusal, error) { return nil, nil },
+		Launches: func() ([]launch.Record, error) { return nil, nil },
+		Threads:  func() ([]board.Thread, error) { return nil, nil },
 		Project:  func(string, time.Time) (goal.Projection, error) { return b.projection(b.now), nil },
 		Tips: func(_ string, goals []string) (map[string]string, error) {
 			tips := map[string]string{}

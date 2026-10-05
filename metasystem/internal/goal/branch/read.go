@@ -60,6 +60,7 @@ type BranchReadRequest struct {
 
 type BranchReadResult struct {
 	State, RootJob, GateRunID, AttestationCommit string
+	DispatchRefusal                              string
 	// Published is set by InspectBranchRead: the collected attestation is
 	// contained in the goal branch's origin tip the push owner last
 	// recorded, so the remote holds it as far as this checkout knows.
@@ -97,6 +98,7 @@ type branchReadRecord struct {
 	Model             string `json:"model,omitempty"`
 	DispatchPending   bool   `json:"dispatchPending,omitempty"`
 	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
+	DispatchRefusal   string `json:"dispatchRefusal,omitempty"`
 	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
 	// BriefFromBuild marks supplied bytes that match the build's digest.
 	BriefFromBuild bool `json:"briefFromBuild,omitempty"`
@@ -542,6 +544,9 @@ func settleBranchReadDispatch(request BranchReadRequest, common, recordPath stri
 		return record, operationRefusal(ReadDispatchPendingCode, "the job records can't be read, so whether the reviewer of build %s started is unknown: %s\nrun: metasystem work status %s", request.UnitCommit, firstLine(err), request.GoalID)
 	}
 	record.RootJob, record.DispatchPending, record.DispatchRetryable = root, false, root == ""
+	if root != "" {
+		record.DispatchRefusal = ""
+	}
 	return record, saveBranchReadRecord(common, recordPath, record)
 }
 
@@ -617,6 +622,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	if restart {
 		record.DispatchRetryable = false
+		record.DispatchRefusal = ""
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
@@ -767,6 +773,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		record.BriefFromBuild = inputSHA256 != "" && inputSHA256 == request.BuildBriefSHA256
 	}
 	record.DispatchPending, record.DispatchRetryable = true, false
+	record.DispatchRefusal = ""
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
 		return result, err
 	}
@@ -776,6 +783,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		var neverLaunched *ReadNeverLaunchedError
 		if job == "" && errors.As(err, &neverLaunched) {
 			record.DispatchPending, record.DispatchRetryable = false, true
+			record.DispatchRefusal = firstLine(err)
 			if saveErr := saveBranchReadRecord(common, recordPath, record); saveErr != nil {
 				return result, fmt.Errorf("%s: pre-launch refusal could not be recorded for retry: %w", ReadDispatchPendingCode, errors.Join(err, saveErr))
 			}
@@ -783,6 +791,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		// The delegate did not say whether it reserved a critic before it
 		// failed. The job records do.
+		record.DispatchRefusal = firstLine(err)
 		settled, settleErr := settleBranchReadDispatch(request, common, recordPath, record)
 		if settleErr != nil {
 			return result, errors.Join(failure, settleErr)
@@ -939,6 +948,8 @@ func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error
 		}
 	case record.RootJob != "":
 		result.State = "examining"
+	case record.DispatchRetryable:
+		result.State, result.DispatchRefusal = "review refused", record.DispatchRefusal
 	}
 	return result, nil
 }

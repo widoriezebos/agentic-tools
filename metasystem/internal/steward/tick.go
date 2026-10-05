@@ -78,6 +78,8 @@ type TickConfig struct {
 	// Seat starts and reads the steward's seat launches (g1-s77); nil starts
 	// no seat and keeps today's notification for ready work.
 	Seat SeatLauncher
+	// Units reads the same unit stages as the public status verb.
+	Units func(root, goalID string) ([]UnitStage, error)
 	// Patterns is the behaviour-pattern pass (design
 	// steward-acts-on-behaviour-patterns): it reports and decides nothing.
 	// It runs after the tick's health pass and, as a report, under the helm

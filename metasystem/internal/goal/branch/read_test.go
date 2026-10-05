@@ -839,7 +839,7 @@ func TestReviewWithABriefNeverJoins(t *testing.T) {
 				t.Fatal(err)
 			}
 			if strings.Contains(string(body), "cites a path the tree lacks") {
-				return "", &branch.ReadNeverLaunchedError{Err: errors.New("brief authority admission refused")}
+				return "", &branch.ReadNeverLaunchedError{Err: errors.New("brief authority admission refused\nsecond line")}
 			}
 			dispatched = append(dispatched, runtime+"/"+model)
 			writeReadJobWithSubject(t, r.root, "critic-corrected", unit, "running", false, r.readSubject())
@@ -849,10 +849,17 @@ func TestReviewWithABriefNeverJoins(t *testing.T) {
 	if _, err := branch.RunBranchRead(request); err == nil || len(dispatched) != 0 {
 		t.Fatalf("refused dispatch=%v dispatched=%v", err, dispatched)
 	}
+	record := gleBranchReadRecord(t, r.root, unit)
+	if !strings.Contains(record, `"dispatchRefusal": "brief authority admission refused"`) || strings.Contains(record, "second line") {
+		t.Fatalf("refused start lost its first line: %s", record)
+	}
 	request.BriefPath, request.Runtime = corrected, ""
 	result, err := branch.RunBranchRead(request)
 	if err != nil || result.State != "dispatched" || len(dispatched) != 1 || dispatched[0] != "/" {
 		t.Fatalf("corrected brief after a refused dispatch=%+v err=%v dispatched=%v", result, err, dispatched)
+	}
+	if record := gleBranchReadRecord(t, r.root, unit); strings.Contains(record, "dispatchRefusal") || strings.Contains(record, "dispatchRetryable") {
+		t.Fatalf("restart kept refusal: %s", record)
 	}
 	request.BriefPath = refused
 	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || !strings.Contains(err.Error(), "critic-corrected") || len(dispatched) != 1 {
@@ -1036,4 +1043,9 @@ func TestGLEBranchReadFrozenBriefCarriesOneDispatchableWorkingMode(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestAReviewRefusedBeforeReservationKeepsItsFirstLine(t *testing.T) {
+	t.Parallel()
+	t.Run("refused start", TestReviewWithABriefNeverJoins)
 }

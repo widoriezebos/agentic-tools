@@ -9,12 +9,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -151,7 +160,37 @@ func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 			}
 			return goal.Project(endpoint, false, now)
 		},
-		Tips:    gitGoalTips,
+		Tips:  gitGoalTips,
+		Units: func(string, string) ([]UnitStage, error) { return nil, errors.New("unit reader unavailable") },
+		Main: func(root string) (string, error) {
+			out, err := exec.Command("git", "-C", root, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}").Output()
+			return strings.TrimSpace(string(out)), err
+		},
+		Contains: func(root, sha, main string) (bool, error) { return plain.ContainedIn(root, main)(sha) },
+		Lane: func(_ string, id string) (plain.Entry, bool, error) {
+			home, err := board.Home()
+			if err != nil {
+				return plain.Entry{}, false, err
+			}
+			record, registered, incomplete, err := lane.ReadGuarded(home)
+			if incomplete != nil {
+				return plain.Entry{}, false, incomplete
+			}
+			if err != nil || !registered {
+				return plain.Entry{}, false, err
+			}
+			return plain.Latest(record.Install, id)
+		},
+		Jobs:     seatJobRecords,
+		Refusals: (launch.Store{}).Refusals,
+		Launches: (launch.Store{}).List,
+		Threads: func() ([]board.Thread, error) {
+			home, err := board.Home()
+			if err != nil {
+				return nil, err
+			}
+			return board.Threads(home)
+		},
 		Machine: goal.ResolveMachine,
 		OpenQuestions: func(root string) []goal.OpenQuestion {
 			stateRoot, err := goal.ResolveStateRoot(root)
@@ -451,6 +490,9 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	}
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	if cfg.Units != nil {
+		dependencies.Units = cfg.Units
+	}
 	openWork := defaultTickContinuationDependencies().openWork
 	openWork.Seat = &dependencies
 	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
@@ -460,20 +502,16 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 }
 
 // seatBrief is what the seat main reads on stdin.
-func seatBrief(selection SeatSelection) string {
+func seatBrief(selection SeatSelection, facts ...string) string {
 	why := "it is approved and ready"
 	if selection.Held {
 		why = "this seat already holds it; the main before you ended"
 	}
-	return fmt.Sprintf(`# Seat session
-
-You are this seat's session: `+"`metasystem goal claim %s`"+` takes or continues this work.
-Work it and land it; stop when nothing is claimable.
-
-The steward started you for goal %s: %s.
-
-Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `+"`metasystem work wait`"+` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `+"`metasystem question ask`"+`, or nothing is claimable.
-`, selection.Goal, selection.Goal, why)
+	return fmt.Sprintf("# Seat session\n\n"+
+		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork it and land it; stop when nothing is claimable.\n\n"+
+		"The steward started you for goal %s: %s.\n\n"+
+		"Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n",
+		selection.Goal, selection.Goal, why) + strings.Join(facts, "")
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
@@ -526,21 +564,23 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		return SeatRecord{}, err
 	}
 	briefPath := filepath.Join(seatsDir(repoRoot), id+".brief.md")
-	if err := writeExclusiveBrief(briefPath, seatBrief(selection)); err != nil {
-		return SeatRecord{}, err
-	}
 	machine, err := dependencies.Machine(repoRoot)
 	if err != nil || machine == "" {
 		machine = "this machine"
 	}
 	goals := append(append([]string{selection.Goal}, selection.Ready...), selection.SeatHeld...)
 	read, err := dependencies.Tips(repoRoot, goals)
-	if err != nil {
-		return SeatRecord{}, err
-	}
+	tipsError := err
 	tips := map[string]string{}
 	for _, id := range goals {
 		tips[id] = read[id]
+	}
+	facts := seatFacts(repoRoot, selection, machine, tips, dependencies)
+	if tipsError != nil {
+		facts += "Goal tips unavailable; metasystem work status " + selection.Goal + "\n"
+	}
+	if err := writeExclusiveBrief(briefPath, seatBrief(selection, facts)); err != nil {
+		return SeatRecord{}, err
 	}
 	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
 		Machine: machine, Tips: tips, StartedAt: dependencies.Now().UTC().Format(seatStartedAtLayout)}
@@ -576,6 +616,14 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 // seatDependencies are the seat ladder's readers and its launcher.
 type seatDependencies struct {
 	Launcher SeatLauncher
+	Units    func(root, goalID string) ([]UnitStage, error)
+	Main     func(root string) (string, error)
+	Contains func(root, sha, main string) (bool, error)
+	Lane     func(root, goalID string) (plain.Entry, bool, error)
+	Jobs     func(root string) ([]map[string]any, error)
+	Refusals func() ([]launch.Refusal, error)
+	Launches func() ([]launch.Record, error)
+	Threads  func() ([]board.Thread, error)
 	Project  func(root string, now time.Time) (goal.Projection, error)
 	Tips     func(root string, goals []string) (map[string]string, error)
 	Machine  func(root string) (string, error)
@@ -613,4 +661,279 @@ func standingProviderOutage(repoRoot string, now time.Time, log func(string)) (o
 		}
 	}
 	return mark, standing
+}
+
+// UnitStage is one unit as the public status reader describes it.
+type UnitStage struct{ Unit, Stage, Line, At string }
+
+type seatFactLine struct {
+	text, omitted string
+	at            time.Time
+}
+
+func seatTime(value string) time.Time { at, _ := time.Parse(time.RFC3339, value); return at }
+
+// seatCut counts omitted bytes and keeps the retained text valid UTF-8.
+func seatCut(value string, limit int, name, command string) string {
+	if len(value) <= limit {
+		return value
+	}
+	note := fmt.Sprintf("\n[%s: %d bytes omitted; %s]\n", name, len(value), command)
+	end := max(0, limit-len(note))
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	note = fmt.Sprintf("\n[%s: %d bytes omitted; %s]\n", name, len(value)-end, command)
+	return value[:end] + note
+}
+
+// seatList keeps newest entries and names every omitted entry or counterpart.
+func seatList(lines []seatFactLine, count, limit int, command string) string {
+	sort.SliceStable(lines, func(i, j int) bool {
+		if lines[i].at.Equal(lines[j].at) {
+			return lines[i].omitted < lines[j].omitted
+		}
+		return lines[i].at.After(lines[j].at)
+	})
+	keep := min(count, len(lines))
+	for {
+		var body strings.Builder
+		for _, line := range lines[:keep] {
+			body.WriteString(line.text + "\n")
+		}
+		omitted := map[string]int{}
+		for _, line := range lines[keep:] {
+			omitted[line.omitted]++
+		}
+		var cuts []string
+		for _, name := range slices.Sorted(maps.Keys(omitted)) {
+			cuts = append(cuts, fmt.Sprintf("%s: %d omitted", name, omitted[name]))
+		}
+		note := ""
+		if len(cuts) > 0 {
+			note = seatCut("["+strings.Join(cuts, "; ")+"; "+command+"]\n", limit, fmt.Sprintf("%d omission notices", len(cuts)), command)
+		}
+		if body.Len()+len(note) <= limit || keep == 0 {
+			return body.String() + note
+		}
+		keep--
+	}
+}
+
+func seatFacts(root string, selection SeatSelection, machine string, tips map[string]string, d seatDependencies) string {
+	id := selection.Goal
+	show, status, landing, inbox := "metasystem goal show "+id, "metasystem work status "+id, "metasystem landing status", "metasystem agent inbox"
+	var facts strings.Builder
+	unavailable := func(name, command string) { facts.WriteString(name + " unavailable; " + command + "\n") }
+	facts.WriteString("\nGoal record:\n")
+	projection, err := d.Project(root, d.Now())
+	if err != nil || projection.Tree == nil || projection.Tree.Live[id] == nil {
+		unavailable("Next step", show)
+	} else {
+		facts.WriteString("Next step: " + seatCut(projection.Tree.Live[id].NextStep, 2000, "next step", show) + "\n")
+	}
+	var units []UnitStage
+	if units, err = d.Units(root, id); err != nil {
+		unavailable("Units", status)
+	}
+	hand := ""
+	entry, found, readErr := d.Lane(root, id)
+	if readErr == nil && found && entry.State == plain.StateWaiting {
+		main, mainErr := d.Main(root)
+		readErr = mainErr
+		if readErr == nil {
+			var derived []plain.Entry
+			derived, readErr = plain.Landed([]plain.Entry{entry}, func(sha string) (bool, error) { return d.Contains(root, sha, main) })
+			entry = derived[0]
+		}
+	}
+	if readErr != nil {
+		unavailable("Hand-in", landing)
+	} else if found {
+		hand = entry.State
+		if hand == plain.StateWaiting {
+			hand = "handed in"
+		}
+		if entry.Reason != "" {
+			hand += ": " + seatCut(entry.Reason, 600, "return text", landing)
+		}
+		if tips[id] == "" || entry.SHA != tips[id] {
+			facts.WriteString("Hand-in at commit " + entry.SHA + ": " + hand + "\n")
+			hand = ""
+		}
+	} else {
+		facts.WriteString("Hand-in: none\n")
+	}
+	var unitLines, refusals []seatFactLine
+	for _, unit := range units {
+		line := unit.Line
+		if line == "" {
+			line = unit.Unit + ": " + unit.Stage
+		}
+		if hand != "" {
+			line += "; " + hand
+		}
+		unitLines = append(unitLines, seatFactLine{line, "units", seatTime(unit.At)})
+		if strings.HasPrefix(unit.Stage, "review refused") {
+			refusals = append(refusals, seatFactLine{unit.Unit + ": " + unit.Stage + "; metasystem work review " + id + " --work " + unit.Unit, "refusals", seatTime(unit.At)})
+		}
+	}
+	facts.WriteString("Units:\n" + seatList(unitLines, 20, 3000, status))
+	jobs, readErr := d.Jobs(root)
+	if readErr != nil {
+		unavailable("Dispatch refusals", status)
+	} else {
+		for _, job := range jobs {
+			if job["goalId"] != id || job["status"] != "failed" || job["error"] != "dispatch-refused" {
+				continue
+			}
+			at, _ := job["createdAt"].(string)
+			open := true
+			for _, later := range jobs {
+				when, _ := later["createdAt"].(string)
+				if later["goalId"] == id && later["role"] == job["role"] && later["reviews"] == job["reviews"] && later["reviewedCommit"] == job["reviewedCommit"] && seatTime(when).After(seatTime(at)) {
+					open = false
+				}
+			}
+			if open {
+				jobID, _ := job["jobId"].(string)
+				refusals = append(refusals, seatFactLine{fmt.Sprintf("job %s, role %v, refusal %v: %v", jobID, job["role"], job["refusalClass"], job["summary"]), "refusals", seatTime(at)})
+			}
+		}
+	}
+	refused, refusalErr := d.Refusals()
+	launched, launchErr := d.Launches()
+	if refusalErr != nil || launchErr != nil {
+		unavailable("Launch refusals", status)
+	} else {
+		latest := map[string]time.Time{}
+		for _, record := range launched {
+			at := seatTime(record.StartedAt)
+			if record.Goal == id && at.After(latest[record.Kind]) {
+				latest[record.Kind] = at
+			}
+		}
+		for _, refusal := range refused {
+			at := seatTime(refusal.Time)
+			if refusal.Goal == id && !latest[refusal.Kind].After(at) {
+				refusals = append(refusals, seatFactLine{fmt.Sprintf("launch %s, kind %s, code %s, tag %s", at.In(time.Local).Format(time.RFC3339), refusal.Kind, refusal.Code, refusal.Tag), "refusals", at})
+			}
+		}
+	}
+	facts.WriteString("Open refusals:\n" + seatList(refusals, 10, 2000, status))
+	if machine == "this machine" {
+		unavailable("Messages", inbox)
+	} else if threads, readErr := d.Threads(); readErr != nil {
+		unavailable("Messages", inbox)
+	} else {
+		groups := map[string][]board.Message{}
+		for _, thread := range threads {
+			relevant, other := false, board.Message{}
+			for _, message := range thread.Messages {
+				if message.To.Machine == machine || message.To.Goal == id || message.From.Machine == machine {
+					relevant = true
+				}
+				if message.From.Machine != machine && message.At.After(other.At) {
+					other = message
+				}
+			}
+			if !relevant {
+				continue
+			}
+			for _, message := range thread.Messages {
+				counterpart := message.From.Machine
+				if counterpart == machine {
+					counterpart = message.To.Machine
+					if counterpart == "" {
+						counterpart = other.From.Machine
+					}
+					if counterpart == "" {
+						counterpart = id
+					}
+				}
+				groups[counterpart] = append(groups[counterpart], message)
+			}
+		}
+		var messageLines []seatFactLine
+		retained := 0
+		for counterpart, messages := range groups {
+			sort.SliceStable(messages, func(i, j int) bool {
+				if messages[i].At.Equal(messages[j].At) {
+					return messages[i].ID > messages[j].ID
+				}
+				return messages[i].At.After(messages[j].At)
+			})
+			for index, message := range messages {
+				text, at := "", time.Time{}
+				if index < 3 {
+					retained++
+					at = messages[0].At
+					text = board.Render(message, d.Now(), time.Local)
+					if len(text) > 600 {
+						closing := "\n" + fmt.Sprintf(board.Closing, message.ID)
+						text = seatCut(text, 600-len(closing), "message "+message.ID, inbox) + closing
+					}
+				}
+				messageLines = append(messageLines, seatFactLine{text, "messages with " + counterpart, at})
+			}
+		}
+		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection))-facts.Len()-128, inbox))
+	}
+	return facts.String()
+}
+
+func seatJobRecords(root string) ([]map[string]any, error) {
+	events, err := seatJSONLines(filepath.Join(root, "artifacts", "agents", "events.jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	directory := filepath.Join(root, "artifacts", "agents", "jobs")
+	paths, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var records []map[string]any
+	for _, path := range paths {
+		if path.IsDir() || !strings.HasSuffix(path.Name(), ".json") {
+			continue
+		}
+		var record map[string]any
+		if err := readRecordJSON(filepath.Join(directory, path.Name()), &record); err != nil {
+			return nil, err
+		}
+		for _, event := range events {
+			if event["event"] == "job-refused" && event["jobId"] == record["jobId"] {
+				record["summary"] = event["summary"]
+			}
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func seatJSONLines(path string) ([]map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var records []map[string]any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	for {
+		var record map[string]any
+		err := decoder.Decode(&record)
+		if errors.Is(err, io.EOF) {
+			return records, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
 }
