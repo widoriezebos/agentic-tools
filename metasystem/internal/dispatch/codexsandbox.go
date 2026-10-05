@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
@@ -29,15 +28,17 @@ func WidenForCodexSandbox(requested map[string]any) map[string]any {
 // admittedRequest is the requested envelope a fresh job is admitted with: a
 // Codex job on a host whose launch.codex.sandbox is danger-full-access gets
 // the widened envelope, and every other job its request unchanged. A
-// checkout without a metasystem.conf reads the compiled default.
-func admittedRequest(lookupEnv func(string) (string, bool), root, runtime string, requested map[string]any) (map[string]any, error) {
+// dispatch without a settings file uses root's metasystem.conf when present,
+// otherwise the compiled default.
+func admittedRequest(lookupEnv func(string) (string, bool), root, settingsFile, runtime string, requested map[string]any) (map[string]any, error) {
 	if runtime != "codex" {
 		return requested, nil
 	}
-	confPath := ""
-	if root != "" {
-		if info, err := os.Stat(filepath.Join(root, "metasystem.conf")); err == nil && info.Mode().IsRegular() {
-			confPath = filepath.Join(root, "metasystem.conf")
+	confPath := settingsFile
+	if confPath == "" && root != "" {
+		rootPath := dispatchSettingsPath(root, "")
+		if info, err := os.Stat(rootPath); err == nil && info.Mode().IsRegular() {
+			confPath = rootPath
 		}
 	}
 	mode, err := config.CodexSandbox(confPath, lookupEnv)
