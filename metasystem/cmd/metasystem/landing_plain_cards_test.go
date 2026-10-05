@@ -93,10 +93,13 @@ func TestPlainLanePushWritesLandedCards(t *testing.T) {
 			}
 		}
 	}
-	for _, goal := range []string{"missing", "unreadable", "released"} {
+	for _, goal := range []string{"unreadable", "released"} {
 		if !detailsHave(result, "the landed card for "+goal+" was not written") {
 			t.Fatalf("untold card %s: %+v", goal, result)
 		}
+	}
+	if detailsHave(result, "the landed card for missing") || counts["missing"] != 0 {
+		t.Fatalf("missing card was reported or counted: %+v counts=%v", result, counts)
 	}
 	if _, err := os.Stat(filepath.Join(board.Dir(b.home), seat.Machine, "missing.json")); !os.IsNotExist(err) {
 		t.Fatalf("missing goal gained a card: %v", err)
@@ -147,6 +150,59 @@ func TestWorkLandHandInWritesJoined(t *testing.T) {
 			}
 			if strings.Contains(strings.Join(result.Details, "\n"), "hand-in card") {
 				t.Fatalf("card write failed: %+v", result)
+			}
+		})
+	}
+}
+
+func TestWorkLandHandInCardDetails(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"missing", "released", "ambiguous", "write-failed"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			b, _, _ := plainLaneBedWith(t, true, "critic-root", "critic-root")
+			registry := t.TempDir()
+			home := filepath.Join(registry, ".metasystem")
+			card := board.Card{Seat: board.Seat{Machine: "seat", Installation: b.install}, Goal: "standing-validation", Stage: board.StageLandReady}
+			if state == "released" {
+				card.Stage = board.StageReleased
+			}
+			if state != "missing" {
+				if err := board.WriteAt(home, card); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if state == "ambiguous" {
+				other := card
+				other.Seat.Machine = "other-seat"
+				if err := board.WriteAt(home, other); err != nil {
+					t.Fatal(err)
+				}
+			}
+			lock := filepath.Join(board.Dir(home), card.Seat.Machine, ".lock")
+			if state == "write-failed" {
+				if err := os.Remove(lock); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(lock, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			owners := b.intentBed.owners()
+			owners.delivery, owners.connection = b.owners, b.connection
+			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
+			owners.landing.by = func(string) string { return "seat" }
+			code, result := b.runJSON(owners, "work", "land", card.Goal)
+			expectOutcome(t, "hand-in", code, result, intentConfirmed)
+			if state == "write-failed" {
+				if len(result.Details) != 1 || !strings.Contains(result.Details[0], "the hand-in card for "+card.Goal+" was not written: ") || !strings.Contains(result.Details[0], lock) {
+					t.Fatalf("card write failure was not named: %+v", result)
+				}
+				if current, live := board.LiveCard(home, card.Goal); !live || current.Stage != board.StageLandReady {
+					t.Fatalf("failed write changed the card: %+v live=%v", current, live)
+				}
+			} else if len(result.Details) != 0 {
+				t.Fatalf("hand-in without a single live card has details: %+v", result)
 			}
 		})
 	}

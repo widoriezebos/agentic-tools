@@ -274,7 +274,7 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 			continue
 		}
 		card, live := board.LiveCard(home, goal)
-		problem := "no single live card holds the goal"
+		problem := ""
 		if live {
 			var count int
 			count, err = unitsOnMain(checkout, outcome.Commit, goal)
