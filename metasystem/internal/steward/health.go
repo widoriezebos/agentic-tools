@@ -1666,21 +1666,23 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "proof-runs")); err != nil {
 		root = repoRoot
 	}
-	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts", "*.json"))
-	sort.Strings(paths)
+	paths, _ := readRunnerRecords(repoRoot, filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts"), func(path string) (proofAttemptHead, error) {
+		value, terminal, err := readProofAttemptHead(path)
+		return proofAttemptHead{value, terminal}, err
+	})
 	var dead, unknown []string
 	for _, path := range paths {
-		value, terminal, err := readProofAttemptHead(path)
-		if err != nil {
-			unknown = append(unknown, strings.TrimSuffix(filepath.Base(path), ".json"))
+		if path.err != nil {
+			unknown = append(unknown, strings.TrimSuffix(path.name, ".json"))
 			continue
 		}
-		if terminal {
+		value := path.value.value
+		if path.value.terminal {
 			continue
 		}
 		attemptID, _ := value["attemptId"].(string)
 		if attemptID == "" {
-			attemptID = strings.TrimSuffix(filepath.Base(path), ".json")
+			attemptID = strings.TrimSuffix(path.name, ".json")
 		}
 		launcher, ok := value["launcher"].(map[string]any)
 		if !ok {
@@ -1707,6 +1709,11 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), remedy)
 	}
 	return roleAlive(RoleProofAttempts, "no live proof attempt has a dead launcher")
+}
+
+type proofAttemptHead struct {
+	value    map[string]any
+	terminal bool
 }
 
 // proofAdmissionRedKey bounds how long a heavy proof lease may stay dead or

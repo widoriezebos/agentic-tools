@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -165,25 +165,32 @@ func loadAlertEpisode(path string) (AlertEpisode, error) {
 }
 
 func loadAlertEpisodesUnlocked(repoRoot string) ([]AlertEpisode, error) {
-	entries, err := os.ReadDir(alertDir(repoRoot))
+	entries, err := readRunnerRecords(repoRoot, alertDir(repoRoot), loadAlertEpisode)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []AlertEpisode{}, nil
 		}
 		return nil, err
 	}
-	var paths []string
+	episodes := make([]AlertEpisode, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
-			paths = append(paths, filepath.Join(alertDir(repoRoot), entry.Name()))
+		if entry.err != nil {
+			return nil, entry.err
 		}
-	}
-	sort.Strings(paths)
-	episodes := make([]AlertEpisode, 0, len(paths))
-	for _, path := range paths {
-		episode, err := loadAlertEpisode(path)
-		if err != nil {
-			return nil, err
+		episode := entry.value
+		episode.Attempts = slices.Clone(episode.Attempts)
+		episode.Evidence = slices.Clone(episode.Evidence)
+		if episode.AcknowledgedBy != nil {
+			invoker := *episode.AcknowledgedBy
+			episode.AcknowledgedBy = &invoker
+		}
+		if episode.ClearedBy != nil {
+			invoker := *episode.ClearedBy
+			episode.ClearedBy = &invoker
+		}
+		if episode.SeatIdle != nil {
+			incident := *episode.SeatIdle
+			episode.SeatIdle = &incident
 		}
 		episodes = append(episodes, episode)
 	}

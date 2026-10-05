@@ -34,8 +34,10 @@ type TickConfig struct {
 	// WorkStateRoot selects the host unit and launch stores; empty uses the
 	// registry's production default.
 	WorkStateRoot string
-	StaleTicks    int
-	MaxRevivals   int
+	// RunnerClock supplies the resident loop's clock; nil uses the system clock.
+	RunnerClock *HandoffClock
+	StaleTicks  int
+	MaxRevivals int
 	// Now is set only by fixture-authorized command boundaries. A zero value
 	// keeps each tick operation on the wall clock.
 	Now time.Time
@@ -113,10 +115,11 @@ func (c TickConfig) localNarrationLocation() *time.Location {
 
 // TickResult is everything the calling verb needs to act and report.
 type TickResult struct {
-	Decision Decision
-	Evidence Evidence
-	OpenWork string       // the open-work reason, for the report
-	Reaped   []ReapReport // continuations this tick closed
+	healthElapsed time.Duration
+	Decision      Decision
+	Evidence      Evidence
+	OpenWork      string       // the open-work reason, for the report
+	Reaped        []ReapReport // continuations this tick closed
 	// ProviderOutage reports a standing outage mark, for the narration
 	// and the long-outage noticing; Outage carries the mark itself.
 	ProviderOutage  bool
@@ -547,6 +550,8 @@ type tickHealthDependencies struct {
 }
 
 func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
+	started := dependencies.now()
+	defer func() { result.healthElapsed += dependencies.now().Sub(started) }()
 	healthNow := func() time.Time {
 		if now.IsZero() {
 			return dependencies.now()

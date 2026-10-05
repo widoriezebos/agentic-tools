@@ -283,6 +283,10 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 // runStewardRun is the runner's body — normally spawned by arm,
 // callable directly by any external ticker the operator provides.
 func runStewardRun(args []string, stdout, stderr io.Writer) int {
+	return runStewardRunWithDependencies(args, stdout, stderr, nil, steward.TickSeconds)
+}
+
+func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer, clock *steward.HandoffClock, tickSeconds func(string) int) int {
 	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
@@ -308,6 +312,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	tickConfig.ArmedLineage = *lineage
+	tickConfig.RunnerClock = clock
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The lane checkout's own steward wakes its landing agent on demand;
@@ -320,7 +325,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.ProbeProvider = func(top string) (bool, error) {
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}
-	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
+	interval := time.Duration(tickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)
 		if err != nil {

@@ -117,8 +117,8 @@ func TickSeconds(repoRoot string) int {
 // build stamp, the lineage the arming caller handed to steward run, and this
 // runner's own cadence. An unreadable enrollment leaves generation zero,
 // which the component records as an unarmed tick rather than publishing.
-func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
-	resident := &seat.RunnerContext{ArmedLineage: lineage, TickSeconds: TickSeconds(repoRoot)}
+func runnerContext(repoRoot, lineage string, interval time.Duration) *seat.RunnerContext {
+	resident := &seat.RunnerContext{ArmedLineage: lineage, TickSeconds: int(interval / time.Second)}
 	if resident.ArmedLineage == "" {
 		resident.ArmedLineage = seat.NoLease
 	}
@@ -137,10 +137,14 @@ func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
+	now, sleep := runnerNow, runnerSleep
+	if cfg.RunnerClock != nil {
+		now, sleep = cfg.RunnerClock.Now, cfg.RunnerClock.Sleep
+	}
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		TrimCaches: machineCacheTrimmer(nil, ""),
-		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
+		Now:        now, Sleep: sleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
 		Bridge:      func(top string) bridgeStepper { return newBridgeRole(top) },
 		StopSignals: productionStopSignals(),
 	})
@@ -191,6 +195,9 @@ func runnerSweepDisk(top string, now time.Time, helmActive bool) {
 }
 
 func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
+	if interval <= 0 {
+		return fmt.Errorf("the steward tick interval must be positive")
+	}
 	top := canonicalPath(repoRoot)
 	if deps.Resumable == nil {
 		deps.Resumable = ResumableIntent
@@ -214,6 +221,15 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		return err
 	}
 	defer held.Release()
+	logFile, err := os.OpenFile(runnerLogPath(top), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	reads := &runnerReadState{dirs: map[string]any{}}
+	runnerReads.Store(top, reads)
+	defer runnerReads.Delete(top)
+	timed := &timedCensus{WorkerCensus: census, clock: deps.Now}
 	_ = os.Remove(runnerStopPath(top))
 	// From here a stop signal drains instead of killing: the tick in
 	// progress finishes its goal transaction, nothing new starts, and the
@@ -260,7 +276,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	// The runner context is filled HERE and nowhere else: only the resident
 	// runner knows the identity it was enrolled with and the lineage its
 	// arming caller handed it, so only the resident runner publishes presence.
-	cfg.Runner = runnerContext(top, cfg.ArmedLineage)
+	cfg.Runner = runnerContext(top, cfg.ArmedLineage, interval)
 	var bridge bridgeStepper
 	if deps.Bridge != nil {
 		bridge = deps.Bridge(top)
@@ -268,18 +284,41 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	bridgeLine := ""
 	keeping := &laneKeeping{step: cfg.KeepLandingLane}
+	var started time.Time
+	var result TickResult
+	logTick := func(work, slept time.Duration) {
+		if _, logErr := fmt.Fprintf(logFile, "tick %d: health %.3fms census %.3fms other %.3fms, slept %.3f s\n", reads.tick,
+			float64(result.healthElapsed)/float64(time.Millisecond), float64(timed.elapsed)/float64(time.Millisecond),
+			float64(work-result.healthElapsed-timed.elapsed)/float64(time.Millisecond), slept.Seconds()); logErr != nil {
+			fmt.Fprintf(os.Stderr, "tick timing: %v\n", logErr)
+		}
+	}
+	wait := func(keeper *laneKeeping) bool {
+		work := deps.Now().Sub(started)
+		var slept time.Duration
+		waiting := deps
+		waiting.Sleep = func(d time.Duration) { before := deps.Now(); deps.Sleep(d); slept += deps.Now().Sub(before) }
+		stopped := runnerWait(top, interval-work, waiting, drain, keeper, cfg.ProbeProvider)
+		logTick(work, slept)
+		return stopped
+	}
 
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return nil
 		}
-		result, err := deps.Tick(top, cfg, census)
+		reads.Lock()
+		reads.tick++
+		reads.Unlock()
+		started, timed.elapsed = deps.Now(), 0
+		result, err = deps.Tick(top, cfg, timed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
 		// A stop signal during the tick: its work in progress has finished,
 		// and nothing after it starts.
 		if drain.Requested() {
+			logTick(deps.Now().Sub(started), 0)
 			return nil
 		}
 		// The disk sweep runs after the tick released arbitration and before
@@ -301,7 +340,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if helm.Active(top).Active {
-			if stopped := runnerWait(top, interval, deps, drain, nil, cfg.ProbeProvider); stopped {
+			if stopped := wait(nil); stopped {
 				return nil
 			}
 			continue
@@ -316,7 +355,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			if startSeat == nil {
 				startSeat = StartSeat
 			}
-			if _, startErr := startSeat(top, cfg, census, *result.Seat); startErr != nil {
+			if _, startErr := startSeat(top, cfg, timed, *result.Seat); startErr != nil {
 				fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
 				if qErr := QueueNotification(top, PendingNotification{
 					Nonce:   "seat-start-failure",
@@ -370,7 +409,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
 			}
 		}
-		if stopped := runnerWait(top, interval, deps, drain, keeping, cfg.ProbeProvider); stopped {
+		if stopped := wait(keeping); stopped {
 			return nil
 		}
 	}
@@ -466,7 +505,9 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 			}
 			probeAt = probeAt.Add(limitProbe)
 		}
-		deps.Sleep(200 * time.Millisecond)
+		if remaining := deadline.Sub(deps.Now()); remaining > 0 {
+			deps.Sleep(min(200*time.Millisecond, remaining))
+		}
 	}
 	return false
 }
