@@ -13,8 +13,9 @@ import (
 // TestRebaseGitAdapter observes replay, checkout installation, atomic publication and abort cleanup.
 func TestRebaseGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"replay", "conflict", "generated"} {
+	for _, mode := range []string{"replay", "conflict", "generated", "generated-rename", "resolve"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			remote := filepath.Join(dir, "origin.git")
 			primary := filepath.Join(dir, "primary")
@@ -56,10 +57,20 @@ func TestRebaseGitAdapter(t *testing.T) {
 			git(primary, "push", "-qu", "origin", "main")
 			git(primary, "worktree", "add", "-qb", "goal/goal-a", work)
 			plan := commit(work, "metasystem/plans/design.md", "a plan\n", "plan\n\nGoal-Plan: goal-a")
-			if mode == "generated" {
+			if strings.HasPrefix(mode, "generated") {
 				write(work, "metasystem/gen/out.txt", "goal\n")
+				if mode == "generated-rename" {
+					git(work, "mv", "metasystem/code.txt", "metasystem/a-much-longer-name.txt")
+				}
 			}
-			unit := commit(work, "metasystem/code.txt", "unit\n", "unit\n\nGoal-Unit: goal-a/u1")
+			unitPath, unitBody := "metasystem/code.txt", "unit\n"
+			if mode == "generated-rename" {
+				unitPath, unitBody = "metasystem/a-much-longer-name.txt", "base\n"
+			}
+			if mode == "resolve" {
+				unitBody = "goal insertion\nbase\n"
+			}
+			unit := commit(work, unitPath, unitBody, "unit\n\nGoal-Unit: goal-a/u1")
 			record := "metasystem/records/reads/goal-a/" + unit + ".json"
 			old := commit(work, record, `{"testsChanged":[]}`+"\n", "read\n\nGoal-Read: goal-a/u1 "+unit)
 			git(work, "push", "-q", "origin", "goal/goal-a")
@@ -67,7 +78,10 @@ func TestRebaseGitAdapter(t *testing.T) {
 			if mode == "conflict" {
 				path, body = "metasystem/code.txt", "main\n"
 			}
-			if mode == "generated" {
+			if mode == "resolve" {
+				write(primary, "metasystem/code.txt", "main insertion\nbase\n")
+			}
+			if strings.HasPrefix(mode, "generated") {
 				write(primary, "metasystem/gen/out.txt", "main\n")
 				write(primary, "metasystem/src.txt", "merged sources\n")
 			}
@@ -90,6 +104,15 @@ func TestRebaseGitAdapter(t *testing.T) {
 				return git(req.Repo, "rev-parse", "HEAD"), Attestation{}, nil
 			}
 			req := RebaseRequest{Repo: filepath.Join(work, "metasystem"), Remote: "origin", GoalID: "goal-a", EndpointTip: main, CheckClaim: func() error { return nil }}
+			if mode == "resolve" {
+				req.Resolve = func(stop RebaseResolution) (string, error) {
+					if stop.Base != git(stop.Worktree, "rev-parse", "HEAD") || !strings.Contains(stop.Conflicts, "<<<<<<< main\nmain insertion\n||||||| base\n=======\ngoal insertion\n>>>>>>> goal") {
+						t.Fatalf("resolve %+v", stop)
+					}
+					write(stop.Worktree, "metasystem/code.txt", "main insertion\ngoal insertion\nbase\n")
+					return "resolve/run.json", nil
+				}
+			}
 			got, err := rebaseWith(req, d)
 			if mode == "conflict" {
 				var refusal *RebaseConflict
@@ -113,13 +136,16 @@ func TestRebaseGitAdapter(t *testing.T) {
 			if err != nil || got.State != "rebased" || got.OldTip != old {
 				t.Fatalf("rebase %+v %v", got, err)
 			}
-			if mode == "generated" {
+			if strings.HasPrefix(mode, "generated") {
 				if data, err := os.ReadFile(filepath.Join(work, "metasystem/gen/out.txt")); err != nil || string(data) != "merged sources\n" {
 					t.Fatalf("generated content %s %v", data, err)
 				}
 				if !reflect.DeepEqual(got.Carried, []string{"u1"}) || !reflect.DeepEqual(got.Regenerated, []string{"metasystem/gen/out.txt"}) {
 					t.Fatalf("review or regeneration %+v", got)
 				}
+			}
+			if mode == "resolve" && (!reflect.DeepEqual(got.NeedsReview, []string{"u1"}) || len(got.Carried) != 0) {
+				t.Fatalf("resolved read %+v", got)
 			}
 			commits, err := ValidateRange(req.Repo, main, got.NewTip, "goal-a")
 			if err != nil || len(commits) != 3 {

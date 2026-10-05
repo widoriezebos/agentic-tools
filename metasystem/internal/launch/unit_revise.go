@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -16,14 +17,18 @@ import (
 // before the new attempt is added or anything is launched, so a repeated or
 // interrupted request reaches the same attempt instead of another one.
 type UnitRevision struct {
-	After              int    `json:"after"`
-	Attempt            int    `json:"attempt"`
-	BriefSHA256        string `json:"briefSha256"`
-	Brief              string `json:"brief"`
-	DecisionsSHA256    string `json:"decisionsSha256,omitempty"`
-	Decisions          string `json:"decisions,omitempty"`
-	RequestedAtUnixSec int64  `json:"requestedAt"`
+	After              int             `json:"after"`
+	Attempt            int             `json:"attempt"`
+	BriefSHA256        string          `json:"briefSha256"`
+	Brief              string          `json:"brief"`
+	DecisionsSHA256    string          `json:"decisionsSha256,omitempty"`
+	Decisions          string          `json:"decisions,omitempty"`
+	RequestedAtUnixSec int64           `json:"requestedAt"`
+	Rebase             *UnitRebasePlan `json:"rebase,omitempty"`
 }
+
+// UnitRebasePlan binds a correction to a stopped replay, whose HEAD is its base.
+type UnitRebasePlan struct{ Worktree, Base, Commit string }
 
 // UnitRevisionRequest asks for one correction. After is the attempt being
 // corrected; zero means the request is first matched against the run's
@@ -34,6 +39,7 @@ type UnitRevisionRequest struct {
 	After     int
 	Brief     []byte
 	Decisions []byte
+	Rebase    *UnitRebasePlan
 }
 
 // UnitRevisionResult is the attempt a request reached. Rejoined is true when
@@ -115,13 +121,22 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		}
 	}
 	briefDigest := digestHex(request.Brief)
+	if request.Rebase != nil {
+		original, err := os.ReadFile(plan.Build.Brief)
+		if err != nil {
+			return UnitRevisionResult{}, err
+		}
+		request.Brief = append(original, request.Brief...)
+		briefDigest = digestHex(request.Brief)
+	}
 	decisionsDigest := ""
 	if len(request.Decisions) > 0 {
 		decisionsDigest = digestHex(request.Decisions)
 	}
 	current := len(record.Rounds)
 	same := func(revision UnitRevision) bool {
-		return revision.BriefSHA256 == briefDigest && revision.DecisionsSHA256 == decisionsDigest
+		return revision.BriefSHA256 == briefDigest && revision.DecisionsSHA256 == decisionsDigest &&
+			(revision.Rebase == nil && request.Rebase == nil || revision.Rebase != nil && request.Rebase != nil && *revision.Rebase == *request.Rebase)
 	}
 	var retained *UnitRevision
 	for index := range record.Revisions {
@@ -155,7 +170,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			return UnitRevisionResult{Current: current}, err
 		}
 		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
-			RequestedAtUnixSec: runner.Manager.Now().Unix()}
+			RequestedAtUnixSec: runner.Manager.Now().Unix(), Rebase: request.Rebase}
 		directory := filepath.Join(runner.runDir(record.ID), "revisions")
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return UnitRevisionResult{}, err
@@ -175,7 +190,23 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			return UnitRevisionResult{}, err
 		}
 		retained = &revision
-	} else if retained.Attempt <= current {
+	}
+	bound := *runner
+	if retained.Rebase != nil {
+		plan, err = runner.rebasePlan(plan, retained.Rebase)
+		if err != nil {
+			return UnitRevisionResult{}, err
+		}
+		bound.resolving = true
+	}
+	runner = &bound
+	require := func() error {
+		if runner.resolving {
+			return nil
+		}
+		return runner.requireGoalBranch(plan)
+	}
+	if retained.Attempt <= current {
 		// The attempt exists: the request is answered by it, continuing it
 		// only while it still runs.
 		result := UnitRevisionResult{Revision: *retained, Rejoined: true, Current: current}
@@ -183,7 +214,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			result.UnitResult = UnitResult{Record: record, Round: retained.Attempt}
 			return result, nil
 		}
-		if err := runner.requireGoalBranch(plan); err != nil {
+		if err := require(); err != nil {
 			return result, err
 		}
 		unit, err := runner.continueRunning(&record, plan)
@@ -197,7 +228,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	if data, err := os.ReadFile(retained.Brief); err != nil || digestHex(data) != retained.BriefSHA256 {
 		return UnitRevisionResult{}, coded("UNIT_REVISION_CORRUPT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d", retained.After)), fmt.Errorf("the kept brief of the correction after attempt %d is missing or changed", retained.After))
 	}
-	if err := runner.requireGoalBranch(plan); err != nil {
+	if err := require(); err != nil {
 		return UnitRevisionResult{}, err
 	}
 	previous := readOutputs(runner.Manager, record.Rounds[retained.After-1])
@@ -228,4 +259,39 @@ func (runner *UnitRunner) continueRunning(record *UnitRunRecord, plan UnitPlan) 
 	}
 	deadline := runner.Manager.Now().Add(time.Duration(settings.WaitCapSeconds) * time.Second)
 	return runner.advanceRunning(record, plan, deadline)
+}
+
+// rebasePlan keeps every continuation on the stopped replay's tree and base.
+func (runner *UnitRunner) rebasePlan(plan UnitPlan, binding *UnitRebasePlan) (UnitPlan, error) {
+	git := runner.Git
+	if git == nil {
+		git = OSGitRunner{}
+	}
+	for _, ref := range []struct{ name, want string }{{"HEAD", binding.Base}, {"REBASE_HEAD", binding.Commit}} {
+		out, err := git.Run(binding.Worktree, nil, "rev-parse", "--verify", ref.name)
+		if err != nil || strings.TrimSpace(string(out)) != ref.want {
+			return UnitPlan{}, errors.Join(fmt.Errorf("resolve round no longer matches stopped rebase %s", ref.name), err)
+		}
+	}
+	move := func(path string) string {
+		rel, err := filepath.Rel(plan.Worktree, path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return filepath.Join(binding.Worktree, rel)
+		}
+		return path
+	}
+	plan.Proof = append([]ProofCommand(nil), plan.Proof...)
+	plan.Build.Inputs = append([]string(nil), plan.Build.Inputs...)
+	plan.Build.Outputs = append([]string(nil), plan.Build.Outputs...)
+	for i := range plan.Build.Inputs {
+		plan.Build.Inputs[i] = move(plan.Build.Inputs[i])
+	}
+	for i := range plan.Build.Outputs {
+		plan.Build.Outputs[i] = move(plan.Build.Outputs[i])
+	}
+	for i := range plan.Proof {
+		plan.Proof[i].Dir = move(plan.Proof[i].Dir)
+	}
+	plan.Worktree, plan.Base = binding.Worktree, binding.Base
+	return plan, nil
 }
