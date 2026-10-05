@@ -18,6 +18,7 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 		t.Skip("synthetic hook-preview volume is intentionally excluded from short tests")
 	}
 	root := t.TempDir()
+	registerHealthFixtureHooks(t, root)
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}

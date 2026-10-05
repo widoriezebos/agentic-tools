@@ -2,8 +2,28 @@ package runtimes
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
+
+// RegisteredRuntimes are the adoptable runtimes whose hook settings file
+// this checkout carries.
+func RegisteredRuntimes(repository string) []string {
+	var selected []string
+	for _, runtime := range Adoptable() {
+		for _, row := range RegistrationRows(runtime) {
+			if row.Operation != OpCopyFile && row.Operation != OpJSONStripKey {
+				continue
+			}
+			if info, err := os.Lstat(filepath.Join(repository, filepath.FromSlash(row.Destination))); err == nil && info.Mode().IsRegular() {
+				selected = append(selected, runtime)
+				break
+			}
+		}
+	}
+	return selected
+}
 
 // The registration rows are the canonical tagged-union declaration of every
 // runtime's installed artifacts. Host setup executes them; registration/v1,

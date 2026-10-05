@@ -3,15 +3,19 @@ package steward
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
@@ -1174,6 +1178,7 @@ func TestNextHookTurnRetainsInterruptedAttemptAsFailedHistory(t *testing.T) {
 
 func TestHookPreviewDoesNotAdvanceTheTickOwnedObservation(t *testing.T) {
 	root := t.TempDir()
+	registerHealthFixtureHooks(t, root)
 	verdict := PreviewHealth(root, time.Now(), healthProbe{})
 	if len(verdict.Roles) != len(healthRoleOrder) {
 		t.Fatalf("hook preview omitted health roles: %+v", verdict.Roles)
@@ -1185,6 +1190,7 @@ func TestHookPreviewDoesNotAdvanceTheTickOwnedObservation(t *testing.T) {
 
 func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing.T) {
 	root := t.TempDir()
+	registerHealthFixtureHooks(t, root)
 	ledger := fixtureSpendLedger()
 	withSpendMeasurement(t, func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil })
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
@@ -1429,5 +1435,124 @@ func TestLedgerAttentionHealthRowUsesConfiguredStalenessGrammar(t *testing.T) {
 	want := "the shared ledger moved to aaaaaaaaaaaa 47m ago and is unexamined past 30m"
 	if row.Status != HealthDead || row.Reason != want || row.NoAutomaticRemedy || !hasLawfulAutomaticRemedy(row, nil) {
 		t.Fatalf("ledger-attention health grammar changed: %+v", row)
+	}
+}
+
+var healthAppliesChild = flag.Bool("health-applies-child", false, "run the health fixture with its private host lane record")
+
+func registerHealthFixtureHooks(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", "settings.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewLaneCheckoutReadsHealthy(t *testing.T) {
+	t.Parallel()
+	testHealthApplies(t, true, false)
+}
+
+func TestHealthCoordinatorEvaluatesEveryRole(t *testing.T) {
+	t.Parallel()
+	testHealthApplies(t, false, true)
+}
+
+func TestHealthSeatWithoutRegisteredHooksOmitsHookRoles(t *testing.T) {
+	t.Parallel()
+	testHealthApplies(t, false, false)
+}
+
+func testHealthApplies(t *testing.T, isLane, hooks bool) {
+	t.Helper()
+	if !*healthAppliesChild {
+		binary, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command(binary, "-test.run=^"+t.Name()+"$", "-test.timeout=30m", "-health-applies-child")
+		for _, value := range os.Environ() {
+			if !strings.HasPrefix(value, "METASYSTEM_SUPERVISION_REGISTRY_HOME=") && !strings.HasPrefix(value, "PATH=") {
+				command.Env = append(command.Env, value)
+			}
+		}
+		command.Env = append(command.Env, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+t.TempDir(), "PATH="+t.TempDir())
+		if out, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("isolated health fixture: %v\n%s", err, out)
+		}
+		return
+	}
+	b := newHealthBed(t, EnrollmentFixture, "")
+	b.writeFile("metasystem.conf", []byte("metasystem.runtimes=fake\n"))
+	b.writeJSON("artifacts/agents/capabilities/fake-fixture.json", map[string]any{"runtime": "fake", "capturedAt": b.base.Format(time.RFC3339Nano)})
+	if hooks {
+		b.writeFile(".claude/settings.json", []byte("{}\n"))
+	}
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := canonicalPath(t.TempDir())
+	if isLane {
+		root = b.root
+		if err := os.RemoveAll(filepath.Join(b.root, "artifacts", "agents", "mains")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(ComponentEvidencePath(b.root, "supervision-hook")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONAtomic(lane.RecordPath(home), lane.Record{Root: root, Install: root, CustodyEpoch: 1}); err != nil {
+		t.Fatal(err)
+	}
+	evaluate := func(repo, installation string, now time.Time, _ identity.Prober, currentHook bool) ([]RoleVerdict, SpendObservation) {
+		ledger := newHealthLedger(repo, now)
+		ledger.readWorld = func(string) bool { return false }
+		roles, observation := evaluateHealthRolesWithLedger(repo, repo, installation, now, b.probe, currentHook,
+			func(string, string, time.Time) (spend.Ledger, error) { return fixtureSpendLedger(), nil }, ledger)
+		baseline, _ := b.evaluate(repo, installation, now, b.probe, currentHook)
+		for index, role := range roles {
+			switch role.Role {
+			case RoleSessionMain, RoleContext, RoleHookFreshness, RoleStopHookDuration:
+			default:
+				for _, held := range baseline {
+					if held.Role == role.Role {
+						roles[index] = held
+					}
+				}
+			}
+		}
+		return roles, observation
+	}
+	var result TickResult
+	if err := completeTickHealthWithDependencies(b.root, &result, b.generation, b.runner, b.base,
+		tickHealthDependencies{evaluate: evaluate, now: func() time.Time { return b.base }, deliver: b.deliver}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range healthRoleOrder {
+		want := true
+		switch name {
+		case RoleSessionMain, RoleContext:
+			want = !isLane
+		case RoleHookFreshness, RoleStopHookDuration:
+			want = !isLane && hooks
+		}
+		found := false
+		for _, role := range result.Health.Roles {
+			if role.Role == name {
+				found = true
+				if name == RoleHookFreshness && role.Status != HealthDead {
+					t.Errorf("a registered seat without hook evidence hid the dead hook: %+v", role)
+				}
+			}
+		}
+		if found != want {
+			t.Errorf("role %s present=%t, want %t: %s", name, found, want, result.Health.Line())
+		}
+	}
+	if isLane {
+		b.requireHealthy("new lane with no session or hook evidence", result.Health)
 	}
 }

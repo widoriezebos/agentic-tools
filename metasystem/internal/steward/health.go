@@ -20,10 +20,12 @@ import (
 	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -512,6 +514,30 @@ func evaluateHealthRolesWithMeasure(repoRoot, runRoot, metasystemRoot string, no
 	return evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot, now, prober, currentHookAttempt, measure, newHealthLedger(repoRoot, now))
 }
 
+// roleApplies keeps session checks only where the ladder seats a session.
+// Steward and ledger duties belong to every checkout with a tick.
+func roleApplies(role HealthRole, checkout string) bool {
+	switch role {
+	case RoleSessionMain, RoleContext, RoleHookFreshness, RoleStopHookDuration:
+		home, err := board.Home()
+		if err == nil {
+			record, registered, readErr := lane.Read(home)
+			if readErr == nil && registered && lane.OwnsLane(checkout, record) {
+				return false
+			}
+		}
+		if role == RoleHookFreshness || role == RoleStopHookDuration {
+			// Template stewards keep state in their nested installation;
+			// its checkout owns the hook registration files.
+			if filepath.Base(checkout) == "metasystem" && config.TemplateMode(checkout) {
+				checkout = filepath.Dir(checkout)
+			}
+			return len(runtimereg.RegisteredRuntimes(checkout)) > 0
+		}
+	}
+	return true
+}
+
 // evaluateHealthRolesWithLedger reads the roles kept wholly in run state under
 // runRoot; the roles that also read the goal ledger or registers use repoRoot.
 func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc, ledger *healthLedger) ([]RoleVerdict, SpendObservation) {
@@ -519,38 +545,42 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
-	timed := func(check func() RoleVerdict) RoleVerdict {
+	timed := func(name HealthRole, check func() RoleVerdict) RoleVerdict {
+		if !roleApplies(name, runRoot) {
+			return RoleVerdict{}
+		}
 		started := time.Now()
 		role := check()
 		role.DurationMillis = elapsedRoleMillis(started)
 		return role
 	}
-	return []RoleVerdict{
-		timed(func() RoleVerdict { return checkStewardRunner(runRoot, now, prober) }),
-		timed(func() RoleVerdict { return checkSupervisionOwner(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
-		timed(func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
-		timed(func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
-		timed(func() RoleVerdict {
+	roles := []RoleVerdict{
+		timed(RoleStewardRunner, func() RoleVerdict { return checkStewardRunner(runRoot, now, prober) }),
+		timed(RoleSupervisionOwner, func() RoleVerdict { return checkSupervisionOwner(runRoot, prober) }),
+		timed(RoleRepoWatcher, func() RoleVerdict { return checkRepoWatcher(runRoot, now, state, stateErr, prober) }),
+		timed(RoleCensusFreshness, func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
+		timed(RoleNarratorFreshness, func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
+		timed(RoleSessionMain, func() RoleVerdict {
 			return checkSessionMainWithLedger(repoRoot, runRoot, now, prober, ledger, defaultSeatDependencies(HealthSeatLauncher))
 		}),
-		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
-		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
-		timed(func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
-		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
-		timed(func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
-		timed(func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
-		timed(func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
+		timed(RoleHookFreshness, func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
+		timed(RoleStopHookDuration, func() RoleVerdict { return checkStopHookDuration(runRoot) }),
+		timed(RoleContext, func() RoleVerdict { return checkInstalledContextBudget(metasystemRoot, now, prober) }),
+		timed(RoleLedgerAttention, func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
+		timed(RoleSeatPresence, func() RoleVerdict { return checkSeatPresence(runRoot, now) }),
+		timed(RoleClaimedGoalBudget, func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
+		timed(RoleStopCapabilityEpoch, func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
+		timed(RoleClaimedGoalDelivery, func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
+		timed(RoleTrunkRed, func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
 		spendRole,
-		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
-		timed(func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
-		timed(func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
-		timed(func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
-		timed(func() RoleVerdict { return checkDisk(runRoot) }),
-	}, spendObservation
+		timed(RoleGovernedObligations, func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
+		timed(RoleNonterminalJobs, func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
+		timed(RoleProofAttempts, func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
+		timed(RoleProofAdmission, func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
+		timed(RoleCapabilitySnapshots, func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
+		timed(RoleDisk, func() RoleVerdict { return checkDisk(runRoot) }),
+	}
+	return slices.DeleteFunc(roles, func(role RoleVerdict) bool { return role.Role == "" }), spendObservation
 }
 
 func elapsedRoleMillis(started time.Time) int64 {
@@ -899,6 +929,12 @@ func standingRoles(state HealthObservationState, roles []RoleVerdict) []RoleVerd
 			role.Standing = role.ConsecutiveFailures >= healthFailureLimit
 		case role.ConsecutiveFailures >= healthFailureLimit:
 			role.FailureEscalation = AutoHealEnded
+			switch role.Role {
+			case RoleCapabilitySnapshots:
+				role.Remedy = "run the affected runtime's login (for Claude: claude auth login), then retry its adapter probe"
+			case RoleLedgerAttention:
+				role.Remedy = "metasystem goal sync"
+			}
 		case len(state.FailureEpisodes[role.Role]) >= healthFlapLimit:
 			role.FailureEscalation = HealingFlapping
 		default:

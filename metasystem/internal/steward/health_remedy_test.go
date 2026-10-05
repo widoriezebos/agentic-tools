@@ -14,6 +14,7 @@ import (
 
 // The command bed runs this same fixture in a child with its own PATH.
 var remedyHealthRoot = flag.String("remedy-health-root", "", "write the failed-probe fixture at this root")
+var remedyHealthObservations = flag.Int("remedy-health-observations", 1, "number of failed remedy observations in the command fixture")
 
 func TestTickFailedCapabilityProbeKeepsRunnerAlive(t *testing.T) {
 	t.Parallel()
@@ -34,6 +35,11 @@ func TestTickFailedCapabilityProbeKeepsRunnerAlive(t *testing.T) {
 	f.dependencies.health = tickHealthDependencies{evaluate: b.evaluate, now: f.cfg.now,
 		lookPath: b.lookPath, deliver: func(string, string) error { return nil }}
 	result, completed, err := f.runAs(t, b.runner, b.generation)
+	for observation := 1; observation < *remedyHealthObservations && err == nil && completed; observation++ {
+		deps := f.dependencies.health
+		deps.probeRuntime = f.cfg.ProbeRuntime
+		err = completeTickHealthWithDependencies(root, &result, b.generation, b.runner, b.base, deps)
+	}
 	if !completed {
 		// Persist the same failed completion as RunTick's defer so the public
 		// command sees the failed producer when the regression is restored.
@@ -64,7 +70,11 @@ func TestTickFailedCapabilityProbeKeepsRunnerAlive(t *testing.T) {
 
 func TestTickLedgerExaminationFailureStaysOnItsRole(t *testing.T) {
 	t.Parallel()
-	b := newHealthBed(t, EnrollmentFixture, "")
+	root := *remedyHealthRoot
+	if root == "" {
+		root = canonicalPath(t.TempDir())
+	}
+	b := newHealthBedAt(t, canonicalPath(root), EnrollmentFixture, "")
 	state := ledgerAttentionState{RemoteTip: "moved", DiffedTip: "moved", ExaminedTip: "base",
 		MovedAt: b.base.Add(-time.Hour).Format(time.RFC3339Nano)}
 	if err := saveLedgerAttentionState(b.root, state); err != nil {
@@ -75,8 +85,10 @@ func TestTickLedgerExaminationFailureStaysOnItsRole(t *testing.T) {
 			return []RoleVerdict{checkLedgerAttention(root, now)}, SpendObservation{}
 		}, examineLedger: func(string, time.Time) error { return errors.New("fixture ledger unreadable") }}
 	var result TickResult
-	if err := completeTickHealthWithDependencies(b.root, &result, b.generation, b.runner, b.base, deps); err != nil {
-		t.Fatal(err)
+	for observation := 0; observation < *remedyHealthObservations; observation++ {
+		if err := completeTickHealthWithDependencies(b.root, &result, b.generation, b.runner, b.base, deps); err != nil {
+			t.Fatal(err)
+		}
 	}
 	role := checkLedgerAttention(b.root, b.base)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "fixture ledger unreadable") || !strings.Contains(result.Health.Line(), "fixture ledger unreadable") {
