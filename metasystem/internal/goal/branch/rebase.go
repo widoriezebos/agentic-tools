@@ -313,7 +313,8 @@ func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string
 	// Read commits retain their files so unchanged builds can carry their reviews.
 	_, stop := d.git(dir, "rebase", "--reapply-cherry-picks", "--empty=keep", "--no-autosquash", req.EndpointTip)
 	for stop != nil {
-		paths, err := resolveRebaseStop(req, local, dir, &log, d, stop)
+		paths, opened, err := resolveRebaseStop(req, local, dir, log, d, stop)
+		log = opened
 		if err != nil {
 			return "", nil, err
 		}
