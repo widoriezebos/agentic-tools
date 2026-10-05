@@ -102,9 +102,16 @@ var runnerAfterRecordPublished func()
 
 // TickSeconds reads the cadence; the default is ten minutes.
 func TickSeconds(repoRoot string) int {
-	out, err := exec.Command("git", "-C", repoRoot, "config", "--get", "metasystem.steward.tick-seconds").Output()
+	return tickSecondsWithGit(repoRoot, func(args ...string) (string, error) {
+		out, err := exec.Command("git", args...).Output()
+		return string(out), err
+	})
+}
+
+func tickSecondsWithGit(repoRoot string, git func(...string) (string, error)) int {
+	out, err := git("-C", repoRoot, "config", "--get", "metasystem.steward.tick-seconds")
 	if err == nil {
-		if n, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil && n > 0 {
+		if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
 			return n
 		}
 	}

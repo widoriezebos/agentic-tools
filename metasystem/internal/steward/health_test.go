@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1032,6 +1033,50 @@ func TestStopHookDurationFastCompletionIsAlive(t *testing.T) {
 	role := checkStopHookDuration(root)
 	if role.Status != HealthAlive || role.Reason != "the last Stop took 3s of the 60s budget" {
 		t.Fatalf("a three-second Stop was not healthy: %+v", role)
+	}
+}
+
+func TestStopDurationExcusesOneRearm(t *testing.T) {
+	t.Parallel()
+	bed := newHealthBed(t, EnrollmentFixture, "")
+	check := func() RoleVerdict {
+		return checkStopHookDurationWithMachine(bed.root, func(string) (string, error) { return "fixture-machine", nil })
+	}
+	now := bed.base
+	process := healthBedRef(46001)
+	elapsed := int64(30)
+	complete := func(turn string, at time.Time) ComponentEvidence {
+		t.Helper()
+		attempt, err := BeginHookAttempt(bed.root, process, turn, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CompleteHookAttempt(bed.root, attempt.Generation, attempt.AttemptSeq, ComponentOK, "EMITTED",
+			"HEALTH healthy", `{"systemMessage":"HEALTH healthy"}`, &elapsed, at.Add(30*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		return attempt
+	}
+	first := complete("rebuilt", now)
+	arming := now.Add(25*time.Second).UTC().Format(time.RFC3339) + " stop-re-armed " + strconv.Itoa(first.Generation) + " " + strconv.FormatInt(first.AttemptSeq, 10) + "\n"
+	bed.writeFile("artifacts/agents/supervision/arming.log", []byte(arming))
+	if role := check(); role.Status != HealthAlive || !strings.Contains(role.Reason, "re-armed") {
+		t.Fatalf("the Stop that re-armed the rebuilt engine was not excused: %+v", role)
+	}
+	// Reading during the next Stop must keep the completed Stop's exception.
+	if _, err := BeginHookAttempt(bed.root, process, "next", now.Add(31*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if role := check(); role.Status != HealthAlive {
+		t.Fatalf("re-arm lost while next Stop ran: %+v", role)
+	}
+	complete("ordinary", now.Add(time.Minute))
+	if role := check(); role.Status != HealthDead || !strings.Contains(role.Reason, "threshold is 15s") {
+		t.Fatalf("a second long Stop reused the first Stop's re-arm exception: %+v", role)
+	}
+	bed.writeFile("artifacts/agents/supervision/arming.log", []byte(now.Add(70*time.Second).Format(time.RFC3339)+" engine-re-armed generation=5 previous=4\n"))
+	if role := check(); role.Status != HealthDead {
+		t.Fatalf("another caller's re-arm excused this Stop: %+v", role)
 	}
 }
 

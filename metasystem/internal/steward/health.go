@@ -260,6 +260,42 @@ func HealthRecordPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "health.json")
 }
 
+// FreshHookHealthPreviewAt checks the installation's fence before reading the
+// tick's verdict. Only the Stop's own roles are evaluated; the tick's record
+// and observation clock stay unchanged. An unusable record requires a preview.
+func FreshHookHealthPreviewAt(repoRoot, metasystemRoot string, now time.Time, git func(...string) (string, error)) (HookHealthPreview, bool) {
+	if stopped, err := healthStopped(metasystemRoot, repoRoot, now.UTC(), nil, SpendObservation{}, HealthObservationState{}); err != nil {
+		return HookHealthPreview{}, false
+	} else if stopped != nil {
+		return NewHookHealthPreview(*stopped), true
+	}
+	record, err := loadHealthRecord(HealthRecordPath(repoRoot))
+	if err != nil || record.Verdict.ObservedAt.After(now) {
+		return HookHealthPreview{}, false
+	}
+	age := now.Sub(record.Verdict.ObservedAt).Seconds()
+	if age >= 2*float64(tickSecondsWithGit(repoRoot, git)) {
+		return HookHealthPreview{}, false
+	}
+	switch record.Verdict.Aggregate {
+	case "healthy", "unhealthy", "unknown":
+		for index, role := range record.Verdict.Roles {
+			switch role.Role {
+			case RoleHookFreshness:
+				record.Verdict.Roles[index] = checkHookFreshnessAt(repoRoot, now.UTC(), true)
+			case RoleStopHookDuration:
+				record.Verdict.Roles[index] = checkStopHookDuration(repoRoot)
+			}
+		}
+		record.Verdict.Roles = standingRoles(record.State, record.Verdict.Roles)
+		record.Verdict.Aggregate, record.Verdict.ShouldAlert = healthSummary(record.Verdict.Roles)
+		record.Verdict.FindingDigest = healthFindingDigest(record.Verdict.Roles)
+		return NewHookHealthPreview(record.Verdict), true
+	default:
+		return HookHealthPreview{}, false
+	}
+}
+
 func healthLockPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "health.flock")
 }
@@ -664,6 +700,10 @@ const stopHookBudgetSeconds = 60
 var defaultStopHookSlowSeconds = config.MustIntDefault("steward.stop-slow-sec")
 
 func checkStopHookDuration(repoRoot string) RoleVerdict {
+	return checkStopHookDurationWithMachine(repoRoot, goal.ResolveMachine)
+}
+
+func checkStopHookDurationWithMachine(repoRoot string, machineName func(string) (string, error)) RoleVerdict {
 	reread := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
@@ -679,6 +719,7 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 
 	outcome := record.Outcome
 	elapsed := record.LastStopElapsedSec
+	generation, attemptSeq := record.Generation, record.AttemptSeq
 	if record.Outcome == "ATTEMPTING" {
 		outcome = ""
 		elapsed = nil
@@ -686,14 +727,18 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 			latest := record.AttemptHistory[size-1]
 			outcome = latest.Outcome
 			elapsed = latest.StopElapsedSec
+			generation, attemptSeq = latest.Generation, latest.AttemptSeq
 		}
 	}
 	if elapsed == nil {
 		return roleAlive(RoleStopHookDuration, "the last Stop carried no measurement")
 	}
+	if stopRearmedEngine(repoRoot, generation, attemptSeq) {
+		return roleAlive(RoleStopHookDuration, fmt.Sprintf("the last Stop took %ds and re-armed the rebuilt engine", *elapsed))
+	}
 
 	machine := "this machine"
-	if enrolled, machineErr := goal.ResolveMachine(repoRoot); machineErr == nil {
+	if enrolled, machineErr := machineName(repoRoot); machineErr == nil {
 		machine = enrolled
 	}
 	remedy := fmt.Sprintf("fix the expensive hook under goal stop-hook-health-cost, then run %s to re-read", reread)
@@ -712,6 +757,25 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 	}
 	return roleAlive(RoleStopHookDuration,
 		fmt.Sprintf("the last Stop took %ds of the %ds budget", *elapsed, stopHookBudgetSeconds))
+}
+
+// A re-arm belongs only to the Stop named by its arming record, including
+// when a later attempt is open and health reads the completed history.
+func stopRearmedEngine(repoRoot string, generation int, attemptSeq int64) bool {
+	file, err := os.Open(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "arming.log"))
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	want := fmt.Sprintf("stop-re-armed %d %d", generation, attemptSeq)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		_, event, ok := strings.Cut(scanner.Text(), " ")
+		if ok && event == want {
+			return true
+		}
+	}
+	return false
 }
 
 func applyHealthObservation(repoRoot string, previous HealthObservationState, roles []RoleVerdict, now time.Time) HealthVerdict {
