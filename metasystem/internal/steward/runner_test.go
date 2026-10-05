@@ -108,8 +108,8 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 		Tick: repository.runnerTick(), DeliverPending: runnerPendingDelivery(root, "true"),
 		Now: func() time.Time { return now },
 		Sleep: func(interval time.Duration) {
-			if interval != 200*time.Millisecond {
-				t.Errorf("runner loop sleep = %s; want 200ms", interval)
+			if interval != 50*time.Millisecond {
+				t.Errorf("runner loop sleep = %s; want 50ms", interval)
 			}
 			now = now.Add(interval)
 			sleeps++
