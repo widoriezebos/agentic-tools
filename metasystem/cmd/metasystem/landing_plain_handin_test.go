@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -69,6 +72,24 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 	owners := &landingOwners{status: readBranch(2, sources...)}
 	owners.install(b)
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/landing", true, nil }
+	// work land rebases the goal branch before a hand-in (land-rebases); the
+	// bed's goal has a worktree at its root and a rebase that holds.
+	root := b.root()
+	b.work.git = func(_ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") == "worktree list --porcelain" {
+			return []byte("worktree " + root + "\nbranch refs/heads/goal/standing-validation\n"), nil
+		}
+		return nil, nil
+	}
+	tip := owners.status.BranchTip
+	b.connection.endpoint = func(string) (goal.Endpoint, error) { return goal.Endpoint{Remote: "origin"}, nil }
+	b.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return owners.status.EndpointTip, nil }
+	b.connection.claimCheck = func(string, string, goal.Endpoint) func() error { return func() error { return nil } }
+	b.connection.section = func(_ string, body func(func(func() error) error) error) error { return body(nil) }
+	b.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+		return branch.RebaseResult{State: "held", OldTip: tip, NewTip: tip, MainTip: owners.status.EndpointTip, Carried: []string{}, NeedsReview: []string{}}, nil
+	}
+	b.connection.recordRebase = func(*intentInvocation, string, branch.RebaseResult) error { return nil }
 	install := filepath.Join(t.TempDir(), "lane", "metasystem")
 	b.owners.laneInstall = func(root string) (string, error) {
 		if root != "/landing" {
@@ -77,6 +98,84 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 		return install, nil
 	}
 	return b, owners, install
+}
+
+func TestWorkLandAgainAfterReturn(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"explicit", "regenerated", "resolved", "unknown", "empty", "untouched", "partial", "changed"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newLandRebaseBed(t)
+			b.rebase.State, b.rebase.NewTip = "held", b.rebase.OldTip
+			b.rebase.Regenerated = []string{"gen/out"}
+			line := plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.rebase.OldTip, Delivered: "Makes landing reliable"}
+			if _, _, err := plain.HandIn(b.lane, line); err != nil {
+				t.Fatal(err)
+			}
+			line.Outcome, line.Reason = plain.StateReturned, "app-standard fails since it joined"
+			if name != "explicit" && name != "unknown" {
+				line.Conflict = &conflict.Return{Paths: []conflict.Path{{Path: "gen/out", Class: conflict.Generated}}}
+				line.Reason = "merge conflict"
+			}
+			switch name {
+			case "empty":
+				line.Conflict.Paths = nil
+			case "untouched":
+				line.Conflict.Paths[0].Path = "source.go"
+			case "partial":
+				line.Conflict.Paths = append(line.Conflict.Paths, conflict.Path{Path: "source.go", Class: conflict.Builder})
+			case "resolved":
+				line.Conflict.Paths = append(line.Conflict.Paths, conflict.Path{Path: "source.go", Class: conflict.Builder})
+				b.rebase.Resolved = []string{"source.go"}
+			case "changed":
+				b.rebase.OldTip = strings.Repeat("9", 40)
+			}
+			queue := filepath.Join(plain.Dir(b.lane), "queue.jsonl")
+			before, err := os.ReadFile(queue)
+			if err != nil {
+				t.Fatal(err)
+			}
+			returned, err := json.Marshal(line)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.writeFile(queue, string(before)+string(returned)+"\n")
+			args := []string{}
+			if name == "explicit" {
+				args = append(args, "--again")
+			}
+			code, result := b.runJSON(b.owners, append([]string{"work", "land", line.Goal}, args...)...)
+			want := intentRefused
+			if name == "explicit" || name == "regenerated" || name == "resolved" {
+				want = intentConfirmed
+			}
+			expectOutcome(t, "return", code, result, want)
+			if want == intentRefused {
+				if !strings.Contains(result.Summary, "returned: "+line.Reason) || result.Next == nil || !strings.Contains(result.Next.Reason, "--again when the return no longer applies") {
+					t.Fatalf("return remedy: %+v", result)
+				}
+				after, err := os.ReadFile(queue)
+				if err != nil || string(after) != string(before)+string(returned)+"\n" {
+					t.Fatalf("refused return wrote queue: %q err=%v", after, err)
+				}
+				return
+			}
+			entries, err := plain.Entries(b.lane)
+			if err != nil || len(entries) != 2 || entries[0].State != plain.StateReturned || entries[0].Reason != line.Reason || entries[1].State != plain.StateWaiting || entries[1].Delivered != line.Delivered || !strings.Contains(result.Summary, "re-queued after a return that needed no change") {
+				t.Fatalf("re-queue: %+v entries=%+v err=%v", result, entries, err)
+			}
+			if strings.Contains(result.Summary, "channel will say nothing") {
+				t.Fatalf("re-queue lost its delivery sentence: %+v", result)
+			}
+			before, _ = os.ReadFile(queue)
+			code, result = b.runJSON(b.owners, "work", "land", line.Goal, "--again", "--delivered", "Another sentence")
+			expectOutcome(t, "waiting", code, result, intentUnchanged)
+			after, err := os.ReadFile(queue)
+			if err != nil || string(after) != string(before) || !strings.Contains(result.Summary, "waiting") {
+				t.Fatalf("repeat wrote queue: %q -> %q; %+v err=%v", before, after, result, err)
+			}
+		})
+	}
 }
 
 // Plain lane step 1: with a lane registered, work land G passes the seat's

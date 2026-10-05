@@ -8,10 +8,12 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -34,13 +36,8 @@ func (inv *intentInvocation) laneInstallOf(root string) (string, error) {
 // newest hand-in is at sha (or its branch is gone): waiting, returned with
 // its reason, or landed when main (the seat's endpoint tip) contains it.
 // nil when it has none, or one at another sha, so the hand-in goes on.
-func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goalID, sha, main string) *intentResult {
-	entry, ok, err := plain.Latest(install, goalID)
-	if err == nil && ok && main != "" {
-		var derived []plain.Entry
-		derived, err = plain.Landed([]plain.Entry{entry}, plain.ContainedIn(inv.layout.InstallationRoot.Path(), main))
-		entry = derived[0]
-	}
+func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goalID, sha, main string, rebase branch.RebaseResult) *intentResult {
+	entry, ok, err := inv.latestLaneEntry(install, goalID, main)
 	if err != nil {
 		return &intentResult{Targets: targets, Outcome: intentFailed, code: 1,
 			Summary: "the landing lane's queue can't be read, so nothing was handed in",
@@ -60,29 +57,49 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 			Summary: fmt.Sprintf("%s at %s landed on main through the landing lane; the goal stays open until done", subject, plain.Short(entry.SHA)),
 			next:    inv.publicArgv("goal", "done", goalID, "--reason", "TEXT"), nextReason: "concludes it"}
 	case plain.StateReturned:
+		if sha != "" && (inv.input.has("again") || returnedPathsResolved(entry, rebase)) {
+			inv.input.values["again"] = []string{"true"}
+			return nil
+		}
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 			Summary: fmt.Sprintf("%s at %s was returned: %s", subject, plain.Short(entry.SHA), entry.Reason),
-			next:    inv.sameCommand(), nextReason: "after the fix is pushed to " + entry.Branch + ", hands it in again"}
+			next:    inv.sameCommand(), nextReason: "after the fix is pushed to " + entry.Branch + ", hands it in again; or metasystem work land " + goalID + " --again when the return no longer applies"}
 	}
 	return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
 
+func returnedPathsResolved(entry plain.Entry, rebase branch.RebaseResult) bool {
+	if rebase.OldTip != entry.SHA || rebase.NewTip != entry.SHA || entry.Conflict == nil || len(entry.Conflict.Paths) == 0 {
+		return false
+	}
+	for _, path := range entry.Conflict.Paths {
+		if path.Path == "" || !slices.Contains(rebase.Regenerated, path.Path) && !slices.Contains(rebase.Resolved, path.Path) {
+			return false
+		}
+	}
+	return true
+}
+
 // handIn appends the goal's branch at sha to the lane's queue: the seat's
 // gates passed before it. The branch is read at origin, so it is already
-// pushed. A repeat at the same sha appends nothing.
+// pushed. Again re-queues a returned tip; a waiting repeat appends nothing.
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
 	now := inv.delivery().now()
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
-		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered"))}
-	_, added, err := plain.HandIn(install, line)
+		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered")), Again: inv.input.has("again")}
+	previous, seen, err := plain.Latest(install, goalID)
+	added := false
+	if err == nil {
+		_, added, err = plain.HandIn(install, line)
+	}
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
 			Summary: "the landing lane's queue can't be written, so nothing was handed in",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if !added {
-		if result := inv.laneQueueState(targets, install, goalID, sha, main); result != nil {
+		if result := inv.laneQueueState(targets, install, goalID, sha, main, branch.RebaseResult{}); result != nil {
 			return *result
 		}
 	}
@@ -91,9 +108,13 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	if inv.input.has("records") {
 		subject += "'s records"
 	}
+	summary := fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha))
+	if line.Again && seen && previous.SHA == sha && previous.State == plain.StateReturned {
+		summary += "; re-queued after a return that needed no change"
+	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
 		Details: inv.writeJoinedCard(goalID),
-		Summary: fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha)),
+		Summary: summary,
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
 }
 
@@ -118,4 +139,18 @@ func (inv *intentInvocation) writeJoinedCard(goal string) []string {
 		return []string{"the hand-in card for " + goal + " was not written: " + err.Error()}
 	}
 	return nil
+}
+
+// latestLaneEntry reads the same derived landing state for hand-in and rebase.
+func (inv *intentInvocation) latestLaneEntry(install, goalID, main string) (plain.Entry, bool, error) {
+	if read := inv.delivery().laneLatest; read != nil {
+		return read(install, goalID, main)
+	}
+	entry, ok, err := plain.Latest(install, goalID)
+	if err == nil && ok && main != "" {
+		var derived []plain.Entry
+		derived, err = plain.Landed([]plain.Entry{entry}, plain.ContainedIn(inv.layout.InstallationRoot.Path(), main))
+		entry = derived[0]
+	}
+	return entry, ok, err
 }

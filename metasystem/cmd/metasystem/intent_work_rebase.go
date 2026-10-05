@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
@@ -27,32 +29,58 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	id := ref.id
+	result, warning, refusal := inv.rebaseGoal(id)
+	if refusal != nil {
+		return inv.render(*refusal)
+	}
 	targets := []intentTarget{{Kind: "goal", ID: id}}
-	refused := func(err error) int {
+	outcome := intentConfirmed
+	summary := fmt.Sprintf("rebased from %s onto main %s", shortCommit(result.OldTip), shortCommit(result.MainTip))
+	if result.State == "held" {
+		outcome = intentUnchanged
+		summary = "goal " + id + " is already on main; held, nothing was written"
+		if len(result.NeedsReview) != 0 {
+			summary = "goal " + id + " is already on main; its branch was held"
+		}
+	} else if result.State != "rebased" {
+		summary = "goal " + id + " is already on main; published its branch"
+		if len(result.Carried) != 0 {
+			summary = "goal " + id + " is on main; carried reviews and published its branch"
+		}
+	}
+	lines := append(inv.rebaseReviewLines(id, result), warning...)
+	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})
+}
+
+// rebaseGoal is the shared branch operation for rebase and land.
+func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []string, *intentResult) {
+	targets := []intentTarget{{Kind: "goal", ID: id}}
+	refused := func(err error) (branch.RebaseResult, []string, *intentResult) {
+		var conflict *branch.RebaseConflict
+		if errors.As(err, &conflict) {
+			result := inv.rebaseJudgementQuestions(id, conflict)
+			return branch.RebaseResult{}, nil, &result
+		}
 		result := intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: err.Error(), next: inv.publicArgv("work", "status", id), nextReason: "shows the goal's branch"}
 		if first, paths, hint, ok := ownerRemedy(err.Error()); ok {
 			result.Summary, result.text = first, paths
 			result.next, result.nextReason = hint.Argv, hint.Reason
 		}
-		return inv.render(result)
+		var operation *branch.OpError
+		if inv.command.action == "land" && errors.As(err, &operation) {
+			result.Data = map[string]any{"code": operation.Code}
+		}
+		return branch.RebaseResult{}, nil, &result
 	}
-	trees, err := inv.registeredWorktrees()
+	found, err := inv.hasGoalWorktree(id)
 	if err != nil {
 		return refused(err)
 	}
-	found := false
-	for path, tree := range trees {
-		if tree.ref == "refs/heads/goal/"+id {
-			if info, err := os.Stat(path); err == nil && info.IsDir() {
-				found = true
-			}
-		}
-	}
 	if !found {
-		return inv.render(intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		return branch.RebaseResult{}, nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "goal " + id + " needs a worktree before its branch can be rebased",
-			next:    inv.publicArgv("work", "build", id), nextReason: "prepares the goal's worktree"})
+			next:    inv.publicArgv("work", "build", id), nextReason: "prepares the goal's worktree"}
 	}
 	root := inv.goalBranchInstallation(id)
 	conn := inv.connection()
@@ -78,20 +106,36 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 	if err != nil {
 		return refused(err)
 	}
-	outcome := intentConfirmed
-	summary := fmt.Sprintf("rebased from %s onto main %s", shortCommit(result.OldTip), shortCommit(result.MainTip))
-	if result.State == "held" {
-		outcome = intentUnchanged
-		summary = "goal " + id + " is already on main; held, nothing was written"
-		if len(result.NeedsReview) != 0 {
-			summary = "goal " + id + " is already on main; its branch was held"
+	if result.State != "held" {
+		record := conn.recordRebase
+		if record == nil {
+			record = productionRecordRebase
 		}
-	} else if result.State != "rebased" {
-		summary = "goal " + id + " is already on main; published its branch"
-		if len(result.Carried) != 0 {
-			summary = "goal " + id + " is on main; carried reviews and published its branch"
+		// The branch has already been published; a missing history line
+		// cannot undo that publication or keep its landing from proceeding.
+		if err := record(inv, id, result); err != nil {
+			return result, []string{"the rebase history line was not written; run: metasystem goal sync"}, nil
 		}
 	}
+	return result, nil, nil
+}
+
+func (inv *intentInvocation) hasGoalWorktree(id string) (bool, error) {
+	trees, err := inv.registeredWorktrees()
+	if err != nil {
+		return false, err
+	}
+	for path, tree := range trees {
+		if tree.ref == "refs/heads/goal/"+id {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (inv *intentInvocation) rebaseReviewLines(id string, result branch.RebaseResult) []string {
 	lines := []string{}
 	for _, unit := range result.Carried {
 		lines = append(lines, "review carried: "+unit, "review: "+shellCommand(inv.publicArgv("work", "review", id, "--work", unit)))
@@ -99,5 +143,67 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 	for _, unit := range result.NeedsReview {
 		lines = append(lines, "needs review: "+unit, "run: "+shellCommand(inv.publicArgv("work", "review", id, "--work", unit)))
 	}
-	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})
+	return lines
+}
+
+func productionRecordRebase(inv *intentInvocation, id string, rebase branch.RebaseResult) error {
+	reason := "on main " + shortCommit(rebase.MainTip)
+	if rebase.State == "rebased" {
+		reason = "rebased " + shortCommit(rebase.OldTip) + " onto main " + shortCommit(rebase.MainTip)
+	}
+	if len(rebase.Carried) != 0 {
+		reason += "; reviews carried: " + strings.Join(rebase.Carried, ", ")
+	}
+	if len(rebase.NeedsReview) != 0 {
+		reason += "; needs review: " + strings.Join(rebase.NeedsReview, ", ")
+	}
+	if len(rebase.Regenerated) != 0 {
+		reason += "; regenerated: " + strings.Join(rebase.Regenerated, ", ")
+	}
+	args := []string{"--root", inv.stateRoot, "--id", id, "--reason", reason}
+	result := inv.goalAct(id, "rebase", func(dependencies syncRequestDependencies) int {
+		return runGoalRecordRebase(args, inv.owners.commandNow, dependencies)
+	})
+	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+		return fmt.Errorf("%s", result.Summary)
+	}
+	return nil
+}
+
+func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branch.RebaseConflict) intentResult {
+	result := intentResult{Targets: []intentTarget{{Kind: "goal", ID: id}}, Outcome: intentRefused, code: 1,
+		Summary: fmt.Sprintf("rebase needs your choice; main is at %s; nothing was changed", shortCommit(conflict.MainTip)),
+		Data:    map[string]any{"code": conflict.Code}, next: inv.publicArgv("work", "status", id),
+		nextReason: "shows the goal's branch"}
+	for _, path := range conflict.Paths {
+		question := fmt.Sprintf("Goal %s and main both changed lines %d to %d of %s.\nKeep main's, keep the goal's, or write a third.", id, path.FirstLine, path.LastLine, path.Path)
+		if path.FirstLine == 0 {
+			question = fmt.Sprintf("Goal %s and main both changed %s where no common version exists.\nKeep main's, keep the goal's, or write a third.", id, path.Path)
+		}
+		mainChange := path.MainGoal
+		if mainChange == "" {
+			mainChange = path.MainCommit
+		}
+		mainImpact := fmt.Sprintf("main's drops what %s did there and unit %s loses its read", id, conflict.Unit)
+		goalImpact := fmt.Sprintf("the goal's undoes main's change there (%s)", mainChange)
+		thirdImpact := "a third is read again"
+		in := channelAskInput{Goal: id, Kind: "other", Facts: []string{question,
+			"Impact: " + mainImpact + ";\n" + goalImpact + "; a third is read again.\nNothing lands until you answer.",
+			fmt.Sprintf("Blobs: original %s, main %s, goal %s.", path.Original, path.Main, path.Goal)},
+			Options: []string{"keep main's: " + mainImpact, "keep the goal's: " + goalImpact, "write a third: " + thirdImpact}}
+		asked, warnings, code, err := inv.connection().askRebase(inv.layout.InstallationRoot.Path(), in)
+		result.text = append(result.text, warnings...)
+		if asked.ID != "" {
+			result.text = append(result.text, "question "+asked.ID+": "+path.Path,
+				"run: "+shellCommand(inv.publicArgv("question", "wait", asked.ID)))
+			if len(result.next) > 2 && result.next[1] == "work" {
+				result.next = inv.publicArgv("question", "wait", asked.ID)
+				result.nextReason = "waits for your choice"
+			}
+		}
+		if err != nil || code != 0 || asked.ID == "" {
+			result.text = append(result.text, "the question could not be sent:", question)
+		}
+	}
+	return result
 }

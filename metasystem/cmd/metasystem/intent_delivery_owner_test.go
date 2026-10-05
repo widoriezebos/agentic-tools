@@ -306,53 +306,184 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 // branch with a clean read, pushed to origin, into a registered plain lane
 // whose checkout is a nested clone of origin: the seat's own branch reads
 // and gates run, one line with the branch's tip lands in the lane
-// installation's queue.jsonl, and a repeat appends nothing. Nothing is
-// proved or pushed by the seat.
+// installation's queue.jsonl. A branch behind main is rebased with its
+// unchanged unit's read carried; its history is published and a repeat appends nothing.
 func TestWorkLandHandsInOverRealGit(t *testing.T) {
 	t.Parallel()
+	for _, behind := range []bool{false, true} {
+		name := "already on main"
+		if behind {
+			name = "behind main"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newWholeOwnerLanding(t)
+			mainTip := f.base
+			if behind {
+				goalSyncMutationGit(t, f.mainRoot, "switch", "--detach", f.base)
+				writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "main-extra.md"), []byte("main advanced\n"), 0o644)
+				goalSyncMutationGit(t, f.mainRoot, "add", "main-extra.md")
+				goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "advance main")
+				mainTip = goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
+				goalSyncMutationGit(t, f.mainRoot, "push", "-q", "upstream", "HEAD:main")
+			}
+			landingRoot := filepath.Join(t.TempDir(), "landing")
+			goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
+			owners := defaultIntentOwners()
+			owners.dependencies.ownerLineage = func() string { return "m1" }
+			// The adapter proves Git's rewrite, carried read and publication;
+			// the fixture has no application for the static gate to run.
+			owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
+			delivery := belowTheGate(defaultIntentDeliveryOwners())
+			delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
+			delivery.process = func(process intentProcess) intentProcessResult {
+				t.Fatalf("the hand-in ran a subprocess %v", process.argv)
+				return intentProcessResult{}
+			}
+			owners.delivery = delivery
+			command, _ := findIntentCommand("work land")
+			run := func() intentResult {
+				t.Helper()
+				var stdout, stderr bytes.Buffer
+				runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
+				var result intentResult
+				if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+					t.Fatalf("land printed no result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+				}
+				return result
+			}
+			result := run()
+			if behind {
+				data, _ := result.Data.(map[string]any)
+				rebase, _ := data["rebase"].(map[string]any)
+				newTip := f.remote(t, "refs/heads/goal/standing-validation")
+				if rebase["state"] != "rebased" || rebase["mainTip"] != mainTip || newTip == f.branchTip {
+					t.Fatalf("branch behind main was not rebased: %+v; remote %s", result, newTip)
+				}
+				if contains, err := plain.IsAncestor(f.mainRoot, mainTip, newTip); err != nil || !contains {
+					t.Fatalf("rebased branch is not on main: %v %v", contains, err)
+				}
+				endpoint, err := branch.MainEndpoint(f.mainRoot)
+				if err != nil {
+					t.Fatal(err)
+				}
+				projection, err := goal.Project(endpoint, true, time.Now().UTC())
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := 0
+				for _, line := range projection.Tree.Live["standing-validation"].History {
+					if line.Verb == "rebase" {
+						lines++
+					}
+				}
+				if lines != 1 {
+					t.Fatalf("rebase history lines = %d, want 1", lines)
+				}
+				f.branchTip = newTip
+			}
+			if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
+				t.Fatalf("hand-in = %+v", result)
+			}
+			// The lane is nested: its records are in the installation, not at the
+			// checkout's top.
+			install := filepath.Join(landingRoot, "metasystem")
+			if _, err := os.Stat(filepath.Join(landingRoot, "artifacts", "agents", "landing", "queue.jsonl")); err == nil {
+				t.Fatal("the hand-in wrote the queue at the checkout's top")
+			}
+			entries, err := plain.Entries(install)
+			if err != nil || len(entries) != 1 || entries[0].SHA != f.branchTip || entries[0].Branch != "goal/standing-validation" {
+				t.Fatalf("the queue line = %+v %v; want the branch tip %s", entries, err, f.branchTip)
+			}
+			if again := run(); again.Outcome != intentUnchanged || !strings.Contains(again.Summary, "waiting") {
+				t.Fatalf("a repeat = %+v", again)
+			}
+			if entries, _ := plain.Entries(install); len(entries) != 1 {
+				t.Fatalf("a repeat appended: %+v", entries)
+			}
+			if !behind && f.remote(t, "refs/heads/main") != mainTip {
+				t.Fatal("a hand-in moved main")
+			}
+		})
+	}
+}
+
+// TestWorkRebaseGitAdapterHoldsAfterHistory exercises the public verbs because
+// publishing a goal history line moves remote main independently of the branch.
+func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
+	t.Parallel()
 	f := newWholeOwnerLanding(t)
-	landingRoot := filepath.Join(t.TempDir(), "landing")
-	goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
+	goalSyncMutationGit(t, f.mainRoot, "switch", "--detach", f.base)
+	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "main-extra.md"), []byte("main advanced\n"), 0o644)
+	goalSyncMutationGit(t, f.mainRoot, "add", "main-extra.md")
+	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "advance main")
+	mainTip := goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
+	goalSyncMutationGit(t, f.mainRoot, "push", "-q", "upstream", "HEAD:main")
+	lane := filepath.Join(t.TempDir(), "landing")
+	goalSyncMutationGit(t, filepath.Dir(lane), "clone", "-q", "-b", "main", f.upstream, lane)
 	owners := defaultIntentOwners()
+	owners.dependencies.ownerLineage = func() string { return "m1" }
+	owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
-	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
+	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return lane, true, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Fatalf("the hand-in ran a subprocess %v", process.argv)
 		return intentProcessResult{}
 	}
 	owners.delivery = delivery
-	command, _ := findIntentCommand("work land")
-	run := func() intentResult {
+	run := func(verb string) intentResult {
 		t.Helper()
+		command, _ := findIntentCommand("work " + verb)
 		var stdout, stderr bytes.Buffer
-		runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
+		code := runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
 		var result intentResult
-		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-			t.Fatalf("land printed no result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || code != 0 {
+			t.Fatalf("work %s: code=%d error=%v stdout=%q stderr=%q", verb, code, err, stdout.String(), stderr.String())
 		}
 		return result
 	}
-	result := run()
-	if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
-		t.Fatalf("hand-in = %+v", result)
+	first := run("rebase")
+	if data := first.Data.(map[string]any); first.Outcome != intentConfirmed || data["state"] != "rebased" || data["mainTip"] != mainTip {
+		t.Fatalf("first rebase: %+v", first)
 	}
-	// The lane is nested: its records are in the installation, not at the
-	// checkout's top.
-	install := filepath.Join(landingRoot, "metasystem")
-	if _, err := os.Stat(filepath.Join(landingRoot, "artifacts", "agents", "landing", "queue.jsonl")); err == nil {
-		t.Fatal("the hand-in wrote the queue at the checkout's top")
+	branchTip := f.remote(t, "refs/heads/goal/standing-validation")
+	ledgerTip := f.remote(t, "refs/heads/main")
+	if branchTip == f.branchTip || ledgerTip == mainTip {
+		t.Fatal("first rebase did not publish both the rewritten branch and its history")
 	}
-	entries, err := plain.Entries(install)
-	if err != nil || len(entries) != 1 || entries[0].SHA != f.branchTip || entries[0].Branch != "goal/standing-validation" {
-		t.Fatalf("the queue line = %+v %v; want the branch tip %s", entries, err, f.branchTip)
+	if paths := goalSyncMutationGit(t, f.mainRoot, "diff", "--name-only", mainTip, ledgerTip); paths != "metasystem/plans/goals/standing-validation.md" {
+		t.Fatalf("history changed non-goal files: %q", paths)
 	}
-	if again := run(); again.Outcome != intentUnchanged || !strings.Contains(again.Summary, "waiting") {
-		t.Fatalf("a repeat = %+v", again)
+	for _, verb := range []string{"rebase", "rebase", "land"} {
+		result := run(verb)
+		data := result.Data.(map[string]any)
+		if verb == "land" {
+			data = data["rebase"].(map[string]any)
+			if result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "handed to the lane") {
+				t.Fatalf("hand-in: %+v", result)
+			}
+		} else if result.Outcome != intentUnchanged {
+			t.Fatalf("repeat wrote something: %+v", result)
+		}
+		if data["state"] != "held" || data["newTip"] != branchTip || data["mainTip"] != ledgerTip || f.remote(t, "refs/heads/main") != ledgerTip || f.remote(t, "refs/heads/goal/standing-validation") != branchTip {
+			t.Fatalf("work %s did not hold after its history moved main: %+v", verb, result)
+		}
 	}
-	if entries, _ := plain.Entries(install); len(entries) != 1 {
-		t.Fatalf("a repeat appended: %+v", entries)
+	endpoint, err := branch.MainEndpoint(f.mainRoot)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if f.remote(t, "refs/heads/main") != f.base {
-		t.Fatal("a hand-in moved main")
+	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := 0
+	for _, line := range projection.Tree.Live["standing-validation"].History {
+		if line.Verb == "rebase" {
+			lines++
+		}
+	}
+	entries, err := plain.Entries(filepath.Join(lane, "metasystem"))
+	if lines != 1 || err != nil || len(entries) != 1 || entries[0].SHA != branchTip {
+		t.Fatalf("history lines=%d, queue=%+v %v", lines, entries, err)
 	}
 }

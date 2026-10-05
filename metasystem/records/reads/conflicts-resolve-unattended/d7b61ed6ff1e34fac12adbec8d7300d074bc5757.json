@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "goal": "conflicts-resolve-unattended",
+  "unit": "land-again2",
+  "subject": {
+    "commit": "d7b61ed6ff1e34fac12adbec8d7300d074bc5757",
+    "parent": "d0751ed639b43e4c9db8ac116b78696c1da7554d",
+    "tree": "6b87faf6412ddc5a227465bccab0a9c63edb6dc6",
+    "patchDigest": "9de1c46d6014ff5e4f76c593a14a1626ce47f9ecdb031ce843e90d94c925c680",
+    "unitDigest": "1f3e3a4fb475486111effbb758c497ef1be9ef3bbed94296a432f5f6afdfb8b4"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-21729132a56c33fcb5da0791",
+    "round": 1,
+    "closureSha256": "cd8b7ed065441ddc9f4a144dc493993da0b784715e9a5d72ef312c472e4b36cd"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6b87faf6412ddc5a227465bccab0a9c63edb6dc6",
+    "runId": "goal-read-gate-20261005t050013z-8c6374f7364d7c01"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_records_test.go",
+      "readerWord": "reviewed by critic root code-critic-21729132a56c33fcb5da0791"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_handin_test.go",
+      "readerWord": "reviewed by critic root code-critic-21729132a56c33fcb5da0791"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help-work-land.txt",
+      "readerWord": "reviewed by critic root code-critic-21729132a56c33fcb5da0791"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-21729132a56c33fcb5da0791"
+    }
+  ],
+  "sha256": "6608bf1c2c327fba899da06c9c5b857fab51ed40f7ea53fd52d75d0aa67116dd"
+}

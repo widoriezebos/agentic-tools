@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "goal": "conflicts-resolve-unattended",
+  "unit": "land-rebases",
+  "subject": {
+    "commit": "b029d9cb4a4c4dfecdb1d5a6b9d7e928b1129915",
+    "parent": "8a4c0183e490e27e93efdfe07bdbfd28a6e42d86",
+    "tree": "d22522ac98723d637bc9a14e0d8875b816cf5cc3",
+    "patchDigest": "c894fc550fde8bf25ba3d6dc9d74780ec5d0bbb3ec8dfae85e62afa4fac38889",
+    "unitDigest": "4ec4990ce06f5bf63cae80e5b37d94924a97b1cd56ec615cf36a5f98975434fc"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-5c2d113f73b9a4dc86471543",
+    "round": 1,
+    "closureSha256": "c8c9e7999a4beaba913bb3db0ca38b76093daa71c0f8346bd721ebbb7b70390d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d22522ac98723d637bc9a14e0d8875b816cf5cc3",
+    "runId": "goal-read-gate-20261005t041721z-9f638c7eacfcc935"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/holder_step_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_owner_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_landing_gate_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_manual_submit_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_records_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_rebase_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/rebase_test.go",
+      "readerWord": "reviewed by critic root code-critic-5c2d113f73b9a4dc86471543"
+    }
+  ],
+  "sha256": "ce05a0e5672d2c711205195c48456cdbe2d176ada7367cd9fefd3be2283c6936"
+}

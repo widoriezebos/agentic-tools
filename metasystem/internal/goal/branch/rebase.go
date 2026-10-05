@@ -4,10 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"slices"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-const RebaseConflictCode = "GOAL_REBASE_CONFLICT"
+const (
+	RebaseConflictCode  = "GOAL_REBASE_CONFLICT"
+	RebaseJudgementCode = "GOAL_REBASE_JUDGEMENT"
+)
 
 type RebaseRequest struct {
 	Repo, Remote, EndpointTip, GoalID string
@@ -23,6 +32,8 @@ type RebaseResult struct {
 	MainTip     string   `json:"mainTip"`
 	Carried     []string `json:"carried"`
 	NeedsReview []string `json:"needsReview"`
+	Regenerated []string `json:"regenerated,omitempty"`
+	Resolved    []string `json:"resolved,omitempty"`
 }
 
 type rebaseDependencies struct {
@@ -35,6 +46,7 @@ type rebaseDependencies struct {
 	commitRead func(CommitReadRequest) (string, Attestation, error)
 	push       func(PushRequest) (PushResult, error)
 	newID      func(string) (string, error)
+	run        func([]string, string, *os.File, func(int64) error) error
 }
 
 func gitRebaseDependencies() rebaseDependencies {
@@ -58,7 +70,7 @@ func gitRebaseDependencies() rebaseDependencies {
 			}
 			return prior.TestsChanged, nil
 		},
-		gate: ResolveReadGate, commitRead: CommitRead, push: Push, newID: branchReadID,
+		run: conflict.RunRegenerationArgv, gate: ResolveReadGate, commitRead: CommitRead, push: Push, newID: branchReadID,
 	}
 }
 
@@ -112,12 +124,26 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 			return result, operationRefusal(StaleCode, "goal %s's worktree has changes; commit or discard them first\nrun: metasystem work status %s", req.GoalID, req.GoalID)
 		}
 	}
+	log, logErr := os.OpenFile(rebaseRegenerationLog(req), os.O_WRONLY|os.O_TRUNC, 0o600)
+	if logErr == nil {
+		if err := log.Close(); err != nil {
+			return result, err
+		}
+	} else if !errors.Is(logErr, os.ErrNotExist) {
+		return result, logErr
+	}
 	onMain, err := r.facts.Ancestor(req.Repo, req.EndpointTip, local)
 	if err != nil {
 		return result, err
 	}
 	if !onMain {
-		next, err := replayRebase(req, local, d)
+		onMain, err = rebaseLedgerOnly(req, local, d.git)
+		if err != nil {
+			return result, err
+		}
+	}
+	if !onMain {
+		next, regenerated, err := replayRebase(req, local, d)
 		if err != nil {
 			return result, err
 		}
@@ -149,7 +175,7 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 			}
 			return result, moveErr
 		}
-		result.NewTip, result.State = next, "rebased"
+		result.NewTip, result.State, result.Regenerated = next, "rebased", regenerated
 	}
 	commits, err := r.facts.Range(req.Repo, req.EndpointTip, result.NewTip, req.GoalID)
 	if err != nil {
@@ -244,64 +270,88 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 	return result, nil
 }
 
-func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string, error) {
+// Goal history lines advance main without changing a unit's code. The lane
+// merges these files without conflict, so only ledger changes need no replay.
+// This also lets the rebase's own history line leave a repeat with nothing to do.
+func rebaseLedgerOnly(req RebaseRequest, local string, git func(string, ...string) ([]byte, error)) (bool, error) {
+	base, err := git(req.Repo, "merge-base", req.EndpointTip, local)
+	if err != nil {
+		return false, err
+	}
+	// Compare trees so changes brought onto main by a merge are included.
+	changed, err := git(req.Repo, "diff", "--name-only", "-z", strings.TrimSpace(string(base)), req.EndpointTip)
+	if err != nil {
+		return false, err
+	}
+	prefix, err := git(req.Repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return false, err
+	}
+	installation := strings.TrimSpace(string(prefix))
+	for _, name := range strings.Split(string(changed), "\x00") {
+		if name != "" && (!strings.HasPrefix(name, installation) || !goal.IsLedgerFile(strings.TrimPrefix(name, installation))) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string, []string, error) {
 	r := d.repository
 	dir, close, err := r.effects.Open(req.Repo, local, false)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer close()
-	// Replay Read commits too: their record files are needed when carrying a review.
-	if _, err := d.git(dir, "rebase", "--reapply-cherry-picks", "--empty=keep", "--no-autosquash", req.EndpointTip); err != nil {
-		paths, pathsErr := d.git(dir, "diff", "--name-only", "--diff-filter=U")
-		stopped, stoppedErr := d.git(dir, "-c", "format.pretty=%H", "rebase", "--show-current-patch")
-		_, abortErr := d.git(dir, "rebase", "--abort")
-		if pathsErr != nil || stoppedErr != nil || abortErr != nil {
-			return "", errors.Join(err, pathsErr, stoppedErr, abortErr)
+	var log *os.File
+	defer func() {
+		if log != nil {
+			_ = log.Close()
 		}
-		if len(strings.TrimSpace(string(paths))) == 0 {
-			return "", err
+	}()
+	var regenerated []string
+	// Read commits retain their files so unchanged builds can carry their reviews.
+	_, stop := d.git(dir, "rebase", "--reapply-cherry-picks", "--empty=keep", "--no-autosquash", req.EndpointTip)
+	for stop != nil {
+		paths, opened, err := resolveRebaseStop(req, local, dir, log, d, stop)
+		log = opened
+		if err != nil {
+			return "", nil, err
 		}
-		stoppedFields := strings.Fields(string(stopped))
-		if len(stoppedFields) == 0 || !hex40(stoppedFields[0]) {
-			return "", err
+		for _, path := range paths {
+			if !slices.Contains(regenerated, path) {
+				regenerated = append(regenerated, path)
+			}
 		}
-		kind, kindErr := r.facts.Kind(req.Repo, stoppedFields[0], req.GoalID)
-		if kindErr != nil {
-			return "", kindErr
-		}
-		name := commitWord(kind.Kind)
-		if kind.Kind == Unit {
-			name = "build " + kind.Unit
-		}
-		return "", operationRefusal(RebaseConflictCode, "rebase stopped at %s; main is at %.7s; nothing was changed\npaths:\n%s\nrun: metasystem work status %s", name, req.EndpointTip, strings.TrimSpace(string(paths)), req.GoalID)
+		_, stop = d.git(dir, "-c", "core.editor=true", "rebase", "--continue")
 	}
+
 	tip, err := r.facts.Head(dir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	suffix, err := r.facts.Suffix(req.Repo, req.EndpointTip, tip)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, id := range suffix {
 		kind, err := r.facts.Kind(req.Repo, id, req.GoalID)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if kind.Kind != Unit {
 			continue
 		}
 		entries, err := r.facts.Entries(req.Repo, id)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if len(entries) == 0 {
-			return "", operationRefusal(RangeCode, "build %s's change is already on main; nothing was changed\nrun: metasystem work status %s", kind.Unit, req.GoalID)
+			return "", nil, operationRefusal(RangeCode, "build %s's change is already on main; nothing was changed\nrun: metasystem work status %s", kind.Unit, req.GoalID)
 		}
 	}
 	_, err = r.facts.Range(req.Repo, req.EndpointTip, tip, req.GoalID)
-	return tip, err
+	return tip, regenerated, err
 }
 
 func rebaseReviewed(repo, goal string, commits []Commit, r commitRepository) (map[string]bool, error) {
