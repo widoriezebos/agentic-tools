@@ -152,10 +152,9 @@ func TestDesignGateNeverStallsWhenItBreaksUnderRefuse(t *testing.T) {
 					t.Fatalf("broken writer pair: %q", output)
 				}
 			}
-			inputs := resultData(t, result)["inputs"].(string)
-			for _, name := range []string{"request.json", "plan.json", "build-brief.md", "read-brief.md"} {
-				if _, err := os.Stat(filepath.Join(inputs, name)); err != nil {
-					t.Fatalf("launch input %s: %v", name, err)
+			for _, path := range designGateLaunchInputs(t, result) {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("launch input %s: %v", path, err)
 				}
 			}
 		})
