@@ -8,12 +8,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// LandingLaneRoot resolves the landing lane a checkout lands through (U12:
-// its own landing.batch-root against the host's one lane, never
-// registering). The command layer sets it; nil reads the checkout's own
-// setting, as before the host lane.
-var LandingLaneRoot func(repoRoot string, now time.Time) (root string, configured bool, err error)
-
 func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	if !ledger.read().newWorld {
 		return roleAlive(RoleTrunkRed, "the bootstrap ledger has no trunk-red register")
@@ -21,10 +15,10 @@ func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) Rol
 	if err := ledger.endpointErr; err != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
 	}
-	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr, LandingLaneRoot)
+	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr)
 }
 
-func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {
+func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error) RoleVerdict {
 	if projectionErr != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
 	}

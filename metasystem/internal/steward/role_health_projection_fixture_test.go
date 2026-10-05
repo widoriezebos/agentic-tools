@@ -98,7 +98,7 @@ func (b *roleHealthProjectionBed) trunkRedWithoutBatch() RoleVerdict {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	return checkTrunkRedFromProjection(b.root, b.now, projection, nil, nil)
+	return checkTrunkRedFromProjection(b.root, b.now, projection, nil)
 }
 
 func (r roleHealthRepository) Accepted() (string, bool, error) {

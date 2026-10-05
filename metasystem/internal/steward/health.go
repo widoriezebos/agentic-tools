@@ -495,7 +495,7 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(func() RoleVerdict { return checkCensusFreshness(runRoot, now, state, stateErr) }),
 		timed(func() RoleVerdict { return checkNarratorFreshness(runRoot, now) }),
 		timed(func() RoleVerdict {
-			return checkSessionMainWithLedger(repoRoot, runRoot, now, prober, ledger, defaultSeatDependencies(nil))
+			return checkSessionMainWithLedger(repoRoot, runRoot, now, prober, ledger, defaultSeatDependencies(HealthSeatLauncher))
 		}),
 		timed(func() RoleVerdict { return checkHookFreshnessAt(runRoot, now, currentHookAttempt) }),
 		timed(func() RoleVerdict { return checkStopHookDuration(runRoot) }),
@@ -525,6 +525,9 @@ func elapsedRoleMillis(started time.Time) int64 {
 }
 
 var measureSpend = spend.Measure
+
+// HealthSeatLauncher is the command layer's seat launcher, also read by health.
+var HealthSeatLauncher SeatLauncher
 
 func checkSpendFence(repoRoot string, now time.Time) (RoleVerdict, SpendObservation) {
 	return checkSpendFenceWithMeasure(repoRoot, now, measureSpend)
@@ -1187,53 +1190,51 @@ func watcherRepairable(role RoleVerdict) bool {
 }
 
 func checkSessionMainWithLedger(repoRoot, runRoot string, now time.Time, prober identity.Prober, ledger *healthLedger, dependencies seatDependencies) RoleVerdict {
-	return checkSessionMainForSeat(runRoot, prober, func() (SeatWorld, error) {
+	return checkSessionMainForSeat(runRoot, prober, func(records []SeatRecord) (Decision, *SeatSelection, error) {
 		if !ledger.read().newWorld {
-			return SeatWorld{}, nil
+			return Decision{}, nil, nil
 		}
 		if ledger.endpointErr != nil {
-			return SeatWorld{}, ledger.endpointErr
+			return Decision{}, nil, ledger.endpointErr
 		}
 		if ledger.projectionErr != nil {
-			return SeatWorld{}, ledger.projectionErr
+			return Decision{}, nil, ledger.projectionErr
 		}
 		machine, err := dependencies.Machine(repoRoot)
 		if err != nil {
-			return SeatWorld{}, err
+			return Decision{}, nil, err
 		}
 		work, err := goal.ClaimableWorkFromProjection(ledger.projection, machine, prober)
 		if err != nil {
-			return SeatWorld{}, err
+			return Decision{}, nil, err
 		}
-		work.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
-		settings, err := dependencies.Gate(repoRoot)
-		if err != nil {
-			return SeatWorld{}, err
+		kind, _, _ := classifySharedBacklog(work)
+		dependencies.Project = func(string, time.Time) (goal.Projection, error) { return ledger.projection, nil }
+		_, providerOutage := standingProviderOutage(repoRoot, now, nil)
+		decision, selection, _ := seatDecision(repoRoot, (TickConfig{Now: now}).withDefaults(), kind, work,
+			Workers{CensusComplete: true}, providerOutage, dependencies, seatTickState{Records: records})
+		if decision.Verdict == VerdictDegraded || decision.Verdict == VerdictUnknown {
+			return decision, nil, errors.New(decision.Reason)
 		}
-		tips, err := dependencies.Tips(repoRoot, work.Landing)
-		if err != nil {
-			return SeatWorld{}, err
-		}
-		return SeatWorldFrom(work, ledger.projection.Tree.Live, settings, tips, now), nil
+		return decision, selection, nil
 	})
 }
 
 // checkSessionMainForSeat judges the need for a successor through the seat
 // ladder. The announcement reader also serves cleanup's process proof.
-func checkSessionMainForSeat(runRoot string, prober identity.Prober, world func() (SeatWorld, error)) RoleVerdict {
+func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func([]SeatRecord) (Decision, *SeatSelection, error)) RoleVerdict {
 	role := checkSessionMain(runRoot, prober)
 	if role.Status != HealthDead {
 		return role
-	}
-	seatWorld, err := world()
-	if err != nil {
-		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), role.Remedy)
 	}
 	records, err := readSeatRecords(runRoot)
 	if err != nil {
 		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its launches: "+err.Error(), role.Remedy)
 	}
-	decision, selection := PlanSeat(seatWorld, records, TickConfig{}.withDefaults().MaxRevivals, false)
+	decision, selection, err := decide(records)
+	if err != nil {
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), role.Remedy)
+	}
 	if selection == nil {
 		return roleAlive(RoleSessionMain, "no seat step is due; "+decision.Reason)
 	}

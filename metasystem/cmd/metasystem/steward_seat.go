@@ -109,6 +109,8 @@ func newStewardSeatLauncher() stewardSeatLauncher {
 		settings: installationSettings, laneRoot: hostLandingLaneRoot}
 }
 
+func init() { steward.HealthSeatLauncher = newStewardSeatLauncher() }
+
 // StartSeat starts the seat kind with the id, brief and tag the steward
 // chose. The seat runs at the top of the checkout that holds the steward's
 // state root, where a person starts a session (the hooks find the

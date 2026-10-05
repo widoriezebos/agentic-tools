@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cliflags"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -82,6 +84,26 @@ func receiptStatus(args []string, stdout, stderr io.Writer) int {
 		page.Headline(strings.Join(due.Out, "; "))
 	}
 	layReceiptStats(page, stats.Out, all == "true")
+	repoRoot, err := goal.ResolveStateRoot(opts.Root)
+	var open []retrodebt.Entry
+	if err == nil {
+		open, err = retrodebt.Open(repoRoot)
+	}
+	if err != nil {
+		return refusePassthrough(stderr, 2, "the retro debt cannot be read: "+err.Error(),
+			textui.Hint{Argv: []string{"metasystem", "system", "check"}, Reason: "names what is wrong here"})
+	}
+	debt := page.Section("Retro debt", "")
+	if len(open) == 0 {
+		debt.Text("none")
+	}
+	for _, item := range open {
+		since := item.RaisedAt
+		if at, err := time.Parse(time.RFC3339, since); err == nil {
+			since = env.Time(at)
+		}
+		debt.Text(item.Kind + " " + item.Source + ": retro owed since " + since)
+	}
 	stream := stdout
 	if due.Code == 1 {
 		// Due is the check's failure: its page goes where failures go.

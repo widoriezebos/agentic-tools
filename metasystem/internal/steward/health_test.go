@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 )
@@ -96,11 +97,29 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 		{"landing waits", []*goal.GoalFile{seatLandingGoal("held", 2, time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC))}, HealthAlive},
 		{"held step", []*goal.GoalFile{seatClaimedGoal("held", SeatLineage)}, HealthDead},
 		{"foreign claim", []*goal.GoalFile{seatClaimedGoal("held", "coordinator")}, HealthAlive},
+		{"seats off", []*goal.GoalFile{seatReadyGoal("ready", "Build it.")}, HealthAlive},
+		{"fenced", []*goal.GoalFile{seatReadyGoal("ready", "Build it.")}, HealthAlive},
+		{"provider outage", []*goal.GoalFile{seatReadyGoal("ready", "Build it.")}, HealthAlive},
+		{"revivals capped", []*goal.GoalFile{seatReadyGoal("ready", "Build it.")}, HealthAlive},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			bed := newSeatBed(t, test.goals...)
 			bed.now = time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+			switch test.name {
+			case "seats off":
+				bed.launcher.off = "launch.seat.runtime=off"
+			case "fenced":
+				bed.fence = "process creation is fenced"
+			case "provider outage":
+				if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
+					t.Fatal(err)
+				}
+			case "revivals capped":
+				for i := 0; i < (TickConfig{}).withDefaults().MaxRevivals; i++ {
+					writeStewardRecord(t, seatRecordPath(bed.root, string(rune('a'+i))), map[string]any{"launchId": string(rune('a' + i)), "goal": "ready", "approvalOpid": bed.goals["ready"].Approved.Opid, "outcome": SeatNoProgress, "reapedAt": bed.now.Format(time.RFC3339)})
+				}
+			}
 			ledger := newHealthLedger(bed.root, bed.now)
 			ledger.readWorld = func(string) bool { return true }
 			ledger.readEndpoint = func(string) (goal.Endpoint, error) { return goal.Endpoint{}, nil }
@@ -109,13 +128,19 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 			if role.Status != test.want {
 				t.Fatalf("seat health = %+v, want %s", role, test.want)
 			}
+			if test.want == HealthAlive && role.Remedy != "" {
+				t.Fatalf("a guarded start must claim no remedy: %+v", role)
+			}
+			if reason := map[string]string{"seats off": bed.launcher.off, "fenced": bed.fence, "provider outage": "provider", "landing waits": "the claims of this seat wait", "revivals capped": "without progress"}[test.name]; reason != "" && !strings.Contains(role.Reason, reason) {
+				t.Fatalf("health lost the seat guard's reason: %+v", role)
+			}
 			if test.want == HealthDead && (!hasLawfulAutomaticRemedy(role, []RoleVerdict{role}) || role.Remedy != supervisionRemedy(bed.root)) {
 				t.Fatalf("a due step needs the lawful seat remedy: %+v", role)
 			}
 		})
 	}
-	if role := checkSessionMainForSeat(t.TempDir(), healthProbe{}, func() (SeatWorld, error) {
-		return SeatWorld{}, errors.New("fixture ledger unreadable")
+	if role := checkSessionMainForSeat(t.TempDir(), healthProbe{}, func([]SeatRecord) (Decision, *SeatSelection, error) {
+		return Decision{}, nil, errors.New("fixture ledger unreadable")
 	}); role.Status != HealthUnknown {
 		t.Fatalf("an unreadable ladder must not read alive: %+v", role)
 	}
