@@ -207,6 +207,7 @@ type sessionState struct {
 	GreenCursor             int64    `json:"greenCursor,omitempty"`
 	IdleBlockDigest         string   `json:"idleBlockDigest,omitempty"`
 	IdleBlocks              int      `json:"idleBlocks,omitempty"`
+	IdleSeatObservation     string   `json:"idleSeatObservation,omitempty"`
 }
 
 // TurnVerdictOptions carries facts established at the Stop hook boundary.
@@ -1300,8 +1301,24 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 	// answer is its next step.
 	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() || waits.hasWorkInFlight() || asked != nil {
 		session.IdleBlockDigest = digest
-		session.IdleBlocks = 0
+		session.IdleBlocks, session.IdleSeatObservation = 0, ""
 		return
+	}
+	if s.ObserveIdleSeat != nil {
+		busy, source, err := s.ObserveIdleSeat(*work)
+		if err != nil {
+			source += ": " + err.Error()
+		}
+		observation := digest + source
+		if session.IdleSeatObservation != observation {
+			verdict.Diagnostics = append(verdict.Diagnostics, source)
+			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + source)
+			session.IdleSeatObservation = observation
+		}
+		if busy || err != nil {
+			session.IdleBlocks = 0
+			return
+		}
 	}
 	verdict.IdleRefusal = true
 	verdict.Class = "idle-with-backlog"

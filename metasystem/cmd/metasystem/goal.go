@@ -602,6 +602,9 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
 		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
+		if contextErr == nil {
+			store.ObserveIdleSeat = observeSeatIdle(installation.Path(), *mainId, steward.SeatBusy)
+		}
 		store.OpenQuestions = func() []goal.OpenQuestion { return channel.GoalOpenQuestions(stateRoot) }
 		store.LandingOverdue = dispatchpkg.LandingOverdue(stateRoot)
 		// The holder takes its due landing or revision on this Stop through
@@ -728,13 +731,34 @@ func resolveSeatIdleActorWithMachine(root, mainID string, resolveMachine func(st
 		if err != nil {
 			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
 		}
-		if mainID == "" || holder.MainId != mainID {
+		if steward.ClassifySeatStop(mainID, holder.MainId) == "mismatch" {
 			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 		}
 		if holder.SessionId == "" || holder.OwnerLineage == "" {
 			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
 		}
 		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
+	}
+}
+
+func observeSeatIdle(root, mainID string, busy func(string, goal.ClaimableBudgetedWork) (string, error)) func(goal.ClaimableBudgetedWork) (bool, string, error) {
+	return func(work goal.ClaimableBudgetedWork) (bool, string, error) {
+		if reason, err := busy(root, work); reason != "" || err != nil {
+			return reason != "", "seat work records: " + reason, err
+		}
+		holder, err := lease.CurrentHolder(root)
+		if err != nil {
+			return false, "checkout main record", err
+		}
+		classification := steward.ClassifySeatStop(mainID, holder.MainId)
+		source := fmt.Sprintf("Stop main %s; source: Stop hook; checkout holder %s", classification, holder.MainId)
+		if classification == "unknown" {
+			source = fmt.Sprintf("Stop main unknown; source: checkout main record; holder %s", holder.MainId)
+		}
+		if classification == "mismatch" {
+			return false, source, fmt.Errorf("the Stop main %q differs from the checkout holder", mainID)
+		}
+		return false, source, nil
 	}
 }
 
