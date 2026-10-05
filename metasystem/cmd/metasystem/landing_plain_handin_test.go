@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,8 +9,49 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+func TestLandingStatusSaysRecords(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	var line plain.Line
+	if err := json.Unmarshal([]byte(`{"goal":"design","branch":"goal/design","sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","seat":"ui","records":true}`), &line); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := plain.HandIn(install, line); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{plain.StateWaiting, plain.StateLanded, plain.StateReturned} {
+		if state == plain.StateReturned {
+			if _, _, err := plain.Return(install, "design", "records check failed", time.Time{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		entries, err := plain.Entries(install)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err = plain.Landed(entries, func(string) (bool, error) { return state == plain.StateLanded, nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, plain.Entry{Goal: "code", Branch: "goal/code", SHA: line.SHA, Seat: "ui", State: state})
+		page := textui.New(textui.Env{Verbose: true})
+		withPlainLane(func(*textui.Page) {}, landingStatusData{View: lane.View{Root: &install}, Queue: entries})(page)
+		words := oneSpaced(page.String())
+		for _, want := range []string{"goal/design records at bbbbbbbbbbbb from ui · " + state, "goal/code at bbbbbbbbbbbb from ui · " + state} {
+			if !strings.Contains(words, want) {
+				t.Fatalf("status %s lacks %q: %s", state, want, words)
+			}
+		}
+		if state == plain.StateReturned && !strings.Contains(words, "returned: records check failed") {
+			t.Fatal(words)
+		}
+	}
+}
 
 // plainLaneBed is a delivery bed whose lane is registered at /landing: its
 // installation is a folder of the test, where the hand-in's queue.jsonl

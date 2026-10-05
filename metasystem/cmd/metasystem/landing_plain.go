@@ -49,18 +49,22 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 		return nil
 	}
 	data := map[string]any{"route": "lane", "queue": entry}
+	subject := "goal " + goalID
+	if entry.Records {
+		subject += "'s records"
+	}
 	switch entry.State {
 	case plain.StateLanded:
 		return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
-			Summary: fmt.Sprintf("goal %s at %s landed on main through the landing lane; the goal stays open until done", goalID, plain.Short(entry.SHA)),
+			Summary: fmt.Sprintf("%s at %s landed on main through the landing lane; the goal stays open until done", subject, plain.Short(entry.SHA)),
 			next:    inv.publicArgv("goal", "done", goalID, "--reason", "TEXT"), nextReason: "concludes it"}
 	case plain.StateReturned:
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: fmt.Sprintf("goal %s at %s was returned: %s", goalID, plain.Short(entry.SHA), entry.Reason),
+			Summary: fmt.Sprintf("%s at %s was returned: %s", subject, plain.Short(entry.SHA), entry.Reason),
 			next:    inv.sameCommand(), nextReason: "after the fix is pushed to " + entry.Branch + ", hands it in again"}
 	}
 	return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
-		Summary: fmt.Sprintf("goal %s at %s is waiting in the landing lane; its landing agent proves and pushes it", goalID, plain.Short(entry.SHA))}
+		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
 
 // handIn appends the goal's branch at sha to the lane's queue: the seat's
@@ -69,7 +73,7 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha, main string) intentResult {
 	now := inv.delivery().now()
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: batchowner.LandingLaneRegistrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
-		Delivered: strings.TrimSpace(inv.input.text("delivered"))}
+		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered"))}
 	_, added, err := plain.HandIn(install, line)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,

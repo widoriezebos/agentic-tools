@@ -53,6 +53,7 @@ type Line struct {
 	Branch   string           `json:"branch,omitempty"`
 	SHA      string           `json:"sha"`
 	Seat     string           `json:"seat,omitempty"`
+	Records  bool             `json:"records,omitempty"`
 	At       string           `json:"at"`
 	Outcome  string           `json:"outcome,omitempty"`
 	Reason   string           `json:"reason,omitempty"`
@@ -69,6 +70,7 @@ type Entry struct {
 	Branch   string           `json:"branch"`
 	SHA      string           `json:"sha"`
 	Seat     string           `json:"seat"`
+	Records  bool             `json:"records,omitempty"`
 	At       string           `json:"at"`
 	State    string           `json:"state"`
 	Reason   string           `json:"reason,omitempty"`
@@ -177,7 +179,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting, Delivered: line.Delivered})
+				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered})
 			}
 			continue
 		}
@@ -262,7 +264,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}
-		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting, Delivered: line.Delivered}, true
+		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered}, true
 		return nil
 	})
 	return entry, added, err
