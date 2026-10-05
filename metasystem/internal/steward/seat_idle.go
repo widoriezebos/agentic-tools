@@ -48,6 +48,8 @@ func SeatBusy(root string, work goal.ClaimableBudgetedWork) (string, error) {
 type SeatBusyOptions struct {
 	Now   time.Time
 	Alive func(identity.Ref) bool
+	// AtBoundary holds every live step, including one past its budget.
+	AtBoundary bool
 }
 
 // SeatBusyAt decodes only records whose goal header names a held goal.
@@ -104,7 +106,7 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 			skipped++
 		}
 		live := err == nil && launchRecord.State == launch.Running && launchRecord.Supervisor != nil && options.Alive(*launchRecord.Supervisor)
-		if live && limit > 0 && !started.IsZero() && !options.Now.Before(started) && options.Now.Sub(started) < limit {
+		if live && (options.AtBoundary || limit > 0 && !started.IsZero() && !options.Now.Before(started) && options.Now.Sub(started) < limit) {
 			busy, reason = true, fmt.Sprintf("unit %s step %s for goal %s is running", run.ID, step.Name, run.Goal)
 		} else if err := logOrphanSeatRun(root, fmt.Sprintf("orphan run %s of goal %s (step %s since %s)", run.ID, run.Goal, step.Name, step.StartedAt), options.Now); err != nil {
 			skipped++
@@ -198,7 +200,11 @@ func readHeldSeatRecord(path, goalField string, held map[string]bool, record any
 
 // The existing log suppresses duplicate reports across ticks, Stop hooks and
 // runner restarts. Its lock makes concurrent observations produce one line.
-func logOrphanSeatRun(root, message string, now time.Time) error {
+func logOrphanSeatRun(root, message string, now time.Time, keys ...string) error {
+	key := message
+	if len(keys) > 0 {
+		key = keys[0]
+	}
 	path := runnerLogPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -216,7 +222,7 @@ func logOrphanSeatRun(root, message string, now time.Time) error {
 	reader := bufio.NewReader(file)
 	for {
 		line, err := reader.ReadString('\n')
-		if strings.HasSuffix(strings.TrimSuffix(line, "\n"), message) {
+		if strings.HasSuffix(strings.TrimSuffix(line, "\n"), key) {
 			return nil
 		}
 		if err == io.EOF {

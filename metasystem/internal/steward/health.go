@@ -859,6 +859,9 @@ func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identi
 			return verdict
 		}
 		provenance := EnrollmentProvenance(installed)
+		if line := RearmDeferredLine(repoRoot); line != "" {
+			provenance += "; " + line
+		}
 		if durabilityPending {
 			provenance += " (durability pending)"
 		}

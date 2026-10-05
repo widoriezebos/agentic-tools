@@ -9,7 +9,52 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
+
+func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []string{"unchanged", "refused", "replaced"} {
+		t.Run(outcome, func(t *testing.T) {
+			t.Parallel()
+			loop := newHelmLoop(t)
+			now := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+			var keeps, starts, revives, delivers, channels, trims int
+			deps := idleRunnerDependencies(&now)
+			deps.Tick = func(string, TickConfig, WorkerCensus) (TickResult, error) {
+				return TickResult{Decision: Decision{Action: ActRevive}, Seat: &SeatSelection{}}, nil
+			}
+			deps.StartSeat = func(string, TickConfig, WorkerCensus, SeatSelection) (SeatRecord, error) {
+				starts++
+				return SeatRecord{}, nil
+			}
+			deps.Resumable = func(string) (string, bool, error) { return "prepared", true, nil }
+			deps.DeliverPending = func(string) (int, error) { delivers++; return 0, nil }
+			deps.Channel = func(context.Context, string) (int, error) { channels++; return 0, nil }
+			deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
+			cfg := TickConfig{Now: now,
+				KeepLandingLane: func() lane.AgentRun { keeps++; return lane.AgentRun{} },
+				RearmAtBoundary: func() (bool, error) {
+					loop.stop(t)
+					if outcome == "refused" {
+						return false, errors.New("engine source has local edits")
+					}
+					return outcome == "replaced", nil
+				},
+			}
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { revives++; return nil }, time.Second, cfg, deps); err != nil {
+				t.Fatal(err)
+			}
+			want := [6]int{1, 1, 1, 1, 1, 1}
+			if outcome == "replaced" {
+				want = [6]int{}
+			}
+			if got := [6]int{keeps, starts, revives, delivers, channels, trims}; got != want {
+				t.Fatalf("post-refresh pass (keeper, seat start, revival, delivery, channel, trim) = %v; want %v", got, want)
+			}
+		})
+	}
+}
 
 // helmLoop drives runLoopWithDependencies with every post-tick act injected
 // and counted, on an artificial clock: each iteration sleeps once, and
