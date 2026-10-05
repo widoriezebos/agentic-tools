@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -91,6 +92,30 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		subject += "'s records"
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
+		Details: inv.writeJoinedCard(goalID),
 		Summary: fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha)),
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
+}
+
+func (inv *intentInvocation) writeJoinedCard(goal string) []string {
+	home, err := inv.boardHome()
+	if err == nil {
+		card, live := board.LiveCard(home, goal)
+		if !live {
+			return nil
+		}
+		err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
+			if current.Goal == "" || current.Stage.Terminal() || current.Stage.ProcessBound() {
+				return current, false
+			}
+			current.Stage, current.Owner, current.Job, current.Proof, current.Batch = board.StageJoined, nil, nil, nil, ""
+			current.Since = time.Time{}
+			current.Writer = board.Writer{Component: "hand-in", At: inv.delivery().now()}
+			return current, true
+		})
+	}
+	if err != nil {
+		return []string{"the hand-in card for " + goal + " was not written: " + err.Error()}
+	}
+	return nil
 }

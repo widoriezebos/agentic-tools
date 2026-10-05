@@ -473,10 +473,18 @@ function stuckSeats(page: Page, board: BoardPayload, now: Date): Need[] {
   return page.machines.flatMap((machine) => {
     const held = new Map(machine.holds.map((one) => [one.goal, one.title]));
     return (seatOf(board, machine.machine)?.goals ?? [])
-      .filter((goal) => held.has(goal.goal) && stuck(goal.unknown))
+      .filter((goal) => held.has(goal.goal) && (goal.stuck !== undefined || stuck(goal.unknown)))
       .map((goal) => {
         const holdTitle = held.get(goal.goal) ?? "";
         const title = holdTitle === "" ? titleOf(goal.goal, board.titles) : holdTitle;
+        if (goal.stuck !== undefined) {
+          return need({
+            key: `stuck:${machine.machine}:${goal.goal}`,
+            at: goal.lastProgressAt ?? "",
+            words: oneLine("“", title, `” on ${machine.machine}: ${stuckUnitWords(goal.stuck)}.`),
+            command: goal.stuck.launch === "" ? "metasystem work land --message" : `metasystem work stop j1:${goal.stuck.launch}`,
+          });
+        }
         const last = goal.lastProgressAt ?? "";
         const since = last === "" ? "" : ` since ${when(last, now)}`;
         const why = goal.unknown === STALLED ? ` (${stageWords(goal.stage)}).` : " (the process writing it is gone).";
@@ -705,6 +713,7 @@ export type Doing = {
 
 /** A stage of a goal's card, as the column says it, and whether it is work in hand. */
 const STAGES: Record<string, { words: string; working: boolean }> = {
+  "claimed-idle": { words: "claimed idle", working: false },
   build: { words: "building", working: true },
   revise: { words: "revising", working: true },
   "unit-proof": { words: "proving", working: true },
@@ -771,7 +780,7 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   }
   const held = new Set(machine.holds.map((one) => one.goal));
   const cards = (seat?.goals ?? []).filter(
-    (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined,
+    (goal) => held.has(goal.goal) && (goal.unknown ?? "") === "" && goal.stage !== undefined && STAGES[goal.stage] !== undefined && (goal.stage !== "claimed-idle" || (goal.landed ?? 0) > 0),
   );
   // Work that moves wins over a stalled goal beside it (step-2 design 2a.1):
   // the stalled goal is its own Needs you item.
@@ -781,7 +790,7 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
   }
   const stalled = (seat?.goals ?? []).find((goal) => held.has(goal.goal) && stuck(goal.unknown));
   if (stalled !== undefined) {
-    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now)]), active: false, source: "board", stalled: true };
+    return { words: sentence([STALLED, stageWords(stalled.stage), elapsed(stalled.lastProgressAt, now), stuckUnitWords(stalled.stuck)]), active: false, source: "board", stalled: true };
   }
   const heard = machine.this || machine.standing === "reachable";
   if (heard) {
@@ -802,14 +811,19 @@ export function doingOf(machine: Machine, seat: BoardSeat | undefined, queue: re
 
 function cardWords(goal: BoardSeat["goals"][number], now: Date): string {
   const stage = goal.stage ?? "";
-  const words = STAGES[stage].words;
+  const words = stage === "claimed-idle" ? `${String(goal.landed)} ${goal.landed === 1 ? "unit" : "units"} landed` : STAGES[stage].words;
   let progress = "";
   if (stage === "unit-proof" && goal.proof !== undefined && goal.proof.planned > 0) {
     progress = `${String(goal.proof.done)} of ${String(goal.proof.planned)}`;
   } else if ((stage === "review" || stage === "revise") && goal.round !== undefined) {
     progress = roundWords(goal.round.n, goal.round.max);
   }
-  return sentence([words, progress, elapsed(goal.since, now)]);
+  return sentence([words, progress, elapsed(goal.since, now), stuckUnitWords(goal.stuck)]);
+}
+
+function stuckUnitWords(stuck: BoardSeat["goals"][number]["stuck"]): string {
+  if (stuck === undefined) return "";
+  return stuck.step === "" ? `round ${String(stuck.rounds)} of ${String(stuck.limit)}` : `${stuck.kind} step ${String(stuck.minutes)} min`;
 }
 
 /** What the job records say: the work in hand, a reservation, or nothing. */
