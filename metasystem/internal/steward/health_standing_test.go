@@ -14,7 +14,7 @@ import (
 )
 
 func standingFailure() RoleVerdict {
-	return RoleVerdict{Role: RoleLedgerAttention, Status: HealthDead,
+	return RoleVerdict{Role: RoleGovernedObligations, Status: HealthDead,
 		Reason: "the ledger moved 43 minutes ago", Remedy: "inspect the ledger"}
 }
 

@@ -49,6 +49,8 @@ type healthBed struct {
 	notify      notificationDependencies
 	sink        string
 	platform    []string
+
+	lookPath func(string) (string, error)
 }
 
 func healthBedRef(pid int64) identity.Ref {
@@ -96,8 +98,11 @@ func (b *healthBed) writeFile(relative string, data []byte) {
 // passes succeeded, a live supervision owner and watcher, a fresh census, an
 // announced session main and one completed Stop without a duration.
 func newHealthBed(t *testing.T, enrollment, configuredCommand string) *healthBed {
+	return newHealthBedAt(t, canonicalPath(t.TempDir()), enrollment, configuredCommand)
+}
+
+func newHealthBedAt(t *testing.T, root, enrollment, configuredCommand string) *healthBed {
 	t.Helper()
-	root := canonicalPath(t.TempDir())
 	b := &healthBed{
 		t: t, root: root, generation: 3, tickSeconds: 1, probe: healthProbe{},
 		runner: healthBedRef(51001), owner: healthBedRef(51002), watcher: healthBedRef(51003), main: healthBedRef(51004),
@@ -199,16 +204,22 @@ func (b *healthBed) evaluate(repoRoot, metasystemRoot string, now time.Time, _ i
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
 	cadence := func(string) int { return b.tickSeconds }
 	real := map[HealthRole]func() RoleVerdict{
-		RoleStewardRunner:       func() RoleVerdict { return checkStewardRunnerWithCadence(repoRoot, now, b.probe, cadence) },
-		RoleSupervisionOwner:    func() RoleVerdict { return checkSupervisionOwner(repoRoot, b.probe) },
-		RoleRepoWatcher:         func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, b.probe) },
-		RoleCensusFreshness:     func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) },
-		RoleNarratorFreshness:   func() RoleVerdict { return checkNarratorFreshnessWithCadence(repoRoot, now, cadence) },
-		RoleSessionMain:         func() RoleVerdict { return checkSessionMain(repoRoot, b.probe) },
-		RoleHookFreshness:       func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHook) },
-		RoleStopHookDuration:    func() RoleVerdict { return checkStopHookDuration(repoRoot) },
-		RoleNonterminalJobs:     func() RoleVerdict { return checkNonterminalJobs(repoRoot, b.probe) },
-		RoleCapabilitySnapshots: func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) },
+		RoleStewardRunner:     func() RoleVerdict { return checkStewardRunnerWithCadence(repoRoot, now, b.probe, cadence) },
+		RoleSupervisionOwner:  func() RoleVerdict { return checkSupervisionOwner(repoRoot, b.probe) },
+		RoleRepoWatcher:       func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, b.probe) },
+		RoleCensusFreshness:   func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) },
+		RoleNarratorFreshness: func() RoleVerdict { return checkNarratorFreshnessWithCadence(repoRoot, now, cadence) },
+		RoleSessionMain:       func() RoleVerdict { return checkSessionMain(repoRoot, b.probe) },
+		RoleHookFreshness:     func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHook) },
+		RoleStopHookDuration:  func() RoleVerdict { return checkStopHookDuration(repoRoot) },
+		RoleNonterminalJobs:   func() RoleVerdict { return checkNonterminalJobs(repoRoot, b.probe) },
+		RoleCapabilitySnapshots: func() RoleVerdict {
+			if b.lookPath != nil {
+				role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, b.lookPath)
+				return role
+			}
+			return checkCapabilitySnapshots(repoRoot, metasystemRoot, now)
+		},
 	}
 	roles := make([]RoleVerdict, 0, len(healthRoleOrder))
 	for _, role := range healthRoleOrder {

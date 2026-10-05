@@ -7,6 +7,7 @@ package main
 // itself lands with the dispatch continuation mode.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
@@ -70,10 +72,22 @@ func stewardFixtureNow(root string) (time.Time, bool, error) {
 
 func stewardFixtureTickConfig(repo, root string) (steward.TickConfig, error) {
 	now, ok, err := stewardFixtureNow(stewardClockRoot(root, repo))
-	if err != nil || !ok {
+	if err != nil {
 		return steward.TickConfig{}, err
 	}
-	return steward.TickConfig{Now: now}, nil
+	config := steward.TickConfig{ProbeRuntime: func(root, runtime string) error {
+		engine, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		return delegation.ProbeRuntime(ctx, root, engine, runtime)
+	}}
+	if ok {
+		config.Now = now
+	}
+	return config, nil
 }
 
 func stewardRunClockRoot(repo string) string {

@@ -1427,7 +1427,7 @@ func TestLedgerAttentionHealthRowUsesConfiguredStalenessGrammar(t *testing.T) {
 	}
 	row := checkLedgerAttention(root, now)
 	want := "the shared ledger moved to aaaaaaaaaaaa 47m ago and is unexamined past 30m"
-	if row.Status != HealthDead || row.Reason != want || !row.NoAutomaticRemedy {
+	if row.Status != HealthDead || row.Reason != want || row.NoAutomaticRemedy || !hasLawfulAutomaticRemedy(row, nil) {
 		t.Fatalf("ledger-attention health grammar changed: %+v", row)
 	}
 }

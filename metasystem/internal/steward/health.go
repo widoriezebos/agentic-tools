@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -963,7 +964,7 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		return false
 	}
 	switch role.Role {
-	case RoleStewardRunner, RoleSessionMain:
+	case RoleStewardRunner, RoleSessionMain, RoleCapabilitySnapshots, RoleLedgerAttention:
 		return true
 	case RoleRepoWatcher:
 		return watcherRepairable(role)
@@ -1733,25 +1734,35 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 }
 
 func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) RoleVerdict {
+	role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, exec.LookPath)
+	return role
+}
+
+func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lookPath func(string) (string, error)) (RoleVerdict, []string) {
 	runtimeValue, _, err := config.Get(config.GetParams{
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
 	}
 	if runtimeValue == "none" {
-		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
+		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured"), nil
 	}
 	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", config.MustIntDefault("capability.snapshot-max-age-days"))
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
 	var dead []string
 	var unknown []string
+	seen := make(map[string]bool)
 	for _, runtimeName := range runtimes {
 		runtimeName = strings.TrimSpace(runtimeName)
+		if seen[runtimeName] {
+			continue
+		}
+		seen[runtimeName] = true
 		if runtimeName == "" {
 			unknown = append(unknown, "empty-runtime")
 			continue
@@ -1760,6 +1771,11 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 		if !supported || !declaration.HasAdapter {
 			unknown = append(unknown, runtimeName+":NO_ADAPTER")
 			continue
+		}
+		if declaration.Executable != "" {
+			if _, err := lookPath(declaration.Executable); err != nil {
+				continue
+			}
 		}
 		var newest time.Time
 		malformed := false
@@ -1785,6 +1801,11 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 			if captured.After(newest) {
 				newest = captured
 			}
+		}
+		if probe, _, err := loadComponentEvidenceForHealth(repoRoot, "capability-probe-"+runtimeName); err == nil &&
+			probe.Result == ComponentError && !newest.After(probe.LastCompletion) {
+			dead = append(dead, runtimeName)
+			continue
 		}
 		if newest.IsZero() {
 			if malformed {
@@ -1817,19 +1838,46 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 			probed = append(probed, name)
 		}
 		if len(probed) > 0 {
-			// A delegated job's admission probes a runtime whose snapshot is
-			// missing or stale and records a fresh one.
-			commands = append(commands, "the next delegated job for "+strings.Join(probed, ", ")+" probes the runtime and records a fresh snapshot")
+			commands = append(commands, "the steward tick probes "+strings.Join(probed, ", ")+" and records a fresh snapshot")
 		}
 		return strings.Join(commands, "; ")
 	}
 	if len(dead) > 0 {
-		return roleDead(RoleCapabilitySnapshots, "missing or stale capability snapshots: "+strings.Join(dead, ","), remedyFor(dead))
+		reason := "missing or stale capability snapshots: " + strings.Join(dead, ",")
+		for _, runtime := range dead {
+			reason = healthRemedyReason(repoRoot, "capability-probe-"+runtime, reason)
+		}
+		return roleDead(RoleCapabilitySnapshots, reason, remedyFor(dead)), dead
 	}
 	if len(unknown) > 0 {
-		return roleUnknown(RoleCapabilitySnapshots, "capability snapshot ages are unreadable: "+strings.Join(unknown, ","), remedyFor(unknown))
+		return roleUnknown(RoleCapabilitySnapshots, "capability snapshot ages are unreadable: "+strings.Join(unknown, ","), remedyFor(unknown)), nil
 	}
-	return roleAlive(RoleCapabilitySnapshots, "the newest configured runtime snapshots are within their age limit")
+	return roleAlive(RoleCapabilitySnapshots, "runtimes on PATH have fresh capability snapshots"), nil
+}
+
+func healthRemedyReason(root, component, reason string) string {
+	if record, _, err := loadComponentEvidenceForHealth(root, component); err == nil && record.Result == ComponentError {
+		return reason + "; " + component + ": " + record.LastFailure
+	}
+	return reason
+}
+
+func saveRemediedHealth(root string, verdict HealthVerdict) error {
+	held, err := lock.File(healthLockPath(root), 0o644, lock.Exclusive)
+	if err != nil {
+		return err
+	}
+	defer held.Release()
+	record, err := loadHealthRecord(HealthRecordPath(root))
+	if err != nil {
+		return err
+	}
+	// A later observation already owns the cached verdict.
+	if record.State.Sequence != verdict.Observation {
+		return nil
+	}
+	record.Verdict = verdict
+	return saveHealthRecord(root, HealthRecordPath(root), record)
 }
 
 func roleAlive(role HealthRole, reason string) RoleVerdict {

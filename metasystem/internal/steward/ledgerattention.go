@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
 
 const ledgerAttentionStateSchema = 2
@@ -44,6 +47,7 @@ type ledgerAttentionStage struct {
 	TopologyEpoch       uint64                 `json:"topologyEpoch,omitempty"`
 	RepairBaseline      []string               `json:"repairBaseline,omitempty"`
 	RepairBaselineReady bool                   `json:"repairBaselineReady,omitempty"`
+	MovedGoals          []string               `json:"movedGoals"`
 }
 
 type ledgerAttentionState struct {
@@ -238,7 +242,10 @@ func buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after st
 	stage := ledgerAttentionStage{
 		From: before, Tip: after, TopologyEpoch: epoch,
 		RepairBaseline: confirmedRepairOperationIDs(entries), RepairBaselineReady: true,
+		MovedGoals: []string{},
 	}
+	previousTree := previousProjection.Tree
+	moved := make(map[string]bool)
 	for _, change := range changes {
 		if !change.Consecutive {
 			stage.TopologyEpoch++
@@ -251,6 +258,20 @@ func buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after st
 		if err != nil {
 			return ledgerAttentionStage{}, err
 		}
+		for index, before := range []map[string]*goal.GoalFile{previousTree.Live, previousTree.Done, previousTree.Abandoned} {
+			after := []map[string]*goal.GoalFile{projection.Tree.Live, projection.Tree.Done, projection.Tree.Abandoned}[index]
+			for id, file := range before {
+				if !reflect.DeepEqual(file, after[id]) {
+					moved[id] = true
+				}
+			}
+			for id, file := range after {
+				if !reflect.DeepEqual(file, before[id]) {
+					moved[id] = true
+				}
+			}
+		}
+		previousTree = projection.Tree
 		event := LedgerAttentionEvent{
 			SourceID:  eventSourceID(change.Tip, stage.TopologyEpoch),
 			Tip:       change.Tip,
@@ -270,11 +291,18 @@ func buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after st
 	stage.Ready = previous.Ready
 	stage.Pinned = previous.Pinned
 	stage.Queue = previous.Queue
+	for id := range moved {
+		stage.MovedGoals = append(stage.MovedGoals, id)
+	}
+	sort.Strings(stage.MovedGoals)
 	return stage, nil
 }
 
-func promoteLedgerAttentionStage(state *ledgerAttentionState) {
+func promoteLedgerAttentionStage(repoRoot string, state *ledgerAttentionState, now time.Time, repository *ledgerAttentionRepository) error {
 	stage := state.Staged
+	if err := examineLedgerState(repoRoot, state, stage, now, repository); err != nil {
+		return err
+	}
 	state.Pending = append(state.Pending, stage.Events...)
 	state.DiffedTip = stage.Tip
 	state.Ready = append([]string(nil), stage.Ready...)
@@ -282,6 +310,65 @@ func promoteLedgerAttentionStage(state *ledgerAttentionState) {
 	state.Queue = append([]string(nil), stage.Queue...)
 	state.TopologyEpoch = stage.TopologyEpoch
 	state.Staged = nil
+	return nil
+}
+
+// examineLedgerMove also covers a move promoted before this steward started.
+// The accepted diff is rebuilt from the last examined tip when no stage remains.
+func examineLedgerMove(repoRoot string, now time.Time) error {
+	held, err := AcquireArbitration(repoRoot)
+	if err != nil {
+		return err
+	}
+	defer held.Release()
+	return examineLedgerMoveWithRepositoryAndWriter(repoRoot, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
+}
+
+func examineLedgerMoveWithRepositoryAndWriter(repoRoot string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) error {
+	state, exists, err := loadLedgerAttentionState(repoRoot)
+	if err != nil || !exists || state.DiffedTip == "" || state.DiffedTip == state.ExaminedTip {
+		return err
+	}
+	if err := examineLedgerState(repoRoot, &state, nil, now, repository); err != nil {
+		return err
+	}
+	return saveLedgerAttentionStateWithWriter(repoRoot, state, writer)
+}
+
+func examineLedgerState(repoRoot string, state *ledgerAttentionState, stage *ledgerAttentionStage, now time.Time, repository *ledgerAttentionRepository) error {
+	tip := state.DiffedTip
+	if stage != nil {
+		tip = stage.Tip
+	}
+	if tip == state.ExaminedTip {
+		return nil
+	}
+	if stage == nil || stage.MovedGoals == nil {
+		machine, err := repository.ResolveMachine(repoRoot)
+		if err != nil {
+			return err
+		}
+		rebuilt, err := buildLedgerAttentionStageWithRepository(repoRoot, machine, state.ExaminedTip, tip, state.TopologyEpoch, now, repository)
+		if err != nil {
+			return err
+		}
+		stage = &rebuilt
+	}
+	goals := "no goal records changed"
+	if len(stage.MovedGoals) > 0 {
+		goals = "moved goals: " + strings.Join(stage.MovedGoals, ", ")
+	}
+	if err := narratordigest.AppendWithLayoutReader(repoRoot, []narratordigest.Entry{{
+		Kind: "highlight", Text: fmt.Sprintf("The steward examined the shared goal ledger at %s; %s.", shortLedgerTip(tip), goals),
+		SourceType: "ledger-examination", SourceID: eventSourceID(tip, stage.TopologyEpoch),
+	}}, now, repository.ResolveLayout); err != nil {
+		return err
+	}
+	state.ExaminedTip = tip
+	if state.RemoteTip == tip {
+		state.MovedAt = ""
+	}
+	return nil
 }
 
 func reportLedgerAttention(state ledgerAttentionState) LedgerAttentionReport {
@@ -333,7 +420,7 @@ func clearLedgerAttentionFromJournal(repoRoot string, state *ledgerAttentionStat
 }
 
 func clearLedgerAttentionFromJournalWithRepository(repoRoot string, state *ledgerAttentionState, repository *ledgerAttentionRepository) (bool, error) {
-	if state.RemoteTip == "" || state.RemoteTip == state.ExaminedTip || !state.JournalReady {
+	if state.RemoteTip == "" || state.RemoteTip == state.ExaminedTip || state.DiffedTip == state.ExaminedTip || !state.JournalReady {
 		return false, nil
 	}
 	entries, err := repository.Entries(repoRoot)
@@ -386,7 +473,7 @@ func stagedTipRetiredByRepairWithRepository(repoRoot string, stage *ledgerAttent
 	return false, nil
 }
 
-func recoverLedgerAttentionStageWithRepository(repoRoot string, state *ledgerAttentionState, accepted string, repository *ledgerAttentionRepository) (bool, error) {
+func recoverLedgerAttentionStageWithRepository(repoRoot string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository) (bool, error) {
 	if state.Staged == nil {
 		return false, nil
 	}
@@ -410,8 +497,7 @@ func recoverLedgerAttentionStageWithRepository(repoRoot string, state *ledgerAtt
 		return false, err
 	}
 	if held {
-		promoteLedgerAttentionStage(state)
-		return true, nil
+		return true, promoteLedgerAttentionStage(repoRoot, state, now, repository)
 	}
 	// A sanctioned repair chose another accepted world before this staged
 	// capture landed. It was never canonical here and must surface nothing.
@@ -443,7 +529,9 @@ func recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine str
 		return err
 	}
 	state.Staged = &stage
-	promoteLedgerAttentionStage(state)
+	if err := promoteLedgerAttentionStage(repoRoot, state, now, repository); err != nil {
+		return err
+	}
 	return saveLedgerAttentionStateWithWriter(repoRoot, *state, writer)
 }
 
@@ -509,7 +597,7 @@ func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, r
 		}
 	}
 
-	if changed, err := recoverLedgerAttentionStageWithRepository(repoRoot, &state, accepted, repository); err != nil {
+	if changed, err := recoverLedgerAttentionStageWithRepository(repoRoot, &state, accepted, now, repository); err != nil {
 		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	} else if changed {
 		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
@@ -570,13 +658,15 @@ func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, r
 		if err := repository.AdvanceAccepted(repoRoot, capture.Tip); err != nil {
 			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
-		promoteLedgerAttentionStage(&state)
+		if err := promoteLedgerAttentionStage(repoRoot, &state, now, repository); err != nil {
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
+		}
 	}
 
 	remoteChanged := state.RemoteTip != capture.Tip
 	state.RemoteTip = capture.Tip
 	if remoteChanged {
-		state.RemoteTipAt = time.Now().UTC().Format(time.RFC3339Nano)
+		state.RemoteTipAt = now.UTC().Format(time.RFC3339Nano)
 		entries, entriesErr := repository.Entries(repoRoot)
 		if entriesErr == nil {
 			state.JournalBaseline = journalOperationIDs(entries)
@@ -663,7 +753,7 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	// A coordinator-turn timestamp is intentionally not a remedy: the
 	// human-reserved accepted-ref repair can rewind after remoteTip was held,
 	// so hook timing cannot prove that the turn examined this stored tip.
-	remedy := "run a journaling goal verb that examines the canonical tip; 'metasystem goal list --fetch' reads without examining"
+	remedy := "the steward examines the canonical tip and names its moved goals in the narrator digest"
 	if err != nil {
 		return roleUnknown(RoleLedgerAttention, "the ledger-attention state is unreadable: "+err.Error(), remedy)
 	}
@@ -690,7 +780,7 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	if state.RemoteTip != "" && state.RemoteTip != state.ExaminedTip && !movedAt.IsZero() && moveAge >= threshold {
 		role := roleDead(RoleLedgerAttention,
 			fmt.Sprintf("the shared ledger moved to %s %s ago and is unexamined past %dm", shortLedgerTip(state.RemoteTip), roundedLedgerAge(moveAge), minutes), remedy)
-		role.NoAutomaticRemedy = true
+		role.Reason = healthRemedyReason(repoRoot, "ledger-examination", role.Reason)
 		return role
 	}
 	failureAge := ledgerAge(now, failingSince)

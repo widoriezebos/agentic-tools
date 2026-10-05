@@ -259,6 +259,11 @@ func (o ownerAdapter) Probe(ctx context.Context, runtime string) error {
 	return err
 }
 
+// ProbeRuntime runs admission's capability probe without creating a job.
+func ProbeRuntime(ctx context.Context, root, engine, runtime string) error {
+	return (ownerAdapter{root: root, engine: engine}).Probe(ctx, runtime)
+}
+
 func (o ownerAdapter) OutputStream(ctx context.Context, runtime, roundDir string) (string, error) {
 	return o.run(ctx, runtime, "output-stream", "--round-dir", roundDir)
 }

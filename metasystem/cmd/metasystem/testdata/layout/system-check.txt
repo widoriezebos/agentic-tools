@@ -8,9 +8,9 @@ Machinery
   ? narrator-freshness     unknown   the steward installation generation is unreadable
   ✗ hook-freshness         dead      no hook turn generation is recorded
   ? ledger-attention       unknown   no ledger-attention pass is recorded; run metasystem goal list
-  ✗ capability-snapshots   dead      missing or stale capability snapshots: fake; the next delegated
-                                     job for each runtime named probes it and records a fresh
-                                     snapshot; nothing needs doing now
+  ✗ capability-snapshots   dead      missing or stale capability snapshots: fake; the steward tick
+                                     probes each runtime on PATH with a missing or stale snapshot
+                                     and records a fresh snapshot
 
 This checkout
   disk: no pass has run for this checkout yet; metasystem disk clean --preview shows what one would
