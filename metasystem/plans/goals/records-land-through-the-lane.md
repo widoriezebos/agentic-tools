@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 23
+- Sequence: 22
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Changes what the lane admits and proves; a wrong rule lets an unaudited record on main or blocks every design landing; builds on the scratch-commit token and the ledger-only inheritance that exist"
 - Tier: 2
 - Intent: A design page, a ruling, a doc or a memory edit lands on main the way code does: a seat hands it in and the lane proves it with the audits such records need (message and word-budget audits, the plan and ruling checks), with no person pushing by hand. Measured 2026-10-03: five design pages and one ruling went to main by hand pushes from the enrolled terminal (two of them voided a running lane proof; five reds on main at night came from hand pushes that skipped the audits), because a build commit may not touch plan files and the lane carries goal work only (Wido 2026-10-03: the supervisor's interventions should be the steward's or the lane's, never a person's push).
 - Origin: human
 - Next step: Design first, tier 2: a records hand-in (the seat names the goal and the record files; the engine makes the commit on the goal branch with a token, as it does for scratch commits) and its lane proof (only the record audits, not the full suite, since no code changed: the lane's ledger-only inheritance generalised to records-only trees); the plan-class rule becomes two rules (a build commit touches no plan files; a records commit touches only them); accepted design pages and rulings land this way, with the status change in the same hand-in. Done when: a seat hands in an accepted design page or a ruling and it is on main through the lane without any person's push, and the record audits ran on it.
 - OpenedAt: 2026-10-03T15:40:34Z
-- Revision: 52
+- Revision: 53
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
 - NormApproval: approvedRef=DMGQSJ8B6985SWKP21J1KAN2RS-ui-c7f5fe80 minutes=1200 reviewRounds=20 goalRevision=51
@@ -71,4 +71,5 @@ History:
 - 2026-10-04T21:33:12Z EZG12FYJVAJ269081SSM2RVRRS-ui-71c5cb39 slice-start actor=ui+steward-seat targets=records-land-through-the-lane
 - 2026-10-05T00:14:22Z D2C76EEFWGC8HT9STHF63ZJ10A-ui-c7f5fe80 set-budget actor=human:Wido targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T21:13:12Z
 - 2026-10-05T03:15:42Z DMGQSJ8B6985SWKP21J1KAN2RS-ui-c7f5fe80 set-budget actor=human:Wido targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-05T00:14:22Z
-Integrity: sha256=3019ea242be0296964b0b424e7d8c5fc4fc26813a6d313d16a07ebd0e340a358
+- 2026-10-05T05:49:19Z JBKAJE8JQM8KMAARYW7WX7SWDQ-m1f-f9afa3d9 done actor=human:wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,health-is-green-when-the-seat-is-healthy,host-setup-from-scratch,lane-reproves-only-what-a-change-can-affect,machine-concurrency-governor,machinery-blocks-of-2026-10-02,machinery-blocks-of-2026-10-04,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,records-land-through-the-lane,recovery-to-good-state,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:23 to=1:22
+Integrity: sha256=ee39435686a3fd8945a9d71c70879359dd0b3b1e8270d48d664c821e265b5c4d
