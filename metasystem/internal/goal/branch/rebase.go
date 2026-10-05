@@ -151,6 +151,74 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		}
 		result.NewTip, result.State = next, "rebased"
 	}
+	carried, err := carryReviewsWith(CarryRequest(req), d)
+	if carried.NewTip != "" {
+		result.NewTip = carried.NewTip
+	}
+	result.Carried, result.NeedsReview = carried.Carried, carried.NeedsReview
+	if err != nil {
+		return result, err
+	}
+	if result.NewTip != remote {
+		if err := checkClaim(req.CheckClaim); err != nil {
+			return result, err
+		}
+		op, err := d.newID("goal-rebase-push")
+		if err != nil {
+			return result, err
+		}
+		pushed, err := d.push(PushRequest{Repo: req.Repo, Remote: req.Remote, EndpointTip: req.EndpointTip, GoalID: req.GoalID, OpID: op, CheckClaim: req.CheckClaim, Transport: req.Transport})
+		if err != nil {
+			return result, err
+		}
+		result.NewTip = pushed.Tip
+		if result.State == "" {
+			result.State = "pushed"
+		}
+	}
+	if result.State == "" {
+		result.State = "held"
+		if len(result.Carried) != 0 {
+			result.State = "carried"
+		}
+	}
+	return result, nil
+}
+
+type CarryRequest RebaseRequest
+
+type CarryResult struct {
+	NewTip      string   `json:"newTip"`
+	Carried     []string `json:"carried"`
+	NeedsReview []string `json:"needsReview"`
+}
+
+// CarryReviews records reviews for unchanged units from a kept branch tip without publishing them.
+func CarryReviews(req CarryRequest) (CarryResult, error) {
+	result := CarryResult{Carried: []string{}, NeedsReview: []string{}}
+	if !validName(req.GoalID) || req.Remote == "" || !hex40(req.EndpointTip) {
+		return result, fmt.Errorf("carrying reviews needs a goal, remote and main's full commit name\nrun: metasystem work status")
+	}
+	if err := checkClaim(req.CheckClaim); err != nil {
+		return result, err
+	}
+	if req.Transport == nil {
+		req.Transport = GitPushTransport{}
+	}
+	return carryReviewsWith(req, gitRebaseDependencies())
+}
+
+func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, error) {
+	result := CarryResult{Carried: []string{}, NeedsReview: []string{}}
+	r := d.repository
+	tip, present, err := r.facts.Tip(req.Repo, goalBranchRef(req.GoalID))
+	if err != nil {
+		return result, err
+	}
+	if !present {
+		return result, operationRefusal(StaleCode, "goal %s has no branch here\nrun: metasystem work build %s", req.GoalID, req.GoalID)
+	}
+	result.NewTip = tip
 	commits, err := r.facts.Range(req.Repo, req.EndpointTip, result.NewTip, req.GoalID)
 	if err != nil {
 		return result, err
@@ -217,29 +285,6 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		}
 		result.NewTip = next
 		result.Carried = append(result.Carried, unit.Units...)
-	}
-	if result.NewTip != remote {
-		if err := checkClaim(req.CheckClaim); err != nil {
-			return result, err
-		}
-		op, err := d.newID("goal-rebase-push")
-		if err != nil {
-			return result, err
-		}
-		pushed, err := d.push(PushRequest{Repo: req.Repo, Remote: req.Remote, EndpointTip: req.EndpointTip, GoalID: req.GoalID, OpID: op, CheckClaim: req.CheckClaim, Transport: req.Transport})
-		if err != nil {
-			return result, err
-		}
-		result.NewTip = pushed.Tip
-		if result.State == "" {
-			result.State = "pushed"
-		}
-	}
-	if result.State == "" {
-		result.State = "held"
-		if len(result.Carried) != 0 {
-			result.State = "carried"
-		}
 	}
 	return result, nil
 }
@@ -319,7 +364,7 @@ func rebaseReviewed(repo, goal string, commits []Commit, r commitRepository) (ma
 	return reviewed, nil
 }
 
-func rebasePredecessor(req RebaseRequest, unit Commit, kept []string, r commitRepository) (string, error) {
+func rebasePredecessor(req CarryRequest, unit Commit, kept []string, r commitRepository) (string, error) {
 	for _, tip := range kept {
 		commits, err := r.facts.Range(req.Repo, req.EndpointTip, tip, req.GoalID)
 		if err != nil {

@@ -27,6 +27,7 @@ type intentConnectionOwners struct {
 	recordsCheck   func(installation string) error
 	applyIndex     func(dir string, patch []byte, reverse bool) error
 	rebase         func(branch.RebaseRequest) (branch.RebaseResult, error)
+	carry          func(branch.CarryRequest) (branch.CarryResult, error)
 	rebaseGate     func(string) (string, error)
 	endpoint       func(root string) (goal.Endpoint, error)
 	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)
@@ -62,6 +63,9 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
 	if owners.rebase == nil {
 		owners.rebase = branch.Rebase
+	}
+	if owners.carry == nil {
+		owners.carry = branch.CarryReviews
 	}
 	if owners.rebaseGate == nil {
 		owners.rebaseGate = readGate
