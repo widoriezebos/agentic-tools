@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "goal": "conflicts-resolve-unattended",
+  "unit": "land-again2",
+  "subject": {
+    "commit": "2caea6c59f8a5db840689cb5165451034aa0dc44",
+    "parent": "41d32012b1b6949c3408dddb76f79ee2e75119fe",
+    "tree": "78c2275c18a5ef2d56c1f0d91538b70b69c56d3b",
+    "patchDigest": "af030a34241db3933146668c1ee3782117956991ae751ca764ca3fce208f7cc8",
+    "unitDigest": "bcde0896e95ca14b3f410e4557ae9859a95e3c0b7ce2f7bcefb67970d6b0a8f5"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-6a2665d91dded72123cba008",
+    "round": 1,
+    "closureSha256": "bfcde7bd5e9ef9d6b4ebd101d93438898120a077242821fbeb46e587bdce1fc6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "78c2275c18a5ef2d56c1f0d91538b70b69c56d3b",
+    "runId": "goal-read-gate-20261005t012804z-fd196c1e35d1a9f9"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "da84e358d9c9eede6be6d16a41f5c38fae470fab",
+      "digest": "523b0a7d555707d8e2ecf59c17b33f8ecb52a13682c9cd38bbf9dc97eb3d5d8f"
+    },
+    {
+      "kind": "read",
+      "commit": "2141d3ddbab3bf9d95ce0920aca0f86a40ba17b4",
+      "digest": "a26ae68542e6a3af237335f43d6474d889e2d1bf05366ae503d1a71d23ae1534"
+    },
+    {
+      "kind": "read",
+      "commit": "cc673049209275813719f41830421f33fc1d9df9",
+      "digest": "292ed1c7af76a171cc13e45b3665656fe65ad58f108dbf4d4beebe55f4924edd"
+    },
+    {
+      "kind": "read",
+      "commit": "b472b2b634b16450cd0d713d8c482d1530ce9495",
+      "digest": "2852b0bca9cb5778fba43d1b68fee37a4a70363997ee1e7ebdae0bf0d53e57f9"
+    },
+    {
+      "kind": "read",
+      "commit": "41d32012b1b6949c3408dddb76f79ee2e75119fe",
+      "digest": "9c40d474923a83d0136dd2307cc137f3176e400c4735ceacd266fb9305285e6c"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_handin_test.go",
+      "readerWord": "reviewed by critic root code-critic-6a2665d91dded72123cba008"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help-work-land.txt",
+      "readerWord": "reviewed by critic root code-critic-6a2665d91dded72123cba008"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-6a2665d91dded72123cba008"
+    }
+  ],
+  "sha256": "de63928a307ebd05b645227e57860f92fda6058d8761c6e9b8d6a4f8fe7e7784"
+}
