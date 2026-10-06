@@ -111,7 +111,7 @@ func TestGoalClaimLaneWaitingThenReturned(t *testing.T) {
 
 func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"two waiting", "landed", "returned then records", "no entry", "no lane", "queue unreadable", "installation unreadable", "existing slot"} {
+	for _, scenario := range []string{"two waiting", "landed", "returned then records", "records then returned", "no entry", "no lane", "queue unreadable", "installation unreadable", "existing slot"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			bed, owners, lane := claimLaneBed(t)
@@ -150,6 +150,15 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 					t.Fatalf("records hand-in: added=%v err=%v", added, err)
 				}
 				wantRemedy = []string{"metasystem", "work", "land", bedGoal}
+			case "records then returned":
+				queueClaimGoal(t, lane.install, bedGoal)
+				if _, added, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
+					t.Fatalf("records hand-in: added=%v err=%v", added, err)
+				}
+				if entry, changed, err := plain.Return(lane.install, bedGoal, "the records check failed", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil || !changed || !entry.Records {
+					t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
+				}
+				wantRemedy = []string{"metasystem", "work", "land", bedGoal}
 			case "no lane":
 				delivery.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 			case "queue unreadable":
@@ -183,7 +192,7 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 			} else if result.Next == nil || !slices.Equal(result.Next.Argv, wantRemedy) {
 				t.Fatalf("refusal remedy: %+v, want %v", result.Next, wantRemedy)
 			}
-			if scenario == "returned then records" && !strings.Contains(result.Summary, "returned") {
+			if (scenario == "returned then records" || scenario == "records then returned") && !strings.Contains(result.Summary, "returned") {
 				t.Fatalf("records hid the goal's return: %+v", result)
 			}
 			if scenario == "queue unreadable" {

@@ -163,6 +163,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			file, err := os.Create(prefix.Log)
 			if err != nil {
 				complete = false
+				result.Reason += "; isolated check of " + unit.Unit + " on " + prefix.Commit + " did not complete"
 				break
 			}
 			result.Cause.Evidence = prefix.Log
@@ -171,6 +172,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			var exit *exec.ExitError
 			if report.kind != "complete" || closeErr != nil || runErr != nil && (!slices.ContainsFunc(report.failed, func(f FailedUnit) bool { return f.Unit == unit.Unit }) || errors.As(runErr, &exit) && !exit.Exited()) {
 				complete = false
+				result.Reason += "; isolated check of " + unit.Unit + " on " + prefix.Commit + " did not complete"
 				break
 			}
 			if runErr != nil {
@@ -186,18 +188,18 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			}
 		}
 		_, removeErr := seams.git(checkout, "worktree", "remove", "--force", tree)
+		if i == 0 && prefix.Main && failed {
+			result.Cause.Kind = "main"
+			result.Cause.Name = mainFailureIdentity(result.Failed)
+			if len(mainChecks) > 0 {
+				result.Cause.Evidence = mainChecks[0].Log
+				result = recordMainFailures(seams, result, mainChecks)
+			}
+		}
 		if !complete || removeErr != nil {
 			return result
 		}
 		if failed {
-			if i == 0 && prefix.Main {
-				result.Cause.Kind = "main"
-				result.Cause.Name = mainFailureIdentity(result.Failed)
-				if len(mainChecks) > 0 {
-					result.Cause.Evidence = mainChecks[0].Log
-					result = recordMainFailures(seams, result, mainChecks)
-				}
-			}
 			if i > 0 && prefix.Goal.Goal != "" {
 				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
 			}

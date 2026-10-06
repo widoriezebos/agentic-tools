@@ -208,9 +208,17 @@ func (inv *intentInvocation) latestLaneGoalEntry(install, goalID, main string) (
 	if err != nil {
 		return plain.Entry{}, false, err
 	}
+	newest := true
 	for index := len(entries) - 1; index >= 0; index-- {
 		entry := entries[index]
-		if entry.Goal != goalID || entry.Records {
+		if entry.Goal != goalID {
+			continue
+		}
+		if newest && entry.State == plain.StateReturned {
+			return entry, true, nil
+		}
+		newest = false
+		if entry.Records {
 			continue
 		}
 		// A records hand-in can supersede this entry in the queue, but

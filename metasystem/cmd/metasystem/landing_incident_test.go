@@ -174,6 +174,58 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 	}
 }
 
+func TestIncidentLandingProveKeepsMainFailureWhenLaterIsolationIsKilled(t *testing.T) {
+	t.Parallel()
+	lane, b, _ := incidentProveFixture(t, false)
+	killed := exec.Command("sleep", "30")
+	if err := killed.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := killed.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := killed.Wait(); err == nil || killed.ProcessState.Exited() {
+		t.Fatal("fixture was not killed")
+	}
+	firstReport := "LANDING-FAILED\tu/a\tTestOne\nLANDING-CHECKED\t1\n"
+	lane.fail = func(_ *exec.Cmd, only string) (string, error) {
+		switch only {
+		case "u/a":
+			return firstReport, errors.New("red")
+		case "u/b":
+			return "LANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t1\n", &exec.ExitError{ProcessState: killed.ProcessState}
+		default:
+			return "LANDING-FAILED\tu/a\tTestOne\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t2\n", errors.New("red")
+		}
+	}
+	check := lane.prove(t)
+	log := filepath.Join(plain.Dir(lane.install), "proofs", check.Attempt+"-replay-1-1.log")
+	if check.Cause == nil || check.Cause.Kind != "main" || check.Cause.Evidence != log || !strings.Contains(check.Reason, "u/b") || check.Repeat != "" ||
+		strings.Join(lane.runs, ",") != "merge-b:,main:u/a,main:u/b" {
+		t.Fatalf("confirmed main failure lost after interruption: %+v runs=%v", check, lane.runs)
+	}
+	stored, ok, err := plain.LastResult(lane.install)
+	if err != nil || !ok || stored.Cause == nil || stored.Cause.Kind != "main" || stored.Reason != check.Reason {
+		t.Fatalf("main cause or incomplete unit not retained: %+v %v %v", stored, ok, err)
+	}
+	code, result := b.runJSON(b.owners(), "incident", "list")
+	data, err := json.Marshal(result.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct{ Incidents []goal.TrunkRedEntry }
+	if err := json.Unmarshal(data, &listed); err != nil || code != 0 || len(listed.Incidents) != 1 {
+		t.Fatalf("list: code=%d data=%s err=%v", code, data, err)
+	}
+	entry := listed.Incidents[0]
+	contents, err := os.ReadFile(log)
+	if err != nil || string(contents) != firstReport || entry.Identity != "red:u/a:TestOne" || len(entry.Failures) != 1 || entry.Failures[0].Report != log ||
+		len(entry.Sightings) != 1 || entry.Sightings[0].BaseCommit != "main" || entry.Sightings[0].BaseTree != "main-tree" ||
+		entry.Sightings[0].LogPath != log || entry.Sightings[0].LogDigest != fmt.Sprintf("%x", sha256.Sum256(contents)) {
+		t.Fatalf("only the completed main failure should be recorded: %+v log=%s err=%v", entry, log, err)
+	}
+}
+
 func TestIncidentLandingProveRecordingFailureKeepsRedAndReportsReason(t *testing.T) {
 	t.Parallel()
 	for _, unchanged := range []bool{false, true} {
