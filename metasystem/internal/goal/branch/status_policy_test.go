@@ -27,6 +27,7 @@ type statusFact struct {
 	info      KindInfo
 	att       Attestation
 	tip       string
+	output    string
 	present   bool
 	err       error
 }
@@ -42,6 +43,9 @@ func attestFact(repo, snapshot, endpoint, goal, unit, commit string, att Attesta
 }
 func tipFact(repo, ref, tip string, present bool, err error) statusFact {
 	return statusFact{operation: "local-tip", args: []string{repo, ref}, tip: tip, present: present, err: err}
+}
+func statusGitFact(repo, output string, err error, args ...string) statusFact {
+	return statusFact{operation: "git", args: append([]string{repo}, args...), output: output, err: err}
 }
 func copyStatusCommits(in []Commit) []Commit {
 	out := append([]Commit(nil), in...)
@@ -123,6 +127,10 @@ func (f *statusFacts) dependencies() statusDependencies {
 			fact := f.take("local-tip", repo, ref)
 			return fact.tip, fact.present, fact.err
 		},
+		gitOutput: func(repo string, args ...string) ([]byte, error) {
+			fact := f.take("git", append([]string{repo}, args...)...)
+			return []byte(fact.output), fact.err
+		},
 	}
 }
 func (f *statusFacts) assertCalls(t *testing.T, want ...string) {
@@ -167,7 +175,10 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 	ref := goalBranchRef("goal-a")
 	facts := threeUnitFacts(repo)
 	facts = append(facts, tipFact(repo, ref, statusTip, true, nil))
-	facts = append(facts, threeUnitFacts(repo)...)
+	facts = append(facts,
+		statusGitFact(repo, statusU3, nil, "rev-list", "--first-parent", statusBase+".."+statusTip),
+		kindFact(repo, statusU3, "goal-a", KindInfo{Kind: Unit, Unit: "u3"}, nil),
+	)
 	facts = append(facts,
 		tipFact(repo, ref, statusNext, true, nil),
 		tipFact(repo, ref, statusTip, true, nil),
@@ -202,12 +213,12 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 		if remoteCalls == 1 {
 			f.assertCallCount(t, 6)
 		} else {
-			f.assertCallCount(t, 12)
+			f.assertCallCount(t, 9)
 		}
 		return statusBase, statusTip, true, nil
 	}
 	parked, err := checkParkBranch(repo, "goal-a", "continue", remote, deps)
-	wantSummary := fmt.Sprintf("goal/goal-a last unit u3 commit %s is read clean", statusU3)
+	wantSummary := fmt.Sprintf("goal/goal-a at %s is pushed; last unit u3 commit %s", statusTip, statusU3)
 	if err != nil || !parked.Branch || parked.Summary != wantSummary || remoteCalls != 1 {
 		t.Fatalf("park state = %+v, err = %v, remote calls = %d", parked, err, remoteCalls)
 	}
@@ -219,7 +230,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 	}
 	_, err = checkParkBranch(repo, "goal-a", "continue", func() (string, string, bool, error) {
 		remoteCalls++
-		f.assertCallCount(t, 13)
+		f.assertCallCount(t, 10)
 		return statusBase, "", false, nil
 	}, deps)
 	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "goal/goal-a here is "+statusTip+" but origin has no copy; push it before parking\nrun: git push origin goal/goal-a, then metasystem goal pause goal-a" || remoteCalls != 3 {
@@ -243,7 +254,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "this checkout has no goal/goal-a branch, so its work can't be kept while parked\nrun: git fetch origin goal/goal-a:goal/goal-a, then metasystem goal pause goal-a" || remoteCalls != 3 {
 		t.Fatalf("missing narrated branch = %v, remote calls = %d", err, remoteCalls)
 	}
-	f.assertCalls(t, "range", "kind", "attestation", "kind", "attestation", "local-tip", "range", "kind", "attestation", "kind", "attestation", "local-tip", "local-tip", "local-tip", "local-tip", "local-tip", "kind", "local-tip", "kind")
+	f.assertCalls(t, "range", "kind", "attestation", "kind", "attestation", "local-tip", "git", "kind", "local-tip", "local-tip", "local-tip", "local-tip", "local-tip", "kind", "local-tip", "kind")
 }
 
 func TestParkRefusalDoesNotClaimOriginState(t *testing.T) {
@@ -371,7 +382,8 @@ func TestStatusDependenciesAreIsolatedPerCall(t *testing.T) {
 		rangeFact(repoA, statusBase, statusTip, "goal-a", []Commit{{ID: statusU1, Kind: Unit, Unit: "u1", Units: []string{"u1"}}}, nil),
 		tipFact(repoA, ref, statusTip, true, nil),
 		tipFact(repoA, ref, statusTip, true, nil),
-		rangeFact(repoA, statusBase, statusTip, "goal-a", []Commit{{ID: statusU1, Kind: Unit, Unit: "u1", Units: []string{"u1"}}}, nil),
+		statusGitFact(repoA, statusU1, nil, "rev-list", "--first-parent", statusBase+".."+statusTip),
+		kindFact(repoA, statusU1, "goal-a", KindInfo{Kind: Unit, Unit: "u1"}, nil),
 	)
 	b := newStatusFacts(t,
 		rangeFact(repoB, statusBase, statusTip, "goal-a", nil, nil),
@@ -402,7 +414,7 @@ func TestStatusDependenciesAreIsolatedPerCall(t *testing.T) {
 			a.assertCallCount(t, 3)
 			return statusBase, statusTip, true, nil
 		}, deps)
-		if err != nil || !park.Branch || park.Summary != "goal/goal-a last unit u1 commit "+statusU1+" is built" || remoteCalls != 1 {
+		if err != nil || !park.Branch || park.Summary != "goal/goal-a at "+statusTip+" is pushed; last unit u1 commit "+statusU1 || remoteCalls != 1 {
 			results <- fmt.Errorf("A park = %+v, err = %v, remote calls = %d", park, err, remoteCalls)
 			return
 		}
@@ -438,6 +450,6 @@ func TestStatusDependenciesAreIsolatedPerCall(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	a.assertCalls(t, "range", "local-tip", "local-tip", "range")
+	a.assertCalls(t, "range", "local-tip", "local-tip", "git", "kind")
 	b.assertCalls(t, "range", "local-tip", "local-tip")
 }
