@@ -637,6 +637,11 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	// The batch lane's pipeline durations and stage list (D14, R22).
+	if raw, present := values["proof.trunk-every"]; present {
+		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
+			add("proof.trunk-every must be a positive duration, got %s", pyRepr(raw))
+		}
+	}
 	if raw, present := values[PipelineProofCostKey]; present {
 		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
 			add("%s must be a positive duration, got %s", PipelineProofCostKey, pyRepr(raw))

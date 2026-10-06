@@ -132,7 +132,7 @@ func CloseIncidentStop(install, incident string, now time.Time) error {
 
 // recordProofStop runs under the lane lock after attribution and before a repeat.
 func recordProofStop(install string, result Result) error {
-	if result.Result != Red || result.Cause == nil {
+	if result.Trunk || result.Result != Red || result.Cause == nil {
 		return nil
 	}
 	s := Stop{Loop: "lane-proof", Budget: 2, Cause: result.Cause, Class: strings.Join(result.Cause.Tests, ", "), Evidence: result.Cause.Evidence, At: result.At}
@@ -163,7 +163,7 @@ func recordProofStop(install string, result Result) error {
 	}
 	attempts := map[string]bool{}
 	for _, r := range results {
-		if mode.Gate && r.Tree != result.Tree {
+		if mode.Gate && r.Tree != result.Tree || r.Trunk && !r.LoopClosed {
 			continue
 		}
 		if r.LoopClosed || len(result.Goals) > 0 && !subsetGoals(result.Goals, r.Goals) {

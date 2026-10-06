@@ -68,9 +68,9 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
    `metasystem landing prove` once more and end your turn. A refusal or a second such red holds
    the waiting goals; end your turn and say what stopped in your final message.
-8. **Full proof owed** (woken with `full-due` and nothing waiting): fetch, check out `origin/main`,
-   and `landing prove`. A green needs no push. A red is main's: ask with `--about lane`, naming
-   the failing tests.
+8. **Full proof owed** (woken with `full-due` and no line you may merge: nothing waits,
+   or every waiting line is held): run `metasystem landing prove --trunk` and end your turn.
+   A green clears main's incidents and needs no push; a red is recorded as main's incident.
 9. **Design refusal** (push returns a goal whose design no longer stands, or refuses because HEAD
    still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
    `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, then `metasystem landing prove`.

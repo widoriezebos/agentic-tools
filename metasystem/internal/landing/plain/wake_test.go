@@ -2,6 +2,8 @@ package plain
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -49,9 +51,12 @@ func TestAScopedPushOwesAFullProofWithinTheHour(t *testing.T) {
 		t.Run(each.name, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
 			scoped := Result{Tree: "pushed-tree", Scope: "scoped", Result: Green,
 				At: pushedAt.Add(-time.Second).Format(time.RFC3339), FullAt: bedNow.Add(-each.age).Format(time.RFC3339)}
-			results := []Result{scoped}
+			results := []Result{{Trunk: true, Result: Green, At: pushedAt.Format(time.RFC3339)}, scoped}
 			if each.proof != nil {
 				results = append(results, *each.proof)
 			}

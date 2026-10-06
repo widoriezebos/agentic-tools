@@ -33,6 +33,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	Trunk   bool   `json:"trunk,omitempty"`
 	Gate    bool   `json:"gate,omitempty"`
 	Attempt string `json:"attempt"`
 	Tree    string `json:"tree"`
@@ -47,6 +48,7 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	Trunk bool `json:"trunk,omitempty"`
 	// CountedFull identifies a whole execution with a complete report.
 	CountedFull bool `json:"countedFull,omitempty"`
 	// LoopClosed ends the batch budget without changing the proof verdict.
@@ -105,6 +107,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Trunk selects origin/main for a fresh full check.
+	Trunk bool
 	// Gate selects the cheap merge check and its separate result register.
 	Gate         bool
 	gateBaseline bool
@@ -220,7 +224,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	if attempt != "" && running.Attempt == attempt {
 		return running, recorded, alive, nil
 	}
-	red := Result{Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
+	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
 	if running.Gate {
 		red.Scope = "gate"
@@ -285,12 +289,24 @@ func head(git func(string, ...string) (string, error), checkout string) (commit,
 	return commit, tree, nil
 }
 
-// Start starts the proof of the checkout's HEAD detached: the engine runs
+func (s ProveSeams) subject(checkout string) (string, string, error) {
+	if !s.Trunk {
+		return head(s.git, checkout)
+	}
+	commit, err := s.git(checkout, "rev-parse", "--verify", "origin/main^{commit}")
+	if err != nil {
+		return "", "", err
+	}
+	tree, err := s.git(checkout, "rev-parse", "--verify", commit+"^{tree}")
+	return commit, tree, err
+}
+
+// Start starts the proof of HEAD, or origin/main for a trunk check, detached: the engine runs
 // landing prove --wait --attempt ID in a session of its own, which runs the
 // command and records the result. A repeat while the same tree's proof runs
 // starts nothing (already true); another tree's running proof is *Busy.
 func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
-	commit, tree, err := head(seams.git, checkout)
+	commit, tree, err := seams.subject(checkout)
 	if err != nil {
 		return Running{}, false, err
 	}
@@ -301,23 +317,25 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err != nil {
 			return err
 		}
-		result, found, err := seams.checkBound(install, tree)
-		if err != nil {
-			return err
-		}
-		if found && result.reusableGreen(seams.now()) {
-			started, already = Running{Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
-			return nil
-		}
 		if recorded && alive {
-			if running.Tree == tree && running.Gate == seams.Gate {
+			if running.Tree == tree && running.Gate == seams.Gate && running.Trunk == seams.Trunk {
 				started, already = running, true
 				return nil
 			}
 			return &Busy{Running: running}
 		}
-		if err := seams.checkBudget(install, checkout, commit); err != nil {
-			return err
+		if !seams.Trunk {
+			result, found, err := seams.checkBound(install, tree)
+			if err != nil {
+				return err
+			}
+			if found && result.reusableGreen(seams.now()) {
+				started, already = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
+				return nil
+			}
+			if err := seams.checkBudget(install, checkout, commit); err != nil {
+				return err
+			}
 		}
 		executable, err := seams.Executable()
 		if err != nil {
@@ -333,11 +351,14 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if seams.Gate {
 			argv = append(argv, "--gate")
 		}
+		if seams.Trunk {
+			argv = append(argv, "--trunk")
+		}
 		pid, err := seams.Launch(argv, checkout, log)
 		if err != nil {
 			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
 		}
-		started = Running{Gate: seams.Gate, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
+		started = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
 		return writeRunning(install, started)
 	})
 	return started, already, err
@@ -352,7 +373,10 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 // starts the proof. Inherited and scoped greens require a full proof no
 // more than an hour old.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
-	commit, tree, err := head(seams.git, checkout)
+	if seams.Trunk {
+		return Result{}, false, nil
+	}
+	commit, tree, err := seams.subject(checkout)
 	if err != nil {
 		return Result{}, false, err
 	}
@@ -403,16 +427,16 @@ func writeRunning(install string, running Running) error {
 	return os.Rename(temp, path)
 }
 
-// Run runs the proof command over the checkout's HEAD in this process, in
+// Run proves HEAD, or origin/main for a trunk check, in this process, in
 // a fresh detached worktree at that commit, and appends its result. attempt names a detached start's record (Start wrote
 // it); empty records this process as the running proof first, refusing
 // while another tree's proof runs. The command's output goes to output.
 func Run(install, checkout, command, attempt string, output io.Writer, seams ProveSeams) (Result, error) {
-	commit, tree, err := head(seams.git, checkout)
+	commit, tree, err := seams.subject(checkout)
 	if err != nil {
 		return Result{}, err
 	}
-	running := Running{Gate: seams.Gate, Attempt: attempt, Tree: tree, Commit: commit}
+	running := Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
 	var previous, result Result
 	already := false
 	err = withLock(install, func() error {
@@ -423,6 +447,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if attempt != "" && recorded && current.Attempt == attempt {
 			running = current
 		}
+		if recorded && alive && (current.Attempt != attempt || current.Gate != seams.Gate || current.Trunk != seams.Trunk) {
+			return &Busy{Running: current}
+		}
 		if seams.CommandForCommit != nil {
 			command, err = seams.CommandForCommit(running.Commit)
 			if err != nil {
@@ -430,19 +457,20 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			}
 		}
 		var found bool
-		previous, found, err = seams.checkBound(install, running.Tree)
+		if !running.Trunk {
+			previous, found, err = seams.checkBound(install, running.Tree)
+		}
 		if err != nil {
 			return err
 		}
-		if found && previous.reusableGreen(seams.now()) {
+		if !running.Trunk && found && previous.reusableGreen(seams.now()) {
 			result, already = previous, true
 			return nil
 		}
-		if recorded && alive && (current.Attempt != attempt || current.Gate != seams.Gate) {
-			return &Busy{Running: current}
-		}
-		if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
-			return err
+		if !running.Trunk {
+			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
+				return err
+			}
 		}
 		if found && previous.Result != Green {
 			if previous.Cause == nil {
@@ -478,7 +506,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil || already {
 		return result, err
 	}
-	result = Result{Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result = Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
 	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
 		return result, err
@@ -487,10 +515,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	observed := &proofOutput{output: io.Discard}
 	inherited := false
 	from, ok := Result{}, false
-	if !seams.Gate {
+	if !seams.Gate && !running.Trunk {
 		from, ok = ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
 	}
-	if !seams.Gate && previous.Result == "" && ok && from.fullCurrent(seams.now()) {
+	if !seams.Gate && !running.Trunk && previous.Result == "" && ok && from.fullCurrent(seams.now()) {
 		result.Reason = inheritedReason(from)
 		result, err = inheritScope(install, result, from)
 		if err != nil {
@@ -500,6 +528,8 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	} else {
 		if seams.Gate {
 			decision = scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
+		} else if running.Trunk {
+			decision = scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
 		} else {
 			decision = decideScope(install, checkout, running, seams)
 		}
@@ -510,7 +540,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
 	}
-	if result.Result == Red && len(result.Failed) > 0 && seams.RecordMain != nil {
+	if result.Trunk && result.Result == Red && len(result.Failed) > 0 {
+		result = recordMainFailures(seams, result, []Result{result})
+	}
+	if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && seams.RecordMain != nil {
 		main, mainErr := checkoutGit(checkout, seams).main()
 		if mainErr == nil {
 			mainTree, treeErr := seams.git(checkout, "rev-parse", "--verify", main+"^{tree}")

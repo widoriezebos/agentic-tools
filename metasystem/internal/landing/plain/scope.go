@@ -111,6 +111,24 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		return d
 	}
 	d.ChangedPaths = strings.Split(strings.TrimSpace(changed), "\n")
+	executablePaths := d.ChangedPaths
+	if d.base.FullTree != "" && d.base.FullTree != d.base.Tree {
+		changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", d.base.FullTree, running.Tree)
+		if err != nil {
+			d.ScopeReason = "the paths changed since the full proof cannot be read: " + err.Error()
+			return d
+		}
+		executablePaths = append(append([]string{}, executablePaths...), strings.Split(strings.TrimSpace(changed), "\n")...)
+	}
+	for _, path := range executablePaths {
+		if path == "" {
+			continue
+		}
+		if !recordsOnlyPaths(install, checkout, []string{path}) {
+			d.ScopeReason = "an executable input changed: " + path
+			return d
+		}
+	}
 	relative, _, err := config.CommittedLookup(filepath.Join(install, "metasystem.conf"), "testing.contract")
 	if err != nil || relative == "" {
 		d.ScopeReason = "the testing contract declaration cannot be read"

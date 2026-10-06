@@ -115,7 +115,13 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 	if err != nil {
 		return result
 	}
-	merges, err := seams.git(checkout, "log", "--first-parent", "--merges", "--reverse", "--format=%H %P", "origin/main.."+running.Commit)
+	merges := ""
+	if !running.Trunk {
+		merges, err = seams.git(checkout, "log", "--first-parent", "--merges", "--reverse", "--format=%H %P", "origin/main.."+running.Commit)
+	}
+	if running.Trunk {
+		main = running.Commit
+	}
 	if err != nil {
 		return result
 	}
@@ -263,7 +269,7 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 			first, firstRed, attempts = nil, false, map[string]bool{}
 			continue
 		}
-		if !r.CountedFull || len(r.Goals) == 0 {
+		if r.Trunk || !r.CountedFull || len(r.Goals) == 0 {
 			continue
 		}
 		if !subsetGoals(r.Goals, first) {

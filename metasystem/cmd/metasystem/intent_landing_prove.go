@@ -141,13 +141,14 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
-		usage: []string{"metasystem landing prove [--gate] [--wait]"},
+		usage: []string{"metasystem landing prove [--gate|--trunk] [--wait]"},
 		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full or scoped, LANDING_PROOF_BASE naming the base tree (empty for full), and LANDING_PROOF_GROUPS naming space-separated group ids (empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
-			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After main moves under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
+			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. Refused while the lane is stopped."},
-		flags: []intentFlag{{name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
+			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. Refused while the lane is stopped.",
+			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
+		flags: []intentFlag{{name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
 		examples: []string{"metasystem landing prove"},
@@ -156,10 +157,15 @@ func landingProveCommand() intentCommand {
 
 func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	targets := laneTargets(admitted.record.Root)
+	if inv.input.switched("gate") && inv.input.switched("trunk") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "--gate and --trunk cannot be used together, so nothing was proven"})
+	}
 	if refused := inv.lanePaused(admitted, "proven"); refused != nil {
 		return inv.render(*refused)
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
+	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
 	key := proveCommandKey
@@ -176,7 +182,16 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	seams.CommandForCommit = func(commit string) (string, error) {
 		return landingProofCommand(admitted.installation, checkout, commit, key, git)
 	}
-	commit, err := git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
+	ref := "HEAD"
+	if seams.Trunk {
+		ref = "origin/main"
+		if inv.input.text("attempt") == "" {
+			if _, err := git(checkout, "fetch", "origin", "main"); err != nil {
+				return inv.render(landingProveRefusal(inv, targets, err))
+			}
+		}
+	}
+	commit, err := git(checkout, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
 		return inv.render(landingProveRefusal(inv, targets, err))
 	}
@@ -245,6 +260,13 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Green {
+		if result.Trunk {
+			if err := admitted.owners.clearLandingIncidents(admitted.installation, result); err != nil {
+				return inv.render(landingLaneFailure(targets, "main passed its full check, but its incidents could not be cleared", err))
+			}
+			summary := "main passed its full check; no push is needed"
+			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
+		}
 		summary := words + " is proven green" + landingRedReason(result.Reason) + "; landing push may put it on main"
 		if seams.Gate {
 			summary = words + " passed the cheap gate" + landingRedReason(result.Reason) + "; the batch still needs landing prove before landing push"

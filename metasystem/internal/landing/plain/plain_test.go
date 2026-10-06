@@ -443,20 +443,20 @@ func TestWakeReasonsAreQueuedAndProofFinished(t *testing.T) {
 		}
 		return strings.Join(got, ",")
 	}
-	if got := reasons(time.Time{}); got != "" {
-		t.Fatalf("an empty queue wakes nothing: %q", got)
+	if got := reasons(time.Time{}); got != WakeFullDue {
+		t.Fatalf("an unchecked main wakes for its full check: %q", got)
 	}
 	sha := b.seat("seat-a", "goal-a")
 	b.handIn("m1e", "goal-a", sha)
-	if got := reasons(time.Time{}); got != WakeQueued {
+	if got := reasons(time.Time{}); got != WakeQueued+","+WakeFullDue {
 		t.Fatalf("a hand-in wakes: %q", got)
 	}
 	b.merge("goal-a")
 	b.prove(b.greenScript) // ends at bedNow
-	if got := reasons(bedNow.Add(-time.Minute)); got != WakeQueued+","+WakeProofFinished {
+	if got := reasons(bedNow.Add(-time.Minute)); got != WakeQueued+","+WakeProofFinished+","+WakeFullDue {
 		t.Fatalf("a proof that ended after the launch wakes: %q", got)
 	}
-	if got := reasons(bedNow.Add(time.Minute)); got != WakeQueued {
+	if got := reasons(bedNow.Add(time.Minute)); got != WakeQueued+","+WakeFullDue {
 		t.Fatalf("a proof that ended before the launch was seen: %q", got)
 	}
 	if _, err := b.push(); err != nil {

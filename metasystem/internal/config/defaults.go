@@ -63,6 +63,8 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "proof.trunk-every", Default: "4h",
+		Meaning: "how often the landing lane freshly checks main in full"},
 	{Key: "host.proof-vm", Default: "", ProofInput: false,
 		Meaning: "the virtual machine this computer uses for the repository's full proof; empty runs on the host"},
 	{Key: "proof.full", CommittedOnly: true, ProofInput: true,
