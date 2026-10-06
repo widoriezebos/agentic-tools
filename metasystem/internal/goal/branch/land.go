@@ -269,7 +269,7 @@ func verifyUnitPreimagesWith(r landingRepository, repo, goalID, tree string, uni
 		}
 	}
 	if len(changed) != 0 {
-		return operationRefusal(UnitRereadCode, "build %s no longer applies to main: %s changed there\nrun: metasystem work review %s", unit.Unit, strings.Join(changed, ", "), goalID)
+		return operationRefusal(UnitRereadCode, "build %s no longer applies to main: %s changed there\nrun: metasystem work rebase %s", unit.Unit, strings.Join(changed, ", "), goalID)
 	}
 	return nil
 }
@@ -295,7 +295,7 @@ func verifyFoldPreimagesWith(r landingRepository, repo, goalID, tree string, fol
 		}
 	}
 	if len(changed) != 0 {
-		return operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %s changed there\nrun: metasystem work status %s", fold.ID, strings.Join(changed, ", "), goalID)
+		return operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %s changed there\nrun: metasystem work rebase %s", fold.ID, strings.Join(changed, ", "), goalID)
 	}
 	return nil
 }
@@ -675,7 +675,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 					return nil, nil, err
 				}
 				if err := applyCommitModeWith(r, worktree, fold.ID, false); err != nil {
-					return nil, nil, operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %v\nrun: metasystem work status %s", fold.ID, err, req.GoalID)
+					return nil, nil, operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %v\nrun: metasystem work rebase %s", fold.ID, err, req.GoalID)
 				}
 			}
 			tree, err := r.index(worktree)
@@ -686,7 +686,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 				return nil, nil, err
 			}
 			if err := applyCommitModeWith(r, worktree, group.status.Commit, true); err != nil {
-				return nil, nil, operationRefusal(UnitRereadCode, "build %s no longer applies to main: %v\nrun: metasystem work review %s", group.status.Unit, err, req.GoalID)
+				return nil, nil, operationRefusal(UnitRereadCode, "build %s no longer applies to main: %v\nrun: metasystem work rebase %s", group.status.Unit, err, req.GoalID)
 			}
 			applied, err := r.index(worktree)
 			if err != nil {
@@ -697,7 +697,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 				return nil, nil, err
 			}
 			if !matches {
-				return nil, nil, operationRefusal(UnitRereadCode, "build %s lands on main as other changes than were reviewed (%s, reviewed %s)\nrun: metasystem work review %s", group.status.Unit, digest, group.status.Digest, req.GoalID)
+				return nil, nil, operationRefusal(UnitRereadCode, "build %s lands on main as other changes than were reviewed (%s, reviewed %s)\nrun: metasystem work rebase %s", group.status.Unit, digest, group.status.Digest, req.GoalID)
 			}
 			message, _, err := landingMessageWith(r, req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)
 			if err != nil {

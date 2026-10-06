@@ -664,6 +664,104 @@ func TestGoalLandingLastRefusesUnitBeyondPrefix(t *testing.T) {
 	}
 }
 
+// A replay that cannot preserve the read change needs an explicit rebase.
+func TestGoalLandingReplayRefusalsNameRebase(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"fold preimage", "unit preimage", "fold apply", "unit apply", "changed transition"} {
+		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
+			f, tip, _ := newCompositionFacts(t)
+			before := f.readFiles(f.repo)
+			remote := f.remote
+			out := filepath.Join(t.TempDir(), "refused")
+			req := f.request(f.base, tip, out, "")
+			req.CandidateOnly = true
+			f.expectStatus(f.base, tip)
+			f.expect("remote", "open:"+f.base)
+			compositionStart := len(f.events)
+			f.expectPass(3)
+			r := f.repository()
+			stopEvent, occurrence := "", 1
+			switch failure {
+			case "fold preimage", "unit preimage":
+				path := "metasystem/plans/goal-a.md"
+				if failure == "unit preimage" {
+					path = "metasystem/one.go"
+				}
+				stopEvent = "entry:" + path
+				entry := r.entry
+				r.entry = func(repo, tree, name string) (string, string, bool, error) {
+					mode, blob, present, err := entry(repo, tree, name)
+					if name == path && err == nil {
+						return "100644", blobHash([]byte("main changed")), true, nil
+					}
+					return mode, blob, present, err
+				}
+			case "fold apply", "unit apply":
+				stopEvent = "apply"
+				if failure == "unit apply" {
+					occurrence = 3
+				}
+				apply, calls := r.apply, 0
+				r.apply = func(dir string, patch []byte, threeWay bool) error {
+					calls++
+					if calls == occurrence {
+						f.call("apply")
+						return errors.New("patch conflicts with main")
+					}
+					return apply(dir, patch, threeWay)
+				}
+			case "changed transition":
+				stopEvent = "transition"
+				transition := r.transition
+				r.transition = func(repo, before, after string, scope landingScope) ([]byte, error) {
+					raw, err := transition(repo, before, after, scope)
+					if before != f.units[0]+"^" && scope == landingAll && err == nil {
+						return append(raw, []byte("changed on main")...), nil
+					}
+					return raw, err
+				}
+			}
+			seen, stopped := 0, false
+			for i := compositionStart; i < len(f.events); i++ {
+				if f.events[i] != stopEvent {
+					continue
+				}
+				seen++
+				if seen != occurrence {
+					continue
+				}
+				f.events = f.events[:i+1]
+				stopped = true
+				break
+			}
+			if !stopped {
+				t.Fatalf("no stop event %s", stopEvent)
+			}
+			if failure == "changed transition" {
+				f.expect("transition", "transition", "transition")
+			}
+			f.expect("close")
+			_, err := prepareLanding(req, r)
+			requireLandingRefusal(t, err, UnitRereadCode)
+			lines := strings.Split(err.Error(), "\n")
+			if len(lines) != 2 || lines[1] != "run: metasystem work rebase goal-a" {
+				t.Fatalf("replay refusal gave the wrong remedy: %v", err)
+			}
+			f.consumed()
+			if f.remote != remote || !reflect.DeepEqual(f.readFiles(f.repo), before) {
+				t.Fatal("refused replay changed the source or remote")
+			}
+			if _, err := os.Stat(out); !os.IsNotExist(err) {
+				t.Fatalf("refusal wrote output: %v", err)
+			}
+			if _, err := os.Stat(f.scratch); !os.IsNotExist(err) {
+				t.Fatalf("refusal retained scratch: %v", err)
+			}
+		})
+	}
+}
+
 func TestGoalLandingRefusesFoldWithStalePreimage(t *testing.T) {
 	t.Parallel()
 	f := newLandingFacts(t, map[string]string{"base.txt": "base", "metasystem/memory/receipts.log": "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n", "metasystem/plans/goal-a.md": "first\nsecond\n"})

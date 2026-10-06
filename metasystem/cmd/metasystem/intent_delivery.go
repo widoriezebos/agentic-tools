@@ -1928,7 +1928,7 @@ func (inv *intentInvocation) deliveredHint(goalID string, result intentResult) i
 	return result
 }
 
-func (inv *intentInvocation) landGoalRoute(goalID, through string) (result intentResult) {
+func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id; nothing was landed", goalID),
@@ -1966,7 +1966,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 	}
 	if configured && through == "" && !inv.input.has("records") {
 		// Reading a records hand-in's state keeps the lane's subject and tip.
-		if queued := inv.laneQueueState(targets, laneInstall, goalID, state.BranchTip, state.EndpointTip, branch.RebaseResult{}); queued != nil {
+		if queued := inv.laneQueueState(targets, laneInstall, goalID, state.BranchTip, state.EndpointTip); queued != nil {
 			if queued.Outcome == intentFailed {
 				return *queued
 			}
@@ -1977,65 +1977,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 			}
 		}
 	}
-	var skip string
 	var refusal *intentResult
-	if inv.input.has("records") {
-		// The lane merges record files; a records hand-in keeps its tip.
-		skip = "--records hands in record files for the lane to merge"
-	} else {
-		skip, refusal = inv.landRebaseSkip(goalID, through, laneInstall, state)
-	}
-	if refusal != nil {
-		return *refusal
-	}
-	var rebase branch.RebaseResult
-	var warning []string
-	if skip == "" {
-		rebase, warning, refusal = inv.rebaseGoal(goalID)
-		if refusal != nil {
-			return *refusal
-		}
-	}
-	defer func() {
-		if inv.input.has("records") {
-			return
-		}
-		data, ok := result.Data.(map[string]any)
-		if !ok {
-			data = map[string]any{}
-			result.Data = data
-		}
-		switch data["code"] {
-		case "GOAL_NOT_FINISHED", "GOAL_NO_END", "GOAL_PROGRESS_UNREADABLE", "GOAL_LAND_WHOLE", "GOAL_LAND_ONCE":
-			return
-		}
-		if skip != "" {
-			data["rebase"] = map[string]string{"state": "skipped", "reason": skip}
-			result.text = append([]string{"not rebased: " + skip}, result.text...)
-			return
-		}
-		data["rebase"] = rebase
-		line := "on main " + shortCommit(rebase.MainTip)
-		if rebase.State == "rebased" {
-			line = "rebased onto main " + shortCommit(rebase.MainTip)
-		}
-		lines := inv.rebaseReviewLines(goalID, rebase)
-		if configured && result.Outcome == intentConfirmed {
-			result.Summary = strings.Replace(result.Summary, "handed to the lane;", "handed to the lane, "+line+";", 1)
-		} else {
-			lines = append([]string{line}, lines...)
-		}
-		lines = append(lines, warning...)
-		result.text = append(lines, result.text...)
-	}()
-	if skip == "" && rebase.State != "held" {
-		state, err = owners.branchState(root.Path(), goalID)
-		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-				Summary: "the rebased goal branch can't be read, so nothing was handed in",
-				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
-		}
-	}
 	subject := ""
 	if state.BranchTip != "" && !inv.input.has("records") {
 		designs, problem := inv.acceptedDesignPaths(goalID)
@@ -2087,7 +2029,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 					next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 			}
 		}
-		if result := inv.laneQueueState(targets, install, goalID, selected, state.EndpointTip, rebase); result != nil {
+		if result := inv.laneQueueState(targets, install, goalID, selected, state.EndpointTip); result != nil {
 			return *result
 		}
 	}

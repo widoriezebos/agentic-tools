@@ -319,6 +319,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			name = "behind main"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := newWholeOwnerLanding(t)
 			mainTip := f.base
 			if behind {
@@ -333,9 +334,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
 			owners := defaultIntentOwners()
 			owners.dependencies.ownerLineage = func() string { return "m1" }
-			// The adapter proves Git's rewrite, carried read and publication;
-			// the fixture has no application for the static gate to run.
-			owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
+			// Real Git proves the published goal tip and main stay unchanged.
 			delivery := belowTheGate(defaultIntentDeliveryOwners())
 			delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 			delivery.process = func(process intentProcess) intentProcessResult {
@@ -355,34 +354,26 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 				return result
 			}
 			result := run()
-			if behind {
-				data, _ := result.Data.(map[string]any)
-				rebase, _ := data["rebase"].(map[string]any)
-				newTip := f.remote(t, "refs/heads/goal/standing-validation")
-				if rebase["state"] != "rebased" || rebase["mainTip"] != mainTip || newTip == f.branchTip {
-					t.Fatalf("branch behind main was not rebased: %+v; remote %s", result, newTip)
+			// Landing no longer rewrites a branch behind main or records a rebase.
+			if newTip := f.remote(t, "refs/heads/goal/standing-validation"); newTip != f.branchTip {
+				t.Fatalf("hand-in rewrote the remote branch: got %s, want %s", newTip, f.branchTip)
+			}
+			endpoint, err := branch.MainEndpoint(f.mainRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection, err := goal.Project(endpoint, true, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := 0
+			for _, line := range projection.Tree.Live["standing-validation"].History {
+				if line.Verb == "rebase" {
+					lines++
 				}
-				if contains, err := plain.IsAncestor(f.mainRoot, mainTip, newTip); err != nil || !contains {
-					t.Fatalf("rebased branch is not on main: %v %v", contains, err)
-				}
-				endpoint, err := branch.MainEndpoint(f.mainRoot)
-				if err != nil {
-					t.Fatal(err)
-				}
-				projection, err := goal.Project(endpoint, true, time.Now().UTC())
-				if err != nil {
-					t.Fatal(err)
-				}
-				lines := 0
-				for _, line := range projection.Tree.Live["standing-validation"].History {
-					if line.Verb == "rebase" {
-						lines++
-					}
-				}
-				if lines != 1 {
-					t.Fatalf("rebase history lines = %d, want 1", lines)
-				}
-				f.branchTip = newTip
+			}
+			if lines != 0 {
+				t.Fatalf("rebase history lines = %d, want 0", lines)
 			}
 			if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
 				t.Fatalf("hand-in = %+v", result)
@@ -403,7 +394,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			if entries, _ := plain.Entries(install); len(entries) != 1 {
 				t.Fatalf("a repeat appended: %+v", entries)
 			}
-			if !behind && f.remote(t, "refs/heads/main") != mainTip {
+			if f.remote(t, "refs/heads/main") != mainTip {
 				t.Fatal("a hand-in moved main")
 			}
 		})
@@ -460,14 +451,14 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 		result := run(verb)
 		data := result.Data.(map[string]any)
 		if verb == "land" {
-			data = data["rebase"].(map[string]any)
-			if result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "handed to the lane") {
+			// Landing preserves the tip without performing or reporting a rebase.
+			if result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "handed to the lane") || data["rebase"] != nil {
 				t.Fatalf("hand-in: %+v", result)
 			}
-		} else if result.Outcome != intentUnchanged {
-			t.Fatalf("repeat wrote something: %+v", result)
+		} else if result.Outcome != intentUnchanged || data["state"] != "held" || data["newTip"] != branchTip || data["mainTip"] != ledgerTip {
+			t.Fatalf("repeat wrote something or did not hold: %+v", result)
 		}
-		if data["state"] != "held" || data["newTip"] != branchTip || data["mainTip"] != ledgerTip || f.remote(t, "refs/heads/main") != ledgerTip || f.remote(t, "refs/heads/goal/standing-validation") != branchTip {
+		if f.remote(t, "refs/heads/main") != ledgerTip || f.remote(t, "refs/heads/goal/standing-validation") != branchTip {
 			t.Fatalf("work %s did not hold after its history moved main: %+v", verb, result)
 		}
 	}
