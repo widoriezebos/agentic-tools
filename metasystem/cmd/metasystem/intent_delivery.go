@@ -2315,6 +2315,41 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 	return progress, nil
 }
 
+// goalNextStep uses the goal's declared progress to advance after a unit.
+// An unreadable branch or design cannot establish that the goal is finished.
+func (inv *intentInvocation) goalNextStep(goalID string) ([]string, string) {
+	designs, problem := inv.acceptedDesignPaths(goalID)
+	if problem != nil {
+		return problem.next, fmt.Sprintf("goal %s's design records cannot be read; design list shows what needs fixing", goalID)
+	}
+	readState := inv.delivery().branchState
+	if readState == nil {
+		readState = productionIntentBranchState
+	}
+	state, err := readState(inv.layout.InstallationRoot.Path(), goalID)
+	if err != nil {
+		return inv.publicArgv("status", goalID), fmt.Sprintf("goal %s's branch cannot be read; status shows its work and reviews", goalID)
+	}
+	progress, err := goalProgress(designs, state)
+	if err != nil {
+		return inv.publicArgv("design", "list"), fmt.Sprintf("goal %s's Units table cannot be read; design list shows its design records", goalID)
+	}
+	if progress.Unit != "" {
+		if progress.NeedsBuild {
+			return inv.publicArgv("work", "build", goalID, "--work", progress.Unit, "--brief", "FILE", "--check", "COMMAND"),
+				fmt.Sprintf("unit %s of goal %s is not built; this builds it", progress.Unit, goalID)
+		}
+		return inv.publicArgv("work", "review", goalID, "--work", progress.Unit),
+			fmt.Sprintf("unit %s of goal %s lacks its clean read; this reads it", progress.Unit, goalID)
+	}
+	if progress.NoEnd {
+		return inv.publicArgv("work", "build", goalID, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"),
+			fmt.Sprintf("goal %s has no Units table; this builds its next unit, and `--last` marks its last one", goalID)
+	}
+	return inv.publicArgv("work", "land", goalID),
+		fmt.Sprintf("goal %s is finished: every unit it declares is built and read. This is its one hand-in; `goal done` follows when it has landed.", goalID)
+}
+
 // handLandingSubject selects the whole branch once its declared work and
 // reads are finished. A records hand-in keeps the branch's read requirement.
 func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records bool, designs ...string) (string, int, *intentResult) {

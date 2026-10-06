@@ -230,6 +230,9 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		}
 	}
 	owners.delivery = &intentDeliveryOwners{
+		branchState: func(string, string) (intentBranchState, error) {
+			return intentBranchState{Status: c.landAdmission(), ReadsWaived: goal.ReadsWaived(c.goalFile(c.id))}, nil
+		},
 		// The bed's close owner runs as a person's act (its engine wrapper
 		// classifies HUMAN); the record-writer authority owner judges that
 		// same classification.
@@ -544,7 +547,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	attestation := resultData(t, result)["attestation"].(string)
 	code, result = c.do("work", "review", "run:"+run)
 	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["attestation"] != attestation ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) || len(c.delegates) != 1 || c.commitReads != 1 {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "build", c.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"}) || len(c.delegates) != 1 || c.commitReads != 1 {
 		t.Fatalf("published read: code=%d %+v", code, result)
 	}
 	if commits := c.unitCommits("goal/" + c.id); len(commits) != 2 {
@@ -983,6 +986,7 @@ func TestUnitReviewRecordsThePromotedRead(t *testing.T) {
 			inv.input = intentInput{values: map[string][]string{"model": {"unused-model"}}}
 			reads, publications := 0, 0
 			inv.owners.delivery = &intentDeliveryOwners{
+				branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 					reads++
 					index := slices.Index(args, "--unit-read")
@@ -1007,7 +1011,7 @@ func TestUnitReviewRecordsThePromotedRead(t *testing.T) {
 			}
 			result := runUnitPromotionReview(t, bed, inv, review)
 			data, _ := result.Data.(map[string]any)
-			if result.Outcome != intentConfirmed || reads != 1 || publications != 1 || !slices.Contains(result.next, "land") {
+			if result.Outcome != intentConfirmed || reads != 1 || publications != 1 || !slices.Equal(result.next, inv.publicArgv("work", "build", bed.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND")) {
 				t.Fatalf("result=%+v reads=%d publications=%d", result, reads, publications)
 			}
 			if clean && (!strings.Contains(result.Summary, "read-a by reader-model is the unit's read") || data["readNotPromoted"] != nil || !strings.Contains(result.Summary, "--model was not used because no critic started")) {
@@ -1041,6 +1045,7 @@ func TestUnitReviewRecordsThePromotedReadContinuesRecordedCritic(t *testing.T) {
 				return branch.BranchReadResult{RootJob: "critic-a"}, nil
 			}
 			inv.owners.delivery = &intentDeliveryOwners{
+				branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 					reads++
 					if slices.Contains(args, "--unit-read") || !slices.Contains(args, "--join") || slices.Index(args, "--brief") < 0 {
@@ -1076,6 +1081,7 @@ func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
 			bed, inv, review := newUnitPromotionReview(t, true)
 			reads := 0
 			inv.owners.delivery = &intentDeliveryOwners{
+				branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 				branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 					reads++
 					if reads == 1 {
@@ -1095,7 +1101,7 @@ func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
 			}
 			result := runUnitPromotionReview(t, bed, inv, review)
 			data, _ := result.Data.(map[string]any)
-			if result.Outcome != intentConfirmed || reads != 2 || data["readNotPromoted"] != strings.Split(refusal.Error(), "\nrun:")[0] || data["readLaunch"] != nil || strings.Contains(result.Summary, "build's clean read") || !slices.Contains(result.next, "land") {
+			if result.Outcome != intentConfirmed || reads != 2 || data["readNotPromoted"] != strings.Split(refusal.Error(), "\nrun:")[0] || data["readLaunch"] != nil || strings.Contains(result.Summary, "build's clean read") || !slices.Equal(result.next, inv.publicArgv("work", "build", bed.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND")) {
 				t.Fatalf("result=%+v reads=%d", result, reads)
 			}
 		})
@@ -1109,6 +1115,7 @@ func TestUnitReviewRecordsThePromotedReadReusesBundle(t *testing.T) {
 	var savedPath string
 	reads := 0
 	inv.owners.delivery = &intentDeliveryOwners{
+		branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			reads++
 			index := slices.Index(args, "--unit-read")
@@ -1156,6 +1163,7 @@ func TestUnitReviewRecordsThePromotedReadRefusalDoesNotRepeat(t *testing.T) {
 	inv.raw = []string{bed.id, "--work", review.Record.Unit}
 	reads := 0
 	inv.owners.delivery = &intentDeliveryOwners{
+		branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			reads++
 			if reads == 1 {
@@ -1190,6 +1198,7 @@ func TestUnitReviewRecordsThePromotedReadAlreadyInstalled(t *testing.T) {
 		return branch.BranchReadResult{State: "collected", AttestationCommit: "attestation"}, nil
 	}
 	inv.owners.delivery = &intentDeliveryOwners{
+		branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },
 		branchRead: func([]string) (branch.BranchReadResult, int, error) {
 			reads++
 			return branch.BranchReadResult{}, 1, errors.New("bundle refused")

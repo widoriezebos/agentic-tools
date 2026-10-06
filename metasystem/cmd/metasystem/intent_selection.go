@@ -278,11 +278,11 @@ func (item manualWorkItem) stage(readers ...func(string, string, string) (branch
 
 func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) ([]string, string) {
 	if item.ReadsWaived {
-		return inv.publicArgv("work", "land", id), "a tier-1 goal's work lands without a read"
+		return inv.goalNextStep(id)
 	}
 	read, err := inv.work().inspectRead(item.Worktree, item.Goal, item.Commit)
 	if err == nil && read.State == "collected" && read.Published {
-		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
+		return inv.goalNextStep(id)
 	}
 	return inv.publicArgv(append(reviewGoalWords(id), "--work", item.Unit)...), "an independent review examines this version, or continues its examination"
 }
@@ -355,7 +355,7 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	case read.State == "collected" && !read.Published:
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the work's read is collected but not published; the same review publishes it"
 	case read.State == "collected":
-		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
+		return inv.goalNextStep(id)
 	case launch.UnitReviewReadyOutcomes[lastOutcome(work)]:
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the result is built; an independent review examines it"
 	}
@@ -624,7 +624,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		targets := []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: item.Unit}, {Kind: "commit", ID: item.Commit}}
 		result := inv.commitReview(targets, install, id, item.Commit, args)
 		if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-			result.next, result.nextReason = inv.publicArgv("work", "land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
+			result.next, result.nextReason = inv.goalNextStep(id)
 		}
 		return inv.render(result)
 	}

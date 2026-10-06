@@ -333,10 +333,11 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	data["published"] = pushed.Tip
 	if goal.ReadsWaived(file) {
 		// No critic may read this goal's work (tier 1, or a box of zero
-		// review rounds): the hand-in ends at publication, ready to land.
+		// review rounds): publication advances to the next unit or hand-in.
+		next, reason := inv.goalNextStep(id)
 		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
 			Summary: fmt.Sprintf("work %s is committed as %s and published; goal %s lands its work without a read", work, shortSHA(commit), id),
-			next:    inv.publicArgv("work", "land", id), nextReason: "lands the goal's work"}
+			next:    next, nextReason: reason}
 	}
 	args := []string{"--root", install, "--goal", id, "--unit", commit, "--brief", frozenBrief}
 	if install != original.Path() {
@@ -360,7 +361,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-		result.next, result.nextReason = inv.publicArgv("work", "land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
+		result.next, result.nextReason = inv.goalNextStep(id)
 	}
 	return result
 }

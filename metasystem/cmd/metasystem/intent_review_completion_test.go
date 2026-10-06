@@ -198,7 +198,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	}
 	code, result = c.do("work", "review", c.id)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 2 || c.commitReads != 1 || c.publications == 0 ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "build", c.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"}) {
 		t.Fatalf("the repaired close completes the review: code=%d %+v closes=%d reads=%d", code, result, len(c.closes), c.commitReads)
 	}
 	if generated, err := os.ReadFile(filepath.Join(install, "artifacts", "agents", "crit2", "rounds", "1", "decisions.md")); err != nil ||
@@ -207,7 +207,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	}
 	// Selection reads the read owner: the work is reviewed, its read
 	// collected and published; a later built item is the one review picks.
-	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[2] != "land" {
+	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[2] != "build" {
 		t.Fatalf("status after collection: %+v", result)
 	}
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
