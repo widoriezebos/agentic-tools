@@ -184,7 +184,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: result,
 		Summary: words + " is proven red" + landingRedReason(result.Reason) + "; its log is " + result.Log,
-		next:    inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), nextReason: "gives the goal that broke it back to its seat"})
+		next:    inv.publicArgv("landing", "status"), nextReason: "shows the cause and the waiting goals"})
 }
 
 // landingProveRefusal renders a prove that could not start or run.
@@ -192,7 +192,7 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 	var noRepeat *plain.NoRepeat
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
-			next: inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), nextReason: "gives the goal that broke it back to its seat"}
+			next: inv.publicArgv("landing", "status"), nextReason: "shows the cause and the waiting goals"}
 	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {

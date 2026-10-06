@@ -83,6 +83,7 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 	var reasons []string
 	for i, unit := range red.Failed {
 		if seams.RecordFlake == nil {
+			green.Cause = &Cause{Kind: "flake", Tests: failingTests(red.Failed), Evidence: red.Log}
 			green.Result, green.Reason = Red, "the failed tests could not be recorded"
 			return green
 		}
@@ -93,6 +94,7 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 		recorded, err := seams.RecordFlake(FlakeRecord{FailedUnit: unit, Commit: red.Commit, Tree: red.Tree, Attempt: red.Attempt, Log: red.Log, Load: red.Load,
 			Repeat: kind, RepeatAttempt: repeat.Attempt, RepeatLog: repeat.Log})
 		if err != nil {
+			green.Cause = &Cause{Kind: "flake", Tests: failingTests(red.Failed), Evidence: red.Log}
 			green.Result, green.Reason = Red, "the failed tests could not be recorded: "+err.Error()
 			return green
 		}

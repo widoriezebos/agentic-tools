@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
+// A design refusal returns the hand-in and holds its commit out of main.
 func TestLandingPushChecksDesign(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"warn", "refuse"} {
@@ -113,8 +114,18 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					if !strings.Contains(strings.Join(result.Details, " "), "refused because: LANDING_DESIGN_NOT_STANDING governed-by=R-146-m1k") {
 						t.Fatalf("refusal has no governing ruling: %+v", result)
 					}
-					if code != 1 || pushes != 0 || !strings.HasSuffix(result.Summary, "; nothing was pushed") || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem landing return "+bed.id+" --reason TEXT" || result.Next.Reason != "gives the goal back to its seat to restore its accepted design" {
+					if code != 1 || pushes != 0 || !strings.HasSuffix(result.Summary, "; nothing was pushed") || result.Next == nil || strings.Join(result.Next.Argv, " ") != "git -C "+layout.GitRoot+" checkout --detach origin/main" || !strings.Contains(result.Next.Reason, "git merge --no-ff SHA for each waiting sha, then metasystem landing prove") {
 						t.Fatalf("refusal: code=%d pushes=%d result=%+v", code, pushes, result)
+					}
+					entry, ok, err := plain.Latest(install, bed.id)
+					if err != nil || !ok || entry.State != plain.StateReturned || entry.Cause == nil || entry.Cause.Kind != "own" || entry.Cause.Goal != bed.id || entry.Cause.SHA != bed.id || entry.Cause.Evidence != entry.Reason || entry.Reason == "" {
+						t.Fatalf("design refusal did not return its own hand-in with evidence: %+v ok=%v err=%v", entry, ok, err)
+					}
+					for _, goal := range []string{"already-on-main", "not-in-head"} {
+						entry, ok, err := plain.Latest(install, goal)
+						if err != nil || !ok || entry.State != plain.StateWaiting {
+							t.Fatalf("excluded hand-in was changed: %+v ok=%v err=%v", entry, ok, err)
+						}
 					}
 				} else if failure == "refs" || failure == "unproven" {
 					if code != 1 || pushes != 0 || stderr.Len() != 0 || reads != 0 {
@@ -150,6 +161,12 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					if len(checks) != 1 || checks[0].Goal != bed.id || checks[0].Commit != bed.id || checks[0].Verdict != want || checks[0].At != laneTestNow.Format(time.RFC3339) {
 						t.Fatalf("lane record: %+v", checks)
 					}
+					if refuses {
+						entry, _, err := plain.Latest(install, bed.id)
+						if err != nil || entry.Cause.Evidence != checks[0].Reason {
+							t.Fatalf("return lost the design-check reason: %+v check=%+v err=%v", entry, checks[0], err)
+						}
+					}
 					if !refuses && (!strings.Contains(stderr.String(), checks[0].Reason+"\nmetasystem design ") || strings.Count(stderr.String(), "\n") != 2) {
 						t.Fatalf("warning pair: %q", stderr.String())
 					}
@@ -160,6 +177,24 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				}
 				if reads != wantReads {
 					t.Fatalf("facts read %d times; want %d", reads, wantReads)
+				}
+				if refuses {
+					before := idemTreeDigest(t, plain.Dir(install))
+					rebuildNext := *result.Next
+					stdout.Reset()
+					stderr.Reset()
+					result = intentResult{}
+					code = runIntentLandingPushWithOwners(inv, admitted, effects)
+					if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+						t.Fatal(err)
+					}
+					if code != 1 || result.Outcome != intentRefused || pushes != 0 || !strings.Contains(result.Summary, "returned goal "+bed.id) {
+						t.Fatalf("unchanged HEAD landed a design-refused goal: code=%d pushes=%d result=%+v", code, pushes, result)
+					}
+					if result.Next == nil || strings.Join(result.Next.Argv, " ") != strings.Join(rebuildNext.Argv, " ") || result.Next.Reason != rebuildNext.Reason {
+						t.Fatalf("repeat refusal did not name the same rebuild: %+v", result)
+					}
+					idemSameTree(t, "push of a returned commit", before, idemTreeDigest(t, plain.Dir(install)))
 				}
 			})
 		}

@@ -175,7 +175,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 					return fmt.Errorf("abort the source conflict: %w", err)
 				}
 				reason := "source conflicts need resolution on the goal branch"
-				returned, _, err := returnLocked(install, entry.Goal, reason, detail, seams.now())
+				returned, _, err := returnLocked(install, entry.Goal, reason, &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA}, detail, seams.now())
 				out.Entry, out.Outcome, out.Exit = &returned, "returned", 0
 				return err
 			}
@@ -203,7 +203,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 				return errors.Join(cause, err, abortErr)
 			}
 			reason := fmt.Sprintf("regeneration exited %d; log: %s", out.Exit, out.Log)
-			returned, _, returnErr := returnLocked(install, entry.Goal, reason, nil, seams.now())
+			returned, _, returnErr := returnLocked(install, entry.Goal, reason, &Cause{Kind: "unclassified", Evidence: out.Log}, nil, seams.now())
 			out.Entry, out.Outcome = &returned, "returned"
 			return errors.Join(cause, returnErr)
 		}

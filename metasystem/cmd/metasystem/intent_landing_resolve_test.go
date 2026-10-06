@@ -111,6 +111,7 @@ func witnessLandingResolveRepeat(t *testing.T) {
 	}
 }
 
+// A source conflict returns its own cause together with the conflict details.
 func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
@@ -135,7 +136,7 @@ func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T
 	if result.Outcome != intentConfirmed || len(result.Details) != 0 {
 		t.Fatalf("source return outcome=%s details=%v", result.Outcome, result.Details)
 	}
-	if result.Data.Conflict == nil || result.Data.Conflict.Main != "main-sha" || len(result.Data.Conflict.Paths) != 1 || result.Data.Conflict.Paths[0].Resolution != "keep both, main's lines then the goal's" || result.Data.Entry == nil || result.Data.Entry.State != plain.StateReturned || !reflect.DeepEqual(writes, [][]string{{"merge", "--abort"}}) {
+	if result.Data.Conflict == nil || result.Data.Conflict.Main != "main-sha" || len(result.Data.Conflict.Paths) != 1 || result.Data.Conflict.Paths[0].Resolution != "keep both, main's lines then the goal's" || result.Data.Entry == nil || result.Data.Entry.State != plain.StateReturned || result.Data.Entry.Cause == nil || result.Data.Entry.Cause.Kind != "own" || result.Data.Entry.Cause.Goal != "goal" || result.Data.Entry.Cause.SHA != "goal-sha" || !reflect.DeepEqual(writes, [][]string{{"merge", "--abort"}}) {
 		t.Fatalf("returned conflict=%+v writes=%v", result.Data, writes)
 	}
 }

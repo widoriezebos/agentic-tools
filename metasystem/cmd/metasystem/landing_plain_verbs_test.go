@@ -282,7 +282,7 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 	refused("not a fast-forward", "does not contain origin's main")
 }
 
-// A red proof refuses the push; landing return gives the goal back with
+// An unclassified red requires a person to return it; landing return records
 // its reason, which the seat's queue line then shows; a repeat return is
 // success and a return of nothing waiting is refused.
 func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
@@ -293,7 +293,7 @@ func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 1 || !strings.Contains(text, "red") {
 		t.Fatalf("a red prove = %d\n%s", code, text)
 	}
-	if code, text := bed.run(t, "landing", "return", "goal-a", "--reason", "app-standard fails since it joined"); code != 0 || !strings.Contains(text, "goal-a") {
+	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "app-standard fails since it joined"); code != 0 || !strings.Contains(text, "goal-a") {
 		t.Fatalf("return = %d\n%s", code, text)
 	}
 	latest, ok, err := plain.Latest(bed.installation, "goal-a")
@@ -303,10 +303,10 @@ func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 	if got := queueStates(bed.status(t)); got["goal-a"] != plain.StateReturned {
 		t.Fatalf("status shows the return: %v", got)
 	}
-	if code, text := bed.run(t, "landing", "return", "goal-a", "--reason", "again"); code != 0 || !strings.Contains(text, "already returned") {
+	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "again"); code != 0 || !strings.Contains(text, "already returned") {
 		t.Fatalf("a repeat return = %d\n%s", code, text)
 	}
-	if code, text := bed.run(t, "landing", "return", "goal-z", "--reason", "x"); code != 1 || !strings.Contains(text, "goal-z") {
+	if code, text := bed.run(t, "landing", "return", "goal-z", "--cause", "unclassified", "--by", "Wido", "--reason", "x"); code != 1 || !strings.Contains(text, "goal-z") {
 		t.Fatalf("a return of nothing waiting = %d\n%s", code, text)
 	}
 }
@@ -422,11 +422,11 @@ func witnessLandingPushRepeat(t *testing.T) {
 func witnessLandingReturnRepeat(t *testing.T) {
 	bed := newPlainVerbBed(t)
 	bed.seat(t, "goal-a")
-	if code, text := bed.run(t, "landing", "return", "goal-a", "--reason", "red"); code != 0 {
+	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "red"); code != 0 {
 		t.Fatalf("first return = %d\n%s", code, text)
 	}
 	records := idemTreeDigest(t, plain.Dir(bed.installation))
-	if code, text := bed.run(t, "landing", "return", "goal-a", "--reason", "red"); code != 0 || !strings.Contains(text, "already returned") {
+	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "red"); code != 0 || !strings.Contains(text, "already returned") {
 		t.Fatalf("repeated return = %d\n%s", code, text)
 	}
 	idemSameTree(t, "a repeated landing return", records, idemTreeDigest(t, plain.Dir(bed.installation)))

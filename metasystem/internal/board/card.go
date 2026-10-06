@@ -452,6 +452,18 @@ func readCardFile(path string) (Card, bool) {
 // seat (the proof-run launcher) advances the card the claim's seat wrote.
 // False when no seat, or more than one, holds a live card for the goal.
 func LiveCard(home, goal string) (Card, bool) {
+	return claimCard(home, goal, false)
+}
+
+// LiveOrReturnedCard finds a claim that can join the lane again after a return.
+func LiveOrReturnedCard(home, goal string) (Card, bool) {
+	if card, live := LiveCard(home, goal); live {
+		return card, true
+	}
+	return claimCard(home, goal, true)
+}
+
+func claimCard(home, goal string, returned bool) (Card, bool) {
 	if !SafeName(goal) {
 		return Card{}, false
 	}
@@ -465,7 +477,7 @@ func LiveCard(home, goal string) (Card, bool) {
 			continue
 		}
 		card, ok := readCardFile(filepath.Join(Dir(home), entry.Name(), goal+".json"))
-		if ok && card.Goal == goal && card.Seat.Machine == entry.Name() && !card.Stage.Terminal() {
+		if ok && card.Goal == goal && card.Seat.Machine == entry.Name() && (!card.Stage.Terminal() || returned && card.Stage == StageReturned) {
 			found = append(found, card)
 		}
 	}

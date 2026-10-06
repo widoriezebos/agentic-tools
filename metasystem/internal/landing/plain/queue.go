@@ -59,6 +59,7 @@ type Line struct {
 	At       string           `json:"at"`
 	Outcome  string           `json:"outcome,omitempty"`
 	Reason   string           `json:"reason,omitempty"`
+	Cause    *Cause           `json:"cause,omitempty"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
@@ -86,6 +87,7 @@ type Entry struct {
 	At       string           `json:"at"`
 	State    string           `json:"state"`
 	Reason   string           `json:"reason,omitempty"`
+	Cause    *Cause           `json:"cause,omitempty"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
 	Delivered string       `json:"delivered,omitempty"`
@@ -203,7 +205,7 @@ func entriesOf(lines []Line) []Entry {
 			continue
 		}
 		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
-		entries[at].Conflict = line.Conflict
+		entries[at].Conflict, entries[at].Cause = line.Conflict, line.Cause
 	}
 	return entries
 }
@@ -243,7 +245,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
-	line.Outcome, line.Reason, line.Conflict = "", "", nil
+	line.Outcome, line.Reason, line.Conflict, line.Cause = "", "", nil, nil
 	err = withLock(install, func() error {
 		entries, err := Entries(install)
 		if err != nil {
@@ -315,13 +317,13 @@ var ErrNotWaiting = errors.New("no hand-in of this goal waits in the lane")
 // false); a goal with nothing waiting is ErrNotWaiting.
 func Return(install, goal, reason string, now time.Time) (entry Entry, changed bool, err error) {
 	err = withLock(install, func() error {
-		entry, changed, err = returnLocked(install, goal, reason, nil, now)
+		entry, changed, err = returnLocked(install, goal, reason, &Cause{Kind: "unclassified"}, nil, now)
 		return err
 	})
 	return entry, changed, err
 }
 
-func returnLocked(install, goal, reason string, detail *conflict.Return, now time.Time) (Entry, bool, error) {
+func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.Return, now time.Time) (Entry, bool, error) {
 	latest, ok, err := Latest(install, goal)
 	switch {
 	case err != nil:
@@ -334,10 +336,10 @@ func returnLocked(install, goal, reason string, detail *conflict.Return, now tim
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
 	at := now.UTC().Format(time.RFC3339)
-	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Conflict: detail}); err != nil {
+	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
 		return latest, false, err
 	}
-	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict = StateReturned, reason, at, detail
+	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
 	return latest, true, nil
 }
 

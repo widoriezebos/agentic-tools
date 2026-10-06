@@ -58,7 +58,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	if err != nil {
 		if out.Entry != nil && out.Entry.State == plain.StateReturned {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: out,
-				Summary: fmt.Sprintf("returned %s: %s", out.Goal, out.Entry.Reason), Details: []string{err.Error()},
+				Summary: fmt.Sprintf("returned %s: %s", out.Goal, out.Entry.Reason), Details: append(inv.writeReturnedCard(out.Goal), err.Error()),
 				next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
 		}
 		result := landingLaneFailure(targets, "the lane merge could not be resolved: "+oneLine(err.Error()), err)
@@ -67,7 +67,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	if out.Entry != nil {
 		summary := fmt.Sprintf("returned %s: %s", out.Goal, out.Entry.Reason)
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: summary, Details: inv.writeReturnedCard(out.Goal), next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: "regenerated and staged the generated conflicts for " + out.Goal + "; commit the merge, then run landing prove", Details: []string{strings.Join([]string{"log", out.Log}, ": ")}})
 }

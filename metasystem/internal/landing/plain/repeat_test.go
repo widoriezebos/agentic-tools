@@ -87,6 +87,7 @@ func (b *repeatBed) lines() []Result {
 	return lines
 }
 
+// A spent repeat holds the goals; a red alone cannot authorize their return.
 func (b *repeatBed) refused() {
 	b.t.Helper()
 	entries := []func() error{
@@ -97,7 +98,7 @@ func (b *repeatBed) refused() {
 	for i, entry := range entries {
 		err := entry()
 		var refused *NoRepeat
-		if !errors.As(err, &refused) || err.Error() != "this code failed its check and gets no other; give the goal that broke it back" {
+		if !errors.As(err, &refused) || err.Error() != "this code failed its check and gets no other; the waiting goals hold" {
 			b.t.Errorf("entry %d: want typed repeat refusal, got %v", i, err)
 		}
 	}

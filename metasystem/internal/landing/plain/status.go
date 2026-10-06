@@ -215,7 +215,16 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 // in queue order; an entry whose containment can't be read is named in the
 // error and left out.
 func proving(queue []Entry, commit string, contains func(main, sha string) (bool, error)) ([]string, error) {
+	checked, err := proofGoals(queue, commit, contains)
 	var goals []string
+	for _, one := range checked {
+		goals = append(goals, one.Goal)
+	}
+	return goals, err
+}
+
+func proofGoals(queue []Entry, commit string, contains func(main, sha string) (bool, error)) ([]GoalSHA, error) {
+	var goals []GoalSHA
 	var problems []error
 	for _, entry := range queue {
 		if entry.State != StateWaiting {
@@ -226,7 +235,7 @@ func proving(queue []Entry, commit string, contains func(main, sha string) (bool
 		case err != nil:
 			problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
 		case inside:
-			goals = append(goals, entry.Goal)
+			goals = append(goals, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
 		}
 	}
 	return goals, errors.Join(problems...)

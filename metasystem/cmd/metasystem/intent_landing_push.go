@@ -64,15 +64,36 @@ func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmi
 }
 
 func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
-	waiting, err := plain.Waiting(admitted.installation)
+	entries, err := plain.Entries(admitted.installation)
 	checkout := string(admitted.layout.Checkout)
 	if err != nil {
 		inv.laneDesignPair([2]string{fmt.Sprintf("warning: the lane's design check could not run (%s); the push goes on", oneLine(err.Error())), "metasystem landing status --verbose"})
 		return nil
 	}
 	inHead, inOld := owners.contains(checkout, head), owners.contains(checkout, old)
+	rebuild := []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}
+	rebuildReason := "rebuild the batch: git merge --no-ff SHA for each waiting sha, then metasystem landing prove"
+	for _, entry := range entries {
+		if entry.State != plain.StateReturned {
+			continue
+		}
+		now, headErr := inHead(entry.SHA)
+		before, oldErr := inOld(entry.SHA)
+		if err := errors.Join(headErr, oldErr); err != nil {
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains returned goal "+entry.Goal+" could not be read: "+oneLine(err.Error()), err)
+			return &failed
+		}
+		if now && !before {
+			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
+				Summary: "HEAD still contains returned goal " + entry.Goal + "; nothing was pushed",
+				next:    rebuild, nextReason: rebuildReason}
+		}
+	}
 	var refused *intentResult
-	for _, entry := range waiting {
+	for _, entry := range entries {
+		if entry.State != plain.StateWaiting {
+			continue
+		}
 		now, headErr := inHead(entry.SHA)
 		before, oldErr := inOld(entry.SHA)
 		var facts landing.DesignFacts
@@ -86,15 +107,20 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 		design := landing.ObserveDesign(facts, false)
 		if design.RefusesAgent {
 			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
-			design.Pair[1] = "metasystem landing return " + entry.Goal + " --reason TEXT"
+			check := plain.DesignCheck{Goal: entry.Goal, Commit: entry.SHA, Verdict: design.Verdict, Reason: design.Pair[0]}
+			if _, _, err := plain.ReturnDesignRefused(admitted.installation, check, admitted.owners.now()); err != nil {
+				failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the design refusal of "+entry.Goal+" could not be returned: "+oneLine(err.Error()), err)
+				return &failed
+			}
+			design.Pair[1] = textui.Command(rebuild) + " (" + rebuildReason + ")"
 			if refused == nil {
 				detail := "refused because: LANDING_DESIGN_NOT_STANDING"
 				if ruling := refusal.GovernedBy["LANDING_DESIGN_NOT_STANDING"]; ruling != "" {
 					detail += " governed-by=" + ruling
 				}
 				refused = &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root), Data: design,
-					Summary: design.Pair[0], next: inv.publicArgv("landing", "return", entry.Goal, "--reason", "TEXT"),
-					nextReason: "gives the goal back to its seat to restore its accepted design",
+					Summary: strings.TrimSuffix(design.Pair[0], "; nothing was pushed") + "; goal " + entry.Goal + " was returned to its seat; nothing was pushed", next: rebuild,
+					nextReason: rebuildReason,
 					Details:    []string{detail}}
 			} else {
 				inv.laneDesignPair(design.Pair)
@@ -190,7 +216,7 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 		case plain.CodeUnproven:
 			result.next, result.nextReason = inv.publicArgv("landing", "prove"), "proves HEAD's tree; then push again"
 		case plain.CodeRed:
-			result.next, result.nextReason = inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), "gives the goal that broke it back to its seat"
+			result.next, result.nextReason = inv.publicArgv("landing", "status"), "shows the cause and the waiting goals"
 		default:
 			result.next, result.nextReason = []string{"git", "-C", root, "merge", "origin/main"}, "then prove and push again"
 		}

@@ -50,7 +50,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-prove-unset", args: []string{"landing", "prove"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-push-stopped", args: []string{"landing", "push"}, bed: landingLayoutBed(landingLayoutPaused)},
-		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--cause", "own", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
 	}
 }
 

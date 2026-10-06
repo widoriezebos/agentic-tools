@@ -359,6 +359,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 			state := entry.State
 			if entry.State == plain.StateReturned {
 				state += ": " + entry.Reason
+				if entry.Cause != nil {
+					state += "; cause: " + entry.Cause.Kind
+				}
+			}
+			if proof := data.LastProof; proof != nil && proof.Cause != nil && proof.Cause.Kind == "own" && proof.Cause.Goal != entry.Goal && slices.ContainsFunc(proof.Goals, func(g plain.GoalSHA) bool { return g.Goal == entry.Goal && g.SHA == entry.SHA }) {
+				state += "; cause: other " + proof.Cause.Goal
 			}
 			branch := entry.Branch
 			if entry.Records {

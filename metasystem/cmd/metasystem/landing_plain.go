@@ -140,12 +140,12 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 func (inv *intentInvocation) writeJoinedCard(goal string) []string {
 	home, err := inv.boardHome()
 	if err == nil {
-		card, live := board.LiveCard(home, goal)
+		card, live := board.LiveOrReturnedCard(home, goal)
 		if !live {
 			return nil
 		}
 		err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
-			if current.Goal == "" || current.Stage.Terminal() || current.Stage.ProcessBound() {
+			if current.Goal == "" || (current.Stage.Terminal() && current.Stage != board.StageReturned) || current.Stage.ProcessBound() {
 				return current, false
 			}
 			current.Stage, current.Owner, current.Job, current.Proof, current.Batch = board.StageJoined, nil, nil, nil, ""
@@ -227,4 +227,27 @@ func handInUnitRounds(work launch.NamedWork) plain.UnitRounds {
 		}
 	}
 	return unit
+}
+
+func (inv *intentInvocation) writeReturnedCard(goal string) []string {
+	home, err := inv.boardHome()
+	if err == nil {
+		card, live := board.LiveCard(home, goal)
+		if !live {
+			return nil
+		}
+		err = board.Update(home, card.Seat, goal, func(current board.Card) (board.Card, bool) {
+			if current.Goal == "" || current.Stage.Terminal() {
+				return current, false
+			}
+			current.Stage, current.Owner, current.Job, current.Proof, current.Batch = board.StageReturned, nil, nil, nil, ""
+			current.Since = time.Time{}
+			current.Writer = board.Writer{Component: "landing-return", At: inv.delivery().now()}
+			return current, true
+		})
+	}
+	if err != nil {
+		return []string{"the returned card for " + goal + " was not written: " + err.Error()}
+	}
+	return nil
 }

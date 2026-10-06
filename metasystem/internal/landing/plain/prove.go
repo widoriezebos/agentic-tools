@@ -46,12 +46,14 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
-	Tree    string `json:"tree"`
-	Commit  string `json:"commit"`
-	Result  string `json:"result"`
-	Log     string `json:"log"`
-	At      string `json:"at"`
-	Attempt string `json:"attempt,omitempty"`
+	Cause   *Cause    `json:"cause,omitempty"`
+	Goals   []GoalSHA `json:"goals"`
+	Tree    string    `json:"tree"`
+	Commit  string    `json:"commit"`
+	Result  string    `json:"result"`
+	Log     string    `json:"log"`
+	At      string    `json:"at"`
+	Attempt string    `json:"attempt,omitempty"`
 	// Reason is why the result is what it is, in one sentence: for red,
 	// how the proving command ended ("the proving command exited 1") or why it
 	// could not run; for an inherited green, the tree it inherits from. An
@@ -178,12 +180,12 @@ func (b *Busy) Error() string {
 type NoRepeat struct{}
 
 func (*NoRepeat) Error() string {
-	return "this code failed its check and gets no other; give the goal that broke it back"
+	return "this code failed its check and gets no other; the waiting goals hold"
 }
 
 // checkState clears completed records and records dead checks under the lane lock.
 // The attempt running in this process must not be marked dead.
-func checkState(install, attempt string, seams ProveSeams) (Running, bool, bool, error) {
+func checkState(install, checkout, attempt string, seams ProveSeams) (Running, bool, bool, error) {
 	running, recorded, alive, err := ReadRunning(install, seams)
 	if err != nil || !recorded || alive {
 		return running, recorded, alive, err
@@ -203,7 +205,11 @@ func checkState(install, attempt string, seams ProveSeams) (Running, bool, bool,
 		return running, recorded, alive, nil
 	}
 	red := Result{Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
-		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended"}
+		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
+	red.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
+	if err != nil {
+		return running, recorded, alive, err
+	}
 	if !exists {
 		red.Repeat = "allowed"
 	}
@@ -269,7 +275,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	var started Running
 	already := false
 	err = withLock(install, func() error {
-		running, recorded, alive, err := checkState(install, "", seams)
+		running, recorded, alive, err := checkState(install, checkout, "", seams)
 		if err != nil {
 			return err
 		}
@@ -324,7 +330,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 	var settled Result
 	found := false
 	err = withLock(install, func() error {
-		_, recorded, alive, err := checkState(install, "", seams)
+		_, recorded, alive, err := checkState(install, checkout, "", seams)
 		if err != nil {
 			return err
 		}
@@ -342,6 +348,10 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
 			Reason: inheritedReason(from)}
 		settled, err = inheritScope(install, settled, from)
+		if err != nil {
+			return err
+		}
+		settled.Goals, err = goalsInCommit(install, checkout, commit, seams.git)
 		if err != nil {
 			return err
 		}
@@ -377,7 +387,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	var previous, result Result
 	already := false
 	err = withLock(install, func() error {
-		current, recorded, alive, err := checkState(install, attempt, seams)
+		current, recorded, alive, err := checkState(install, checkout, attempt, seams)
 		if err != nil {
 			return err
 		}
@@ -397,6 +407,15 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			return &Busy{Running: current}
 		}
 		if found && previous.Result != Green {
+			if previous.Cause == nil {
+				previous.Cause = &Cause{Kind: "unclassified", Tests: failingTests(previous.Failed), Evidence: previous.Log}
+			}
+			if previous.Goals == nil {
+				previous.Goals, err = goalsInCommit(install, checkout, previous.Commit, seams.git)
+				if err != nil {
+					return err
+				}
+			}
 			previous.Repeat = "started"
 			if err := appendLine(resultsPath(install), previous); err != nil {
 				return err
@@ -422,6 +441,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return result, err
 	}
 	result = Result{Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
+	if err != nil {
+		return result, err
+	}
 	var decision scopeDecision
 	observed := &proofOutput{output: io.Discard}
 	inherited := false
@@ -634,11 +657,12 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 	trees := proofTrees(install)
 	removeProofTrees(git, checkout, trees, output)
 	if err := os.MkdirAll(trees, 0o755); err != nil {
-		result.Result, result.Reason = Red, err.Error()
+		result.Result, result.Reason, result.Cause = Red, err.Error(), &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}
 		return result
 	}
 	tree := filepath.Join(trees, running.Attempt)
 	if _, err := git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
+		result.Cause = &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}
 		result.Result, result.Reason = Red, fmt.Sprintf("the worktree of commit %s could not be made: %v", Short(running.Commit), err)
 		return result
 	}
@@ -665,6 +689,13 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		return result
 	}
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
+	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
+	var exit *exec.ExitError
+	var launch *exec.Error
+	var path *os.PathError
+	if report.kind == "not-run" || errors.As(runErr, &exit) && !exit.Exited() || errors.As(runErr, &launch) || errors.As(runErr, &path) {
+		result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
+	}
 	result = decision.describe(result, observed)
 	if report.kind == "not-run" && previous.Result == "" {
 		result.Repeat = "allowed"
@@ -673,6 +704,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		return result
 	}
 	result.Failed = report.failed
+	result.Cause.Tests = failingTests(result.Failed)
 	if seams.Judge == nil {
 		return result
 	}
@@ -698,6 +730,8 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		return result
 	}
 	result.Repeat = "started"
+	result.Cause.Kind = "flake"
+	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
 	if err := withLock(install, func() error { return appendLine(resultsPath(install), result) }); err != nil {
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result
@@ -731,7 +765,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		return result
 	}
 	green := result
-	green.Result, green.Repeat, green.Failed, green.Load, green.Reason = Green, "", nil, 0, ""
+	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
 	return recordFlakes(seams, result, green, "alone", repeats)
 }
 
