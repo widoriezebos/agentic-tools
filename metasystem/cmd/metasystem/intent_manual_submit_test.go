@@ -500,7 +500,9 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Add the delivered file.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "delivered.txt"), []byte("hand-written and delivered\n"), 0o644)
-	submit := []string{"work", "review", c.id, "--changes", "--brief", brief}
+	// The goal has no Units table, so its only unit declares the end with
+	// --last; without it work land refuses GOAL_NO_END (lane-lands-finished-goals).
+	submit := []string{"work", "review", c.id, "--changes", "--last", "--brief", brief}
 	_, result := do(submit...)
 	commit, _ := resultData(t, result)["commit"].(string)
 	if result.Outcome != intentInProgress || commit == "" {
