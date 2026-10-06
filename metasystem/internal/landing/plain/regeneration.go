@@ -100,7 +100,7 @@ func commandExit(err error) int {
 }
 
 // StopRegeneration ends the recorded command and its children after a pause.
-// The resolver then restores the merge and returns the goal with its log.
+// The resolver restores the merge and records an environment cause.
 func StopRegeneration(install string) error {
 	running, err := ReadRunningRegeneration(install, ProveSeams{})
 	if err != nil || running == nil || running.State == "died" {

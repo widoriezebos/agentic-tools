@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -42,7 +43,7 @@ func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*text
 			return ""
 		}
 		if len(listed) > 0 {
-			table := page.Section("On main", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true})
+			table := page.Section("On main", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
 			for _, entry := range listed {
 				state, words := textui.Alert, "nobody fixes it"
 				switch {
@@ -54,7 +55,7 @@ func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*text
 				if at := since(entry); at != "" && entry.Closed == nil {
 					words += " · failing " + at
 				}
-				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words))
+				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words+incidentEvidence(entry)))
 			}
 		}
 		if len(tracked) > 0 {
@@ -68,4 +69,19 @@ func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*text
 			}
 		}
 	}
+}
+
+func incidentEvidence(entry goal.TrunkRedEntry) string {
+	var tests []string
+	for _, failure := range entry.Failures {
+		tests = append(tests, failure.Name)
+	}
+	words := ""
+	if len(tests) > 0 {
+		words = "; test " + strings.Join(tests, ", ")
+	}
+	if len(entry.Sightings) > 0 && entry.Sightings[0].LogPath != "" {
+		words += "; evidence: " + entry.Sightings[0].LogPath
+	}
+	return words
 }

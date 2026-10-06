@@ -10,17 +10,11 @@ exit 1
     }
   ],
   "outcome": "refused",
-  "summary": "this landing lane has no command that proves HEAD, so nothing was proven",
-  "next": {
-    "argv": [
-      "metasystem",
-      "settings",
-      "set",
-      "landing.prove.command",
-      "COMMAND"
-    ],
-    "reason": "run in the lane checkout"
-  }
+  "summary": "proof.full is missing or invalid in the proven commit's metasystem.conf, so nothing was proven",
+  "decision": "declare proof.full in metasystem.conf through a goal and land it on main",
+  "details": [
+    "proof.full is missing or invalid in the proven commit's metasystem.conf: proof.full must be a non-empty, one-line command in metasystem.conf"
+  ]
 }
 
 --

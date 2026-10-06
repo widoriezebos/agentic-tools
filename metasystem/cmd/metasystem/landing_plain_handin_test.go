@@ -33,7 +33,16 @@ func TestHandInTierOneReadsAreWaived(t *testing.T) {
 
 func TestHandInUnreadUnitHasNoRead(t *testing.T) {
 	t.Parallel()
-	testHandInUnitRounds(t, readBranch(1, "critic-root"), [2]string{"critic", "none"}, "--through", strings.Repeat("1", 40))
+	b, owners, install := plainLaneBedWith(t, true, "critic-root")
+	owners.status = readBranch(1, "critic-root")
+	code, result := b.do("work", "land", "standing-validation", "--through", strings.Repeat("1", 40))
+	expectOutcome(t, "partial goal", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "u2 has no clean read") {
+		t.Fatalf("unread unit was not named: %+v", result)
+	}
+	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
+		t.Fatalf("partial goal was queued: %+v %v", entries, err)
+	}
 }
 
 func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string, args ...string) {
@@ -181,8 +190,7 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 	owners := &landingOwners{status: readBranch(2, sources...)}
 	owners.install(b)
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/landing", true, nil }
-	// work land rebases the goal branch before a hand-in (land-rebases); the
-	// bed's goal has a worktree at its root and a rebase that holds.
+	// The bed exposes a goal worktree and keeps explicit rebase isolated from Git.
 	root := b.root()
 	b.work.git = func(_ string, args ...string) ([]byte, error) {
 		if strings.Join(args, " ") == "worktree list --porcelain" {
@@ -255,12 +263,17 @@ func TestWorkLandAgainAfterReturn(t *testing.T) {
 			}
 			code, result := b.runJSON(b.owners, append([]string{"work", "land", line.Goal}, args...)...)
 			want := intentRefused
-			if name == "explicit" || name == "regenerated" || name == "resolved" {
+			// Landing requires an explicit retry even after paths were resolved.
+			if name == "explicit" {
 				want = intentConfirmed
 			}
 			expectOutcome(t, "return", code, result, want)
 			if want == intentRefused {
-				if !strings.Contains(result.Summary, "returned: "+line.Reason) || result.Next == nil || !strings.Contains(result.Next.Reason, "--again when the return no longer applies") {
+				wantNext := "metasystem work rebase " + line.Goal
+				if line.Conflict == nil {
+					wantNext = "metasystem work land " + line.Goal + " --json"
+				}
+				if !strings.Contains(result.Summary, "returned: "+line.Reason) || result.Next == nil || strings.Join(result.Next.Argv, " ") != wantNext {
 					t.Fatalf("return remedy: %+v", result)
 				}
 				after, err := os.ReadFile(queue)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -57,7 +58,7 @@ func (b *resolveFixture) git(dir string, args ...string) (string, error) {
 	switch strings.Join(args, " ") {
 	case "diff --name-only --diff-filter=U -z":
 		return b.paths, nil
-	case "rev-parse --verify HEAD^{commit}":
+	case "rev-parse --verify refs/remotes/origin/main^{commit}", "rev-parse --verify HEAD^{commit}":
 		return "main-sha", nil
 	case "rev-parse --verify MERGE_HEAD^{commit}":
 		return "goal-sha", nil
@@ -181,10 +182,16 @@ func TestResolveSourceAbortsAndReturnsStructuredConflictWithoutEditing(t *testin
 	b.record(out)
 }
 
-func TestResolveFailedCommandRestoresAbortsAndReturnsExitAndLog(t *testing.T) {
+// A non-zero regeneration returns only when its commands pass before the merge.
+func TestResolveFailedCommandRestoresAbortsAndReturnsOwnWithBaselineAndLog(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
+	runs := 0
 	b.seams.Run = func(_ []string, _ string, log *os.File, started func(int64) error) error {
+		runs++
+		if runs > 1 {
+			return nil
+		}
 		if err := started(0); err != nil {
 			return err
 		}
@@ -195,7 +202,7 @@ func TestResolveFailedCommandRestoresAbortsAndReturnsExitAndLog(t *testing.T) {
 		return exec.Command("/usr/bin/false").Run()
 	}
 	out, err := b.resolve()
-	if err == nil || out.Outcome != "returned" || out.Exit != 1 || out.Entry == nil || out.Entry.State != StateReturned || !strings.Contains(out.Entry.Reason, "exited 1; log: "+out.Log) || len(out.Command) != 1 {
+	if err == nil || out.Outcome != "returned" || out.Exit != 1 || out.Entry == nil || out.Entry.State != StateReturned || !strings.Contains(out.Entry.Reason, "exited 1; log: "+out.Log) || len(out.Command) != 1 || runs != 3 || out.Entry.Cause.Kind != "own" {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
 	want := [][]string{
@@ -203,13 +210,15 @@ func TestResolveFailedCommandRestoresAbortsAndReturnsExitAndLog(t *testing.T) {
 		{"clean", "-f", "--", "metasystem/out/new"},
 		{"restore", "--source=AUTO_MERGE", "--worktree", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
 		{"merge", "--abort"},
+		{"clean", "-f", "--", "metasystem/out/new"},
+		{"restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
 	}
 	if !reflect.DeepEqual(b.writes, want) {
 		t.Fatalf("failure cleanup=%v; want %v", b.writes, want)
 	}
 	b.record(out)
 	data, readErr := os.ReadFile(out.Log)
-	if readErr != nil || string(data) != "compile failed\n" {
+	if readErr != nil || string(data) != "compile failed\n\nRegeneration on the tree before the merge:\n" {
 		t.Fatalf("failure log=%q err=%v", data, readErr)
 	}
 }
@@ -289,7 +298,7 @@ func TestRegenerationStatusShowsCommandLogGrowthAndDiedState(t *testing.T) {
 			}
 		}
 		view := lane.View{Root: &b.checkout}
-		status := readStatus(b.home, lane.Record{Root: b.checkout, Install: b.install}, view, ProveSeams{Alive: func(Running) bool { return false }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
+		status := readStatus(b.home, lane.Record{Root: b.checkout, Install: b.install}, view, ProveSeams{Alive: func(Running) bool { return false }, Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
 		if status.RunningRegeneration == nil || status.RunningRegeneration.State != "died" || len(status.Problems) != 0 {
 			t.Fatalf("status=%+v", status)
 		}
@@ -302,6 +311,7 @@ func TestRegenerationStatusShowsCommandLogGrowthAndDiedState(t *testing.T) {
 	b.record(out)
 }
 
+// A stopped generator leaves the hand-in waiting with an environment cause.
 func TestRegenerationRefusesPausedLaneBeforeStartingCommand(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
@@ -309,7 +319,7 @@ func TestRegenerationRefusesPausedLaneBeforeStartingCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := b.resolve()
-	if err == nil || !strings.Contains(err.Error(), "landing lane is stopped") || out.Entry == nil || out.Outcome != "returned" {
+	if err == nil || !strings.Contains(err.Error(), "landing lane is stopped") || out.Entry == nil || out.Entry.State != StateWaiting || out.Outcome != "held" || out.Cause.Kind != "environment" {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
 	b.record(out)

@@ -29,11 +29,13 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	t.Helper()
 	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
 	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
+	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "plans", "designs", "landing-work.md"),
+		[]byte("# Landing work\n\n- Kind: design\n- Id: landing-work\n- Status: accepted\n- Goals: standing-validation\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 5 |\n"), 0o644)
 	// The public commands resolve a self-hosted checkout by its template
 	// signal (metasystem.template=true); the design page is ordinary content.
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
-	pagePath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	pagePath := filepath.Join(f.mainRoot, "plans", "goals", "standing-validation.md")
 	pageData, err := os.ReadFile(pagePath)
 	if err != nil {
 		t.Fatal(err)
@@ -48,10 +50,11 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	file.History = append(file.History, goal.HistoryLine{At: file.Landing.At, Opid: landReadyOpid,
 		Verb: "land-ready", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1})
 	writeTestingFixtureFile(t, pagePath, goal.RenderFile(file), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "memory", "receipts.log"),
+	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "memory", "receipts.log"),
 		[]byte("1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"), 0o644)
-	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md", "memory/receipts.log")
-	goalSyncMutationGit(t, root, "commit", "-qm", "mark fixture land ready")
+	goalSyncMutationGit(t, f.mainRoot, "add", "plans/goals/standing-validation.md", "plans/designs/landing-work.md", "memory/receipts.log")
+	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "mark fixture land ready")
+	goalSyncMutationGit(t, root, "merge", "--ff-only", "--quiet", "main")
 	f.base = goalSyncMutationGit(t, root, "rev-parse", "HEAD")
 	goalSyncMutationGit(t, root, "push", "-q", "upstream", "HEAD:main")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, f.base)
@@ -316,6 +319,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			name = "behind main"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := newWholeOwnerLanding(t)
 			mainTip := f.base
 			if behind {
@@ -330,9 +334,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
 			owners := defaultIntentOwners()
 			owners.dependencies.ownerLineage = func() string { return "m1" }
-			// The adapter proves Git's rewrite, carried read and publication;
-			// the fixture has no application for the static gate to run.
-			owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
+			// Real Git proves the published goal tip and main stay unchanged.
 			delivery := belowTheGate(defaultIntentDeliveryOwners())
 			delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 			delivery.process = func(process intentProcess) intentProcessResult {
@@ -352,34 +354,26 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 				return result
 			}
 			result := run()
-			if behind {
-				data, _ := result.Data.(map[string]any)
-				rebase, _ := data["rebase"].(map[string]any)
-				newTip := f.remote(t, "refs/heads/goal/standing-validation")
-				if rebase["state"] != "rebased" || rebase["mainTip"] != mainTip || newTip == f.branchTip {
-					t.Fatalf("branch behind main was not rebased: %+v; remote %s", result, newTip)
+			// Landing no longer rewrites a branch behind main or records a rebase.
+			if newTip := f.remote(t, "refs/heads/goal/standing-validation"); newTip != f.branchTip {
+				t.Fatalf("hand-in rewrote the remote branch: got %s, want %s", newTip, f.branchTip)
+			}
+			endpoint, err := branch.MainEndpoint(f.mainRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection, err := goal.Project(endpoint, true, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := 0
+			for _, line := range projection.Tree.Live["standing-validation"].History {
+				if line.Verb == "rebase" {
+					lines++
 				}
-				if contains, err := plain.IsAncestor(f.mainRoot, mainTip, newTip); err != nil || !contains {
-					t.Fatalf("rebased branch is not on main: %v %v", contains, err)
-				}
-				endpoint, err := branch.MainEndpoint(f.mainRoot)
-				if err != nil {
-					t.Fatal(err)
-				}
-				projection, err := goal.Project(endpoint, true, time.Now().UTC())
-				if err != nil {
-					t.Fatal(err)
-				}
-				lines := 0
-				for _, line := range projection.Tree.Live["standing-validation"].History {
-					if line.Verb == "rebase" {
-						lines++
-					}
-				}
-				if lines != 1 {
-					t.Fatalf("rebase history lines = %d, want 1", lines)
-				}
-				f.branchTip = newTip
+			}
+			if lines != 0 {
+				t.Fatalf("rebase history lines = %d, want 0", lines)
 			}
 			if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
 				t.Fatalf("hand-in = %+v", result)
@@ -400,7 +394,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			if entries, _ := plain.Entries(install); len(entries) != 1 {
 				t.Fatalf("a repeat appended: %+v", entries)
 			}
-			if !behind && f.remote(t, "refs/heads/main") != mainTip {
+			if f.remote(t, "refs/heads/main") != mainTip {
 				t.Fatal("a hand-in moved main")
 			}
 		})
@@ -457,14 +451,14 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 		result := run(verb)
 		data := result.Data.(map[string]any)
 		if verb == "land" {
-			data = data["rebase"].(map[string]any)
-			if result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "handed to the lane") {
+			// Landing preserves the tip without performing or reporting a rebase.
+			if result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "handed to the lane") || data["rebase"] != nil {
 				t.Fatalf("hand-in: %+v", result)
 			}
-		} else if result.Outcome != intentUnchanged {
-			t.Fatalf("repeat wrote something: %+v", result)
+		} else if result.Outcome != intentUnchanged || data["state"] != "held" || data["newTip"] != branchTip || data["mainTip"] != ledgerTip {
+			t.Fatalf("repeat wrote something or did not hold: %+v", result)
 		}
-		if data["state"] != "held" || data["newTip"] != branchTip || data["mainTip"] != ledgerTip || f.remote(t, "refs/heads/main") != ledgerTip || f.remote(t, "refs/heads/goal/standing-validation") != branchTip {
+		if f.remote(t, "refs/heads/main") != ledgerTip || f.remote(t, "refs/heads/goal/standing-validation") != branchTip {
 			t.Fatalf("work %s did not hold after its history moved main: %+v", verb, result)
 		}
 	}

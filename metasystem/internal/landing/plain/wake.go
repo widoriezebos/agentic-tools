@@ -9,7 +9,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -21,7 +25,7 @@ const (
 	// WakeProofFinished: a proof ended after the agent's last launch and
 	// queued work remains.
 	WakeProofFinished = "proof-finished"
-	// WakeFullDue: the newest scoped push still owes its hourly full proof.
+	// WakeFullDue: main is due for a fresh full check.
 	WakeFullDue = "full-due"
 )
 
@@ -29,8 +33,15 @@ const (
 // hand-in is pending (Pending), and WakeProofFinished besides when a result
 // line ended after lastLaunch (zero: never launched). WakeFullDue also wakes
 // an idle lane when a scoped push's full proof is more than an hour old.
-func WakeReasons(install, checkout string, lastLaunch, now time.Time) ([]string, error) {
-	pending, err := Pending(install, checkout)
+// When incidents alone hold all waiting lines, one fetch refreshes main
+// before the keeper decides. A failed fetch leaves the lines held and is
+// reported by landing status through the wake's unread sources.
+func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ...ProveSeams) ([]string, error) {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	pending, err := pendingQueue(install, checkout, seams, true)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +55,13 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]stri
 		last, ok, err := LastResult(install)
 		if err != nil {
 			return nil, err
+		}
+		gate, gateOK, err := LastGate(install)
+		if err != nil {
+			return nil, err
+		}
+		if gateOK && (!ok || resultTime(gate).After(resultTime(last))) {
+			last, ok = gate, true
 		}
 		if ok {
 			if at, err := time.Parse(time.RFC3339, last.At); err == nil && at.After(lastLaunch) {
@@ -61,9 +79,58 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]stri
 	return reasons, nil
 }
 
-// fullProofDue reads only the newest push. Any later full green pays its
-// debt, including a batch proof, because every lane tree contains main.
+// fullProofDue preserves the hourly debt and checks main's independent clock.
 func fullProofDue(install string, now time.Time) (bool, error) {
+	due, err := scopedProofDue(install, now)
+	if err != nil || due {
+		return due, err
+	}
+	raw, _, err := config.Get(config.GetParams{Key: "proof.trunk-every", ConfPath: filepath.Join(install, "metasystem.conf")})
+	if err != nil {
+		return false, err
+	}
+	every, err := time.ParseDuration(raw)
+	if err != nil || every <= 0 {
+		return false, fmt.Errorf("main's full check interval must be a positive duration; %s is %q", "proof.trunk-every", raw)
+	}
+	results, err := Results(install)
+	if err != nil {
+		return false, err
+	}
+	pushes, err := readLines[Pushed](pushesPath(install))
+	if err != nil {
+		return false, err
+	}
+	last := time.Time{}
+	for _, proof := range results {
+		if proof.Trunk {
+			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(last) {
+				last = at
+			}
+		}
+	}
+	for _, push := range pushes {
+		pushedAt, err := time.Parse(time.RFC3339, push.At)
+		if err != nil {
+			continue
+		}
+		var proof Result
+		for _, r := range results {
+			at, err := time.Parse(time.RFC3339, r.At)
+			if r.Tree == push.Tree && err == nil && !at.After(pushedAt) {
+				proof = r
+			}
+		}
+		if proof.Result == Green && proof.Scope == "full" && proof.FullTree == proof.Tree && proof.FullAt == proof.At && !strings.HasPrefix(proof.Reason, "inherits green from tree ") && pushedAt.After(last) {
+			last = pushedAt
+		}
+	}
+	return last.IsZero() || now.Sub(last) >= every, nil
+}
+
+// scopedProofDue reads only the newest push. Any later full green pays its
+// debt, including a batch proof, because every lane tree contains main.
+func scopedProofDue(install string, now time.Time) (bool, error) {
 	push, ok, err := LastPush(install)
 	if err != nil || !ok {
 		return false, err
@@ -150,6 +217,10 @@ func KeeperFingerprint(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	gate, _, err := LastGate(install)
+	if err != nil {
+		return "", err
+	}
 	pushed, _, err := LastPush(install)
 	if err != nil {
 		return "", err
@@ -161,10 +232,11 @@ func KeeperFingerprint(root string) (string, error) {
 	data, err := json.Marshal(struct {
 		Entries  []Entry `json:"entries"`
 		Last     Result  `json:"last"`
+		Gate     Result  `json:"gate"`
 		Pushed   Pushed  `json:"pushed"`
 		Running  Running `json:"running"`
 		Recorded bool    `json:"recorded"`
-	}{entries, last, pushed, running, recorded})
+	}{entries, last, gate, pushed, running, recorded})
 	if err != nil {
 		return "", err
 	}

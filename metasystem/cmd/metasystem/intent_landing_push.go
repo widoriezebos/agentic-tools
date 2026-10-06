@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -64,15 +65,44 @@ func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmi
 }
 
 func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
-	waiting, err := plain.Waiting(admitted.installation)
+	entries, err := plain.Entries(admitted.installation)
 	checkout := string(admitted.layout.Checkout)
 	if err != nil {
 		inv.laneDesignPair([2]string{fmt.Sprintf("warning: the lane's design check could not run (%s); the push goes on", oneLine(err.Error())), "metasystem landing status --verbose"})
 		return nil
 	}
 	inHead, inOld := owners.contains(checkout, head), owners.contains(checkout, old)
+	rebuild := []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}
+	rebuildReason := "rebuild the batch: git merge --no-ff SHA for each waiting sha, then metasystem landing prove"
+	// A goal's newest code hand-in decides; a later records hand-in of the
+	// same goal does not lift the block (it carries none of the goal's code).
+	latest := make(map[string]int)
+	for index, entry := range entries {
+		if !entry.Records {
+			latest[entry.Goal] = index
+		}
+	}
+	for index, entry := range entries {
+		if entry.State != plain.StateReturned || latest[entry.Goal] != index {
+			continue
+		}
+		now, headErr := inHead(entry.SHA)
+		before, oldErr := inOld(entry.SHA)
+		if err := errors.Join(headErr, oldErr); err != nil {
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains returned goal "+entry.Goal+" could not be read: "+oneLine(err.Error()), err)
+			return &failed
+		}
+		if now && !before {
+			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
+				Summary: "HEAD still contains returned goal " + entry.Goal + "; nothing was pushed",
+				next:    rebuild, nextReason: rebuildReason}
+		}
+	}
 	var refused *intentResult
-	for _, entry := range waiting {
+	for _, entry := range entries {
+		if entry.State != plain.StateWaiting {
+			continue
+		}
 		now, headErr := inHead(entry.SHA)
 		before, oldErr := inOld(entry.SHA)
 		var facts landing.DesignFacts
@@ -86,15 +116,20 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 		design := landing.ObserveDesign(facts, false)
 		if design.RefusesAgent {
 			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
-			design.Pair[1] = "metasystem landing return " + entry.Goal + " --reason TEXT"
+			check := plain.DesignCheck{Goal: entry.Goal, Commit: entry.SHA, Verdict: design.Verdict, Reason: design.Pair[0]}
+			if _, _, err := plain.ReturnDesignRefused(admitted.installation, check, admitted.owners.now()); err != nil {
+				failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the design refusal of "+entry.Goal+" could not be returned: "+oneLine(err.Error()), err)
+				return &failed
+			}
+			design.Pair[1] = textui.Command(rebuild) + " (" + rebuildReason + ")"
 			if refused == nil {
 				detail := "refused because: LANDING_DESIGN_NOT_STANDING"
 				if ruling := refusal.GovernedBy["LANDING_DESIGN_NOT_STANDING"]; ruling != "" {
 					detail += " governed-by=" + ruling
 				}
 				refused = &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root), Data: design,
-					Summary: design.Pair[0], next: inv.publicArgv("landing", "return", entry.Goal, "--reason", "TEXT"),
-					nextReason: "gives the goal back to its seat to restore its accepted design",
+					Summary: strings.TrimSuffix(design.Pair[0], "; nothing was pushed") + "; goal " + entry.Goal + " was returned to its seat; nothing was pushed", next: rebuild,
+					nextReason: rebuildReason,
 					Details:    []string{detail}}
 			} else {
 				inv.laneDesignPair(design.Pair)
@@ -158,6 +193,10 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	checkout := string(admitted.layout.Checkout)
 	var designRefusal *intentResult
 	outcome, err := admitted.owners.push(admitted.installation, checkout, admitted.owners.now(), func(old, head string) error {
+		designRefusal = inv.checkLaneHolds(admitted, owners, old, head)
+		if designRefusal != nil {
+			return errors.New(designRefusal.Summary)
+		}
 		designRefusal = inv.checkLaneDesigns(admitted, owners, old, head)
 		if designRefusal != nil {
 			return errors.New(designRefusal.Summary)
@@ -166,6 +205,15 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	})
 	if designRefusal != nil {
 		return inv.render(*designRefusal)
+	}
+	if outcome.Changed {
+		proof, found, readErr := plain.ResultFor(admitted.installation, outcome.Tree)
+		if readErr == nil && found {
+			readErr = admitted.owners.clearLandingIncidents(admitted.installation, proof)
+		}
+		if readErr != nil {
+			err = errors.Join(err, fmt.Errorf("main's incidents could not be cleared: %w", readErr))
+		}
 	}
 	var told []string
 	if outcome.Changed {
@@ -190,14 +238,14 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 		case plain.CodeUnproven:
 			result.next, result.nextReason = inv.publicArgv("landing", "prove"), "proves HEAD's tree; then push again"
 		case plain.CodeRed:
-			result.next, result.nextReason = inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), "gives the goal that broke it back to its seat"
+			result.next, result.nextReason = inv.publicArgv("landing", "status"), "shows the cause and the waiting goals"
 		default:
 			result.next, result.nextReason = []string{"git", "-C", root, "merge", "origin/main"}, "then prove and push again"
 		}
 		return inv.render(result)
 	case err != nil && outcome.Changed:
 		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: outcome,
-			Summary: "pushed " + shortLandingID(outcome.Commit) + " to main, but the push could not be recorded for landing status: " + oneLine(err.Error()),
+			Summary: "pushed " + shortLandingID(outcome.Commit) + " to main, but its follow-up could not finish: " + oneLine(err.Error()),
 			Details: append([]string{err.Error()}, told...)})
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: outcome,
@@ -308,4 +356,68 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 		}
 	}
 	return told
+}
+
+func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
+	checkout := string(admitted.layout.Checkout)
+	entries, err := plain.Entries(admitted.installation)
+	// A records hand-in cannot hide the goal's current code from the hold.
+	for index, entry := range entries {
+		if err != nil || entry.Records || entry.State != plain.StateSuperseded {
+			continue
+		}
+		current, found, readErr := inv.latestLaneGoalEntry(admitted.installation, entry.Goal, "")
+		err = readErr
+		if found && current.SHA == entry.SHA {
+			entries[index] = current
+		}
+	}
+	if err == nil && len(entries) == 0 {
+		return nil
+	}
+	if err == nil {
+		read := admitted.owners.plainProve.Incidents
+		if read == nil {
+			git := admitted.owners.plainProve.Git
+			if git == nil {
+				git = plain.Git
+			}
+			read = func(install, checkout, main string) ([]goal.TrunkRedEntry, error) {
+				return plain.ReadIncidents(install, checkout, main, git)
+			}
+		}
+		var incidents []goal.TrunkRedEntry
+		incidents, err = read(admitted.installation, checkout, old)
+		if err == nil {
+			couldHold := false
+			for _, entry := range plain.HoldEntries(entries, incidents) {
+				couldHold = couldHold || entry.State == plain.StateWaiting && (entry.Held || len(entry.After) > 0)
+			}
+			if !couldHold {
+				return nil
+			}
+			entries, err = plain.Landed(entries, owners.contains(checkout, old))
+			entries = plain.HoldEntries(entries, incidents)
+		}
+	}
+	if err != nil {
+		failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the lane's holds could not be read", err)
+		return &failed
+	}
+	for _, entry := range entries {
+		if entry.State != plain.StateWaiting || !entry.Held {
+			continue
+		}
+		inside, err := owners.contains(checkout, head)(entry.SHA)
+		if err != nil {
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains held goal "+entry.Goal+" could not be read", err)
+			return &failed
+		}
+		if inside {
+			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
+				Summary: "HEAD contains held goal " + entry.Goal + ": " + entry.Reason + "; nothing was pushed",
+				next:    []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}, nextReason: "rebuild the batch by merging only waiting goals that are not held, then metasystem landing prove"}
+		}
+	}
+	return nil
 }

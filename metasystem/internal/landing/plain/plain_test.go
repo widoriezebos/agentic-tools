@@ -196,6 +196,11 @@ func TestTwoSeatsHandInAndLandByOneGreenPush(t *testing.T) {
 	if push, ok, err := LastPush(b.install); err != nil || !ok || push.Commit != head || push.Old != before {
 		t.Fatalf("last push: %+v %v %v", push, ok, err)
 	}
+	// The batch budget rule requires a push to close the loop and preserve its green proof.
+	closed, ok, err := LastResult(b.install)
+	if err != nil || !ok || !closed.LoopClosed || closed.Result != result.Result || closed.Tree != result.Tree || closed.Attempt != result.Attempt || closed.At != result.At {
+		t.Fatalf("the push did not close the proof loop or changed its proof: %+v %v", closed, err)
+	}
 	// Idempotent: the same push again changes nothing.
 	again, err := b.push()
 	if err != nil || again.Changed || again.Commit != head {
@@ -322,10 +327,11 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 	}
 }
 
-func TestHandInAgainRequeuesReturnedTipAndHoldsWaiting(t *testing.T) {
+func TestHandInAgainRequeuesReturnedTipAndKeepsWaitingMetadata(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
 	line := Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: "same-tip", Delivered: "Makes landing reliable"}
+	delivered := line.Delivered
 	if _, _, err := HandIn(install, line); err != nil {
 		t.Fatal(err)
 	}
@@ -339,16 +345,23 @@ func TestHandInAgainRequeuesReturnedTipAndHoldsWaiting(t *testing.T) {
 		line.Again, line.Delivered = true, ""
 		entry, added, err := HandIn(install, line)
 		entries, readErr := Entries(install)
-		if err != nil || !added || entry.State != StateWaiting || entry.Delivered != "Makes landing reliable" || readErr != nil || len(entries) != round+2 || entries[round].State != StateReturned || entries[round].Reason != "merge conflict" {
+		if err != nil || !added || entry.State != StateWaiting || entry.Delivered != delivered || readErr != nil || len(entries) != round+2 || entries[round].State != StateReturned || entries[round].Reason != "merge conflict" {
 			t.Fatalf("again: %+v added=%v err=%v; history=%+v err=%v", entry, added, err, entries, readErr)
 		}
 		before, _ := os.ReadFile(queuePath(install))
-		line.Delivered = "Another sentence"
+		line.Delivered = fmt.Sprintf("Delivers correction %d", round+1)
 		entry, added, err = HandIn(install, line)
 		after, readErr := os.ReadFile(queuePath(install))
-		if err != nil || added || entry.State != StateWaiting || readErr != nil || !bytes.Equal(before, after) {
+		if err != nil || added || entry.State != StateWaiting || entry.Delivered != line.Delivered || readErr != nil || bytes.Equal(before, after) {
 			t.Fatalf("waiting repeat: %+v added=%v err=%v queue=%q -> %q err=%v", entry, added, err, before, after, readErr)
 		}
+		before = after
+		entry, added, err = HandIn(install, line)
+		after, readErr = os.ReadFile(queuePath(install))
+		if err != nil || added || entry.Delivered != line.Delivered || readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("identical waiting repeat: %+v added=%v err=%v queue=%q -> %q err=%v", entry, added, err, before, after, readErr)
+		}
+		delivered = line.Delivered
 		line.Again, line.Delivered = false, ""
 	}
 }
@@ -438,20 +451,20 @@ func TestWakeReasonsAreQueuedAndProofFinished(t *testing.T) {
 		}
 		return strings.Join(got, ",")
 	}
-	if got := reasons(time.Time{}); got != "" {
-		t.Fatalf("an empty queue wakes nothing: %q", got)
+	if got := reasons(time.Time{}); got != WakeFullDue {
+		t.Fatalf("an unchecked main wakes for its full check: %q", got)
 	}
 	sha := b.seat("seat-a", "goal-a")
 	b.handIn("m1e", "goal-a", sha)
-	if got := reasons(time.Time{}); got != WakeQueued {
+	if got := reasons(time.Time{}); got != WakeQueued+","+WakeFullDue {
 		t.Fatalf("a hand-in wakes: %q", got)
 	}
 	b.merge("goal-a")
 	b.prove(b.greenScript) // ends at bedNow
-	if got := reasons(bedNow.Add(-time.Minute)); got != WakeQueued+","+WakeProofFinished {
+	if got := reasons(bedNow.Add(-time.Minute)); got != WakeQueued+","+WakeProofFinished+","+WakeFullDue {
 		t.Fatalf("a proof that ended after the launch wakes: %q", got)
 	}
-	if got := reasons(bedNow.Add(time.Minute)); got != WakeQueued {
+	if got := reasons(bedNow.Add(time.Minute)); got != WakeQueued+","+WakeFullDue {
 		t.Fatalf("a proof that ended before the launch was seen: %q", got)
 	}
 	if _, err := b.push(); err != nil {

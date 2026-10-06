@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // The host's Codex sandbox mode: one setting per host, in its local
 // settings. workspace-write keeps each envelope's own read-only or
@@ -41,6 +44,9 @@ func CodexSandbox(confPath string, lookupEnv func(string) (string, bool)) (strin
 // written: a key with a closed set of values refuses one outside it. Every
 // other key is written as given and judged by settings check.
 func SettingValueProblem(key, value string) error {
+	if CommittedOnly(key) && (strings.TrimSpace(value) == "" || strings.ContainsAny(value, "\r\n")) {
+		return fmt.Errorf("%s must be a non-empty, one-line command in metasystem.conf", key)
+	}
 	if key == CodexSandboxKey {
 		_, err := ParseCodexSandbox(value)
 		return err

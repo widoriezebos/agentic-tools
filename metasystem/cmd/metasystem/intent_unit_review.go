@@ -237,7 +237,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				var err error
 				installed, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
 					GoalID: goalID, Units: []string{unit}, OpID: subject.Operation + "-unit", Kind: branch.Unit,
-					Amend: subject.Amends != "", CheckClaim: check, Transport: conn.transport})
+					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport})
 				return err
 			})
 			if commitErr != nil {
@@ -396,7 +396,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
-		result.next, result.nextReason = inv.publicArgv("work", "land", goalID), "the unit's read is published on the goal branch; landing admits it by its own rules"
+		result.next, result.nextReason = inv.goalNextStep(goalID)
 	}
 	if bundle != nil && inv.input.has("model") {
 		result.Summary += "; --model was not used because no critic started"

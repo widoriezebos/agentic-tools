@@ -113,12 +113,12 @@ func TestModeScopedDefaultsKeepTheirPrecedence(t *testing.T) {
 }
 
 // Validation reads the effective configuration: an overrides-only file is
-// complete, and the compiled defaults are themselves valid.
+// complete once required proof commands are declared; compiled defaults are valid.
 func TestValidateAcceptsAnOverridesOnlyConfiguration(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
-	putFile(t, conf, "# overrides only\n")
+	putFile(t, conf, "# overrides only\nproof.full=true\nproof.cheap=true\n")
 	contract, err := os.ReadFile(filepath.Join("..", "..", "testing.json"))
 	if err != nil {
 		t.Fatal(err)

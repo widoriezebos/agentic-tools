@@ -40,7 +40,8 @@ func TestValidateAdmitsANamedExternalRuntime(t *testing.T) {
 			if err := os.Chmod(adapter, test.mode); err != nil {
 				t.Fatal(err)
 			}
-			conf := "metasystem.runtimes=fake,newagent\ntesting.contract=testing.json\nevidence.root=" + t.TempDir() +
+			// Required proof commands belong to the repository configuration.
+			conf := "proof.full=true\nproof.cheap=true\nmetasystem.runtimes=fake,newagent\ntesting.contract=testing.json\nevidence.root=" + t.TempDir() +
 				"\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n"
 			if test.named {
 				conf += "adapters.newagent.use=external\n"

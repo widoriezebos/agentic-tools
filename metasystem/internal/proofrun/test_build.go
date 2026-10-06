@@ -1781,6 +1781,14 @@ func appendSuiteFailureEvidenceLine(result *GroupResult, groupID, bundle string)
 	}
 }
 
+// RunSectionGroup uses the native section adapter on a caller-supplied candidate bed.
+func RunSectionGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) GroupResult {
+	if group.Adapter != "section" {
+		return GroupResult{ID: group.ID, Status: "invalid", NotRunReason: "the section runner requires a section group"}
+	}
+	return runTestGroup(ctx, request, group)
+}
+
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	started := time.Now()

@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -31,7 +31,7 @@ type landRebaseBed struct {
 // bed never invokes Git, including during its setup.
 func newLandRebaseBed(t *testing.T) *landRebaseBed {
 	t.Helper()
-	b := &landRebaseBed{deliveryBed: newDeliveryBedWith(t, nil), registered: true}
+	b := &landRebaseBed{deliveryBed: newDeliveryBedWith(t, nil, true), registered: true}
 	b.landing = &landingOwners{status: readBranch(2, "critic-root", "critic-root")}
 	b.landing.install(b.deliveryBed)
 	b.lane = filepath.Join(t.TempDir(), "lane")
@@ -115,185 +115,63 @@ func (b *landRebaseBed) land(args ...string) (int, intentResult) {
 	return code, result
 }
 
-func TestWorkLandRebasesBeforeHandIn(t *testing.T) {
+// Landing preserves the reviewed commits even when main has advanced.
+func TestWorkLandKeepsBranchBehindMain(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"rebased", "held", "carried", "pushed"} {
-		t.Run(state, func(t *testing.T) {
+	for _, route := range []string{"lane", "hand"} {
+		t.Run(route, func(t *testing.T) {
+			t.Parallel()
 			b := newLandRebaseBed(t)
-			b.rebase.State = state
-			if state == "held" {
-				b.rebase.NewTip = b.rebase.OldTip
+			tip := b.landing.status.BranchTip
+			if route == "hand" {
+				b.deliveryBed.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 			}
-			code, result := b.land()
-			entries, err := plain.Entries(b.lane)
-			wantRecords, wantReads, line := 1, 2, "on main "
-			if state == "held" {
-				wantRecords, wantReads = 0, 1
+			code, result := b.runJSON(b.owners, "work", "land", "standing-validation", "--delivered", "Makes landing reliable")
+			if code != 0 || result.Outcome != intentConfirmed || b.calls != 0 || b.records != 0 || b.reads != 1 || b.landing.status.BranchTip != tip {
+				t.Fatalf("%s landing: %d %+v; rebases=%d records=%d reads=%d tip=%s", route, code, result, b.calls, b.records, b.reads, b.landing.status.BranchTip)
 			}
-			if state == "rebased" {
-				line = "rebased onto main "
+			if route == "lane" {
+				entries, err := plain.Entries(b.lane)
+				if err != nil || len(entries) != 1 || entries[0].SHA != tip || len(b.landing.pushes) != 0 {
+					t.Fatalf("hand-in changed the tip: %+v %v; pushes=%v", entries, err, b.landing.pushes)
+				}
+			} else if len(b.landing.pushes) != 1 || resultData(t, result)["subject"] != tip {
+				t.Fatalf("hand landing did not replay the original tip: preps=%v pushes=%v", b.landing.preps, b.landing.pushes)
 			}
-			if code != 0 || result.Outcome != intentConfirmed || b.calls != 1 || b.records != wantRecords || b.reads != wantReads || err != nil || len(entries) != 1 || entries[0].SHA != b.rebase.NewTip {
-				t.Fatalf("hand-in: %d %+v; calls=%d records=%d reads=%d entries=%+v %v", code, result, b.calls, b.records, b.reads, entries, err)
-			}
-			if !strings.Contains(result.Summary, "handed to the lane, "+line+shortCommit(b.rebase.MainTip)) {
-				t.Fatalf("rebase output: %+v", result)
-			}
-			if data := result.Data.(map[string]any)["rebase"].(map[string]any); data["state"] != state || data["newTip"] != b.rebase.NewTip {
-				t.Fatalf("rebase JSON: %+v", data)
+			if _, ok := resultData(t, result)["rebase"]; ok {
+				t.Fatalf("landing reported a rebase: %+v", result)
 			}
 		})
 	}
 }
 
-func TestWorkLandSkipsBoundCommitsAndMissingWorktree(t *testing.T) {
-	t.Parallel()
-	for _, kind := range []string{"through", "waiting", "waiting elsewhere", "landed", "human", "no worktree"} {
-		t.Run(kind, func(t *testing.T) {
-			b := newLandRebaseBed(t)
-			args, reason := []string{}, ""
-			switch kind {
-			case "through":
-				args = []string{"--through", b.landing.status.Status.Units[0].Commit}
-				reason = "--through names a commit"
-			case "waiting", "waiting elsewhere", "landed":
-				sha := b.landing.status.BranchTip
-				if kind == "waiting elsewhere" {
-					sha = strings.Repeat("9", 40)
-				}
-				_, _, err := plain.HandIn(b.lane, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: sha, Seat: "seat", At: time.Now().UTC().Format(time.RFC3339)})
-				if err != nil {
-					t.Fatal(err)
-				}
-				reason = "its hand-in at " + plain.Short(sha) + " still waits in the lane"
-				if kind == "landed" {
-					b.landing.status.EndpointTip = sha
-					reason = "its hand-in at " + plain.Short(sha) + " already landed on main"
-				}
-			case "human":
-				file := b.goalFile("standing-validation")
-				file.Tier = 3
-				file.History = append(file.History, goal.HistoryLine{At: "2026-09-01T12:00:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB1", "mac-cli", "m1"),
-					Verb: goal.LandWithoutSittingVerb, Actor: "human:Wido", Targets: []string{file.Id}, Keep: -1,
-					Reason: "landed-without-sitting tip=" + b.landing.status.BranchTip + " by=Wido because=ready"})
-				file.Revision++
-				b.addGoal(file)
-				reason = "a person's word stands at this tip"
-			case "no worktree":
-				b.registered = false
-				reason = "the goal has no worktree"
-			}
-			code, result := b.land(args...)
-			if code != 0 || b.calls != 0 || b.records != 0 || !strings.Contains(strings.Join(result.text, "\n"), "not rebased: "+reason) {
-				t.Fatalf("skip: %d %+v calls=%d records=%d", code, result, b.calls, b.records)
-			}
-			if data := result.Data.(map[string]any)["rebase"].(map[string]any); data["state"] != "skipped" || data["reason"] != reason {
-				t.Fatalf("skip JSON: %+v", data)
-			}
-		})
-	}
-}
-
-func TestWorkLandRebaseSkipReadFailuresNameGoal(t *testing.T) {
-	t.Parallel()
-	for _, kind := range []string{"queue", "worktree", "settings"} {
-		t.Run(kind, func(t *testing.T) {
-			b := newLandRebaseBed(t)
-			switch kind {
-			case "queue":
-				b.deliveryBed.owners.laneLatest = func(string, string, string) (plain.Entry, bool, error) {
-					return plain.Entry{}, false, errors.New("queue unavailable")
-				}
-			case "worktree":
-				b.owners.work.git = func(string, ...string) ([]byte, error) { return nil, errors.New("worktree unavailable") }
-			case "settings":
-				writeTestingFixtureFile(t, filepath.Join(b.install, "metasystem.conf.local"), []byte("landing.review.human-from-tier = two\n"), 0o644)
-			}
-			code, result := b.land()
-			entries, _ := plain.Entries(b.lane)
-			if code == 0 || b.calls != 0 || len(entries) != 0 || result.Next == nil || len(result.Targets) != 1 || result.Targets[0] != (intentTarget{Kind: "goal", ID: "standing-validation"}) {
-				t.Fatalf("%s failure: %d %+v calls=%d queue=%+v", kind, code, result, b.calls, entries)
-			}
-		})
-	}
-}
-
-func TestWorkLandRebaseFailuresHandNothingIn(t *testing.T) {
-	t.Parallel()
-	for _, kind := range []string{"conflict", "needs review"} {
-		t.Run(kind, func(t *testing.T) {
-			b := newLandRebaseBed(t)
-			switch kind {
-			case "conflict":
-				b.rebaseErr = &branch.OpError{Code: branch.RebaseConflictCode, Message: "rebase stopped at build u1; nothing was changed\npaths:\nowned.go\nrun: metasystem work status standing-validation"}
-			case "needs review":
-				b.rebase.NeedsReview = []string{"u2"}
-				b.landing.status = readBranch(1, "critic-root")
-			}
-			code, result := b.land()
-			entries, _ := plain.Entries(b.lane)
-			if code == 0 || len(entries) != 0 || result.Next == nil {
-				t.Fatalf("refusal: %d %+v queue=%+v", code, result, entries)
-			}
-			switch kind {
-			case "conflict":
-				if result.Data.(map[string]any)["code"] != branch.RebaseConflictCode || !strings.Contains(strings.Join(result.text, "\n"), "owned.go") || b.records != 0 {
-					t.Fatalf("conflict: %+v", result)
-				}
-			case "needs review":
-				if strings.Join(result.Next.Argv, " ") != "metasystem work review standing-validation --work u2" {
-					t.Fatalf("review command: %+v", result)
-				}
-			}
-		})
-	}
-}
-
-func TestWorkLandRebaseHistoryFailureKeepsHandIn(t *testing.T) {
+func TestWorkLandReturnedConflictNamesRebase(t *testing.T) {
 	t.Parallel()
 	b := newLandRebaseBed(t)
-	b.recordErr = errors.New("history unavailable")
-	code, result := b.land()
-	entries, _ := plain.Entries(b.lane)
-	if code != 0 || len(entries) != 1 || b.records != 1 || !strings.Contains(strings.Join(result.text, "\n"), "history line was not written; run: metasystem goal sync") {
-		t.Fatalf("history failure: %d %+v queue=%+v", code, result, entries)
+	tip := b.landing.status.BranchTip
+	line := plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: tip}
+	if _, _, err := plain.HandIn(b.lane, line); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWorkLandRebaseHandsInAfterItsHistoryMovesMain(t *testing.T) {
-	t.Parallel()
-	b := newLandRebaseBed(t)
-	record := b.owners.connection.recordRebase
-	b.owners.connection.recordRebase = func(inv *intentInvocation, id string, result branch.RebaseResult) error {
-		if err := record(inv, id, result); err != nil {
-			return err
-		}
-		b.landing.status.EndpointTip = strings.Repeat("4", 40)
-		return nil
+	line.Outcome = plain.StateReturned
+	line.Reason = "it does not merge with main (owned.go: both sides inserted at one place)."
+	line.Conflict = &conflict.Return{Paths: []conflict.Path{{Path: "owned.go", Class: conflict.Builder}}}
+	queue := filepath.Join(plain.Dir(b.lane), "queue.jsonl")
+	before, err := os.ReadFile(queue)
+	if err != nil {
+		t.Fatal(err)
 	}
-	code, result := b.land()
-	entries, err := plain.Entries(b.lane)
-	if code != 0 || result.Outcome != intentConfirmed || b.records != 1 || b.reads != 2 || err != nil || len(entries) != 1 || entries[0].SHA != b.rebase.NewTip {
-		t.Fatalf("history advanced main: %d %+v queue=%+v %v", code, result, entries, err)
+	returned, err := json.Marshal(line)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWorkLandByHandRebasesFirst(t *testing.T) {
-	t.Parallel()
-	b := newLandRebaseBed(t)
-	b.deliveryBed.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
-	code, result := b.land()
-	if code != 0 || b.calls != 1 || len(b.landing.pushes) != 1 || b.reads != 2 || len(result.text) == 0 || !strings.Contains(result.text[0], "rebased onto main") {
-		t.Fatalf("hand landing: %d %+v calls=%d pushes=%v", code, result, b.calls, b.landing.pushes)
-	}
-}
-
-func TestWorkLandRebasePlainOutput(t *testing.T) {
-	t.Parallel()
-	b := newLandRebaseBed(t)
-	code, stdout, stderr := b.run(b.owners, "work", "land", "standing-validation", "--delivered", "the change is ready")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "handed to the lane") || !strings.Contains(stdout, "rebased onto main "+shortCommit(b.rebase.MainTip)) || !strings.Contains(stdout, "review carried: u1") {
-		t.Fatalf("plain output: %d stdout=%q stderr=%q", code, stdout, stderr)
+	before = append(before, append(returned, '\n')...)
+	b.writeFile(queue, string(before))
+	code, stdout, stderr := b.run(b.owners, "work", "land", line.Goal, "--delivered", "Makes landing reliable")
+	want := "goal standing-validation at " + plain.Short(tip) + " was returned: " + line.Reason + " → metasystem work rebase standing-validation"
+	after, err := os.ReadFile(queue)
+	if code != 1 || stdout != "" || oneSpaced(stderr) != "✗ "+want || err != nil || string(after) != string(before) || b.calls != 0 || b.records != 0 {
+		t.Fatalf("returned conflict: %d stdout=%q stderr=%q queue=%q err=%v rebases=%d records=%d", code, stdout, stderr, after, err, b.calls, b.records)
 	}
 }
 
@@ -330,21 +208,17 @@ func TestWorkRebaseRecordsItsReasonAfterPublishing(t *testing.T) {
 	}
 }
 
-func TestWorkLandRebaseJudgementAsksAndHandsNothingIn(t *testing.T) {
+// TestWorkLandUnreadableQueueNamesGoal: when the lane's queue cannot be read,
+// work land fails, names the goal and hands nothing in.
+func TestWorkLandUnreadableQueueNamesGoal(t *testing.T) {
 	t.Parallel()
 	b := newLandRebaseBed(t)
-	b.rebaseErr = rebaseJudgementFixture(t)
-	asked := 0
-	b.owners.connection.askRebase = func(_ string, in channelAskInput) (channel.Question, []string, int, error) {
-		asked++
-		if in.Goal != "standing-validation" || in.Kind != "other" {
-			t.Fatalf("question %+v", in)
-		}
-		return channel.Question{ID: fmt.Sprintf("q%d", asked)}, nil, 0, nil
+	b.deliveryBed.owners.laneLatest = func(string, string, string) (plain.Entry, bool, error) {
+		return plain.Entry{}, false, errors.New("queue unavailable")
 	}
 	code, result := b.land()
-	entries, err := plain.Entries(b.lane)
-	if code == 0 || err != nil || len(entries) != 0 || asked != 2 || b.records != 0 || result.Data.(map[string]any)["code"] != branch.RebaseJudgementCode || !strings.Contains(strings.Join(result.text, "\n"), "metasystem question wait q2") {
-		t.Fatalf("refusal %d %+v queue %v questions %d", code, result, entries, asked)
+	entries, _ := plain.Entries(b.lane)
+	if code == 0 || b.calls != 0 || len(entries) != 0 || result.Next == nil || len(result.Targets) != 1 || result.Targets[0] != (intentTarget{Kind: "goal", ID: "standing-validation"}) {
+		t.Fatalf("unreadable queue: %d %+v calls=%d queue=%+v", code, result, b.calls, entries)
 	}
 }

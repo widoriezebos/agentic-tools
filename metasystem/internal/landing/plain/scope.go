@@ -111,6 +111,24 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		return d
 	}
 	d.ChangedPaths = strings.Split(strings.TrimSpace(changed), "\n")
+	executablePaths := d.ChangedPaths
+	if d.base.FullTree != "" && d.base.FullTree != d.base.Tree {
+		changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", d.base.FullTree, running.Tree)
+		if err != nil {
+			d.ScopeReason = "the paths changed since the full proof cannot be read: " + err.Error()
+			return d
+		}
+		executablePaths = append(append([]string{}, executablePaths...), strings.Split(strings.TrimSpace(changed), "\n")...)
+	}
+	for _, path := range executablePaths {
+		if path == "" {
+			continue
+		}
+		if !recordsOnlyPaths(install, checkout, []string{path}) {
+			d.ScopeReason = "an executable input changed: " + path
+			return d
+		}
+	}
 	relative, _, err := config.CommittedLookup(filepath.Join(install, "metasystem.conf"), "testing.contract")
 	if err != nil || relative == "" {
 		d.ScopeReason = "the testing contract declaration cannot be read"
@@ -365,7 +383,7 @@ func (d scopeDecision) describe(result Result, observed *proofOutput) Result {
 	result.Ran, result.Environment = observed.ran, observed.environment
 	if d.Scope == "scoped" {
 		result.FullTree, result.FullAt = d.base.FullTree, d.base.FullAt
-	} else if result.Result == Green {
+	} else if result.Result == Green && d.Scope != "gate" {
 		result.FullTree, result.FullAt = result.Tree, result.At
 	} else {
 		result.FullTree, result.FullAt = "", ""

@@ -15,6 +15,10 @@ import (
 )
 
 func landingFlakeJudge(installation string, git func(string, ...string) (string, error)) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
+	return landingFlakeJudgeFor(installation, git, false)
+}
+
+func landingFlakeJudgeFor(installation string, git func(string, ...string) (string, error), gate bool) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
 	return func(checkout, commit string, failed []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
 		out := map[string]plain.UnitJudgement{}
 		for _, unit := range failed {
@@ -36,7 +40,11 @@ func landingFlakeJudge(installation string, git func(string, ...string) (string,
 		if err != nil {
 			return out, err
 		}
-		changed, err := git(checkout, "diff", "--name-only", "origin/main..."+commit)
+		comparison := "origin/main..." + commit
+		if gate {
+			comparison = commit + "^1.." + commit
+		}
+		changed, err := git(checkout, "diff", "--name-only", comparison)
 		if err != nil {
 			return out, err
 		}

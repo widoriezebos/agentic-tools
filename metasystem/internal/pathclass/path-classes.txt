@@ -19,6 +19,7 @@ install:testing-coverage-floors-linux.json behavior
 install:run-state-audit.json behavior
 install:cmd/ behavior
 install:internal/ behavior
+install:proof/ behavior
 install:docs/ behavior
 install:skills/ behavior
 install:optional-skills/ behavior
@@ -46,6 +47,7 @@ install:records/goals/ ledger
 # Installation-relative runtime state.
 install:artifacts/ runtime
 install:bin/ runtime
+install:proof/.full-reporter runtime
 install:metasystem runtime
 install:metasystem.conf.local runtime
 

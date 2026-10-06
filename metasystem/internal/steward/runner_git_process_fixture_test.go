@@ -2,6 +2,7 @@ package steward
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -233,19 +234,42 @@ func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 	}
 	var output bytes.Buffer
 	command := exec.Command(bin, "steward", "run", "--repo", root)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(os.Environ(), environment...)
 	command.Stdout, command.Stderr = &output, &output
+	done := make(chan error, 1)
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{
+		Verb: "steward run",
+		Resolve: func() (int, bool, error) {
+			if command.Process == nil {
+				return 0, false, nil
+			}
+			return command.Process.Pid, true, nil
+		},
+	}}, testenv.FixtureCleanup{
+		Verb: "stop steward run",
+		Run: func(ctx context.Context) error {
+			if command.Process == nil {
+				return nil
+			}
+			if err := stopRunnerLoop(root); err != nil {
+				return err
+			}
+			select {
+			case err := <-done:
+				if err != nil {
+					return fmt.Errorf("runner exit: %w\n%s", err, output.String())
+				}
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := stopRunnerLoop(root); err != nil {
-			t.Error(err)
-		}
-		if err := command.Wait(); err != nil {
-			t.Errorf("runner exit: %v\n%s", err, output.String())
-		}
-	})
+	go func() { done <- command.Wait() }()
 	testenv.Await(t, "the served checkout's fetch to clear its stale deferral", func() bool {
 		calls, err := os.ReadFile(config.Unexpected)
 		if err != nil || len(calls) != 0 {

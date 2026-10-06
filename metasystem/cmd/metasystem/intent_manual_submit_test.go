@@ -37,7 +37,8 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "manual.txt"), []byte("manual work\n"), 0o644)
 	indexBefore, _ := os.ReadFile(filepath.Join(root, ".git", "index"))
 	statusBefore := connectionGit(t, root, "status", "--porcelain")
-	submit := []string{"work", "review", c.id, "--changes", "--brief", "notes/brief.md"}
+	// A read-clean last unit leads to hand-in rather than another build.
+	submit := []string{"work", "review", c.id, "--changes", "--last", "--brief", "notes/brief.md"}
 
 	delegates := len(c.delegates)
 	code, result := do(submit...)
@@ -59,6 +60,10 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	}
 	if message := connectionGit(t, root, "show", "-s", "--format=%B", commit); !strings.Contains(message, "Goal-Unit: "+c.id+"/main") {
 		t.Fatalf("the unit commit is the goal's work main: %s", message)
+	}
+	// Manual work can declare the last unit with the same trailer as a build.
+	if message := connectionGit(t, root, "show", "-s", "--format=%B", commit); !strings.Contains(message, "Goal-Whole: "+c.id) {
+		t.Fatalf("manual last unit lost its goal end: %s", message)
 	}
 	indexAfter, _ := os.ReadFile(filepath.Join(root, ".git", "index"))
 	if !bytes.Equal(indexBefore, indexAfter) || connectionGit(t, root, "status", "--porcelain") != statusBefore {
@@ -95,8 +100,8 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	}
 
 	// A goal no critic may read (a box of zero review rounds, as tier 1)
-	// ends the hand-in at publication: no critic starts, and the landing
-	// is the next step.
+	// advances at publication: no critic starts, the next declared unit
+	// comes first, and the last build offers the whole goal's hand-in.
 	waived := newJourneyBedWith(t, func(file *goal.GoalFile) {
 		workApprovedBox(file)
 		file.Budget.ReviewRoundLimit = 0
@@ -104,6 +109,7 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		}
 	})
+	nextStepDesign(waived.c.workBed, "main", "second")
 	waivedRoot := waived.c.root()
 	os.MkdirAll(filepath.Join(waivedRoot, "notes"), 0o700)
 	os.WriteFile(filepath.Join(waivedRoot, "notes", "brief.md"), []byte("Add the manual file.\n"), 0o644)
@@ -111,11 +117,17 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	before := len(waived.c.delegates)
 	code, result = waived.do("work", "review", waived.c.id, "--changes", "--brief", "notes/brief.md")
 	if code != 0 || result.Outcome != intentConfirmed || len(waived.c.delegates) != before || result.Next == nil ||
-		!slices.Equal(result.Next.Argv[1:], []string{"work", "land", waived.c.id}) || !strings.Contains(result.Summary, "lands its work without a read") {
+		!slices.Equal(result.Next.Argv[1:], []string{"work", "build", waived.c.id, "--work", "second", "--brief", "FILE", "--check", "COMMAND"}) || !strings.Contains(result.Summary, "lands its work without a read") {
 		t.Fatalf("a read-waived goal's hand-in asks no critic: code=%d %+v", code, result)
 	}
 	if got := connectionGit(t, waivedRoot, "--git-dir", waived.c.origin, "show", "refs/heads/goal/"+waived.c.id+":manual.txt"); got != "manual work" {
 		t.Fatalf("the read-waived hand-in still publishes the work: %q", got)
+	}
+	os.WriteFile(filepath.Join(waived.c.worktree, "second.txt"), []byte("second unit\n"), 0o644)
+	code, result = manualDo(t, waived, waived.c.worktree, "work", "review", waived.c.id, "--changes", "--work", "second", "--brief", filepath.Join(waivedRoot, "notes", "brief.md"), "--repo", waivedRoot)
+	if code != 0 || result.Outcome != intentConfirmed || len(waived.c.delegates) != before || result.Next == nil ||
+		!slices.Equal(result.Next.Argv[1:], []string{"work", "land", waived.c.id, "--repo", waivedRoot}) {
+		t.Fatalf("the last read-waived build offers the goal hand-in: code=%d next=%+v result=%+v", code, result.Next, result)
 	}
 }
 
@@ -488,7 +500,9 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Add the delivered file.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "delivered.txt"), []byte("hand-written and delivered\n"), 0o644)
-	submit := []string{"work", "review", c.id, "--changes", "--brief", brief}
+	// The goal has no Units table, so its only unit declares the end with
+	// --last; without it work land refuses GOAL_NO_END (lane-lands-finished-goals).
+	submit := []string{"work", "review", c.id, "--changes", "--last", "--brief", brief}
 	_, result := do(submit...)
 	commit, _ := resultData(t, result)["commit"].(string)
 	if result.Outcome != intentInProgress || commit == "" {

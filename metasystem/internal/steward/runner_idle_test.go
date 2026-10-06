@@ -39,14 +39,11 @@ func TestRunnerPassCost(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			runnerVolume(t, root, counts[0], counts[1])
-			start := time.Now()
 			if _, err := loadAlertEpisodesUnlocked(root); err != nil {
 				t.Fatal(err)
 			}
-			health := time.Since(start)
-			start = time.Now()
 			supplementWorkers(root)
-			t.Logf("%d open alerts, %d proof payloads (1 MiB each): health alert read=%s census supplement=%s", counts[0], counts[1], health, time.Since(start))
+			t.Logf("%d open alerts, %d proof payloads (1 MiB each): records read and census supplemented", counts[0], counts[1])
 		})
 	}
 }
@@ -188,7 +185,6 @@ func TestRunnerSecondTickDoesNotScanUnchangedRecords(t *testing.T) {
 		value, _ := runnerReads.Load(root)
 		state := value.(*runnerReadState)
 		beforeScans, beforeReads := state.scans, state.reads
-		start := time.Now()
 		alerts, err := loadAlertEpisodesUnlocked(root)
 		if err != nil || len(alerts) != 211 {
 			t.Fatalf("alerts=%d err=%v", len(alerts), err)
@@ -196,10 +192,8 @@ func TestRunnerSecondTickDoesNotScanUnchangedRecords(t *testing.T) {
 		if role := checkProofAttempts(root, attemptProbe{}); role.Status != HealthAlive {
 			t.Fatal(role)
 		}
-		health := time.Since(start)
-		start = time.Now()
 		_, _ = census.Workers(root)
-		t.Logf("tick %d: health records=%s census supplement=%s scans=%d reads=%d", ticks, health, time.Since(start), state.scans-beforeScans, state.reads-beforeReads)
+		t.Logf("tick %d: scans=%d reads=%d", ticks, state.scans-beforeScans, state.reads-beforeReads)
 		if ticks == 1 {
 			scans, reads = state.scans, state.reads
 		} else if state.scans != scans || state.reads != reads {

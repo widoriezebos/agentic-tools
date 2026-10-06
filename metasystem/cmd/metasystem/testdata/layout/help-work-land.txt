@@ -36,6 +36,8 @@ MetaSystem administration
   metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]
 
 Options  before or after the target; -- ends them
+  --whole                       with --by NAME: declare the end of a goal whose design has no Units
+                                table
   --records PATH (repeatable)   commit these record files on the goal branch, publish it and hand it
                                 in; repeat for each path, relative to the checkout top
   --through COMMIT              land a human-approved prefix ending at this unit commit
@@ -57,7 +59,8 @@ Advanced
   --exception CODE              a person's exception: the one refusal code or group:NAME this
                                 landing is carried past
   --reason TEXT                 with --exception: why
-  --by NAME                     with --exception: the person deciding, at the enrolled terminal
+  --by NAME                     with --whole or --exception: the person deciding, at the enrolled
+                                terminal
   --expires DURATION            with --exception: how long it stays usable (default 2h, at most 4h)
   --replace-exception ID        with --exception: the unused exception this one replaces
   --transfer                    with --replace-exception: take over an exception recorded on another

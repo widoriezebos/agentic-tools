@@ -116,10 +116,12 @@ func TestPlainLanePushWritesLandedCards(t *testing.T) {
 	}
 }
 
+// A returned card joins again because a return ends its previous wait.
 func TestWorkLandHandInWritesJoined(t *testing.T) {
 	t.Parallel()
-	for _, stage := range []board.Stage{board.StageLandReady, board.StageBuild} {
+	for _, stage := range []board.Stage{board.StageLandReady, board.StageBuild, board.StageReturned} {
 		t.Run(string(stage), func(t *testing.T) {
+			t.Parallel()
 			b, _, _ := plainLaneBedWith(t, true, "critic-root", "critic-root")
 			registry := t.TempDir()
 			home := filepath.Join(registry, ".metasystem")

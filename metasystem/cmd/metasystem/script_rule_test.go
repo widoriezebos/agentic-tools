@@ -33,9 +33,12 @@ func scriptRuleIsScript(rel string) bool {
 }
 
 // scriptRuleAllowed reports whether a repository-relative shell file sits at a
-// declared extension point: a skill helper tool,
-// metasystem/optional-skills/*/scripts/**.
+// declared extension point: a skill helper tool or the repository's committed
+// full-proof launcher. Proof decisions and reporting stay in Go.
 func scriptRuleAllowed(rel string) bool {
+	if rel == "metasystem/proof/full.sh" {
+		return true
+	}
 	parts := strings.Split(rel, "/")
 	return len(parts) >= 5 && parts[0] == "metasystem" && parts[1] == "optional-skills" &&
 		parts[2] != "" && parts[3] == "scripts"
@@ -103,6 +106,8 @@ func scriptRuleExecutableOrConfig(rel string) bool {
 // positive and negative cases.
 func TestScriptRuleClassifiers(t *testing.T) {
 	t.Parallel()
+	// The repository's full proof uses one plumbing launcher; other scripts
+	// in its directory remain forbidden.
 	for _, row := range []struct {
 		rel             string
 		script, allowed bool
@@ -116,6 +121,8 @@ func TestScriptRuleClassifiers(t *testing.T) {
 		{"metasystem/plans/first-headless-run/gate.sh", true, false},
 		{"metasystem/scripts/agents/role-packets.json", false, false},
 		{"metasystem/docs/tool.sh.md", false, false},
+		{"metasystem/proof/full.sh", true, true},
+		{"metasystem/proof/other.sh", true, false},
 	} {
 		if got := scriptRuleIsScript(row.rel); got != row.script {
 			t.Errorf("scriptRuleIsScript(%q) = %v, want %v", row.rel, got, row.script)

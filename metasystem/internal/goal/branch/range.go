@@ -28,12 +28,14 @@ const (
 )
 
 type KindInfo struct {
+	Whole    bool
 	Kind     Kind
 	Units    []string
 	Unit     string
 	CommitID string
 }
 type Commit struct {
+	Whole  bool
 	ID     string
 	Kind   Kind
 	Units  []string
@@ -136,8 +138,12 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		return KindInfo{}, err
 	}
 	var trailers [][2]string
+	whole := false
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		key, value, ok := strings.Cut(line, ":")
+		if ok && key == "Goal-Whole" && strings.TrimSpace(value) == goalID {
+			whole = true
+		}
 		if ok && (key == "Goal-Unit" || key == "Goal-Plan" || key == "Goal-Read") {
 			trailers = append(trailers, [2]string{key, strings.TrimSpace(value)})
 		}
@@ -171,7 +177,7 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		return KindInfo{}, rangeRefusal(goalID, commit, fmt.Sprintf("it belongs to goal %q, not to %q (%s)", goal, goalID, key))
 	}
 	if key == "Goal-Unit" {
-		return KindInfo{Kind: Unit, Units: units, Unit: unitList(units)}, nil
+		return KindInfo{Kind: Unit, Units: units, Unit: unitList(units), Whole: whole}, nil
 	}
 	if !hex40(fields[1]) {
 		return KindInfo{}, rangeRefusal(goalID, commit, "its review line names the reviewed commit by a short id")
@@ -337,7 +343,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 				return nil, rangeRefusal(goalID, id, "the review names no earlier build of the same work")
 			}
 		}
-		item := Commit{ID: id, Kind: kind.Kind, Units: append([]string(nil), kind.Units...), Unit: kind.Unit}
+		item := Commit{ID: id, Kind: kind.Kind, Units: append([]string(nil), kind.Units...), Unit: kind.Unit, Whole: kind.Whole}
 		if kind.Kind == Unit {
 			item.Digest, err = unitDigestWithGit(repo, id, gitRead)
 			if err != nil {

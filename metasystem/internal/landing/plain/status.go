@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -30,8 +31,10 @@ type Status struct {
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
 	LastProof *Result `json:"last_proof"`
+	LastGate  *Result `json:"last_gate,omitempty"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
+	Stop     *Stop   `json:"stop,omitempty"`
 	// Problems are the lane's records this read could not read, one plain
 	// sentence each: a queue, proof or push that could not be read, or a
 	// line of one that does not decode, is said here rather than read as
@@ -42,6 +45,7 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
+	Gate   bool   `json:"gate,omitempty"`
 	Tree   string `json:"tree"`
 	Commit string `json:"commit,omitempty"`
 	Since  string `json:"since"`
@@ -166,6 +170,21 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.Problems = append(status.Problems, fmt.Sprintf("%s %d %s that can't be read (%s)", what, skipped, lines, path))
 		}
 	}
+	status.Stop, err = NewestStop(install)
+	unread("the stop record", err)
+	if status.Stop != nil && strings.HasPrefix(status.Stop.Handoff, "hold ") {
+		main, readErr := git.main()
+		if readErr == nil {
+			var incidents []goal.TrunkRedEntry
+			incidents, readErr = seams.incidents(install, string(layout.Checkout), main)
+			if readErr == nil && !slices.ContainsFunc(incidents, func(entry goal.TrunkRedEntry) bool {
+				return entry.Identity == strings.TrimPrefix(status.Stop.Handoff, "hold ") && entry.Closed == nil
+			}) {
+				status.Stop = nil
+			}
+		}
+		unread("the stop's main incident", readErr)
+	}
 	lines, skipped, err := countedLines[Line](queuePath(install))
 	unread("the queue", err)
 	damaged("the queue has", skipped, queuePath(install))
@@ -178,6 +197,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			contains := func(sha string) (bool, error) { return git.contains(main, sha) }
 			var again error
 			status.Queue, err = Landed(status.Queue, contains)
+			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
+			unread("main's incidents", readErr)
+			if readErr == nil {
+				status.Queue = HoldEntries(status.Queue, incidents)
+			}
 			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
 			err = errors.Join(err, again)
 		}
@@ -199,6 +223,12 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	if err == nil && len(results) > 0 {
 		status.LastProof = &results[len(results)-1]
 	}
+	gates, skipped, err := countedLines[Result](gatesPath(install))
+	unread("the gate results", err)
+	damaged("the gate results have", skipped, gatesPath(install))
+	if err == nil && len(gates) > 0 {
+		status.LastGate = &gates[len(gates)-1]
+	}
 	pushes, skipped, err := countedLines[Pushed](pushesPath(install))
 	unread("the push record", err)
 	damaged("the push record has", skipped, pushesPath(install))
@@ -215,7 +245,16 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 // in queue order; an entry whose containment can't be read is named in the
 // error and left out.
 func proving(queue []Entry, commit string, contains func(main, sha string) (bool, error)) ([]string, error) {
+	checked, err := proofGoals(queue, commit, contains)
 	var goals []string
+	for _, one := range checked {
+		goals = append(goals, one.Goal)
+	}
+	return goals, err
+}
+
+func proofGoals(queue []Entry, commit string, contains func(main, sha string) (bool, error)) ([]GoalSHA, error) {
+	var goals []GoalSHA
 	var problems []error
 	for _, entry := range queue {
 		if entry.State != StateWaiting {
@@ -226,7 +265,7 @@ func proving(queue []Entry, commit string, contains func(main, sha string) (bool
 		case err != nil:
 			problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
 		case inside:
-			goals = append(goals, entry.Goal)
+			goals = append(goals, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
 		}
 	}
 	return goals, errors.Join(problems...)
@@ -331,5 +370,5 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	return &RunningProof{Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

@@ -111,6 +111,7 @@ func witnessLandingResolveRepeat(t *testing.T) {
 	}
 }
 
+// A source conflict returns its own cause together with the conflict details.
 func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
@@ -135,7 +136,7 @@ func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T
 	if result.Outcome != intentConfirmed || len(result.Details) != 0 {
 		t.Fatalf("source return outcome=%s details=%v", result.Outcome, result.Details)
 	}
-	if result.Data.Conflict == nil || result.Data.Conflict.Main != "main-sha" || len(result.Data.Conflict.Paths) != 1 || result.Data.Conflict.Paths[0].Resolution != "keep both, main's lines then the goal's" || result.Data.Entry == nil || result.Data.Entry.State != plain.StateReturned || !reflect.DeepEqual(writes, [][]string{{"merge", "--abort"}}) {
+	if result.Data.Conflict == nil || result.Data.Conflict.Main != "main-sha" || len(result.Data.Conflict.Paths) != 1 || result.Data.Conflict.Paths[0].Resolution != "keep both, main's lines then the goal's" || result.Data.Entry == nil || result.Data.Entry.State != plain.StateReturned || result.Data.Entry.Cause == nil || result.Data.Entry.Cause.Kind != "own" || result.Data.Entry.Cause.Goal != "goal" || result.Data.Entry.Cause.SHA != "goal-sha" || !reflect.DeepEqual(writes, [][]string{{"merge", "--abort"}}) {
 		t.Fatalf("returned conflict=%+v writes=%v", result.Data, writes)
 	}
 }
@@ -151,7 +152,7 @@ func (b *resolveVerbFixture) sourceConflictGit(t *testing.T, abort func()) {
 			return b.contract, nil
 		case "diff --name-only --diff-filter=U -z":
 			return "metasystem/src/list.go\x00", nil
-		case "rev-parse --verify HEAD^{commit}":
+		case "rev-parse --verify refs/remotes/origin/main^{commit}", "rev-parse --verify HEAD^{commit}":
 			return "main-sha", nil
 		case "rev-parse --verify MERGE_HEAD^{commit}":
 			return "goal-sha", nil
@@ -200,13 +201,15 @@ func TestLandingResolveVerbFailsWhenReturnCannotBeAppended(t *testing.T) {
 	}
 }
 
-func TestLandingResolveVerbReportsFailedRegenerationAsReturnedWithoutRetry(t *testing.T) {
+// A changed regeneration rule requires a green run before the merge for an own return.
+func TestLandingResolveVerbReturnsFailedRegenerationOnlyAfterBaselinePasses(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
 	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	aborted := false
+	runs := 0
 	b.owners.landing.plainResolve = plain.ResolveSeams{
 		Git: func(_ string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
@@ -231,6 +234,13 @@ func TestLandingResolveVerbReportsFailedRegenerationAsReturnedWithoutRetry(t *te
 			}
 		},
 		Run: func(_ []string, _ string, log *os.File, _ func(int64) error) error {
+			runs++
+			if runs > 1 {
+				if !aborted {
+					t.Fatal("baseline regeneration ran before abort")
+				}
+				return nil
+			}
 			if _, err := log.WriteString("fixture regeneration failed\n"); err != nil {
 				t.Fatal(err)
 			}
@@ -239,8 +249,8 @@ func TestLandingResolveVerbReportsFailedRegenerationAsReturnedWithoutRetry(t *te
 	}
 	code, text := b.run(t, b.root, "resolve")
 	entry, ok, err := plain.Latest(b.install, "goal")
-	if err != nil || !ok || entry.State != plain.StateReturned || !aborted {
-		t.Fatalf("queue=%+v ok=%v err=%v aborted=%v", entry, ok, err, aborted)
+	if err != nil || !ok || entry.State != plain.StateReturned || !aborted || runs != 2 || entry.Cause.Kind != "own" || entry.Cause.Evidence == "" || entry.Conflict == nil {
+		t.Fatalf("queue=%+v ok=%v err=%v aborted=%v runs=%d", entry, ok, err, aborted, runs)
 	}
 	if code != 1 || !strings.Contains(oneSpaced(text), "returned goal: regeneration exited 1; log:") ||
 		!strings.Contains(oneSpaced(text), oneSpaced(entry.Reason)) || strings.Contains(text, "tries again") || strings.Contains(text, "could not be resolved") {

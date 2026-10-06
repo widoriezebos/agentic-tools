@@ -80,6 +80,19 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	for key := range values {
 		named[key] = true
 	}
+	if named["landing.prove.command"] {
+		add("%v", SettingKeyProblem("landing.prove.command"))
+	}
+	for _, setting := range compiledSettings {
+		if !setting.CommittedOnly {
+			continue
+		}
+		if _, present := values[setting.Key]; !present {
+			add("%s is required in metasystem.conf", setting.Key)
+		} else if err := SettingValueProblem(setting.Key, values[setting.Key]); err != nil {
+			add("%v", err)
+		}
+	}
 	// The committed layer is the file over the compiled defaults
 	// (defaults.go): a key the file does not name validates as its
 	// applicable default, exactly as the full shipped file did.
@@ -624,6 +637,11 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	// The batch lane's pipeline durations and stage list (D14, R22).
+	if raw, present := values["proof.trunk-every"]; present {
+		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
+			add("proof.trunk-every must be a positive duration, got %s", pyRepr(raw))
+		}
+	}
 	if raw, present := values[PipelineProofCostKey]; present {
 		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
 			add("%s must be a positive duration, got %s", PipelineProofCostKey, pyRepr(raw))

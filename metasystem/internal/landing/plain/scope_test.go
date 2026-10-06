@@ -54,7 +54,7 @@ func newScopeBed(t *testing.T) *scopeBed {
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"metasystem/**"}, Standard: []string{"plans"}}}, Unknown: []string{"plans"}}
 	for i, id := range []string{"plans", "unrelated", "shared"} {
-		input := []string{"metasystem/plans/**", "assets/**", "metasystem/**"}[i]
+		input := []string{"metasystem/plans/**", "metasystem/records/**", "metasystem/plans/**"}[i]
 		b.contract.Groups = append(b.contract.Groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".",
 			Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{input}, Platforms: []string{"any"}, TargetMS: 1,
 			Argv: []string{"app-tests"}, Format: "exit-status"})
@@ -132,6 +132,7 @@ func commandEnv(command *exec.Cmd, name string) string {
 	return "missing"
 }
 
+// Record-only tip moves preserve scoped proof; executable changes require full proof.
 func TestATipMoveRunsOnlyTheGroupsItsPathsReach(t *testing.T) {
 	t.Parallel()
 	b := newScopeBed(t)
@@ -164,7 +165,7 @@ func TestATipMoveRunsOnlyTheGroupsItsPathsReach(t *testing.T) {
 	b.git.batches[result.Commit] = "batch-a\nbatch-b"
 	b.git.tree, b.git.commit = "next-tree", "next-commit"
 	b.git.batches[b.git.commit] = "batch-b\nbatch-a"
-	b.git.changed[[2]string{result.Tree, b.git.tree}] = "assets/image.png"
+	b.git.changed[[2]string{result.Tree, b.git.tree}] = "metasystem/records/test-image.json"
 	b.setContract(t)
 	b.seams.NewID = func() string { return "next-attempt" }
 	b.seams.Command = func(command *exec.Cmd) error {
@@ -227,7 +228,7 @@ func TestARecordsOnlyBatchIsProvedScopedOnMainsGreen(t *testing.T) {
 			paths := "metasystem/plans/page.md\nmetasystem/plans/goals/fix.md"
 			b.git.changed[[2]string{"origin/main", b.git.tree}] = paths
 			if name == "main moved" {
-				paths += "\nmetasystem/plans/README.md"
+				paths += "\nmetasystem/plans/another-page.md"
 			}
 			b.git.changed[[2]string{b.base.Tree, b.git.tree}] = paths
 			// A newer full green that has not reached main cannot be the base.
@@ -414,7 +415,7 @@ func TestSelectionFailureIsAFullProof(t *testing.T) {
 				want = "testing contract is invalid"
 			case "contract changed":
 				b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/testing.json"
-				want = "testing contract changed"
+				want = "an executable input changed: metasystem/testing.json"
 			case "adapter error":
 				b.seams.Closure = func(string, string, string) (adapter.Closure, error) {
 					return adapter.Closure{}, errors.New("no adapter")
@@ -429,7 +430,10 @@ func TestSelectionFailureIsAFullProof(t *testing.T) {
 				}
 				want = "affect code units"
 			case "uncovered path":
-				b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/plans/page.md\nREADME.md"
+				b.contract.Groups[1].Inputs = []string{"nothing/**"}
+				b.contract.Groups[2].Inputs = []string{"metasystem/plans/**"}
+				b.setContract(t)
+				b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/plans/page.md\nmetasystem/records/uncovered.json"
 				want = "no declared test inputs"
 			case "template path":
 				b.contract.Groups = append(b.contract.Groups, testpolicy.Group{ID: "template", Adapter: "go", PackageSelection: "changed-and-consumers", Kind: "unit", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{"metasystem/plans/**"}, Platforms: []string{"any"}, TargetMS: 1, Tests: json.RawMessage(`"all"`)})
@@ -623,8 +627,8 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 			if err != nil || paid.Result != Green || paid.Scope != "full" || paid.FullTree != paid.Tree || paid.FullAt != now.Format(time.RFC3339) || len(b.calls) != 2 || commandEnv(b.calls[1], "LANDING_PROOF_SCOPE") != "full" {
 				t.Fatalf("owed full proof: %+v %v, calls %d", paid, err, len(b.calls))
 			}
-			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || len(reasons) != 0 {
-				t.Fatalf("paid debt still wakes the lane: %v %v", reasons, err)
+			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || !reflect.DeepEqual(reasons, []string{WakeFullDue}) {
+				t.Fatalf("batch proof paid the hourly debt but must still wake main's independent clock: %v %v", reasons, err)
 			}
 		})
 	}
@@ -633,20 +637,25 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	t.Parallel()
 	b := newScopeBed(t)
-	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "assets/image.png"
+	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/records/test-image.json"
+	// The repeat rule requires isolated greens before a whole retry.
 	b.seams.Command = func(command *exec.Cmd) error {
 		b.calls = append(b.calls, command)
+		if commandEnv(command, "LANDING_ONLY") != "" {
+			fmt.Fprint(command.Stdout, "LANDING-CHECKED\t0\n")
+			return nil
+		}
 		fmt.Fprint(command.Stdout, "landing environment image toolchain\nlanding group unrelated failed 7\nLANDING-FAILED\tu/a\tTestA\nLANDING-LOAD\t2.75\nLANDING-CHECKED\t1\n")
 		return errors.New("check failed")
 	}
 	b.seams.Judge = func(string, string, []FailedUnit) (map[string]UnitJudgement, error) {
-		return map[string]UnitJudgement{"u/a": {Surfaces: []string{"assets"}}}, nil
+		return map[string]UnitJudgement{"u/a": {Surfaces: []string{"records"}}}, nil
 	}
 	red := b.run(t)
 	if red.Result != Red || red.Scope != "scoped" || red.Base != b.base.Tree || red.FullAt != b.base.FullAt || !reflect.DeepEqual(red.Ran, []string{"unrelated"}) || len(red.Failed) != 1 || red.Failed[0].Unit != "u/a" || red.Load != 2.75 || red.Repeat != "allowed" || commandEnv(b.calls[0], "LANDING_PROOF_GROUPS") != "unrelated" {
 		t.Fatalf("scoped failure: %+v", red)
 	}
-	if record := b.record(t); record.Groups[1].State != "ran" || !reflect.DeepEqual(record.Groups[1].Why, []string{"assets/image.png"}) {
+	if record := b.record(t); record.Groups[1].State != "ran" || !reflect.DeepEqual(record.Groups[1].Why, []string{"metasystem/records/test-image.json"}) {
 		t.Fatalf("failed group's scope record: %+v", record)
 	}
 	b.seams.NewID = func() string { return "whole-repeat" }
@@ -661,7 +670,7 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 		return FlakeRecorded{Goal: "fix-flaky-a", Seen: 1}, nil
 	}
 	green := b.run(t)
-	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 2 {
+	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 3 {
 		t.Fatalf("scoped whole repeat: %+v, records %+v", green, records)
 	}
 }

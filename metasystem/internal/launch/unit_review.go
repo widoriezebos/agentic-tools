@@ -48,6 +48,7 @@ type UnitSubject struct {
 
 // UnitReview is a completed round as a committed review consumes it.
 type UnitReview struct {
+	Whole  bool
 	Record UnitRunRecord
 	Round  UnitRound
 	// Head is the completed round's observed HEAD; Result is its retained
@@ -132,6 +133,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
 	}
 	review.BuildBrief, review.Base = plan.Build.Brief, plan.Base
+	review.Whole = plan.Whole
 	review.BuildBriefSHA256 = round.BuildBriefSHA256
 	if round.FollowUp != "" {
 		// A corrected attempt was built from its correction brief alone, so

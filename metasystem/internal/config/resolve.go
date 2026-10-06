@@ -328,6 +328,19 @@ func getLayered(p GetParams) (value string, code int, err error) {
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", 2, fmt.Errorf("invalid mode: %s", p.Mode)
 	}
+	if CommittedOnly(p.Key) {
+		value, found, err := CommittedLookup(p.ConfPath, p.Key)
+		if err != nil {
+			return "", 1, err
+		}
+		if !found {
+			return "", 1, fmt.Errorf("%w for %s in metasystem.conf", ErrNoValue, p.Key)
+		}
+		if err := SettingValueProblem(p.Key, value); err != nil {
+			return "", 1, err
+		}
+		return value, 0, nil
+	}
 	// The evidence root has one owner and a compiled-in default; a general
 	// reader answers what the owner resolves, never "no value".
 	if p.Key == EvidenceRootKey && !p.FlagSet {
@@ -431,11 +444,15 @@ func ConfLookup(path, key string) (value string, found bool, err error) {
 	if readErr != nil {
 		return "", false, fmt.Errorf("cannot read metasystem configuration: %s: %w", path, readErr)
 	}
+	return confContentLookup(string(content), key)
+}
+
+func confContentLookup(content, key string) (value string, found bool, err error) {
 	// Strict HERE, deliberately: resolution verbs refuse an ambiguous
 	// conf instead of silently picking a winner (ConfValue's hot-path
 	// readers keep last-wins).
 	var matches []string
-	parseSettings(string(content), func(_ int, name, val string, ok bool) {
+	parseSettings(content, func(_ int, name, val string, ok bool) {
 		if ok && name == key {
 			matches = append(matches, val)
 		}
@@ -454,15 +471,21 @@ func ConfLookup(path, key string) (value string, found bool, err error) {
 // selection (defaults.go). It is strict on duplicates and on an unreadable
 // file, as ConfLookup is.
 func CommittedLookup(confPath, key string) (value string, found bool, err error) {
-	value, found, err = ConfLookup(confPath, key)
-	if err != nil || found {
-		return value, found, err
-	}
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
 		return "", false, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
 	}
-	if compiled, ok := applicableDefault(key, fileRuntimes(string(content))); ok {
+	return CommittedContentLookup(string(content), key)
+}
+
+// CommittedContentLookup reads a committed configuration's content with the
+// same duplicate detection and applicable defaults as CommittedLookup.
+func CommittedContentLookup(content, key string) (value string, found bool, err error) {
+	value, found, err = confContentLookup(content, key)
+	if err != nil || found {
+		return value, found, err
+	}
+	if compiled, ok := applicableDefault(key, fileRuntimes(content)); ok {
 		return compiled, true, nil
 	}
 	return "", false, nil
@@ -566,6 +589,19 @@ func KeyOrigin(p GetParams) (string, error) {
 	}
 	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
 		return "", fmt.Errorf("invalid mode: %s", p.Mode)
+	}
+	if CommittedOnly(p.Key) {
+		source := "conf"
+		if _, set := lookupEnv(EnvName(p.Key)); set {
+			source += "; environment value ignored"
+		}
+		if isFile(p.ConfPath + ".local") {
+			_, found, err := ConfLookup(p.ConfPath+".local", p.Key)
+			if found || err != nil {
+				source += "; local value ignored"
+			}
+		}
+		return source, nil
 	}
 	if p.Key == EvidenceRootKey {
 		root, err := ResolveEvidenceRoot(EvidenceRootParams{ConfPath: p.ConfPath, LookupEnv: lookupEnv})

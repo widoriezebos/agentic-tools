@@ -2,6 +2,7 @@ package lane
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -351,5 +352,63 @@ func TestKeeperHoldsAfterBarrenRuns(t *testing.T) {
 	explicit.Explicit = true
 	if step(explicit); len(agent.starts) != 5 {
 		t.Fatalf("a start asked for by name: %d starts; want it started", len(agent.starts))
+	}
+}
+
+func TestKeeperStopCallbacksReleaseHomeLock(t *testing.T) {
+	t.Parallel()
+	home, _, module := nestedLaneDirs(t)
+	clock := laneNow
+	reasons := []string{queuedReason}
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, wakeFor(&reasons))
+	keeper.Fingerprint = func(string) (string, error) { return "unchanged", nil }
+	observed, held, cleared := 0, 0, 0
+	checkLock := func() error {
+		file, err := lock.File(LockPath(home), 0o600, lock.TryExclusive)
+		if err != nil {
+			return fmt.Errorf("home lock held during stop callback: %w", err)
+		}
+		return file.Release()
+	}
+	keeper.Observe = func(Record) error { observed++; return checkLock() }
+	keeper.BarrenStop = func(_ Record, state AgentState) error {
+		if state.Barren == 0 {
+			cleared++
+		} else {
+			held++
+		}
+		return checkLock()
+	}
+	for range 2 {
+		if run := keeper.Run(); run.Outcome != AgentStarted {
+			t.Fatalf("start: %+v", run)
+		}
+		agent.running = ""
+		clock = clock.Add(time.Minute)
+	}
+	if run := keeper.Run(); run.Outcome != AgentHeld || held != 1 {
+		t.Fatalf("hold: %+v callbacks=%d", run, held)
+	}
+	keeper.Explicit = true
+	if run := keeper.Run(); run.Outcome != AgentStarted || cleared != 1 || observed != 4 {
+		t.Fatalf("clear: %+v callbacks=%d observations=%d", run, cleared, observed)
+	}
+}
+
+func TestKeeperExplicitStartSurvivesStopQuestionReadError(t *testing.T) {
+	t.Parallel()
+	home, _, module := nestedLaneDirs(t)
+	clock := laneNow
+	reasons := []string{queuedReason}
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, wakeFor(&reasons))
+	keeper.Observe = func(Record) error { return errors.New("the lane's stop question cannot be read") }
+	if run := keeper.Run(); run.Outcome != AgentHeld || len(agent.starts) != 0 {
+		t.Fatalf("automatic start ignored the unreadable stop question: %+v", run)
+	}
+	keeper.Explicit = true
+	if run := keeper.Run(); run.Outcome != AgentStarted || len(agent.starts) != 1 {
+		t.Fatalf("the person's start was held by the unreadable stop question: %+v", run)
 	}
 }

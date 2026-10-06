@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -50,7 +51,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-prove-unset", args: []string{"landing", "prove"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-push-stopped", args: []string{"landing", "push"}, bed: landingLayoutBed(landingLayoutPaused)},
-		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-return-refusal", args: []string{"landing", "return", "goal-z", "--cause", "own", "--reason", "red twice"}, bed: landingLayoutBed(landingLayoutRunning)},
 	}
 }
 
@@ -133,6 +134,16 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		const pid = 38928
 		notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
+			plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+				switch strings.Join(args, " ") {
+				case "rev-parse --verify HEAD^{commit}":
+					return "head", nil
+				case "show head:metasystem/metasystem.conf":
+					return "metasystem.template=true\n", nil
+				}
+				t.Fatalf("layout queried Git %v", args)
+				return "", nil
+			}},
 			home: func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {

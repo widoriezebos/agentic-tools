@@ -17,6 +17,9 @@ import (
 // overrides-only file resolves exactly as the full shipped file did.
 type Setting struct {
 	Key string
+	// CommittedOnly declares a required repository value with no default.
+	// Flags, environment variables and local settings cannot replace it.
+	CommittedOnly bool
 	// Default is the compiled value; empty when Computed names the owner
 	// that derives it.
 	Default string
@@ -60,6 +63,14 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "proof.trunk-every", Default: "4h",
+		Meaning: "how often the landing lane freshly checks main in full"},
+	{Key: "host.proof-vm", Default: "", ProofInput: false,
+		Meaning: "the virtual machine this computer uses for the repository's full proof; empty runs on the host"},
+	{Key: "proof.full", CommittedOnly: true, ProofInput: true,
+		Meaning: "the repository's full proof command, declared in metasystem.conf"},
+	{Key: "proof.cheap", CommittedOnly: true, ProofInput: true,
+		Meaning: "the repository's merge gate command, declared in metasystem.conf"},
 	// Installation shape.
 	{Key: "metasystem.engine-delivery", Default: "source", ProofInput: true,
 		Meaning: "how the engine ships (D17/D33): source, rebuilt by the target and by CI; declared, never inferred"},
@@ -454,6 +465,9 @@ func compiledSetting(key string) (Setting, bool) {
 // SettingKeyProblem refuses undeclared keys and names three declared keys,
 // ranked by longest common prefix, then alphabetically for stable ties.
 func SettingKeyProblem(key string) error {
+	if key == "landing.prove.command" {
+		return fmt.Errorf("the full check setting %s replaces %s; set it in metasystem.conf", "proof.full", key)
+	}
 	keys := append([]string(nil), readSettingKeys...)
 	for _, setting := range compiledSettings {
 		keys = append(keys, setting.Key)
@@ -500,7 +514,7 @@ func SettingKeyProblem(key string) error {
 // runtime binding. It is for readers that hold no configuration context.
 func CompiledDefault(key string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" {
+	if !ok || setting.Computed != "" || setting.CommittedOnly {
 		return "", false
 	}
 	return setting.Default, true
@@ -585,13 +599,19 @@ func runtimeSelected(runtimes, runtime string) bool {
 // given runtime selection. runtimes is resolved only for a runtime-bound key.
 func applicableDefault(key string, runtimes func() string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" {
+	if !ok || setting.Computed != "" || setting.CommittedOnly {
 		return "", false
 	}
 	if setting.Runtime != "" && !runtimeSelected(runtimes(), setting.Runtime) {
 		return "", false
 	}
 	return setting.Default, true
+}
+
+// CommittedOnly reports whether the setting is a repository declaration.
+func CommittedOnly(key string) bool {
+	setting, ok := compiledSetting(key)
+	return ok && setting.CommittedOnly
 }
 
 // effectiveRuntimes resolves metasystem.runtimes through Get's own layers.

@@ -49,16 +49,22 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
-	Again    bool             `json:"-"`
-	Goal     string           `json:"goal"`
-	Branch   string           `json:"branch,omitempty"`
-	SHA      string           `json:"sha"`
-	Seat     string           `json:"seat,omitempty"`
-	Records  bool             `json:"records,omitempty"`
-	At       string           `json:"at"`
-	Outcome  string           `json:"outcome,omitempty"`
-	Reason   string           `json:"reason,omitempty"`
-	Conflict *conflict.Return `json:"conflict,omitempty"`
+	Exception *Exception       `json:"exception,omitempty"`
+	Fix       string           `json:"fix,omitempty"`
+	WholeBy   string           `json:"wholeBy,omitempty"`
+	Again     bool             `json:"-"`
+	Goal      string           `json:"goal"`
+	Branch    string           `json:"branch,omitempty"`
+	SHA       string           `json:"sha"`
+	Seat      string           `json:"seat,omitempty"`
+	Records   bool             `json:"records,omitempty"`
+	At        string           `json:"at"`
+	Outcome   string           `json:"outcome,omitempty"`
+	Reason    string           `json:"reason,omitempty"`
+	Cause     *Cause           `json:"cause,omitempty"`
+	After     []GoalSHA        `json:"after,omitempty"`
+	Held      bool             `json:"held,omitempty"`
+	Conflict  *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
 	// the work reaches main.
@@ -77,15 +83,20 @@ type UnitRounds struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
-	Goal     string           `json:"goal"`
-	Branch   string           `json:"branch"`
-	SHA      string           `json:"sha"`
-	Seat     string           `json:"seat"`
-	Records  bool             `json:"records,omitempty"`
-	At       string           `json:"at"`
-	State    string           `json:"state"`
-	Reason   string           `json:"reason,omitempty"`
-	Conflict *conflict.Return `json:"conflict,omitempty"`
+	Exception *Exception       `json:"exception,omitempty"`
+	Fix       string           `json:"fix,omitempty"`
+	Goal      string           `json:"goal"`
+	Branch    string           `json:"branch"`
+	SHA       string           `json:"sha"`
+	Seat      string           `json:"seat"`
+	Records   bool             `json:"records,omitempty"`
+	At        string           `json:"at"`
+	State     string           `json:"state"`
+	Reason    string           `json:"reason,omitempty"`
+	Cause     *Cause           `json:"cause,omitempty"`
+	After     []GoalSHA        `json:"after,omitempty"`
+	Held      bool             `json:"held,omitempty"`
+	Conflict  *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
 	Delivered string       `json:"delivered,omitempty"`
 	Units     []UnitRounds `json:"units,omitempty"`
@@ -178,8 +189,14 @@ func entriesOf(lines []Line) []Entry {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
 			if at, seen := index[key]; seen && entries[at].State != StateReturned {
-				// A repeat hand-in that says what it delivers adds its
-				// sentence to the line.
+				// A repeat adds its delivery sentence or explicit
+				// exception to the waiting line.
+				if line.Exception != nil {
+					entries[at].Exception = line.Exception
+				}
+				if line.Fix != "" {
+					entries[at].Fix = line.Fix
+				}
 				if line.Delivered != "" {
 					entries[at].Delivered = line.Delivered
 				}
@@ -193,7 +210,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+				entries = append(entries, Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -201,8 +218,12 @@ func entriesOf(lines []Line) []Entry {
 		if !seen || entries[at].State != StateWaiting {
 			continue
 		}
-		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
-		entries[at].Conflict = line.Conflict
+		entries[at].State, entries[at].Reason = line.Outcome, line.Reason
+		if line.Outcome == StateReturned {
+			entries[at].ReturnedAt = line.At
+		}
+		entries[at].After, entries[at].Held = line.After, line.Held
+		entries[at].Conflict, entries[at].Cause = line.Conflict, line.Cause
 	}
 	return entries
 }
@@ -235,14 +256,14 @@ func Latest(install, goal string) (Entry, bool, error) {
 
 // HandIn appends a seat's hand-in. A hand-in of the same goal at the same
 // sha is a repeat: the existing entry is returned with added false, and
-// nothing is appended unless the repeat brings a new sentence of what a
-// waiting line delivers, which is kept with it. Again re-queues a returned
-// line; on a waiting line it holds without writing.
+// nothing is appended unless the repeat brings a new delivery sentence,
+// exception or fix incident for a waiting line. Again re-queues a returned
+// line; a waiting repeat writes only new delivery information.
 func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
-	line.Outcome, line.Reason, line.Conflict = "", "", nil
+	line.Outcome, line.Reason, line.Conflict, line.Cause, line.After, line.Held = "", "", nil, nil, nil, false
 	err = withLock(install, func() error {
 		entries, err := Entries(install)
 		if err != nil {
@@ -255,15 +276,23 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 					break
 				}
 				entry = existing
-				if line.Again || line.Delivered == "" || line.Delivered == existing.Delivered || existing.State != StateWaiting {
+				if existing.State != StateWaiting || (line.Delivered == "" || line.Delivered == existing.Delivered) && (line.Exception == nil || existing.Exception != nil) && (line.Fix == "" || line.Fix == existing.Fix) {
 					return nil
 				}
-				// The repeat brings the sentence of what it delivers: it is
-				// kept with the waiting line, nothing else changes.
+				// Delivery information belongs to the waiting line; it
+				// does not create another hand-in.
 				if err := appendLine(queuePath(install), line); err != nil {
 					return err
 				}
-				entry.Delivered = line.Delivered
+				if line.Delivered != "" {
+					entry.Delivered = line.Delivered
+				}
+				if line.Exception != nil {
+					entry.Exception = line.Exception
+				}
+				if line.Fix != "" {
+					entry.Fix = line.Fix
+				}
 				return nil
 			}
 		}
@@ -283,7 +312,10 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}
-		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+		if err := closeStopsLocked(install, "", "hand-in "+line.Goal, time.Now()); err != nil {
+			return err
+		}
+		entry, added = Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err
@@ -314,13 +346,13 @@ var ErrNotWaiting = errors.New("no hand-in of this goal waits in the lane")
 // false); a goal with nothing waiting is ErrNotWaiting.
 func Return(install, goal, reason string, now time.Time) (entry Entry, changed bool, err error) {
 	err = withLock(install, func() error {
-		entry, changed, err = returnLocked(install, goal, reason, nil, now)
+		entry, changed, err = returnLocked(install, goal, reason, &Cause{Kind: "unclassified"}, nil, now)
 		return err
 	})
 	return entry, changed, err
 }
 
-func returnLocked(install, goal, reason string, detail *conflict.Return, now time.Time) (Entry, bool, error) {
+func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.Return, now time.Time) (Entry, bool, error) {
 	latest, ok, err := Latest(install, goal)
 	switch {
 	case err != nil:
@@ -333,11 +365,11 @@ func returnLocked(install, goal, reason string, detail *conflict.Return, now tim
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
 	at := now.UTC().Format(time.RFC3339)
-	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Conflict: detail}); err != nil {
+	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
 		return latest, false, err
 	}
-	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict = StateReturned, reason, at, detail
-	return latest, true, nil
+	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
+	return latest, true, closeStopsLocked(install, "", "return "+goal, now)
 }
 
 // Landed derives each waiting entry's landing: one whose sha main
@@ -357,6 +389,19 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 		}
 		out = append(out, entry)
 	}
+	for at := range out {
+		if len(out[at].After) == 0 || out[at].State != StateWaiting {
+			continue
+		}
+		out[at].Held = false
+		for _, before := range out[at].After {
+			for _, candidate := range out {
+				if candidate.Goal == before.Goal && candidate.SHA == before.SHA && candidate.State == StateWaiting {
+					out[at].Held = true
+				}
+			}
+		}
+	}
 	return out, errors.Join(problems...)
 }
 
@@ -364,18 +409,49 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 // nor contained in origin's main as the lane checkout last fetched it. It
 // is the signal a keeper wakes the landing agent on.
 func Pending(install, checkout string) ([]Entry, error) {
+	return pending(install, checkout, ProveSeams{})
+}
+
+func pending(install, checkout string, seams ProveSeams) ([]Entry, error) {
+	return pendingQueue(install, checkout, seams, false)
+}
+
+func pendingQueue(install, checkout string, seams ProveSeams, refresh bool) ([]Entry, error) {
 	waiting, err := Waiting(install)
 	if err != nil || len(waiting) == 0 {
 		return []Entry{}, err
 	}
-	main, err := Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+	main, err := seams.git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
 	if err != nil {
-		return waiting, nil
+		main = ""
 	}
-	derived, err := Landed(waiting, ContainedIn(checkout, main))
+	contains := func(sha string) (bool, error) {
+		if main == "" {
+			return false, nil
+		}
+		return checkoutGit(checkout, seams).contains(main, sha)
+	}
+	derived, err := Landed(waiting, contains)
+	if err != nil {
+		return nil, err
+	}
+	if main != "" {
+		incidents, err := seams.incidents(install, checkout, main)
+		if err != nil {
+			return nil, err
+		}
+		held := HoldEntries(derived, incidents)
+		if refresh && incidentOnlyHolds(derived, held) {
+			if err := seams.fetchMain(checkout); err != nil {
+				return nil, err
+			}
+			return pendingQueue(install, checkout, seams, false)
+		}
+		derived = held
+	}
 	pending := []Entry{}
 	for _, entry := range derived {
-		if entry.State == StateWaiting {
+		if entry.State == StateWaiting && !entry.Held {
 			pending = append(pending, entry)
 		}
 	}

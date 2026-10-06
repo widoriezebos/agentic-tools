@@ -210,13 +210,14 @@ func TestLandingFlakeRecordFieldsAndPublication(t *testing.T) {
 	}
 }
 
+// A spent repeat sends the agent to the recorded cause; it cannot authorize a return.
 func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 	t.Parallel()
 	for _, action := range []string{"refusal", "prove", "prove wait", "status", "status json"} {
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
-			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("landing.prove.command=unused\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=unused\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			reason := "src/unit failed once and passed when run again alone; seen 3 times; goal fix-flaky-src-unit fixes it"
@@ -239,6 +240,8 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 					return "head", nil
 				case "rev-parse --verify HEAD^{tree}":
 					return "tree", nil
+				case "show head:metasystem/metasystem.conf":
+					return "proof.full=unused\n", nil
 				case "diff --name-only --no-renames old-tree tree":
 					return "metasystem/plans/goals/trunk-red.json", nil
 				}
@@ -262,7 +265,7 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 			}
 			code, output := b.run(t, b.root, words...)
 			if action == "refusal" {
-				if code != 1 || !strings.Contains(output, "landing return GOAL --reason TEXT") || strings.Contains(output, "could not run") || !strings.Contains(output, "gets no other") {
+				if code != 1 || !strings.Contains(output, "metasystem landing status") || strings.Contains(output, "could not run") || !strings.Contains(output, "gets no other") {
 					t.Fatalf("refusal = %d %s", code, output)
 				}
 				return
@@ -288,13 +291,15 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 	}
 }
 
+// The agent reads the recorded cause and holds a spent retry instead of guessing a return.
+// Every merge also needs its cheap check before the completed batch gets a full proof.
 func TestLandingFlakeSkillAndProtocol(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		path    string
 		phrases []string
 	}{
-		{"skills/landing-agent/SKILL.md", []string{"last_proof.repeat", "allowed", "last_proof.failed", "recorded flake", "no other check of that tree"}},
+		{"skills/landing-agent/SKILL.md", []string{"last_proof.repeat", "allowed", "last_proof.failed", "recorded flake", "no other check of that tree", "last_proof.cause", "landing return GOAL --cause own", "the waiting goals hold", "After every merge run", "landing prove --gate --wait", "merge's first parent", "last_gate"}},
 		{"docs/flake-registry.md", []string{"one repeat per tree", "fix-flaky-UNIT", "first sighting", "plans/goals/trunk-red.json", "old hand register"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

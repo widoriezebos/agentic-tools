@@ -66,6 +66,8 @@ type laneVerbOwners struct {
 	plainProve       plain.ProveSeams
 	mainEndpoint     func(string) (goal.Endpoint, error)
 	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
+	recordMain       func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
+	clearMain        func(goal.VerbRequest, goal.TrunkRedClearArgs) (goal.PublishResult, error)
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main;
@@ -270,7 +272,7 @@ func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.V
 	if owners.view != nil {
 		return owners.view(home)
 	}
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: plain.KeeperWake(home)}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: owners.wake(home)}
 	sources.Fingerprint = func(root string) (string, error) {
 		fingerprint := owners.keeper(home, root).Fingerprint
 		if fingerprint == nil {
@@ -348,6 +350,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		if data.Root == nil {
 			return
 		}
+		if stop := data.Stop; stop != nil {
+			section := page.Section("", "")
+			section.Text(stop.Words())
+			section.Text("run: " + stop.Command())
+		}
 		if run := data.RunningRegeneration; run != nil {
 			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
 		}
@@ -357,8 +364,17 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 				continue
 			}
 			state := entry.State
-			if entry.State == plain.StateReturned {
+			if entry.Held {
+				state += " (held)"
+			}
+			if entry.State == plain.StateReturned || entry.Reason != "" {
 				state += ": " + entry.Reason
+				if entry.Cause != nil {
+					state += "; cause: " + entry.Cause.Kind
+				}
+			}
+			if proof := data.LastProof; proof != nil && proof.Cause != nil && proof.Cause.Kind == "own" && proof.Cause.Goal != entry.Goal && slices.ContainsFunc(proof.Goals, func(g plain.GoalSHA) bool { return g.Goal == entry.Goal && g.SHA == entry.SHA }) {
+				state += "; cause: other " + proof.Cause.Goal
 			}
 			branch := entry.Branch
 			if entry.Records {
@@ -388,12 +404,19 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
 			}
 		}
-		if data.LastProof == nil && data.LastPush == nil {
+		if data.LastProof == nil && data.LastGate == nil && data.LastPush == nil {
 			return
 		}
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+		}
+		if gate := data.LastGate; gate != nil {
+			words := gate.Result + landingRedReason(gate.Reason) + " for " + provedWords(gate.Commit, gate.Tree)
+			if gate.Cause != nil {
+				words += "; cause: " + gate.Cause.Kind
+			}
+			section.KV("gate", textui.Plain(words))
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))
@@ -772,6 +795,15 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	if refused := inv.laneNotReady(owners, root); refused != nil {
 		return inv.render(*refused)
+	}
+	if inv.claimLineage() != lane.AgentLineage {
+		layout, err := record.Layout()
+		if err == nil {
+			err = plain.CloseProofLoop(string(layout.Install))
+		}
+		if err != nil {
+			return inv.render(landingLaneFailure(targets, "the batch's allowance for full checks could not be reopened", err))
+		}
 	}
 	// A start asked for by name is not held by the agent's barren runs.
 	keeper := owners.keeper(home, root)

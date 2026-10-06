@@ -59,8 +59,8 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		return PushOutcome{}, err
 	}
 	outcome := PushOutcome{Commit: head, Tree: tree}
-	if _, err := Git(checkout, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
-		return outcome, fmt.Errorf("fetch origin's main: %w", err)
+	if err := (ProveSeams{}).fetchMain(checkout); err != nil {
+		return outcome, err
 	}
 	old, err := Git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 	if err != nil {
@@ -97,8 +97,28 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	}
 	outcome.Changed = true
 	return outcome, withLock(install, func() error {
-		return appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)})
+		if err := appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}); err != nil {
+			return err
+		}
+		if err := closeProofLoop(install); err != nil {
+			return err
+		}
+		return closeStopsLocked(install, "", "push", now)
 	})
+}
+
+func (s ProveSeams) fetchMain(checkout string) error {
+	args := []string{"fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"}
+	var err error
+	if s.FetchCommand != nil || s.Git == nil {
+		_, err = boundedFetch(checkout, s.FetchTimeout, s.FetchCommand, args...)
+	} else {
+		_, err = s.git(checkout, args...)
+	}
+	if err != nil {
+		return fmt.Errorf("fetch origin's main: %w", err)
+	}
+	return nil
 }
 
 // provenGreen refuses a tree results.jsonl does not hold green.
@@ -110,7 +130,7 @@ func provenGreen(install, tree string) *Refusal {
 	case !ok:
 		return &Refusal{Code: CodeUnproven, Reason: "HEAD's tree " + Short(tree) + " was never proven, so nothing was pushed", Next: "landing prove"}
 	case result.Result != Green:
-		return &Refusal{Code: CodeRed, Reason: "HEAD's tree " + Short(tree) + " was proven " + result.Result + ", not green, so nothing was pushed", Next: "landing return"}
+		return &Refusal{Code: CodeRed, Reason: "HEAD's tree " + Short(tree) + " was proven " + result.Result + ", not green, so nothing was pushed", Next: "landing status"}
 	}
 	return nil
 }

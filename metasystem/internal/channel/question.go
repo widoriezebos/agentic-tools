@@ -262,7 +262,13 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		return Question{}, false, fmt.Errorf("unknown question kind %q", r.Kind)
 	}
 	digest := factsDigest(questionSubjectKey(r.Goal, r.About), r.Kind, r.Facts)
-	existing, err := listQuestions(r.RepoRoot)
+	var existing []Question
+	var err error
+	if r.About == "lane" && r.Lineage == "landing-agent" {
+		existing, _ = WalkQuestions(r.RepoRoot)
+	} else {
+		existing, err = listQuestions(r.RepoRoot)
+	}
 	if err != nil {
 		return Question{}, false, err
 	}
@@ -382,6 +388,9 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if command := LaneStopCommand(q); command != "" {
+		return "Run " + command + "; a later lane record closes this question."
+	}
 	if codeOff {
 		if q.Wants != "" {
 			return "Reply in this thread with this token verbatim:\n" + q.Wants
@@ -459,7 +468,18 @@ func renderQuestionParts(q Question, facts, consequences []string, recommendatio
 }
 
 func questionHead(q Question) string {
+	if command := LaneStopCommand(q); command != "" {
+		return command + "\n"
+	}
 	return fmt.Sprintf("%s — %s\n", QuestionSubject(q), q.Kind)
+}
+
+// LaneStopCommand recognizes the lane's own stop question in its existing facts.
+func LaneStopCommand(q Question) string {
+	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && strings.HasPrefix(q.Facts[1], "lane stop: ") {
+		return q.Facts[0]
+	}
+	return ""
 }
 
 // QuestionSubject is what a question is about, in words: its goal, or the

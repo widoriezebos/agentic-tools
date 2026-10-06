@@ -25,7 +25,6 @@ var readSettingKeys = []string{
 	"fence.job-cap-min",
 	"independence",
 	"landing.batch-root",
-	"landing.prove.command",
 	"metrics.collisions.max-per-period",
 	"metrics.debt-age.max-days",
 	"metrics.delegates.min-share",

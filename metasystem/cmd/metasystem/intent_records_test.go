@@ -299,10 +299,11 @@ func TestRecordsHandInSkipsRebase(t *testing.T) {
 func TestRecordsQueueKeepsTheThroughSelection(t *testing.T) {
 	t.Parallel()
 	b := newLandRebaseBed(t)
+	b.landing.status.BranchTip = strings.Repeat("3", 40)
 	if _, _, err := plain.HandIn(b.lane, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.landing.status.BranchTip, Records: true}); err != nil {
 		t.Fatal(err)
 	}
-	through := b.landing.status.Status.Units[0].Commit
+	through := b.landing.status.Status.Units[1].Commit
 	code, result := b.land("--through", through)
 	entries, err := plain.Entries(b.lane)
 	if code != 0 || result.Outcome != intentConfirmed || b.calls != 0 || err != nil || len(entries) != 2 || entries[1].SHA != through || entries[1].Records {
@@ -489,14 +490,14 @@ func TestAFailedPublicationIsPartialAndTheRepeatPublishesIt(t *testing.T) {
 func TestAPlanOnlyBranchLands(t *testing.T) {
 	t.Parallel()
 	tip := strings.Repeat("b", 40)
-	subject, count, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: tip, Status: branch.Status{Commits: []branch.Commit{{ID: tip, Kind: branch.Plan}}}})
+	subject, count, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: tip, Status: branch.Status{Commits: []branch.Commit{{ID: tip, Kind: branch.Plan}}}}, false, false)
 	if refusal != nil || subject != tip || count != 0 {
 		t.Fatalf("plan-only tip: %s %d %+v", subject, count, refusal)
 	}
 }
 func TestAnEmptyBranchStillRefuses(t *testing.T) {
 	t.Parallel()
-	_, _, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: strings.Repeat("a", 40)})
+	_, _, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: strings.Repeat("a", 40)}, false, false)
 	if refusal == nil || refusal.Outcome != intentRefused {
 		t.Fatalf("empty range: %+v", refusal)
 	}
@@ -504,7 +505,7 @@ func TestAnEmptyBranchStillRefuses(t *testing.T) {
 func TestRecordsBehindAnUnreadUnitWait(t *testing.T) {
 	t.Parallel()
 	state := intentBranchState{BranchTip: strings.Repeat("b", 40), Status: branch.Status{Commits: []branch.Commit{{Kind: branch.Unit}, {Kind: branch.Plan}}, Units: []branch.UnitStatus{{Commit: strings.Repeat("a", 40)}}}}
-	_, _, refusal := handLandingSubject(nil, "records", "", state)
+	_, _, refusal := handLandingSubject(nil, "records", "", state, true, false)
 	if refusal == nil || !strings.Contains(refusal.Summary, "no clean read") {
 		t.Fatalf("records wait for unread unit: %+v", refusal)
 	}

@@ -180,13 +180,15 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	secondArgs := trunkRedRecordFixture(identity, "batch-2", "attempt-2", "base-2", second.stamp())
 	secondArgs.Groups[0].Status = "not-run"
 	secondArgs.Groups[0].NotRunReason = "runner unavailable"
+	// A standing trunk red is recorded once; a different finder or base
+	// cannot replace its first evidence or append a ledger commit.
 	result, err = RecordTrunkRed(second, secondArgs)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("second sighting: %+v %v", result, err)
 	}
 	projected, err := trunkRedProjectAt(endpoint, result.Tip)
 	entry := projected.Tree.TrunkRed[0]
-	if err != nil || entry.ID != identity || len(entry.Sightings) != 2 || len(entry.Holds) != 2 || entry.Status != "not-run" || entry.Owner.How != "joiner" {
+	if err != nil || entry.ID != identity || len(entry.Sightings) != 1 || len(entry.Holds) != 1 || entry.Status != "failed" || entry.Owner.How != "joiner" || result.Tip != replay.Tip {
 		t.Fatalf("merged entry: %+v %v", entry, err)
 	}
 
@@ -726,5 +728,43 @@ func TestTrunkRedTwiceOnTheBaseMakesAFlakeIdentityATrunkRed(t *testing.T) {
 	entry := projectedTrunkRedEntryFor(t, endpoint, red.Now)
 	if entry.EntryClass() != TrunkRedClassTrunkRed || entry.AllowanceUntil != "" || len(entry.Holds) != 1 || len(entry.Sightings) != 2 {
 		t.Fatalf("a base red twice must turn the known flake into a holding trunk red: %+v", entry)
+	}
+	// Promotion happens once; another base red keeps the promoted evidence.
+	before := acceptedTipForEndpoint(t, endpoint)
+	red.Ulid = "01J5X0000000000000000000E3"
+	if result, err := RecordTrunkRed(red, args); err != nil || result.Outcome != OutcomeConfirmed || result.Tip != before {
+		t.Fatalf("repeated promoted red moved main: %+v %v", result, err)
+	}
+}
+
+func TestTrunkRedConcurrentFindersPublishOneIncident(t *testing.T) {
+	t.Parallel()
+	first := localTrunkRedEndpoint(t)
+	second := localTrunkRedPeer(t, first)
+	base := acceptedTipForEndpoint(t, first)
+	start := make(chan struct{})
+	errors := make(chan error, 2)
+	for i, endpoint := range []Endpoint{first, second} {
+		go func(i int, endpoint Endpoint) {
+			<-start
+			r := trunkRedVerbReqFor(endpoint, fmt.Sprintf("01J5X0000000000000000000C%d", i), fmt.Sprintf("finder-%d", i))
+			_, err := RecordTrunkRed(r, trunkRedRecordFixture("red:unit:TestOne", "check", "attempt", "main", r.stamp()))
+			errors <- err
+		}(i, endpoint)
+	}
+	close(start)
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := first.Repository.(*fakeGoalRepository)
+	client.store.mu.Lock()
+	tip := client.store.canonical
+	parent := client.store.commits[tip].parent
+	client.store.mu.Unlock()
+	p, err := trunkRedProjectAt(first, tip)
+	if err != nil || len(p.Tree.TrunkRed) != 1 || len(p.Tree.TrunkRed[0].Sightings) != 1 || parent != base {
+		t.Fatalf("concurrent findings duplicated the incident: %+v %v (parent=%s; base=%s)", p.Tree, err, parent, base)
 	}
 }

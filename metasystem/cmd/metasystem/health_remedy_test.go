@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 var remedyPreviewRoot = flag.String("remedy-preview-root", "", "read the steward failed-probe fixture")
@@ -26,7 +27,7 @@ func TestHealthSystemCheckFailedProbeKeepsStewardGreen(t *testing.T) {
 	t.Parallel()
 	if *remedyPreviewRoot == "" {
 		root, path := t.TempDir(), t.TempDir()
-		if err := os.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		goBin, err := exec.LookPath("go")

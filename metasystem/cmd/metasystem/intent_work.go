@@ -244,6 +244,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work (default: main, or the goal's only work)"},
+				{name: "last", usage: "marks this unit as the goal's last; for a goal whose design has no Units table"},
 				intentLineageFlag,
 				intentBriefFlag,
 				{name: "lines", value: "N", usage: "the unit's changed-line estimate, when no units table has its row"},
@@ -348,7 +349,7 @@ func intentWorkCommands() []intentCommand {
 			object: "settings", action: "show", laidOut: true, audience: "both", summary: "the launch settings, or one setting with its source",
 			usage: []string{"metasystem settings show [KEY]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
-				"Read only. settings set changes one for this seat; settings check validates them all."},
+				"Read only. settings set changes one for this seat; proof.full and proof.cheap belong to metasystem.conf. settings check validates them all."},
 			maxArgs:  1,
 			examples: []string{"metasystem settings show", "metasystem settings show launch.read.model"},
 			run:      runIntentSettings,
@@ -364,7 +365,8 @@ func intentWorkCommands() []intentCommand {
 		{
 			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
-			details: []string{"Writes KEY=VALUE into the installation's metasystem.conf.local, the seat's own layer over the shipped metasystem.conf, which is never changed.",
+			details: []string{"Writes seat settings into metasystem.conf.local, the seat's own layer over metasystem.conf.",
+				"proof.full and proof.cheap are committed-only repository declarations; declare them in metasystem.conf through a goal and land it on main. settings set refuses them.",
 				"KEY must be declared; settings check reports undeclared keys already in the local file.",
 				"A key already holding the value is left as it is."},
 			maxArgs:  2,
@@ -843,7 +845,8 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		ReadToolCalls int               `json:"readToolCalls"`
 		Model         string            `json:"model,omitempty"`
 		Effort        string            `json:"effort,omitempty"`
-	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}}
+		Whole         bool              `json:"whole,omitempty"`
+	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}, Whole: inv.input.switched("last")}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built",
 			next: inv.sameCommand(), nextReason: "once --brief names a readable file"}
@@ -893,7 +896,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		}
 		binding := unitBinding{goal: id, unit: unit, worktree: worktree, base: base, brief: briefPath, designs: designs, check: check,
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
-		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base,
+		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
 			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
 		if readEachRound {
@@ -1936,7 +1939,7 @@ func settingsView(seat string, one bool, values []launch.Setting, adapters any) 
 		}
 		if one && len(sorted) == 1 {
 			source := settingSource(sorted[0].Source)
-			if page.Verbose() {
+			if page.Verbose() || config.CommittedOnly(sorted[0].Key) {
 				source = sorted[0].Source
 			}
 			page.Headline(sorted[0].Key+" is "+sorted[0].Value, source)
@@ -2278,6 +2281,11 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 			next:    inv.publicArgv("settings", "set", "KEY", "VALUE"), nextReason: "metasystem settings keys lists the keys"})
 	}
 	key, value := strings.TrimSpace(inv.input.args[0]), inv.input.args[1]
+	if config.CommittedOnly(key) {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "setting", ID: key}},
+			Summary:  key + " is committed-only, so settings set cannot change it",
+			Decision: proofDeclarationRemedy(key)})
+	}
 	if strings.ContainsAny(key, "= \t\n") || strings.ContainsAny(value, "\n\r") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done",
