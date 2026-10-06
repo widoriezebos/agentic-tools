@@ -182,7 +182,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 			if err != nil {
 				return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.sameCommand(), nextReason: "try again once the goal ledger can be read"}
 			}
-			warnings, err := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, goalID, line.AreaSnapshot, readers)
+			warnings, err := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, goalID, line.AreaSnapshot, readers, goal.Actor{})
 			if err != nil {
 				message := strings.SplitN(err.Error(), "\nrun: ", 2)[0]
 				_, proof, problem := inv.actingAs("work land", goalID, actorEither)

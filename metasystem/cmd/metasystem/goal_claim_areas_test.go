@@ -39,6 +39,64 @@ func claimAreasBed(t *testing.T) (*intentBed, intentOwners, *resolveVerbFixture)
 	return bed, owners, lane
 }
 
+func TestGoalClaimAreasSharedArc(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"whole arc", "complete arc", "individual member", "foreign overlap"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			bed, owners, _ := claimAreasBed(t)
+			first := bed.goalFile(bedGoal)
+			foreign := *first.Claimed
+			first.State, first.Claimed = goal.StateApproved, nil
+			first.Arc = "shared-arc"
+			bed.addGoal(first)
+			second := bed.goalFile("second-goal")
+			second.Arc = first.Arc
+			bed.addGoal(second)
+			for _, id := range []string{bedGoal, "second-goal"} {
+				claimAreaDesign(t, bed, id, "metasystem/shared/**")
+			}
+			if mode == "foreign overlap" {
+				third := bed.goalFile("third-goal")
+				foreign.Machine, foreign.Lineage = "other-seat", "other-session"
+				foreign.AreaSnapshot = goal.AreaSnapshot{Known: true, Areas: []string{"metasystem/shared/**"}, Source: "foreign-design@" + strings.Repeat("a", 64)}
+				third.State, third.Claimed = goal.StateClaimed, &foreign
+				bed.addGoal(third)
+			} else if mode != "whole arc" {
+				if code, result := bed.runJSON(owners, "goal", "claim", bedGoal); code != 0 {
+					t.Fatalf("first member: exit=%d %+v", code, result)
+				}
+			}
+			before := bed.publications()
+			args := []string{"goal", "claim", "second-goal"}
+			if mode != "individual member" {
+				args = append(args, "--arc")
+			}
+			code, result := bed.runJSON(owners, args...)
+			if mode == "foreign overlap" {
+				if code == 0 || bed.publications() != before || !strings.Contains(result.Summary, "third-goal") || !strings.Contains(result.Summary, "literal prefixes") {
+					t.Fatalf("foreign overlap admitted: exit=%d %+v", code, result)
+				}
+				for _, id := range []string{bedGoal, "second-goal"} {
+					if bed.goalFile(id).Claimed != nil {
+						t.Fatalf("refused arc partially claimed %s", id)
+					}
+				}
+				return
+			}
+			if code != 0 || bed.publications() != before+1 {
+				t.Fatalf("shared arc: exit=%d %+v", code, result)
+			}
+			for _, id := range []string{bedGoal, "second-goal"} {
+				file := bed.goalFile(id)
+				if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != "mac-cli" || file.Claimed.Lineage != "m1" || !file.Claimed.Known || !slices.Equal(file.Claimed.Areas, []string{"metasystem/shared/**"}) {
+					t.Fatalf("arc member %s not bound to claimant and shared areas: %+v", id, file)
+				}
+			}
+		})
+	}
+}
+
 func TestGoalClaimAreasAdmission(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

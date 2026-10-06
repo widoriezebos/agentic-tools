@@ -1193,7 +1193,7 @@ func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *
 		ready := frontier.Ready[:0]
 		for _, candidate := range frontier.Ready {
 			snapshot := readers.Design(candidate, projection.Tip)
-			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers)
+			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers, goal.Actor{Machine: machine, Lineage: inv.claimLineage()})
 			if refusal != nil {
 				areaRefusal = refusal
 				continue

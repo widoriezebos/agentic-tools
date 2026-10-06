@@ -127,7 +127,7 @@ func snapshotFor(readers ClaimAreaReaders, endpoint Endpoint, tip, id string) Ar
 
 // ClaimAreas is the one admission predicate for selection and publication.
 // Unknown declarations warn; another known overlap still refuses admission.
-func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate AreaSnapshot, readers ClaimAreaReaders) ([]string, error) {
+func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate AreaSnapshot, readers ClaimAreaReaders, claimant Actor) ([]string, error) {
 	warnings := slices.Clone(candidate.Warnings)
 	if _, err := launch.NormalizeAreas(candidate.Areas); err != nil {
 		candidate.Known = false
@@ -170,9 +170,15 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 		}
 		return nil
 	}
+	target := tree.Live[id]
+	// One claimant's arc shares its declared areas, including waiting hand-ins.
+	sameArcClaim := func(f *GoalFile) bool {
+		return target != nil && target.Arc != "" && f != nil && f.Arc == target.Arc &&
+			f.State == StateClaimed && claimant.Machine != "" && claimant.Lineage != "" && ownPair(f.Claimed, claimant)
+	}
 	for _, other := range sortedGoalIds(tree.Live) {
 		f := tree.Live[other]
-		if other == id || f.State != StateClaimed || f.Claimed == nil || landed[other] {
+		if other == id || f.State != StateClaimed || f.Claimed == nil || landed[other] || sameArcClaim(f) {
 			continue
 		}
 		snapshot := f.Claimed.AreaSnapshot
@@ -188,7 +194,7 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 			continue
 		}
 		f := tree.Live[entry.Goal]
-		if f == nil || f.State == StateAbandoned || f.State == StateDone {
+		if f == nil || f.State == StateAbandoned || f.State == StateDone || sameArcClaim(f) {
 			continue
 		}
 		if err := compare(entry.Goal, entry.Snapshot); err != nil {
@@ -200,7 +206,7 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 
 func admitClaimAreas(t *TreeGoals, r VerbRequest, tip, id string) (AreaSnapshot, error) {
 	snapshot := snapshotFor(r.ClaimAreaReaders, r.Endpoint, tip, id)
-	warnings, err := ClaimAreas(t, r.Endpoint, tip, id, snapshot, r.ClaimAreaReaders)
+	warnings, err := ClaimAreas(t, r.Endpoint, tip, id, snapshot, r.ClaimAreaReaders, r.Actor)
 	snapshot.Warnings = warnings
 	return snapshot, err
 }
