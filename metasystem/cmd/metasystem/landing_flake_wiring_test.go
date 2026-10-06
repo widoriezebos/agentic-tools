@@ -217,7 +217,7 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
-			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("landing.prove.command=unused\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=unused\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			reason := "src/unit failed once and passed when run again alone; seen 3 times; goal fix-flaky-src-unit fixes it"
@@ -240,6 +240,8 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 					return "head", nil
 				case "rev-parse --verify HEAD^{tree}":
 					return "tree", nil
+				case "show head:metasystem/metasystem.conf":
+					return "proof.full=unused\n", nil
 				case "diff --name-only --no-renames old-tree tree":
 					return "metasystem/plans/goals/trunk-red.json", nil
 				}

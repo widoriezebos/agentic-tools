@@ -183,7 +183,7 @@ func TestLandingReturnWritesReturnedCard(t *testing.T) {
 func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("landing.prove.command=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
@@ -195,6 +195,8 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 			return "head", nil
 		case "rev-parse --verify HEAD^{tree}":
 			return "tree", nil
+		case "show head:metasystem/metasystem.conf":
+			return "proof.full=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n", nil
 		case "cat-file -e head^{commit}", "cat-file -e waiting^{commit}", "merge-base --is-ancestor waiting head":
 			return "", nil
 		case "show origin/main:metasystem/testing.json", "show origin/main:metasystem/plans/goals/trunk-red.json":

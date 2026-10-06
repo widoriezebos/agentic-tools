@@ -725,7 +725,7 @@ func stageFailure(err error) *Refusal {
 	return refuseAgain(CodeRefused, "the template's files could not be prepared, so nothing reached the target: "+err.Error(), "try again")
 }
 
-// dropTemplateMode removes the template-mode declaration (and the comment
+// dropTemplateMode removes the template's mode and proof declarations (and the comment
 // lines directly above it) from a staged metasystem.conf.
 func dropTemplateMode(conf string) error {
 	data, err := os.ReadFile(conf)
@@ -736,7 +736,7 @@ func dropTemplateMode(conf string) error {
 	var kept []string
 	for _, line := range lines {
 		key, _, found := strings.Cut(line, "=")
-		if found && strings.TrimSpace(key) == config.TemplateModeKey {
+		if found && (strings.TrimSpace(key) == config.TemplateModeKey || strings.HasPrefix(strings.TrimSpace(key), "proof.")) {
 			for len(kept) > 0 && strings.HasPrefix(strings.TrimSpace(kept[len(kept)-1]), "#") {
 				kept = kept[:len(kept)-1]
 			}

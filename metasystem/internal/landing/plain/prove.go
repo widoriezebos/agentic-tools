@@ -1,6 +1,6 @@
 package plain
 
-// landing prove: the project's own proof command (landing.prove.command)
+// landing prove: the project's own proof command (proof.full)
 // over the lane checkout's HEAD, detached so it outlives the agent's
 // session. The command runs in a fresh detached worktree of the lane
 // repository at exactly the commit being proven, so it sees only that
@@ -126,6 +126,9 @@ type ProveSeams struct {
 	// the checkout's adapter. Command runs the prepared proof; nil runs it.
 	Closure func(root, base, tree string) (adapter.Closure, error)
 	Command func(*exec.Cmd) error
+	// CommandForCommit resolves the proof declaration for the exact commit
+	// selected under the lane lock, including a detached attempt's commit.
+	CommandForCommit func(commit string) (string, error)
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -406,6 +409,12 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if attempt != "" && recorded && current.Attempt == attempt {
 			running = current
+		}
+		if seams.CommandForCommit != nil {
+			command, err = seams.CommandForCommit(running.Commit)
+			if err != nil {
+				return err
+			}
 		}
 		var found bool
 		previous, found, err = checkBound(install, running.Tree)

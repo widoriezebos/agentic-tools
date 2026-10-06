@@ -52,7 +52,7 @@ var lawfulExecPrograms = map[string]execAllowance{
 	"/bin/sh": {
 		files: []string{"internal/testutil/", "internal/landing/plain/prove.go"},
 		reason: "test support drives a fixture script; never production decision code. " +
-			"internal/landing/plain/prove.go: adapter: runs the project's configured landing.prove.command",
+			"internal/landing/plain/prove.go: adapter: runs the project's configured proof.full",
 	},
 }
 

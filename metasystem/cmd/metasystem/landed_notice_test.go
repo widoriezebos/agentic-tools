@@ -105,10 +105,10 @@ const (
 func TestLandingPushPostsTheDeliveredSentencesInOneMessage(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
 	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA), bed.seatSaying(t, "goal-b", sentenceB))
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	bed.proveAndPush(t)
 	want := sentenceA + "\n" + sentenceB
 	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != want {
@@ -127,10 +127,10 @@ func TestLandingPushPostsTheDeliveredSentencesInOneMessage(t *testing.T) {
 func TestLandingPushWithoutSentencePostsNothing(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
 	bed.merge(t, bed.seat(t, "goal-a"))
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	bed.proveAndPush(t)
 	if got := fakeChannelPosts(t, dir); len(got) != 0 {
 		t.Fatalf("a landing with no sentence posted %q", got)
@@ -157,7 +157,6 @@ func TestRefusedLandingPushPostsNothing(t *testing.T) {
 func TestLandingPushStandsWhenTheLandedPostFails(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir := filepath.Join(filepath.Dir(bed.checkout), "unreachable-channel")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -166,7 +165,9 @@ func TestLandingPushStandsWhenTheLandedPostFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendChannelConf(t, bed.installation, dir)
-	head := bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
+	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
+	head := bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	if text := bed.proveAndPush(t); !strings.Contains(text, "pushed "+shortLandingID(head)) {
 		t.Fatalf("push:\n%s", text)
 	}
@@ -236,7 +237,6 @@ func TestWorkLandDeliveredGuardRefusesHashesAndPaths(t *testing.T) {
 func TestReturnedGoalHandedInAgainKeepsItsSentence(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
 	bed.seatSaying(t, "goal-a", sentenceA)
@@ -251,6 +251,7 @@ func TestReturnedGoalHandedInAgainKeepsItsSentence(t *testing.T) {
 		t.Fatal(err)
 	}
 	bed.merge(t, fixed)
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	bed.proveAndPush(t)
 	if got := fakeChannelPosts(t, dir); len(got) != 1 || got[0] != sentenceA {
 		t.Fatalf("posts = %q; want [%q]", got, sentenceA)
@@ -359,10 +360,10 @@ func TestLandingPathOwnersPostTheLandedLine(t *testing.T) {
 func TestNextSliceWithoutSentencePostsNothing(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
 	bed.merge(t, bed.seatSaying(t, "goal-a", sentenceA))
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	bed.proveAndPush(t)
 	seat := filepath.Join(filepath.Dir(bed.checkout), "seat-goal-a")
 	bed.git(t, seat, "fetch", "--quiet", "origin")

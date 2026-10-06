@@ -233,6 +233,7 @@ func TestSettingsCheckUndeclaredLocalKey(t *testing.T) {
 	}
 }
 
+// Valid settings fixtures declare the repository proof commands before validation.
 func TestSettingsReadKeysWriteAndValidate(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
@@ -242,7 +243,7 @@ func TestSettingsReadKeysWriteAndValidate(t *testing.T) {
 		_, contract, path, err := testrun.LoadContract(root)
 		return path, len(contract.Groups), err
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\nproof.full=true\nproof.cheap=true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	contract, err := contractmerge.Render(testingMergeFixture())

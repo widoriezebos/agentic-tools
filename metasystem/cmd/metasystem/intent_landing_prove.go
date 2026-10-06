@@ -1,16 +1,16 @@
 package main
 
 // landing prove (plain lane step 3): runs the project's proof command,
-// config key landing.prove.command, over the landing checkout's HEAD in a
+// config key proof.full, over the landing checkout's HEAD in a
 // fresh worktree at that commit, detached so it outlives the agent's session, and records green or red for
 // that exact tree in results.jsonl, which landing push reads. The detached
 // start is gaterun.LaunchDetached; nothing else of the older lane runs.
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -22,7 +22,33 @@ import (
 
 // proveCommandKey is the project's proof command, run in a worktree of the
 // lane checkout at the proven commit with LANDING_TREE and LANDING_COMMIT set; exit 0 is green.
-const proveCommandKey = "landing.prove.command"
+const proveCommandKey = "proof.full"
+
+var errProofDeclaration = errors.New("proof.full is missing or invalid in the proven commit's metasystem.conf")
+
+func proofDeclarationRemedy(key string) string {
+	return "declare " + key + " in metasystem.conf through a goal and land it on main"
+}
+
+// landingProofCommand reads the declaration from the tree the command proves.
+func landingProofCommand(installation, checkout, commit string, git func(string, ...string) (string, error)) (string, error) {
+	path, err := filepath.Rel(checkout, filepath.Join(installation, "metasystem.conf"))
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errProofDeclaration, err)
+	}
+	content, err := git(checkout, "show", commit+":"+filepath.ToSlash(path))
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errProofDeclaration, err)
+	}
+	command, _, err := config.CommittedContentLookup(content, proveCommandKey)
+	if err == nil {
+		err = config.SettingValueProblem(proveCommandKey, command)
+	}
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errProofDeclaration, err)
+	}
+	return command, nil
+}
 
 // laneAdmitted is a lane verb's admission: the registered lane and its
 // installation.
@@ -106,7 +132,7 @@ func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
 		usage: []string{"metasystem landing prove [--wait]"},
-		details: []string{"Runs the shell command set as landing.prove.command in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full or scoped, LANDING_PROOF_BASE naming the base tree (empty for full), and LANDING_PROOF_GROUPS naming space-separated group ids (empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
+		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full or scoped, LANDING_PROOF_BASE naming the base tree (empty for full), and LANDING_PROOF_GROUPS naming space-separated group ids (empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After main moves under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
@@ -123,18 +149,33 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if refused := inv.lanePaused(admitted, "proven"); refused != nil {
 		return inv.render(*refused)
 	}
-	command, _, err := config.Get(config.GetParams{Key: proveCommandKey, ConfPath: filepath.Join(admitted.installation, "metasystem.conf"), Default: "", DefaultSet: true})
-	if err != nil || strings.TrimSpace(command) == "" {
-		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "this landing lane has no command that proves HEAD, so nothing was proven",
-			next:    inv.publicArgv("settings", "set", proveCommandKey, "COMMAND"), nextReason: "run in the lane checkout"}
-		if err != nil {
-			result.Details = []string{err.Error()}
-		}
-		return inv.render(result)
-	}
 	seams := admitted.owners.proveSeams(admitted.installation)
 	checkout := string(admitted.layout.Checkout)
+	git := seams.Git
+	if git == nil {
+		git = plain.Git
+	}
+	seams.CommandForCommit = func(commit string) (string, error) {
+		return landingProofCommand(admitted.installation, checkout, commit, git)
+	}
+	commit, err := git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return inv.render(landingProveRefusal(inv, targets, err))
+	}
+	attempt := inv.input.text("attempt")
+	if attempt != "" {
+		running, recorded, _, err := plain.ReadRunning(admitted.installation, seams)
+		if err != nil {
+			return inv.render(landingProveRefusal(inv, targets, err))
+		}
+		if recorded && running.Attempt == attempt {
+			commit = running.Commit
+		}
+	}
+	command, err := seams.CommandForCommit(commit)
+	if err != nil {
+		return inv.render(landingProveRefusal(inv, targets, err))
+	}
 	if !inv.input.switched("wait") {
 		settled, ok, err := plain.Settled(admitted.installation, checkout, seams)
 		if err != nil {
@@ -160,7 +201,6 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		}
 		return inv.render(result)
 	}
-	attempt := inv.input.text("attempt")
 	output := os.Stdout
 	if attempt == "" {
 		// A person's --wait keeps the command's output in the lane's log,
@@ -197,6 +237,11 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "this batch has used its two full checks; the waiting goals hold",
 			next: inv.publicArgv("landing", "run"), nextReason: "only a person's call reopens the batch's allowance for full checks"}
 	}
+	if errors.Is(err, errProofDeclaration) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary:  errProofDeclaration.Error() + ", so nothing was proven",
+			Decision: proofDeclarationRemedy(proveCommandKey), Details: []string{err.Error()}}
+	}
 	var noRepeat *plain.NoRepeat
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
@@ -207,7 +252,7 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: busy.Error(),
 			next: inv.publicArgv("landing", "status"), nextReason: "shows when it ends"}
 	}
-	return landingLaneFailure(targets, "landing.prove.command could not run: "+oneLine(err.Error()), err)
+	return landingLaneFailure(targets, "the full check command could not run: "+oneLine(err.Error()), err)
 }
 
 func landingLaneFailure(targets []intentTarget, summary string, err error) intentResult {

@@ -92,9 +92,12 @@ func (bed *plainVerbBed) script(t *testing.T, name string, code int) string {
 
 func (bed *plainVerbBed) setCommand(t *testing.T, command string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf.local"), []byte("landing.prove.command="+command+"\n"), 0o600); err != nil {
+	// Proof commands belong to the repository configuration, not the seat's local settings.
+	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full="+command+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	bed.git(t, bed.checkout, "add", "metasystem/metasystem.conf")
+	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "declare the proof command")
 }
 
 // seat pushes goal/G from a seat clone and hands it in, as work land does.
@@ -191,7 +194,6 @@ func (bed *plainVerbBed) detachedEngine(t *testing.T) plain.ProveSeams {
 func TestPlainLaneVerbsLandTwoSeats(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	bed.owners.landing.plainProve = bed.detachedEngine(t)
 	shaA, shaB := bed.seat(t, "goal-a"), bed.seat(t, "goal-b")
 	data := bed.status(t)
@@ -203,7 +205,9 @@ func TestPlainLaneVerbsLandTwoSeats(t *testing.T) {
 			t.Fatalf("status --json %s = %v, present %v; want null", key, value, present)
 		}
 	}
-	head := bed.merge(t, shaA, shaB)
+	bed.merge(t, shaA, shaB)
+	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
+	head := bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	tree := bed.git(t, bed.checkout, "rev-parse", "HEAD^{tree}")
 	if code, text := bed.run(t, "landing", "prove"); code != 0 || !strings.Contains(text, "proving") {
 		t.Fatalf("prove = %d\n%s", code, text)
@@ -288,8 +292,8 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
-	bed.setCommand(t, bed.script(t, "prove-red.sh", 1))
 	bed.merge(t, bed.seat(t, "goal-a"))
+	bed.setCommand(t, bed.script(t, "prove-red.sh", 1))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 1 || !strings.Contains(text, "red") {
 		t.Fatalf("a red prove = %d\n%s", code, text)
 	}
@@ -320,7 +324,7 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
 	code, text := bed.run(t, "landing", "prove")
-	if lines := strings.Split(strings.TrimRight(text, "\n"), "\n"); code != 1 || len(lines) != 2 || !strings.Contains(lines[1], "metasystem settings set landing.prove.command") {
+	if lines := strings.Split(strings.TrimRight(text, "\n"), "\n"); code != 1 || len(lines) != 2 || !strings.Contains(lines[1], "declare proof.full in metasystem.conf through a goal and land it on main") || strings.Contains(text, "settings set") {
 		t.Fatalf("no proof command = %d\n%s", code, text)
 	}
 	bed.setCommand(t, "true")
@@ -401,8 +405,9 @@ func witnessLandingProveRepeat(t *testing.T) {
 // were.
 func witnessLandingPushRepeat(t *testing.T) {
 	bed := newPlainVerbBed(t)
-	head := bed.merge(t, bed.seat(t, "goal-a"))
+	bed.merge(t, bed.seat(t, "goal-a"))
 	bed.setCommand(t, "true")
+	head := bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("prove = %d\n%s", code, text)
 	}
@@ -449,7 +454,8 @@ func TestPlainLaneProveIgnoresTheLaneCheckoutsChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("not committed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\n# steward\n"), 0o644); err != nil {
+	// The working declaration must never replace the committed command.
+	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=exit 9\n# steward\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if code, text := bed.run(t, "landing", "prove"); code != 0 || launched != 1 {
@@ -499,5 +505,80 @@ func TestPlainLaneProveReportsAKnownGreenAtOnce(t *testing.T) {
 	code, text := bed.run(t, "landing", "prove")
 	if code != 0 || !strings.Contains(text, "already proven green") || !strings.Contains(text, "metasystem landing push") || len(launched) != 0 {
 		t.Fatalf("prove of a proven tree = %d %v\n%s", code, launched, text)
+	}
+}
+
+// Git's committed tree is the authority even when the working configuration
+// supplies a command that would pass.
+func TestPlainLaneProveRefusesAnUncommittedFullDeclaration(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.owners.landing.plainProve = plain.ProveSeams{
+		Executable: func() (string, error) { t.Fatal("an undeclared command reached the launcher"); return "", nil },
+		Command:    func(*exec.Cmd) error { t.Fatal("an undeclared command ran"); return nil },
+	}
+	for _, args := range [][]string{{"landing", "prove"}, {"landing", "prove", "--wait"}} {
+		code, output := bed.run(t, args...)
+		if code != 1 || !strings.Contains(output, "proof.full") || !strings.Contains(output, "declare proof.full in metasystem.conf through a goal and land it on main") || strings.Contains(output, "settings set") {
+			t.Fatalf("uncommitted declaration = %d\n%s", code, output)
+		}
+	}
+	if _, err := os.Stat(plain.Dir(bed.installation)); !os.IsNotExist(err) {
+		t.Fatalf("a refused proof wrote records: %v", err)
+	}
+}
+
+// A detached proof must keep both its tree and its command when HEAD moves.
+func TestPlainLaneProveKeepsTheDetachedCommitsDeclaration(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, "true")
+	bed.owners.landing.plainProve = plain.ProveSeams{
+		Executable: func() (string, error) { return "/engine/metasystem", nil },
+		Launch:     func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil },
+	}
+	if code, output := bed.run(t, "landing", "prove"); code != 0 {
+		t.Fatalf("start = %d\n%s", code, output)
+	}
+	running, recorded, _, err := plain.ReadRunning(bed.installation, bed.owners.landing.plainProve)
+	if err != nil || !recorded {
+		t.Fatalf("running = %+v, %v", running, err)
+	}
+	bed.setCommand(t, "")
+	if code, output := bed.run(t, "landing", "prove", "--wait", "--attempt", running.Attempt); code != 0 {
+		t.Fatalf("detached proof = %d\n%s", code, output)
+	}
+	result, found, err := plain.LastResult(bed.installation)
+	if err != nil || !found || result.Commit != running.Commit || result.Tree != running.Tree || result.Result != plain.Green {
+		t.Fatalf("detached result = %+v, %v", result, err)
+	}
+}
+
+// A tip move between the initial declaration read and execution must not pair
+// the old command with the new tree.
+func TestPlainLaneProveReadsCommandForTheCommitSelectedToRun(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, "true")
+	old := bed.git(t, bed.checkout, "rev-parse", "HEAD")
+	moved := false
+	bed.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		content, err := plain.Git(dir, args...)
+		if !moved && len(args) == 2 && args[0] == "show" && args[1] == old+":metasystem/metasystem.conf" {
+			moved = true
+			bed.setCommand(t, "exit 9")
+		}
+		return content, err
+	}
+	if code, output := bed.run(t, "landing", "prove", "--wait"); code != 1 || !strings.Contains(output, "proven red") {
+		t.Fatalf("moved HEAD proof = %d\n%s", code, output)
+	}
+	result, found, err := plain.LastResult(bed.installation)
+	head := bed.git(t, bed.checkout, "rev-parse", "HEAD")
+	if !moved || err != nil || !found || result.Commit != head || result.Commit == old || result.Result != plain.Red || !strings.Contains(result.Reason, "exited 9") {
+		t.Fatalf("moved HEAD result = %+v, %v", result, err)
 	}
 }
