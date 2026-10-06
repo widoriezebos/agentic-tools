@@ -215,6 +215,67 @@ func TestWorkLandRecordsDoNotHideTheGoalsLanding(t *testing.T) {
 	}
 }
 
+func TestWorkLandReturnedRecordsDoNotHideTheGoalsLanding(t *testing.T) {
+	t.Parallel()
+	b, owners, install := admissionBed(t, "lane")
+	finishThirdUnit(owners)
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "finished goal hand-in", code, result, intentConfirmed)
+	landed := owners.status.BranchTip
+	owners.status.EndpointTip = landed
+	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == landed, nil }
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "finished goal landed", code, result, intentUnchanged)
+	if !strings.Contains(result.Summary, "landed on main") {
+		t.Fatalf("goal has not landed: %+v", result)
+	}
+
+	records := strings.Repeat("4", 40)
+	owners.status.BranchTip = records
+	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: records, Kind: branch.Plan})
+	if _, added, err := plain.HandIn(install, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
+		t.Fatalf("records hand-in: added=%v err=%v", added, err)
+	}
+	if entry, changed, err := plain.Return(install, "standing-validation", "the records check failed", b.owners.now()); err != nil || !changed || !entry.Records || entry.SHA != records {
+		t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
+	}
+
+	commit := strings.Repeat("5", 40)
+	owners.status.BranchTip = commit
+	owners.status.Status.Units = append(owners.status.Status.Units, branch.UnitStatus{Unit: "correction", Commit: commit})
+	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: commit, Kind: branch.Unit})
+	owners.status.Status.Prefix++
+	owners.status.Sources = append(owners.status.Sources, "critic-root")
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "read unit after records returned", code, result, intentRefused)
+	if resultData(t, result)["code"] != "GOAL_LAND_ONCE" || !strings.Contains(result.Summary, "already landed at "+shortCommit(landed)) {
+		t.Fatalf("returned records hid the goal's landing: %+v", result)
+	}
+	if entries, err := plain.Entries(install); err != nil || len(entries) != 2 || entries[0].Records || entries[0].SHA != landed || !entries[1].Records || entries[1].SHA != records || entries[1].State != plain.StateReturned {
+		t.Fatalf("refused unit changed the queue: %+v %v", entries, err)
+	}
+
+	b.lineage = "m1"
+	announceProofFixtureHolder(t, b.root())
+	second := *b.goalFile("standing-validation")
+	second.Id, second.State, second.Claimed = "second-goal", goal.StateApproved, nil
+	second.History = slices.Clone(second.History)
+	for index := range second.History {
+		second.History[index].Targets = []string{second.Id}
+	}
+	b.addGoal(&second)
+	before := b.publications()
+	code, result = b.do("goal", "claim", "second-goal")
+	expectOutcome(t, "claim after goal landed and records returned", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "standing-validation") || !strings.Contains(result.Summary, "landed") || result.Next == nil ||
+		!slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "done", "standing-validation", "--reason", "TEXT"}) {
+		t.Fatalf("landed goal did not block the claim or name its remedy: %+v", result)
+	}
+	if b.publications() != before || b.goalFile("second-goal").Claimed != nil {
+		t.Fatal("refused claim changed the accepted ledger")
+	}
+}
+
 func TestWorkLandWaitingGoalCanReplaceItsWholeTip(t *testing.T) {
 	t.Parallel()
 	b, owners, install := admissionBed(t, "lane")

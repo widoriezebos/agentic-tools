@@ -47,8 +47,30 @@ func (inv *intentInvocation) claimLaneReader() func(string, string) (string, err
 		if err != nil || !ok {
 			return "", nil
 		}
+		// Landed code decides first; otherwise a goal whose newest entry of
+		// any kind was returned is returned (a returned records hand-in
+		// carries the goal's code). Only the claim reads it this way: work
+		// land's land-once check keeps reading latestLaneGoalEntry.
+		if entry.State != plain.StateLanded && newestLaneEntryReturned(install, id) {
+			return plain.StateReturned, nil
+		}
 		return entry.State, nil
 	}
+}
+
+// newestLaneEntryReturned says whether the goal's newest queue entry, records
+// hand-ins included, is a return.
+func newestLaneEntryReturned(install, goalID string) bool {
+	entries, err := plain.Entries(install)
+	if err != nil {
+		return false
+	}
+	for index := len(entries) - 1; index >= 0; index-- {
+		if entries[index].Goal == goalID {
+			return entries[index].State == plain.StateReturned
+		}
+	}
+	return false
 }
 
 // laneQueueState answers work land G from the lane's queue when the goal's
@@ -208,16 +230,11 @@ func (inv *intentInvocation) latestLaneGoalEntry(install, goalID, main string) (
 	if err != nil {
 		return plain.Entry{}, false, err
 	}
-	newest := true
 	for index := len(entries) - 1; index >= 0; index-- {
 		entry := entries[index]
 		if entry.Goal != goalID {
 			continue
 		}
-		if newest && entry.State == plain.StateReturned {
-			return entry, true, nil
-		}
-		newest = false
 		if entry.Records {
 			continue
 		}
