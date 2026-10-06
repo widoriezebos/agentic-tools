@@ -63,6 +63,8 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "host.proof-vm", Default: "", ProofInput: false,
+		Meaning: "the virtual machine this computer uses for the repository's full proof; empty runs on the host"},
 	{Key: "proof.full", CommittedOnly: true, ProofInput: true,
 		Meaning: "the repository's full proof command, declared in metasystem.conf"},
 	{Key: "proof.cheap", CommittedOnly: true, ProofInput: true,
