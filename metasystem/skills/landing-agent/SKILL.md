@@ -27,7 +27,7 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3. A green proof is
    never left unpushed: when the push refuses because main moved, do case 5 before anything else.
 3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then
-   `git merge --no-ff SHA` for the `sha` of every `waiting` line, and `landing prove`. End your
+   `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, and `landing prove`. End your
    turn.
 
 ## Cases
@@ -39,10 +39,13 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    `allowed`, run `metasystem landing prove` once more and end your turn. For any other cause,
    end your turn; the waiting goals hold. A red without the repeat allowance gets
    no other check of that tree.
-4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve`. When it
-   regenerates and stages the generated paths, commit the merge, then prove it. When it aborts
-   and returns the goal, land the rest. `landing status` shows a running regeneration command
-   and its log size; `landing stop` ends it. Regeneration is never proof.
+4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve` and read its
+   outcome and reason. `resolved`: commit the staged merge, then prove it. `returned`: land
+   the rest. `held`: read its reason. When it says to retry, end your turn and retry that
+   hand-in once at the next turn. When it says to ask, ask with `--about lane`; a second lost
+   process holds and asks. Otherwise skip that line. A batch conflict waits until its `after` hand-ins have landed or returned;
+   merge it again in the next batch. `landing status` shows the running command and log size;
+   `landing stop` ends it. Regeneration is never proof.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
    check out the new main, merge the same shas the green proof covered, in the same order, and
    `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
@@ -63,7 +66,7 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    the failing tests.
 9. **Design refusal** (push returns a goal whose design no longer stands, or refuses because HEAD
    still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
-   `git merge --no-ff SHA` for the `sha` of every `waiting` line, then `metasystem landing prove`.
+   `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, then `metasystem landing prove`.
    End your turn; push when the proof is green.
 10. **Blocked outside cases 1-9:** ask with `--about lane`, then end your turn; the keeper holds you
    until it is answered.

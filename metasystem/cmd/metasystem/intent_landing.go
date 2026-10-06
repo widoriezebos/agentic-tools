@@ -357,7 +357,10 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 				continue
 			}
 			state := entry.State
-			if entry.State == plain.StateReturned {
+			if entry.Held {
+				state += " (held)"
+			}
+			if entry.State == plain.StateReturned || entry.Reason != "" {
 				state += ": " + entry.Reason
 				if entry.Cause != nil {
 					state += "; cause: " + entry.Cause.Kind

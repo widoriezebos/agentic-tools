@@ -60,6 +60,8 @@ type Line struct {
 	Outcome  string           `json:"outcome,omitempty"`
 	Reason   string           `json:"reason,omitempty"`
 	Cause    *Cause           `json:"cause,omitempty"`
+	After    []GoalSHA        `json:"after,omitempty"`
+	Held     bool             `json:"held,omitempty"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
@@ -88,6 +90,8 @@ type Entry struct {
 	State    string           `json:"state"`
 	Reason   string           `json:"reason,omitempty"`
 	Cause    *Cause           `json:"cause,omitempty"`
+	After    []GoalSHA        `json:"after,omitempty"`
+	Held     bool             `json:"held,omitempty"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
 	Delivered string       `json:"delivered,omitempty"`
@@ -204,7 +208,11 @@ func entriesOf(lines []Line) []Entry {
 		if !seen || entries[at].State != StateWaiting {
 			continue
 		}
-		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
+		entries[at].State, entries[at].Reason = line.Outcome, line.Reason
+		if line.Outcome == StateReturned {
+			entries[at].ReturnedAt = line.At
+		}
+		entries[at].After, entries[at].Held = line.After, line.Held
 		entries[at].Conflict, entries[at].Cause = line.Conflict, line.Cause
 	}
 	return entries
@@ -245,7 +253,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
-	line.Outcome, line.Reason, line.Conflict, line.Cause = "", "", nil, nil
+	line.Outcome, line.Reason, line.Conflict, line.Cause, line.After, line.Held = "", "", nil, nil, nil, false
 	err = withLock(install, func() error {
 		entries, err := Entries(install)
 		if err != nil {
@@ -360,6 +368,19 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 		}
 		out = append(out, entry)
 	}
+	for at := range out {
+		if len(out[at].After) == 0 || out[at].State != StateWaiting {
+			continue
+		}
+		out[at].Held = false
+		for _, before := range out[at].After {
+			for _, candidate := range out {
+				if candidate.Goal == before.Goal && candidate.SHA == before.SHA && candidate.State == StateWaiting {
+					out[at].Held = true
+				}
+			}
+		}
+	}
 	return out, errors.Join(problems...)
 }
 
@@ -367,18 +388,28 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 // nor contained in origin's main as the lane checkout last fetched it. It
 // is the signal a keeper wakes the landing agent on.
 func Pending(install, checkout string) ([]Entry, error) {
+	return pending(install, checkout, ProveSeams{})
+}
+
+func pending(install, checkout string, seams ProveSeams) ([]Entry, error) {
 	waiting, err := Waiting(install)
 	if err != nil || len(waiting) == 0 {
 		return []Entry{}, err
 	}
-	main, err := Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+	main, err := seams.git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
 	if err != nil {
-		return waiting, nil
+		main = ""
 	}
-	derived, err := Landed(waiting, ContainedIn(checkout, main))
+	contains := func(sha string) (bool, error) {
+		if main == "" {
+			return false, nil
+		}
+		return checkoutGit(checkout, seams).contains(main, sha)
+	}
+	derived, err := Landed(waiting, contains)
 	pending := []Entry{}
 	for _, entry := range derived {
-		if entry.State == StateWaiting {
+		if entry.State == StateWaiting && !entry.Held {
 			pending = append(pending, entry)
 		}
 	}

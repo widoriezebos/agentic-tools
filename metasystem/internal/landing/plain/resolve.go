@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
@@ -45,6 +47,8 @@ type Regeneration struct {
 	Outcome  string           `json:"outcome"`
 	At       string           `json:"at"`
 	Conflict *conflict.Return `json:"conflict,omitempty"`
+	Cause    *Cause           `json:"cause,omitempty"`
+	Reason   string           `json:"reason,omitempty"`
 }
 
 type ResolveOutcome struct {
@@ -115,13 +119,13 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 				}
 			}
 		}
-		entries, err := Waiting(install)
+		entries, err := Entries(install)
 		if err != nil {
 			return err
 		}
 		var entry Entry
 		for _, candidate := range entries {
-			if candidate.SHA == sha {
+			if candidate.SHA == sha && candidate.State == StateWaiting {
 				entry = candidate
 				break
 			}
@@ -130,10 +134,14 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			return errors.New("the conflicted merge does not name a waiting hand-in; nothing was changed")
 		}
 		out.Regeneration = Regeneration{Goal: entry.Goal, SHA: sha, Command: [][]string{}, At: seams.now().Format(time.RFC3339), Outcome: "failed", Exit: -1}
+		if entry.Held {
+			out.Cause, out.Reason, out.Outcome, out.Held, out.Entry = entry.Cause, entry.Reason, "held", true, &entry
+			return nil
+		}
 		ownsBegun := resuming
 		defer func() {
 			recordErr := appendLine(regeneratePath(install), out.Regeneration)
-			if recordErr == nil && ownsBegun && (out.Outcome == "resolved" || out.Outcome == "returned") {
+			if recordErr == nil && ownsBegun && (out.Outcome == "resolved" || out.Outcome == "returned" || out.Outcome == "held") {
 				recordErr = os.Remove(resolveBegunPath(install))
 			}
 			runErr = errors.Join(runErr, recordErr)
@@ -169,16 +177,61 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 		}
 		detail := &conflict.Return{Main: main, Paths: classified}
 		for _, item := range classified {
-			if item.Class != conflict.Generated {
-				out.Conflict = detail
-				if _, err := git("merge", "--abort"); err != nil {
-					return fmt.Errorf("abort the source conflict: %w", err)
-				}
-				reason := "source conflicts need resolution on the goal branch"
-				returned, _, err := returnLocked(install, entry.Goal, reason, &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA}, detail, seams.now())
-				out.Entry, out.Outcome, out.Exit = &returned, "returned", 0
+			if item.Class == conflict.Generated {
+				continue
+			}
+			trunk, err := git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+			if err != nil {
 				return err
 			}
+			detail.Main = trunk
+			var after []GoalSHA
+			if main != trunk {
+				_, mergeErr := git("merge-tree", "--write-tree", trunk, sha)
+				if mergeErr == nil {
+					contains := checkoutGit(checkout, ProveSeams{Git: seams.Git}).contains
+					for _, candidate := range entries {
+						inHead, err := contains(main, candidate.SHA)
+						if err != nil {
+							return err
+						}
+						inMain, err := contains(trunk, candidate.SHA)
+						if err != nil {
+							return err
+						}
+						if one := (GoalSHA{Goal: candidate.Goal, SHA: candidate.SHA}); inHead && !inMain && !slices.Contains(after, one) {
+							after = append(after, one)
+						}
+					}
+					if len(after) == 0 {
+						return errors.New("the batch conflict has no queued merge to wait for; nothing was changed")
+					}
+				} else {
+					var exit *exec.ExitError
+					if !errors.As(mergeErr, &exit) || exit.ExitCode() != 1 {
+						return mergeErr
+					}
+				}
+			}
+			out.Conflict = detail
+			if _, err := git("merge", "--abort"); err != nil {
+				return fmt.Errorf("abort the source conflict: %w", err)
+			}
+			out.Exit = 0
+			if len(after) > 0 {
+				names := []string{}
+				for _, before := range after {
+					names = append(names, before.Goal)
+				}
+				out.Reason = "conflicts with goal " + strings.Join(names, ", ") + ", which is in the same batch; it is merged again when " + strings.Join(names, ", ") + " has landed"
+				out.Held, out.Outcome = true, "held"
+				return resolveWaitingLocked(install, entry, after, false, &out)
+			}
+			out.Cause = &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA}
+			out.Reason = "source conflicts need resolution on the goal branch; run metasystem work rebase " + entry.Goal
+			returned, _, err := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now())
+			out.Entry, out.Outcome = &returned, "returned"
+			return err
 		}
 		// A failed regeneration restores the merge snapshot before aborting, and
 		// removes only new outputs in the sets this run actually regenerated.
@@ -202,8 +255,35 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			if err != nil || abortErr != nil {
 				return errors.Join(cause, err, abortErr)
 			}
-			reason := fmt.Sprintf("regeneration exited %d; log: %s", out.Exit, out.Log)
-			returned, _, returnErr := returnLocked(install, entry.Goal, reason, &Cause{Kind: "unclassified", Evidence: out.Log}, nil, seams.now())
+			out.Cause = &Cause{Kind: "environment", Name: "lost-process", Evidence: out.Log}
+			out.Reason = "regeneration did not complete; retry at the next turn"
+			out.Outcome = "held"
+			var exit *exec.ExitError
+			lost := out.Exit < 0
+			if errors.As(cause, &exit) {
+				if status, ok := exit.Sys().(syscall.WaitStatus); ok {
+					lost = lost || status.Signaled()
+				}
+			}
+			if lost {
+				out.Held = entry.Cause != nil && entry.Cause.Kind == "environment" && entry.Cause.Name == "lost-process"
+				if out.Held {
+					out.Outcome, out.Reason = "held", "regeneration did not complete twice; hold and ask about the lane"
+				}
+				return errors.Join(cause, resolveWaitingLocked(install, entry, nil, out.Held, &out))
+			}
+			// The merge is gone before replay; only the selected generators' own
+			// outputs are restored, so unrelated checkout files survive.
+			baselineErr := replayRegeneration(home, install, git, sets, prefix, seams, out.Goal, out.SHA, out.Log)
+			if baselineErr != nil {
+				out.Cause.Kind, out.Cause.Name = "unclassified", ""
+				out.Held, out.Outcome, out.Reason = true, "held", "regeneration fails on the tree before the merge too; hold and ask about the lane; log: "+out.Log
+				return errors.Join(cause, baselineErr, resolveWaitingLocked(install, entry, nil, true, &out))
+			}
+			out.Cause = &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA, Evidence: out.Log}
+			out.Conflict = detail
+			out.Reason = fmt.Sprintf("regeneration exited %d; log: %s; run metasystem work rebase %s", out.Exit, out.Log, entry.Goal)
+			returned, _, returnErr := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now())
 			out.Entry, out.Outcome = &returned, "returned"
 			return errors.Join(cause, returnErr)
 		}
@@ -251,6 +331,9 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			return abort(err)
 		}
 		out.Outcome, out.Exit = "resolved", 0
+		if entry.Cause != nil || len(entry.After) > 0 {
+			return resolveWaitingLocked(install, entry, nil, false, &out)
+		}
 		return nil
 	})
 	return out, err
@@ -287,4 +370,58 @@ func writeRegeneration(install string, running RunningRegeneration) error {
 		return err
 	}
 	return os.WriteFile(regenerationRunningPath(install), data, 0o600)
+}
+
+// resolveWaitingLocked records a resolution that leaves the hand-in waiting.
+func resolveWaitingLocked(install string, entry Entry, after []GoalSHA, held bool, out *ResolveOutcome) error {
+	line := Line{Goal: entry.Goal, SHA: entry.SHA, At: out.At, Outcome: StateWaiting, After: after, Held: held, Reason: out.Reason, Cause: out.Cause}
+	if err := appendLine(queuePath(install), line); err != nil {
+		return err
+	}
+	entry.After, entry.Held, entry.Reason, entry.Cause = after, out.Held, out.Reason, out.Cause
+	if out.Outcome != "resolved" {
+		out.Entry = &entry
+	}
+	return nil
+}
+
+func replayRegeneration(home, install string, git conflict.Git, sets []testpolicy.Generated, prefix string, seams ResolveSeams, goal, sha, evidence string) (err error) {
+	log, err := os.OpenFile(evidence, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	_, _ = log.WriteString("\nRegeneration on the tree before the merge:\n")
+	var ran []testpolicy.Generated
+	defer func() {
+		outputs := func(name string) bool { return conflict.GeneratedBy(ran, prefix, name) }
+		listed, cleanErr := git("ls-files", "--others", "--exclude-standard", "-z")
+		var created []string
+		for _, name := range nulPaths(listed) {
+			if outputs(name) {
+				created = append(created, name)
+			}
+		}
+		if cleanErr == nil && len(created) > 0 {
+			_, cleanErr = git(append([]string{"clean", "-f", "--"}, created...)...)
+		}
+		names, listErr := conflict.GeneratedFiles(git, outputs, nil)
+		if listErr == nil && len(names) > 0 {
+			_, listErr = git(append([]string{"restore", "--source=HEAD", "--staged", "--worktree", "--"}, names...)...)
+		}
+		err = errors.Join(err, cleanErr, listErr)
+	}()
+	for _, set := range sets {
+		ran = append(ran, set)
+		for _, argv := range [][]string{set.Command, set.Then} {
+			if len(argv) == 0 {
+				continue
+			}
+			running := RunningRegeneration{Goal: goal, SHA: sha, Command: argv, Log: evidence, Since: seams.now().Format(time.RFC3339)}
+			if err := runRegeneration(home, install, running, argv, filepath.Join(install, set.Cwd), log, seams.Run); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

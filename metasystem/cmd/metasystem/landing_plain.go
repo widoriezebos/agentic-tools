@@ -68,6 +68,14 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 			Summary: fmt.Sprintf("%s at %s was returned: %s", subject, plain.Short(entry.SHA), entry.Reason),
 			next:    inv.sameCommand(), nextReason: "after the fix is pushed to " + entry.Branch + ", hands it in again; or metasystem work land " + goalID + " --again when the return no longer applies"}
 	}
+	if len(entry.After) > 0 {
+		return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
+			Summary: fmt.Sprintf("%s at %s waits in the landing lane. It %s.", subject, plain.Short(entry.SHA), entry.Reason)}
+	}
+	if entry.Cause != nil {
+		return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
+			Summary: fmt.Sprintf("%s at %s waits in the landing lane: %s; cause: %s", subject, plain.Short(entry.SHA), entry.Reason, entry.Cause.Kind)}
+	}
 	return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
