@@ -97,6 +97,7 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 			t.Parallel()
 			b, _, _ := plainLaneBedWith(t, true, "critic-root", "critic-root")
 			l, _ := holdLaneFixture(t, nil)
+			seedRecentTrunkCheck(t, l.install, l.home)
 			b.owners.laneInstall = func(string) (string, error) { return l.install, nil }
 			code, result := b.do("work", "land", bedGoal)
 			expectOutcome(t, "hand-in", code, result, intentConfirmed)
