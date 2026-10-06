@@ -24,7 +24,7 @@ func newStopVerbBed(t *testing.T) *replayVerbBed {
 	if err := os.WriteFile(filepath.Join(b.install, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nlanding.prove.command=fixture\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return b

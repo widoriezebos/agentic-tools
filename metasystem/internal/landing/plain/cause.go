@@ -2,7 +2,6 @@ package plain
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -132,7 +131,7 @@ func ReturnProven(install, goal, kind, reason string, person bool, by string, no
 
 func lastGoalProof(install, goal string) (Result, error) {
 	var newest Result
-	for _, path := range []string{resultsPath(install), filepath.Join(Dir(install), "gates.jsonl")} {
+	for _, path := range []string{resultsPath(install), gatesPath(install)} {
 		results, err := readLines[Result](path)
 		if err != nil {
 			return Result{}, err

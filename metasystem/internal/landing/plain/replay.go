@@ -60,7 +60,7 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 		if err := recordProofStop(install, result); err != nil {
 			return err
 		}
-		return appendLine(resultsPath(install), result)
+		return appendLine(seams.resultsPath(install), result)
 	}); err != nil {
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result

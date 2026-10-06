@@ -365,7 +365,7 @@ func (d scopeDecision) describe(result Result, observed *proofOutput) Result {
 	result.Ran, result.Environment = observed.ran, observed.environment
 	if d.Scope == "scoped" {
 		result.FullTree, result.FullAt = d.base.FullTree, d.base.FullAt
-	} else if result.Result == Green {
+	} else if result.Result == Green && d.Scope != "gate" {
 		result.FullTree, result.FullAt = result.Tree, result.At
 	} else {
 		result.FullTree, result.FullAt = "", ""

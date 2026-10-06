@@ -30,6 +30,7 @@ type Status struct {
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
 	LastProof *Result `json:"last_proof"`
+	LastGate  *Result `json:"last_gate,omitempty"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
 	Stop     *Stop   `json:"stop,omitempty"`
@@ -43,6 +44,7 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
+	Gate   bool   `json:"gate,omitempty"`
 	Tree   string `json:"tree"`
 	Commit string `json:"commit,omitempty"`
 	Since  string `json:"since"`
@@ -202,6 +204,12 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	if err == nil && len(results) > 0 {
 		status.LastProof = &results[len(results)-1]
 	}
+	gates, skipped, err := countedLines[Result](gatesPath(install))
+	unread("the gate results", err)
+	damaged("the gate results have", skipped, gatesPath(install))
+	if err == nil && len(gates) > 0 {
+		status.LastGate = &gates[len(gates)-1]
+	}
 	pushes, skipped, err := countedLines[Pushed](pushesPath(install))
 	unread("the push record", err)
 	damaged("the push record has", skipped, pushesPath(install))
@@ -343,5 +351,5 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	return &RunningProof{Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

@@ -26,7 +26,7 @@ type replayVerbBed struct {
 func newReplayVerbBed(t *testing.T) *replayVerbBed {
 	t.Helper()
 	b := &replayVerbBed{resolveVerbFixture: newResolveVerbFixture(t), head: "merge-b"}
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("landing.prove.command=fixture\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, g := range []string{"c", "b", "a"} {
@@ -46,8 +46,10 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 		Git: func(_ string, args ...string) (string, error) {
 			joined := strings.Join(args, " ")
 			switch {
+			// Proof declarations come from the checked commit, including in replay fixtures.
 			case len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/metasystem.conf"):
-				return "proof.full=fixture\n", nil
+				body, err := os.ReadFile(filepath.Join(b.install, "metasystem.conf"))
+				return string(body), err
 			case joined == "rev-parse --verify HEAD^{commit}":
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":
@@ -63,7 +65,7 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 				if inside {
 					return "", nil
 				}
-				return "", &exec.ExitError{ProcessState: falseState}
+				return "", fmt.Errorf("git merge-base: %w", &exec.ExitError{ProcessState: falseState})
 			case args[0] == "log":
 				var lines []string
 				parent := "main"

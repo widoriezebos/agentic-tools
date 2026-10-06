@@ -96,7 +96,7 @@ func closeStopsLocked(install, loop, act string, now time.Time) error {
 	for _, s := range lines {
 		latest[s.Loop] = s
 	}
-	for _, name := range []string{"lane-proof", "lane-return"} {
+	for _, name := range []string{"lane-proof", "lane-gate", "lane-return"} {
 		s, ok := latest[name]
 		if !ok || s.Decision == "close" || loop != "" && loop != name {
 			continue
@@ -153,12 +153,19 @@ func recordProofStop(install string, result Result) error {
 		s.Subject = "main"
 	}
 	s.Measure.Name, s.Measure.Now = "red set", result.Cause.Tests
-	results, err := Results(install)
+	mode := ProveSeams{Gate: result.Scope == "gate"}
+	if mode.Gate {
+		s.Loop, s.Measure.Name = "lane-gate", "gate red set"
+	}
+	results, err := readLines[Result](mode.resultsPath(install))
 	if err != nil {
 		return err
 	}
 	attempts := map[string]bool{}
 	for _, r := range results {
+		if mode.Gate && r.Tree != result.Tree {
+			continue
+		}
 		if r.LoopClosed || len(result.Goals) > 0 && !subsetGoals(result.Goals, r.Goals) {
 			attempts = map[string]bool{}
 			s.Measure.Previous = nil
@@ -187,6 +194,9 @@ func recordProofStop(install string, result Result) error {
 		if result.Repeat == "allowed" && s.Attempt < s.Budget {
 			s.Decision, s.Handoff = "repeat", "landing prove"
 		}
+	}
+	if mode.Gate && s.Decision == "repeat" {
+		s.Handoff = "landing prove --gate"
 	}
 	return appendLine(stopsPath(install), s)
 }

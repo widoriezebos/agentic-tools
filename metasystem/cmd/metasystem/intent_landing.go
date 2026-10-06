@@ -404,12 +404,19 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
 			}
 		}
-		if data.LastProof == nil && data.LastPush == nil {
+		if data.LastProof == nil && data.LastGate == nil && data.LastPush == nil {
 			return
 		}
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+		}
+		if gate := data.LastGate; gate != nil {
+			words := gate.Result + landingRedReason(gate.Reason) + " for " + provedWords(gate.Commit, gate.Tree)
+			if gate.Cause != nil {
+				words += "; cause: " + gate.Cause.Kind
+			}
+			section.KV("gate", textui.Plain(words))
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))

@@ -45,6 +45,13 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]stri
 		if err != nil {
 			return nil, err
 		}
+		gate, gateOK, err := LastGate(install)
+		if err != nil {
+			return nil, err
+		}
+		if gateOK && (!ok || resultTime(gate).After(resultTime(last))) {
+			last, ok = gate, true
+		}
 		if ok {
 			if at, err := time.Parse(time.RFC3339, last.At); err == nil && at.After(lastLaunch) {
 				reasons = append(reasons, WakeProofFinished)
@@ -150,6 +157,10 @@ func KeeperFingerprint(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	gate, _, err := LastGate(install)
+	if err != nil {
+		return "", err
+	}
 	pushed, _, err := LastPush(install)
 	if err != nil {
 		return "", err
@@ -161,10 +172,11 @@ func KeeperFingerprint(root string) (string, error) {
 	data, err := json.Marshal(struct {
 		Entries  []Entry `json:"entries"`
 		Last     Result  `json:"last"`
+		Gate     Result  `json:"gate"`
 		Pushed   Pushed  `json:"pushed"`
 		Running  Running `json:"running"`
 		Recorded bool    `json:"recorded"`
-	}{entries, last, pushed, running, recorded})
+	}{entries, last, gate, pushed, running, recorded})
 	if err != nil {
 		return "", err
 	}

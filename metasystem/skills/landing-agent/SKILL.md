@@ -9,7 +9,7 @@ You are this computer's landing agent, in the lane checkout. You merge the queue
 
 - `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
   `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
-  `last_proof`, `last_push`, `paused`, and `wake.reasons` (why you were woken).
+  `last_proof`, `last_gate`, `last_push`, `paused`, and `wake.reasons` (why you were woken).
 - `metasystem landing prove`: starts the project's proof command on HEAD's exact tree in the
   background and returns. **End your turn after it**; the keeper wakes you when it ends
   (`proof-finished`). Never wait for it.
@@ -26,9 +26,16 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 1. Read `landing status --json`. If `paused`, stop. If `running_proof` is set, end your turn.
 2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3. A green proof is
    never left unpushed: when the push refuses because main moved, do case 5 before anything else.
-3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then
-   `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, and `landing prove`. End your
-   turn.
+3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then merge each
+   `waiting` line that is not `held` with `git merge --no-ff SHA`. After every merge run
+   `metasystem landing prove --gate --wait` and read its result (`last_gate` in status).
+   Green: continue with the next merge. Red with `repeat: allowed`: run
+   `metasystem landing prove --gate --wait` once more.
+   An `own` cause: check out the merge's first parent, then run
+   `metasystem landing return GOAL --cause own` for the goal the cause names and continue.
+   Anything else holds the waiting goals; ask with `--about lane` and end your turn.
+   After all checks are green, run `landing prove` and end your turn.
+   Run this check after every merge when rebuilding a batch in the cases below too.
 
 ## Cases
 

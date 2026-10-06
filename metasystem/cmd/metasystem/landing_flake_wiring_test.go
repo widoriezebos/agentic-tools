@@ -292,13 +292,14 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 }
 
 // The agent reads the recorded cause and holds a spent retry instead of guessing a return.
+// Every merge also needs its cheap check before the completed batch gets a full proof.
 func TestLandingFlakeSkillAndProtocol(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		path    string
 		phrases []string
 	}{
-		{"skills/landing-agent/SKILL.md", []string{"last_proof.repeat", "allowed", "last_proof.failed", "recorded flake", "no other check of that tree", "last_proof.cause", "landing return GOAL --cause own", "the waiting goals hold"}},
+		{"skills/landing-agent/SKILL.md", []string{"last_proof.repeat", "allowed", "last_proof.failed", "recorded flake", "no other check of that tree", "last_proof.cause", "landing return GOAL --cause own", "the waiting goals hold", "After every merge run", "landing prove --gate --wait", "merge's first parent", "last_gate"}},
 		{"docs/flake-registry.md", []string{"one repeat per tree", "fix-flaky-UNIT", "first sighting", "plans/goals/trunk-red.json", "old hand register"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
