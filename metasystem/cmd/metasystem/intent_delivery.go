@@ -90,6 +90,7 @@ func intentDeliveryCommands() []intentCommand {
 			flags: []intentFlag{
 				goalFlag,
 				{name: "work", value: "NAME", usage: "with G: the goal's named work to review"},
+				{name: "last", usage: "with --changes or --patch: marks this unit as the goal's last; for a goal whose design has no Units table"},
 				{name: "changes", usage: "with G: submit this checkout's current changes as the goal's work; without G: feedback on them"},
 				{name: "patch", value: "PATCH", usage: "with G: submit this patch file as the goal's work; without G: feedback on it"},
 				{name: "commit", value: "SHA", usage: "review one committed version of a goal's work, with --goal"},
@@ -171,6 +172,7 @@ func intentDeliveryCommands() []intentCommand {
 				"While this computer has a landing lane it is refused, as is work land j2:J, except with --local or --recertification.",
 			},
 			flags: append([]intentFlag{
+				{name: "whole", usage: "with --by NAME: declare the end of a goal whose design has no Units table"},
 				{name: "records", value: "PATH", repeat: true, usage: "commit these record files on the goal branch, publish it and hand it in; repeat for each path, relative to the checkout top"},
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
@@ -178,7 +180,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "delivered", value: "TEXT", usage: "one plain sentence of what this delivers, posted to the channel when it reaches main"},
 				{name: "exception", value: "CODE", advanced: true, usage: "a person's exception: the one refusal code or group:NAME this landing is carried past"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "with --exception: why"},
-				{name: "by", value: "NAME", advanced: true, usage: "with --exception: the person deciding, at the enrolled terminal"},
+				{name: "by", value: "NAME", advanced: true, usage: "with --whole or --exception: the person deciding, at the enrolled terminal"},
 				{name: "expires", value: "DURATION", advanced: true, usage: "with --exception: how long it stays usable (default 2h, at most 4h)"},
 				{name: "replace-exception", value: "ID", advanced: true, usage: "with --exception: the unused exception this one replaces"},
 				{name: "transfer", advanced: true, usage: "with --replace-exception: take over an exception recorded on another seat"},
@@ -1662,6 +1664,18 @@ func runIntentLand(inv *intentInvocation) int {
 	if refused := inv.deliveredRefusal(); refused != nil {
 		return inv.render(*refused)
 	}
+	if inv.input.switched("whole") {
+		if !inv.input.has("by") || inv.input.text("by") == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: "--whole needs the name of the person declaring the goal's end (--by); nothing was done", next: inv.typedArgvWith("--by", "NAME")})
+		}
+		for _, option := range []string{"records", "message", "queue-only", "exception", "using-exception"} {
+			if inv.input.has(option) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2,
+					Summary: "--whole takes an ordinary goal hand-in, without --" + option + "; nothing was done", next: inv.typedArgvLess(option)})
+			}
+		}
+	}
 	if inv.input.has("records") {
 		for _, option := range []string{"through", "queue-only", "message", "exception", "using-exception"} {
 			if inv.input.has(option) {
@@ -1688,6 +1702,10 @@ func runIntentLand(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if ref.kind == refJ2 {
+		if inv.input.switched("whole") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: "--whole declares a goal's end, so it takes a goal; nothing was done", next: inv.publicArgv("work", "land", "G", "--whole", "--by", "NAME")})
+		}
 		if inv.input.has("records") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--records names a goal, so nothing was done",
 				next: inv.publicArgv("work", "land", "G", "--records", "PATH")})
@@ -1733,10 +1751,22 @@ func runIntentLand(inv *intentInvocation) int {
 	if result := inv.selectRoot(); result != nil {
 		return inv.render(*result)
 	}
+	if inv.input.switched("whole") {
+		if inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1,
+				Summary: "declaring a goal's end is a person's act; this agent session cannot do it", next: inv.publicArgv("work", "land", args[0]), nextReason: "after a person has declared its end"})
+		}
+		if _, _, problem := inv.actingAs("work land --whole", args[0], actorHuman); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	if inv.input.has("exception") || inv.input.has("using-exception") {
 		return inv.render(inv.landException(args[0]))
 	}
 	for _, other := range exceptionOptions {
+		if other == "by" && inv.input.switched("whole") {
+			continue
+		}
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s only goes with an exceptional landing (--exception); nothing was done", other),
 				next: inv.typedArgvLess(other), nextReason: "an ordinary landing"})
@@ -2032,12 +2062,12 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 				Summary: fmt.Sprintf("goal %s already landed at %s; a goal lands once, so the commits since then were not handed in.", goalID, shortCommit(landed)),
 				next:    inv.publicArgv("goal", "done", goalID, "--reason", "TEXT")}
 		}
-		subject, _, refusal = handLandingSubject(targets, goalID, through, state, false, designs...)
+		subject, _, refusal = handLandingSubject(targets, goalID, through, state, false, inv.input.switched("whole"), designs...)
 		if refusal != nil {
 			return *refusal
 		}
 	} else if state.BranchTip != "" {
-		subject, _, refusal = handLandingSubject(targets, goalID, through, state, true)
+		subject, _, refusal = handLandingSubject(targets, goalID, through, state, true, false)
 		if refusal != nil {
 			return *refusal
 		}
@@ -2271,6 +2301,13 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		break
 	}
 	progress.Declared = len(declared)
+	if progress.NoEnd {
+		for _, unit := range state.Status.Units {
+			if unit.Whole {
+				progress.NoEnd = false
+			}
+		}
+	}
 	clean := func(index int) bool {
 		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].ReadState == "read clean"
 	}
@@ -2352,7 +2389,7 @@ func (inv *intentInvocation) goalNextStep(goalID string) ([]string, string) {
 
 // handLandingSubject selects the whole branch once its declared work and
 // reads are finished. A records hand-in keeps the branch's read requirement.
-func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records bool, designs ...string) (string, int, *intentResult) {
+func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records, whole bool, designs ...string) (string, int, *intentResult) {
 	units := state.Status.Units
 	unread := func(index int) *intentResult {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
@@ -2365,10 +2402,14 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			Summary: fmt.Sprintf("the units table for goal %s can't be read, so nothing was landed", goalID),
 			next:    []string{"metasystem", "design", "list"}, Details: []string{err.Error()}}
 	}
+	if whole && progress.NoEnd {
+		progress.NoEnd = false
+	}
 	if !records && progress.NoEnd && len(units) > 0 {
 		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "GOAL_NO_END"},
-			Summary: fmt.Sprintf("goal %s has no Units table and no unit built with --last, so nothing says it is finished.\nA goal lands whole, once.", goalID),
-			next:    []string{"metasystem", "work", "build", goalID, "--work", "NAME", "--last", "--brief", "FILE", "--check", "COMMAND"}}
+			Summary: fmt.Sprintf("goal %s has no end declared; use --last, or a person declares it with work land %s --whole --by.", goalID, goalID),
+			next:    []string{"metasystem", "work", "build", goalID, "--work", "NAME", "--last", "--brief", "FILE", "--check", "COMMAND"},
+			Details: []string{fmt.Sprintf("A person can declare its end with metasystem work land %s --whole --by NAME.", goalID)}}
 	}
 	if !progress.NoEnd && progress.Unit != "" {
 		var missing []string
@@ -2390,8 +2431,12 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 		if progress.NeedsBuild {
 			next = []string{"metasystem", "work", "build", goalID, "--work", progress.Unit, "--brief", "FILE", "--check", "COMMAND"}
 		}
+		declaration := fmt.Sprintf("its design declares %d units", progress.Declared)
+		if progress.Declared == 0 {
+			declaration = fmt.Sprintf("its branch has %d units", len(units))
+		}
 		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "GOAL_NOT_FINISHED"},
-			Summary: fmt.Sprintf("goal %s is not finished: its design declares %d units; %s. A goal lands whole, once.", goalID, progress.Declared, strings.Join(missing, "; ")),
+			Summary: fmt.Sprintf("goal %s is not finished: %s; %s. A goal lands whole, once.", goalID, declaration, strings.Join(missing, "; ")),
 			next:    next}
 	}
 	if len(units) == 0 {

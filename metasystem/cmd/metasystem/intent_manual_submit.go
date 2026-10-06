@@ -259,7 +259,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		commitErr := withToken(func() error {
 			var err error
 			installed, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: id,
-				Units: []string{work}, OpID: operation + "-unit", Kind: branch.Unit, Amend: after != "", CheckClaim: check, Transport: conn.transport})
+				Units: []string{work}, OpID: operation + "-unit", Kind: branch.Unit, Amend: after != "", Whole: inv.input.switched("last"), CheckClaim: check, Transport: conn.transport})
 			return err
 		})
 		// A lost commit response is resolved from the actual range: the

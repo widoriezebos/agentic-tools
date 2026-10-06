@@ -49,6 +49,7 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
+	WholeBy  string           `json:"wholeBy,omitempty"`
 	Again    bool             `json:"-"`
 	Goal     string           `json:"goal"`
 	Branch   string           `json:"branch,omitempty"`

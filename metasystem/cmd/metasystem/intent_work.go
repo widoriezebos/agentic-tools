@@ -244,6 +244,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work (default: main, or the goal's only work)"},
+				{name: "last", usage: "marks this unit as the goal's last; for a goal whose design has no Units table"},
 				intentLineageFlag,
 				intentBriefFlag,
 				{name: "lines", value: "N", usage: "the unit's changed-line estimate, when no units table has its row"},
@@ -843,7 +844,8 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		ReadToolCalls int               `json:"readToolCalls"`
 		Model         string            `json:"model,omitempty"`
 		Effort        string            `json:"effort,omitempty"`
-	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}}
+		Whole         bool              `json:"whole,omitempty"`
+	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}, Whole: inv.input.switched("last")}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built",
 			next: inv.sameCommand(), nextReason: "once --brief names a readable file"}
@@ -893,7 +895,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		}
 		binding := unitBinding{goal: id, unit: unit, worktree: worktree, base: base, brief: briefPath, designs: designs, check: check,
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
-		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base,
+		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
 			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
 		if readEachRound {

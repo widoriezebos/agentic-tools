@@ -58,6 +58,7 @@ type CommitRequest struct {
 	Units                                         []string
 	Kind                                          Kind
 	Amend                                         bool
+	Whole                                         bool
 	CheckClaim                                    func() error
 	Transport                                     PushTransport
 }
@@ -236,7 +237,11 @@ func commitMessage(req CommitRequest, subjectCommit string) (string, string, err
 		if len(units) == 0 {
 			return "", "", fmt.Errorf("unit commits need one or more distinct unit names")
 		}
-		return "goal " + req.GoalID + " units " + list, "Goal-Unit: " + req.GoalID + "/" + list, nil
+		trailers := "Goal-Unit: " + req.GoalID + "/" + list
+		if req.Whole {
+			trailers += "\nGoal-Whole: " + req.GoalID
+		}
+		return "goal " + req.GoalID + " units " + list, trailers, nil
 	case Plan:
 		if len(units) != 0 || req.Amend {
 			return "", "", fmt.Errorf("plan commits take neither --unit nor --amend")

@@ -447,7 +447,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	brief := c.brief("brief.md", "Build the connection.\n")
 	c.edits = map[string]string{"connect.txt": "the built result\n", "café.txt": "accented\n", "tab\tname.txt": "tab\n",
 		"quote\"d name.txt": "quoted\n", "dir with space/space name.txt": "spaced\n"}
-	code, result := c.do(append([]string{"work", "build", c.id, "connect", "--brief", brief, "--lines", "10"}, workCheck...)...)
+	code, result := c.do(append([]string{"work", "build", c.id, "connect", "--last", "--brief", brief, "--lines", "10"}, workCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
@@ -498,7 +498,12 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		subjects[0].ExpectedParent != base || len(c.unitCommits("goal/"+c.id)) != 1 || len(subjects[0].Paths) != 5 {
 		t.Fatalf("one retained, unpublished unit commit of the five exact paths: commits=%d %+v", c.commits, subjects)
 	}
+	// A read-clean last unit leads to hand-in rather than another build.
 	first := subjects[0].Commit
+	// The build's last-unit declaration survives a later review and a lost commit response.
+	if message := connectionGit(t, c.worktree, "show", "-s", "--format=%B", first); !strings.Contains(message, "Goal-Whole: "+c.id) {
+		t.Fatalf("last build's commit lost its goal end: %s", message)
+	}
 	for _, path := range []string{"café.txt", "tab\tname.txt", "quote\"d name.txt", "dir with space/space name.txt"} {
 		if out := connectionGit(t, c.root(), "cat-file", "-p", first+":"+path); out == "" {
 			t.Fatalf("%q is not in the unit commit", path)
@@ -547,7 +552,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	attestation := resultData(t, result)["attestation"].(string)
 	code, result = c.do("work", "review", "run:"+run)
 	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["attestation"] != attestation ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "build", c.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"}) || len(c.delegates) != 1 || c.commitReads != 1 {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) || len(c.delegates) != 1 || c.commitReads != 1 {
 		t.Fatalf("published read: code=%d %+v", code, result)
 	}
 	if commits := c.unitCommits("goal/" + c.id); len(commits) != 2 {

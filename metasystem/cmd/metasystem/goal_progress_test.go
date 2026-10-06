@@ -90,8 +90,10 @@ func TestWorkLandRequiresDeclaredEnd(t *testing.T) {
 			owners.status.BranchTip = owners.status.Status.Units[0].Commit
 			code, result := b.do("work", "land", "standing-validation")
 			expectOutcome(t, "no declared end", code, result, intentRefused)
+			// The end can also be declared by a person at hand-in, so the refusal names that route.
 			if resultData(t, result)["code"] != "GOAL_NO_END" ||
-				oneSpaced(result.Summary) != "goal standing-validation has no Units table and no unit built with --last, so nothing says it is finished. A goal lands whole, once." ||
+				oneSpaced(result.Summary) != "goal standing-validation has no end declared; use --last, or a person declares it with work land standing-validation --whole --by." ||
+				!slices.Contains(result.Details, "A person can declare its end with metasystem work land standing-validation --whole --by NAME.") ||
 				result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "build", "standing-validation", "--work", "NAME", "--last", "--brief", "FILE", "--check", "COMMAND"}) {
 				t.Fatalf("goal without an end's remedy: %+v", result)
 			}

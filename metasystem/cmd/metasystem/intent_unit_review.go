@@ -237,7 +237,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				var err error
 				installed, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
 					GoalID: goalID, Units: []string{unit}, OpID: subject.Operation + "-unit", Kind: branch.Unit,
-					Amend: subject.Amends != "", CheckClaim: check, Transport: conn.transport})
+					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport})
 				return err
 			})
 			if commitErr != nil {

@@ -8,6 +8,7 @@ import (
 const ParkUnpushedCode = "GOAL_PARK_UNPUSHED"
 
 type UnitStatus struct {
+	Whole                           bool
 	Unit, Commit, Digest, ReadState string
 	Units                           []string
 }
@@ -59,7 +60,7 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 			}
 			unitIndex[commit.ID] = len(result.Units)
 			result.Units = append(result.Units, UnitStatus{
-				Unit: commit.Unit, Units: append([]string(nil), commit.Units...), Commit: commit.ID, Digest: commit.Digest, ReadState: "built",
+				Unit: commit.Unit, Units: append([]string(nil), commit.Units...), Commit: commit.ID, Digest: commit.Digest, ReadState: "built", Whole: commit.Whole,
 			})
 		case Read:
 			info, err := deps.kind(repo, commit.ID, goalID)

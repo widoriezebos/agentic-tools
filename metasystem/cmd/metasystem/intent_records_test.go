@@ -490,14 +490,14 @@ func TestAFailedPublicationIsPartialAndTheRepeatPublishesIt(t *testing.T) {
 func TestAPlanOnlyBranchLands(t *testing.T) {
 	t.Parallel()
 	tip := strings.Repeat("b", 40)
-	subject, count, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: tip, Status: branch.Status{Commits: []branch.Commit{{ID: tip, Kind: branch.Plan}}}}, false)
+	subject, count, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: tip, Status: branch.Status{Commits: []branch.Commit{{ID: tip, Kind: branch.Plan}}}}, false, false)
 	if refusal != nil || subject != tip || count != 0 {
 		t.Fatalf("plan-only tip: %s %d %+v", subject, count, refusal)
 	}
 }
 func TestAnEmptyBranchStillRefuses(t *testing.T) {
 	t.Parallel()
-	_, _, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: strings.Repeat("a", 40)}, false)
+	_, _, refusal := handLandingSubject(nil, "records", "", intentBranchState{BranchTip: strings.Repeat("a", 40)}, false, false)
 	if refusal == nil || refusal.Outcome != intentRefused {
 		t.Fatalf("empty range: %+v", refusal)
 	}
@@ -505,7 +505,7 @@ func TestAnEmptyBranchStillRefuses(t *testing.T) {
 func TestRecordsBehindAnUnreadUnitWait(t *testing.T) {
 	t.Parallel()
 	state := intentBranchState{BranchTip: strings.Repeat("b", 40), Status: branch.Status{Commits: []branch.Commit{{Kind: branch.Unit}, {Kind: branch.Plan}}, Units: []branch.UnitStatus{{Commit: strings.Repeat("a", 40)}}}}
-	_, _, refusal := handLandingSubject(nil, "records", "", state, true)
+	_, _, refusal := handLandingSubject(nil, "records", "", state, true, false)
 	if refusal == nil || !strings.Contains(refusal.Summary, "no clean read") {
 		t.Fatalf("records wait for unread unit: %+v", refusal)
 	}

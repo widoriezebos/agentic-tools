@@ -93,6 +93,9 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: registrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered")), Again: inv.input.has("again")}
+	if inv.input.switched("whole") {
+		line.WholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
+	}
 	work, problem := inv.goalWork(goalID)
 	if problem != nil {
 		return *problem

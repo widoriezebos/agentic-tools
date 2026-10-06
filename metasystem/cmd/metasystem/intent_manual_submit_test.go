@@ -37,7 +37,8 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "manual.txt"), []byte("manual work\n"), 0o644)
 	indexBefore, _ := os.ReadFile(filepath.Join(root, ".git", "index"))
 	statusBefore := connectionGit(t, root, "status", "--porcelain")
-	submit := []string{"work", "review", c.id, "--changes", "--brief", "notes/brief.md"}
+	// A read-clean last unit leads to hand-in rather than another build.
+	submit := []string{"work", "review", c.id, "--changes", "--last", "--brief", "notes/brief.md"}
 
 	delegates := len(c.delegates)
 	code, result := do(submit...)
@@ -60,6 +61,10 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	if message := connectionGit(t, root, "show", "-s", "--format=%B", commit); !strings.Contains(message, "Goal-Unit: "+c.id+"/main") {
 		t.Fatalf("the unit commit is the goal's work main: %s", message)
 	}
+	// Manual work can declare the last unit with the same trailer as a build.
+	if message := connectionGit(t, root, "show", "-s", "--format=%B", commit); !strings.Contains(message, "Goal-Whole: "+c.id) {
+		t.Fatalf("manual last unit lost its goal end: %s", message)
+	}
 	indexAfter, _ := os.ReadFile(filepath.Join(root, ".git", "index"))
 	if !bytes.Equal(indexBefore, indexAfter) || connectionGit(t, root, "status", "--porcelain") != statusBefore {
 		t.Fatal("manual submission changed the source checkout's index or files")
@@ -75,7 +80,7 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	publications := c.publications
 	code, result = do(append(slices.Clone(submit), "--dispositions", j.dispositions)...)
 	if code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 || j.job(c.worktree, critic)["chainClosed"] != true ||
-		result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "build", c.id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "land", c.id}) {
 		t.Fatalf("the decisions close, collect and publish the read: code=%d %+v", code, result)
 	}
 	code, result = do(submit...)
