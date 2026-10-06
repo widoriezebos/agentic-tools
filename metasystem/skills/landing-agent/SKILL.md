@@ -63,19 +63,20 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    needs a full proof.
    Lines that began waiting meanwhile are not added: proven work is pushed first, and
    they are the next batch.
+   **Design refusal** (push returns a goal whose design no longer stands, or refuses because HEAD
+   still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
+   `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, then `metasystem landing prove`.
+   End your turn; push when the proof is green.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
 7. **The check stopped or ran no test** (`running_proof.state` is `died`, or `last_proof` is
    red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
-   `metasystem landing prove` once more and end your turn. A refusal or a second such red holds
+   `metasystem landing prove` once more (use `metasystem landing prove --trunk` when
+   `last_proof.trunk` is set) and end your turn. A refusal or a second such red holds
    the waiting goals; end your turn and say what stopped in your final message.
 8. **Full proof owed** (woken with `full-due` and no line you may merge: nothing waits,
    or every waiting line is held): run `metasystem landing prove --trunk` and end your turn.
    A green clears main's incidents and needs no push; a red is recorded as main's incident.
-9. **Design refusal** (push returns a goal whose design no longer stands, or refuses because HEAD
-   still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
-   `git merge --no-ff SHA` for the `sha` of every `waiting` line that is not `held`, then `metasystem landing prove`.
-   End your turn; push when the proof is green.
-10. **Blocked outside cases 1-9:** ask with `--about lane`, then end your turn; the keeper holds you
+9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you
    until it is answered.
 
 Never end your session with a `waiting` line you could act on: push it, return it, or have a

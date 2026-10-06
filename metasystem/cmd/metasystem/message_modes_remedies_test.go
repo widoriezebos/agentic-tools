@@ -4,6 +4,7 @@ package main
 // own exclusions (G4b keeps its own in message_modes_g4b_test.go). Each is
 // excluded with why; everything else the traced reading finds is enforced.
 var messageTracedExcludedRemedies = map[string]string{
+	"internal/repoproof/full.go#runVM": "shell commands transferring the proof checkout and invoking its reporter; a machine protocol, never a human message",
 	// The adapter self-test's brief to the agent under test: the
 	// PERMITTED_READ token and the attempts it names are the protocol the
 	// self-test checks the agent's evidence against.

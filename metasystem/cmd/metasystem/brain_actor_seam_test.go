@@ -95,6 +95,7 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 	}
 }
 
+// The incident writer uses the lane machine and agent lineage, with no human authority.
 const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
@@ -108,6 +109,7 @@ cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/intent_landing_flake.go:		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
+cmd/metasystem/intent_landing_incident.go:	return goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()}, err
 cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
 cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {

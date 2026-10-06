@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,6 +33,33 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// A lane that never ran a trunk check is due at once (Decision 4's
+	// clock); this bed records a recent one so the wake answers only the
+	// queue and the proofs.
+	trunk, err := json.Marshal(plain.Result{Result: plain.Green, Trunk: true, Tree: "trunk-tree", Commit: "trunk-commit", Scope: "full",
+		At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(module), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(module), "results.jsonl"), append(trunk, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The keeper's last launch ended after that check, so it is not a
+	// finished proof the agent has yet to see.
+	ended := time.Now().UTC().Format(time.RFC3339)
+	state, err := json.Marshal(lane.AgentState{StartedAt: ended, ReapedAt: ended})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(lane.AgentStatePath(bed.home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lane.AgentStatePath(bed.home), state, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	store := launch.Store{Root: filepath.Join(t.TempDir(), "launches")}
@@ -96,7 +124,12 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := `{"tree":"` + tree + `","result":"green","log":"/x.log","at":"` + now.Add(time.Minute).Format(time.RFC3339) + `"}` + "\n"
-	if err := os.WriteFile(filepath.Join(plain.Dir(module), "results.jsonl"), []byte(result), 0o644); err != nil {
+	// Appended, so the bed's recent trunk check still stands.
+	previous, err := os.ReadFile(filepath.Join(plain.Dir(module), "results.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(module), "results.jsonl"), append(previous, result...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	run = keeper.Run()

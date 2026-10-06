@@ -10,6 +10,7 @@ package plain
 // gone without a result died: it holds nothing and is shown as such.
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -108,6 +110,10 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
+	FetchCommand func(*exec.Cmd)
+	// FetchTimeout overrides the fetch deadline for isolated tests.
+	FetchTimeout time.Duration
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
 	// Gate selects the cheap merge check and its separate result register.
@@ -679,6 +685,9 @@ func Short(id string) string {
 
 // Git runs git in dir and returns its trimmed output.
 func Git(dir string, args ...string) (string, error) {
+	if len(args) > 0 && args[0] == "fetch" {
+		return boundedFetch(dir, 60*time.Second, nil, args...)
+	}
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	command.Env = gittree.ScrubbedEnviron()
 	out, err := command.Output()
@@ -690,6 +699,26 @@ func Git(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// boundedFetch keeps a stalled remote or credential prompt inside one keeper tick.
+func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), args ...string) (string, error) {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Env = append(gittree.ScrubbedEnviron(), "GIT_TERMINAL_PROMPT=0")
+	command.WaitDelay = time.Second
+	var output, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &output, &stderr
+	if prepare != nil {
+		prepare(command)
+	}
+	err := boundedexec.Run(command, boundedexec.FixedBound(timeout, ""), "the landing fetch")
+	if err != nil {
+		return "", fmt.Errorf("git fetch: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(output.String()), nil
 }
 
 // runCheck gives the shell files, so a descendant holding its output open

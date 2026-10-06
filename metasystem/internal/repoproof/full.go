@@ -9,10 +9,13 @@ import (
 	"fmt"
 
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -213,11 +216,42 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 	if commit == "" || strings.ContainsAny(commit, "/\\\n\r") {
 		return notRun(stdout, stderr, fmt.Errorf("the proof commit could not be resolved"))
 	}
+	var top bytes.Buffer
+	if err := command([]string{"git", "rev-parse", "--show-toplevel"}, &top, stderr); err != nil {
+		return notRun(stdout, stderr, err)
+	}
+	root := strings.TrimSpace(top.String())
+	if root == "" {
+		return notRun(stdout, stderr, fmt.Errorf("the proof checkout root could not be resolved"))
+	}
+	temp, err := os.MkdirTemp(diskstore.ProcessTempRoot(), "metasystem-proof-bundle-")
+	if err != nil {
+		return notRun(stdout, stderr, err)
+	}
+	defer os.Remove(temp)
+	bundle := filepath.Join(temp, "candidate.bundle")
+	defer os.Remove(bundle)
+	ref := "refs/metasystem/proof/" + filepath.Base(temp)
+	if err := command([]string{"git", "-C", root, "update-ref", ref, commit}, io.Discard, stderr); err != nil {
+		return notRun(stdout, stderr, err)
+	}
+	defer command([]string{"git", "-C", root, "update-ref", "-d", ref, commit}, io.Discard, stderr)
+	if err := command([]string{"git", "-C", root, "bundle", "create", bundle, ref}, io.Discard, stderr); err != nil {
+		return notRun(stdout, stderr, err)
+	}
 	dir := "/tmp/metasystem-proof/" + commit
-	remote := "set -e; mkdir -p " + shellQuote(dir) + "; tar -x -C " + shellQuote(dir) + "; cd " + shellQuote(dir+"/metasystem") + "; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " sh proof/full.sh --host"
-	pipeline := "git archive " + shellQuote(commit) + " | limactl shell " + shellQuote(vm) + " -- bash -c " + shellQuote(remote) + `; statuses=("${PIPESTATUS[@]}"); if [ "${statuses[0]}" -ne 0 ]; then exit 2; fi; exit "${statuses[1]}"`
+	remoteBundle := dir + ".bundle"
+	// Checkout failures are environment failures, before any test can report a code red.
+	remote := "if ! (mkdir -p /tmp/metasystem-proof && cat > " + shellQuote(remoteBundle) +
+		" && { [ -d " + shellQuote(dir+"/.git") + " ] || git clone --no-checkout " + shellQuote(remoteBundle) + " " + shellQuote(dir) +
+		"; } && git -C " + shellQuote(dir) + " fetch --no-tags " + shellQuote(remoteBundle) + " " + shellQuote(ref) +
+		" && git -C " + shellQuote(dir) + " checkout --detach " + shellQuote(commit) +
+		" && test -f " + shellQuote(dir+"/metasystem/proof/full.sh") +
+		"); then printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; fi; cd " + shellQuote(dir+"/metasystem") +
+		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " sh proof/full.sh --host"
+	pipeline := "cat " + shellQuote(bundle) + " | limactl shell " + shellQuote(vm) + " -- bash -c " + shellQuote(remote) + `; statuses=("${PIPESTATUS[@]}"); if [ "${statuses[0]}" -ne 0 ]; then exit 2; fi; exit "${statuses[1]}"`
 	var report bytes.Buffer
-	err := command([]string{"bash", "-c", pipeline}, io.MultiWriter(stdout, &report), stderr)
+	err = command([]string{"bash", "-c", pipeline}, io.MultiWriter(stdout, &report), stderr)
 	// A failed transfer cannot be certified by a report from the remote process.
 	var exit *exec.ExitError
 	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {

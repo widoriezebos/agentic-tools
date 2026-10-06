@@ -61,7 +61,7 @@ func HoldEntries(entries []Entry, incidents []goal.TrunkRedEntry) []Entry {
 		}
 		fixOpen := false
 		for _, incident := range incidents {
-			if entry.Fix != "" && incident.Identity == entry.Fix && incident.Closed == nil {
+			if entry.Fix != "" && incident.Identity == entry.Fix && incident.Closed == nil && (incident.FixGoal == "" || incident.FixGoal == entry.Goal) {
 				fixOpen = true
 				break
 			}

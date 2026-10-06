@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -111,7 +112,7 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 				"git":     "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$PROOF_ARGS\"\nprintf archive\n",
 				"limactl": "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$PROOF_ARGS\"\ncat >/dev/null\nprintf 'VM native output\\nLANDING-FAILED\\tfixture/vm\\tTestVM\\nLANDING-CHECKED\\t1\\n'\nexit 1\n",
 			} {
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0755); err != nil {
+				if err := testexec.WriteFile(filepath.Join(dir, name), []byte(body), 0755); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -126,6 +127,22 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 					}
 					return nil
 				case "git":
+					if len(argv) > 2 && argv[1] == "-C" {
+						f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+						if err != nil {
+							return err
+						}
+						defer f.Close()
+						fmt.Fprintln(f, strings.Join(argv[1:], "\n"))
+						if argv[3] == "bundle" {
+							return os.WriteFile(argv[5], []byte("bundle"), 0644)
+						}
+						return nil
+					}
+					if reflect.DeepEqual(argv, []string{"git", "rev-parse", "--show-toplevel"}) {
+						fmt.Fprint(stdout, "/fixture-root")
+						return nil
+					}
 					want := commit
 					if want == "" {
 						want = "HEAD"
@@ -151,7 +168,7 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 			if exit != 1 || err != nil || out.String() != "VM native output\nLANDING-FAILED\tfixture/vm\tTestVM\nLANDING-CHECKED\t1\n" {
 				t.Fatalf("exit=%d output=%s stderr=%s args=%s err=%v", exit, &out, &stderr, data, err)
 			}
-			for _, want := range []string{"archive\n" + strings.Repeat("a", 40), "shell\nfixture-vm\n--\nbash\n-c", "/tmp/metasystem-proof/" + strings.Repeat("a", 40), "mkdir -p", "tar -x", "/metasystem", "proof/full.sh --host"} {
+			for _, want := range []string{"-C\n/fixture-root\nbundle\ncreate", "shell\nfixture-vm\n--\nbash\n-c", "/tmp/metasystem-proof/" + strings.Repeat("a", 40), "mkdir -p", "git clone --no-checkout", "checkout --detach", "/metasystem", "proof/full.sh --host"} {
 				if !strings.Contains(string(data), want) {
 					t.Fatalf("missing %q in %s", want, data)
 				}
@@ -230,7 +247,7 @@ func TestFullVMEnvironmentFailuresCannotCertify(t *testing.T) {
 	for _, tc := range []struct{ name, git, lima string }{
 		{"missing limactl", "printf archive", ""},
 		{"VM stopped", "printf archive", "exit 1"},
-		{"archive failed after remote green", "exit 1", "cat >/dev/null; printf 'LANDING-CHECKED\\t0\\n'"},
+		{"bundle failed after remote green", "exit 1", "cat >/dev/null; printf 'LANDING-CHECKED\\t0\\n'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -239,13 +256,22 @@ func TestFullVMEnvironmentFailuresCannotCertify(t *testing.T) {
 				if body == "" {
 					continue
 				}
-				if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0755); err != nil {
+				if err := testexec.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0755); err != nil {
 					t.Fatal(err)
 				}
 			}
 			var out, stderr bytes.Buffer
 			command := func(argv []string, stdout, stderr io.Writer) error {
 				if argv[0] == "git" {
+					if len(argv) > 2 && argv[1] == "-C" {
+						if argv[3] == "bundle" {
+							if tc.name == "bundle failed after remote green" {
+								return errors.New("bundle failed")
+							}
+							return os.WriteFile(argv[5], []byte("bundle"), 0644)
+						}
+						return nil
+					}
 					fmt.Fprint(stdout, strings.Repeat("a", 40))
 					return nil
 				}

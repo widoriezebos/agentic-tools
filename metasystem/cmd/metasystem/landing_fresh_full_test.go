@@ -36,11 +36,26 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 	owners := incidentRecorderFixture(t, register, "finder")
 	b.owners.landing.mainEndpoint, b.owners.landing.machine = owners.mainEndpoint, owners.machine
 	b.owners.landing.now = owners.now
+	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "waiting", SHA: "waiting-sha"}); err != nil {
+		t.Fatal(err)
+	}
+	wantHeld := false
 	now := laneTestNow
 	calls, fetches, worktrees, id := 0, 0, 0, 0
 	red := false
 	b.owners.landing.plainProve = plain.ProveSeams{
 		Now: func() time.Time { return now }, NewID: func() string { id++; return fmt.Sprintf("trunk-%d", id) },
+		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
+			data := register.repo.commit("main").files["plans/goals/trunk-red.json"]
+			if len(data) == 0 {
+				return nil, nil
+			}
+			entries, problems := goal.ParseTrunkRed(data)
+			if len(problems) != 0 {
+				return nil, fmt.Errorf("fixture incidents: %v", problems)
+			}
+			return entries, nil
+		},
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
@@ -59,6 +74,9 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 				return "proof.full=main-command\n", nil
 			case "worktree list --porcelain", "worktree prune":
 				return "", nil
+			}
+			if args[0] == "cat-file" {
+				return "", os.ErrNotExist
 			}
 			if len(args) == 5 && args[0] == "worktree" && args[1] == "add" {
 				if args[4] != "main" {
@@ -96,7 +114,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		t.Helper()
 		code, out := b.run(t, b.root, "status", "--json")
 		var data struct{ Data plain.Status }
-		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 0 || data.Data.Wake == nil || slices.Contains(data.Data.Wake.Reasons, plain.WakeFullDue) != due {
+		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 0 || len(data.Data.Queue) != 1 || data.Data.Queue[0].Held != wantHeld || data.Data.Wake == nil || slices.Contains(data.Data.Wake.Reasons, plain.WakeFullDue) != due {
 			t.Fatalf("status due=%v: %d %s %v", due, code, out, err)
 		}
 	}
@@ -111,8 +129,9 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 1 || !data.Data.Trunk || data.Data.Scope != "full" || data.Data.Cause == nil || data.Data.Cause.Kind != "main" || calls != before+2 {
 			t.Fatalf("fresh red: %d %s calls=%d %v", code, out, calls, err)
 		}
-		status(false)
 		register.repo.commits["main"] = register.repo.commit(register.repo.canonical)
+		wantHeld = true
+		status(false)
 		red = false
 		before = calls
 		code, out = b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
@@ -126,6 +145,8 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 			t.Fatalf("incidents not cleared: %s %v", encoded, err)
 		}
 		register.repo.commits["main"] = register.repo.commit(register.repo.canonical)
+		wantHeld = false
+		status(false)
 		// Another check of the green tree must execute again.
 		before = calls
 		code, out = b.run(t, b.root, "prove", "--trunk", "--wait", "--json")

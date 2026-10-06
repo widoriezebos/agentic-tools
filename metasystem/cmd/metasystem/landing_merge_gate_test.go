@@ -274,6 +274,30 @@ func TestLandingMergeGateRequiresCheapDeclaration(t *testing.T) {
 	}
 }
 
+func TestLandingMergeGateBaselineUsesParentsCommittedCommand(t *testing.T) {
+	t.Parallel()
+	b := newMergeGateBed(t)
+	git := b.owners.landing.plainProve.Git
+	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/metasystem.conf") {
+			if strings.HasPrefix(args[1], "merge-a:") {
+				return "proof.cheap=parent-cheap\n", nil
+			}
+			return "proof.cheap=goal-cheap\n", nil
+		}
+		return git(dir, args...)
+	}
+	var commands []string
+	b.fail = func(cmd *exec.Cmd, _ string) (string, error) {
+		commands = append(commands, commandEnv(cmd, "LANDING_COMMIT")+":"+cmd.Args[len(cmd.Args)-1])
+		return "LANDING-CHECKED\t0\n", nil
+	}
+	gateResult(t, b, 0)
+	if !reflect.DeepEqual(commands, []string{"merge-a:parent-cheap", "merge-b:goal-cheap"}) {
+		t.Fatalf("the baseline used the goal's changed declaration: %v", commands)
+	}
+}
+
 func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)

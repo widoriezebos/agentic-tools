@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -171,6 +172,19 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	status.Stop, err = NewestStop(install)
 	unread("the stop record", err)
+	if status.Stop != nil && strings.HasPrefix(status.Stop.Handoff, "hold ") {
+		main, readErr := git.main()
+		if readErr == nil {
+			var incidents []goal.TrunkRedEntry
+			incidents, readErr = seams.incidents(install, string(layout.Checkout), main)
+			if readErr == nil && !slices.ContainsFunc(incidents, func(entry goal.TrunkRedEntry) bool {
+				return entry.Identity == strings.TrimPrefix(status.Stop.Handoff, "hold ") && entry.Closed == nil
+			}) {
+				status.Stop = nil
+			}
+		}
+		unread("the stop's main incident", readErr)
+	}
 	lines, skipped, err := countedLines[Line](queuePath(install))
 	unread("the queue", err)
 	damaged("the queue has", skipped, queuePath(install))

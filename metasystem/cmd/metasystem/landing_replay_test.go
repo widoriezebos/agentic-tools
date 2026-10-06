@@ -50,6 +50,9 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 			case len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/metasystem.conf"):
 				body, err := os.ReadFile(filepath.Join(b.install, "metasystem.conf"))
 				return string(body), err
+			// Main's trunk-red register is absent in this bed (no incident open).
+			case len(args) > 0 && args[0] == "ls-tree" && strings.HasSuffix(joined, "plans/goals/trunk-red.json"):
+				return "", nil
 			case joined == "rev-parse --verify HEAD^{commit}":
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":

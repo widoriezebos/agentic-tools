@@ -108,7 +108,13 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 }
 
 func (s ProveSeams) fetchMain(checkout string) error {
-	_, err := s.git(checkout, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")
+	args := []string{"fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"}
+	var err error
+	if s.FetchCommand != nil || s.Git == nil {
+		_, err = boundedFetch(checkout, s.FetchTimeout, s.FetchCommand, args...)
+	} else {
+		_, err = s.git(checkout, args...)
+	}
 	if err != nil {
 		return fmt.Errorf("fetch origin's main: %w", err)
 	}

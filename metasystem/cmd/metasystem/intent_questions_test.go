@@ -386,6 +386,7 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	original = append(original, []byte("\nproof.full=sh proof/full.sh\nproof.cheap=metasystem test run\n")...)
 	os.WriteFile(conf, append(original, []byte("\nfixture.alpha.one=1\nfixture.alpha.two=2\nfixture.beta=3\n")...), 0o644)
 	caller := t.TempDir()
 	run := func(args ...string) (int, intentResult) {
@@ -425,7 +426,7 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	// The accepted configuration shape of the config owner's own fixture
 	// (validConf and minimalTestingContract in internal/config), with only
 	// the fake runtime enabled, whose registration needs no directory.
-	valid := []byte("metasystem.version=1\nmetasystem.runtimes=fake\ntesting.contract=testing.json\n" +
+	valid := []byte("metasystem.version=1\nmetasystem.runtimes=fake\ntesting.contract=testing.json\nproof.full=sh proof/full.sh\nproof.cheap=metasystem test run\n" +
 		"evidence.root=" + t.TempDir() + "\nrole.default.runtime=fake\n" +
 		"role.default.model.fake=fake-model\nmodel.tier.1=fake:fake-model\nfixture.alpha.one=1\n")
 	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke","argv":["bash","scripts/smoke.sh"]}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -174,5 +175,103 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 				t.Fatalf("status fetched more than once: %d", fetches-wantFetch)
 			}
 		})
+	}
+}
+
+func TestLandingKeeperBoundsBlockingFetchAndReportsIt(t *testing.T) {
+	t.Parallel()
+	register := holdIncidentFixture(t, newIntentBed(t, false, nil))
+	l, _ := holdLaneFixture(t, register)
+	if _, _, err := plain.HandIn(l.install, plain.Line{Goal: "goal", SHA: "sha-goal"}); err != nil {
+		t.Fatal(err)
+	}
+	l.owners.landing.plainProve.FetchTimeout = 20 * time.Millisecond
+	fetches := 0
+	l.owners.landing.plainProve.FetchCommand = func(cmd *exec.Cmd) {
+		fetches++
+		if freshProofEnv(cmd, "GIT_TERMINAL_PROMPT") != "0" {
+			t.Fatal("the keeper fetch could prompt for credentials")
+		}
+		// Replace only the executable; the production runner still owns its deadline.
+		cmd.Path, cmd.Args = "/bin/sleep", []string{"sleep", "5"}
+	}
+	keeper, starts := holdRefreshKeeper(l)
+	run := keeper.Run()
+	if fetches != 1 || *starts != 0 || run.Outcome == lane.AgentStarted {
+		t.Fatalf("blocking fetch escaped its deadline: fetches=%d starts=%d run=%+v", fetches, *starts, run)
+	}
+	code, words := l.run(t, l.root, "status", "--json")
+	var status struct{ Data plain.Status }
+	if code != 0 || json.Unmarshal([]byte(words), &status) != nil || len(status.Data.Queue) != 1 || !status.Data.Queue[0].Held || !strings.Contains(strings.Join(status.Data.Problems, " "), "timed out") {
+		t.Fatalf("the fetch timeout was not a reported hold: %d %s", code, words)
+	}
+}
+
+func TestLandingPushRefusesFixHandInAfterIncidentReassignment(t *testing.T) {
+	t.Parallel()
+	b, _, _ := plainLaneBedWith(t, true, "critic-root", "critic-root")
+	holdIncidentFixture(t, b.intentBed)
+	b.addGoal(queuedIntentGoal("other-goal", 1))
+	code, result := b.do("incident", "claim", holdIncidentID, "--goal", bedGoal, "--by", "Wido")
+	expectOutcome(t, "claim for first fix", code, result, intentConfirmed)
+	l, pushes := holdLaneFixture(t, nil)
+	b.owners.laneInstall = func(string) (string, error) { return l.install, nil }
+	code, result = b.do("work", "land", bedGoal)
+	expectOutcome(t, "fix hand-in", code, result, intentConfirmed)
+	entries, err := plain.Entries(l.install)
+	if err != nil || len(entries) != 1 || entries[0].Fix != holdIncidentID {
+		t.Fatalf("missing fix identity: %+v %v", entries, err)
+	}
+	code, result = b.do("incident", "claim", holdIncidentID, "--goal", "other-goal", "--by", "Wido")
+	expectOutcome(t, "reassign fix", code, result, intentConfirmed)
+	register, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"])
+	if len(problems) != 0 || register[0].FixGoal != "other-goal" {
+		t.Fatalf("reassignment missing: %+v %v", register, problems)
+	}
+	l.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return register, nil }
+	l.owners.landing.contained = func(_ string, main string) func(string) (bool, error) {
+		return func(sha string) (bool, error) { return main == "head" && sha == entries[0].SHA, nil }
+	}
+	code, words := l.run(t, l.root, "push", "--json")
+	if code != 1 || *pushes != 0 || !strings.Contains(words, "HEAD contains held goal "+bedGoal) {
+		t.Fatalf("an obsolete fix claim authorized push: %d pushes=%d %s", code, *pushes, words)
+	}
+}
+
+func TestLandingStatusClosesIncidentStopAtReadTime(t *testing.T) {
+	t.Parallel()
+	b := newIntentBed(t, false, nil)
+	register := holdIncidentFixture(t, b)
+	l, _ := holdLaneFixture(t, register)
+	stopBytes, err := json.Marshal(plain.Stop{Loop: "lane-proof", Decision: "stop", Handoff: "hold " + holdIncidentID,
+		Cause: &plain.Cause{Kind: "main", Name: holdIncidentID}, At: laneTestNow.Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(l.install), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(l.install), "stops.jsonl"), append(stopBytes, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := func(wantStop bool) {
+		t.Helper()
+		code, words := l.run(t, l.root, "status", "--json")
+		var result struct{ Data plain.Status }
+		if code != 0 || json.Unmarshal([]byte(words), &result) != nil || (result.Data.Stop != nil) != wantStop {
+			t.Fatalf("stop open=%v: %d %s", wantStop, code, words)
+		}
+	}
+	status(true)
+	code, result := b.runJSON(b.owners(), "incident", "close", holdIncidentID, "--reason", "Main is repaired", "--by", "Wido")
+	expectOutcome(t, "person closes main incident", code, result, intentConfirmed)
+	closed, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"])
+	if len(problems) != 0 || closed[0].Closed == nil {
+		t.Fatalf("main's closure missing: %+v %v", closed, problems)
+	}
+	l.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return closed, nil }
+	status(false)
+	if stop, err := plain.NewestStop(l.install); err != nil || stop == nil {
+		t.Fatalf("status rewrote the stop record: %+v %v", stop, err)
 	}
 }

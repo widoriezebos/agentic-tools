@@ -105,7 +105,7 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 			return "", os.WriteFile(filepath.Join(dir, "..", "testing.json"), contract, 0o644)
 		}
 		if len(args) == 4 && args[0] == "worktree" && args[1] == "remove" {
-			return "", os.RemoveAll(args[3])
+			return "", nil
 		}
 		return "", fmt.Errorf("unexpected stub Git: %v", args)
 	}, Command: func(command *exec.Cmd) error {

@@ -465,6 +465,14 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	b.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+		data := register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"]
+		entries, problems := goal.ParseTrunkRed(data)
+		if len(problems) != 0 {
+			return nil, fmt.Errorf("fixture incidents: %v", problems)
+		}
+		return entries, nil
+	}
 	b.owners.landing.view = func(string) lane.View {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
@@ -504,8 +512,22 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 		t.Fatalf("question: %d %s %s", code, &stdout, &stderr)
 	}
 	proof := plain.Result{Result: plain.Green, Commit: register.repo.canonical, Tree: "green-tree", Scope: "full", At: syncRequestTestNow.Format(time.RFC3339), FullAt: syncRequestTestNow.Format(time.RFC3339), FullTree: "green-tree", Attempt: "clearing-green"}
-	if err := b.owners.landing.clearLandingIncidents(b.install, proof); err != nil {
-		t.Fatal(err)
+	writeCauseProof(t, b.install, "results.jsonl", proof)
+	b.owners.landing.contained = func(string, string) func(string) (bool, error) {
+		return func(string) (bool, error) { return false, nil }
+	}
+	b.owners.landing.push = func(_, _ string, _ time.Time, before func(string, string) error) (plain.PushOutcome, error) {
+		out := plain.PushOutcome{Old: proof.Commit, Commit: proof.Commit, Tree: proof.Tree, Changed: true}
+		return out, before(out.Old, out.Commit)
+	}
+	command, _ := findIntentAction("landing", "push")
+	command = laneCommand(command, func(inv *intentInvocation, admitted laneAdmitted) int {
+		return runIntentLandingPushWithOwners(inv, admitted, landingPushOwners{notify: func(plain.PushOutcome) error { return nil }})
+	})
+	stdout.Reset()
+	stderr.Reset()
+	if code := runIntentIn(command, []string{"--json"}, &stdout, &stderr, b.root, b.owners); code != 0 {
+		t.Fatalf("clearing push: %d %s %s", code, &stdout, &stderr)
 	}
 	if stop, err := plain.NewestStop(b.install); err != nil || stop != nil {
 		t.Fatalf("cleared incident still holds: %+v %v", stop, err)

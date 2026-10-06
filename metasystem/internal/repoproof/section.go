@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -42,7 +43,7 @@ func runSection(stdout, stderr io.Writer, module, id string, environment []strin
 		if group.ID != id || group.Adapter != "section" {
 			continue
 		}
-		logs, err := os.MkdirTemp("", "metasystem-full-section-")
+		logs, err := os.MkdirTemp(diskstore.ProcessTempRoot(), "metasystem-full-section-")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
