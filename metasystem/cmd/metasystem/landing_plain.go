@@ -165,6 +165,38 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	if problem != nil {
 		return *problem
 	}
+	if file := projection.Tree.Live[goalID]; file != nil && file.Claimed != nil {
+		line.AreaSnapshot = file.Claimed.AreaSnapshot
+		if line.Source == "" && !line.Known && len(line.Warnings) == 0 {
+			line.AreaSnapshot = inv.claimAreaReaders().Design(goalID, projection.Tip)
+			if !line.Known && line.Source == "" {
+				line.Warnings = nil
+			}
+		}
+	} else {
+		readers := inv.claimAreaReaders()
+		line.AreaSnapshot = readers.Design(goalID, projection.Tip)
+		if !line.Records {
+			// Restoring code queue ownership after release needs area admission.
+			endpoint, err := inv.owners.dependencies.endpoint(projection.Root)
+			if err != nil {
+				return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.sameCommand(), nextReason: "try again once the goal ledger can be read"}
+			}
+			warnings, err := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, goalID, line.AreaSnapshot, readers)
+			if err != nil {
+				message := strings.SplitN(err.Error(), "\nrun: ", 2)[0]
+				_, proof, problem := inv.actingAs("work land", goalID, actorEither)
+				if goal.RefusalCode(err) != goal.ClaimAreasCode || problem != nil || proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+					return intentResult{Outcome: intentRefused, code: 1, Summary: message, next: inv.sameCommand(), nextReason: "after the blocking goal lands or is dropped, hands this branch in again"}
+				}
+				warnings = append(warnings, message)
+			}
+			line.Warnings = warnings
+		}
+	}
+	if line.Records && !line.Known && line.Source == "" {
+		line.Warnings = nil
+	}
 	for _, incident := range projection.Tree.TrunkRed {
 		if incident.Closed == nil && incident.EntryClass() == goal.TrunkRedClassTrunkRed && incident.FixGoal == goalID {
 			line.Fix = incident.Identity
@@ -218,6 +250,9 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	summary := fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha))
 	if line.Again && seen && previous.SHA == sha && previous.State == plain.StateReturned {
 		summary += "; re-queued after a return that needed no change"
+	}
+	if len(line.Warnings) > 0 {
+		summary += "; warning: " + strings.Join(line.Warnings, "; ")
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
 		Details: inv.writeJoinedCard(goalID),

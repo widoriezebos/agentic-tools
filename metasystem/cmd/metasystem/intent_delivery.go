@@ -256,6 +256,7 @@ type intentDeliveryOwners struct {
 	branchState  func(root, goalID string) (intentBranchState, error)
 	laneLatest   func(install, goalID, main string) (plain.Entry, bool, error)
 	laneContains func(sha, main string) (bool, error)
+	claimMain    func(root string) (string, error)
 	// trailerWorktree is the goal worktree a missing kind trailer may be
 	// amended in (productionTrailerWorktree); nil offers no amend.
 	trailerWorktree func(root, goalID, commit, endpointTip string) string

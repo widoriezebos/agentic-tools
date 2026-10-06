@@ -671,6 +671,9 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	if view.Box != "" {
 		summary += " under " + view.Box
 	}
+	if file.Claimed != nil && len(file.Claimed.Warnings) > 0 {
+		summary += "; " + strings.Join(file.Claimed.Warnings, "; ")
+	}
 	shown := goalShown{file: file, budget: view}
 	return intentResult{Summary: summary, text: view.lines(),
 		Data: map[string]any{"where": where, "goal": goalDisplayRecord(file, false), "budget": view},

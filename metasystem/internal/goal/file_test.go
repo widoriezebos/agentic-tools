@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -212,9 +213,10 @@ func TestClaimedEpisodeRoundTrip(t *testing.T) {
 			t.Parallel()
 			file := episodeGolden()
 			file.Claimed.EpisodeObligationRevision = obligationRevision
+			file.Claimed.AreaSnapshot = AreaSnapshot{Known: true, Areas: []string{"metasystem/file with, spaces.go"}, Source: "accepted-design@" + strings.Repeat("a", 64), Warnings: []string{"areas unknown for another goal"}}
 			rendered := RenderFile(file)
 			parsed, problems := ParseFile(rendered)
-			if len(problems) != 0 || parsed.Claimed == nil || *parsed.Claimed != *file.Claimed || string(RenderFile(parsed)) != string(rendered) {
+			if len(problems) != 0 || parsed.Claimed == nil || !reflect.DeepEqual(parsed.Claimed, file.Claimed) || string(RenderFile(parsed)) != string(rendered) {
 				t.Fatalf("episode fields did not round-trip: claim=%+v problems=%v\n%s", parsed.Claimed, problems, rendered)
 			}
 			if obligationRevision == 0 && strings.Contains(string(rendered), "episodeObligationRevision=") {

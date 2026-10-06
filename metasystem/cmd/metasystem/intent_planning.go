@@ -1186,6 +1186,22 @@ func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *
 			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}.withCause(err)
 		return "", &failed
 	}
+	var areaRefusal error
+	readers := inv.claimAreaReaders()
+	endpoint, endpointErr := inv.owners.dependencies.endpoint(projection.Root)
+	if endpointErr == nil {
+		ready := frontier.Ready[:0]
+		for _, candidate := range frontier.Ready {
+			snapshot := readers.Design(candidate, projection.Tip)
+			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers)
+			if refusal != nil {
+				areaRefusal = refusal
+				continue
+			}
+			ready = append(ready, candidate)
+		}
+		frontier.Ready = ready
+	}
 	selection := goal.SelectNext(frontier)
 	if returnedOrLanded && len(frontier.Ready) > 0 {
 		// The claim transaction names the goal's return or conclusion remedy.
@@ -1201,6 +1217,9 @@ func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *
 	case goal.NextSelectionReady:
 		return selection.GoalID, nil
 	default:
+		if areaRefusal != nil {
+			return "", &intentResult{Outcome: intentRefused, code: 1, Summary: areaRefusal.Error(), next: inv.publicArgv("goal", "claim"), nextReason: "after the blocking goal lands or is dropped"}
+		}
 		return "", &intentResult{Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("no goal is ready for %s; nothing was claimed", machine),
 			next:    inv.publicArgv("goal", "list"), nextReason: "a goal is ready once a person approves it",
@@ -1263,6 +1282,7 @@ func (inv *intentInvocation) claimGoal(id, box string, projection goal.Projectio
 	}
 	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		req.ClaimLaneState = laneState
+		req.ClaimAreaReaders = inv.claimAreaReaders()
 		budget, err := f.budgetTuple(false)
 		if err != nil {
 			return goal.PublishResult{}, err
@@ -1289,6 +1309,7 @@ func (inv *intentInvocation) acquireClaim(id string) intentResult {
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		req.ClaimLaneState = laneState
+		req.ClaimAreaReaders = inv.claimAreaReaders()
 		return goal.Claim(req, f.id)
 	}, "id"))
 }

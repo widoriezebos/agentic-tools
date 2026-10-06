@@ -56,6 +56,17 @@ func (shown goalShown) view(page *textui.Page) {
 		facts = append(facts, "stopped by its budget")
 	}
 	page.Headline(headline, facts...)
+	if file.Claimed != nil && (file.Claimed.Source != "" || file.Claimed.Known || len(file.Claimed.Warnings) > 0) {
+		areas := page.Section("Edit areas", "")
+		if file.Claimed.Known {
+			areas.Text(strings.Join(file.Claimed.Areas, ", "))
+		} else {
+			areas.Text("areas unknown for goal " + file.Id)
+		}
+		for _, warning := range file.Claimed.Warnings {
+			areas.Text(warning)
+		}
+	}
 	if page.Verbose() {
 		page.Facts(textui.KV{Key: "ledger", Value: []textui.Span{textui.Plain(textui.SHA(shown.tip))}},
 			textui.KV{Key: "kept", Value: []textui.Span{textui.Plain(shown.where)}})

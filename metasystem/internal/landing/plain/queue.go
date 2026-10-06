@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -49,6 +50,7 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
+	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
 	WholeBy   string           `json:"wholeBy,omitempty"`
@@ -83,6 +85,7 @@ type UnitRounds struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
+	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
 	Goal      string           `json:"goal"`
@@ -210,7 +213,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -315,7 +318,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := closeStopsLocked(install, "", "hand-in "+line.Goal, time.Now()); err != nil {
 			return err
 		}
-		entry, added = Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err
@@ -456,4 +459,17 @@ func pendingQueue(install, checkout string, seams ProveSeams, refresh bool) ([]E
 		}
 	}
 	return pending, err
+}
+
+// AreaEntries preserves queue corruption as unknown admission advice. Ordinary
+// queue readers still tolerate interrupted appends for lane recovery.
+func AreaEntries(install string) ([]Entry, error) {
+	lines, skipped, err := countedLines[Line](queuePath(install))
+	if err != nil {
+		return nil, err
+	}
+	if skipped != 0 {
+		return nil, fmt.Errorf("%s has %d unreadable queue lines", queuePath(install), skipped)
+	}
+	return entriesOf(lines), nil
 }

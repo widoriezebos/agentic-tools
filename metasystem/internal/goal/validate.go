@@ -396,6 +396,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
+	forAll(t, func(where string, f *GoalFile) {
+		if f.Claimed != nil {
+			if err := validateAreaSnapshot(f.Claimed.AreaSnapshot); err != nil {
+				addf("%s: %v", where, err)
+			}
+		}
+	})
+
 	// Quota: one claim per machine, tree-wide; the members of ONE arc under
 	// one claimant count once. A breach-stopped goal is waiting on a human
 	// and must not keep the machine from taking the next item; a claim

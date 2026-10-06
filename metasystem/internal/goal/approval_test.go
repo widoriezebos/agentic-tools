@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -593,10 +594,14 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 	waiting.Budget = &budget
 	running := legacyClaimedFixture("sweep-running", budget)
 	running.Priority, running.Sequence = 2, 1
+	running.Claimed.AreaSnapshot = AreaSnapshot{Known: true, Areas: []string{"metasystem/future/**"}, Source: "accepted-design@" + strings.Repeat("a", 64)}
 	publishGoalFixturesForEndpoint(t, endpoint, waiting, running)
 	published, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(published.Live[running.Id].Claimed.AreaSnapshot, running.Claimed.AreaSnapshot) {
+		t.Fatalf("claim areas lost during publication: %+v", published.Live[running.Id].Claimed)
 	}
 	originalClaim := *published.Live[running.Id].Claimed
 	originalBudget := *published.Live[running.Id].Budget
@@ -635,7 +640,7 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 	if tree.Live[running.Id].State != StateClaimed || tree.Live[running.Id].Claimed == nil || tree.Live[running.Id].Approved == nil {
 		t.Fatalf("the sweep broke or failed to grandfather claimed work: %+v", tree.Live[running.Id])
 	}
-	if got := tree.Live[running.Id]; got.Priority != 2 || got.Sequence != 1 || *got.Claimed != originalClaim || *got.Budget != originalBudget {
+	if got := tree.Live[running.Id]; got.Priority != 2 || got.Sequence != 1 || !reflect.DeepEqual(*got.Claimed, originalClaim) || *got.Budget != originalBudget {
 		t.Fatalf("the sweep changed the ranked claim or its budget: %+v", got)
 	}
 	if got := tree.Live[waiting.Id]; got.Priority != 0 || got.Sequence != 0 {
