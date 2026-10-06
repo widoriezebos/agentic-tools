@@ -35,6 +35,14 @@ func newRepeatBed(t *testing.T) *repeatBed {
 	id := 0
 	b.seams = ProveSeams{Now: func() time.Time { return bedNow }, NewID: func() string { id++; return fmt.Sprintf("a%d", id) },
 		Git: func(dir string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+				return "commit", nil
+			case "rev-parse --verify commit^{tree}":
+				return "tree", nil
+			case "log --first-parent --merges --reverse --format=%H %P origin/main..commit":
+				return "", nil
+			}
 			out, err := g.run(dir, args...)
 			if err == nil && len(args) == 5 && args[0] == "worktree" && args[1] == "add" {
 				err = os.MkdirAll(filepath.Join(args[3], "metasystem"), 0o755)
@@ -345,7 +353,8 @@ func TestRepeatNewTestAllowsOneWholeCheck(t *testing.T) {
 		m["u/a"] = j
 		return m, e
 	}
-	red := b.run(failedReport)
+	// A whole repeat requires isolated greens on every replay tree.
+	red := b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
 	if red.Result != Red || red.Repeat != "allowed" || len(b.records) != 0 {
 		t.Fatalf("new test: %+v records %+v", red, b.records)
 	}
@@ -374,7 +383,8 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 				b.seams.Judge = func(string, string, []FailedUnit) (map[string]UnitJudgement, error) {
 					return map[string]UnitJudgement{"u/a": {}, "u/b": {}}, nil
 				}
-				b.run(failedReport)
+				// The repeat rule requires isolated greens before the whole retry.
+				b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
 			}
 			if strings.Contains(name, "record error") {
 				b.seams.RecordFlake = func(FlakeRecord) (FlakeRecorded, error) { return FlakeRecorded{}, errors.New("record not confirmed") }
@@ -398,8 +408,8 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 			}
 			if name == "unit fails" {
 				trace, _ := os.ReadFile(b.trace)
-				if strings.Count(string(trace), "|tree|commit\n") != 3 {
-					t.Fatalf("did not repeat every unit: %s", trace)
+				if strings.Count(string(trace), "|tree|commit\n") != 4 {
+					t.Fatalf("did not repeat every unit and replay its failure: %s", trace)
 				}
 			}
 			b.refused()

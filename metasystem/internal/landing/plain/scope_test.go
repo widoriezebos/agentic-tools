@@ -634,8 +634,13 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	t.Parallel()
 	b := newScopeBed(t)
 	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "assets/image.png"
+	// The repeat rule requires isolated greens before a whole retry.
 	b.seams.Command = func(command *exec.Cmd) error {
 		b.calls = append(b.calls, command)
+		if commandEnv(command, "LANDING_ONLY") != "" {
+			fmt.Fprint(command.Stdout, "LANDING-CHECKED\t0\n")
+			return nil
+		}
 		fmt.Fprint(command.Stdout, "landing environment image toolchain\nlanding group unrelated failed 7\nLANDING-FAILED\tu/a\tTestA\nLANDING-LOAD\t2.75\nLANDING-CHECKED\t1\n")
 		return errors.New("check failed")
 	}
@@ -661,7 +666,7 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 		return FlakeRecorded{Goal: "fix-flaky-a", Seen: 1}, nil
 	}
 	green := b.run(t)
-	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 2 {
+	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 3 {
 		t.Fatalf("scoped whole repeat: %+v, records %+v", green, records)
 	}
 }

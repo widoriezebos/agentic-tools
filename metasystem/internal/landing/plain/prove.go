@@ -46,14 +46,18 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
-	Cause   *Cause    `json:"cause,omitempty"`
-	Goals   []GoalSHA `json:"goals"`
-	Tree    string    `json:"tree"`
-	Commit  string    `json:"commit"`
-	Result  string    `json:"result"`
-	Log     string    `json:"log"`
-	At      string    `json:"at"`
-	Attempt string    `json:"attempt,omitempty"`
+	// CountedFull identifies a whole execution with a complete report.
+	CountedFull bool `json:"countedFull,omitempty"`
+	// LoopClosed ends the batch budget without changing the proof verdict.
+	LoopClosed bool      `json:"loopClosed,omitempty"`
+	Cause      *Cause    `json:"cause,omitempty"`
+	Goals      []GoalSHA `json:"goals"`
+	Tree       string    `json:"tree"`
+	Commit     string    `json:"commit"`
+	Result     string    `json:"result"`
+	Log        string    `json:"log"`
+	At         string    `json:"at"`
+	Attempt    string    `json:"attempt,omitempty"`
 	// Reason is why the result is what it is, in one sentence: for red,
 	// how the proving command ended ("the proving command exited 1") or why it
 	// could not run; for an inherited green, the tree it inherits from. An
@@ -294,6 +298,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 			return &Busy{Running: running}
 		}
+		if err := checkProofBudget(install, checkout, commit, seams); err != nil {
+			return err
+		}
 		executable, err := seams.Executable()
 		if err != nil {
 			return err
@@ -406,6 +413,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if recorded && alive && current.Attempt != attempt {
 			return &Busy{Running: current}
 		}
+		if err := checkProofBudget(install, checkout, running.Commit, seams); err != nil {
+			return err
+		}
 		if found && previous.Result != Green {
 			if previous.Cause == nil {
 				previous.Cause = &Cause{Kind: "unclassified", Tests: failingTests(previous.Failed), Evidence: previous.Log}
@@ -416,7 +426,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 					return err
 				}
 			}
-			previous.Repeat = "started"
+			previous.Repeat, previous.LoopClosed = "started", false
 			if err := appendLine(resultsPath(install), previous); err != nil {
 				return err
 			}
@@ -658,11 +668,17 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 	removeProofTrees(git, checkout, trees, output)
 	if err := os.MkdirAll(trees, 0o755); err != nil {
 		result.Result, result.Reason, result.Cause = Red, err.Error(), &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}
+		if previous.Result == "" {
+			result.Repeat = "allowed"
+		}
 		return result
 	}
 	tree := filepath.Join(trees, running.Attempt)
 	if _, err := git(checkout, "worktree", "add", "--detach", tree, running.Commit); err != nil {
 		result.Cause = &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}
+		if previous.Result == "" {
+			result.Repeat = "allowed"
+		}
 		result.Result, result.Reason = Red, fmt.Sprintf("the worktree of commit %s could not be made: %v", Short(running.Commit), err)
 		return result
 	}
@@ -682,91 +698,20 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		*observed = proofOutput{output: io.Discard}
 		report, runErr = runCheck(seams, dir, command, running, "", *decision, output, observed)
 	}
+	result.CountedFull = report.kind == "complete" && decision.Scope == "full"
+	if previous.Result != "" {
+		result.Repeat = "started"
+	}
 	if runErr == nil {
 		if previous.Result == Red && len(previous.Failed) > 0 {
 			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}
 		return result
 	}
-	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
-	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
-	var exit *exec.ExitError
-	var launch *exec.Error
-	var path *os.PathError
-	if report.kind == "not-run" || errors.As(runErr, &exit) && !exit.Exited() || errors.As(runErr, &launch) || errors.As(runErr, &path) {
-		result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
-	}
-	result = decision.describe(result, observed)
-	if report.kind == "not-run" && previous.Result == "" {
-		result.Repeat = "allowed"
-	}
-	if report.kind != "complete" {
-		return result
-	}
-	result.Failed = report.failed
-	result.Cause.Tests = failingTests(result.Failed)
-	if seams.Judge == nil {
-		return result
-	}
-	judged, err := seams.Judge(checkout, running.Commit, result.Failed)
-	if err != nil {
-		return result
-	}
-	known := len(result.Failed) > 0
-	for i := range result.Failed {
-		unit := &result.Failed[i]
-		j, found := judged[unit.Unit]
-		unit.Surfaces = j.Surfaces
-		if !found || j.Affected {
-			return result
-		}
-		known = known && j.Known && len(unit.Tests) > 0
-	}
-	if previous.Result != "" {
-		return result
-	}
-	if !known {
-		result.Repeat = "allowed"
-		return result
-	}
-	result.Repeat = "started"
-	result.Cause.Kind = "flake"
-	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
-	if err := withLock(install, func() error { return appendLine(resultsPath(install), result) }); err != nil {
-		result.Reason = "the repeat could not be recorded: " + err.Error()
-		return result
-	}
-	if err := os.MkdirAll(filepath.Join(Dir(install), "proofs"), 0o755); err != nil {
-		result.Reason = "the repeat's log folder could not be made: " + err.Error()
-		return result
-	}
-	repeats := make([]Running, len(result.Failed))
-	var failures []string
-	for i, unit := range result.Failed {
-		repeat := running
-		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
-		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
-		repeats[i] = repeat
-		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-		if err == nil {
-			_, err = runCheck(seams, dir, command, repeat, unit.Unit, *decision, file, &proofOutput{output: io.Discard})
-			if info, statErr := file.Stat(); statErr == nil {
-				_, copyErr := io.Copy(output, io.NewSectionReader(file, 0, info.Size()))
-				err = errors.Join(err, copyErr)
-			}
-			err = errors.Join(err, file.Close())
-		}
-		if err != nil {
-			failures = append(failures, unit.Unit+": "+err.Error())
-		}
-	}
-	if len(failures) > 0 {
-		result.Reason = strings.Join(failures, "; ")
-		return result
-	}
-	green := result
-	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
-	return recordFlakes(seams, result, green, "alone", repeats)
+	return classifyRed(seams, install, checkout, command, dir, running, *decision, output, observed, result, previous, report, runErr,
+		func(red, prior Result) Result {
+			return replayBatch(seams, install, checkout, command, running, red, prior)
+		})
 }
 
 // removeProofTrees removes the lane repository's worktrees under trees,

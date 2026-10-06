@@ -29,6 +29,12 @@ type stubGit struct {
 
 func (g stubGit) run(dir string, args ...string) (string, error) {
 	switch {
+	case strings.Join(args, " ") == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+		return g.commit, nil
+	case strings.Join(args, " ") == "rev-parse --verify "+g.commit+"^{tree}":
+		return g.tree, nil
+	case strings.Join(args, " ") == "log --first-parent --merges --reverse --format=%H %P origin/main.."+g.commit:
+		return "", nil
 	case len(args) == 3 && args[0] == "rev-parse" && args[2] == "HEAD^{commit}":
 		return g.commit, nil
 	case len(args) == 3 && args[0] == "rev-parse" && args[2] == "HEAD^{tree}":

@@ -782,6 +782,15 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	if refused := inv.laneNotReady(owners, root); refused != nil {
 		return inv.render(*refused)
 	}
+	if inv.claimLineage() != lane.AgentLineage {
+		layout, err := record.Layout()
+		if err == nil {
+			err = plain.CloseProofLoop(string(layout.Install))
+		}
+		if err != nil {
+			return inv.render(landingLaneFailure(targets, "the batch's allowance for full checks could not be reopened", err))
+		}
+	}
 	// A start asked for by name is not held by the agent's barren runs.
 	keeper := owners.keeper(home, root)
 	keeper.Explicit = true

@@ -196,6 +196,11 @@ func TestTwoSeatsHandInAndLandByOneGreenPush(t *testing.T) {
 	if push, ok, err := LastPush(b.install); err != nil || !ok || push.Commit != head || push.Old != before {
 		t.Fatalf("last push: %+v %v %v", push, ok, err)
 	}
+	// The batch budget rule requires a push to close the loop and preserve its green proof.
+	closed, ok, err := LastResult(b.install)
+	if err != nil || !ok || !closed.LoopClosed || closed.Result != result.Result || closed.Tree != result.Tree || closed.Attempt != result.Attempt || closed.At != result.At {
+		t.Fatalf("the push did not close the proof loop or changed its proof: %+v %v", closed, err)
+	}
 	// Idempotent: the same push again changes nothing.
 	again, err := b.push()
 	if err != nil || again.Changed || again.Commit != head {

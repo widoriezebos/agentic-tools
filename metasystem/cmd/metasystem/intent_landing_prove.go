@@ -189,6 +189,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 
 // landingProveRefusal renders a prove that could not start or run.
 func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
+	var budget *plain.ProofBudget
+	if errors.As(err, &budget) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "this batch has used its two full checks; the waiting goals hold",
+			next: inv.publicArgv("landing", "run"), nextReason: "only a person's call reopens the batch's allowance for full checks"}
+	}
 	var noRepeat *plain.NoRepeat
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),

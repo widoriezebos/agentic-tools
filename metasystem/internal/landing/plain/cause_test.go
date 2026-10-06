@@ -23,7 +23,8 @@ func TestProofCauseRecordsExistingDecisions(t *testing.T) {
 			case "no worktree":
 				b.seams.Git, kind = (stubGit{commit: "commit", tree: "tree", addErr: errors.New("cannot create worktree")}).run, "environment"
 			case "complete unknown":
-				command, b.seams.Judge = failedReport, nil
+				// The classifier proves an unknown red on main by replay.
+				command, b.seams.Judge, kind = failedReport, nil, "main"
 			case "flake record failed":
 				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 0"
 				b.seams.RecordFlake, kind = nil, "flake"

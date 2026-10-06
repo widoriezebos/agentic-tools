@@ -97,7 +97,10 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	}
 	outcome.Changed = true
 	return outcome, withLock(install, func() error {
-		return appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)})
+		if err := appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}); err != nil {
+			return err
+		}
+		return closeProofLoop(install)
 	})
 }
 
