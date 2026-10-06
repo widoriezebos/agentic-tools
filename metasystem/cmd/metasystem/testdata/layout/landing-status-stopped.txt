@@ -1,2 +1,6 @@
 ○ The landing lane is stopped by Wido; it lands nothing
+
+Admission
+  admission open
+
 → metasystem landing start  resumes it

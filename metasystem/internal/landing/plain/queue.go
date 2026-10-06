@@ -53,6 +53,7 @@ type Line struct {
 	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
+	DrainBy   string           `json:"drainBy,omitempty"`
 	WholeBy   string           `json:"wholeBy,omitempty"`
 	Again     bool             `json:"-"`
 	Goal      string           `json:"goal"`
@@ -86,6 +87,7 @@ type UnitRounds struct {
 // Entry is one hand-in and what became of it.
 type Entry struct {
 	goal.AreaSnapshot
+	DrainBy   string           `json:"drainBy,omitempty"`
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
 	Goal      string           `json:"goal"`
@@ -213,7 +215,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -262,7 +264,7 @@ func Latest(install, goal string) (Entry, bool, error) {
 // nothing is appended unless the repeat brings a new delivery sentence,
 // exception or fix incident for a waiting line. Again re-queues a returned
 // line; a waiting repeat writes only new delivery information.
-func HandIn(install string, line Line) (entry Entry, added bool, err error) {
+func HandIn(install string, line Line, person ...string) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
@@ -272,6 +274,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err != nil {
 			return err
 		}
+		line.DrainBy = ""
 		for index := len(entries) - 1; index >= 0; index-- {
 			existing := entries[index]
 			if existing.Goal == line.Goal && existing.SHA == line.SHA {
@@ -299,6 +302,22 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 				return nil
 			}
 		}
+		drain, drainErr := ReadDrain(install)
+		if drain != nil || drainErr != nil {
+			if len(person) == 0 || person[0] == "" {
+				// An agent is refused while admission is closed whatever the
+				// queue holds; the refusal's remedy (work land G once landing
+				// status shows admission open) is the one that works.
+				return &AdmissionClosed{Drain: drain, Unreadable: drainErr}
+			}
+			line.DrainBy = person[0]
+			if drain != nil && drain.State == DrainHeld {
+				drain.State = DrainDraining
+				if err := writeDrain(install, *drain); err != nil {
+					return err
+				}
+			}
+		}
 		if line.Delivered == "" {
 			// A goal handed in again after a return, without a sentence,
 			// keeps the returned line's; a landed or waiting line's
@@ -318,7 +337,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := closeStopsLocked(install, "", "hand-in "+line.Goal, time.Now()); err != nil {
 			return err
 		}
-		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err
