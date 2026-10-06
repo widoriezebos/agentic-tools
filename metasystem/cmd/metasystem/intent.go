@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -541,6 +542,8 @@ func editDistance(left, right string) int {
 // intentOwners are the existing owners a public command calls. Production
 // uses the real ones; tests give each invocation its own fakes.
 type intentOwners struct {
+	policies config.PolicyReaders
+
 	contractReady func(string, bool) (string, int, error)
 
 	resolver   stateroot.Resolver

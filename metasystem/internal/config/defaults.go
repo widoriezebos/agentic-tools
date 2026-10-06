@@ -17,7 +17,7 @@ import (
 // overrides-only file resolves exactly as the full shipped file did.
 type Setting struct {
 	Key string
-	// CommittedOnly declares a required repository value with no default.
+	// CommittedOnly declares a repository value; Default may supply its absence.
 	// Flags, environment variables and local settings cannot replace it.
 	CommittedOnly bool
 	// Default is the compiled value; empty when Computed names the owner
@@ -63,6 +63,15 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
+	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
+	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},
+	{Key: "landing.trunk-red", Default: "auto", Meaning: "red main decisions; consumption deferred to lane-reads-its-policies"},
+	{Key: "seat.driver", Default: "auto", Meaning: "seat driver decisions; consumption deferred"},
+	{Key: "review.stop", Default: "auto", Meaning: "review correction cap; consumption deferred"},
+	{Key: "goal.raise", Default: "auto", Meaning: "budget raise decisions; consumption deferred"},
+	{Key: "question.route", Default: "auto", Meaning: "coordinator routing decisions; consumption deferred"},
+	{Key: "settings.apply", Default: "boundary", CommittedOnly: true, Meaning: "applies at the next verb; unit-boundary application is not implemented yet"},
 	{Key: "proof.trunk-every", Default: "4h",
 		Meaning: "how often the landing lane freshly checks main in full"},
 	{Key: "host.proof-vm", Default: "", ProofInput: false,
@@ -514,7 +523,7 @@ func SettingKeyProblem(key string) error {
 // runtime binding. It is for readers that hold no configuration context.
 func CompiledDefault(key string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" || setting.CommittedOnly {
+	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "") {
 		return "", false
 	}
 	return setting.Default, true
@@ -599,7 +608,7 @@ func runtimeSelected(runtimes, runtime string) bool {
 // given runtime selection. runtimes is resolved only for a runtime-bound key.
 func applicableDefault(key string, runtimes func() string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" || setting.CommittedOnly {
+	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "") {
 		return "", false
 	}
 	if setting.Runtime != "" && !runtimeSelected(runtimes(), setting.Runtime) {
