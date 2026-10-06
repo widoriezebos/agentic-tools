@@ -526,6 +526,7 @@ type landingOwners struct {
 }
 
 func (l *landingOwners) install(b *deliveryBed) {
+	writeLandingUnits(b, "u1", "u2")
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 	b.owners.branchState = func(string, string) (intentBranchState, error) {
 		if l.branchDeleted {
@@ -583,6 +584,15 @@ func (l *landingOwners) install(b *deliveryBed) {
 	}
 }
 
+func writeLandingUnits(b *deliveryBed, names ...string) {
+	b.t.Helper()
+	page := "# Landing work\n\n- Kind: design\n- Id: landing-work\n- Status: accepted\n- Goals: standing-validation\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n"
+	for _, name := range names {
+		page += "| " + name + " | 5 |\n"
+	}
+	b.writeFile(filepath.Join(b.root(), "plans", "designs", "landing-work.md"), page)
+}
+
 // sweep is the branch owner's merged-branch deletion; a failure leaves the
 // branch in place.
 func (l *landingOwners) sweep() error {
@@ -623,8 +633,8 @@ func TestIntentLandRecovery(t *testing.T) {
 	owners.install(b)
 	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unread unit", code, result, intentRefused)
-	if result.Next == nil || !slices.Equal(result.Next.Argv[1:5], []string{"work", "review", "--commit", strings.Repeat("2", 40)}) || owners.candidates != 0 {
-		t.Fatalf("an unread unit names its read and proves nothing: %+v", result)
+	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "standing-validation", "--work", "u2"}) || owners.candidates != 0 {
+		t.Fatalf("an unread unit names its review and proves nothing: %+v", result)
 	}
 
 	owners.status = readBranch(2, "reader-record", "reader-record")
@@ -771,6 +781,8 @@ func TestIntentLandByHandWritesLandingThenLanded(t *testing.T) {
 	owners := &landingOwners{status: readBranch(2, "reader-record", "reader-record")}
 	owners.install(b)
 	push := b.owners.landPush
+	b.writeFile(filepath.Join(b.root(), "plans", "designs", "card-hand-landing.md"),
+		"# Hand landing\n\n- Kind: design\n- Id: card-hand-landing\n- Status: accepted\n- Goals: card-hand-landing\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 5 |\n| u2 | 5 |\n")
 	var during board.Card
 	b.owners.landPush = func(args []string) (branch.PreparedLanding, string, int, error) {
 		during, _ = board.LiveCard(home, goalID)
@@ -801,7 +813,7 @@ func TestWorkLandTierOneUnitsNeedNoRead(t *testing.T) {
 	owners.install(b)
 	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "tier-2 unread unit by hand", code, result, intentRefused)
-	if !strings.Contains(result.Summary, "has no clean read") || len(owners.preps) != 0 {
+	if !strings.Contains(result.Summary, "u1, u2 have no clean read") || len(owners.preps) != 0 {
 		t.Fatalf("a goal with review rounds lands an unread unit: %+v", result)
 	}
 	owners.status.ReadsWaived = true

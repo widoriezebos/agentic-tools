@@ -29,6 +29,8 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	t.Helper()
 	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
 	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
+	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "plans", "designs", "landing-work.md"),
+		[]byte("# Landing work\n\n- Kind: design\n- Id: landing-work\n- Status: accepted\n- Goals: standing-validation\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 5 |\n"), 0o644)
 	// The public commands resolve a self-hosted checkout by its template
 	// signal (metasystem.template=true); the design page is ordinary content.
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)

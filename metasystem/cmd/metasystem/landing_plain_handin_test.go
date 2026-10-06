@@ -33,7 +33,16 @@ func TestHandInTierOneReadsAreWaived(t *testing.T) {
 
 func TestHandInUnreadUnitHasNoRead(t *testing.T) {
 	t.Parallel()
-	testHandInUnitRounds(t, readBranch(1, "critic-root"), [2]string{"critic", "none"}, "--through", strings.Repeat("1", 40))
+	b, owners, install := plainLaneBedWith(t, true, "critic-root")
+	owners.status = readBranch(1, "critic-root")
+	code, result := b.do("work", "land", "standing-validation", "--through", strings.Repeat("1", 40))
+	expectOutcome(t, "partial goal", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "u2 has no clean read") {
+		t.Fatalf("unread unit was not named: %+v", result)
+	}
+	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
+		t.Fatalf("partial goal was queued: %+v %v", entries, err)
+	}
 }
 
 func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string, args ...string) {

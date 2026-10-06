@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -1973,6 +1974,10 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 			data = map[string]any{}
 			result.Data = data
 		}
+		switch data["code"] {
+		case "GOAL_NOT_FINISHED", "GOAL_NO_END", "GOAL_PROGRESS_UNREADABLE", "GOAL_LAND_WHOLE", "GOAL_LAND_ONCE":
+			return
+		}
 		if skip != "" {
 			data["rebase"] = map[string]string{"state": "skipped", "reason": skip}
 			result.text = append([]string{"not rebased: " + skip}, result.text...)
@@ -1998,6 +2003,42 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 				Summary: "the rebased goal branch can't be read, so nothing was handed in",
 				next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		}
+	}
+	subject := ""
+	if state.BranchTip != "" && !inv.input.has("records") {
+		designs, problem := inv.acceptedDesignPaths(goalID)
+		if problem != nil {
+			return *problem
+		}
+		landed := ""
+		if configured {
+			entry, found, readErr := inv.latestLaneEntry(laneInstall, goalID, state.EndpointTip)
+			if readErr != nil {
+				return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+					Summary: "the landing lane's queue can't be read, so nothing was handed in",
+					next:    inv.sameCommand(), Details: []string{readErr.Error()}}
+			}
+			if found && entry.State == plain.StateLanded && !entry.Records {
+				landed = entry.SHA
+			}
+		} else if previous, found := latestLanded(base); found {
+			landed = previous.Subject
+		}
+		at := slices.IndexFunc(state.Status.Commits, func(commit branch.Commit) bool { return commit.ID == landed })
+		if landed != "" && landed != state.BranchTip && len(state.Status.Units) > 0 && (at < 0 || slices.ContainsFunc(state.Status.Commits[at+1:], func(commit branch.Commit) bool { return commit.Kind == branch.Unit })) {
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "GOAL_LAND_ONCE"},
+				Summary: fmt.Sprintf("goal %s already landed at %s; a goal lands once, so the commits since then were not handed in.", goalID, shortCommit(landed)),
+				next:    inv.publicArgv("goal", "done", goalID, "--reason", "TEXT")}
+		}
+		subject, _, refusal = handLandingSubject(targets, goalID, through, state, false, designs...)
+		if refusal != nil {
+			return *refusal
+		}
+	} else if state.BranchTip != "" {
+		subject, _, refusal = handLandingSubject(targets, goalID, through, state, true)
+		if refusal != nil {
+			return *refusal
 		}
 	}
 	if configured {
@@ -2026,14 +2067,6 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
 			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
-	}
-	subject, _, refusal := handLandingSubject(targets, goalID, through, state)
-	if refusal != nil {
-		if len(rebase.NeedsReview) != 0 {
-			refusal.next = inv.publicArgv("work", "review", goalID, "--work", rebase.NeedsReview[0])
-			refusal.nextReason = "reads the changed unit"
-		}
-		return *refusal
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
 		return *refused
@@ -2211,15 +2244,119 @@ func receiptProves(path, candidate string) bool {
 	return err == nil && json.Unmarshal(encoded, &receipt) == nil && receipt.SchemaVersion == 3 && receipt.Tree == candidate
 }
 
-// handLandingSubject is the unit commit a landing ends at and the number of
-// units through it, provided every one of them has a clean read or the
-// goal's reads are waived.
-func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState) (string, int, *intentResult) {
+type goalProgressState struct {
+	NoEnd, NeedsBuild bool
+	Declared, Index   int
+	Unit              string
+	Unbuilt, Unread   []string
+}
+
+// goalProgress reads the first accepted design with a Units table. Every
+// declared row needs a build, and every branch build needs a clean read
+// unless the goal waives reads. NoEnd also keeps the branch's pending read
+// for goals whose end has not yet been declared.
+func goalProgress(designs []string, state intentBranchState) (goalProgressState, error) {
+	progress := goalProgressState{NoEnd: true, Index: -1}
+	var declared []launch.UnitSize
+	for _, page := range designs {
+		units, err := launch.DeclaredUnits(page)
+		if launch.UnsizedMissing(err) == "units-table" {
+			continue
+		}
+		if err != nil {
+			return progress, err
+		}
+		declared, progress.NoEnd = units, false
+		break
+	}
+	progress.Declared = len(declared)
+	clean := func(index int) bool {
+		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].ReadState == "read clean"
+	}
+	covered := make([]bool, len(state.Status.Units))
+	for _, row := range declared {
+		built, unread := false, -1
+		for index, unit := range state.Status.Units {
+			names := unit.Units
+			if len(names) == 0 {
+				names = strings.Split(unit.Unit, "+")
+			}
+			if !slices.ContainsFunc(names, func(name string) bool {
+				return row.Name == name || strings.HasPrefix(row.Name, name+".") || strings.HasPrefix(row.Name, name+" ")
+			}) {
+				continue
+			}
+			built = true
+			covered[index] = true
+			if !clean(index) && unread < 0 {
+				unread = index
+			}
+		}
+		if !built {
+			progress.Unbuilt = append(progress.Unbuilt, row.Name)
+		} else if unread >= 0 {
+			progress.Unread = append(progress.Unread, row.Name)
+		}
+		if progress.Unit == "" && (!built || unread >= 0) {
+			progress.Unit, progress.NeedsBuild, progress.Index = row.Name, !built, unread
+		}
+	}
+	for index, unit := range state.Status.Units {
+		if !clean(index) {
+			if progress.Unit == "" {
+				progress.Unit, progress.Index = unit.Unit, index
+			}
+			if !covered[index] && !slices.Contains(progress.Unread, unit.Unit) {
+				progress.Unread = append(progress.Unread, unit.Unit)
+			}
+		}
+	}
+	return progress, nil
+}
+
+// handLandingSubject selects the whole branch once its declared work and
+// reads are finished. A records hand-in keeps the branch's read requirement.
+func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records bool, designs ...string) (string, int, *intentResult) {
 	units := state.Status.Units
 	unread := func(index int) *intentResult {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("unit %s of goal %s has no clean read, so it cannot land", units[index].Commit, goalID),
 			next:    []string{"metasystem", "work", "review", "--commit", units[index].Commit, "--goal", goalID}, nextReason: "reads that unit"}
+	}
+	progress, err := goalProgress(designs, state)
+	if err != nil {
+		return "", 0, &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: map[string]any{"code": "GOAL_PROGRESS_UNREADABLE"},
+			Summary: fmt.Sprintf("the units table for goal %s can't be read, so nothing was landed", goalID),
+			next:    []string{"metasystem", "design", "list"}, Details: []string{err.Error()}}
+	}
+	if !records && progress.NoEnd && len(units) > 0 {
+		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "GOAL_NO_END"},
+			Summary: fmt.Sprintf("goal %s has no Units table and no unit built with --last, so nothing says it is finished.\nA goal lands whole, once.", goalID),
+			next:    []string{"metasystem", "work", "build", goalID, "--work", "NAME", "--last", "--brief", "FILE", "--check", "COMMAND"}}
+	}
+	if !progress.NoEnd && progress.Unit != "" {
+		var missing []string
+		if len(progress.Unbuilt) > 0 {
+			verb := " are not built"
+			if len(progress.Unbuilt) == 1 {
+				verb = " is not built"
+			}
+			missing = append(missing, strings.Join(progress.Unbuilt, ", ")+verb)
+		}
+		if len(progress.Unread) > 0 {
+			verb := " have no clean read"
+			if len(progress.Unread) == 1 {
+				verb = " has no clean read"
+			}
+			missing = append(missing, strings.Join(progress.Unread, ", ")+verb)
+		}
+		next := []string{"metasystem", "work", "review", goalID, "--work", progress.Unit}
+		if progress.NeedsBuild {
+			next = []string{"metasystem", "work", "build", goalID, "--work", progress.Unit, "--brief", "FILE", "--check", "COMMAND"}
+		}
+		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "GOAL_NOT_FINISHED"},
+			Summary: fmt.Sprintf("goal %s is not finished: its design declares %d units; %s. A goal lands whole, once.", goalID, progress.Declared, strings.Join(missing, "; ")),
+			next:    next}
 	}
 	if len(units) == 0 {
 		if through == "" && slices.ContainsFunc(state.Status.Commits, func(commit branch.Commit) bool { return commit.Kind == branch.Plan }) {
@@ -2233,28 +2370,18 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			next: []string{"metasystem", "status", goalID}, nextReason: "shows the goal's work and its reviews",
 			Details: []string{"the branch reader returned no attestation source for a read unit"}}
 	}
-	// A goal whose reads are waived (tier 1, zero review rounds) lands its
-	// units unread.
-	landable := state.Status.Prefix
-	if state.ReadsWaived {
-		landable = len(units)
+	if progress.Index >= 0 {
+		return "", 0, unread(progress.Index)
 	}
-	if through == "" {
-		if landable != len(units) {
-			return "", 0, unread(landable)
-		}
-		return state.BranchTip, len(units), nil
+	if through != "" && through != units[len(units)-1].Commit {
+		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Data: map[string]any{"code": "GOAL_LAND_WHOLE"},
+			Summary: fmt.Sprintf("goal %s lands whole, once; --through %s is not its last unit commit, so nothing was landed", goalID, through),
+			next:    []string{"metasystem", "work", "land", goalID}}
 	}
-	for index, unit := range units {
-		if unit.Commit == through {
-			if index >= landable {
-				return "", 0, unread(landable)
-			}
-			return unit.Commit, index + 1, nil
-		}
+	if through != "" {
+		return through, len(units), nil
 	}
-	return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--through %s is not a work commit on goal/%s; nothing was landed", through, goalID),
-		next: []string{"metasystem", "status", goalID}, nextReason: "lists the goal's commits; --through takes one in full"}
+	return state.BranchTip, len(units), nil
 }
 
 // prepareReceipt runs the landing proof on the subject tree through the

@@ -154,7 +154,7 @@ func TestWorkLandSkipsBoundCommitsAndMissingWorktree(t *testing.T) {
 			args, reason := []string{}, ""
 			switch kind {
 			case "through":
-				args = []string{"--through", b.landing.status.Status.Units[0].Commit}
+				args = []string{"--through", b.landing.status.Status.Units[1].Commit}
 				reason = "--through names a commit"
 			case "waiting", "waiting elsewhere", "landed":
 				sha := b.landing.status.BranchTip
@@ -241,7 +241,7 @@ func TestWorkLandRebaseFailuresHandNothingIn(t *testing.T) {
 					t.Fatalf("conflict: %+v", result)
 				}
 			case "needs review":
-				if strings.Join(result.Next.Argv, " ") != "metasystem work review standing-validation --work u2" {
+				if strings.Join(result.Next.Argv, " ") != "metasystem work review standing-validation --work u2" || !strings.Contains(result.Summary, "u2 has no clean read") {
 					t.Fatalf("review command: %+v", result)
 				}
 			}
