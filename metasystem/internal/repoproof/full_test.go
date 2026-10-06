@@ -168,7 +168,7 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 			if exit != 1 || err != nil || out.String() != "VM native output\nLANDING-FAILED\tfixture/vm\tTestVM\nLANDING-CHECKED\t1\n" {
 				t.Fatalf("exit=%d output=%s stderr=%s args=%s err=%v", exit, &out, &stderr, data, err)
 			}
-			for _, want := range []string{"-C\n/fixture-root\nbundle\ncreate", "shell\nfixture-vm\n--\nbash\n-c", "/tmp/metasystem-proof/" + strings.Repeat("a", 40), "mkdir -p", "git clone --no-checkout", "checkout --detach", "/metasystem", "proof/full.sh --host"} {
+			for _, want := range []string{"-C\n/fixture-root\nbundle\ncreate", "shell\nfixture-vm\n--\nbash\n-c", "/tmp/metasystem-proof/" + strings.Repeat("a", 40), "mkdir -p", "git clone --no-checkout", "checkout --force --detach", "/metasystem", "proof/full.sh --host"} {
 				if !strings.Contains(string(data), want) {
 					t.Fatalf("missing %q in %s", want, data)
 				}

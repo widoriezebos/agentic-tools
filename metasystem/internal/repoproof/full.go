@@ -245,7 +245,7 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 	remote := "if ! (mkdir -p /tmp/metasystem-proof && cat > " + shellQuote(remoteBundle) +
 		" && { [ -d " + shellQuote(dir+"/.git") + " ] || git clone --no-checkout " + shellQuote(remoteBundle) + " " + shellQuote(dir) +
 		"; } && git -C " + shellQuote(dir) + " fetch --no-tags " + shellQuote(remoteBundle) + " " + shellQuote(ref) +
-		" && git -C " + shellQuote(dir) + " checkout --detach " + shellQuote(commit) +
+		" && git -C " + shellQuote(dir) + " checkout --force --detach " + shellQuote(commit) +
 		" && test -f " + shellQuote(dir+"/metasystem/proof/full.sh") +
 		"); then printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; fi; cd " + shellQuote(dir+"/metasystem") +
 		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " sh proof/full.sh --host"

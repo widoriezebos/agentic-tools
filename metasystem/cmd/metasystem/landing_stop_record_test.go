@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func newStopVerbBed(t *testing.T) *replayVerbBed {
@@ -327,15 +328,21 @@ func TestLandingKeeperQuestionHoldDoesNotTakeInstallLock(t *testing.T) {
 	defer home.Release()
 	done := make(chan error, 1)
 	go func() { _, err := keeper.Holds[len(keeper.Holds)-1](b.landingA); done <- err }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
+	var holdErr error
+	testenv.AwaitOr(t, "the question hold to finish while both locks are held", func() bool {
+		select {
+		case holdErr = <-done:
+			return true
+		default:
+			return false
 		}
-	case <-time.After(10 * time.Second):
+	}, func() string {
 		_ = home.Release()
 		_ = install.Release()
 		<-done
-		t.Fatal("the question hold waited for the install lock while the home lock was held")
+		return "the question hold waited for the install lock while the home lock was held"
+	})
+	if holdErr != nil {
+		t.Fatal(holdErr)
 	}
 }

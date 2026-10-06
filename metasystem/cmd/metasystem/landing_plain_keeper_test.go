@@ -24,6 +24,7 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
 	module := bed.installation
+	now := laneTestNow
 	// The launcher finds the lane installation by its module file
 	// (batch.ModuleRoot), as for any landing agent.
 	for path, text := range map[string]string{
@@ -38,7 +39,7 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 	// clock); this bed records a recent one so the wake answers only the
 	// queue and the proofs.
 	trunk, err := json.Marshal(plain.Result{Result: plain.Green, Trunk: true, Tree: "trunk-tree", Commit: "trunk-commit", Scope: "full",
-		At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)})
+		At: now.Add(-time.Minute).Format(time.RFC3339)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 	}
 	// The keeper's last launch ended after that check, so it is not a
 	// finished proof the agent has yet to see.
-	ended := time.Now().UTC().Format(time.RFC3339)
+	ended := now.Format(time.RFC3339)
 	state, err := json.Marshal(lane.AgentState{StartedAt: ended, ReapedAt: ended})
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +62,6 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 	if err := os.WriteFile(lane.AgentStatePath(bed.home), state, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC().Truncate(time.Second)
 	store := launch.Store{Root: filepath.Join(t.TempDir(), "launches")}
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(t.TempDir(), "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
@@ -70,6 +70,18 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
 		nonce: func() (string, error) { nonces++; return strings.Repeat(string(rune('0'+nonces)), 16), nil }}
 	keeper := newLandingAgentKeeper(module, bed.home, agent)
+	wake := func(home string) lane.WakeSources {
+		return lane.WakeSources{Reasons: func(string) ([]string, error) {
+			state, err := lane.ReadAgentState(home)
+			if err != nil {
+				return nil, err
+			}
+			launched, _ := time.Parse(time.RFC3339, state.StartedAt)
+			return plain.WakeReasons(module, bed.checkout, launched, now)
+		}}
+	}
+	keeper.Sources = wake(bed.home)
+	bed.owners.landing.wake = wake
 	launches := func() int {
 		t.Helper()
 		records, err := store.List()

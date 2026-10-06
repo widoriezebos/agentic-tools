@@ -1321,7 +1321,8 @@ func TestProofConfigurationDigestDecidesPerKeyFromTheCompiledTable(t *testing.T)
 	digest := func(committed, local string) string {
 		t.Helper()
 		conf := filepath.Join(t.TempDir(), "metasystem.conf")
-		if err := os.WriteFile(conf, []byte(committed), 0o600); err != nil {
+		// Proof commands have no compiled default and belong to the repository.
+		if err := os.WriteFile(conf, []byte("proof.full=true\nproof.cheap=true\n"+committed), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if local != "" {
@@ -1337,7 +1338,7 @@ func TestProofConfigurationDigestDecidesPerKeyFromTheCompiledTable(t *testing.T)
 	}
 	var spelled strings.Builder
 	for _, setting := range config.CompiledSettings() {
-		if setting.Computed == "" {
+		if setting.Computed == "" && !setting.CommittedOnly {
 			spelled.WriteString(setting.Key + "=" + setting.Default + "\n")
 		}
 	}

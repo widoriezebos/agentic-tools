@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 var fixtureRunnerChild = flag.Bool("fixture-runner-child", false, "run the steward with a private runtime PATH")
@@ -45,7 +46,7 @@ func TestStewardFixtureRunnerNeverProbes(t *testing.T) {
 		if err := os.Symlink(goBin, filepath.Join(path, "go")); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		command := exec.Command(commandTestExecutable(t), "-test.run=^"+t.Name()+"$", "-test.timeout=30m", "-fixture-runner-child")
@@ -106,7 +107,7 @@ func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRol
 		if err := os.Symlink(goBin, filepath.Join(path, "go")); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		binary := filepath.Join(t.TempDir(), "steward.test")

@@ -209,6 +209,23 @@ func TestRepositoryPathResolutionUsesModeAndLocation(t *testing.T) {
 	}
 }
 
+func TestRepositoryManifestClassifiesProofSourcesAndGeneratedReporter(t *testing.T) {
+	t.Parallel()
+	manifest := loadRepositoryManifest(t)
+	for _, test := range []struct {
+		path string
+		want Class
+	}{
+		{"proof/full.sh", Behavior},
+		{"proof/main.go", Behavior},
+		{"proof/.full-reporter", Runtime},
+	} {
+		if got := manifest.Resolve(Install, test.path).Class; got != test.want {
+			t.Errorf("Resolve(install, %q) = %s; want %s", test.path, got, test.want)
+		}
+	}
+}
+
 func TestRepositoryManifestClassifiesEveryTrackedPath(t *testing.T) {
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

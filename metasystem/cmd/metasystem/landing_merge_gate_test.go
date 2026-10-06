@@ -301,6 +301,8 @@ func TestLandingMergeGateBaselineUsesParentsCommittedCommand(t *testing.T) {
 func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
+	now := laneTestNow
+	bed.owners.landing.plainProve.Now = func() time.Time { return now }
 	conf := filepath.Join(bed.installation, "metasystem.conf")
 	if err := os.WriteFile(conf, []byte("metasystem.template=true\nproof.full=exit 9\nproof.cheap=printf 'LANDING-CHECKED\\t0\\n'\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -332,13 +334,13 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate.At = time.Now().Add(time.Minute).UTC().Format(time.RFC3339)
+	gate.At = now.Add(time.Minute).Format(time.RFC3339)
 	writeCauseProof(t, bed.installation, "gates.jsonl", gate)
 	after, err := plain.KeeperFingerprint(bed.checkout)
 	if err != nil || after == fingerprint {
 		t.Fatalf("keeper missed gate completion: %s %s %v", fingerprint, after, err)
 	}
-	reasons, err := plain.WakeReasons(bed.installation, bed.checkout, time.Now(), time.Now())
+	reasons, err := plain.WakeReasons(bed.installation, bed.checkout, now, now.Add(time.Minute))
 	if err != nil || !strings.Contains(strings.Join(reasons, ","), plain.WakeProofFinished) {
 		t.Fatalf("gate did not wake keeper: %v %v", reasons, err)
 	}

@@ -4,6 +4,7 @@
 - Id: 01M484T41SDEHDHR1VSE4YWRVF
 - Status: accepted
 - Goals: lane-lands-finished-goals
+- Critique: closed after 1 round with 11 findings folded (Codex Astra); stopped early under the old one-round rule, since replaced by the convergence rule in the machinery plan's stop table
 
 Landing redesign 1a. Written 2026-10-06 from `plans/lane-lands-finished-goals-design-brief.md`, and revised the same day from `plans/lane-lands-finished-goals-design-brief-after-1.md` after one Astra round (gpt-6-astra, 11 material findings, all accepted and folded; the table at the end of "What the code says today" says where each one landed). Against main `9eb87cd15`. Paths are relative to `metasystem/`. Nothing is built yet. Every site cited below was read at that commit. It consumes mechanisms 2, 3, 4, 5, 6, 9 and 12 of `plans/designs/machinery-mechanisms.md`, each in the smallest form this goal needs.
 

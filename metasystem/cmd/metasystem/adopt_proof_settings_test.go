@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The public action reaches adoption's configuration tailoring before goal
@@ -47,7 +48,7 @@ func TestSystemAdoptDropsTemplateProofDeclarationsBeforeGenesis(t *testing.T) {
 				if err := os.MkdirAll(filepath.Join(source, "bin"), 0o755); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(source, "bin", "metasystem"), []byte("fixture engine"), 0o755)
+				return testexec.WriteFile(filepath.Join(source, "bin", "metasystem"), []byte("fixture engine"), 0o755)
 			},
 			Git: func(_ string, _ bool, args ...string) ([]byte, error) {
 				switch strings.Join(args, " ") {
