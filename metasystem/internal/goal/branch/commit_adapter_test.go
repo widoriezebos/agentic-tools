@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -297,6 +298,7 @@ func TestCommitStagedGitAdapter(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := snapshotCheckout(t, f.root)
+		previous := git(t, f.root, "rev-parse", "refs/heads/goal/goal-a")
 		if before.head != "refs/heads/goal/goal-a" {
 			t.Fatalf("starting HEAD=%s", before.head)
 		}
@@ -304,6 +306,10 @@ func TestCommitStagedGitAdapter(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "cannot lock ref") {
 			t.Fatalf("locked ref error=%v", err)
 		}
+		refs := strings.Split(before.refs, "\n")
+		refs = append(refs, "refs/metasystem/goals/before/goal-a/"+previous+" "+previous)
+		slices.Sort(refs)
+		before.refs = strings.Join(refs, "\n")
 		requireCheckoutUnchanged(t, f.root, before)
 		for path, want := range map[string]string{"metasystem/keep-a.go": "local a", "metasystem/code.go": "two"} {
 			if got, readErr := os.ReadFile(filepath.Join(f.root, path)); readErr != nil || string(got) != want {
@@ -328,6 +334,7 @@ func TestCommitStagedGitAdapter(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := snapshotCheckout(t, f.root)
+		previous := git(t, f.root, "rev-parse", "refs/heads/goal/goal-a")
 		if before.head != "refs/heads/other" {
 			t.Fatalf("starting HEAD=%s", before.head)
 		}
@@ -339,6 +346,10 @@ func TestCommitStagedGitAdapter(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "cannot lock ref") {
 			t.Fatalf("locked moved error=%v", err)
 		}
+		refs := strings.Split(before.refs, "\n")
+		refs = append(refs, "refs/metasystem/goals/before/goal-a/"+previous+" "+previous)
+		slices.Sort(refs)
+		before.refs = strings.Join(refs, "\n")
 		requireCheckoutUnchanged(t, f.root, before)
 		if got, readErr := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(readPath))); readErr != nil || string(got) != string(readBefore) {
 			t.Fatalf("rollback read=%q err=%v", got, readErr)

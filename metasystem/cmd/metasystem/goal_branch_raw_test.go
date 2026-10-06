@@ -298,6 +298,7 @@ func (f *branchRawFixture) inputs() *branch.ReadCommitInputs {
 		Changes: func(string, string, string) ([]string, error) { return nil, nil }, Worktrees: func(string) ([]branch.CommitWorktree, error) { fail(); return nil, nil },
 	}
 	effects := branch.CommitEffects{
+		KeepTip:    func(string, string, string) error { fail(); return nil },
 		ClearFetch: func(string, string) error { fail(); return nil }, Open: func(string, string, bool) (string, func(), error) {
 			dir, err := os.MkdirTemp(f.project, "build-")
 			return dir, func() { os.RemoveAll(dir) }, err

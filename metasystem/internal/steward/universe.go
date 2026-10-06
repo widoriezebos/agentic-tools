@@ -24,6 +24,25 @@ var recordStores = []string{
 	"artifacts/agents/missions/runners",
 }
 
+type workerRecord struct {
+	Pid           *int64  `json:"pid"`
+	PidStartedAt  *int64  `json:"pidStartedAt"`
+	PidStartTicks *int64  `json:"pidStartTicks"`
+	BootID        string  `json:"bootId"`
+	Status        string  `json:"status"`
+	EndedAt       *string `json:"endedAt"`
+	ExitCode      *int64  `json:"exitCode"`
+}
+
+func loadWorkerRecord(path string) (record workerRecord, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return record, err
+	}
+	err = json.Unmarshal(data, &record)
+	return record, err
+}
+
 // The supervision directory itself stays OUT: the watcher is
 // infrastructure that ticks whether or not anyone works — counting
 // it as a worker would block every death proof on every armed
@@ -37,7 +56,7 @@ var recordStores = []string{
 func supplementWorkers(repoRoot string) (live, liveSeatMains, unprovable int) {
 	for _, store := range recordStores {
 		dir := filepath.Join(repoRoot, store)
-		entries, err := os.ReadDir(dir)
+		entries, err := readRunnerRecords(repoRoot, dir, loadWorkerRecord)
 		if err != nil {
 			if !os.IsNotExist(err) {
 				// An unreadable store must not look empty: it blocks
@@ -47,27 +66,11 @@ func supplementWorkers(repoRoot string) (live, liveSeatMains, unprovable int) {
 			continue
 		}
 		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-			if err != nil {
+			if entry.err != nil {
 				unprovable++
 				continue
 			}
-			var record struct {
-				Pid           *int64  `json:"pid"`
-				PidStartedAt  *int64  `json:"pidStartedAt"`
-				PidStartTicks *int64  `json:"pidStartTicks"`
-				BootID        string  `json:"bootId"`
-				Status        string  `json:"status"`
-				EndedAt       *string `json:"endedAt"`
-				ExitCode      *int64  `json:"exitCode"`
-			}
-			if err := json.Unmarshal(data, &record); err != nil {
-				unprovable++
-				continue
-			}
+			record := entry.value
 			// A run is terminal by its STATUS: draining stamps endedAt
 			// while descendants still work, so timestamps prove
 			// nothing. Records without a status field keep the

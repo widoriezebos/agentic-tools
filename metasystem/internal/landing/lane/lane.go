@@ -266,8 +266,8 @@ func registeredText(record Record) string {
 // The same layout again changes nothing (changed false); anything else
 // writes a record with a custody epoch greater than any this computer has
 // used, and returns the previous record. It is refused while an unset is
-// under way. The keeper's restart count starts over with a new lane. A
-// record written but not confirmed on disk returns changed and ErrNotDurable.
+// under way. A record written but not confirmed on disk returns changed
+// and ErrNotDurable.
 func Register(home string, layout Layout, by string, now time.Time) (previous Record, changed bool, err error) {
 	if layout.Checkout == "" || layout.Install == "" {
 		return Record{}, false, &Refusal{Code: CodeRegisterInvalid, Message: "no landing checkout was resolved; nothing was registered",

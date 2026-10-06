@@ -9,7 +9,7 @@ package branch
 // one implementation with one-line wrappers left at the command edge rather
 // than a second copy that could drift from it.
 //
-// Nothing here decides anything. The policy is CheckParkBranch's, in
+// Nothing here decides anything. The policy is checkParkBranch's, in
 // status.go; this supplies it with a scrubbed git, a fresh operation id and
 // the two tips it reads the remote through, and hands back the summary the
 // verb writes onto the next step.
@@ -126,7 +126,7 @@ func OriginTip(root string, endpoint goal.Endpoint, goalID string) (tip string, 
 	return tip, true, err
 }
 
-// The three readers CheckParkBranch is driven through, named so a caller can
+// The three readers checkParkBranch is driven through, named so a caller can
 // substitute one without a repository.
 type (
 	// ParkLocalTipReader answers one raw local ref.
@@ -148,6 +148,13 @@ func ParkCheck(root string, endpoint goal.Endpoint) func(goalID, next string) (s
 // tip reader takes the package's ordinary one.
 func ParkCheckWithReaders(root string, endpoint goal.Endpoint, localTip ParkLocalTipReader,
 	endpointTipReader ParkEndpointTipReader, originTipReader ParkOriginTipReader) func(goalID, next string) (string, error) {
+	return ParkCheckWithRaw(root, endpoint, localTip, endpointTipReader, originTipReader, gitOutput)
+}
+
+// ParkCheckWithRaw uses a caller's ref readers and Git for commit classification.
+func ParkCheckWithRaw(root string, endpoint goal.Endpoint, localTip ParkLocalTipReader,
+	endpointTipReader ParkEndpointTipReader, originTipReader ParkOriginTipReader,
+	read func(string, ...string) ([]byte, error)) func(goalID, next string) (string, error) {
 	return func(goalID, next string) (string, error) {
 		readRemote := func() (string, string, bool, error) {
 			if endpoint.Branch != "refs/heads/main" {
@@ -160,13 +167,11 @@ func ParkCheckWithReaders(root string, endpoint goal.Endpoint, localTip ParkLoca
 			originTip, present, err := originTipReader(root, endpoint, goalID)
 			return endpointTip, originTip, present, err
 		}
-		var state ParkBranchState
-		var err error
-		if localTip == nil {
-			state, err = CheckParkBranch(root, goalID, next, readRemote)
-		} else {
-			state, err = CheckParkBranchWithLocalTip(root, goalID, next, readRemote, localTip)
+		deps := statusDependenciesWithRaw(read)
+		if localTip != nil {
+			deps.localTip = localTip
 		}
+		state, err := checkParkBranch(root, goalID, next, readRemote, deps)
 		return state.Summary, err
 	}
 }

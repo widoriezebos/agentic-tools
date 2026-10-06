@@ -1,10 +1,101 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
+
+func TestGoalPauseAcceptsChangesRead(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	owners := bed.owners()
+	// A --changes read has no earlier build. Parking doesn't validate the read.
+	changesRead, main := strings.Repeat("b", 40), strings.Repeat("a", 40)
+	origin := main
+	read := func(repo string, args ...string) ([]byte, error) {
+		if repo == bed.root() {
+			switch strings.Join(args, " ") {
+			case "rev-list --first-parent " + main + ".." + changesRead:
+				return []byte(changesRead + "\n"), nil
+			case "show -s --format=%(trailers:only,unfold=true) " + changesRead:
+				return []byte("Goal-Read: " + bedGoal + "/seat-change " + strings.Repeat("c", 40) + "\n"), nil
+			}
+		}
+		t.Errorf("unexpected Git read at %q: %q", repo, args)
+		return nil, fmt.Errorf("unexpected Git read")
+	}
+	owners.parkBranchCheck = func(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
+		return branch.ParkCheckWithRaw(root, endpoint,
+			func(string, string) (string, bool, error) { return changesRead, true, nil },
+			func(string, goal.Endpoint) (string, error) { return main, nil },
+			func(string, goal.Endpoint, string) (string, bool, error) { return origin, true, nil }, read)
+	}
+	reason := "wait for Wido's word on the --changes read"
+	if code, result := bed.runJSON(owners, "goal", "pause", bedGoal, "--reason", reason, "--lineage", "m1"); code == 0 || bed.goalFile(bedGoal).State == goal.StateParked {
+		t.Fatalf("an unpushed branch paused: %d %+v", code, result)
+	}
+	origin = changesRead
+	code, result := bed.runJSON(owners, "goal", "pause", bedGoal, "--reason", reason, "--lineage", "m1")
+	file := bed.goalFile(bedGoal)
+	if code != 0 || file.State != goal.StateParked || file.Parked == nil || file.Parked.Because != reason {
+		t.Fatalf("pause after a changes read = %d %+v; record %s %+v", code, result, file.State, file.Parked)
+	}
+	if !strings.Contains(file.NextStep, "goal/"+bedGoal+" at "+changesRead+" has no unit") || file.History[len(file.History)-1].Reason != reason {
+		t.Fatalf("pause lost its branch tip or reason: %+v", file)
+	}
+}
+
+func TestGoalPauseChangesReadSummarySweepsWithoutLocalBranch(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	owners := bed.owners()
+	main, changesRead := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	olderUnit, lastUnit, subject := strings.Repeat("c", 40), strings.Repeat("d", 40), strings.Repeat("e", 40)
+	read := func(repo string, args ...string) ([]byte, error) {
+		if repo == bed.root() {
+			switch strings.Join(args, " ") {
+			case "rev-list --first-parent " + main + ".." + changesRead:
+				return []byte(changesRead + "\n" + lastUnit + "\n" + olderUnit + "\n"), nil
+			case "show -s --format=%(trailers:only,unfold=true) " + changesRead:
+				// The seat's read names no earlier build of the same work.
+				return []byte("Goal-Read: " + bedGoal + "/seat-change " + subject + "\n"), nil
+			case "show -s --format=%(trailers:only,unfold=true) " + lastUnit:
+				return []byte("Goal-Unit: " + bedGoal + "/last\n"), nil
+			}
+		}
+		t.Errorf("unexpected Git read at %q: %q", repo, args)
+		return nil, fmt.Errorf("unexpected Git read")
+	}
+	owners.parkBranchCheck = func(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
+		return branch.ParkCheckWithRaw(root, endpoint,
+			func(string, string) (string, bool, error) { return changesRead, true, nil },
+			func(string, goal.Endpoint) (string, error) { return main, nil },
+			func(string, goal.Endpoint, string) (string, bool, error) { return changesRead, true, nil }, read)
+	}
+	code, result := bed.runJSON(owners, "goal", "pause", bedGoal, "--reason", "wait for Wido", "--lineage", "m1")
+	file := bed.goalFile(bedGoal)
+	if code != 0 || file.State != goal.StateParked {
+		t.Fatalf("pause after a changes read = %d %+v; record %+v", code, result, file)
+	}
+	sweep, err := branch.ShouldSweepWithRaw(bed.root(), bedGoal, file.NextStep,
+		func(repo, ref string) (string, bool, error) {
+			if repo != bed.root() || ref != "refs/heads/goal/"+bedGoal {
+				t.Fatalf("sweep local ref = %q %q", repo, ref)
+			}
+			return "", false, nil
+		}, read)
+	if err != nil || !sweep {
+		t.Fatalf("sweep without a local branch = %v, %v; archived next step %q", sweep, err, file.NextStep)
+	}
+	if !strings.Contains(file.NextStep, "goal/"+bedGoal+" at "+changesRead+" is pushed; last unit last commit "+lastUnit) {
+		t.Fatalf("pause lost the pushed tip or last unit: %q", file.NextStep)
+	}
+}
 
 // quietSyncFlags parses a goal verb's flags as its owner does; the
 // refusal it would print goes nowhere, since only whether it parsed is

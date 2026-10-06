@@ -371,7 +371,8 @@ func TestClearedFindingRecurrenceOpensANewEpisode(t *testing.T) {
 	}
 }
 
-func TestNewFindingResolvesEarlierOpenEpisodeWithoutClearingIt(t *testing.T) {
+func TestNewFindingClearsEarlierOpenEpisode(t *testing.T) {
+	t.Parallel()
 	f := newNotifyFixture(t)
 	root := f.root
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
@@ -384,8 +385,8 @@ func TestNewFindingResolvesEarlierOpenEpisodeWithoutClearingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	episodes, err := AlertEpisodes(root)
-	if err != nil || len(episodes) != 2 || !episodes[0].Resolved || episodes[0].Cleared || episodes[1].Resolved {
-		t.Fatalf("new finding did not resolve only its predecessor: episodes=%+v err=%v", episodes, err)
+	if err != nil || len(episodes) != 2 || !episodes[0].Resolved || !episodes[0].Cleared || episodes[1].Resolved || episodes[1].Cleared {
+		t.Fatalf("new finding did not close only its predecessor: episodes=%+v err=%v", episodes, err)
 	}
 }
 

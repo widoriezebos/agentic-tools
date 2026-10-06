@@ -13,6 +13,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -42,6 +43,10 @@ func newJourneyBed(t *testing.T) *journeyBed {
 func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 	c := newConnectionBedWith(t, amend)
 	owners := c.connectionOwners()
+	// The fixture checkout has no cmd/devgate, so the static gate a carried
+	// review records is the bed's declared fixture effect, as in the carry
+	// tests; the carry itself, its read commit and its attestation are real.
+	owners.connection.rebaseGate = func(string) (string, error) { return "checks passed", nil }
 	b := &deliveryBed{intentBed: c.intentBed, install: c.root(), owners: owners.delivery}
 	realCloseOwner(t, b)
 	conf := filepath.Join(c.root(), "metasystem.conf")
@@ -171,9 +176,10 @@ func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 
 // TestIntentConnectedJourneyRealClose (VMI-10) drives one goal's units
 // through the public surface on one physical repository with a bare origin:
-// build A, review unit A, real close, collection; build B the same way; fold
-// A and review it again while B survives, and review the rewritten B commit,
-// on the same physical accepted goal. Each committed critic is closed by
+// build A, review unit A, real close, collection; build B and C the same way;
+// fold A and review it again: B's unchanged change has its review carried
+// onto its replayed commit, while C, whose change now differs, is reviewed
+// as the rewritten C commit, on the same physical accepted goal. Each committed critic is closed by
 // the real delegate lifecycle's close over the real owners, after the
 // actual register advance of a subject-bound fake model return; nothing here
 // stamps a closure. Model launches, proof, the fast gate, the claim and the
@@ -238,7 +244,9 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		}
 		return resultData(t, result)["run"].(string)
 	}
-	runA := build("unit-a", map[string]string{"a.txt": "first A\n"})
+	// A's file has room for a later unit to change a line whose diff context
+	// holds A's first line, so folding A changes that later unit's change.
+	runA := build("unit-a", map[string]string{"a.txt": "first A\nl2\nl3\nl4\nl5\n"})
 	criticA, commitA := reviewed(runA)
 	// The default path names no critic model; a caller's --model reaches the
 	// committed read's dispatch through the branch read owner.
@@ -297,9 +305,18 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		t.Fatalf("both units must be read on the published branch: %+v", status)
 	}
 
+	// C changes A's file four lines down, so its diff context holds A's
+	// first line: folding A leaves C's own bytes but changes C's change.
+	runC := build("unit-c", map[string]string{"a.txt": "first A\nl2\nl3\nthe C line\nl5\n"})
+	criticC, commitC := reviewed(runC)
+	if status := c.landAdmission(); status.Prefix != 3 || status.Units[0].Commit != commitA || status.Units[1].Commit != commitB || status.Units[2].Commit != commitC {
+		t.Fatalf("all three units must be read on the published branch: %+v", status)
+	}
+
 	// A same-unit correction: fold A, review it again. B's unit survives
-	// with its exact bytes; A's old read does not carry over.
-	c.edits = map[string]string{"a.txt": "amended A\n"}
+	// with its exact bytes and its exact change; A's old read does not carry
+	// over.
+	c.edits = map[string]string{"a.txt": "amended A\nl2\nl3\nthe C line\nl5\n"}
 	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("fold unit A: code=%d %+v", code, result)
 	}
@@ -307,44 +324,59 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if commitA2 == commitA || criticA2 == criticA {
 		t.Fatalf("the fold must be read as a new subject by a new critic: %s/%s", criticA2, commitA2)
 	}
-	if originFile("a.txt") != "amended A" || originFile("b.txt") != "the B bytes" {
-		t.Fatalf("the published branch must carry amended A and B's exact bytes")
+	if originFile("a.txt") != "amended A\nl2\nl3\nthe C line\nl5" || originFile("b.txt") != "the B bytes" {
+		t.Fatalf("the published branch must carry amended A, C's line and B's exact bytes")
 	}
 	status := c.landAdmission()
 	var subjects []string
 	for _, unit := range status.Units {
 		subjects = append(subjects, unit.Commit)
 	}
-	if len(status.Units) != 2 || status.Units[0].Commit != commitA2 || slices.Contains(subjects, commitA) {
+	if len(status.Units) != 3 || status.Units[0].Commit != commitA2 || slices.Contains(subjects, commitA) {
 		t.Fatalf("admission must see the replacement A first and never the old A: %+v", status)
 	}
-	// Rewriting A's prefix leaves B's replayed commit without an accepted
-	// read; the current B commit gets its own committed review, closed by
-	// the real owner and collected, never a copied closure.
+	// The correction carries B's review: B's change is unchanged, so its
+	// replayed commit has a review naming it, carried from the read of the
+	// old B, and no critic ever reads it.
 	currentB := status.Units[1].Commit
-	if status.Prefix != 1 || currentB == commitB || status.Units[1].ReadState != "built" {
-		t.Fatalf("the replayed B must await its own read: %+v", status)
+	if status.Prefix != 2 || currentB == commitB || status.Units[1].ReadState != "read clean" {
+		t.Fatalf("the replayed B must carry its review: %+v", status)
 	}
-	review := []string{"work", "review", "--commit", currentB, "--goal", c.id, "--brief", brief, "--repo", c.worktree}
-	if code, result := do(review...); result.Outcome != "in-progress" || c.delegates[len(c.delegates)-1] != currentB {
-		t.Fatalf("review commit of the current B: code=%d %+v", code, result)
+	publishedTip := strings.Fields(connectionGit(t, c.root(), "ls-remote", c.origin, "refs/heads/goal/"+c.id))[0]
+	if att, err := branch.ValidateAttestationAt(c.root(), publishedTip, c.endpointTip(), c.id, "unit-b", currentB); err != nil || att.Carry == nil ||
+		att.Carry.FromCommit != commitB || att.Carry.ToCommit != currentB {
+		t.Fatalf("B's carried review must name its replayed commit: %+v, %v", att, err)
 	}
-	criticB2 := "crit" + strconv.Itoa(len(c.delegates))
-	finish(c.worktree, criticB2, currentB)
+	if slices.Contains(c.delegates, currentB) {
+		t.Fatalf("a carried review must not start a critic: %v", c.delegates)
+	}
+	// Rewriting A's prefix changed C's change, so C's replayed commit has no
+	// accepted read; the current C commit gets its own committed review,
+	// closed by the real owner and collected, never a copied closure.
+	currentC := status.Units[2].Commit
+	if currentC == commitC || status.Units[2].ReadState != "built" {
+		t.Fatalf("the replayed C must await its own read: %+v", status)
+	}
+	review := []string{"work", "review", "--commit", currentC, "--goal", c.id, "--brief", brief, "--repo", c.worktree}
+	if code, result := do(review...); result.Outcome != "in-progress" || c.delegates[len(c.delegates)-1] != currentC {
+		t.Fatalf("review commit of the current C: code=%d %+v", code, result)
+	}
+	criticC2 := "crit" + strconv.Itoa(len(c.delegates))
+	finish(c.worktree, criticC2, currentC)
 	// One public review with the author's decisions: the real whole close
 	// owner closes and mirrors the chain, then the read is collected and
 	// published.
-	if code, result := do(append(review, "--dispositions", dispositions)...); code != 0 || result.Outcome != intentConfirmed || job(c.worktree, criticB2)["chainClosed"] != true {
-		t.Fatalf("decide, close and collect the current B read: code=%d %+v", code, result)
+	if code, result := do(append(review, "--dispositions", dispositions)...); code != 0 || result.Outcome != intentConfirmed || job(c.worktree, criticC2)["chainClosed"] != true {
+		t.Fatalf("decide, close and collect the current C read: code=%d %+v", code, result)
 	}
 	status = c.landAdmission()
-	if status.Prefix != 2 || status.Units[0].Commit != commitA2 || status.Units[1].Commit != currentB {
-		t.Fatalf("admission must see replacement A and current B read: %+v", status)
+	if status.Prefix != 3 || status.Units[0].Commit != commitA2 || status.Units[1].Commit != currentB || status.Units[2].Commit != currentC {
+		t.Fatalf("admission must see replacement A, carried B and current C read: %+v", status)
 	}
 	if originFile("b.txt") != "the B bytes" {
 		t.Fatal("B's bytes changed")
 	}
-	if len(c.delegates) != 4 || criticB == criticB2 {
-		t.Fatalf("exactly four committed critics: %v", c.delegates)
+	if len(c.delegates) != 5 || criticB == criticC2 || criticC == criticC2 {
+		t.Fatalf("exactly five committed critics, none for the carried B: %v", c.delegates)
 	}
 }

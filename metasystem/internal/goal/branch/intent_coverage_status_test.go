@@ -10,34 +10,34 @@ import (
 // sweep policy over a caller's raw local-ref reader. Both run over the
 // scripted status facts of status_policy_test.go; no repository is read.
 
-// A pushed branch whose range cannot be validated refuses the park with the
-// range's own error rather than answering a summary it could not read, and a
-// pushed branch carrying no unit says exactly that.
+// Parking names the last unit without validating the range or its reads.
 func TestParkOfAPushedBranchAnswersItsRangeOrItsEmptiness(t *testing.T) {
 	t.Parallel()
 
 	repo := t.TempDir()
 	ref := goalBranchRef("goal-a")
-	unreadable := errors.New("range is not ancestry-linked")
 	f := newStatusFacts(t,
 		tipFact(repo, ref, statusTip, true, nil),
-		rangeFact(repo, statusBase, statusTip, "goal-a", nil, unreadable),
+		statusGitFact(repo, statusR1+"\n"+statusU2+"\n"+statusU1, nil, "rev-list", "--first-parent", statusBase+".."+statusTip),
+		kindFact(repo, statusR1, "goal-a", KindInfo{Kind: Read}, nil),
+		kindFact(repo, statusU2, "goal-a", KindInfo{Kind: Unit, Unit: "u2"}, nil),
 		tipFact(repo, ref, statusTip, true, nil),
-		rangeFact(repo, statusBase, statusTip, "goal-a", []Commit{}, nil),
+		statusGitFact(repo, "", nil, "rev-list", "--first-parent", statusBase+".."+statusTip),
 	)
 	deps := f.dependencies()
 	pushed := func() (string, string, bool, error) { return statusBase, statusTip, true, nil }
 
 	state, err := checkParkBranch(repo, "goal-a", "continue", pushed, deps)
-	if !errors.Is(err, unreadable) || state.Branch {
-		t.Fatalf("a pushed branch with an unreadable range parked as %+v, %v; want the range error", state, err)
+	want := fmt.Sprintf("goal/goal-a at %s is pushed; last unit u2 commit %s", statusTip, statusU2)
+	if err != nil || !state.Branch || state.Summary != want {
+		t.Fatalf("a pushed branch parked as %+v, %v; want %q", state, err, want)
 	}
 	state, err = checkParkBranch(repo, "goal-a", "continue", pushed, deps)
-	want := fmt.Sprintf("goal/goal-a at %s has no unit", statusTip)
+	want = fmt.Sprintf("goal/goal-a at %s has no unit", statusTip)
 	if err != nil || !state.Branch || state.Summary != want {
 		t.Fatalf("a pushed branch with no unit parked as %+v, %v; want %q", state, err, want)
 	}
-	f.assertCalls(t, "local-tip", "range", "local-tip", "range")
+	f.assertCalls(t, "local-tip", "git", "kind", "kind", "local-tip", "git")
 }
 
 // The sweep policy over a caller's local-ref reader sweeps a present branch,

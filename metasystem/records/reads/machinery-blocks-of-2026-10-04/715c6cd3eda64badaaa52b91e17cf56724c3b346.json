@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "correction-carries-reads",
+  "subject": {
+    "commit": "715c6cd3eda64badaaa52b91e17cf56724c3b346",
+    "parent": "ea318dd60dd1c0975f2eed3bf15fd1d29477247c",
+    "tree": "79b011e6dfe564b34873ec9ea2233c0178805989",
+    "patchDigest": "9b972f3932396b326fdef10803105b0d8b5f003d51a93a80f61bb22b3e6bf4d3",
+    "unitDigest": "290be49d40f7661495b84090d79b01a636988958fef2128f1279743f2edf4d0d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c25468486c17685549cb2349",
+    "round": 1,
+    "closureSha256": "f39a1e56b4c5d1de225d40ec73977d38e8b51449aa07b6cea8fc67c5f861af9b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "79b011e6dfe564b34873ec9ea2233c0178805989",
+    "runId": "goal-read-gate-20261005t202339z-102fa6b635a45127"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "18c8c335651fa35390e0561dc15b70c1f7b0ca49",
+      "digest": "10099df0f6b990e153fc485f863084a6e7ad0d88f4efa03a5ebd7a0f1325fb12"
+    },
+    {
+      "kind": "read",
+      "commit": "0c957f8f8bff664d9f922a30d1664203e3fb10f6",
+      "digest": "5bb79a82a34f7bb4299b64eb65aec409b2040f78b4719486460a8549fb6dfc4f"
+    },
+    {
+      "kind": "read",
+      "commit": "b1f17456e194787e3488e8a2e7fdda885ed05d3e",
+      "digest": "ea3d74e5cfd71072a62be9d8bb206da58b2016818793fff8067ad948ba56bab1"
+    },
+    {
+      "kind": "read",
+      "commit": "39cb784d3e98def150d65b9b0d5020c2d9a36b67",
+      "digest": "f778f6ccba73d47a6b2b7eb018e6a481cea5931e041741cc1a1a77a29cd197b7"
+    },
+    {
+      "kind": "read",
+      "commit": "f17c05a37b60a1894f1e62f5ba714a30ec977361",
+      "digest": "ed49fdbde5b43d3a26f772b748e59e4eca73b73262d16ae56a27a67a537550a4"
+    },
+    {
+      "kind": "read",
+      "commit": "ea318dd60dd1c0975f2eed3bf15fd1d29477247c",
+      "digest": "6e8cd4ca8a63459c415aa353650aa27a775183816704987c8bbaeb5df501bf68"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/goal_branch_raw_test.go",
+      "readerWord": "reviewed by critic root code-critic-c25468486c17685549cb2349"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-c25468486c17685549cb2349"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/commit_adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-c25468486c17685549cb2349"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/commit_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-c25468486c17685549cb2349"
+    }
+  ],
+  "sha256": "119a1def85a9fb5ab73222c6051ffab8b5ef6eb50477d9568663095ee3ec384f"
+}

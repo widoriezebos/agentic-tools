@@ -365,6 +365,7 @@ func intentWorkCommands() []intentCommand {
 			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
 			details: []string{"Writes KEY=VALUE into the installation's metasystem.conf.local, the seat's own layer over the shipped metasystem.conf, which is never changed.",
+				"KEY must be declared; settings check reports undeclared keys already in the local file.",
 				"A key already holding the value is left as it is."},
 			maxArgs:  2,
 			examples: []string{"metasystem settings set role.default.model.claude claude-opus-5-5"},
@@ -1830,7 +1831,11 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	}
 	// The testing contract the settings name is validated with its declared
 	// tools; no test runs and no native discovery takes the host's lease.
-	path, groups, err := testrun.ContractReady(root.Path(), false)
+	contractReady := inv.owners.contractReady
+	if contractReady == nil {
+		contractReady = testrun.ContractReady
+	}
+	path, groups, err := contractReady(root.Path(), false)
 	if err != nil {
 		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root.Path()},
 			Summary: "the settings of " + root.Path() + " are valid, but the testing contract is not: " + err.Error(),
@@ -2277,6 +2282,10 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done",
 			next:    inv.publicArgv("settings", "set", "KEY", "VALUE"), nextReason: "a key without spaces or '=', and a one-line value"})
+	}
+	if problem := config.SettingKeyProblem(key); problem != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: problem.Error(),
+			next: inv.publicArgv("settings", "keys"), nextReason: "lists the settings"})
 	}
 	if problem := config.SettingValueProblem(key, value); problem != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "setting", ID: key}},

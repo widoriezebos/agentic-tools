@@ -626,6 +626,10 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return "", err
 	}
+	// Keep the old branch before moving it so an interrupted correction can still carry its reviews.
+	if err := r.effects.KeepTip(req.Repo, req.GoalID, state.baseTip); err != nil {
+		return "", err
+	}
 	if err := r.installCommitOnto(req, state, newTip); err != nil {
 		return "", err
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func init() {
@@ -171,6 +172,120 @@ func TestSettingsSetWritesTheLocalConfiguration(t *testing.T) {
 	}
 	if code, result := runSettingsSet(t, root, owners, "role.default.model.claude"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("settings set without a value = %d %+v", code, result)
+	}
+}
+
+func TestSettingsSetDeclaredKeys(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		key, before string
+		refused     bool
+	}{
+		{"role.code-critic.model", "", true},
+		{"role.code-critic.model", "role.code-critic.model=old\n", true},
+		{"role.code-crtic.model.claude", "", true},
+		{"role.code-critic.model.claude", "", false},
+		{"role.code-critic.model.codex", "", false},
+		{"launch.read.model.fake", "", false},
+		{"mode.refactor.role.code-critic.model.codex", "", false},
+		{"evidence.citation-roots", "", false},
+	} {
+		t.Run(test.key+test.before, func(t *testing.T) {
+			t.Parallel()
+			root, owners := newHomesSettingsInstallation(t)
+			local := filepath.Join(root, "metasystem.conf.local")
+			if test.before != "" {
+				if err := os.WriteFile(local, []byte(test.before), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, result := runSettingsSet(t, root, owners, test.key, "X")
+			after, err := os.ReadFile(local)
+			if test.refused {
+				want := test.key + " is not a setting; nearest: role.code-critic.model.claude, role.code-critic.model.codex, role.code-critic.model.devin"
+				if code == 0 || result.Outcome != intentRefused || result.Summary != want || string(after) != test.before || (test.before == "" && !os.IsNotExist(err)) || (test.before != "" && err != nil) {
+					t.Fatalf("refusal = %d %+v; local=%q, %v", code, result, after, err)
+				}
+			} else if code != 0 || result.Outcome != intentConfirmed || err != nil || string(after) != test.key+"=X\n" {
+				t.Fatalf("declared setting = %d %+v; local=%q, %v", code, result, after, err)
+			}
+		})
+	}
+}
+
+func TestSettingsCheckUndeclaredLocalKey(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	root, owners := bed.root(), bed.workOwners()
+	local := filepath.Join(root, "metasystem.conf.local")
+	body := "# ignored.typo=X\nrole.code-critic.model=X\nrole.code-critic.model=X\nlaunch.read.model=X\n"
+	if err := os.WriteFile(local, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(mustIntentCommand(t, "settings check"), nil, &stdout, &stderr, root, owners)
+	output := stdout.String() + stderr.String()
+	if code == 0 || strings.Count(output, "is not a setting; nearest:") != 1 || !strings.Contains(output, "role.code-critic.model is not a setting; nearest: role.code-critic.model.claude") {
+		t.Fatalf("settings check = %d, %q", code, output)
+	}
+	if after, err := os.ReadFile(local); err != nil || string(after) != body {
+		t.Fatalf("settings check changed the local file: %q, %v", after, err)
+	}
+}
+
+func TestSettingsReadKeysWriteAndValidate(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	root, owners := bed.root(), bed.workOwners()
+	owners.work.config = configSettingWithDefault
+	owners.contractReady = func(root string, _ bool) (string, int, error) {
+		_, contract, path, err := testrun.LoadContract(root)
+		return path, len(contract.Groups), err
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contract, err := contractmerge.Render(testingMergeFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "testing.json"), contract, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{".claude/agents", ".claude/skills"} {
+		if err := os.MkdirAll(filepath.Join(root, directory), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, setting := range []struct{ key, value string }{
+		{"testing.concurrency", "4"},
+		{"dispatch.return-margin-min", "10"},
+		{"steward.proof-admission-red-min", "10"},
+		{"dispatch.permissions.network", "allow"},
+	} {
+		if code, result := runSettingsSet(t, root, owners, setting.key, setting.value); code != 0 || result.Outcome != intentConfirmed {
+			t.Fatalf("settings set %s = %d %+v", setting.key, code, result)
+		}
+		local, err := os.ReadFile(filepath.Join(root, "metasystem.conf.local"))
+		if err != nil || !strings.Contains(string(local), setting.key+"="+setting.value+"\n") {
+			t.Fatalf("local setting %s missing: %q, %v", setting.key, local, err)
+		}
+		var stdout, stderr bytes.Buffer
+		if code := runIntentIn(mustIntentCommand(t, "settings show"), []string{setting.key}, &stdout, &stderr, root, owners); code != 0 || !strings.Contains(stdout.String(), setting.key) || !strings.Contains(stdout.String(), setting.value) {
+			t.Fatalf("settings show %s = %d: %s%s", setting.key, code, &stdout, &stderr)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := runConfigValidate([]string{"--conf", filepath.Join(root, "metasystem.conf"), "--repo", root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("config validate = %d: %s%s", code, &stdout, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runIntentIn(mustIntentCommand(t, "settings check"), nil, &stdout, &stderr, root, owners); code != 0 {
+		t.Fatalf("settings check = %d: %s%s", code, &stdout, &stderr)
+	}
+	if code, result := runSettingsSet(t, root, owners, "role.code-critic.model", "claude-opus-5-5"); code == 0 || !strings.Contains(result.Summary, "nearest: role.code-critic.model.claude") {
+		t.Fatalf("undeclared model = %d %+v", code, result)
 	}
 }
 

@@ -96,7 +96,7 @@ func TestLandingPushChecksDesign(t *testing.T) {
 						if id != bed.id {
 							t.Fatalf("checked an excluded hand-in: %s", id)
 						}
-						return inv.landingDesignFacts(inv.stateRoot, id)
+						return inv.landingDesignFacts(inv.layout.InstallationRoot.Path(), id)
 					},
 					notify: func(plain.PushOutcome) error { return nil },
 				}

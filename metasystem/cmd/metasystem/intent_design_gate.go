@@ -23,11 +23,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 type designGateOwners struct {
 	chains   func(root, goal, path string) ([]designgate.Chain, error)
-	identity func(root string) (string, error)
+	identity func(installation stateroot.Installation) (string, error)
 	record   func(path, text, anchor string) (durable bool, err error)
 	digest   func(root string, entry narratordigest.Entry, now time.Time) error
 }
@@ -61,15 +62,19 @@ func (inv *intentInvocation) designGate() designGateOwners {
 		}
 	}
 	if o.identity == nil {
-		o.identity = func(root string) (string, error) {
-			endpoint, err := inv.owners.dependencies.endpoint(root)
+		o.identity = func(installation stateroot.Installation) (string, error) {
+			endpoint, err := inv.owners.dependencies.endpoint(installation.Path())
 			if err != nil {
 				return "", err
 			}
 			if identity := goal.ExistingLedgerIdentityAtEndpoint(endpoint); identity != "" {
 				return identity, nil
 			}
-			data, err := os.ReadFile(filepath.Join(root, "plans", "goals", "backlog.md"))
+			state, err := inv.owners.resolver.RootForInstallation(installation)
+			if err != nil {
+				return "", err
+			}
+			data, err := os.ReadFile(state.Path("plans", "goals", "backlog.md"))
 			if err != nil {
 				return "", err
 			}
@@ -154,7 +159,7 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 			r.Designs = append(r.Designs, landing.DesignRecord{Design: d, BodySHA256: body})
 		}
 	}
-	identity, err := o.identity(inv.stateRoot)
+	identity, err := o.identity(inv.layout.InstallationRoot)
 	if bodyErr != nil {
 		err = bodyErr
 	}
@@ -280,7 +285,7 @@ func (inv *intentInvocation) landingDesignFacts(root, id string) landing.DesignF
 }
 
 func (inv *intentInvocation) readDesignGateRecords(id string) ([]landing.DesignRecord, error) {
-	identity, err := inv.designGate().identity(inv.stateRoot)
+	identity, err := inv.designGate().identity(inv.layout.InstallationRoot)
 	if err != nil || !designGateIdentity.MatchString(identity) {
 		return nil, nil
 	}

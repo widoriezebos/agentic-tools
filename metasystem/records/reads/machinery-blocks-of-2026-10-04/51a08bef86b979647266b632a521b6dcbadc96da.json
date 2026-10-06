@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "goal": "machinery-blocks-of-2026-10-04",
+  "unit": "pause-accepts-changes-read",
+  "subject": {
+    "commit": "51a08bef86b979647266b632a521b6dcbadc96da",
+    "parent": "c14bb9613f7db3b8727097000020d8d79f5b60e1",
+    "tree": "ef7ad74eba21867fa8be9c823e42284e1e24cc4e",
+    "patchDigest": "016fdfd27d31e849b5bfd1f50efb6f4cd2ca26b22167d186822ecb802dfa5185",
+    "unitDigest": "744374fe41db417f8eda2db88492c8e1cb30dedf1a08dc13adccac2f4da3e360"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-9022abb21802d9682cc33fd9",
+    "round": 1,
+    "closureSha256": "ea8e21799300592e7e2d4f906e222d5e81ff48da0defa3a807be3b56891f83fa"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ef7ad74eba21867fa8be9c823e42284e1e24cc4e",
+    "runId": "goal-read-gate-20261006t005013z-87d1de5c25c91016"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "18c8c335651fa35390e0561dc15b70c1f7b0ca49",
+      "digest": "10099df0f6b990e153fc485f863084a6e7ad0d88f4efa03a5ebd7a0f1325fb12"
+    },
+    {
+      "kind": "read",
+      "commit": "0c957f8f8bff664d9f922a30d1664203e3fb10f6",
+      "digest": "5bb79a82a34f7bb4299b64eb65aec409b2040f78b4719486460a8549fb6dfc4f"
+    },
+    {
+      "kind": "read",
+      "commit": "b1f17456e194787e3488e8a2e7fdda885ed05d3e",
+      "digest": "ea3d74e5cfd71072a62be9d8bb206da58b2016818793fff8067ad948ba56bab1"
+    },
+    {
+      "kind": "read",
+      "commit": "39cb784d3e98def150d65b9b0d5020c2d9a36b67",
+      "digest": "f778f6ccba73d47a6b2b7eb018e6a481cea5931e041741cc1a1a77a29cd197b7"
+    },
+    {
+      "kind": "read",
+      "commit": "f17c05a37b60a1894f1e62f5ba714a30ec977361",
+      "digest": "ed49fdbde5b43d3a26f772b748e59e4eca73b73262d16ae56a27a67a537550a4"
+    },
+    {
+      "kind": "read",
+      "commit": "ea318dd60dd1c0975f2eed3bf15fd1d29477247c",
+      "digest": "6e8cd4ca8a63459c415aa353650aa27a775183816704987c8bbaeb5df501bf68"
+    },
+    {
+      "kind": "read",
+      "commit": "742446c98b715a9b0b3bf425c3bf15332c508b36",
+      "digest": "56c156c4c5d8340423942c3cf474246d2f55780fce2465a20ee08fdfb3689bfb"
+    },
+    {
+      "kind": "read",
+      "commit": "bb7f2c6714c0c2d77473cfc7b7bdc3d2b207adf9",
+      "digest": "79fd7e4c79584d7d82b6bf3743e7e4a3f92d963c556520da37185e068dc45dcf"
+    },
+    {
+      "kind": "read",
+      "commit": "b5d6264df6460fbd4ed88b6b1dd253cc6b311c95",
+      "digest": "ec75866ceefa01e10727450f0a81ddc9e5431928389fe3eb81d44ea2f7412e36"
+    },
+    {
+      "kind": "read",
+      "commit": "c14bb9613f7db3b8727097000020d8d79f5b60e1",
+      "digest": "ace696ad657bad701252dfed5ca756a08f59000e9ee52344483951efbb74e742"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/goal_park_test.go",
+      "readerWord": "reviewed by critic root code-critic-9022abb21802d9682cc33fd9"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/intent_coverage_status_test.go",
+      "readerWord": "reviewed by critic root code-critic-9022abb21802d9682cc33fd9"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/status_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-9022abb21802d9682cc33fd9"
+    }
+  ],
+  "sha256": "75d7a1f81c5bd21768d09a80eab6fd05d13990931a22440479db7454f8a44de3"
+}

@@ -251,7 +251,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			if parent == nil {
 				return nil, fmt.Errorf("goal %s does not exist", parentID)
 			}
-			if err := refuseOpenReadItems(parentID, parent); err != nil {
+			if err := refuseAllOpenReadItems(parentID, parent); err != nil {
 				return nil, err
 			}
 			if parent.Sliced != nil {

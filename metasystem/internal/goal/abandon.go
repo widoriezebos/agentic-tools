@@ -256,7 +256,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				return nil, fmt.Errorf("carried must name a live successor")
 			}
 			for _, goalID := range sortedSet(arguments.set) {
-				if err := refuseOpenReadItems(goalID, tree.Live[goalID]); err != nil {
+				if err := refuseAllOpenReadItems(goalID, tree.Live[goalID]); err != nil {
 					return nil, err
 				}
 			}

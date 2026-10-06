@@ -24,10 +24,20 @@ type statusDependencies struct {
 	kind           func(repo, commit, goalID string) (KindInfo, error)
 	attestation    func(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error)
 	localTip       func(repo, ref string) (string, bool, error)
+	gitOutput      func(repo string, args ...string) ([]byte, error)
 }
 
 func defaultStatusDependencies() statusDependencies {
-	return statusDependencies{ValidateRange, KindOf, ValidateAttestationAt, localBranchTip}
+	return statusDependencies{ValidateRange, KindOf, ValidateAttestationAt, localBranchTip, gitOutput}
+}
+
+func statusDependenciesWithRaw(read func(string, ...string) ([]byte, error)) statusDependencies {
+	deps := defaultStatusDependencies()
+	deps.gitOutput = read
+	deps.kind = func(repo, commit, goalID string) (KindInfo, error) {
+		return KindOfWithRaw(repo, commit, goalID, read)
+	}
+	return deps
 }
 
 func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
@@ -102,7 +112,12 @@ func ShouldSweep(repo, goalID, next string) (bool, error) {
 
 // ShouldSweepWithLocalTip applies the branch policy to a caller's raw local ref.
 func ShouldSweepWithLocalTip(repo, goalID, next string, localTip func(repo, ref string) (string, bool, error)) (bool, error) {
-	deps := defaultStatusDependencies()
+	return ShouldSweepWithRaw(repo, goalID, next, localTip, gitOutput)
+}
+
+// ShouldSweepWithRaw applies the sweep policy to a caller's local ref and Git.
+func ShouldSweepWithRaw(repo, goalID, next string, localTip func(repo, ref string) (string, bool, error), read func(string, ...string) ([]byte, error)) (bool, error) {
+	deps := statusDependenciesWithRaw(read)
 	deps.localTip = localTip
 	return shouldSweep(repo, goalID, next, deps)
 }
@@ -113,18 +128,6 @@ func shouldSweep(repo, goalID, next string, deps statusDependencies) (bool, erro
 		return false, err
 	}
 	return localPresent || nextNamesUnitCommit(repo, goalID, next, deps), nil
-}
-
-func CheckParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReader) (ParkBranchState, error) {
-	return checkParkBranch(repo, goalID, next, readRemote, defaultStatusDependencies())
-}
-
-// CheckParkBranchWithLocalTip uses the ordinary branch policy with a caller's
-// raw local-ref reader. All other status readers retain their defaults.
-func CheckParkBranchWithLocalTip(repo, goalID, next string, readRemote ParkBranchRemoteReader, localTip func(repo, ref string) (string, bool, error)) (ParkBranchState, error) {
-	deps := defaultStatusDependencies()
-	deps.localTip = localTip
-	return checkParkBranch(repo, goalID, next, readRemote, deps)
 }
 
 func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReader, deps statusDependencies) (ParkBranchState, error) {
@@ -149,13 +152,19 @@ func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 		}
 		return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "goal/%s here is %s but origin has %s; push it before parking\nrun: git push origin goal/%s, then metasystem goal pause %s", goalID, localTip, remote, goalID, goalID)
 	}
-	status, err := inspectStatus(repo, endpointTip, originTip, goalID, deps)
+	// Parking keeps pushed work recoverable without judging its reads.
+	commits, err := deps.gitOutput(repo, "rev-list", "--first-parent", endpointTip+".."+originTip)
 	if err != nil {
 		return ParkBranchState{}, err
 	}
-	if len(status.Units) == 0 {
-		return ParkBranchState{Branch: true, Summary: fmt.Sprintf("goal/%s at %s has no unit", goalID, originTip)}, nil
+	for _, commit := range strings.Fields(string(commits)) {
+		kind, err := deps.kind(repo, commit, goalID)
+		if err != nil {
+			return ParkBranchState{}, err
+		}
+		if kind.Kind == Unit {
+			return ParkBranchState{Branch: true, Summary: fmt.Sprintf("goal/%s at %s is pushed; last unit %s commit %s", goalID, originTip, kind.Unit, commit)}, nil
+		}
 	}
-	last := status.Units[len(status.Units)-1]
-	return ParkBranchState{Branch: true, Summary: fmt.Sprintf("goal/%s last unit %s commit %s is %s", goalID, last.Unit, last.Commit, last.ReadState)}, nil
+	return ParkBranchState{Branch: true, Summary: fmt.Sprintf("goal/%s at %s has no unit", goalID, originTip)}, nil
 }

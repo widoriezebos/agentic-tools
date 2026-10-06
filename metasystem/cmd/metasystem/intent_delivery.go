@@ -517,6 +517,7 @@ type intentFinding struct {
 	ID       string `json:"id"`
 	Material bool   `json:"material"`
 	Title    string `json:"title,omitempty"`
+	Claim    string `json:"claim,omitempty"`
 }
 
 func readIntentFindings(path string) ([]intentFinding, string, error) {

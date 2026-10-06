@@ -12,6 +12,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
 func setDesignGateMode(t *testing.T, bed *workBed, mode string) {
@@ -83,7 +85,7 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 			if code != 0 || len(bed.starter.launched()) == 0 {
 				t.Fatalf("build: code=%d result=%+v output=%q", code, result, output)
 			}
-			identity, _ := bed.designGate.identity(bed.stateRoot())
+			identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 			_, record := designGateRead(t, bed, identity, "u")
 			if record.Mode != mode || record.Person != (scenario == "person") || record.GovernedBy != "R-146-m1k" {
 				t.Fatalf("dispatch record: %+v", record)
@@ -129,9 +131,9 @@ func TestDesignGateNeverStallsWhenItBreaksUnderRefuse(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "identity":
-				bed.designGate.identity = func(string) (string, error) { return "", problem }
+				bed.designGate.identity = func(stateroot.Installation) (string, error) { return "", problem }
 			case "invalid identity":
-				bed.designGate.identity = func(string) (string, error) { return "../../escape", nil }
+				bed.designGate.identity = func(stateroot.Installation) (string, error) { return "../../escape", nil }
 			case "record":
 				bed.designGate.record = func(string, string, string) (bool, error) { return false, problem }
 			case "unreadable mode":

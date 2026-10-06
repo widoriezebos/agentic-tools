@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const closureField = "closure"
@@ -137,14 +139,15 @@ func ReadClosure(root map[string]any) (Closure, bool, error) {
 }
 
 // CleanRegister says whether a finding register is clean: empty, or every
-// entry resolved as withdrawn or folded. It is the clean read of D3/D7.
+// entry resolved as withdrawn or folded, or a placeholder superseded by a
+// retry. It is the clean read of D3/D7.
 func CleanRegister(value any) (bool, error) {
 	clean, _, _, err := classifyRegister(value)
 	return clean, err
 }
 
 // LandableRegister says whether a closed register yields the read a landing
-// takes: every entry is withdrawn, folded, ruled out-of-scope (never a severe or
+// takes: every entry is withdrawn, folded, a superseded placeholder, or ruled out-of-scope (never a severe or
 // unproven finding), or accepted as a risk by a person's recorded act whose
 // accepted digest is the entry's AcceptedFindingDigest (an acceptance that
 // predates content binding has none and covers the finding as it stands). It
@@ -154,6 +157,15 @@ func CleanRegister(value any) (bool, error) {
 func LandableRegister(value any) (bool, []AcceptedRisk, error) {
 	_, landable, risks, err := classifyRegister(value)
 	return landable, risks, err
+}
+
+// SupersededPlaceholder identifies a missing return replaced by a later round.
+func SupersededPlaceholder(entry map[string]any) bool {
+	round, ok := strictInteger(entry["placeholderRound"])
+	retry, marked := strings.CutPrefix(stringValue(entry["resolution"]), "superseded by round ")
+	next, err := strconv.ParseInt(retry, 10, 64)
+	return ok && round > 0 && marked && err == nil && next > round &&
+		entry["status"] == "resolved" && stringValue(entry["decisionOpid"]) == ""
 }
 
 func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
@@ -167,6 +179,14 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 		entry, ok := raw.(map[string]any)
 		if !ok {
 			return false, false, nil, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
+		}
+		superseded := SupersededPlaceholder(entry)
+		if value, marked := entry["placeholderRound"]; marked {
+			if round, valid := strictInteger(value); !valid || round < 1 {
+				return false, false, nil, fmt.Errorf("finding register entry %d has an invalid placeholder round", index)
+			}
+			entry = maps.Clone(entry)
+			delete(entry, "placeholderRound")
 		}
 		legacy := hasExactFields(entry,
 			"findingId", "critic", "rigorClass", "factsDigest", "status", "evidenceDigest", "multiplicity")
@@ -206,7 +226,7 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 			}
 		}
 
-		pairIsClean := status == "resolved" && (resolution == "withdrawn" || resolution == "folded")
+		pairIsClean := status == "resolved" && (resolution == "withdrawn" || resolution == "folded") || superseded
 		pairIsNonClean := (status == "open" || status == "disputed") && resolution == "" ||
 			status == "resolved" && (resolution == "out-of-scope" || resolution == "refuted" || resolution == "accepted") ||
 			status == "deferred" && resolution == "deferred" ||

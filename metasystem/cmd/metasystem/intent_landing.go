@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -38,6 +39,8 @@ type laneVerbOwners struct {
 	validate func(root, seatRoot string, now time.Time) (string, error)
 	by       func(installation string) string
 	now      func() time.Time
+	wake     func(home string) lane.WakeSources
+	status   func(home string, record lane.Record, view lane.View) landingStatusData
 	// person proves the person at the enrolled terminal of an installation
 	// and names them.
 	person func(root string) (string, error)
@@ -89,6 +92,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.now == nil {
 		owners.now = func() time.Time { return time.Now().UTC() }
+	}
+	if owners.wake == nil {
+		owners.wake = plain.KeeperWake
 	}
 	if owners.person == nil {
 		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
@@ -264,7 +270,15 @@ func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.V
 	if owners.view != nil {
 		return owners.view(home)
 	}
-	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: plain.KeeperWake(home)})
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: plain.KeeperWake(home)}
+	sources.Fingerprint = func(root string) (string, error) {
+		fingerprint := owners.keeper(home, root).Fingerprint
+		if fingerprint == nil {
+			return "", nil
+		}
+		return fingerprint(root)
+	}
+	return lane.BuildView(sources)
 }
 
 func laneTargets(root string) []intentTarget {
@@ -279,12 +293,17 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	view := inv.laneView(owners, home)
 	record, _, unreadable := lane.Read(home)
 	data := landingStatus(owners, home, record, view)
+	waiting := slices.ContainsFunc(data.Queue, func(entry plain.Entry) bool { return entry.State == plain.StateWaiting })
+	if view.Root != nil && view.Owner.State == lane.OwnerIdle {
+		view.Summary = view.SummaryWithWaiting(waiting)
+		data.View = view
+	}
 	summary := view.Summary
 	if view.Root != nil {
 		summary += "; " + landingQueueWords(data.Queue)
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
-		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof), data.RunningProof), data)}
+		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting), data.RunningProof), data)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -299,6 +318,9 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 type landingStatusData = plain.Status
 
 func landingStatus(owners laneVerbOwners, home string, record lane.Record, view lane.View) landingStatusData {
+	if owners.status != nil {
+		return owners.status(home, record, view)
+	}
 	return plain.ReadStatus(home, record, view, owners.plainProve)
 }
 
@@ -383,7 +405,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 // headline says whether the lane runs, and what it proves while its agent
 // is idle. --verbose adds the lane's checkout, who registered it and its
 // landing agent.
-func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, running *plain.RunningProof) func(*textui.Page) {
+func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, running *plain.RunningProof, waiting bool) func(*textui.Page) {
 	return func(page *textui.Page) {
 		env := page.Env()
 		if view.Root == nil {
@@ -413,10 +435,8 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 		case owner.State == lane.OwnerIdle && running != nil && running.State == "running":
 			// The proof the agent started runs on after the agent's turn.
 			page.Headline("The landing lane is proving tree " + shortLandingID(running.Tree) + "; its agent is not running")
-		case owner.State == lane.OwnerIdle:
-			// An idle lane runs no model: the keeper wakes the agent when
-			// there is work (design r10 §3).
-			page.Headline("The landing lane is idle; its agent starts when there is work")
+		case owner.State == lane.OwnerIdle || owner.State == lane.OwnerHeld:
+			page.Headline("The landing lane is " + view.AgentSummary(waiting))
 		default:
 			page.Mark(textui.Alert, "The landing lane can't run its agent")
 			section := page.Section("", "")
@@ -426,6 +446,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 			if owner.RetryHint != nil && len(owner.Fix) == 0 {
 				section.Text("to fix: " + *owner.RetryHint)
 			}
+		}
+		if line := steward.RearmDeferredLine(*view.Root); line != "" {
+			page.Section("Engine", "").Text(line)
 		}
 		if !page.Verbose() {
 			return

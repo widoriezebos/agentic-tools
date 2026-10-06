@@ -823,10 +823,16 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	by := flags.String("by", "", "the directing human")
 	lineage := flags.String("lineage", "", "coordinator lineage")
 	itemsFile := flags.String("items-file", "", "one item per line")
+	material := flags.Bool("material", false, "notes block conclusion (default)")
+	notMaterial := flags.Bool("not-material", false, "notes do not block conclusion")
 	var items repeatedStrings
 	flags.Var(&items, "item", "read item (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
 		dependencies.complain("goal notes needs the goal, --read with the read's label, and --add or --items")
+		return 2
+	}
+	if *material && *notMaterial {
+		dependencies.complain("goal notes takes one of --material or --not-material")
 		return 2
 	}
 	texts := []string(items)
@@ -846,7 +852,7 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	if !ok {
 		return 1
 	}
-	result, err := goal.AddReadItems(req, *id, *read, texts)
+	result, err := goal.AddReadItems(req, *id, *read, texts, !*notMaterial)
 	return dependencies.publish(result, err)
 }
 

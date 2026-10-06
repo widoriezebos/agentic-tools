@@ -352,7 +352,7 @@ func intentPlanningCommands() []intentCommand {
 		},
 		{
 			object: "goal", action: "notes", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
-			usage: []string{"metasystem goal notes G", "metasystem goal notes G --read LABEL --add TEXT...", "metasystem goal notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
+			usage: []string{"metasystem goal notes G", "metasystem goal notes G --read LABEL --add TEXT... [--material|--not-material]", "metasystem goal notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
 			details: []string{
 				"Notes are non-breaking read items. A finding stays a finding; closing a note never certifies one.",
 				"--all lists closed items too.",
@@ -363,6 +363,8 @@ func intentPlanningCommands() []intentCommand {
 				{name: "add", value: "TEXT", repeat: true, usage: "an item to record (repeatable)"},
 				{name: "add-file", value: "FILE", advanced: true, usage: "record each line of FILE as its own note, not one note"},
 				{name: "read", value: "LABEL", usage: "with --add: the read the items came from"},
+				{name: "material", usage: "with --add: notes block conclusion (default)"},
+				{name: "not-material", usage: "with --add: notes do not block conclusion"},
 				{name: "close", value: "ITEM", usage: "the item to close"},
 				{name: "fixed", value: "COMMIT", usage: "with --close: the commit that fixed it"},
 				{name: "moved", value: "G2", usage: "with --close: the open goal receiving it"},
@@ -2001,6 +2003,14 @@ func runIntentNotes(inv *intentInvocation) int {
 	}
 	adding := inv.input.has("add") || inv.input.has("add-file")
 	closing := inv.input.has("close")
+	if inv.input.has("material") && inv.input.has("not-material") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "choose one of --material or --not-material; nothing was done",
+			next: inv.typedArgvLess("material"), nextReason: "records notes that do not block conclusion"})
+	}
+	if !adding && (inv.input.has("material") || inv.input.has("not-material")) {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "materiality only goes with adding notes; nothing was done",
+			next: inv.typedArgvLess("material", "not-material"), nextReason: "reads or closes the notes"})
+	}
 	var closure []string
 	for _, name := range []string{"fixed", "moved", "accepted"} {
 		if inv.input.has(name) {
@@ -2030,6 +2040,7 @@ func runIntentNotes(inv *intentInvocation) int {
 		}
 		args := append([]string{"--root", inv.stateRoot, "--id", id, "--read", inv.input.text("read")}, actor...)
 		args = append(args, inv.forwardEach("add", "item")...)
+		args = append(args, inv.forward("material", "not-material")...)
 		if path := inv.input.text("add-file"); path != "" {
 			args = append(args, "--items-file", inv.inputPath(path))
 		}

@@ -46,6 +46,7 @@ func (f commitFacts) complete() bool {
 }
 
 type commitEffects struct {
+	KeepTip      func(repo, goal, tip string) error
 	ClearFetch   func(repo, ref string) error
 	Open         func(repo, base string, amend bool) (dir string, close func(), err error)
 	Apply        func(dir string, patch []byte) error
@@ -61,7 +62,7 @@ type commitEffects struct {
 type CommitEffects = commitEffects
 
 func (e commitEffects) complete() bool {
-	return e.ClearFetch != nil && e.Open != nil && e.Apply != nil && e.Commit != nil && e.Replay != nil && e.WithoutPaths != nil && e.Checkout != nil && e.Attach != nil && e.Restore != nil && e.Publish != nil
+	return e.KeepTip != nil && e.ClearFetch != nil && e.Open != nil && e.Apply != nil && e.Commit != nil && e.Replay != nil && e.WithoutPaths != nil && e.Checkout != nil && e.Attach != nil && e.Restore != nil && e.Publish != nil
 }
 
 type commitRepository struct {
@@ -135,6 +136,10 @@ func gitCommitRepository() commitRepository {
 			},
 		},
 		effects: commitEffects{
+			KeepTip: func(repo, goal, tip string) error {
+				_, err := gitOutput(repo, "update-ref", "refs/metasystem/goals/before/"+goal+"/"+tip, tip)
+				return err
+			},
 			ClearFetch: clearPushTxn,
 			Open: func(repo, base string, amend bool) (string, func(), error) {
 				// The hook resolves its root as the worktree top plus the

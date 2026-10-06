@@ -541,6 +541,8 @@ func editDistance(left, right string) int {
 // intentOwners are the existing owners a public command calls. Production
 // uses the real ones; tests give each invocation its own fakes.
 type intentOwners struct {
+	contractReady func(string, bool) (string, int, error)
+
 	resolver   stateroot.Resolver
 	prove      goalAuthorityProver
 	commandNow func(string) (time.Time, error)

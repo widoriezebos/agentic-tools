@@ -38,6 +38,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func stewardCensusFor(repo string) steward.WorkerCensus {
@@ -344,6 +345,13 @@ func probeStewardRuntime(root, runtime string) error {
 func runStewardRunWith(args []string, stdout, stderr io.Writer,
 	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
 	probeRuntime func(string, string) error) int {
+	return runStewardRunWithDependencies(args, stdout, stderr, runLoop, probeRuntime, nil, steward.TickSeconds, nil)
+}
+
+func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
+	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
+	probeRuntime func(string, string) error,
+	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error)) int {
 	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
@@ -372,6 +380,30 @@ func runStewardRunWith(args []string, stdout, stderr io.Writer,
 		tickConfig.ProbeRuntime = probeRuntime
 	}
 	tickConfig.ArmedLineage = *lineage
+	tickConfig.RunnerClock = clock
+	tickConfig.RearmAtBoundary = func() (bool, error) {
+		_, err := steward.VerifyIdentity(steward.RepoIdentityPath(*repo), *repo)
+		if err != nil {
+			return false, nil
+		}
+		home, err := steward.HomeStateRoot()
+		if err != nil {
+			return false, err
+		}
+		return testrun.RearmStewardAtBoundary(*repo, func() (bool, error) {
+			now := time.Now()
+			if !tickConfig.Now.IsZero() {
+				now = tickConfig.Now
+			}
+			if clock != nil {
+				now = clock.Now()
+			}
+			return steward.SeatAtUnitBoundary(*repo, home, now)
+		})
+	}
+	if refresh != nil {
+		tickConfig.RearmAtBoundary = refresh
+	}
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The lane checkout's own steward wakes its landing agent on demand;
@@ -385,7 +417,7 @@ func runStewardRunWith(args []string, stdout, stderr io.Writer,
 	tickConfig.ProbeProvider = func(top string) (bool, error) {
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}
-	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
+	interval := time.Duration(tickSeconds(*repo)) * time.Second
 	err := runLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)
 		if err != nil {
@@ -612,6 +644,9 @@ func runStewardStatus(args []string, stdout, stderr io.Writer) int {
 	pending, pendErr := steward.PendingNotifications(*repo)
 	alerts, alertErr := steward.AlertEpisodes(*repo)
 	report := map[string]any{"evidence": evidence, "liveIntents": intents, "pendingNotifications": pending, "alertEpisodes": alerts}
+	if line := steward.RearmDeferredLine(*repo); line != "" {
+		report["engine"] = line
+	}
 	var problems []string
 	for _, err := range []error{evErr, intErr, pendErr, alertErr} {
 		if err != nil {
