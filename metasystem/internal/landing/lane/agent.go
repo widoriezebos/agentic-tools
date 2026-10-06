@@ -152,6 +152,7 @@ func (k AgentKeeper) Run() AgentRun {
 	var root string
 	var result AgentRun
 	var registered Record
+	var barren *AgentState
 	proceed := false
 	if err := withLock(k.Home, func() error {
 		record, ok, err := Read(k.Home)
@@ -160,13 +161,31 @@ func (k AgentKeeper) Run() AgentRun {
 			return err
 		}
 		root, registered = record.Root, record
-		result, proceed = k.decide(record)
+		decision := k
+		decision.BarrenStop = func(_ Record, state AgentState) error { barren = &state; return nil }
+		result, proceed = decision.decide(record)
 		return nil
 	}); err != nil {
 		return agentRun(AgentFailed, root, "the landing agent's keeper can't read the lane: "+err.Error())
 	}
+	// The lock order is install lock before home lock, never the reverse.
+	// Stop records and question synchronization may take the install lock;
+	// their inputs are read under the home lock and written after releasing it.
+	if barren != nil && k.BarrenStop != nil {
+		if err := k.BarrenStop(registered, *barren); err != nil {
+			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its stop: "+err.Error())
+		}
+	}
+	if k.own(registered) && !gone(root) && k.Observe != nil {
+		if err := k.Observe(registered); err != nil && !k.Explicit {
+			return agentRun(AgentHeld, root, "the lane's stop question cannot be reconciled: "+err.Error())
+		}
+	}
 	if !proceed {
 		return result
+	}
+	if reason, held := k.held(root); held {
+		return agentRun(AgentHeld, root, reason)
 	}
 	wake := ReadWake(registered, k.Sources)
 	if len(wake.Reasons) == 0 {
@@ -292,11 +311,6 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 	if !k.own(record) {
 		return agentRun(AgentNotKept, root, ""), false
 	}
-	if k.Observe != nil {
-		if err := k.Observe(record); err != nil {
-			return agentRun(AgentHeld, root, "the lane's stop question cannot be reconciled: "+err.Error()), false
-		}
-	}
 	// An ended launch is reaped at once, paused or not.
 	state, _ := ReadAgentState(k.Home)
 	if _, running, err := k.Running(); err == nil && !running && state.Launch != "" && state.ReapedAt == "" {
@@ -321,9 +335,6 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 	}
 	if stopped, stop := k.recheck(root); stop {
 		return stopped, false
-	}
-	if reason, held := k.held(root); held {
-		return agentRun(AgentHeld, root, reason), false
 	}
 	return AgentRun{}, true
 }

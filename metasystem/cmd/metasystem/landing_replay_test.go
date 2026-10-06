@@ -46,6 +46,8 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 		Git: func(_ string, args ...string) (string, error) {
 			joined := strings.Join(args, " ")
 			switch {
+			case len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/metasystem.conf"):
+				return "proof.full=fixture\n", nil
 			case joined == "rev-parse --verify HEAD^{commit}":
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":

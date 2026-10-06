@@ -262,7 +262,13 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		return Question{}, false, fmt.Errorf("unknown question kind %q", r.Kind)
 	}
 	digest := factsDigest(questionSubjectKey(r.Goal, r.About), r.Kind, r.Facts)
-	existing, err := listQuestions(r.RepoRoot)
+	var existing []Question
+	var err error
+	if r.About == "lane" && r.Lineage == "landing-agent" {
+		existing, _ = WalkQuestions(r.RepoRoot)
+	} else {
+		existing, err = listQuestions(r.RepoRoot)
+	}
 	if err != nil {
 		return Question{}, false, err
 	}

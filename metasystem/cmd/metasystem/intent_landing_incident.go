@@ -120,6 +120,9 @@ func (owners laneVerbOwners) clearLandingIncidents(installation string, proof pl
 		if err := confirmedIncidentWrite(result, err); err != nil {
 			return err
 		}
+		if err := plain.CloseIncidentStop(installation, entry.Identity, owners.now()); err != nil {
+			return err
+		}
 	}
 	return nil
 }

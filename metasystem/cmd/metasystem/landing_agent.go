@@ -187,9 +187,6 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	if machineFn == nil {
 		machineFn = goal.ResolveMachine
 	}
-	if err := plain.SyncStopQuestion(module, machineFn, a.now()); err != nil {
-		return "", err
-	}
 	open, _ := channel.WalkQuestions(module)
 	var lane []channel.Question
 	for _, q := range open {
@@ -247,10 +244,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
 		Fingerprint: plain.KeeperFingerprint,
 		BarrenStop: func(record lane.Record, state lane.AgentState) error {
-			if err := plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now()); err != nil {
-				return err
-			}
-			return plain.SyncStopQuestion(record.Install, machine, agent.now())
+			return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now())
 		},
 		Waiting: func(install, checkout string) (int, error) {
 			waiting, err := plain.Pending(install, checkout)

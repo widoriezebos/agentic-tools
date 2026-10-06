@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 func newStopVerbBed(t *testing.T) *replayVerbBed {
@@ -26,6 +28,13 @@ func newStopVerbBed(t *testing.T) *replayVerbBed {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func syncStopQuestionHold(agent landingAgent, install string) (string, error) {
+	if err := plain.SyncStopQuestion(install, agent.machine, agent.now()); err != nil {
+		return "", err
+	}
+	return agent.questionHold(install)
 }
 
 func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing.T) {
@@ -61,7 +70,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	}
 	// The keeper reconciles the stop question at its own tick.
 	agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
-	if hold, err := agent.questionHold(b.install); err != nil || !strings.Contains(hold, command) {
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
 		t.Fatalf("keeper did not ask and hold: %q %v", hold, err)
 	}
 	questions, _ := channel.WalkOpenQuestions(b.install)
@@ -78,7 +87,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	if code != 0 || strings.SplitN(strings.TrimSpace(stdout.String()), "\n", 2)[0] != command || strings.Contains(stdout.String(), "question retry") {
 		t.Fatalf("question show lost the stop command: %d %s %s", code, &stdout, &stderr)
 	}
-	if _, err := agent.questionHold(b.install); err != nil {
+	if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 		t.Fatal(err)
 	}
 	if all, _ := channel.WalkQuestions(b.install); len(all) != 1 {
@@ -90,7 +99,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	if code, text := b.run(t, b.root, "run"); code != 0 {
 		t.Fatalf("landing run: %d %s", code, text)
 	}
-	if hold, err := agent.questionHold(b.install); err != nil || hold != "" {
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || hold != "" {
 		t.Fatalf("the act did not end the question: %q %v", hold, err)
 	}
 	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State != "closed" {
@@ -123,7 +132,7 @@ func TestLandingStopCauseChoosesTheHandoff(t *testing.T) {
 				t.Fatalf("no attributed stop: %+v %v", stop, err)
 			}
 			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
-			if _, err := agent.questionHold(b.install); err != nil {
+			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}
 			questions, _ := channel.WalkQuestions(b.install)
@@ -160,7 +169,7 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			b.prove(t)
 			b.prove(t)
 			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
-			if _, err := agent.questionHold(b.install); err != nil {
+			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}
 			questions, _ := channel.WalkOpenQuestions(b.install)
@@ -232,5 +241,101 @@ func TestLandingStopBarrenHoldRecordsOneQuestionAndRunClearsIt(t *testing.T) {
 	}
 	if q, err := channel.ReadQuestion(install, questions[0].ID); err != nil || q.State != "closed" {
 		t.Fatalf("run did not withdraw the barren question: %+v %v", q, err)
+	}
+}
+
+func TestLandingUnreadableUnrelatedQuestionAllowsKeeperAndRun(t *testing.T) {
+	t.Parallel()
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit=%v", explicit), func(t *testing.T) {
+			t.Parallel()
+			b, keeper, _, starts, _ := landingRestartBed(t)
+			queueRestartWork(t, b)
+			dir := filepath.Join(b.landingA, "artifacts", "agents", "channel", "questions")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "q-x.json"), []byte("{invalid"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if explicit {
+				if code, out, stderr := b.run(t, "landing", "run"); code != 0 {
+					t.Fatalf("run: %d %s %s", code, out, stderr)
+				}
+			} else if run := keeper.Run(); run.Outcome != lane.AgentStarted {
+				t.Fatalf("keeper: %+v", run)
+			}
+			if *starts != 1 {
+				t.Fatalf("starts=%d", *starts)
+			}
+		})
+	}
+}
+
+func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsRun(t *testing.T) {
+	t.Parallel()
+	b, keeper, now, starts, _ := landingRestartBed(t)
+	queueRestartWork(t, b)
+	dir := filepath.Join(b.landingA, "artifacts", "agents", "channel", "questions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "q-x.json"), []byte("{invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if run := keeper.Run(); run.Outcome != lane.AgentStarted {
+			t.Fatalf("start: %+v", run)
+		}
+		b.alive = false
+		*now = now.Add(time.Minute)
+	}
+	if run := keeper.Run(); run.Outcome != lane.AgentHeld {
+		t.Fatalf("hold: %+v", run)
+	}
+	questions, _ := channel.WalkQuestions(b.landingA)
+	if len(questions) != 1 {
+		t.Fatalf("questions=%+v", questions)
+	}
+	path := filepath.Join(b.landingA, "artifacts", "agents", "channel", "questions", questions[0].ID+".json")
+	if err := os.WriteFile(path, []byte("{invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if run := keeper.Run(); run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, questions[0].ID) {
+		t.Fatalf("own unreadable: %+v", run)
+	}
+	if code, out, stderr := b.run(t, "landing", "run"); code != 0 || *starts != 3 {
+		t.Fatalf("explicit run: %d %s %s starts=%d", code, out, stderr, *starts)
+	}
+}
+
+func TestLandingKeeperQuestionHoldDoesNotTakeInstallLock(t *testing.T) {
+	t.Parallel()
+	b, keeper, _, _, _ := landingRestartBed(t)
+	if err := os.MkdirAll(plain.Dir(b.landingA), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	install, err := lock.File(filepath.Join(plain.Dir(b.landingA), "lane.lock"), 0o600, lock.Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer install.Release()
+	home, err := lock.File(lane.LockPath(b.home), 0o600, lock.Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer home.Release()
+	done := make(chan error, 1)
+	go func() { _, err := keeper.Holds[len(keeper.Holds)-1](b.landingA); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		_ = home.Release()
+		_ = install.Release()
+		<-done
+		t.Fatal("the question hold waited for the install lock while the home lock was held")
 	}
 }

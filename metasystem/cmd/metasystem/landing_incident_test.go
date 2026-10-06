@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
@@ -315,6 +317,16 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 				b.repo.accepted = oldAccepted
 			}
 			lane := newResolveVerbFixture(t)
+			stopData, err := json.Marshal(plain.Stop{Loop: "lane-proof", Decision: "stop", Handoff: "hold red:internal/unit:TestOne", Cause: &plain.Cause{Kind: "main", Name: "red:internal/unit:TestOne"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(plain.Dir(lane.install), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(plain.Dir(lane.install), "stops.jsonl"), append(stopData, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			lane.owners.landing.mainEndpoint, lane.owners.landing.machine = owners.mainEndpoint, owners.machine
 			lane.owners.landing.now = owners.now
 			proof := plain.Result{Result: plain.Green, Tree: "pushed-tree", Commit: "head", Scope: "full", At: syncRequestTestNow.Format(time.RFC3339), Attempt: "full-green", FullTree: "pushed-tree", FullAt: syncRequestTestNow.Format(time.RFC3339)}
@@ -384,7 +396,67 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 			if len(listed.Incidents) != want {
 				t.Fatalf("%s cleared wrong entries: %s", name, data)
 			}
+			stop, err := plain.NewestStop(lane.install)
+			if err != nil || (stop == nil) != (want == 0) {
+				t.Fatalf("%s: stop closure disagrees with incident clearance: %+v %v", name, stop, err)
+			}
 		})
+	}
+}
+
+func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
+	t.Parallel()
+	b, register, _ := incidentProveFixture(t, false)
+	if err := os.WriteFile(filepath.Join(b.install, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.owners.landing.view = func(string) lane.View {
+		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
+	}
+	mainRed := b.fail
+	b.fail = func(cmd *exec.Cmd, only string) (string, error) {
+		if only != "" {
+			return "LANDING-CHECKED\t0\n", nil
+		}
+		return mainRed(cmd, only)
+	}
+	b.prove(t)
+	b.fail = mainRed
+	b.prove(t)
+	stop, err := plain.NewestStop(b.install)
+	identity := "red:u/a:TestOne"
+	if err != nil || stop == nil || stop.Attempt != 2 || stop.Cause.Name != identity || stop.Handoff != "hold "+identity || stop.Command() != "metasystem incident list" {
+		t.Fatalf("main stop has no incident handoff: %+v %v", stop, err)
+	}
+	code, text := b.run(t, b.root, "status")
+	if code != 0 || !strings.Contains(oneSpaced(text), stop.Command()) || !strings.Contains(oneSpaced(text), identity) {
+		t.Fatalf("status: %d %s", code, text)
+	}
+	data, err := json.Marshal(stop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := channel.Ask(channel.AskRequest{RepoRoot: b.install, About: "lane", Kind: "other", Machine: "finder-one", Lineage: lane.AgentLineage,
+		Facts: []string{stop.Command(), "lane stop: " + string(data), "evidence: " + stop.Evidence}, Now: syncRequestTestNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.owners.processes.question = channel.ReadQuestion
+	action, _ := findIntentAction("question", "show")
+	var stdout, stderr bytes.Buffer
+	code = runIntentIn(action, []string{"channel:" + q.ID}, &stdout, &stderr, b.install, b.owners)
+	if code != 0 || !strings.HasPrefix(stdout.String(), stop.Command()+"\n") || !strings.Contains(stdout.String(), identity) {
+		t.Fatalf("question: %d %s %s", code, &stdout, &stderr)
+	}
+	proof := plain.Result{Result: plain.Green, Commit: register.repo.canonical, Tree: "green-tree", Scope: "full", At: syncRequestTestNow.Format(time.RFC3339), FullAt: syncRequestTestNow.Format(time.RFC3339), FullTree: "green-tree", Attempt: "clearing-green"}
+	if err := b.owners.landing.clearLandingIncidents(b.install, proof); err != nil {
+		t.Fatal(err)
+	}
+	if stop, err := plain.NewestStop(b.install); err != nil || stop != nil {
+		t.Fatalf("cleared incident still holds: %+v %v", stop, err)
 	}
 }
 

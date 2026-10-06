@@ -192,6 +192,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		if failed {
 			if i == 0 && prefix.Main {
 				result.Cause.Kind = "main"
+				result.Cause.Name = mainFailureIdentity(result.Failed)
 				if len(mainChecks) > 0 {
 					result.Cause.Evidence = mainChecks[0].Log
 					result = recordMainFailures(seams, result, mainChecks)
@@ -214,9 +215,23 @@ func recordMainFailures(seams ProveSeams, result Result, checks []Result) Result
 	if seams.RecordMain != nil {
 		if err := seams.RecordMain(checks); err != nil {
 			result.Reason += "; main's failed tests could not be recorded: " + err.Error()
+		} else if len(checks) > 0 && result.Cause != nil {
+			result.Cause.Kind, result.Cause.Name = "main", mainFailureIdentity(checks[0].Failed)
 		}
 	}
 	return result
+}
+
+// Main incidents are keyed by the failing unit and, when known, its test.
+func mainFailureIdentity(failed []FailedUnit) string {
+	if len(failed) == 0 {
+		return ""
+	}
+	identity := "red:" + failed[0].Unit
+	if len(failed[0].Tests) > 0 {
+		identity += ":" + failed[0].Tests[0]
+	}
+	return identity
 }
 
 // ProofBudget refuses a third completed full check in the open batch loop.
