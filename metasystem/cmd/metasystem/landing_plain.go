@@ -181,6 +181,35 @@ func (inv *intentInvocation) latestLaneEntry(install, goalID, main string) (plai
 	return entry, ok, err
 }
 
+// latestLaneGoalEntry keeps records hand-ins from hiding the goal's landing.
+func (inv *intentInvocation) latestLaneGoalEntry(install, goalID, main string) (plain.Entry, bool, error) {
+	entries, err := plain.Entries(install)
+	if err != nil {
+		return plain.Entry{}, false, err
+	}
+	for index := len(entries) - 1; index >= 0; index-- {
+		entry := entries[index]
+		if entry.Goal != goalID || entry.Records {
+			continue
+		}
+		// A records hand-in can supersede this entry in the queue, but
+		// main still determines whether the goal's work landed.
+		if entry.State == plain.StateSuperseded {
+			entry.State = plain.StateWaiting
+		}
+		if main != "" {
+			contains := plain.ContainedIn(inv.layout.InstallationRoot.Path(), main)
+			if read := inv.delivery().laneContains; read != nil {
+				contains = func(sha string) (bool, error) { return read(sha, main) }
+			}
+			derived, err := plain.Landed([]plain.Entry{entry}, contains)
+			return derived[0], true, err
+		}
+		return entry, true, nil
+	}
+	return plain.Entry{}, false, nil
+}
+
 func handInUnitRounds(work launch.NamedWork) plain.UnitRounds {
 	unit := plain.UnitRounds{Unit: work.Unit, Machinery: map[string]int{}, Proof: []string{"check"}, Read: "none"}
 	if work.Record == nil {

@@ -16,6 +16,7 @@ import (
 func admissionBed(t *testing.T, route string) (*deliveryBed, *landingOwners, string) {
 	t.Helper()
 	b, owners, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
+	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == main, nil }
 	b.owners.laneLatest = func(install, id, main string) (plain.Entry, bool, error) {
 		entry, found, err := plain.Latest(install, id)
 		if err == nil && found {
@@ -164,6 +165,51 @@ func TestWorkLandTierOneRequiresAllDeclaredBuilds(t *testing.T) {
 	expectOutcome(t, "all units built without reads", code, result, intentConfirmed)
 	if entries, err := plain.Entries(install); err != nil || len(entries) != 1 {
 		t.Fatalf("waived goal was not queued: %+v %v", entries, err)
+	}
+}
+
+func TestWorkLandRecordsDoNotHideTheGoalsLanding(t *testing.T) {
+	t.Parallel()
+	b, owners, install := admissionBed(t, "lane")
+	finishThirdUnit(owners)
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "finished goal hand-in", code, result, intentConfirmed)
+	landed := owners.status.BranchTip
+	owners.status.EndpointTip = landed
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "finished goal landed", code, result, intentUnchanged)
+	if !strings.Contains(result.Summary, "landed on main") {
+		t.Fatalf("goal has not landed: %+v", result)
+	}
+
+	records := strings.Repeat("4", 40)
+	owners.status.BranchTip = records
+	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: records, Kind: branch.Plan})
+	if _, added, err := plain.HandIn(install, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
+		t.Fatalf("records hand-in: added=%v err=%v", added, err)
+	}
+	owners.status.EndpointTip = records
+	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == landed || sha == records, nil }
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "records landed", code, result, intentUnchanged)
+	entry := resultData(t, result)["queue"].(map[string]any)
+	if entry["records"] != true || entry["state"] != plain.StateLanded {
+		t.Fatalf("records have not landed: %+v", result)
+	}
+
+	commit := strings.Repeat("5", 40)
+	owners.status.BranchTip = commit
+	owners.status.Status.Units = append(owners.status.Status.Units, branch.UnitStatus{Unit: "correction", Commit: commit})
+	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: commit, Kind: branch.Unit})
+	owners.status.Status.Prefix++
+	owners.status.Sources = append(owners.status.Sources, "critic-root")
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "read unit after goal and records landed", code, result, intentRefused)
+	if resultData(t, result)["code"] != "GOAL_LAND_ONCE" || !strings.Contains(result.Summary, "already landed at "+shortCommit(landed)) {
+		t.Fatalf("records hid the goal's landing: %+v", result)
+	}
+	if entries, err := plain.Entries(install); err != nil || len(entries) != 2 || entries[0].Records || !entries[1].Records || entries[1].SHA != records {
+		t.Fatalf("refused unit changed the queue: %+v %v", entries, err)
 	}
 }
 

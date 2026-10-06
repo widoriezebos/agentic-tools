@@ -248,11 +248,12 @@ type intentDeliveryOwners struct {
 	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error, release carriedRelease) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
-	closeOwner  func(root string, args []string) intentProcessResult
-	executable  func() (string, error)
-	branchRead  func([]string) (branch.BranchReadResult, int, error)
-	branchState func(root, goalID string) (intentBranchState, error)
-	laneLatest  func(install, goalID, main string) (plain.Entry, bool, error)
+	closeOwner   func(root string, args []string) intentProcessResult
+	executable   func() (string, error)
+	branchRead   func([]string) (branch.BranchReadResult, int, error)
+	branchState  func(root, goalID string) (intentBranchState, error)
+	laneLatest   func(install, goalID, main string) (plain.Entry, bool, error)
+	laneContains func(sha, main string) (bool, error)
 	// trailerWorktree is the goal worktree a missing kind trailer may be
 	// amended in (productionTrailerWorktree); nil offers no amend.
 	trailerWorktree func(root, goalID, commit, endpointTip string) string
@@ -2013,7 +2014,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) (result inten
 		}
 		landed := ""
 		if configured {
-			entry, found, readErr := inv.latestLaneEntry(laneInstall, goalID, state.EndpointTip)
+			entry, found, readErr := inv.latestLaneGoalEntry(laneInstall, goalID, state.EndpointTip)
 			if readErr != nil {
 				return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
 					Summary: "the landing lane's queue can't be read, so nothing was handed in",

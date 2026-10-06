@@ -35,7 +35,7 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	// signal (metasystem.template=true); the design page is ordinary content.
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
-	pagePath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	pagePath := filepath.Join(f.mainRoot, "plans", "goals", "standing-validation.md")
 	pageData, err := os.ReadFile(pagePath)
 	if err != nil {
 		t.Fatal(err)
@@ -50,10 +50,11 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	file.History = append(file.History, goal.HistoryLine{At: file.Landing.At, Opid: landReadyOpid,
 		Verb: "land-ready", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1})
 	writeTestingFixtureFile(t, pagePath, goal.RenderFile(file), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "memory", "receipts.log"),
+	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "memory", "receipts.log"),
 		[]byte("1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"), 0o644)
-	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md", "memory/receipts.log")
-	goalSyncMutationGit(t, root, "commit", "-qm", "mark fixture land ready")
+	goalSyncMutationGit(t, f.mainRoot, "add", "plans/goals/standing-validation.md", "plans/designs/landing-work.md", "memory/receipts.log")
+	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "mark fixture land ready")
+	goalSyncMutationGit(t, root, "merge", "--ff-only", "--quiet", "main")
 	f.base = goalSyncMutationGit(t, root, "rev-parse", "HEAD")
 	goalSyncMutationGit(t, root, "push", "-q", "upstream", "HEAD:main")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, f.base)
