@@ -399,6 +399,9 @@ var peerTextReaders = map[string]bool{
 	"internal/hooks/runtime_hook_start.go":    true,
 	"internal/adapter/toolgate_run.go":        true,
 	"cmd/metasystem/adapter_runtime_verbs.go": true,
+	// The seat start brief renders the seat's own messages for its agent,
+	// as the runtime start hook does; no person reads it.
+	"internal/steward/seat_start.go": true,
 }
 
 // TestPeerTextNeverReachesAHumanSurface (R26; the static half, and status's):

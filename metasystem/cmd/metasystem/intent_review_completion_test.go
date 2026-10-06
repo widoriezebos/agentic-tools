@@ -159,7 +159,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// The correction carries the reviewed findings and decisions; repeating
 	// it rejoins the same attempt without another launch.
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
-	fix := c.brief("fix.md", "Fix F1.\n")
+	fix := c.brief("fix.md", "Fix F1.\n\n## Decisions on round 1\n\n| F1 | fixed | connect.txt:1 |\n")
 	code, result = c.do("work", "revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("revise: code=%d %+v", code, result)

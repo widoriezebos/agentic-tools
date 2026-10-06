@@ -143,11 +143,13 @@ func TestARecurringIDIsItsOwnCardInEachRound(t *testing.T) {
 	b := newDesignLoopBed(t)
 	roots, id, owners := b.page()
 	designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal, ToolCalls: 30}, owners)
-	b.finish("rev1", 1, "completed", finding("F1", true, "first"))
+	critical := finding("F1", true, "first")
+	critical["severity"] = "critical"
+	b.finish("rev1", 1, "completed", critical)
 	designDecide(roots, id, 1, httpd.DesignRow{Finding: "F1", Disposition: "accepted", Reasoning: "real", Amendment: "section 2"})
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	requested, err := designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal, ToolCalls: 30, After: 1}, owners)
-	if err != nil || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested") || strings.Contains(requested.Summary, "the final round") {
+	if err != nil || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested, the final round") {
 		t.Fatalf("round 2 requested: %+v %v", requested, err)
 	}
 	b.finish("rev1-r2", 2, "completed", finding("F1", true, "second"))

@@ -57,7 +57,10 @@ func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *design
 	b.owners = &intentDeliveryOwners{
 		draftPaths:   func([]byte, string) ([]string, error) { return nil, nil },
 		recordWriter: humanRecordWriter,
-		process:      func(process intentProcess) intentProcessResult { return b.handler(process) },
+		process: func(process intentProcess) intentProcessResult {
+			b.calls = append(b.calls, process.argv)
+			return b.handler(process)
+		},
 		closeOwner: func(root string, args []string) intentProcessResult {
 			return b.handler(intentProcess{argv: append([]string{"close-owner"}, args...), dir: root})
 		},

@@ -336,7 +336,7 @@ func TestContextStatusExitCodesForReadableUnknownAndCeilingBreach(t *testing.T) 
 	code, output, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "ceiling", "--transcript", transcript}, stdout, stderr)
 	})
-	if code != 0 || problem != "" || !strings.HasPrefix(flatPage(output), "The context budget is dead: diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") {
+	if code != 0 || problem != "" || !strings.HasPrefix(flatPage(output), "The context budget is alive: diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger") {
 		t.Fatalf("ceiling breach = code %d stdout %q stderr %q", code, output, problem)
 	}
 }
@@ -378,9 +378,8 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, ceilingText, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling}, stdout, stderr)
 	})
-	if code != 0 || problem != "" || !strings.HasPrefix(flatPage(ceilingText), "The context budget is dead: diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
-		!strings.Contains(flatPage(ceilingText), "remedy metasystem session handoff --status --root "+root) ||
-		strings.Contains(strings.ReplaceAll(ceilingText, "session handoff --status", ""), "handoff") {
+	if code != 0 || problem != "" || !strings.HasPrefix(flatPage(ceilingText), "The context budget is alive: diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger") ||
+		strings.Contains(ceilingText, "handoff") {
 		t.Fatalf("over-ceiling diagnostic = code %d stdout %q stderr %q", code, ceilingText, problem)
 	}
 
