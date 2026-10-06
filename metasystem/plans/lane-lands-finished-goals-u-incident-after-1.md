@@ -1,0 +1,10 @@
+# Brief: lane-lands-finished-goals, unit incident, correction 1
+
+Working Mode: Implement
+The unit is uncommitted in this worktree, now rebased onto the goal branch tip, which holds unit replay (`internal/landing/plain/replay.go`: the classifier, lone runs on origin/main per tree). One Opus read found one material defect; fix exactly this.
+
+F-1: nothing in production calls the recorder. `seams.RecordMain` (`internal/landing/plain/prove.go:118-120`, wired to landingIncidentRecorder at `cmd/metasystem/intent_landing_prove.go:99-101`) is only called from tests, so a red of origin/main opens no entry. Fix: call RecordMain where the lane learns that a test fails on origin/main's own tree: (a) in replay, when the classifier's cause is `main` (a unit red alone on tree 0, origin/main), once per failing test with that lone run's own log as evidence; (b) in a proof whose proven tree is origin/main unchanged (the trunk check path that exists today, SKILL case 8 / full-due), once per failing test of the red result. Recording failures never change the proof's result; they are reported in the result's reason. Test through `landing prove --wait` (design test 8): a batch whose red is main's own opens one entry per failing test that `incident list` shows; proving again on the same main after a ledger-only move leaves main's tip unchanged (mutation: drop the call, red). Replace the tests that only called the seam directly where they claim test 8; keep the recorder's unit tests.
+
+Check: go build ./... && go vet ./cmd/metasystem/ ./internal/goal/ ./internal/landing/... && go test -count=1 -timeout 30m ./internal/goal/ ./internal/landing/... && go test -count=1 -timeout 30m -run 'TestIncident|TestLanding|TestGoal|TestAudit|TestEvery|TestVerbRatchet|TestRepository|TestFrozenPublic|TestHCL' ./cmd/metasystem/ && go run ./cmd/devgate static
+
+Every new test calls t.Parallel(); -timeout 30m. Do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, the tests with their mutations.

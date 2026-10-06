@@ -46,7 +46,7 @@ Every stop is a policy with the three values: auto (the primitive decides), capp
 | Loop | Budget | Progress measure | Class repeat | Handoff | The week |
 | --- | --- | --- | --- | --- | --- |
 | Unit correction rounds (finding 6) | 2 corrections | material count falls | finding class repeats in a new place | split or drop | 18, 10, 10, 9, 6 rounds on single units |
-| Design critique rounds (finding 20) | 1 round unless a critical finding | findings change what would be built | same class of finding | accept with the list, or redesign | 6 critique rounds on one design; "17 critic rounds" |
+| Design critique rounds (finding 20) | rounds continue while the last round found material; at most 4 rounds | the material count falls every round; a round with 0 material accepts the design | a class already fixed recurs in the same section | accept; or accept the sections clean in the last round and split the sections still carrying material into a follow-up goal with its own design loop, queued next in the plan; never ask a person | 6 critique rounds on one design; "17 critic rounds"; 1a stopped after 1 round with 11 findings and paid about 6 material code-read findings that traced to the design |
 | Lane re-proofs and returns (findings 1, 2) | 2 full proofs per batch; 2 returns per goal | the red set shrinks; the cause class differs | same test red, same hunk | hold the batch and ask; return names the cause | a goal returned 8 times; proven red three times on the same test; 5 re-proofs of one green branch |
 | Environment retries (findings 5, 14) | 1 retry | the cause differs | same cause twice | stop the unit with the cause | 7 read failures in a row on one path; capacity kills counted as rounds |
 | Steward revivals and restarts (findings 4, 7) | 2 an hour | the seat makes progress after revival | same death reason | stop the seat and alert | 15 failed revivals of one seat; 71 seat restarts in a day |
@@ -55,6 +55,8 @@ Every stop is a policy with the three values: auto (the primitive decides), capp
 | Fix-forward on one component | N fixes in a day without a green end-to-end run (N from the tier) | an end-to-end run passes | the same component again | step back: open a design | the lane of 09-30: 11 stacked defects, 14 fixes, 5 arms, nothing landed |
 | Refusals that need a person (finding 11) | N per hour across seats | the refusal code differs | same code again | file a machinery finding, route to the helm holder | 6 person-needing refusals an hour at night |
 | The helm holder's own supervision | hourly judgment | the judgment names what changed | the same intervention twice | ask why the steward did not; open a finding | m1e's rounds beyond "last round"; slices by habit |
+
+**What counts as material in a design round, decided by the critic's return, not by judgment.** A finding is material only when it names the section or unit and the concrete change to what is built or to a test; a finding without one is recorded and does not count. Every round answers the same five questions for every new function, record and act: who calls it in production; how fresh is every state a decision reads; is the actor a person or an agent; can every refusal's remedy succeed when followed; does every unreadable input fail safe for the agent and never refuse a person. An unanswered question is a material finding. (Wido 2026-10-06 22:40 CEST: the design stop is an automated rule, not a question to him.)
 
 **What this changes in the findings above.** Finding 6 holds the primitive and the review loop; findings 1, 2, 4, 5, 7, 10, 11, 14 and 20 each declare their budget, measure, class and handoff in the terms of the primitive rather than their own counters. One implementation, one record shape (`stop: <loop> <attempt> <measure> <class> <handoff>`), one board column.
 
@@ -121,6 +123,8 @@ The lane runs `proof.full` once per batch on the exact tree it pushes, and the t
 Either way: the seat's rebase ignores ledger-only moves (no rewrite, no re-read); a proof never re-runs for a ledger move; a hand-in records to the lane's queue (finding 1). The first shape is cleaner; the second is smaller.
 
 **First unit.** The seat's rebase treats a ledger-only move as no move (no rewrite); the lane's proof inherits green across it (exists). Then the records ref.
+
+**Seen again 10-06, starting goal 1a.** The seat's view of the accepted ledger was seven hours old; `goal claim` acted on it until a person ran `goal list --fetch`. Then `session start` was deferred because the checkout was two ledger and settings commits past the engine's stamp, and only a person's `system restart` from the pane cleared it. Both are ledger-only moves treated as if they were code. Added to the solution: a reader of the ledger fetches it itself before it decides, and an engine re-arm compares code, never ledger or settings commits (with finding 17's stamp). In goal 1b (unit U6 of its brief: a ledger-only move is no move for any reader) and goal 7 (the stamp).
 
 ### 4. Provider limits and outage marks take the whole fleet down
 
@@ -222,6 +226,8 @@ Either way: the seat's rebase ignores ledger-only moves (no rewrite, no re-read)
 
 **First unit.** Derivation at claim from the Units table.
 
+**Seen again 10-06, starting goal 1a.** The review-round maximum of 20 stood before the first build of a 15-unit design and had to be raised by a person in the committed configuration. Finding 10's derivation from the Units table covers it (goal 4).
+
 ### 11. Refusals and questions that need a person, at night
 
 **Problem.** A seat that is refused a verb either fights the refusal, bypasses it, or asks a person; many refusals are wrong or name the wrong act.
@@ -282,6 +288,8 @@ Either way: the seat's rebase ignores ledger-only moves (no rewrite, no re-read)
 
 **First unit.** The premise check and the Readers grep in `work brief`.
 
+**Seen again 10-06, starting goal 1a.** `design write` refused a brief whose code sites were written as short paths; a person rewrote every path. A builder appended to `memory/receipts.log`, outside its brief, in three of eleven builds. Added to the solution: the brief resolver accepts any path that resolves from the repository root and names the one it cannot; a build whose diff touches `memory/` or `records/` without its brief naming them is refused at the check (goal 6, briefs-carry-their-rules).
+
 ### 16. Settings changes strand units in flight; ledger acts re-bind running claims
 
 **Problem.** A roster or settings change applies at once to units mid-round (their digest froze the old settings) and strands them; a person's ledger act on a claimed goal (unapprove and approve to re-arm, a set-budget) re-binds the claim epoch and refuses the holder; approvals were withdrawn in bulk so waiting goals became unapproved.
@@ -293,6 +301,8 @@ Either way: the seat's rebase ignores ledger-only moves (no rewrite, no re-read)
 **Solution.** A settings change takes effect per seat at its next unit boundary, never mid-round; a running round keeps its frozen settings to its end and says so. A ledger act on a claimed goal never changes its claim epoch unless the act is release or steal. Approval is agreement: once given it stays until intent drifts (the accepted design). `settings set` refuses unknown keys and shows the effective roster per seat.
 
 **First unit.** Settings at the unit boundary.
+
+**Seen again 10-06, starting goal 1a.** `goal claim` by the seat refused because no session of the seat was live, and the seat could not start one until the engine was rebuilt. A person's act needs no live session (No HAL 9000); an agent's claim starts the session it needs. Added to goal 1b, unit U6, with finding 3's readers.
 
 ### 17. Engine versions drift across seats
 
@@ -393,6 +403,19 @@ Read together, the twenty-one solutions use eleven mechanisms more than once. Th
 - **Registers.** Finding 2's trunk-red register, finding 18's flake register and finding 11's repeated-refusal findings are one register with kinds; `work land`, `goal done` and health read one thing.
 - **Records push versus the records ref.** Finding 21 validates records pushes; finding 3 may move the ledger to a ref. If the ref is chosen, the records push becomes a commit on the ref and the validation runs there; the landed records-land-through-the-lane is the bridge until then.
 
+## Practices tried by hand, promoted to machinery when proven
+
+Wido (2026-10-06 22:45 CEST): "what you apply here should be the best solution. And if that proves to be true; that should be promoted to machinery." Each practice below is applied by hand from goal 1b on, measured per goal against 1a's baseline, and becomes a unit of the named goal only when its measure holds on at least two goals; a practice whose measure does not hold is dropped and the drop recorded here.
+
+| Practice (by hand now) | Measure, 1a baseline | Promoted into |
+| --- | --- | --- |
+| Design critique to convergence under the stop table's design row, with the five fixed questions | material code-read findings that trace to the design or brief per unit (1a: about 6 of 30) | goal 2 (review chain: replaces design admission's "critical finding for a second round") |
+| Every builder brief hand-written with read, cited code sites; the four recurring defect classes named in it | corrections per unit (1a: 13 of 15 units corrected, 7 split) | goal 6 (briefs carry their rules: the scaffold) |
+| Builders run only the tests their change affects (new and changed tests, their mutations, the touched packages) | wall time per build and host load (1a: full cmd run 55 min under load against about 8 unloaded) | goal 4 (runs advance: the builder's check) |
+| Each unit built from the goal branch's current tip and integrated right after its read | cherry-pick conflicts per goal (1a: 6, one needing a merge job) | goal 4 (the driver) |
+| The full gate (`go test ./internal/...` and the whole cmd package) after every batch of integrated units and on the exact pushed tree | reds found only at integration (1a: main's internal red, 12 bed reds, 3 audit reds) | goal 1 follow-up (the lane's proof.full already runs both) and goal 7 |
+| A bounded waiter armed with every delegate job | idle minutes with a finished job unread (1a: about 120) | goal 4 (the driver consumes the job's end) |
+
 ## Suggested goals and order
 
 | Order | Goal | Findings | Mechanisms it builds | Why first |
@@ -407,4 +430,4 @@ Read together, the twenty-one solutions use eleven mechanisms more than once. Th
 | 7 | housekeeping | 14, 17, 18, 19, 21 | the flake kind of the register, the engine stamp | Small units, bundled |
 
 
-The landing redesign is split in two designs, 1a (the lane's charter: whole-goal admission, merge instead of rebase, red classification, trunk timer and register) and 1b (the policies and the helm, drain, areas on the claim over the claim-and-queue view), each with a consumer from its first unit; the minimal stop and ask records are 1a's because its on-red hold needs them. The machinery is switched on when goals 1 to 4 are on main and one small real goal goes from claim to `goal done` with no hand step while a person holds nothing. Finding 7 needs Wido's word first, because it amends his rule of 09-20 for headless sessions.
+The landing redesign is split in two designs, 1a (the lane's charter: whole-goal admission, merge instead of rebase, red classification, trunk timer and register) and 1b (the policies and the helm, drain, areas on the claim over the claim-and-queue view), each with a consumer from its first unit; the minimal stop and ask records are 1a's because its on-red hold needs them. The machinery stays off until every goal of this plan (0 to 7) is on main; then one small real goal goes from claim to `goal done` with no hand step while a person holds nothing, and only then is it switched on (Wido, 2026-10-06 22:15 CEST: "no machinery does not switch on until all is landed. I want a reliable machine before we switch it on"). Until then every goal is delivered by hand with delegates. Finding 7 needs Wido's word first, because it amends his rule of 09-20 for headless sessions.
