@@ -79,7 +79,13 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					outcome.Changed = true
 					return outcome, nil
 				}
-				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, push: push}}
+				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, push: push, plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+					if args[0] == "ls-tree" {
+						return "", nil
+					}
+					t.Fatalf("unexpected Git: %v", args)
+					return "", nil
+				}}}}
 				effects := landingPushOwners{
 					contains: func(_, ref string) func(string) (bool, error) {
 						if ref != "head" && ref != "main" {

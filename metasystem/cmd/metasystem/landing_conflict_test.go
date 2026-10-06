@@ -29,6 +29,8 @@ func TestLandingResolveBatchConflictWaitsThenReturnsAgainstMain(t *testing.T) {
 	trunk, head, aborts, probes := "main-sha", "batch-sha", 0, 0
 	git := func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
+		case "ls-tree --name-only main-sha -- metasystem/plans/goals/trunk-red.json", "ls-tree --name-only A-sha -- metasystem/plans/goals/trunk-red.json":
+			return "", nil
 		case "show HEAD:metasystem/testing.json":
 			return b.contract, nil
 		case "diff --name-only --diff-filter=U -z":
@@ -109,6 +111,8 @@ func TestLandingResolveRegenerationHoldsByCauseAndShowsStatus(t *testing.T) {
 			aborts, runs := 0, 0
 			git := func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
+				case "ls-tree --name-only main-sha -- metasystem/plans/goals/trunk-red.json":
+					return "", nil
 				case "show HEAD:metasystem/testing.json":
 					return b.contract, nil
 				case "diff --name-only --diff-filter=U -z", "ls-files -z", "ls-tree -r --name-only -z HEAD -- metasystem/out/result":
@@ -210,6 +214,8 @@ func TestLandingResolveProbesMainBeforeReturningSourceConflict(t *testing.T) {
 			base := b.owners.landing.plainResolve.Git
 			b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
+				case "ls-tree --name-only main-sha -- metasystem/plans/goals/trunk-red.json":
+					return "", nil
 				case "rev-parse --verify HEAD^{commit}":
 					return "batch-sha", nil
 				case "merge-tree --write-tree main-sha goal-sha":

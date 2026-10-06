@@ -327,10 +327,11 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 	}
 }
 
-func TestHandInAgainRequeuesReturnedTipAndHoldsWaiting(t *testing.T) {
+func TestHandInAgainRequeuesReturnedTipAndKeepsWaitingMetadata(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
 	line := Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: "same-tip", Delivered: "Makes landing reliable"}
+	delivered := line.Delivered
 	if _, _, err := HandIn(install, line); err != nil {
 		t.Fatal(err)
 	}
@@ -344,16 +345,23 @@ func TestHandInAgainRequeuesReturnedTipAndHoldsWaiting(t *testing.T) {
 		line.Again, line.Delivered = true, ""
 		entry, added, err := HandIn(install, line)
 		entries, readErr := Entries(install)
-		if err != nil || !added || entry.State != StateWaiting || entry.Delivered != "Makes landing reliable" || readErr != nil || len(entries) != round+2 || entries[round].State != StateReturned || entries[round].Reason != "merge conflict" {
+		if err != nil || !added || entry.State != StateWaiting || entry.Delivered != delivered || readErr != nil || len(entries) != round+2 || entries[round].State != StateReturned || entries[round].Reason != "merge conflict" {
 			t.Fatalf("again: %+v added=%v err=%v; history=%+v err=%v", entry, added, err, entries, readErr)
 		}
 		before, _ := os.ReadFile(queuePath(install))
-		line.Delivered = "Another sentence"
+		line.Delivered = fmt.Sprintf("Delivers correction %d", round+1)
 		entry, added, err = HandIn(install, line)
 		after, readErr := os.ReadFile(queuePath(install))
-		if err != nil || added || entry.State != StateWaiting || readErr != nil || !bytes.Equal(before, after) {
+		if err != nil || added || entry.State != StateWaiting || entry.Delivered != line.Delivered || readErr != nil || bytes.Equal(before, after) {
 			t.Fatalf("waiting repeat: %+v added=%v err=%v queue=%q -> %q err=%v", entry, added, err, before, after, readErr)
 		}
+		before = after
+		entry, added, err = HandIn(install, line)
+		after, readErr = os.ReadFile(queuePath(install))
+		if err != nil || added || entry.Delivered != line.Delivered || readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("identical waiting repeat: %+v added=%v err=%v queue=%q -> %q err=%v", entry, added, err, before, after, readErr)
+		}
+		delivered = line.Delivered
 		line.Again, line.Delivered = false, ""
 	}
 }

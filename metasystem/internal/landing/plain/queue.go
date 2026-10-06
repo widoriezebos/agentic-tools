@@ -49,20 +49,22 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
-	WholeBy  string           `json:"wholeBy,omitempty"`
-	Again    bool             `json:"-"`
-	Goal     string           `json:"goal"`
-	Branch   string           `json:"branch,omitempty"`
-	SHA      string           `json:"sha"`
-	Seat     string           `json:"seat,omitempty"`
-	Records  bool             `json:"records,omitempty"`
-	At       string           `json:"at"`
-	Outcome  string           `json:"outcome,omitempty"`
-	Reason   string           `json:"reason,omitempty"`
-	Cause    *Cause           `json:"cause,omitempty"`
-	After    []GoalSHA        `json:"after,omitempty"`
-	Held     bool             `json:"held,omitempty"`
-	Conflict *conflict.Return `json:"conflict,omitempty"`
+	Exception *Exception       `json:"exception,omitempty"`
+	Fix       string           `json:"fix,omitempty"`
+	WholeBy   string           `json:"wholeBy,omitempty"`
+	Again     bool             `json:"-"`
+	Goal      string           `json:"goal"`
+	Branch    string           `json:"branch,omitempty"`
+	SHA       string           `json:"sha"`
+	Seat      string           `json:"seat,omitempty"`
+	Records   bool             `json:"records,omitempty"`
+	At        string           `json:"at"`
+	Outcome   string           `json:"outcome,omitempty"`
+	Reason    string           `json:"reason,omitempty"`
+	Cause     *Cause           `json:"cause,omitempty"`
+	After     []GoalSHA        `json:"after,omitempty"`
+	Held      bool             `json:"held,omitempty"`
+	Conflict  *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's one plain sentence of what it delivers,
 	// written by the agent that did the work; the channel posts it when
 	// the work reaches main.
@@ -81,18 +83,20 @@ type UnitRounds struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
-	Goal     string           `json:"goal"`
-	Branch   string           `json:"branch"`
-	SHA      string           `json:"sha"`
-	Seat     string           `json:"seat"`
-	Records  bool             `json:"records,omitempty"`
-	At       string           `json:"at"`
-	State    string           `json:"state"`
-	Reason   string           `json:"reason,omitempty"`
-	Cause    *Cause           `json:"cause,omitempty"`
-	After    []GoalSHA        `json:"after,omitempty"`
-	Held     bool             `json:"held,omitempty"`
-	Conflict *conflict.Return `json:"conflict,omitempty"`
+	Exception *Exception       `json:"exception,omitempty"`
+	Fix       string           `json:"fix,omitempty"`
+	Goal      string           `json:"goal"`
+	Branch    string           `json:"branch"`
+	SHA       string           `json:"sha"`
+	Seat      string           `json:"seat"`
+	Records   bool             `json:"records,omitempty"`
+	At        string           `json:"at"`
+	State     string           `json:"state"`
+	Reason    string           `json:"reason,omitempty"`
+	Cause     *Cause           `json:"cause,omitempty"`
+	After     []GoalSHA        `json:"after,omitempty"`
+	Held      bool             `json:"held,omitempty"`
+	Conflict  *conflict.Return `json:"conflict,omitempty"`
 	// Delivered is the hand-in's plain sentence of what it delivers.
 	Delivered string       `json:"delivered,omitempty"`
 	Units     []UnitRounds `json:"units,omitempty"`
@@ -185,8 +189,14 @@ func entriesOf(lines []Line) []Entry {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
 			if at, seen := index[key]; seen && entries[at].State != StateReturned {
-				// A repeat hand-in that says what it delivers adds its
-				// sentence to the line.
+				// A repeat adds its delivery sentence or explicit
+				// exception to the waiting line.
+				if line.Exception != nil {
+					entries[at].Exception = line.Exception
+				}
+				if line.Fix != "" {
+					entries[at].Fix = line.Fix
+				}
 				if line.Delivered != "" {
 					entries[at].Delivered = line.Delivered
 				}
@@ -200,7 +210,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
-				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+				entries = append(entries, Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -246,9 +256,9 @@ func Latest(install, goal string) (Entry, bool, error) {
 
 // HandIn appends a seat's hand-in. A hand-in of the same goal at the same
 // sha is a repeat: the existing entry is returned with added false, and
-// nothing is appended unless the repeat brings a new sentence of what a
-// waiting line delivers, which is kept with it. Again re-queues a returned
-// line; on a waiting line it holds without writing.
+// nothing is appended unless the repeat brings a new delivery sentence,
+// exception or fix incident for a waiting line. Again re-queues a returned
+// line; a waiting repeat writes only new delivery information.
 func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
@@ -266,15 +276,23 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 					break
 				}
 				entry = existing
-				if line.Again || line.Delivered == "" || line.Delivered == existing.Delivered || existing.State != StateWaiting {
+				if existing.State != StateWaiting || (line.Delivered == "" || line.Delivered == existing.Delivered) && (line.Exception == nil || existing.Exception != nil) && (line.Fix == "" || line.Fix == existing.Fix) {
 					return nil
 				}
-				// The repeat brings the sentence of what it delivers: it is
-				// kept with the waiting line, nothing else changes.
+				// Delivery information belongs to the waiting line; it
+				// does not create another hand-in.
 				if err := appendLine(queuePath(install), line); err != nil {
 					return err
 				}
-				entry.Delivered = line.Delivered
+				if line.Delivered != "" {
+					entry.Delivered = line.Delivered
+				}
+				if line.Exception != nil {
+					entry.Exception = line.Exception
+				}
+				if line.Fix != "" {
+					entry.Fix = line.Fix
+				}
 				return nil
 			}
 		}
@@ -297,7 +315,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := closeStopsLocked(install, "", "hand-in "+line.Goal, time.Now()); err != nil {
 			return err
 		}
-		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+		entry, added = Entry{Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err
@@ -395,6 +413,10 @@ func Pending(install, checkout string) ([]Entry, error) {
 }
 
 func pending(install, checkout string, seams ProveSeams) ([]Entry, error) {
+	return pendingQueue(install, checkout, seams, false)
+}
+
+func pendingQueue(install, checkout string, seams ProveSeams, refresh bool) ([]Entry, error) {
 	waiting, err := Waiting(install)
 	if err != nil || len(waiting) == 0 {
 		return []Entry{}, err
@@ -410,6 +432,23 @@ func pending(install, checkout string, seams ProveSeams) ([]Entry, error) {
 		return checkoutGit(checkout, seams).contains(main, sha)
 	}
 	derived, err := Landed(waiting, contains)
+	if err != nil {
+		return nil, err
+	}
+	if main != "" {
+		incidents, err := seams.incidents(install, checkout, main)
+		if err != nil {
+			return nil, err
+		}
+		held := HoldEntries(derived, incidents)
+		if refresh && incidentOnlyHolds(derived, held) {
+			if err := seams.fetchMain(checkout); err != nil {
+				return nil, err
+			}
+			return pendingQueue(install, checkout, seams, false)
+		}
+		derived = held
+	}
 	pending := []Entry{}
 	for _, entry := range derived {
 		if entry.State == StateWaiting && !entry.Held {

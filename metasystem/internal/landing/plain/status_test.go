@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -167,7 +168,7 @@ func TestReadStatusSaysWhenEachHandInLanded(t *testing.T) {
 		"m1..m2": {"m2", "sha-b", "x1"},
 	})
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{Now: func() time.Time { return bedNow }}, git)
+	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, git)
 
 	got := map[string]Entry{}
 	for _, entry := range status.Queue {
@@ -265,7 +266,7 @@ func TestReadStatusSaysWhatItCouldNotRead(t *testing.T) {
 	git := b.git(nil, nil)
 	git.main = func() (string, error) { return "", errors.New("origin's main is not fetched") }
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{Now: func() time.Time { return bedNow }}, git)
+	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, git)
 
 	if len(status.Queue) != 1 || status.Queue[0].State != StateWaiting {
 		t.Fatalf("queue %+v; want the hand-in as recorded", status.Queue)
@@ -290,7 +291,7 @@ func TestReadStatusSaysWhatItCouldNotRead(t *testing.T) {
 	contains := 0
 	git = torn.git(nil, nil)
 	git.contains = func(string, string) (bool, error) { contains++; return false, nil }
-	unread := readStatus(torn.home, torn.record, torn.view, ProveSeams{}, git)
+	unread := torn.read(ProveSeams{}, git)
 	if len(unread.Problems) != 1 || !strings.HasPrefix(unread.Problems[0], "the queue can't be read: ") {
 		t.Fatalf("problems %q; want the queue named", unread.Problems)
 	}
@@ -316,7 +317,7 @@ func TestReadStatusSaysWhichContainmentItCouldNotRead(t *testing.T) {
 		return inside(main, sha)
 	}
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{}, git)
+	status := b.read(ProveSeams{}, git)
 
 	if status.Queue[0].State != StateWaiting || status.Queue[1].State != StateLanded {
 		t.Fatalf("queue %+v; want goal-a as recorded and goal-b landed", status.Queue)
@@ -337,7 +338,7 @@ func TestReadStatusSaysWhetherTheRunningProofStillRuns(t *testing.T) {
 	b.lines("running.json", Running{Attempt: "a-7", Tree: "t1", Commit: "c1", Since: "2026-10-01T21:00:00Z", Log: "/l"})
 	for alive, state := range map[bool]string{true: "running", false: "died"} {
 		seams := ProveSeams{Alive: func(Running) bool { return alive }}
-		status := readStatus(b.home, b.record, b.view, seams, b.git(nil, nil))
+		status := b.read(seams, b.git(nil, nil))
 		if status.RunningProof == nil || status.RunningProof.State != state || status.RunningProof.Attempt != "a-7" || status.RunningProof.Log != "/l" {
 			t.Fatalf("alive %v: running proof %+v; want %s", alive, status.RunningProof, state)
 		}
@@ -354,7 +355,7 @@ func TestReadStatusSaysALaneRecordItCannotPlace(t *testing.T) {
 	b := newStatusBed(t)
 	b.record.Install = "/elsewhere"
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{}, b.git(nil, nil))
+	status := b.read(ProveSeams{}, b.git(nil, nil))
 
 	if len(status.Problems) != 1 || !strings.HasPrefix(status.Problems[0], "the lane's record can't be placed: ") {
 		t.Fatalf("problems %q; want the record named", status.Problems)
@@ -398,12 +399,12 @@ func TestReadStatusNamesWhatTheRunningProofHolds(t *testing.T) {
 	}
 	alive := ProveSeams{Alive: func(Running) bool { return true }}
 
-	status := readStatus(b.home, b.record, b.view, alive, git)
+	status := b.read(alive, git)
 
 	if status.RunningProof == nil || strings.Join(status.RunningProof.Goals, " ") != "seat-path plain-lane" || len(status.Problems) != 0 {
 		t.Fatalf("running proof %+v, problems %q; want the two waiting hand-ins it holds", status.RunningProof, status.Problems)
 	}
-	died := readStatus(b.home, b.record, b.view, ProveSeams{Alive: func(Running) bool { return false }}, git)
+	died := b.read(ProveSeams{Alive: func(Running) bool { return false }}, git)
 	if died.RunningProof == nil || len(died.RunningProof.Goals) != 0 {
 		t.Fatalf("died proof %+v; want no goals named", died.RunningProof)
 	}
@@ -413,7 +414,7 @@ func TestReadStatusNamesWhatTheRunningProofHolds(t *testing.T) {
 		}
 		return sha == "sha-l", nil
 	}
-	torn := readStatus(b.home, b.record, b.view, alive, git)
+	torn := b.read(alive, git)
 	if len(torn.Problems) != 1 || !strings.HasPrefix(torn.Problems[0], "what the running proof holds can't be read: seat-path: bad object proof-head") {
 		t.Fatalf("problems %q; want the proof's containment named", torn.Problems)
 	}
@@ -451,7 +452,7 @@ func TestReadStatusSaysLinesItCouldNotDecode(t *testing.T) {
 	b.raw("results.jsonl", jsonLine(t, Result{Tree: "t1", Commit: "c1", Result: Green, At: "2026-10-01T20:30:00Z"})+`{"tree":"t2","res`+"\n")
 	b.raw("pushes.jsonl", jsonLine(t, Pushed{Old: "m0", Commit: "m1", Tree: "t1", At: "2026-10-01T20:40:00Z"})+`{"old":"m1","com`+"\n")
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{Now: func() time.Time { return bedNow }}, b.git(nil, nil))
+	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, b.git(nil, nil))
 
 	dir := Dir(b.install)
 	want := []string{
@@ -484,7 +485,7 @@ func TestReadStatusCarriesWhatTheViewCouldNotRead(t *testing.T) {
 	keeper := lane.UnreadableAgentRecord(b.home)
 	b.view.Wake = &lane.Wake{Reasons: []string{}, Unread: []string{"unexpected end of JSON input", keeper, "unexpected end of JSON input"}}
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{}, b.git(nil, nil))
+	status := b.read(ProveSeams{}, b.git(nil, nil))
 
 	want := []string{"unexpected end of JSON input", strings.ReplaceAll(keeper, "\n", "; ")}
 	if strings.Join(status.Problems, "\n") != strings.Join(want, "\n") {
@@ -504,7 +505,7 @@ func TestReadStatusSaysAPauseItCouldNotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{}, b.git(nil, nil))
+	status := b.read(ProveSeams{}, b.git(nil, nil))
 
 	if !status.Paused || len(status.Problems) != 1 || status.Problems[0] != "the lane's pause record can't be read, so the lane reads as stopped" {
 		t.Fatalf("paused %v, problems %q; want stopped and the pause record named", status.Paused, status.Problems)
@@ -519,7 +520,7 @@ func TestReadStatusSaysAnAgentItCouldNotCheck(t *testing.T) {
 	unknown := "whether the landing agent runs is unknown: permission denied"
 	b.view.Owner = lane.OwnerView{State: lane.OwnerUnready, LastExit: &unknown, Unread: unknown}
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{}, b.git(nil, nil))
+	status := b.read(ProveSeams{}, b.git(nil, nil))
 
 	if len(status.Problems) != 1 || status.Problems[0] != unknown {
 		t.Fatalf("problems %q; want %q", status.Problems, unknown)
@@ -566,7 +567,7 @@ func TestReadStatusKeepsALandingItsGoalHandedInAgain(t *testing.T) {
 	b.lines("pushes.jsonl", Pushed{Old: "m0", Commit: "m1", At: "2026-10-01T21:00:00Z"})
 	git := b.git([]string{"sha-a1", "sha-z1", "sha-z2"}, map[string][]string{"m0..m1": {"m1", "sha-a1"}})
 
-	status := readStatus(b.home, b.record, b.view, ProveSeams{Now: func() time.Time { return bedNow }}, git)
+	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, git)
 
 	got := map[string]Entry{}
 	for _, entry := range status.Queue {
@@ -597,4 +598,12 @@ func TestLandingTimesNameADamagedPushWithNothingToTime(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `a push line can't be read (old "", commit "m3", at "2026-10-01T20:00:00Z")`) {
 		t.Fatalf("err %v; want the damaged push line named", err)
 	}
+}
+
+// read supplies the fixture's empty incident register along with its ancestry.
+// Record damage, proof ownership and landing times keep their own assertions.
+func (b *statusBed) read(seams ProveSeams, git laneGit) Status {
+	b.t.Helper()
+	seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
+	return readStatus(b.home, b.record, b.view, seams, git)
 }

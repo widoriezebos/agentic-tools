@@ -59,8 +59,8 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		return PushOutcome{}, err
 	}
 	outcome := PushOutcome{Commit: head, Tree: tree}
-	if _, err := Git(checkout, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
-		return outcome, fmt.Errorf("fetch origin's main: %w", err)
+	if err := (ProveSeams{}).fetchMain(checkout); err != nil {
+		return outcome, err
 	}
 	old, err := Git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 	if err != nil {
@@ -105,6 +105,14 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		}
 		return closeStopsLocked(install, "", "push", now)
 	})
+}
+
+func (s ProveSeams) fetchMain(checkout string) error {
+	_, err := s.git(checkout, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")
+	if err != nil {
+		return fmt.Errorf("fetch origin's main: %w", err)
+	}
+	return nil
 }
 
 // provenGreen refuses a tree results.jsonl does not hold green.

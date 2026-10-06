@@ -1761,6 +1761,18 @@ func runIntentLand(inv *intentInvocation) int {
 		}
 	}
 	if inv.input.has("exception") || inv.input.has("using-exception") {
+		if inv.input.text("exception") == branch.LandTrunkRedCode {
+			_, configured, problem := inv.laneCheck(inv.targets(args[0]))
+			if problem != nil {
+				return inv.render(*problem)
+			}
+			if configured {
+				if _, _, problem := inv.actingAs("work land --exception", args[0], actorHuman); problem != nil {
+					return inv.render(*problem)
+				}
+				return inv.render(inv.landGoal(args[0], ""))
+			}
+		}
 		return inv.render(inv.landException(args[0]))
 	}
 	for _, other := range exceptionOptions {
@@ -2040,6 +2052,9 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
 			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
+	}
+	if refused := inv.landIncidentHold(goalID); refused != nil {
+		return *refused
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
 		return *refused

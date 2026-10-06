@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -192,6 +193,10 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	checkout := string(admitted.layout.Checkout)
 	var designRefusal *intentResult
 	outcome, err := admitted.owners.push(admitted.installation, checkout, admitted.owners.now(), func(old, head string) error {
+		designRefusal = inv.checkLaneHolds(admitted, owners, old, head)
+		if designRefusal != nil {
+			return errors.New(designRefusal.Summary)
+		}
 		designRefusal = inv.checkLaneDesigns(admitted, owners, old, head)
 		if designRefusal != nil {
 			return errors.New(designRefusal.Summary)
@@ -351,4 +356,68 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 		}
 	}
 	return told
+}
+
+func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
+	checkout := string(admitted.layout.Checkout)
+	entries, err := plain.Entries(admitted.installation)
+	// A records hand-in cannot hide the goal's current code from the hold.
+	for index, entry := range entries {
+		if err != nil || entry.Records || entry.State != plain.StateSuperseded {
+			continue
+		}
+		current, found, readErr := inv.latestLaneGoalEntry(admitted.installation, entry.Goal, "")
+		err = readErr
+		if found && current.SHA == entry.SHA {
+			entries[index] = current
+		}
+	}
+	if err == nil && len(entries) == 0 {
+		return nil
+	}
+	if err == nil {
+		read := admitted.owners.plainProve.Incidents
+		if read == nil {
+			git := admitted.owners.plainProve.Git
+			if git == nil {
+				git = plain.Git
+			}
+			read = func(install, checkout, main string) ([]goal.TrunkRedEntry, error) {
+				return plain.ReadIncidents(install, checkout, main, git)
+			}
+		}
+		var incidents []goal.TrunkRedEntry
+		incidents, err = read(admitted.installation, checkout, old)
+		if err == nil {
+			couldHold := false
+			for _, entry := range plain.HoldEntries(entries, incidents) {
+				couldHold = couldHold || entry.State == plain.StateWaiting && (entry.Held || len(entry.After) > 0)
+			}
+			if !couldHold {
+				return nil
+			}
+			entries, err = plain.Landed(entries, owners.contains(checkout, old))
+			entries = plain.HoldEntries(entries, incidents)
+		}
+	}
+	if err != nil {
+		failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the lane's holds could not be read", err)
+		return &failed
+	}
+	for _, entry := range entries {
+		if entry.State != plain.StateWaiting || !entry.Held {
+			continue
+		}
+		inside, err := owners.contains(checkout, head)(entry.SHA)
+		if err != nil {
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains held goal "+entry.Goal+" could not be read", err)
+			return &failed
+		}
+		if inside {
+			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
+				Summary: "HEAD contains held goal " + entry.Goal + ": " + entry.Reason + "; nothing was pushed",
+				next:    []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}, nextReason: "rebuild the batch by merging only waiting goals that are not held, then metasystem landing prove"}
+		}
+	}
+	return nil
 }

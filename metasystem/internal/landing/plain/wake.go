@@ -33,8 +33,15 @@ const (
 // hand-in is pending (Pending), and WakeProofFinished besides when a result
 // line ended after lastLaunch (zero: never launched). WakeFullDue also wakes
 // an idle lane when a scoped push's full proof is more than an hour old.
-func WakeReasons(install, checkout string, lastLaunch, now time.Time) ([]string, error) {
-	pending, err := Pending(install, checkout)
+// When incidents alone hold all waiting lines, one fetch refreshes main
+// before the keeper decides. A failed fetch leaves the lines held and is
+// reported by landing status through the wake's unread sources.
+func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ...ProveSeams) ([]string, error) {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	pending, err := pendingQueue(install, checkout, seams, true)
 	if err != nil {
 		return nil, err
 	}

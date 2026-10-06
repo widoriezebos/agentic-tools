@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -297,7 +298,7 @@ func TestRegenerationStatusShowsCommandLogGrowthAndDiedState(t *testing.T) {
 			}
 		}
 		view := lane.View{Root: &b.checkout}
-		status := readStatus(b.home, lane.Record{Root: b.checkout, Install: b.install}, view, ProveSeams{Alive: func(Running) bool { return false }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
+		status := readStatus(b.home, lane.Record{Root: b.checkout, Install: b.install}, view, ProveSeams{Alive: func(Running) bool { return false }, Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
 		if status.RunningRegeneration == nil || status.RunningRegeneration.State != "died" || len(status.Problems) != 0 {
 			t.Fatalf("status=%+v", status)
 		}

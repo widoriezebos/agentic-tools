@@ -290,6 +290,13 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
+			b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+				if args[0] == "ls-tree" {
+					return "", nil
+				}
+				t.Fatalf("unexpected Git: %v", args)
+				return "", nil
+			}
 			if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "returned-sha"}); err != nil {
 				t.Fatal(err)
 			}

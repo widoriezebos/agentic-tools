@@ -272,7 +272,7 @@ func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.V
 	if owners.view != nil {
 		return owners.view(home)
 	}
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: plain.KeeperWake(home)}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Ready: owners.ready, Wake: owners.wake(home)}
 	sources.Fingerprint = func(root string) (string, error) {
 		fingerprint := owners.keeper(home, root).Fingerprint
 		if fingerprint == nil {

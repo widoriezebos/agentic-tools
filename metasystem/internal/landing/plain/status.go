@@ -183,6 +183,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			contains := func(sha string) (bool, error) { return git.contains(main, sha) }
 			var again error
 			status.Queue, err = Landed(status.Queue, contains)
+			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
+			unread("main's incidents", readErr)
+			if readErr == nil {
+				status.Queue = HoldEntries(status.Queue, incidents)
+			}
 			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
 			err = errors.Join(err, again)
 		}

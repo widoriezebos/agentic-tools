@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -87,6 +89,14 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 	if !ok || (sha != "" && entry.SHA != sha) {
 		return nil
 	}
+	if entry.State == plain.StateWaiting && entry.Exception == nil && inv.input.text("exception") == branch.LandTrunkRedCode {
+		return nil
+	}
+	if entry.State == plain.StateWaiting && entry.Exception == nil {
+		if refused := inv.landIncidentHold(goalID); refused != nil {
+			return refused
+		}
+	}
 	data := map[string]any{"route": "lane", "queue": entry}
 	subject := "goal " + goalID
 	if entry.Records {
@@ -122,9 +132,24 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
 
+func (inv *intentInvocation) landIncidentHold(goalID string) *intentResult {
+	if inv.input.text("exception") == branch.LandTrunkRedCode {
+		return nil
+	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return problem
+	}
+	if red, held := goal.LandingIncident(projection.Tree.TrunkRed, goalID); held {
+		return &intentResult{Targets: inv.targets(goalID), Outcome: intentRefused, code: 1, Data: map[string]any{"code": branch.LandTrunkRedCode},
+			Summary: plain.IncidentReason(red) + ". Nothing was handed in.", next: inv.publicArgv("incident", "list")}
+	}
+	return nil
+}
+
 // handIn appends the goal's branch at sha to the lane's queue: the seat's
 // gates passed before it. The branch is read at origin, so it is already
-// pushed. Again re-queues a returned tip; a waiting repeat appends nothing.
+// pushed. Again re-queues a returned tip; a waiting repeat keeps new metadata.
 func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha string, state intentBranchState) intentResult {
 	now := inv.delivery().now()
 	registrant := inv.delivery().laneRegistrant
@@ -133,6 +158,19 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: registrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered")), Again: inv.input.has("again")}
+	if inv.input.text("exception") == branch.LandTrunkRedCode {
+		line.Exception = &plain.Exception{Code: branch.LandTrunkRedCode, Reason: inv.input.text("reason"), By: strings.TrimPrefix(inv.input.text("by"), "human:")}
+	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return *problem
+	}
+	for _, incident := range projection.Tree.TrunkRed {
+		if incident.Closed == nil && incident.EntryClass() == goal.TrunkRedClassTrunkRed && incident.FixGoal == goalID {
+			line.Fix = incident.Identity
+			break
+		}
+	}
 	if inv.input.switched("whole") {
 		line.WholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
 	}

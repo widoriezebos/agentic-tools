@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -112,8 +113,10 @@ type ProveSeams struct {
 	// Gate selects the cheap merge check and its separate result register.
 	Gate         bool
 	gateBaseline bool
-	Now          func() time.Time
-	Executable   func() (string, error)
+	// Incidents reads main's register for queue holds; nil uses Git.
+	Incidents  func(install, checkout, main string) ([]goal.TrunkRedEntry, error)
+	Now        func() time.Time
+	Executable func() (string, error)
 	// Launch starts argv detached in dir, its output appended to log, and
 	// returns its pid (the kernel's detached start).
 	Launch func(argv []string, dir, log string) (int64, error)

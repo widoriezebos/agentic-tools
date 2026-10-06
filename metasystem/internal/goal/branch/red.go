@@ -7,10 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-const LandTrunkRedCode = "GOAL_LAND_TRUNK_RED"
+const LandTrunkRedCode = goal.LandTrunkRedCode
 
 type DiagnosticRun struct {
 	Goal, Tree string
