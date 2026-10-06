@@ -275,6 +275,9 @@ type VerbRequest struct {
 	ParkBranchCheck func(goalID, next string) (string, error)
 	// SweepBranch removes recoverable branch work after a confirmed conclusion.
 	SweepBranch func(goalID string) error
+	// ClaimLaneState reads a held goal's newest hand-in against the fetched
+	// main tip. nil preserves the quota on computers without a lane.
+	ClaimLaneState func(goalID, main string) (string, error)
 	// ForceBy names the person at the helm who concludes a goal despite
 	// its open read items, review obligations, carry word or unfinished
 	// blockers; each is recorded as overridden. Only goal done reads it; the
@@ -1387,23 +1390,59 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
 
-func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) error {
+func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string) ([]Change, error) {
 	target := t.Live[id]
-	var held []string
+	var held, slots []string
+	var waiting []*GoalFile
 	for _, heldID := range sortedGoalIds(t.Live) {
 		file := t.Live[heldID]
 		if heldID == id || file.State != StateClaimed || file.Claimed == nil || file.Claimed.Machine != r.Actor.Machine ||
-			file.Claimed.HandedOver.present() || file.Landing != nil || file.IsFencedClaim() ||
-			target.Arc != "" && file.Arc == target.Arc {
+			file.Claimed.HandedOver.present() {
+			continue
+		}
+		if file.Landing != nil {
+			slots = append(slots, heldID)
+		}
+		if file.IsFencedClaim() || target.Arc != "" && file.Arc == target.Arc {
+			continue
+		}
+		state := ""
+		if r.ClaimLaneState != nil {
+			var err error
+			state, err = r.ClaimLaneState(heldID, tip)
+			if err != nil {
+				return nil, err
+			}
+		}
+		switch state {
+		case "returned":
+			return nil, coded(ClaimQuotaCode, fmt.Errorf("goal %s was returned by the landing lane; it still counts as a held claim\nrun: metasystem work land %s  (shows the return)", heldID, heldID))
+		case "landed":
+			return nil, coded(ClaimQuotaCode, fmt.Errorf("goal %s landed but is still claimed; conclude it before claiming another\nrun: metasystem goal done %s --reason TEXT  (concludes the landed goal)", heldID, heldID))
+		case "waiting":
+			if file.Landing == nil {
+				slots = append(slots, heldID)
+				waiting = append(waiting, file)
+			}
+			continue
+		}
+		if file.Landing != nil {
 			continue
 		}
 		held = append(held, heldID)
 	}
-	if len(held) == 0 {
-		return nil
+	if len(slots) > 1 {
+		return nil, coded(ClaimQuotaCode, fmt.Errorf("machine %s has %s waiting to land: one landing slot per machine\nrun: metasystem work land %s  (shows its landing state)", r.Actor.Machine, strings.Join(slots, ", "), slots[0]))
 	}
-	return coded(ClaimQuotaCode, fmt.Errorf("machine %s already claims %s, and a machine holds one claim at a time\nrun: metasystem goal release %s, then metasystem goal claim %s",
-		r.Actor.Machine, strings.Join(held, ", "), held[0], id))
+	if len(held) > 0 {
+		return nil, coded(ClaimQuotaCode, fmt.Errorf("machine %s already claims %s, and a machine holds one claim at a time\nrun: metasystem goal release %s, then metasystem goal claim %s",
+			r.Actor.Machine, strings.Join(held, ", "), held[0], id))
+	}
+	var changes []Change
+	for _, file := range waiting {
+		changes = append(changes, recordLandReady(file, r))
+	}
+	return changes, nil
 }
 
 // Handover transfers one claim from its current holder to one authenticated
@@ -1559,7 +1598,8 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
-			if refusal := claimQuotaRefusal(t, r, id); refusal != nil {
+			changes, refusal := claimQuotaRefusal(t, r, id, tip)
+			if refusal != nil {
 				return nil, refusal
 			}
 			f.State = StateClaimed
@@ -1576,7 +1616,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 					return nil, err
 				}
 			}
-			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+			return ackDisplacements(t, r, append(changes, Change{Path: livePath(id), Content: RenderFile(f)})), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
@@ -2270,12 +2310,16 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 					return nil, fmt.Errorf("goal %s already waits to land on machine %s; one landing slot per machine: land it before entering %s", other.Id, r.Actor.Machine, id)
 				}
 			}
-			touch(f, r, "land-ready", []string{id})
-			f.Landing = &LandingRecord{At: r.stamp(), Opid: r.opid()}
-			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+			return ackDisplacements(t, r, []Change{recordLandReady(f, r)}), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+func recordLandReady(f *GoalFile, r VerbRequest) Change {
+	touch(f, r, "land-ready", []string{f.Id})
+	f.Landing = &LandingRecord{At: r.stamp(), Opid: r.opid()}
+	return Change{Path: livePath(f.Id), Content: RenderFile(f)}
 }
 
 // Done concludes one goal and moves it to the archive — the one
@@ -4360,6 +4404,7 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				targets = append(targets, m.Id)
 			}
 			var changes []Change
+			quotaChecked := false
 			for _, m := range members {
 				if opidLanded(m, r) {
 					return nil, AlreadyApplied{}
@@ -4396,6 +4441,14 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				budget, err := requireApprovedForClaim(r.Endpoint.Root, t, m, r.Now, "arc claim")
 				if err != nil {
 					return nil, err
+				}
+				if !quotaChecked {
+					var refusal error
+					changes, refusal = claimQuotaRefusal(t, r, id, tip)
+					if refusal != nil {
+						return nil, refusal
+					}
+					quotaChecked = true
 				}
 				m.State = StateClaimed
 				m.Budget = &budget

@@ -31,6 +31,26 @@ func (inv *intentInvocation) laneInstallOf(root string) (string, error) {
 	return string(layout.Install), nil
 }
 
+// claimLaneReader reads only when a held claim needs a lane answer. An
+// unreadable lane supplies no entry, so the standing quota still applies.
+func (inv *intentInvocation) claimLaneReader() func(string, string) (string, error) {
+	return func(id, main string) (string, error) {
+		root, configured, problem := inv.laneCheck(nil)
+		if problem != nil || !configured {
+			return "", nil
+		}
+		install, err := inv.laneInstallOf(root)
+		if err != nil {
+			return "", nil
+		}
+		entry, ok, err := inv.latestLaneGoalEntry(install, id, main)
+		if err != nil || !ok {
+			return "", nil
+		}
+		return entry.State, nil
+	}
+}
+
 // laneQueueState answers work land G from the lane's queue when the goal's
 // newest hand-in is at sha (or its branch is gone): waiting, returned with
 // its reason, or landed when main (the seat's endpoint tip) contains it.

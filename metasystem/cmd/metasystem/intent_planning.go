@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1153,6 +1154,32 @@ func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *
 		return "", &intentResult{Outcome: intentRefused, code: 1, Summary: "this machine's name can't be told, so no ready goal could be picked; nothing was done",
 			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}
 	}
+	laneState := inv.claimLaneReader()
+	returnedOrLanded := false
+	if laneState != nil {
+		tree := *projection.Tree
+		tree.Live = maps.Clone(tree.Live)
+		projection.Tree = &tree
+		for id, file := range tree.Live {
+			if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine ||
+				file.Claimed.HandedOver.FromMachine != "" || file.IsFencedClaim() {
+				continue
+			}
+			state, err := laneState(id, projection.Tip)
+			if err != nil {
+				continue
+			}
+			copy := *file
+			switch state {
+			case "waiting":
+				copy.Landing = &goal.LandingRecord{}
+			case "returned", "landed":
+				copy.Landing = nil
+				returnedOrLanded = true
+			}
+			tree.Live[id] = &copy
+		}
+	}
 	frontier, err := goal.Next(projection, machine, inv.input.values["label"]...)
 	if err != nil {
 		failed := intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was claimed",
@@ -1160,6 +1187,10 @@ func (inv *intentInvocation) frontierPick(projection goal.Projection) (string, *
 		return "", &failed
 	}
 	selection := goal.SelectNext(frontier)
+	if returnedOrLanded && len(frontier.Ready) > 0 {
+		// The claim transaction names the goal's return or conclusion remedy.
+		selection = goal.NextSelection{Kind: goal.NextSelectionReady, GoalID: frontier.Ready[0]}
+	}
 	switch selection.Kind {
 	case goal.NextSelectionContinue:
 		// Held work is continued, never switched for the frontier's next goal.
@@ -1217,6 +1248,7 @@ func (inv *intentInvocation) claimGoal(id, box string, projection goal.Projectio
 	if problem != nil {
 		return *problem
 	}
+	laneState := inv.claimLaneReader()
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	if box != "" {
 		budget, problem := inv.completeBox(box, projection.Tree.Live[id])
@@ -1230,6 +1262,7 @@ func (inv *intentInvocation) claimGoal(id, box string, projection goal.Projectio
 		args = append(args, "--arc", id)
 	}
 	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		req.ClaimLaneState = laneState
 		budget, err := f.budgetTuple(false)
 		if err != nil {
 			return goal.PublishResult{}, err
@@ -1252,8 +1285,10 @@ func (inv *intentInvocation) acquireClaim(id string) intentResult {
 	if problem != nil {
 		return *problem
 	}
+	laneState := inv.claimLaneReader()
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		req.ClaimLaneState = laneState
 		return goal.Claim(req, f.id)
 	}, "id"))
 }
