@@ -175,6 +175,16 @@ func TestLandingResolveRegenerationHoldsByCauseAndShowsStatus(t *testing.T) {
 					t.Fatalf("status: exit=%d %s", statusCode, statusOutput)
 				}
 				if wantHeld {
+					// A held regeneration exposes its stop and remedy through status.
+					code, output := b.run(t, b.root, "status", "--json")
+					var status struct{ Data plain.Status }
+					command := "metasystem landing run"
+					if wantCause == "unclassified" {
+						command = "metasystem landing return goal --cause own --reason TEXT"
+					}
+					if code != 0 || json.Unmarshal([]byte(output), &status) != nil || status.Data.Stop == nil || status.Data.Stop.Attempt != 0 || status.Data.Stop.Cause.Kind != wantCause || status.Data.Stop.Command() != command || status.Data.Stop.Evidence == "" {
+						t.Fatalf("held regeneration has no uncounted stop and command: %d %s", code, output)
+					}
 					break
 				}
 			}

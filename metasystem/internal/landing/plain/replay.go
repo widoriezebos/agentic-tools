@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // classifyRed applies the first-match cause table. The caller supplies the
@@ -55,7 +56,12 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 	result.Repeat = "started"
 	result.Cause.Kind = "flake"
 	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
-	if err := withLock(install, func() error { return appendLine(resultsPath(install), result) }); err != nil {
+	if err := withLock(install, func() error {
+		if err := recordProofStop(install, result); err != nil {
+			return err
+		}
+		return appendLine(resultsPath(install), result)
+	}); err != nil {
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result
 	}
@@ -269,7 +275,12 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 
 // CloseProofLoop closes the batch budget while preserving its newest proof.
 func CloseProofLoop(install string) error {
-	return withLock(install, func() error { return closeProofLoop(install) })
+	return withLock(install, func() error {
+		if err := closeProofLoop(install); err != nil {
+			return err
+		}
+		return closeStopsLocked(install, "", "landing run", time.Now())
+	})
 }
 
 func closeProofLoop(install string) error {

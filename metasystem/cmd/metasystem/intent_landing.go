@@ -350,6 +350,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		if data.Root == nil {
 			return
 		}
+		if stop := data.Stop; stop != nil {
+			section := page.Section("", "")
+			section.Text(stop.Words())
+			section.Text("run: " + stop.Command())
+		}
 		if run := data.RunningRegeneration; run != nil {
 			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
 		}

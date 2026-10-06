@@ -138,7 +138,15 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			result.text = []string{channel.ReplyInstructionsAt(inv.stateRoot, c)}
 			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
 		}
+		if command := channel.LaneStopCommand(c); command != "" && c.State != "closed" {
+			result.Summary, result.next, result.nextReason, result.text = command, nil, "", nil
+		}
 		result.view = func(page *textui.Page) {
+			if command := channel.LaneStopCommand(c); command != "" && c.State != "closed" {
+				page.Headline(command, "")
+				page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
+				return
+			}
 			page.Headline(headline, fact)
 			rows := []textui.KV{}
 			if c.Goal != "" {

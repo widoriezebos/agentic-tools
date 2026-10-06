@@ -182,24 +182,33 @@ func (a landingAgent) reapOutage(id string) error {
 // this computer is open: the agent that asked ended its turn to wait for
 // the person, and the next one reads the answer with question show. A lane
 // question from another computer holds nothing here.
-func (a landingAgent) questionHold(root string) (string, error) {
-	module := batch.ModuleRoot(root)
-	open, _ := channel.WalkOpenQuestions(module)
+func (a landingAgent) questionHold(module string) (string, error) {
+	machineFn := a.machine
+	if machineFn == nil {
+		machineFn = goal.ResolveMachine
+	}
+	if err := plain.SyncStopQuestion(module, machineFn, a.now()); err != nil {
+		return "", err
+	}
+	open, _ := channel.WalkQuestions(module)
 	var lane []channel.Question
 	for _, q := range open {
-		if q.Goal == "" && q.About == "lane" {
+		if q.Goal == "" && q.About == "lane" && (q.State == "open" || q.State != "closed" && channel.LaneStopCommand(q) != "") {
 			lane = append(lane, q)
 		}
 	}
 	if len(lane) == 0 {
 		return "", nil
 	}
-	machine, err := a.machine(module)
+	machine, err := machineFn(module)
 	if err != nil {
 		return "", fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
 	}
 	for _, q := range lane {
 		if q.Machine == machine {
+			if command := channel.LaneStopCommand(q); command != "" {
+				return "the lane waits for a person's act\nrun: " + command, nil
+			}
 			return fmt.Sprintf("the landing agent asked a person about the lane (question %s) and waits for the answer; it starts again once the question is answered or withdrawn\nrun: metasystem question show channel:%s", q.ID, q.ID), nil
 		}
 	}
@@ -213,7 +222,12 @@ func (a landingAgent) questionHold(root string) (string, error) {
 // outage at the lane installation and an open question the landing agent
 // asked about the lane, and each ended launch is reaped for its outage.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
+	machine := agent.machine
+	if machine == nil {
+		machine = goal.ResolveMachine
+	}
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
+		Observe: func(record lane.Record) error { return plain.SyncStopQuestion(record.Install, machine, agent.now()) },
 		Holds: []func(string) (string, error){
 			plain.KeeperProofHold,
 			func(root string) (string, error) {
@@ -222,10 +236,22 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				}
 				return "", nil
 			},
-			agent.questionHold,
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return agent.questionHold(record.Install)
+			},
 		},
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
 		Fingerprint: plain.KeeperFingerprint,
+		BarrenStop: func(record lane.Record, state lane.AgentState) error {
+			if err := plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now()); err != nil {
+				return err
+			}
+			return plain.SyncStopQuestion(record.Install, machine, agent.now())
+		},
 		Waiting: func(install, checkout string) (int, error) {
 			waiting, err := plain.Pending(install, checkout)
 			return len(waiting), err

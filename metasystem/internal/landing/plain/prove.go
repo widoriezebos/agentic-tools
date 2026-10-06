@@ -220,6 +220,9 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	if !exists {
 		red.Repeat = "allowed"
 	}
+	if err := recordProofStop(install, red); err != nil {
+		return running, recorded, alive, err
+	}
 	if err := appendLine(resultsPath(install), red); err != nil {
 		return running, recorded, alive, err
 	}
@@ -493,6 +496,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			if err := decision.writeRecord(install, result, observed); err != nil {
 				return err
 			}
+		}
+		if err := recordProofStop(install, result); err != nil {
+			return err
 		}
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err

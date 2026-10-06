@@ -32,6 +32,7 @@ type Status struct {
 	LastProof *Result `json:"last_proof"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
+	Stop     *Stop   `json:"stop,omitempty"`
 	// Problems are the lane's records this read could not read, one plain
 	// sentence each: a queue, proof or push that could not be read, or a
 	// line of one that does not decode, is said here rather than read as
@@ -166,6 +167,8 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.Problems = append(status.Problems, fmt.Sprintf("%s %d %s that can't be read (%s)", what, skipped, lines, path))
 		}
 	}
+	status.Stop, err = NewestStop(install)
+	unread("the stop record", err)
 	lines, skipped, err := countedLines[Line](queuePath(install))
 	unread("the queue", err)
 	damaged("the queue has", skipped, queuePath(install))

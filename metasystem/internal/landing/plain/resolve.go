@@ -141,6 +141,13 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 		ownsBegun := resuming
 		defer func() {
 			recordErr := appendLine(regeneratePath(install), out.Regeneration)
+			if recordErr == nil && out.Held && out.Cause != nil {
+				cause := *out.Cause
+				if cause.Evidence == "" {
+					cause.Evidence = regeneratePath(install)
+				}
+				recordErr = recordProofStop(install, Result{Result: Red, Goals: []GoalSHA{{Goal: out.Goal, SHA: out.SHA}}, Cause: &cause, Log: out.Log, Reason: out.Reason, At: out.At})
+			}
 			if recordErr == nil && ownsBegun && (out.Outcome == "resolved" || out.Outcome == "returned" || out.Outcome == "held") {
 				recordErr = os.Remove(resolveBegunPath(install))
 			}

@@ -48,6 +48,9 @@ func agentStatePath(home string) string {
 	return filepath.Join(HostDir(home), "landing-agent-keeper.json")
 }
 
+// AgentStatePath is the keeper record used as evidence for a barren hold.
+func AgentStatePath(home string) string { return agentStatePath(home) }
+
 // ReadAgentState is the keeper's record of the agent it last started; the
 // zero state when none is kept.
 func ReadAgentState(home string) (AgentState, error) {
@@ -86,6 +89,10 @@ type AgentKeeper struct {
 	// results and pushes): barrenLimit launches in a row that end with it
 	// unchanged hold the next start until it changes. nil holds nothing.
 	Fingerprint func(root string) (string, error)
+	// BarrenStop records the existing barren hold, or its clearing, at its owner.
+	BarrenStop func(record Record, state AgentState) error
+	// Observe reconciles the lane's own stop question on every keeper tick.
+	Observe func(Record) error
 	// Explicit is a start asked for by name (landing run), not the keeper's
 	// own: barren runs do not hold it, and it clears their count.
 	Explicit bool
@@ -285,6 +292,11 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 	if !k.own(record) {
 		return agentRun(AgentNotKept, root, ""), false
 	}
+	if k.Observe != nil {
+		if err := k.Observe(record); err != nil {
+			return agentRun(AgentHeld, root, "the lane's stop question cannot be reconciled: "+err.Error()), false
+		}
+	}
 	// An ended launch is reaped at once, paused or not.
 	state, _ := ReadAgentState(k.Home)
 	if _, running, err := k.Running(); err == nil && !running && state.Launch != "" && state.ReapedAt == "" {
@@ -302,7 +314,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 	if by, paused := pausedClosed(k.Home); paused {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), false
 	}
-	if reason, held, err := k.barrenHold(root); err != nil {
+	if reason, held, err := k.barrenHold(record); err != nil {
 		return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 	} else if held {
 		return agentRun(AgentHeld, root, reason), false
@@ -335,7 +347,8 @@ func (k AgentKeeper) countBarren(state *AgentState, root string) {
 // barrenHold holds the keeper's own start after barrenLimit launches in a
 // row ended with the lane unchanged, until the lane changes (a new hand-in,
 // a result) or a start is asked for by name; either clears the count.
-func (k AgentKeeper) barrenHold(root string) (string, bool, error) {
+func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
+	root := record.Root
 	state, _ := ReadAgentState(k.Home)
 	if k.Fingerprint == nil || state.Barren == 0 {
 		return "", false, nil
@@ -347,10 +360,20 @@ func (k AgentKeeper) barrenHold(root string) (string, bool, error) {
 	}
 	if clear {
 		state.Barren, state.BarrenLaunches, state.BarrenFingerprint = 0, nil, ""
+		if k.BarrenStop != nil {
+			if err := k.BarrenStop(record, state); err != nil {
+				return "", false, err
+			}
+		}
 		return "", false, written(writeJSON(k.Home, agentStatePath(k.Home), state))
 	}
 	if state.Barren < barrenLimit {
 		return "", false, nil
+	}
+	if k.BarrenStop != nil {
+		if err := k.BarrenStop(record, state); err != nil {
+			return "", true, err
+		}
 	}
 	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person's metasystem landing run starts it, or a new hand-in",
 		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil

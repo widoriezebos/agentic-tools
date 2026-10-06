@@ -114,7 +114,7 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 		t.Fatal(err)
 	}
 	now, starts, proofAlive := laneTestNow, 0, false
-	keeper := newLandingAgentKeeper(root, home, landingAgent{now: func() time.Time { return now }})
+	keeper := newLandingAgentKeeper(root, home, landingAgent{now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
 	if keeper.Fingerprint == nil {
 		t.Fatal("the landing keeper has no lane fingerprint, so barren runs cannot hold it")
 	}

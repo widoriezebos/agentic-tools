@@ -294,6 +294,9 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 		if err := appendLine(queuePath(install), line); err != nil {
 			return err
 		}
+		if err := closeStopsLocked(install, "", "hand-in "+line.Goal, time.Now()); err != nil {
+			return err
+		}
 		entry, added = Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
@@ -348,7 +351,7 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 		return latest, false, err
 	}
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
-	return latest, true, nil
+	return latest, true, closeStopsLocked(install, "", "return "+goal, now)
 }
 
 // Landed derives each waiting entry's landing: one whose sha main
