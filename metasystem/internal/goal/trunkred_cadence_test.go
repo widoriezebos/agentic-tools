@@ -2,6 +2,7 @@ package goal
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -163,6 +164,35 @@ func TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal(t *testing.T) {
 	entry = projection.Tree.TrunkRed[0]
 	if err != nil || entry.FixGoal != "solo-goal" || entry.Owner.Machine != "mac-fix" || entry.Owner.How != "hand" || entry.Owner.By != "Wido" || projection.Tree.Cadence == nil {
 		t.Fatalf("human ownership = %+v cadence=%+v, %v", entry, projection.Tree.Cadence, err)
+	}
+}
+
+func TestCadenceNewStatusPublishesWhenItsRedIsAlreadyOpen(t *testing.T) {
+	t.Parallel()
+	endpoint := localTrunkRedEndpoint(t)
+	now := time.Date(2026, 9, 17, 2, 0, 0, 0, time.UTC)
+	key := cadenceKeyFixture()
+	group := TrunkRedRecordGroup{Identity: "red:unit:TestOne", Group: "unit", Status: "failed", Failures: []TrunkRedFailure{}}
+	for i := range 2 {
+		key.WeightGeneration++
+		claimRequest := trunkRedVerbReqFor(endpoint, fmt.Sprintf("01J5X0000000000000000000D%d", 4+i*2), "mac-a")
+		claimRequest.Now = now.Add(time.Duration(i) * time.Hour)
+		claim, err := ClaimCadence(claimRequest, key, time.Hour)
+		if err != nil || claim.Outcome != CadenceClaimAcquired {
+			t.Fatalf("claim %d: %+v %v", i, claim, err)
+		}
+		publish := trunkRedVerbReqFor(endpoint, fmt.Sprintf("01J5X0000000000000000000D%d", 5+i*2), "mac-a")
+		publish.Now = claimRequest.Now.Add(time.Minute)
+		status := cadenceStatusFixture(key, claimRequest.Now, "failed")
+		status.AttemptID = fmt.Sprintf("check-%d", i)
+		result, err := PublishCadence(publish, CadencePublishArgs{ClaimOpid: claim.Claim.Opid, Status: status, Groups: []TrunkRedRecordGroup{group}})
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("publish %d: %+v %v", i, result, err)
+		}
+		p, err := trunkRedProjectAt(endpoint, result.Tip)
+		if err != nil || p.Tree.Cadence == nil || p.Tree.Cadence.AttemptID != status.AttemptID || p.Tree.CadenceClaim != nil || len(p.Tree.TrunkRed) != 1 || len(p.Tree.TrunkRed[0].Sightings) != 1 {
+			t.Fatalf("new cadence status or standing incident lost: %+v %v", p.Tree, err)
+		}
 	}
 }
 

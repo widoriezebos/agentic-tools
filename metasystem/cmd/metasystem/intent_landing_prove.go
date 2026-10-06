@@ -96,6 +96,9 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 	if seams.RecordFlake == nil {
 		seams.RecordFlake = owners.landingFlakeRecorder(installation)
 	}
+	if seams.RecordMain == nil {
+		seams.RecordMain = owners.landingIncidentRecorder(installation)
+	}
 	return seams
 }
 

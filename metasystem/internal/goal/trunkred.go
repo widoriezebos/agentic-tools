@@ -621,16 +621,21 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 				return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 			}
 			already := 0
+			repeated := func(group TrunkRedRecordGroup) bool {
+				entry := openTrunkRedByIdentity(tree.TrunkRed, group.Identity)
+				return trunkRedSightingExists(tree.TrunkRed, group.Identity, r.opid()) ||
+					(args.Class == "" || args.Class == TrunkRedClassTrunkRed) && entry != nil && entry.EntryClass() == TrunkRedClassTrunkRed
+			}
 			for _, group := range args.Groups {
-				if trunkRedSightingExists(tree.TrunkRed, group.Identity, r.opid()) {
+				if repeated(group) {
 					already++
 				}
 			}
-			if already == len(args.Groups) && (len(args.Groups) > 0 || cadenceAlready) {
+			if already == len(args.Groups) && (cadenceAlready || args.Cadence == nil && len(args.Groups) > 0) {
 				return nil, AlreadyApplied{}
 			}
 			for _, group := range args.Groups {
-				if trunkRedSightingExists(tree.TrunkRed, group.Identity, r.opid()) {
+				if repeated(group) {
 					continue
 				}
 				sighting := TrunkRedSighting{Attempt: args.Attempt, Batch: args.Batch, BaseCommit: args.BaseCommit,

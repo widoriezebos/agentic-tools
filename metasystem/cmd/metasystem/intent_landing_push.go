@@ -201,6 +201,15 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	if designRefusal != nil {
 		return inv.render(*designRefusal)
 	}
+	if outcome.Changed {
+		proof, found, readErr := plain.ResultFor(admitted.installation, outcome.Tree)
+		if readErr == nil && found {
+			readErr = admitted.owners.clearLandingIncidents(admitted.installation, proof)
+		}
+		if readErr != nil {
+			err = errors.Join(err, fmt.Errorf("main's incidents could not be cleared: %w", readErr))
+		}
+	}
 	var told []string
 	if outcome.Changed {
 		// A landing on main is the one piece of news the channel carries
@@ -231,7 +240,7 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 		return inv.render(result)
 	case err != nil && outcome.Changed:
 		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: outcome,
-			Summary: "pushed " + shortLandingID(outcome.Commit) + " to main, but the push could not be recorded for landing status: " + oneLine(err.Error()),
+			Summary: "pushed " + shortLandingID(outcome.Commit) + " to main, but its follow-up could not finish: " + oneLine(err.Error()),
 			Details: append([]string{err.Error()}, told...)})
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: outcome,

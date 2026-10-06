@@ -66,6 +66,8 @@ type laneVerbOwners struct {
 	plainProve       plain.ProveSeams
 	mainEndpoint     func(string) (goal.Endpoint, error)
 	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
+	recordMain       func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
+	clearMain        func(goal.VerbRequest, goal.TrunkRedClearArgs) (goal.PublishResult, error)
 	plainResolve     plain.ResolveSeams
 	stopRegeneration func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main;

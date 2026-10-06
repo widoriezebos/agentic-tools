@@ -150,6 +150,8 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			dir = filepath.Join(tree, rel)
 		}
 		failed, complete := false, true
+		var mainChecks []Result
+		recordingMain := i == 0 && prefix.Main && prefix.Tree != running.Tree && seams.RecordMain != nil
 		for j, unit := range result.Failed {
 			prefix.Log = filepath.Join(Dir(install), "proofs", fmt.Sprintf("%s-%d.log", prefix.Attempt, j+1))
 			file, err := os.Create(prefix.Log)
@@ -168,6 +170,12 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			if runErr != nil {
 				failed = true
 				result.Cause.Evidence = prefix.Log
+				if recordingMain {
+					units := slices.DeleteFunc(slices.Clone(report.failed), func(f FailedUnit) bool { return f.Unit != unit.Unit })
+					mainChecks = append(mainChecks, Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
+						Attempt: prefix.Attempt, Log: prefix.Log, At: result.At, Failed: units})
+					continue
+				}
 				break
 			}
 		}
@@ -178,6 +186,10 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		if failed {
 			if i == 0 && prefix.Main {
 				result.Cause.Kind = "main"
+				if len(mainChecks) > 0 {
+					result.Cause.Evidence = mainChecks[0].Log
+					result = recordMainFailures(seams, result, mainChecks)
+				}
 			}
 			if i > 0 && prefix.Goal.Goal != "" {
 				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
@@ -187,6 +199,16 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 	}
 	if len(trees) > 0 && len(result.Failed) > 0 && previous.Result == "" {
 		result.Repeat = "allowed"
+	}
+	return result
+}
+
+// Recording an incident preserves the proof's verdict and repeat allowance.
+func recordMainFailures(seams ProveSeams, result Result, checks []Result) Result {
+	if seams.RecordMain != nil {
+		if err := seams.RecordMain(checks); err != nil {
+			result.Reason += "; main's failed tests could not be recorded: " + err.Error()
+		}
 	}
 	return result
 }

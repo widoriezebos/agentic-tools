@@ -119,6 +119,9 @@ type ProveSeams struct {
 	Judge func(checkout, commit string, failed []FailedUnit) (map[string]UnitJudgement, error)
 	// RecordFlake confirms a sighting and its fix goal; nil cannot record.
 	RecordFlake func(FlakeRecord) (FlakeRecorded, error)
+	// RecordMain publishes failed checks of main in one transaction. Each
+	// result carries its own log and main's commit/tree.
+	RecordMain func([]Result) error
 	// Closure names language units changed between the two trees; nil detects
 	// the checkout's adapter. Command runs the prepared proof; nil runs it.
 	Closure func(root, base, tree string) (adapter.Closure, error)
@@ -473,6 +476,17 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	}
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
+	}
+	if result.Result == Red && len(result.Failed) > 0 && seams.RecordMain != nil {
+		main, mainErr := checkoutGit(checkout, seams).main()
+		if mainErr == nil {
+			mainTree, treeErr := seams.git(checkout, "rev-parse", "--verify", main+"^{tree}")
+			if treeErr == nil && mainTree == result.Tree {
+				check := result
+				check.Commit = main
+				result = recordMainFailures(seams, result, []Result{check})
+			}
+		}
 	}
 	err = withLock(install, func() error {
 		if !inherited {

@@ -2190,7 +2190,7 @@ func runIntentIncidents(inv *intentInvocation) int {
 		case entry.FixGoal != "":
 			state = "owned, fixed by goal " + entry.FixGoal
 		}
-		lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)", entry.ID, entry.Group, state, entry.Status))
+		lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)%s", entry.ID, entry.Group, state, entry.Status, incidentEvidence(entry)))
 	}
 	summary := fmt.Sprintf("%d incident(s) on main", len(listed))
 	if len(tracked) > 0 {
