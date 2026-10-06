@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
@@ -281,7 +284,7 @@ func TestLandingReturnPersonWithoutBy(t *testing.T) {
 
 func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"still in head", "already on main", "removed from head"} {
+	for _, name := range []string{"still in head", "already on main", "removed from head", "fix-forward hand-in", "same commit handed in again"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
@@ -290,6 +293,19 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 			}
 			if _, _, err := plain.ReturnDesignRefused(b.install, plain.DesignCheck{Goal: "goal", Commit: "returned-sha", Reason: "the design changed"}, laneTestNow); err != nil {
 				t.Fatal(err)
+			}
+			retrySHA := ""
+			switch name {
+			case "fix-forward hand-in":
+				retrySHA = "fix-forward-sha"
+			case "same commit handed in again":
+				retrySHA = "returned-sha"
+			}
+			if retrySHA != "" {
+				entry, added, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: retrySHA, Again: retrySHA == "returned-sha"})
+				if err != nil || !added || entry.State != plain.StateWaiting {
+					t.Fatalf("retry not queued: entry=%+v added=%v err=%v", entry, added, err)
+				}
 			}
 			pushes := 0
 			b.owners.landing.push = func(_, _ string, _ time.Time, before func(string, string) error) (plain.PushOutcome, error) {
@@ -306,13 +322,30 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 					t.Fatalf("containment checked %s at %s", checkout, ref)
 				}
 				return func(sha string) (bool, error) {
-					if sha != "returned-sha" {
+					if sha != "returned-sha" && (retrySHA == "" || sha != retrySHA) {
 						t.Fatalf("checked unexpected commit %s", sha)
 					}
-					return name == "already on main" || name == "still in head" && ref == "head", nil
+					return name == "already on main" || (name == "still in head" || retrySHA != "") && ref == "head", nil
 				}
 			}
-			code, output := b.run(t, b.root, "push", "--json")
+			command, ok := findIntentAction("landing", "push")
+			if !ok {
+				t.Fatal("landing push is not discoverable")
+			}
+			command = laneCommand(command, func(inv *intentInvocation, admitted laneAdmitted) int {
+				return runIntentLandingPushWithOwners(inv, admitted, landingPushOwners{
+					facts: func(id string) landing.DesignFacts {
+						if id != "goal" {
+							t.Fatalf("checked unexpected goal %s", id)
+						}
+						return landing.DesignFacts{Facts: designgate.Facts{Goal: id, Tier: 1}}
+					},
+					notify: func(plain.PushOutcome) error { return nil },
+				})
+			})
+			var stdout, stderr bytes.Buffer
+			code := runIntentIn(command, []string{"--json"}, &stdout, &stderr, b.root, b.owners)
+			output := stdout.String()
 			var result intentResult
 			if err := json.Unmarshal([]byte(output), &result); err != nil {
 				t.Fatal(err)

@@ -73,8 +73,16 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 	inHead, inOld := owners.contains(checkout, head), owners.contains(checkout, old)
 	rebuild := []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}
 	rebuildReason := "rebuild the batch: git merge --no-ff SHA for each waiting sha, then metasystem landing prove"
-	for _, entry := range entries {
-		if entry.State != plain.StateReturned {
+	// A goal's newest code hand-in decides; a later records hand-in of the
+	// same goal does not lift the block (it carries none of the goal's code).
+	latest := make(map[string]int)
+	for index, entry := range entries {
+		if !entry.Records {
+			latest[entry.Goal] = index
+		}
+	}
+	for index, entry := range entries {
+		if entry.State != plain.StateReturned || latest[entry.Goal] != index {
 			continue
 		}
 		now, headErr := inHead(entry.SHA)
