@@ -472,7 +472,7 @@ func TestLedgerFreshSessionAndUpPendingRepairAndOfflineHook(t *testing.T) {
 				return code, out.String() + diagnostic.String()
 			}
 			code, output := invoke()
-			remedy := "metasystem up"
+			remedy := "metasystem internal up"
 			if verb == "session" {
 				remedy = "metasystem session start"
 			}

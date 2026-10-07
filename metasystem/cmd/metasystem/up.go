@@ -275,7 +275,7 @@ func runUpWithInputs(args []string, repositoryTop func(string) (string, error), 
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityWith(inputs.dependencies, inputs.clock, true), AdoptionRemedy: "metasystem up",
+		RestampStopCapability: restampStopCapabilityWith(inputs.dependencies, inputs.clock, true), AdoptionRemedy: "metasystem internal up",
 	}
 	if *printScheduler {
 		fmt.Fprintln(stdout, up.SchedulerEntry(options))
