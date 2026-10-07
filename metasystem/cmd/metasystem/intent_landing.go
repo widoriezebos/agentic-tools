@@ -214,10 +214,12 @@ func landingIntentCommands() []intentCommand {
 		},
 		{
 			object: "landing", action: "drain", audience: "both", summary: "close automatic admission, finish queued work and hold",
-			usage:   []string{"metasystem landing drain [--reason TEXT]"},
-			details: []string{"A person's act: keeps admitted work running and closes new agent hand-ins until a person runs landing start."},
-			flags:   []intentFlag{{name: "reason", value: "TEXT", usage: "why admission is closed"}},
-			maxArgs: 0, run: runIntentLandingDrain,
+			usage:    []string{"metasystem landing drain [--reason TEXT]"},
+			details:  []string{"A person's act: keeps admitted work running and closes new agent hand-ins until a person runs landing start."},
+			flags:    []intentFlag{{name: "reason", value: "TEXT", usage: "why admission is closed"}},
+			maxArgs:  0,
+			examples: []string{"metasystem landing drain", "metasystem landing drain --reason 'maintenance after queued work finishes'"},
+			run:      runIntentLandingDrain,
 		},
 		{
 			object: "landing", action: "stop", audience: "both", summary: "pause the landing lane for maintenance until landing start",
