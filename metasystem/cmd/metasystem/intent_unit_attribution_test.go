@@ -64,7 +64,7 @@ func TestUnitBuildAttributesUnitNewOnMainAfterJudgeError(t *testing.T) {
 	unitFlakeBuild(t, true, true)
 }
 
-func unitFlakeBuild(t *testing.T, affected, newOnMain bool) {
+func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 	t.Helper()
 	bed := newWorkBed(t)
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
@@ -183,6 +183,7 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) {
 	if strings.Join(kinds, ",") != "build,proof,proof" {
 		t.Fatalf("launches=%v", kinds)
 	}
+	return bed
 }
 
 type unitProofBaseGit struct {

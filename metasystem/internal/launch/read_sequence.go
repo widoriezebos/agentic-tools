@@ -67,11 +67,6 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	}
 	launchRecord, err := driver.manager.Store.Read(step.LaunchID)
 	if errors.Is(err, fs.ErrNotExist) {
-		if driver.before != nil {
-			if err := driver.before(spec); err != nil {
-				return Record{}, err
-			}
-		}
 		spec.ID = step.LaunchID
 		if driver.unit {
 			if spec.Kind == "proof" || spec.Kind == "read" {
@@ -99,11 +94,17 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 				return Record{}, err
 			}
 		}
+		if driver.before != nil {
+			if err := driver.before(spec); err != nil {
+				return Record{}, err
+			}
+		}
 		launchRecord, err = driver.start(spec)
 	}
 	if err != nil && launchRecord.ID == "" {
 		if driver.unit {
 			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
+			step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
 			return Record{}, driver.save()
 		}
 		return Record{}, err

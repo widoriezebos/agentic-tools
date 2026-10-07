@@ -148,7 +148,13 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 		if _, err := atomicfile.WriteFile(brief, data, 0600, runner.root()); err != nil {
 			return false, err
 		}
-		started, startErr := runner.Manager.Start(StartSpec{ID: comparison.LaunchID, Kind: "proof", Goal: record.Goal, Tag: record.Unit, WorkingDirectory: command.Dir, Brief: brief, Round: round.Number, MaxRounds: record.MaxRounds})
+		spec := StartSpec{ID: comparison.LaunchID, Kind: "proof", Goal: record.Goal, Tag: record.Unit, WorkingDirectory: command.Dir, Brief: brief, Round: round.Number, MaxRounds: record.MaxRounds}
+		if runner.BeforeModelLaunch != nil {
+			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+				return false, err
+			}
+		}
+		started, startErr := runner.Manager.Start(spec)
 		if started.ID != "" {
 			cleanup = false
 		}
@@ -167,6 +173,11 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 		return true, nil
 	}
 	cleanup = true
+	if runner.CollectLaunch != nil {
+		if err := runner.CollectLaunch(*record, baseline, failedStepCause(baseline)); err != nil {
+			return false, err
+		}
+	}
 	if comparison.Before == nil {
 		return false, fmt.Errorf("the comparison's original tree observation is unavailable")
 	}

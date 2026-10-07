@@ -104,6 +104,7 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 			current.State, current.Reason, code = launch.Failed, "fixture-red", 1
 		}
 		current.ExitCode = &code
+		current.FinishedAt = s.m.Now().UTC().Format(time.RFC3339Nano)
 		if record.Kind == "read" {
 			yes := true
 			current.VerdictCounts, current.Measurement.Verdict = &yes, "pass"
@@ -323,7 +324,26 @@ func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 // newWorkBedWith is the work bed with its goal record shaped by amend.
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
-	bed := &workBed{intentBed: newIntentBed(t, false, amend), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
+	bed := &workBed{intentBed: newIntentBed(t, false, func(file *goal.GoalFile) {
+		if file.Claimed != nil {
+			claim, _ := time.Parse(time.RFC3339, file.Claimed.At)
+			shift := time.Date(2026, 9, 1, 9, 55, 0, 0, time.UTC).Sub(claim)
+			move := func(at string) string {
+				parsed, _ := time.Parse(time.RFC3339, at)
+				return parsed.Add(shift).UTC().Format(time.RFC3339)
+			}
+			file.Claimed.At, file.OpenedAt = move(file.Claimed.At), move(file.OpenedAt)
+			for index := range file.History {
+				file.History[index].At = move(file.History[index].At)
+			}
+			if file.Approved != nil {
+				file.Approved.At = move(file.Approved.At)
+			}
+		}
+		if amend != nil {
+			amend(file)
+		}
+	}), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
 	bed.designGate = designGateOwners{
 		chains:   func(string, string, string) ([]designgate.Chain, error) { return nil, nil },
 		identity: func(stateroot.Installation) (string, error) { return "01M4189Q0RH1NSPD3PNAS6G177", nil },
@@ -340,7 +360,7 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	}
 	os.WriteFile(filepath.Join(parent, "index"), []byte("index"), 0o600)
 	bed.branchListed = true
-	clock := &workClock{now: time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)}
+	clock := &workClock{now: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}
 	bed.manager = &launch.Manager{Store: launch.Store{Root: filepath.Join(parent, "launch")},
 		Adapters:  map[string]launch.Adapter{"codex-exec": workAdapter{}, "claude-headless": workAdapter{}, "plain-exec": workAdapter{}},
 		Processes: workProcesses{}, Prober: workProber{}, Now: clock.Now, Sleep: clock.Sleep, Grace: time.Second, Poll: time.Second}
@@ -710,6 +730,7 @@ var (
 // workApprovedBox gives the fixture goal an approved box with two review
 // rounds, the limit a public build reads.
 func workApprovedBox(file *goal.GoalFile) {
+
 	if file.Budget == nil {
 		file.Budget = &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1}
 	}

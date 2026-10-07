@@ -469,7 +469,31 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return findings, nil
 	}
-	runner.BeforeModelLaunch = inv.unitLaunchAuthority
+	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
+		settings := runner.Manager.Settings
+		if len(settings.Values) == 0 {
+			settings = launch.DefaultSettings()
+		}
+		return inv.unitLaunchAuthority(record, spec, settings)
+	}
+	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
+		if inv.stateRoot == "" {
+			if inv.layout.InstallationRoot == "" {
+				layout, err := inv.owners.resolver.ResolveLayout(unit.Worktree)
+				if err != nil {
+					return err
+				}
+				inv.layout = layout
+			}
+			root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+			if err != nil {
+				return err
+			}
+			inv.stateRoot = root.Path()
+		}
+		return dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, string(execution.State), cause,
+			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
+	}
 	runner.PlanProof = inv.unitProof
 	judge := landingFlakeJudge(inv.layout.InstallationRoot.Path(), func(root string, args ...string) (string, error) {
 		data, err := inv.work().git(root, args...)
@@ -554,17 +578,42 @@ func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofComm
 	return append(proof, plan.Proof...), nil
 }
 
-// unitLaunchAuthority is asked before every build or read launch of a unit
+// unitLaunchAuthority is asked before every build, proof or read launch of a unit
 // run this command advances, new or continued: the goal must be claimed by
 // this session and the checkout lease held, resolved through the selected
 // installation's own configuration.
-func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ launch.StartSpec) error {
+func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, spec launch.StartSpec, settings launch.Settings) error {
 	conn := inv.connection()
 	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return err
 	}
-	return branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint))
+	if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
+		return err
+	}
+	projection, now, problem := inv.projection()
+	if problem != nil {
+		return fmt.Errorf("the launch's goal revision cannot be read: %s", problem.Summary)
+	}
+	file, _ := goalRecord(projection, record.Goal)
+	if file == nil {
+		return fmt.Errorf("the launch's goal %s cannot be read", record.Goal)
+	}
+	role, runtime, model := "implementer", settings.BuildRuntime, settings.BuildModel
+	if spec.Kind == "proof" {
+		role, runtime, model = "tester", "plain", ""
+	}
+	if spec.Kind == "read" {
+		role, runtime, model = "code-critic", settings.ReadRuntime, settings.ReadModel
+	}
+	if spec.Model != "" {
+		model = spec.Model
+	}
+	cap, _, _, err := dispatchcore.ResolveCap(filepath.Join(inv.layout.InstallationRoot.Path(), "metasystem.conf"), role, runtime, model, "", "")
+	if err != nil {
+		return err
+	}
+	return dispatchcore.ReserveUnitLaunch(inv.stateRoot, spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
 }
 
 // build
@@ -1306,6 +1355,10 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "BUDGET_REFUSED") || launch.IsCode(err, "BUDGET_UNKNOWN"):
+			goalID := targetID(targets, "goal", record.Goal)
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				Data: unitData(record, runner.Manager), next: inv.publicArgv("goal", "budget", goalID, "BOX"), nextReason: "a person sets the goal's budget; unreadable spending records also need repair"}
 		case launch.IsCode(err, "UNIT_STOPPED"):
 			if len(record.Rounds) > 0 && (record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" || record.Rounds[len(record.Rounds)-1].Stop != nil && record.Rounds[len(record.Rounds)-1].Stop.Loop == "unit-build") {
 				next, _ := inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)

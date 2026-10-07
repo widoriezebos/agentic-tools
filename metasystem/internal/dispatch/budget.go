@@ -61,6 +61,7 @@ type BudgetBreach struct {
 // latest exact consumed discharge proof. While the goal is marked as waiting
 // to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
+	unitAttempts            map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
 	GoalRevision            uint64
@@ -386,6 +387,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	operations := make(map[string]string)
+	unitAttempts := make(map[string]bool)
+	projection.unitAttempts = unitAttempts
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -427,6 +430,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("operationId %q duplicates %s", operationID, first))
 		}
 		operations[operationID] = logicalPath
+		if record["unitUnaccounted"] == true && asString(record["unitRun"]) != "" && operationID == "unit-launch:"+jobID && TerminalStatus(lens.Status()) {
+			continue
+		}
 		recordRevision, ok := lens.GoalRevision()
 		if !ok || recordRevision == 0 {
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation is revisionless")
@@ -491,7 +497,31 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
-		if consumes {
+		unitAttempt := ""
+		if run, present := record["unitRun"]; present {
+			runID, typed := run.(string)
+			round, roundOK := numInt(record["unitRound"])
+			if !typed || runID == "" || !roundOK || round < 1 || operationID != "unit-launch:"+jobID {
+				return unknownBudget(file.Id, revision, logicalPath, "the unit reservation has an unreadable execution identity")
+			}
+			if TerminalStatus(status) {
+				if _, typed := record["unitExecuted"].(bool); !typed {
+					return unknownBudget(file.Id, revision, logicalPath, "the terminal unit reservation has unreadable execution evidence")
+				}
+				if record["unitExecuted"] == false {
+					continue
+				}
+			}
+			if excluded, present := record["unitEnvironment"]; present {
+				if excluded != true || !TerminalStatus(status) {
+					return unknownBudget(file.Id, revision, logicalPath, "the unit environment exclusion has no terminal execution")
+				}
+				continue
+			}
+			unitAttempt = fmt.Sprintf("%s/%d", runID, round)
+		}
+		if consumes && (unitAttempt == "" || !unitAttempts[unitAttempt]) {
+			unitAttempts[unitAttempt] = true
 			switch countedCriticRole {
 			case "design-critic":
 				if projection.DesignCritiques == math.MaxUint64 {
@@ -515,7 +545,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		terminal := TerminalStatus(status)
 		if terminal && consumes {
-			if !recordHasProcessIdentity(record) {
+			if !recordHasProcessIdentity(record) && !(unitAttempt != "" && record["unitExecuted"] == true) {
 				charge = 0
 			} else {
 				var start time.Time

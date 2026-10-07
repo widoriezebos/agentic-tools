@@ -151,10 +151,12 @@ type UnitRunner struct {
 	// ExaminationRoot is the caller's installation; each examination carries its own return path.
 	ExaminationRoot string
 	AfterWrite      func(UnitRunRecord) error
-	// BeforeModelLaunch, when set, is asked before each new build or read
+	// BeforeModelLaunch, when set, is asked before each new build, proof or read
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// CollectLaunch settles the physical execution through its reservation owner.
+	CollectLaunch func(UnitRunRecord, Record, string) error
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
 	PlanProof         func(UnitPlan) ([]ProofCommand, error)
@@ -218,6 +220,11 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		record, err = runner.read(record.ID)
 		if err != nil {
 			return UnitResult{}, err
+		}
+	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return UnitResult{Record: record}, err
 		}
 	}
 	if runner.named != nil {
@@ -639,10 +646,18 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
 	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: runner.Manager.Start,
-		save: func() error { return runner.save(*record) }, unit: true, snapshot: runner.snapshotRepository,
+		save: func() error {
+			if err := runner.collectLaunches(*record, *round); err != nil {
+				return err
+			}
+			return runner.save(*record)
+		}, unit: true, snapshot: runner.snapshotRepository,
 		before: func(spec StartSpec) error {
-			if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
+			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+						return err
+					}
 					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
 				}
 			}
