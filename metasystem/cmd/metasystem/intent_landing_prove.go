@@ -166,6 +166,8 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
 	seams.Trunk = inv.input.switched("trunk")
+	_, personErr := admitted.owners.person(admitted.installation)
+	seams.Person = personErr == nil
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
 	key := proveCommandKey

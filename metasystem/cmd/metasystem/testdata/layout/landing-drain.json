@@ -1,0 +1,33 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing drain",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "admission closed by Wido; queued work finishes before the lane holds",
+  "data": {
+    "by": "Wido",
+    "at": "2026-09-29T18:00:00Z",
+    "reason": "",
+    "source": {
+      "kind": "person"
+    },
+    "state": "draining"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "status"
+    ],
+    "reason": "shows drain progress"
+  }
+}
+
+--

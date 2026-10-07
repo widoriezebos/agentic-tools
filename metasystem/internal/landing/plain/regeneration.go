@@ -70,6 +70,19 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 	if _, paused := lane.ReadPause(home); paused {
 		return errors.New("the landing lane is stopped")
 	}
+	drain, drainErr := ReadDrain(install)
+	if drainErr != nil {
+		return &AdmissionClosed{Unreadable: drainErr}
+	}
+	if drain != nil {
+		entry, ok, err := Latest(install, running.Goal)
+		if err != nil {
+			return err
+		}
+		if !ok || entry.SHA != running.SHA || entry.State != StateWaiting {
+			return &AdmissionClosed{Drain: drain}
+		}
+	}
 	started := func(pid int64) error {
 		running.Pid, running.Process = pid, processRef(pid)
 		err := writeRegeneration(install, running)

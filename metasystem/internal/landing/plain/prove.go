@@ -110,6 +110,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Person is verified by the command owner, never supplied queue metadata.
+	Person bool
 	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.
@@ -281,11 +283,6 @@ func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) 
 	return running, true, seams.alive(running), nil
 }
 
-// Head is the commit and tree of the checkout's HEAD.
-func Head(checkout string) (commit, tree string, err error) {
-	return head(Git, checkout)
-}
-
 func head(git func(string, ...string) (string, error), checkout string) (commit, tree string, err error) {
 	commit, err = git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
@@ -345,6 +342,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			if err := seams.checkBudget(install, checkout, commit); err != nil {
 				return err
 			}
+		}
+		if err := proofAdmission(install, checkout, commit, seams); err != nil {
+			return err
 		}
 		executable, err := seams.Executable()
 		if err != nil {
@@ -501,6 +501,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if attempt != "" && recorded && current.Attempt == attempt {
 			return nil
+		}
+		if err := proofAdmission(install, checkout, running.Commit, seams); err != nil {
+			return err
 		}
 		if running.Attempt == "" {
 			running.Attempt = seams.newID()

@@ -58,7 +58,9 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 // landingAgent starts, finds and reaps the landing agent through the launch
 // manager the work verbs use.
 type landingAgent struct {
-	manager func() *launch.Manager
+	// proofEffects are the lane Git and process boundaries; zero uses the host.
+	proofEffects plain.ProveSeams
+	manager      func() *launch.Manager
 	// settings are the launch settings of the installation at a state root.
 	settings func(stateRoot string) (launch.Settings, error)
 	now      func() time.Time
@@ -223,10 +225,41 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 	if machine == nil {
 		machine = goal.ResolveMachine
 	}
-	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
-		Observe: func(record lane.Record) error { return plain.SyncStopQuestion(record.Install, machine, agent.now()) },
+	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home), AdmitWake: func(root string, wake lane.Wake) (lane.Wake, error) {
+		record, _, err := lane.Read(home)
+		if err != nil {
+			return wake, err
+		}
+		return plain.DrainWake(record.Install, record.Root, wake, agent.proofEffects)
+	},
+		Observe: func(record lane.Record) error {
+			effects := agent.proofEffects
+			effects.Now = agent.now
+			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
+			questionErr := plain.SyncStopQuestion(record.Install, machine, agent.now())
+			if questionErr != nil {
+				questionErr = fmt.Errorf("synchronize the lane's stop question in %s: %w; repair that question source and observe the lane again", plain.Dir(record.Install), questionErr)
+			}
+			if drainErr != nil || questionErr != nil {
+				return &lane.ObservationError{Progress: drainErr, StopQuestion: questionErr}
+			}
+			return nil
+		},
 		Holds: []func(string) (string, error){
-			plain.KeeperProofHold,
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.ProofHold(record.Install, agent.proofEffects)
+			},
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.KeeperDrainHold(record.Install)
+			},
 			func(root string) (string, error) {
 				if mark, standing := outage.StandingAt(batch.ModuleRoot(root), agent.now()); standing {
 					return fmt.Sprintf("the model provider is limited or overloaded (%s since %s); it starts when the provider recovers", mark.LastClass, lane.LocalText(mark.Since)), nil

@@ -53,21 +53,31 @@ func Push(install, checkout string, now time.Time) (PushOutcome, error) {
 
 // PushChecked runs before with fetched main and HEAD after the push's own
 // checks pass. An error from before prevents publication and its push record.
-func PushChecked(install, checkout string, now time.Time, before func(old, head string) error) (PushOutcome, error) {
-	head, tree, err := Head(checkout)
+func PushChecked(install, checkout string, now time.Time, before func(old, head string) error, effects ...ProveSeams) (PushOutcome, error) {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	head, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return PushOutcome{}, err
 	}
 	outcome := PushOutcome{Commit: head, Tree: tree}
-	if err := (ProveSeams{}).fetchMain(checkout); err != nil {
+	if err := seams.fetchMain(checkout); err != nil {
 		return outcome, err
 	}
-	old, err := Git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+	old, err := seams.git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 	if err != nil {
 		return outcome, fmt.Errorf("read origin's main: %w", err)
 	}
 	outcome.Old = old
-	onMain, err := IsAncestor(checkout, head, old)
+	contains := func(ancestor, commit string) (bool, error) {
+		if seams.Git == nil {
+			return IsAncestor(checkout, ancestor, commit)
+		}
+		return checkoutGit(checkout, seams).contains(commit, ancestor)
+	}
+	onMain, err := contains(head, old)
 	if err != nil {
 		return outcome, err
 	}
@@ -78,7 +88,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	if refusal := provenGreen(install, tree); refusal != nil {
 		return outcome, refusal
 	}
-	forward, err := IsAncestor(checkout, old, head)
+	forward, err := contains(old, head)
 	if err != nil {
 		return outcome, err
 	}
@@ -92,7 +102,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			return outcome, err
 		}
 	}
-	if _, err := Git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
+	if _, err := seams.git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
 		return outcome, fmt.Errorf("push %s to main: %w", Short(head), err)
 	}
 	outcome.Changed = true
