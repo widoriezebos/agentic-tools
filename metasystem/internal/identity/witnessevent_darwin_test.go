@@ -144,6 +144,10 @@ type darwinProcessEvent struct {
 }
 
 func armWitnessDeathEvent(t *testing.T, ref Ref) witnessEventSource {
+	return armWitnessDeathEventOwned(t, ref, t.Cleanup)
+}
+
+func armWitnessDeathEventOwned(t *testing.T, ref Ref, register func(func())) witnessEventSource {
 	t.Helper()
 	queue, err := unix.Kqueue()
 	if err != nil {
@@ -165,7 +169,7 @@ func armWitnessDeathEvent(t *testing.T, ref Ref) witnessEventSource {
 		}
 		t.Fatalf("register process exit for pid %d: %v", ref.Pid, err)
 	}
-	t.Cleanup(event.close)
+	register(event.close)
 	return event
 }
 

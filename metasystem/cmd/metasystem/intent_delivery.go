@@ -392,6 +392,10 @@ func runIntentOwnerEnvelope(process intentProcess, verb string) (verbresult.Resu
 }
 
 func productionIntentBranchState(root, goalID string) (intentBranchState, error) {
+	return intentBranchStateWithDeadline(root, goalID, nil)
+}
+
+func intentBranchStateWithDeadline(root, goalID string, deadline func(time.Duration) <-chan time.Time) (intentBranchState, error) {
 	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return intentBranchState{}, err
@@ -412,7 +416,7 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 		// The tips read so far say whether a refused commit is the tip.
 		return intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip}, err
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), deadline)
 	if err != nil {
 		return intentBranchState{}, err
 	}

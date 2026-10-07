@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -419,6 +420,47 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	owners.dependencies.ownerLineage = func() string { return "m1" }
 	owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	// Every projection uses both fixture deadlines, even inside repeated
+	// claim checks. Counts assert selection without relying on Git latency.
+	neverDeadline := func() (func(time.Duration) <-chan time.Time, func()) {
+		var outer, fetch atomic.Int32
+		deadline := func(wait time.Duration) <-chan time.Time {
+			switch wait {
+			case 4 * time.Second:
+				outer.Add(1)
+			case 3 * time.Second:
+				fetch.Add(1)
+			default:
+				t.Errorf("unexpected projection deadline %s", wait)
+			}
+			return make(chan time.Time)
+		}
+		return deadline, func() {
+			if outer.Load() != 1 || fetch.Load() != 1 {
+				t.Fatalf("fixture deadlines selected: projection=%d fetch=%d; want one each", outer.Load(), fetch.Load())
+			}
+		}
+	}
+	branchReads, claimChecks := 0, 0
+	delivery.branchState = func(root, id string) (intentBranchState, error) {
+		branchReads++
+		deadline, assert := neverDeadline()
+		state, err := intentBranchStateWithDeadline(root, id, deadline)
+		assert()
+		return state, err
+	}
+	owners.connection.claimCheck = func(root, id string, endpoint goal.Endpoint) func() error {
+		return func() error {
+			claimChecks++
+			deadline, assert := neverDeadline()
+			check := goalBranchClaimCheckWithDeadline(root, id, endpoint,
+				func(root, _ string) (string, error) { return goal.ResolveMachine(root) }, goalBranchHolderRoot, deadline)
+			err := check()
+			assert()
+			return err
+		}
+	}
+
 	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return laneRoot, true, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Fatalf("the hand-in ran a subprocess %v", process.argv)
@@ -442,11 +484,16 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 		t.Helper()
 		command, _ := findIntentCommand("work " + verb)
 		var stdout, stderr bytes.Buffer
+		beforeChecks := claimChecks
 		code := runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || code != 0 {
 			t.Fatalf("work %s: code=%d error=%v stdout=%q stderr=%q", verb, code, err, stdout.String(), stderr.String())
 		}
+		if verb == "rebase" && claimChecks == beforeChecks {
+			t.Fatalf("work %s did not check its claim", verb)
+		}
+
 		return result
 	}
 	first := run("rebase")
@@ -480,10 +527,14 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
+	if projection.Tip != ledgerTip || branchReads != 1 {
+		t.Fatalf("accepted tip=%s want %s; hand-in branch reads=%d want 1", projection.Tip, ledgerTip, branchReads)
+	}
+
 	lines := 0
 	for _, line := range projection.Tree.Live["standing-validation"].History {
 		if line.Verb == "rebase" {
