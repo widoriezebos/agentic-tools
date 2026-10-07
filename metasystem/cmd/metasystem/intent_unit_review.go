@@ -44,12 +44,16 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			}
 			impact := fmt.Sprintf("Impact: accept %d changed lines against %d declared and resume the pending checks.\nThe larger change still needs checks and review; later automatic limits remain.\nStop this run to undo the continuation; its retained change remains.", round.BuildLines, round.DeclaredLines)
 			person := unitStopActor(actor)
-			resumed, err := runner.AcceptBuildSize(run, person)
+			var impactErr error
+			resumed, err := runner.AcceptBuildSize(run, person, func() error {
+				impactErr = inv.recordUnitStopOverride(current.Goal, "work-review-size", inv.input.text("reason"), impact, person)
+				return impactErr
+			})
+			if impactErr != nil {
+				return intentResult{Outcome: intentFailed, code: 1, Summary: "the size decision impact could not be recorded", Details: []string{impactErr.Error()}, next: inv.sameCommand()}
+			}
 			if err != nil {
 				return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
-			}
-			if err := inv.recordUnitStopOverride(current.Goal, "work-review-size", inv.input.text("reason"), impact, person); err != nil {
-				return intentResult{Outcome: intentFailed, code: 1, Summary: "the size decision impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand()}
 			}
 			resumed, err = runner.Continue(launch.UnitRequest{Resume: run})
 			return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))

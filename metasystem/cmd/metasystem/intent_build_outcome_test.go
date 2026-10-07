@@ -242,22 +242,131 @@ func TestIntentBuildHoldQuestionRecoversAfterWriteFailure(t *testing.T) {
 	}
 }
 
-func TestIntentBuildSizeMovedChangeStaysHeld(t *testing.T) {
+func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 	t.Parallel()
 	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n+one\n+two\n+three\n"
 	b := outcomeBed(t, diff)
+	code, held, _ := outcomeBuild(t, b)
+	if code != 1 || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("size did not hold: %d %+v %v", code, held, b.starter.launched())
+	}
+	run := resultData(t, held)["run"].(string)
+	reader := &launch.UnitRunner{Root: b.unitRoot}
+	before, err := reader.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	register := filepath.Join(before.Rounds[0].Directory, "stop-register.json")
+	beforeRegister, err := os.ReadFile(register)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overrides := filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides")
+	if err := os.MkdirAll(overrides, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(overrides, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(overrides, 0700) })
+	// A privileged process bypasses permissions, so obstruct the directory
+	// itself to exercise the same production write failure on those hosts.
+	if os.Geteuid() == 0 {
+		if err := os.Remove(overrides); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(overrides, []byte("not a directory\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stderr bytes.Buffer
+	code, refused := outcomeReview(t, b, true, &stderr)
+	after, err := reader.Status(run)
+	afterRegister, registerErr := os.ReadFile(register)
+	if code != 1 || err != nil || registerErr != nil || after.State != "awaiting-judgement" || after.Rounds[0].Outcome != "build-size" || after.Rounds[0].SizeAcceptedBy != "" || after.Rounds[0].Stop == nil || !bytes.Equal(beforeRegister, afterRegister) || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("failed impact changed the hold: %d %+v %+v %s %v %v", code, refused, after, afterRegister, err, registerErr)
+	}
+	code, waited, _ := b.work("work", "wait", b.id, "--work", "outcome")
+	if code != 1 || resultData(t, waited)["outcome"] != "build-size" || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("wait bypassed the failed impact: %d %+v %v", code, waited, b.starter.launched())
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Remove(overrides); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(overrides, 0700); err != nil {
+			t.Fatal(err)
+		}
+	} else if err := os.Chmod(overrides, 0700); err != nil {
+		t.Fatal(err)
+	}
+	b.manager.Supervisor = outcomeStarter{bed: b, proof: func() {
+		impacts, err := filepath.Glob(filepath.Join(overrides, "*.json"))
+		if err != nil || len(impacts) != 1 {
+			t.Errorf("proof needs exactly one impact: %v %v", impacts, err)
+		}
+	}}
+	code, accepted := outcomeReview(t, b, true, &stderr)
+	impacts, globErr := filepath.Glob(filepath.Join(overrides, "*.json"))
+	after, err = reader.Status(run)
+	if code != 0 || err != nil || globErr != nil || len(impacts) != 1 || after.Rounds[0].SizeAcceptedBy != "Wido" || after.Rounds[0].Outcome != "green" || len(after.Rounds) != 1 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("same act did not resume once: %d %+v %+v %v %v %v", code, accepted, after, impacts, err, globErr)
+	}
+}
+
+func TestIntentBuildSizeAcceptanceIgnoresReadRecordsGitAdapter(t *testing.T) {
+	t.Parallel()
+	b := realOutcomeBed(t)
+	for _, path := range []string{"records/reads/g/old.json", "metasystem/records/reads/g/old.json", "other.go"} {
+		full := filepath.Join(b.worktree, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("preexisting\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.manager.Supervisor = outcomeStarter{bed: b, build: func() {
+		if err := os.WriteFile(filepath.Join(b.worktree, "unit.go"), []byte("one\ntwo\nthree\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	code, held, _ := outcomeBuild(t, b)
+	if code != 1 || resultData(t, held)["outcome"] != "build-size" || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("size did not hold: %d %+v %v", code, held, b.starter.launched())
+	}
+	for _, path := range []string{"records/reads/g/old.json", "metasystem/records/reads/g/old.json", "metasystem/records/reads/g/other.json"} {
+		if err := os.WriteFile(filepath.Join(b.worktree, path), []byte("another unit's read\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stderr bytes.Buffer
+	code, accepted := outcomeReview(t, b, true, &stderr)
+	if code != 0 || resultData(t, accepted)["outcome"] != "green" || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("read records prevented acceptance: %d %+v %v", code, accepted, b.starter.launched())
+	}
+	run := resultData(t, held)["run"].(string)
+	after, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if err != nil || after.Rounds[0].BuildLines != 4 || after.Rounds[0].SizeAcceptedBy != "Wido" || after.Rounds[0].Stop != nil {
+		t.Fatalf("acceptance lost the builder's scope: %+v %v", after, err)
+	}
+}
+
+func TestIntentBuildSizeMovedChangeStaysHeldGitAdapter(t *testing.T) {
+	t.Parallel()
+	b := realOutcomeBed(t)
+	b.manager.Supervisor = outcomeStarter{bed: b, build: func() {
+		if err := os.WriteFile(filepath.Join(b.worktree, "unit.go"), []byte("one\ntwo\nthree\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}}
 	code, result, _ := outcomeBuild(t, b)
 	if code != 1 {
 		t.Fatalf("size did not hold: %d %+v", code, result)
 	}
 	questions, _ := channel.WalkOpenQuestions(b.root())
-	b.workOwnersHook = func(o *intentWorkOwners) {
-		units := o.units
-		o.units = func(layout stateroot.Layout) *launch.UnitRunner {
-			runner := units(layout)
-			runner.Git = outcomeGit{workGit{b}, diff + "+moved\n"}
-			return runner
-		}
+	if err := os.WriteFile(filepath.Join(b.worktree, "unit.go"), []byte("one\ntwo\nthree\nmoved\n"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
 	code, result = outcomeReview(t, b, true, &stderr)
@@ -272,6 +381,13 @@ func TestIntentBuildSizeMovedChangeStaysHeld(t *testing.T) {
 	code, result, _ = b.work("work", "wait", b.id, "--work", "outcome")
 	if code != 1 || result.Next == nil || !slices.Contains(result.Next.Argv, "--reason") || len(b.starter.launched()) != 1 {
 		t.Fatalf("failed acceptance undid the hold: %d %+v", code, result)
+	}
+	if err := os.WriteFile(filepath.Join(b.worktree, "unit.go"), []byte("one\ntwo\nthree\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, result = outcomeReview(t, b, true, &stderr)
+	if code != 0 || resultData(t, result)["outcome"] != "green" || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("restoring the builder's change did not admit acceptance: %d %+v %v", code, result, b.starter.launched())
 	}
 }
 

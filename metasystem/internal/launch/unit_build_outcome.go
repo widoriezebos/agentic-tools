@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
@@ -82,8 +84,9 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	return true, nil
 }
 
-// AcceptBuildSize admits the retained round before its caller records impact and continues checks.
-func (runner *UnitRunner) AcceptBuildSize(id, person string) (UnitResult, error) {
+// AcceptBuildSize validates the retained builder change and records the
+// person's impact under the run lock before clearing its hold.
+func (runner *UnitRunner) AcceptBuildSize(id, person string, recordImpact func() error) (UnitResult, error) {
 	held, err := runner.lock(id)
 	if err != nil {
 		return UnitResult{}, err
@@ -93,7 +96,7 @@ func (runner *UnitRunner) AcceptBuildSize(id, person string) (UnitResult, error)
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if person == "" || len(record.Rounds) == 0 {
+	if person == "" || recordImpact == nil || len(record.Rounds) == 0 {
 		return UnitResult{Record: record}, fmt.Errorf("accepting the builder's size needs a proven person")
 	}
 	round := &record.Rounds[len(record.Rounds)-1]
@@ -104,13 +107,29 @@ func (runner *UnitRunner) AcceptBuildSize(id, person string) (UnitResult, error)
 	if err != nil {
 		return UnitResult{Record: record}, err
 	}
-	current, err := runner.WorktreeDiff(plan.Worktree, plan.Base)
+	before := UnitRound{Directory: filepath.Join(round.Directory, "build-before")}
+	scope := UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}
+	frozen, err := runner.diffSince(scope, before, *round, "records", "metasystem/records")
 	if err != nil {
 		return UnitResult{Record: record}, err
 	}
-	frozen, err := os.ReadFile(filepath.Join(round.Directory, "worktree.diff"))
-	if err != nil || string(current) != string(frozen) {
+	directory, done, err := diskstore.ScratchDir("metasystem-unit-size.")
+	if err != nil {
+		return UnitResult{Record: record}, err
+	}
+	defer done()
+	if err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(directory, "worktree.diff")); err != nil {
+		return UnitResult{Record: record}, err
+	}
+	current, err := runner.diffSince(scope, before, UnitRound{Number: round.Number, Directory: directory}, "records", "metasystem/records")
+	if err != nil {
+		return UnitResult{Record: record}, err
+	}
+	if !bytes.Equal(current, frozen) {
 		return UnitResult{Record: record}, fmt.Errorf("the builder's retained change moved; restore that change before accepting its size")
+	}
+	if err := recordImpact(); err != nil {
+		return UnitResult{Record: record}, err
 	}
 	entry, _ := json.Marshal(map[string]any{"kind": "stop", "status": "cleared", "stop": round.Stop})
 	if _, err := atomicfile.WriteFile(filepath.Join(round.Directory, "stop-register.json"), entry, 0600, runner.root()); err != nil {
