@@ -1261,9 +1261,10 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "UNIT_STOPPED"):
-			if len(record.Rounds) > 0 && record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" {
+			if len(record.Rounds) > 0 && (record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" || record.Rounds[len(record.Rounds)-1].Stop != nil && record.Rounds[len(record.Rounds)-1].Stop.Loop == "unit-build") {
+				next, _ := inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
 				return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
-					Data: unitData(record, runner.Manager), next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+					Data: unitData(record, runner.Manager), next: next}
 			}
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
 				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "review"), nextReason: "applies the unit's recorded review decision"}
@@ -1309,9 +1310,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	line := unitJudgementLine(record, runner.Manager)
-	if round.Outcome == "build-size" || round.Outcome == "build-gap" {
+	if round.Outcome == "build-size" || round.Outcome == "build-gap" || round.Stop != nil && round.Stop.Loop == "unit-build" {
 		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
-		if round.Outcome == "build-gap" {
+		if round.Outcome != "build-size" {
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
 		}
 		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: round.Stop.Handoff + ": " + round.Stop.Class, next: next}

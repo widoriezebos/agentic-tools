@@ -84,11 +84,19 @@ func unitStopActor(actor []string) string {
 func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 	root := inv.layout.InstallationRoot.Path()
 	for index, round := range record.Rounds {
+		for _, step := range round.Steps {
+			if step.RetryLaunch != "" {
+				if err := channel.RecordUnitStopAct(root, channel.UnitStopAct{ID: step.RetryLaunch + ":retry", Goal: record.Goal, Loop: "unit-build", Subject: record.Goal + "/" + record.Unit + "/" + record.ID, Attempt: round.Number, Findings: []string{step.RetryLaunch}, Kind: "work-review-retry", Reason: step.RetryReason, At: inv.unitStopNow()}); err != nil {
+					return err
+				}
+			}
+		}
 		kind := round.Outcome
 		if round.SizeAcceptedBy != "" {
 			kind = "build-size"
 		}
-		if kind != "build-gap" && kind != "build-size" {
+		failure := round.Stop != nil && round.Stop.Loop == "unit-build" && kind != "build-gap" && kind != "build-size"
+		if kind != "build-gap" && kind != "build-size" && !failure {
 			continue
 		}
 		subject := record.Goal + "/" + record.Unit + "/" + record.ID
@@ -97,6 +105,21 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		if kind == "build-gap" {
 			act = "work-revise"
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+		}
+		if failure {
+			act = "work-revise"
+			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+			if round.Cause == "environment" || round.Cause == "deadline" {
+				act = "work-review-retry"
+			}
+			if act == "work-review-retry" {
+				for _, step := range round.Steps {
+					if step.State == launch.StepFailed {
+						kind = step.LaunchID
+						break
+					}
+				}
+			}
 		}
 		supersededSize := kind == "build-size" && round.SizeAcceptedBy == "" && index+1 < len(record.Rounds)
 		if supersededSize {

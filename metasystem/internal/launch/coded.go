@@ -48,7 +48,7 @@ func (runner *UnitRunner) countedCap(record UnitRunRecord) error {
 	}
 	var newest UnitRound
 	for _, round := range record.Rounds {
-		if round.Cause == "" {
+		if round.Cause == "own" {
 			newest = round
 		}
 	}

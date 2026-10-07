@@ -56,7 +56,7 @@ type UnitRunRecord struct {
 	BuildModel  string `json:"buildModel,omitempty"`
 	BuildEffort string `json:"buildEffort,omitempty"`
 	MaxRounds   int    `json:"maxRounds,omitempty"`
-	// CountedCap limits rounds without an environment cause; zero imposes no cap.
+	// CountedCap limits demonstrated own defects; zero imposes no cap.
 	CountedCap int `json:"countedCap,omitempty"`
 	// Subjects binds completed rounds to their committed goal-branch
 	// subjects; ReviewSubject is its only writer.
@@ -107,6 +107,15 @@ type UnitStep struct {
 	Rerun         bool          `json:"rerun,omitempty"`
 	Verdict       string        `json:"verdict,omitempty"`
 	VerdictCounts *bool         `json:"verdictCounts,omitempty"`
+
+	Moved       []string            `json:"moved,omitempty"`
+	RetryBy     string              `json:"retryBy,omitempty"`
+	RetryReason string              `json:"retryReason,omitempty"`
+	RetryLaunch string              `json:"retryLaunch,omitempty"`
+	Deadline    bool                `json:"deadline,omitempty"`
+	LaunchIDs   []string            `json:"launchIds,omitempty"`
+	Retained    *StartSpec          `json:"retained,omitempty"`
+	Before      *repositorySnapshot `json:"before,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -481,7 +490,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return UnitResult{}, err
 	}
 	commands := proofCommands(plan)
-	before, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	_, err = runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -500,12 +509,24 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
 		red = red || round.Steps[index].State != StepPassed
+		if red {
+			if err := runner.skipAfter(record, round, index+1, "proof-red"); err != nil {
+				return UnitResult{}, err
+			}
+			break
+		}
 	}
-	after, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	_, err = runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
 	if err != nil {
 		return UnitResult{}, err
 	}
-	moved := before.changed(after)
+	var moved []string
+	for _, step := range round.Steps[buildCount:] {
+		moved = append(moved, step.Moved...)
+	}
+	if len(moved) > 0 {
+		round.Cause = "environment"
+	}
 	diffPath := filepath.Join(round.Directory, "worktree.diff")
 	if _, err := os.Stat(diffPath); os.IsNotExist(err) {
 		if err := runner.writeDiff(plan.Worktree, plan.Base, diffPath); err != nil {
@@ -611,7 +632,7 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
 	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: runner.Manager.Start,
-		save: func() error { return runner.save(*record) },
+		save: func() error { return runner.save(*record) }, unit: true, snapshot: runner.snapshotRepository,
 		before: func(spec StartSpec) error {
 			if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
@@ -743,11 +764,18 @@ func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, fro
 
 func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcome string) (UnitResult, error) {
 	round.Outcome, record.State = outcome, "awaiting-judgement"
-	round.Cause = roundCause(round.Steps)
+	if round.Cause == "" {
+		round.Cause = roundCause(round.Steps)
+	}
 	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
 		round.Material = -1
 	} else {
 		if err := runner.collectRoundRead(record, round); err != nil {
+			return UnitResult{}, err
+		}
+	}
+	if round.Cause != "" && round.Stop == nil {
+		if err := runner.holdFailedStep(record, round); err != nil {
 			return UnitResult{}, err
 		}
 	}
@@ -758,18 +786,17 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 	return UnitResult{Record: *record, Round: round.Number}, nil
 }
 
-// A red proof or a counting read judges the code, even if a launch was lost.
+// Attribution supplies own only when evidence demonstrates a defect.
 func roundCause(steps []UnitStep) string {
-	cause := ""
 	for _, step := range steps {
-		if strings.HasPrefix(step.Name, "proof:") && step.State == StepFailed || strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
-			return ""
-		}
-		if cause == "" {
-			cause = step.Cause
+		if step.State == StepFailed {
+			if (loopstop.Cause{Kind: step.Cause}).Valid() {
+				return step.Cause
+			}
+			return "unclassified"
 		}
 	}
-	return cause
+	return ""
 }
 
 // publishJudgement puts the finished round on the board as judgement: the
@@ -811,7 +838,7 @@ func judgementRound(record UnitRunRecord, number int) *board.Round {
 
 func countedRounds(record UnitRunRecord) (counted, machinery int) {
 	for _, round := range record.Rounds {
-		if round.Cause == "" {
+		if round.Cause == "own" {
 			counted++
 		} else {
 			machinery++

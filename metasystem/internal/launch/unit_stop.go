@@ -195,6 +195,9 @@ func (runner *UnitRunner) decideRound(record *UnitRunRecord, round *UnitRound, u
 		s.Handoff = "stopped " + unknown
 		round.Cause = "environment"
 	}
+	if !readUnknown && combined.Material > 0 {
+		round.Cause = "own"
+	}
 	round.Material = combined.Material
 	if readUnknown {
 		round.Material = -1
@@ -222,7 +225,7 @@ func (runner *UnitRunner) saveDecision(record *UnitRunRecord, round *UnitRound) 
 	}
 	if round.Number > 1 || round.Stop != nil && (round.Stop.Decision == "close" || round.Transferred) {
 		for _, previous := range record.Rounds {
-			if (round.Stop == nil || round.Stop.Decision != "close" && !round.Transferred) && (previous.Outcome != "build-gap" && previous.Outcome != "build-size" || previous.Number >= round.Number) {
+			if (round.Stop == nil || round.Stop.Decision != "close" && !round.Transferred) && (previous.Stop != nil && previous.Stop.Loop != "unit-build" || previous.Number >= round.Number) {
 				continue
 			}
 			if previous.Stop == nil {

@@ -474,8 +474,11 @@ func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 	for _, input := range launched.Inputs {
 		inputs = append(inputs, input.Path)
 	}
-	if !slices.ContainsFunc(inputs, func(path string) bool { return filepath.Clean(path) == filepath.Clean(frozen) }) {
-		t.Fatalf("attempt 3's build inputs %v lack the frozen findings and decisions %s", inputs, frozen)
+	if !slices.ContainsFunc(inputs, func(path string) bool {
+		got, err := os.ReadFile(path)
+		return err == nil && string(got) == string(decisions)
+	}) {
+		t.Fatalf("attempt 3's build inputs %v lack the retained findings and decisions %s", inputs, frozen)
 	}
 }
 

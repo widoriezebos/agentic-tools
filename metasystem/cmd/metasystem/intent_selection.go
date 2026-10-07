@@ -367,6 +367,12 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	}
 
 	switch {
+	case work.Record != nil && len(work.Record.Rounds) > 0 && work.Record.Rounds[len(work.Record.Rounds)-1].Stop != nil && work.Record.Rounds[len(work.Record.Rounds)-1].Stop.Loop == "unit-build" && lastOutcome(work) != "build-size" && lastOutcome(work) != "build-gap":
+		round := work.Record.Rounds[len(work.Record.Rounds)-1]
+		if round.Cause == "environment" || round.Cause == "deadline" {
+			return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person reruns the retained failed step after repairing its environment"
+		}
+		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides how to continue the failed step"
 	case lastOutcome(work) == "build-gap" && gapPerson:
 		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to admit another gap correction"
 	case lastOutcome(work) == "build-size":
@@ -673,7 +679,8 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
 	}
-	if !builtWork(*selected) && lastOutcome(*selected) != "build-size" && lastOutcome(*selected) != "build-gap" {
+	heldBuild := selected.Record != nil && len(selected.Record.Rounds) > 0 && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop != nil && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop.Loop == "unit-build"
+	if !builtWork(*selected) && lastOutcome(*selected) != "build-size" && lastOutcome(*selected) != "build-gap" && !heldBuild {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s did not pass its checks (%s), so there is nothing to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
 			next:    inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})

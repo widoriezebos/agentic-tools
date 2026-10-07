@@ -172,7 +172,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
 		}
 		if request.Person == "" {
-			if request.Rebase == nil {
+			if request.Rebase == nil || record.Rounds[after-1].Stop != nil && record.Rounds[after-1].Stop.Loop == "unit-build" {
 				if err := runner.allowCorrection(record); err != nil {
 					return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
 				}

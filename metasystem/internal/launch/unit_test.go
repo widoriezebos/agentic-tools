@@ -24,16 +24,35 @@ import (
 )
 
 type stubGit struct {
-	once      sync.Once
-	stub      *testgit.Stub
-	makeStub  func() *testgit.Stub
-	normalize func([]string) []string
+	once         sync.Once
+	stub         *testgit.Stub
+	makeStub     func() *testgit.Stub
+	normalize    func([]string) []string
+	snapshot     []testgit.Expectation
+	snapshotStub *testgit.Stub
+	snapshotNext int
+	reporter     testgit.Reporter
 }
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
 	git.once.Do(func() { git.stub = git.makeStub() })
 	if git.normalize != nil {
 		args = git.normalize(args)
+	}
+	if len(git.snapshot) > 0 && (git.snapshotNext > 0 || slices.Equal(args, []string{"rev-parse", "--show-toplevel"})) {
+		if git.snapshotNext == 0 {
+			expected := slices.Clone(git.snapshot)
+			check := isolatedGitEnvironment(expected[0].Call.Dir, strings.TrimSpace(string(expected[4].Result.Stdout)), true)
+			for i := range expected {
+				if expected[i].Check != nil {
+					expected[i].Check = check
+				}
+			}
+			git.snapshotStub = testgit.New(git.reporter, expected...)
+		}
+		result := git.snapshotStub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
+		git.snapshotNext = (git.snapshotNext + 1) % len(git.snapshot)
+		return result.Stdout, result.Err
 	}
 	result := git.stub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
 	return result.Stdout, result.Err
@@ -245,6 +264,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	events = expanded
 	var expected []testgit.Expectation
+	var snapshot []testgit.Expectation
 	add := func(dir string, output string, check func(testgit.Call) error, args ...string) {
 		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: dir, Args: args}, Result: testgit.Result{Stdout: []byte(output)}, Check: check})
 	}
@@ -288,7 +308,8 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			}
 			add(fixture.worktree, diff, foldCheck, "diff", "--cached", "--binary", "previous-tree", "--", ".", ":(exclude,literal)records", ":(exclude,literal)metasystem/records")
 
-			for range 2 {
+			{
+				snapshotStart := len(expected)
 				check := isolatedGitEnvironment(fixture.worktree, objects, true)
 				add(fixture.worktree, fixture.worktree+"\n", nil, "rev-parse", "--show-toplevel")
 				add(fixture.worktree, "head\n", nil, "rev-parse", "HEAD")
@@ -301,6 +322,8 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				add(fixture.worktree, "", check, "ls-files", "--resolve-undo", "-z", "--full-name", "--", ".")
 				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
+				snapshot = append([]testgit.Expectation(nil), expected[snapshotStart:]...)
+				expected = expected[:snapshotStart]
 			}
 		case "warm":
 			verify := isolatedGitEnvironment(fixture.worktree, objects, false)
@@ -327,7 +350,9 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			t.Fatalf("unknown Git fixture event %q", event)
 		}
 	}
-	fixture.git = &stubGit{makeStub: func() *testgit.Stub {
+	// Each physical proof/read execution takes fresh snapshots, including a
+	// retained step retry. Every snapshot must complete this strict Git sequence.
+	fixture.git = &stubGit{snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
 		if defaultEvents && fixture.starter.failKind == "build" {
 			return testgit.New(t, expected[:5]...)
 		}
@@ -595,11 +620,13 @@ func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
 		name, fail, hold, output, cause, stepCause string
 		counts                                     bool
 	}{
-		{"lost-build", "build", "build", "", "process-lost", "process-lost", false},
-		{"red-proof", "proof", "proof", "", "", "process-lost", false},
-		{"no-findings", "read", "", "", "environment", "read-no-findings", false},
-		{"findings", "read", "", "report", "environment", "", false},
-		{"counted-read", "read", "", "", "environment", "read-no-findings", true},
+		// Decision 3 assigns lost processes to environment and unattributed exits
+		// to unclassified; every failed step uses that shared cause vocabulary.
+		{"lost-build", "build", "build", "", "environment", "environment", false},
+		{"red-proof", "proof", "proof", "", "environment", "environment", false},
+		{"no-findings", "read", "", "", "environment", "unclassified", false},
+		{"findings", "read", "", "report", "environment", "unclassified", false},
+		{"counted-read", "read", "", "", "environment", "unclassified", true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -886,7 +913,17 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 	for _, input := range launched.Inputs {
 		paths = append(paths, input.Path)
 	}
-	if !slices.Contains(paths, output) || !slices.Contains(paths, second.Record.Rounds[1].FollowUp) || stepNamed(t, second.Record.Rounds[0], "read").LaunchID == read.LaunchID {
+	hasRetained := func(source string) bool {
+		want, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(paths, func(path string) bool {
+			got, err := os.ReadFile(path)
+			return err == nil && string(got) == string(want)
+		})
+	}
+	if !hasRetained(output) || !hasRetained(second.Record.Rounds[1].FollowUp) || stepNamed(t, second.Record.Rounds[0], "read").LaunchID == read.LaunchID {
 		t.Fatalf("inputs=%v", paths)
 	}
 }
@@ -926,7 +963,7 @@ func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
 	}
 }
 
-func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
+func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
 		name, moved string
@@ -994,7 +1031,7 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 			t.Parallel()
 			fixture, repo := newGitUnitFixture(t)
 			fixture.starter.onStart = func(record Record) error {
-				if record.Kind == "proof" && row.effect != nil {
+				if record.Kind == "proof" && row.effect != nil && !strings.Contains(record.ID, "-retry") {
 					row.effect(t, repo)
 				}
 				return nil
@@ -1009,13 +1046,10 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 				}
 				return
 			}
-			if result.Record.Rounds[0].Outcome != "proof-wrote" || result.Record.State != "awaiting-judgement" {
-				t.Fatalf("record=%+v", result.Record)
-			}
-			for _, step := range result.Record.Rounds[0].Steps {
-				if strings.HasPrefix(step.Name, "read") && (step.State != StepSkipped || !strings.HasPrefix(step.Reason, "proof-wrote:") || !strings.Contains(step.Reason, row.moved)) {
-					t.Fatalf("read step=%+v", step)
-				}
+			round := result.Record.Rounds[0]
+			proof := stepNamed(t, round, "proof:check")
+			if round.Outcome != "green" || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepPassed {
+				t.Fatalf("tree movement did not retry only proof before reading: %+v", round)
 			}
 		})
 	}
@@ -1094,7 +1128,7 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 			runGit(t, repo, "commit", "-m", "add nested worktree")
 			setUnitPlanWorktree(t, &fixture, nested)
 			fixture.starter.onStart = func(record Record) error {
-				if record.Kind == "proof" {
+				if record.Kind == "proof" && !strings.Contains(record.ID, "-retry") {
 					row.effect(t, repo, nested)
 				}
 				return nil
@@ -1103,10 +1137,10 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row.moved && result.Record.Rounds[0].Outcome != "proof-wrote" {
+			if row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 2) {
 				t.Fatalf("repository-wide index mutation was not detected: %+v", result.Record)
 			}
-			if !row.moved && result.Record.Rounds[0].Outcome != "green" {
+			if !row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 1) {
 				t.Fatalf("harmless cache refresh stopped the read: %+v", result.Record)
 			}
 		})
@@ -1442,7 +1476,7 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 			fixture := newUnitFixture(t, "", []string{}...)
 			yes := true
 			record := UnitRunRecord{ID: "R", Unit: "U", Goal: "G", CountedCap: 2,
-				Rounds: []UnitRound{{Number: 1}, {Number: 2, Steps: []UnitStep{{Name: "read", Verdict: test.verdict, VerdictCounts: &yes}}}, {Number: 3, Cause: "provider-limit"}}}
+				Rounds: []UnitRound{{Number: 1, Cause: "own"}, {Number: 2, Cause: "own", Steps: []UnitStep{{Name: "read", Verdict: test.verdict, VerdictCounts: &yes}}}, {Number: 3, Cause: "provider-limit"}}}
 			read, err := readsubject.Collect("launch", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(2, "regression", "code.go")), test.verdict)
 			if strings.EqualFold(test.verdict, "land") {
 				read, err = readsubject.Collect("launch", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(0, "regression", "code.go")), test.verdict)
