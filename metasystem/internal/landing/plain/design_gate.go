@@ -30,7 +30,7 @@ func DesignChecks(install string) ([]DesignCheck, error) {
 
 // ReturnDesignRefused returns only the hand-in whose design was checked.
 // The queue lock keeps a newer hand-in from inheriting an older design refusal.
-func ReturnDesignRefused(install string, check DesignCheck, now time.Time) (entry Entry, changed bool, err error) {
+func ReturnDesignRefused(install string, check DesignCheck, now time.Time, effects ...ProveSeams) (entry Entry, changed bool, err error) {
 	err = withLock(install, func() error {
 		latest, ok, readErr := Latest(install, check.Goal)
 		if readErr != nil {
@@ -40,7 +40,7 @@ func ReturnDesignRefused(install string, check DesignCheck, now time.Time) (entr
 			return fmt.Errorf("%w: the checked commit of %s is no longer its newest hand-in", ErrNotWaiting, check.Goal)
 		}
 		entry, changed, readErr = returnLocked(install, check.Goal, check.Reason,
-			&Cause{Kind: "own", Goal: check.Goal, SHA: check.Commit, Evidence: check.Reason}, nil, now)
+			&Cause{Kind: "own", Goal: check.Goal, SHA: check.Commit, Evidence: check.Reason}, nil, now, effects...)
 		return readErr
 	})
 	return

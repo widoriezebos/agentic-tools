@@ -240,7 +240,7 @@ func TestReturnedGoalHandedInAgainKeepsItsSentence(t *testing.T) {
 	dir, _ := commandFakeBed(t)
 	appendChannelConf(t, bed.installation, dir)
 	bed.seatSaying(t, "goal-a", sentenceA)
-	if _, _, err := plain.Return(bed.installation, "goal-a", "red", time.Now()); err != nil {
+	if _, _, err := plain.ReturnProven(bed.installation, "goal-a", "unclassified", "red", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	seat := filepath.Join(filepath.Dir(bed.checkout), "seat-goal-a")

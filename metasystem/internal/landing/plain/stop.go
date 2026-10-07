@@ -52,19 +52,23 @@ func (s Stop) Command() string {
 		}
 		return proofCommand(s.Loop == "lane-gate", s.Trunk)
 	}
-	if s.Loop == "lane-return" {
+	if s.Loop == "lane-return" && s.Subject == "lane" {
 		return "metasystem landing run"
 	}
 	goal := "GOAL"
 	if s.Cause != nil && s.Cause.Goal != "" {
 		goal = s.Cause.Goal
 	}
-	return "metasystem landing return " + goal + " --cause own --reason TEXT"
+	kind := "unclassified"
+	if s.Cause != nil && s.Cause.Valid() {
+		kind = s.Cause.Kind
+	}
+	return "metasystem landing return " + goal + " --cause " + kind + " --reason TEXT"
 }
 
 func (s Stop) Words() string {
 	why := s.Class
-	if s.Loop == "lane-return" {
+	if s.Loop == "lane-return" && s.Subject == "lane" {
 		why = fmt.Sprintf("%d launches left the lane unchanged", s.Attempt)
 	} else if s.Cause != nil && s.Cause.Kind == "environment" {
 		why = "the check could not complete twice"
@@ -172,9 +176,40 @@ func closeSubjectStopsLocked(install, loop, subject, act string, now time.Time) 
 	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool { return s.Loop == loop && s.Subject == subject })
 }
 
-func closeGoalStopsLocked(install, goal, act string, now time.Time) error {
+func closeGoalStopsLocked(install, goal, act string, now time.Time, sha ...string) error {
+	var proofs []Result
+	if len(sha) > 0 {
+		for _, path := range []string{resultsPath(install), gatesPath(install)} {
+			results, err := readLines[Result](path)
+			if err != nil {
+				return err
+			}
+			proofs = append(proofs, results...)
+		}
+	}
 	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool {
-		return !(s.Loop == "lane-return" && s.Subject == "lane") && slices.Contains(strings.Split(s.Subject, ", "), goal)
+		if s.Loop == "lane-return" {
+			return s.Subject == goal && (len(sha) == 0 || s.Tree == "" || s.Tree == sha[0])
+		}
+		if s.Loop != "lane-proof" && s.Loop != "lane-gate" || s.Trunk || !slices.Contains(strings.Split(s.Subject, ", "), goal) {
+			return false
+		}
+		command := strings.Fields(s.Command())
+		if len(command) < 4 || strings.Join(command[:3], " ") != "metasystem landing return" || command[3] != goal && command[3] != "GOAL" {
+			return false
+		}
+		if len(sha) == 0 {
+			return true
+		}
+		// A proof tree identifies the batch, while its goal/commit pairs
+		// identify the waiting hand-in that the return completes.
+		for _, proof := range proofs {
+			if proof.Tree == s.Tree && (s.ProofAttempt == "" || proof.Attempt == s.ProofAttempt) && slices.Contains(proof.Goals, GoalSHA{Goal: goal, SHA: sha[0]}) {
+				return true
+			}
+		}
+		// Regeneration and legacy stops may carry only the goal's commit.
+		return s.Tree == "" && (s.Cause == nil || s.Cause.SHA == "" || s.Cause.SHA == sha[0])
 	})
 }
 
@@ -203,11 +238,11 @@ func CloseIncidentStop(install, incident string, now time.Time) error {
 
 // recordProofStop runs under the lane lock after attribution and before a repeat.
 func recordProofStop(install string, result Result) error {
-	if result.Result != Red || result.Cause == nil || result.Trunk && result.Cause.Kind != "environment" {
+	if result.ClassificationPending || result.Result != Red || result.Cause == nil || result.Trunk && result.Cause.Kind != "environment" {
 		return nil
 	}
 	s := Stop{ProofAttempt: result.Attempt, Loop: "lane-proof", Tree: result.Tree, BatchID: result.BatchID, Scope: result.Scope, Trunk: result.Trunk, Budget: 2, Cause: result.Cause, Class: strings.Join(result.Cause.Tests, ", "), Evidence: result.Cause.Evidence, At: result.At}
-	if !result.CountedFull && len(result.Goals) == 1 && result.Cause.Kind == "unclassified" {
+	if len(result.Goals) == 1 && result.Cause.Kind == "unclassified" {
 		cause := *result.Cause
 		cause.Goal = result.Goals[0].Goal
 		s.Cause = &cause

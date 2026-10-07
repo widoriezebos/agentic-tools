@@ -131,7 +131,7 @@ func TestRepeatNoTestsRan(t *testing.T) {
 	if err != nil || green.Result != Green || len(b.records) != 0 {
 		t.Fatalf("whole repeat: %+v %v records %+v", green, err, b.records)
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("allowance was not consumed: %+v", lines)
 	}
 }
@@ -253,13 +253,13 @@ func TestRepeatDetachedOwnAttemptKeepsAllowance(t *testing.T) {
 	if err != nil || string(trace) != "check\n" {
 		t.Fatalf("detached check did not run once: %q %v", trace, err)
 	}
-	if lines := b.lines(); len(lines) != 1 || !reflect.DeepEqual(lines[0], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the proving command exited 2" {
+	if lines := b.lines(); len(lines) != 2 || !lines[0].ClassificationPending || !reflect.DeepEqual(lines[1], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the proving command exited 2" {
 		t.Fatalf("own attempt consumed its allowance: %+v", lines)
 	}
 	if green := b.run("exit 0"); green.Result != Green || len(b.records) != 0 {
 		t.Fatalf("whole repeat: %+v records %+v", green, b.records)
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("whole repeat did not consume the allowance: %+v", lines)
 	}
 }
@@ -394,7 +394,7 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 			t.Fatalf("reason: %s", green.Reason)
 		}
 	}
-	if lines := b.lines(); len(lines) != 2 || lines[0].Result != Red || lines[0].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 3 || !lines[0].ClassificationPending || lines[0].Result != Red || lines[1].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
 	}
 }
@@ -424,7 +424,7 @@ func TestRepeatNewTestAllowsOneWholeCheck(t *testing.T) {
 			t.Fatalf("whole sighting: %+v reason %s", r, green.Reason)
 		}
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
 	}
 }
@@ -561,7 +561,12 @@ func TestRepeatRedCannotBorrowInheritedGreenPermission(t *testing.T) {
 				}
 				return git(dir, args...)
 			}
-			b.seams.Policy = func(string) (PolicyValue, error) { return PolicyValue{Value: "person"}, nil }
+			b.seams.Policy = func(key string) (PolicyValue, error) {
+				if key == "landing.proof" {
+					return PolicyValue{Value: "person"}, nil
+				}
+				return PolicyValue{Value: "auto"}, nil
+			}
 			b.seams.Command = func(*exec.Cmd) error { t.Error("a red tree borrowed permission from an older green"); return nil }
 			b.seams.Launch = func([]string, string, string) (int64, error) {
 				t.Error("a red tree launched without fresh full-check permission")

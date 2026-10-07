@@ -194,6 +194,14 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	status.Stop, err = NewestStop(install)
 	unread("the stop record", err)
+	openStops, readErr := OpenStops(install)
+	unread("the pending red actions", readErr)
+	for _, stop := range openStops {
+		if (stop.Loop != "lane-classify" && !(stop.Loop == "lane-return" && stop.Subject != "lane")) || status.Stop != nil && stopKey(stop) == stopKey(*status.Stop) {
+			continue
+		}
+		status.PendingActions = append(status.PendingActions, PolicyRequest{Required: stop.Required, Evidence: stop.Evidence, Subject: PolicySubject{Lane: record, Policy: "landing.on-red", Act: stop.Loop, BatchID: stop.BatchID, ProofAttempt: stop.ProofAttempt, Tree: stop.Tree, Members: []GoalSHA{{Goal: stop.Subject, SHA: stop.Tree}}}})
+	}
 	if status.Stop != nil && status.Stop.Loop == "lane-return" && status.Stop.Subject == "lane" && status.Owner.State == lane.OwnerHeld {
 		command := status.Stop.Command()
 		status.Owner.RetryHint = &command

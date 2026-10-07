@@ -50,6 +50,7 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
+	ReturnOrigin *ReturnOrigin `json:"return-origin,omitempty"`
 	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
@@ -85,6 +86,7 @@ type UnitRounds struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
+	ReturnOrigin *ReturnOrigin `json:"return-origin,omitempty"`
 	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
 	Fix       string           `json:"fix,omitempty"`
@@ -224,6 +226,7 @@ func entriesOf(lines []Line) []Entry {
 		entries[at].State, entries[at].Reason = line.Outcome, line.Reason
 		if line.Outcome == StateReturned {
 			entries[at].ReturnedAt = line.At
+			entries[at].ReturnOrigin = line.ReturnOrigin
 		}
 		entries[at].After, entries[at].Held = line.After, line.Held
 		entries[at].Conflict, entries[at].Cause = line.Conflict, line.Cause
@@ -344,18 +347,7 @@ func Say(install, goal, sha, delivered string) error {
 // ErrNotWaiting is a return of a goal with no waiting hand-in.
 var ErrNotWaiting = errors.New("no hand-in of this goal waits in the lane")
 
-// Return appends a "returned" outcome for the goal's waiting hand-in. A
-// goal whose newest hand-in is already returned is a repeat (changed
-// false); a goal with nothing waiting is ErrNotWaiting.
-func Return(install, goal, reason string, now time.Time) (entry Entry, changed bool, err error) {
-	err = withLock(install, func() error {
-		entry, changed, err = returnLocked(install, goal, reason, &Cause{Kind: "unclassified"}, nil, now)
-		return err
-	})
-	return entry, changed, err
-}
-
-func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.Return, now time.Time) (Entry, bool, error) {
+func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.Return, now time.Time, effects ...ProveSeams) (Entry, bool, error) {
 	latest, ok, err := Latest(install, goal)
 	switch {
 	case err != nil:
@@ -367,12 +359,21 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	case latest.State != StateWaiting:
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
-	at := now.UTC().Format(time.RFC3339)
-	if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	origin, err := checkReturnLocked(install, latest, cause, detail, now, seams)
+	if err != nil {
 		return latest, false, err
 	}
+	at := now.UTC().Format(time.RFC3339)
+	if err := appendLine(queuePath(install), Line{ReturnOrigin: &origin, Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
+		return latest, false, err
+	}
+	latest.ReturnOrigin = &origin
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
-	return latest, true, closeGoalStopsLocked(install, goal, "return "+goal, now)
+	return latest, true, closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA)
 }
 
 // Landed derives each waiting entry's landing: one whose sha main

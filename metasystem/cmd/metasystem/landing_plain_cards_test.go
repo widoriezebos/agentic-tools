@@ -67,7 +67,7 @@ func TestPlainLanePushWritesLandedCards(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := plain.Return(b.root, "returned", "fix needed", b.clock); err != nil {
+	if _, _, err := plain.ReturnProven(b.root, "returned", "unclassified", "fix needed", true, "fixture", b.clock, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result := b.push(owners)

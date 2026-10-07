@@ -147,7 +147,7 @@ func TestLandingStatusSaysRecords(t *testing.T) {
 	}
 	for _, state := range []string{plain.StateWaiting, plain.StateLanded, plain.StateReturned} {
 		if state == plain.StateReturned {
-			if _, _, err := plain.Return(install, "design", "records check failed", time.Time{}); err != nil {
+			if _, _, err := plain.ReturnProven(install, "design", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -337,7 +337,7 @@ func TestWorkLandHandsInToThePlainLane(t *testing.T) {
 		t.Fatalf("a repeat appends nothing: %q", data)
 	}
 
-	if _, _, err := plain.Return(install, "standing-validation", "app-standard fails since it joined", time.Now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "app-standard fails since it joined", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.do("work", "land", "standing-validation")

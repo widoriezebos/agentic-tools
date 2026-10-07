@@ -292,7 +292,10 @@ func TestLandingBatchAdapterDescendantRehandIn(t *testing.T) {
 			oldSHA := b.seat(t, "a")
 			b.success(t, "landing", "run")
 			if state == plain.StateReturned {
+				prove := b.owners.prove
+				b.owners.prove = enrolledPersonProver(t, b.installation, b.now)
 				b.success(t, "landing", "return", "a", "--cause", "unclassified", "--by", "Wido", "--reason", "fix forward")
+				b.owners.prove = prove
 			}
 			seat := filepath.Join(filepath.Dir(b.checkout), "seat-a")
 			if err := os.WriteFile(filepath.Join(seat, "a.txt"), []byte("a fixed\n"), 0644); err != nil {
@@ -340,7 +343,10 @@ func TestLandingBatchAdapterRefusesOlderContentOfUnselectedGoal(t *testing.T) {
 			b := newBatchVerbBed(t, "1")
 			b1 := b.seat(t, "b")
 			if state == plain.StateReturned {
+				prove := b.owners.prove
+				b.owners.prove = enrolledPersonProver(t, b.installation, b.now)
 				b.success(t, "landing", "return", "b", "--cause", "unclassified", "--by", "Wido", "--reason", "fix forward")
+				b.owners.prove = prove
 			}
 
 			// Goal a hands in only after its branch has merged b's old content.
@@ -665,7 +671,7 @@ func TestLandingBatchAdapterSameSHARehandIn(t *testing.T) {
 			t.Parallel()
 			b := newBatchVerbBed(t, "auto")
 			sha := b.seat(t, "a")
-			if _, changed, err := plain.Return(b.installation, "a", "rebuild requested", b.now); err != nil || !changed {
+			if _, changed, err := plain.ReturnProven(b.installation, "a", "unclassified", "rebuild requested", true, "fixture", b.now, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
 				t.Fatalf("return: %v %v", changed, err)
 			}
 			var prefix string

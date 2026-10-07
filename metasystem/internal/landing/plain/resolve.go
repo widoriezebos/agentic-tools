@@ -18,9 +18,10 @@ import (
 
 // ResolveSeams keeps Git and command execution local to a resolution.
 type ResolveSeams struct {
-	Git func(dir string, args ...string) (string, error)
-	Run func(argv []string, dir string, log *os.File, started func(int64) error) error
-	Now func() time.Time
+	Proof ProveSeams
+	Git   func(dir string, args ...string) (string, error)
+	Run   func(argv []string, dir string, log *os.File, started func(int64) error) error
+	Now   func() time.Time
 }
 
 func (s ResolveSeams) git(dir string, args ...string) (string, error) {
@@ -236,8 +237,12 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			out.Cause = &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA}
 			out.Reason = "source conflicts need resolution on the goal branch; run metasystem work rebase " + entry.Goal
-			returned, _, err := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now())
+			returned, _, err := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now(), seams.Proof)
 			out.Entry, out.Outcome = &returned, "returned"
+			if returned.State == StateWaiting {
+				out.Held, out.Outcome = true, "held"
+				return errors.Join(err, resolveWaitingLocked(install, entry, nil, true, &out))
+			}
 			return err
 		}
 		// A failed regeneration restores the merge snapshot before aborting, and
@@ -281,6 +286,21 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			// The merge is gone before replay; only the selected generators' own
 			// outputs are restored, so unrelated checkout files survive.
+			out.Cause.Kind, out.Cause.Name = "unclassified", ""
+			if err := appendLine(regeneratePath(install), out.Regeneration); err != nil {
+				return errors.Join(cause, err)
+			}
+			value := PolicyValue{Value: "auto"}
+			var policyErr error
+			if seams.Proof.Policy != nil {
+				value, policyErr = seams.Proof.Policy("landing.on-red")
+			}
+			if policyErr != nil || value.Value == "person" {
+				out.Cause.Kind = "unclassified"
+				out.Held, out.Outcome = true, "held"
+				_, _, holdErr := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now(), seams.Proof)
+				return errors.Join(cause, holdErr, resolveWaitingLocked(install, entry, nil, true, &out))
+			}
 			baselineErr := replayRegeneration(home, install, git, sets, prefix, seams, out.Goal, out.SHA, out.Log)
 			if baselineErr != nil {
 				out.Cause.Kind, out.Cause.Name = "unclassified", ""
@@ -290,8 +310,11 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			out.Cause = &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA, Evidence: out.Log}
 			out.Conflict = detail
 			out.Reason = fmt.Sprintf("regeneration exited %d; log: %s; run metasystem work rebase %s", out.Exit, out.Log, entry.Goal)
-			returned, _, returnErr := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now())
+			returned, _, returnErr := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now(), seams.Proof)
 			out.Entry, out.Outcome = &returned, "returned"
+			if returned.State == StateWaiting {
+				out.Held, out.Outcome = true, "held"
+			}
 			return errors.Join(cause, returnErr)
 		}
 		if !resuming {

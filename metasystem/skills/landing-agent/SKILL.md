@@ -32,6 +32,15 @@ A detached proof carries one recorded admission; its child needs no new
 enrollment. A later full execution, including an escalation from scoped
 checks after an environment change, requires its own admission.
 
+A red report is saved before attribution, retries or returns. When status names
+`metasystem landing prove --classify ATTEMPT`, hold for that enrolled person's
+act. Classification supplies evidence only: a return needs its separate
+`landing return GOAL --cause CAUSE --reason TEXT` act under person policy.
+Automatic returns retain all of the goal's history across hand-ins: repeated
+tests or conflicts, a red set that does not shrink, or two prior automatic
+returns stop the next return. Follow its recorded command; a new batch or a
+human return restores no automatic allowance.
+
 1. Read `landing status --json` before each operation. If `paused`, continue only when `admitted-batch` matches your recorded batch identity; otherwise stop. If `running_proof` is set, end your turn.
    A `prepared` batch whose selector is `person` and has no recorded `person` act is a proposal; hold for the pending human-selection consumer.
    The keeper prepares the batch before launching you. If there is no active batch and no

@@ -302,6 +302,8 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
+	bed.cwd = bed.checkout
+	bed.owners.prove = enrolledPersonProver(t, bed.installation, laneTestNow)
 	bed.merge(t, bed.seat(t, "goal-a"))
 	bed.setCommand(t, bed.script(t, "prove-red.sh", 1))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 1 || !strings.Contains(text, "red") {
@@ -441,6 +443,8 @@ func witnessLandingPushRepeat(t *testing.T) {
 // success and leaves the lane's records as they were.
 func witnessLandingReturnRepeat(t *testing.T) {
 	bed := newPlainVerbBed(t)
+	bed.cwd = bed.checkout
+	bed.owners.prove = enrolledPersonProver(t, bed.installation, laneTestNow)
 	bed.seat(t, "goal-a")
 	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "red"); code != 0 {
 		t.Fatalf("first return = %d\n%s", code, text)

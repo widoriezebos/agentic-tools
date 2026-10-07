@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -50,6 +52,18 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					t.Fatal(err)
 				}
 				install := string(layout.InstallationRoot)
+				policyPath := filepath.Join(t.TempDir(), "lane-policy.conf")
+				if err := os.WriteFile(policyPath, []byte("landing.on-red=auto\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				owners.policies = config.PolicyReaders{
+					Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: layout.GitRoot}, nil },
+					ConfPath: func(string) (string, error) { return policyPath, nil },
+					Helm:     func(string) helm.State { return helm.State{} },
+				}
+				if err := os.MkdirAll(filepath.Join(layout.GitRoot, ".git"), 0755); err != nil {
+					t.Fatal(err)
+				}
 				for _, goal := range []string{bed.id, "already-on-main", "not-in-head"} {
 					if _, _, err := plain.HandIn(install, plain.Line{Goal: goal, SHA: goal, At: laneTestNow.Format(time.RFC3339)}); err != nil {
 						t.Fatal(err)
@@ -57,7 +71,7 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				}
 				var stdout, stderr bytes.Buffer
 				inv := &intentInvocation{command: landingPushCommand(), input: intentInput{values: map[string][]string{"json": {"true"}}},
-					owners: owners, layout: layout, stateRoot: bed.stateRoot(), stdout: &stdout, stderr: &stderr}
+					owners: owners, layout: layout, stateRoot: bed.stateRoot(), stdout: &stdout, stderr: &stderr, cwd: layout.GitRoot}
 				record := lane.Record{Root: layout.GitRoot, Install: install}
 				laneLayout, err := record.Layout()
 				if err != nil {
@@ -79,7 +93,7 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					outcome.Changed = true
 					return outcome, nil
 				}
-				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, push: push, plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "fixture", nil }, push: push, plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
 					if args[0] == "ls-tree" {
 						return "", nil
 					}

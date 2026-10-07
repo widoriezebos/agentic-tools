@@ -110,7 +110,7 @@ func TestConflictDependencyHoldTracksExactHandInAndPendingSkipsHeld(t *testing.T
 				t.Fatal(err)
 			}
 			if outcome == "returned" {
-				if _, _, err := Return(install, "A", "own", bedNow); err != nil {
+				if _, _, err := ReturnProven(install, "A", "unclassified", "own", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			}

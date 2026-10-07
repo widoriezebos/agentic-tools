@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 func writeCauseProof(t *testing.T, install, file string, results ...plain.Result) {
@@ -111,11 +112,10 @@ func TestLandingReturnRequiresDemonstratedOwnCause(t *testing.T) {
 			}
 			if strings.HasPrefix(name, "person") || name == "unproven by" {
 				args = append(args, "--by", "Wido")
-				b.owners.landing.person = func(string) (string, error) {
-					if name == "unproven by" {
-						return "", errors.New("no enrolled person")
-					}
-					return "Wido", nil
+				if name != "unproven by" {
+					b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+					b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+					helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\n"), 0600))
 				}
 				if name == "person main" {
 					args = append(args, "--reason", "human decision")
@@ -275,12 +275,9 @@ func TestLandingStatusReadsCauseAndNamesOtherGoal(t *testing.T) {
 func TestLandingReturnPersonWithoutBy(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	b.owners.landing.person = func(root string) (string, error) {
-		if root != b.install {
-			t.Fatalf("person proof at %q; want %q", root, b.install)
-		}
-		return "Wido", nil
-	}
+	b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\n"), 0600))
 	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
 		t.Fatal(err)
 	}

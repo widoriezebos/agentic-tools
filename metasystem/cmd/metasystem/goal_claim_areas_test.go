@@ -168,7 +168,7 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 			}
 			switch scenario {
 			case "returned":
-				if _, _, err := plain.Return(lane.install, bedGoal, "needs correction", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "needs correction", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			case "records":
@@ -199,7 +199,7 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 				first := bed.goalFile(bedGoal)
 				first.State, first.Claimed = goal.StateApproved, nil
 				bed.addGoal(first)
-				if _, _, err := plain.Return(lane.install, bedGoal, "dropped", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "dropped", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -362,7 +362,7 @@ func releasedAreasHandInBed(t *testing.T, overlap bool) (*deliveryBed, string, s
 	if _, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: strings.Repeat("2", 40)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.Return(install, bedGoal, "needs another hand-in", bed.owners.now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "needs another hand-in", true, "fixture", bed.owners.now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	first := bed.goalFile(bedGoal)

@@ -118,6 +118,8 @@ var Rows = []Row{
 	{Code: "LANE_BATCH_PERSON", Owner: "internal/landing/plain", Site: "batch.go#PolicyDecision", Shape: Question, H1: StandingInput},
 	{Code: "LANE_PROOF_PERSON", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
 	{Code: "LANE_PROOF_BUDGET", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
+	{Code: "LANE_RED_PERSON", Owner: "internal/landing/plain", Site: "red.go#redContinuationLocked", Shape: Agent, Override: "landing prove --classify", Commands: 1},
+	{Code: "LANE_RETURN_PERSON", Owner: "internal/landing/plain", Site: "return_bound.go#checkReturnLocked", Shape: Agent, Override: "landing return", Commands: 1},
 	{Code: "LANE_PROOF_SUBJECT", Owner: "internal/landing/plain", Site: "prove.go#Start", Shape: Question, H1: StandingInput},
 	{Code: "LANE_PROOF_ADMISSION", Owner: "internal/landing/plain", Site: "prove.go#Run", Shape: Question, H1: StandingInput},
 	{Code: "LANDING_LANE_UNSETTING", Owner: "internal/landing/lane", Site: "unset.go#unsettingRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},

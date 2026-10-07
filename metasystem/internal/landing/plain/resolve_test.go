@@ -93,7 +93,11 @@ func (b *resolveFixture) resolve() (ResolveOutcome, error) {
 func (b *resolveFixture) record(out ResolveOutcome) {
 	b.t.Helper()
 	rows, err := readLines[Regeneration](regeneratePath(b.install))
-	if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], out.Regeneration) {
+	expected := 1
+	if out.Exit > 0 && out.Cause != nil && out.Cause.Kind != "environment" {
+		expected = 2
+	}
+	if err != nil || len(rows) != expected || !reflect.DeepEqual(rows[len(rows)-1], out.Regeneration) || expected == 2 && rows[0].Cause.Kind != "unclassified" {
 		b.t.Fatalf("regeneration rows=%+v err=%v; want one outcome %+v", rows, err, out.Regeneration)
 	}
 	if _, err := os.Stat(resultsPath(b.install)); !errors.Is(err, os.ErrNotExist) {

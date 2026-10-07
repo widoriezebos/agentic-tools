@@ -65,6 +65,7 @@ func (o landingPushOwners) withDefaults(inv *intentInvocation, admitted laneAdmi
 }
 
 func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
+	defer plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	entries, err := plain.Entries(admitted.installation)
 	checkout := string(admitted.layout.Checkout)
 	if err != nil {
@@ -117,7 +118,7 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 		if design.RefusesAgent {
 			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
 			check := plain.DesignCheck{Goal: entry.Goal, Commit: entry.SHA, Verdict: design.Verdict, Reason: design.Pair[0]}
-			if _, _, err := plain.ReturnDesignRefused(admitted.installation, check, admitted.owners.now()); err != nil {
+			if _, _, err := plain.ReturnDesignRefused(admitted.installation, check, admitted.owners.now(), inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))); err != nil {
 				failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the design refusal of "+entry.Goal+" could not be returned: "+oneLine(err.Error()), err)
 				return &failed
 			}

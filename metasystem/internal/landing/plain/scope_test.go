@@ -485,7 +485,7 @@ func TestAChangedEnvironmentProvesAgainInFull(t *testing.T) {
 				t.Fatalf("full green: %+v", result)
 			}
 			results, err := Results(b.install)
-			if err != nil || results[len(results)-2].Attempt == result.Attempt {
+			if err != nil || results[len(results)-2].Attempt == result.Attempt && (!results[len(results)-2].ClassificationPending || results[len(results)-2].Scope != "full") {
 				t.Fatal("fallback wrote a separate scoped result")
 			}
 		})
@@ -721,7 +721,12 @@ func TestAScopedFlakeRepeatsWithTheEffectiveScope(t *testing.T) {
 				t.Fatal("unit repeat lost the effective scope")
 			}
 			lines, err := Results(b.install)
-			if err != nil || len(lines) != 3 || lines[1].Scope != wantScope || lines[1].Result != Red || lines[1].Repeat != "started" {
+			wantLines := 4
+			if changedEnvironment {
+				wantLines++
+			}
+			repeatAt := len(lines) - 2
+			if err != nil || len(lines) != wantLines || !lines[1].ClassificationPending || lines[repeatAt].Scope != wantScope || lines[repeatAt].Result != Red || lines[repeatAt].Repeat != "started" {
 				t.Fatalf("repeat allowance did not record scope: %+v %v", lines, err)
 			}
 			if changedEnvironment && (result.FullAt != result.At || result.FullTree != result.Tree) {

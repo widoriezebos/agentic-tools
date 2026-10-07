@@ -71,7 +71,7 @@ func (r *ReturnRefused) Error() string {
 
 // ReturnProven checks and records a return under the same queue lock. A person's
 // proven act may return any cause; an agent needs the newest proof of this hand-in.
-func ReturnProven(install, goal, kind, reason string, person bool, by string, now time.Time) (entry Entry, changed bool, err error) {
+func ReturnProven(install, goal, kind, reason string, person bool, by string, now time.Time, effects ...ProveSeams) (entry Entry, changed bool, err error) {
 	if !(Cause{Kind: kind}).Valid() {
 		return Entry{}, false, fmt.Errorf("unknown return cause %q", kind)
 	}
@@ -123,7 +123,7 @@ func ReturnProven(install, goal, kind, reason string, person bool, by string, no
 				reason = "cause: " + kind
 			}
 		}
-		entry, changed, readErr = returnLocked(install, goal, reason, cause, nil, now)
+		entry, changed, readErr = returnLocked(install, goal, reason, cause, nil, now, effects...)
 		return readErr
 	})
 	return

@@ -297,7 +297,7 @@ func TestLandingReplayLostProcessPrecedesCompleteReport(t *testing.T) {
 		return "LANDING-CHECKED\t0\n", nil
 	}
 	first := b.prove(t)
-	if first.Cause.Kind != "environment" || first.Repeat != "allowed" || first.CountedFull || len(first.Failed) != 0 || len(b.runs) != 1 {
+	if first.Cause.Kind != "environment" || first.Repeat != "allowed" || first.CountedFull || len(first.Failed) != 1 || first.Failed[0].Tests[0] != "TestBroken" || len(b.runs) != 1 {
 		t.Fatalf("lost process was replayed or counted: %+v runs=%v", first, b.runs)
 	}
 	if code, out := b.run(t, b.root, "prove", "--wait"); code != 0 {

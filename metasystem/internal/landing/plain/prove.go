@@ -40,6 +40,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	ClassificationOf  string               `json:"classification-of,omitempty"`
 	ObservedIncidents []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
 	Admission         *ExecutionAdmission  `json:"admission,omitempty"`
 	Executions        []ExecutionAdmission `json:"executions,omitempty"`
@@ -61,13 +62,19 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
-	ObservedIncidents []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
-	Person            *ActProvenance       `json:"person,omitempty"`
-	Executions        []ExecutionAdmission `json:"executions,omitempty"`
-	executionErr      error
-	BatchID           string    `json:"batch-id,omitempty"`
-	BatchMembers      []GoalSHA `json:"batch-members,omitempty"`
-	Trunk             bool      `json:"trunk,omitempty"`
+	ClassificationOf      string               `json:"classification-of,omitempty"`
+	NextFull              *Result              `json:"next-full,omitempty"`
+	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty"`
+	ClassificationWarning string               `json:"classification-warning,omitempty"`
+	ClassificationPending bool                 `json:"classification-pending,omitempty"`
+	ClassificationPerson  *ActProvenance       `json:"classification-person,omitempty"`
+	ObservedIncidents     []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
+	Person                *ActProvenance       `json:"person,omitempty"`
+	Executions            []ExecutionAdmission `json:"executions,omitempty"`
+	executionErr          error
+	BatchID               string    `json:"batch-id,omitempty"`
+	BatchMembers          []GoalSHA `json:"batch-members,omitempty"`
+	Trunk                 bool      `json:"trunk,omitempty"`
 	// CountedFull identifies a whole execution with a complete report.
 	CountedFull bool `json:"countedFull,omitempty"`
 	// LoopClosed ends the batch budget without changing the proof verdict.
@@ -126,6 +133,7 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	ClassificationOf string
 	// Person admits one direct proof; Start binds its provenance to the attempt.
 	Person *ActProvenance
 	// FenceCheck rechecks execution admission under the owning queue lock.
@@ -174,7 +182,8 @@ type ProveSeams struct {
 	Command func(*exec.Cmd) error
 	// CommandForCommit resolves the proof declaration for the exact commit
 	// selected under the lane lock, including a detached attempt's commit.
-	CommandForCommit func(commit string) (string, error)
+	CommandForCommit     func(commit string) (string, error)
+	GateCommandForCommit func(commit string) (string, error)
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -282,6 +291,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
 	red.BatchID, red.BatchMembers = running.BatchID, running.BatchMembers
+	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
 	if running.Gate {
 		red.Scope = "gate"
 	}
@@ -304,6 +314,9 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 // checkBound reads the newest line under the lane lock before any check starts.
 func (s ProveSeams) checkBound(install, tree string) (Result, bool, error) {
 	result, found, err := resultFor(s.resultsPath(install), tree)
+	if err == nil && found && result.Result == Red && s.Person == nil && (result.ClassificationPending || result.ClassificationPerson == nil && result.ClassificationOf == "") {
+		err = redContinuationLocked(install, result, s)
+	}
 	if err == nil && found && result.Result != Green && result.Result != Held && result.Repeat != "allowed" && s.Person == nil {
 		err = &NoRepeat{}
 	}
@@ -770,10 +783,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
 	}
-	if result.Trunk && result.Result == Red && len(result.Failed) > 0 {
+	if result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") {
 		result = recordMainFailures(seams, result, []Result{result})
 	}
-	if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && seams.RecordMain != nil {
+	if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") && seams.RecordMain != nil {
 		main, mainErr := checkoutGit(checkout, seams).main()
 		if mainErr == nil {
 			mainTree, treeErr := seams.git(checkout, "rev-parse", "--verify", main+"^{tree}")
@@ -784,6 +797,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			}
 		}
 	}
+	result.ClassificationOf = running.ClassificationOf
 	result.Person, result.Executions, result.ObservedIncidents = running.Person, running.Executions, running.ObservedIncidents
 	if current, recorded, _, readErr := ReadRunning(install, seams); readErr == nil && recorded && current.Attempt == running.Attempt {
 		result.Executions = current.Executions
@@ -1054,6 +1068,12 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		runErr = fmt.Errorf("the cheap check reported that it did not run")
 	}
 	if (runErr == nil || report.kind == "complete") && decision.Scope == "scoped" && (observed.environment == "" || decision.base.Environment == "" || observed.environment != decision.base.Environment) {
+		if runErr != nil {
+			result = observeRed(seams, install, running, *decision, observed, result, previous, report, runErr)
+			if result.executionErr != nil {
+				return result
+			}
+		}
 		full := *decision
 		full.Scope, full.Base = "full", ""
 		next := seams
@@ -1080,7 +1100,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.Repeat = "started"
 	}
 	if runErr == nil {
-		if previous.Result == Red && len(previous.Failed) > 0 {
+		if previous.Result == Red && len(previous.Failed) > 0 && (previous.Cause == nil || previous.Cause.Kind != "environment") {
 			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}
 		return result

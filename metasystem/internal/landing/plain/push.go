@@ -167,7 +167,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			return err
 		}
 		for _, member := range pushed.BatchMembers {
-			if err := closeGoalStopsLocked(install, member.Goal, "push", now); err != nil {
+			if err := closeGoalStopsLocked(install, member.Goal, "push", now, member.SHA); err != nil {
 				return err
 			}
 		}

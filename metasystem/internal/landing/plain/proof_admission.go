@@ -99,7 +99,7 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		}
 		if !running.Trunk {
 			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
-				if !person {
+				if !person || seams.ClassificationOf != "" {
 					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", "this batch has used its two full checks; a person may request one more execution")
 				}
 				admission.Override = true
@@ -117,6 +117,7 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		provenance.Subject = append([]GoalSHA{}, running.BatchMembers...)
 		running.Person = &provenance
 	}
+	running.ClassificationOf = seams.ClassificationOf
 	running.Admission = &admission
 	running.Executions = append(running.Executions, admission)
 	return nil

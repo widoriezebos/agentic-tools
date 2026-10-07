@@ -105,7 +105,7 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 	lane.prepareBatch(t)
 	if unchanged {
 		for _, g := range []string{"a", "b", "c"} {
-			if _, _, err := plain.Return(lane.install, g, "not in this assembly", laneTestNow); err != nil {
+			if _, _, err := plain.ReturnProven(lane.install, g, "unclassified", "not in this assembly", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 				t.Fatal(err)
 			}
 		}

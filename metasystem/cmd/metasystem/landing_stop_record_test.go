@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -63,7 +64,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 		t.Fatalf("no recorded stop: %d %s", code, text)
 	}
 	stop := status.Data.Stop
-	command := "metasystem landing return GOAL --cause own --reason TEXT"
+	command := "metasystem landing return GOAL --cause unclassified --reason TEXT"
 	if stop.Loop != "lane-proof" || stop.Attempt != 2 || stop.Budget != 2 || stop.Cause.Kind != "unclassified" || stop.Command() != command || !strings.Contains(stop.Subject, "a") || !strings.Contains(stop.Subject, "b") || stop.Evidence == "" {
 		t.Fatalf("stop lost its decision or evidence: %+v", stop)
 	}
@@ -167,24 +168,30 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 		t.Run(act, func(t *testing.T) {
 			t.Parallel()
 			b := newStopVerbBed(t)
-			b.fail = func(_ *exec.Cmd, only string) (string, error) {
-				if only == "" {
+			b.fail = func(cmd *exec.Cmd, only string) (string, error) {
+				_, exists := os.Stat(filepath.Join(cmd.Dir, "b"))
+				if only == "" || exists == nil {
 					return replayFailure, errors.New("red")
 				}
 				return "LANDING-CHECKED\t0\n", nil
 			}
 			b.prove(t)
-			b.prove(t)
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\nlanding.on-red=person\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if code, out := b.run(t, b.root, "return", "b", "--cause", "own"); code != 1 || !strings.Contains(out, "the return needs a person") {
+				t.Fatalf("return request: %d %s", code, out)
+			}
 			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
 			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}
 			questions, _ := channel.WalkOpenQuestions(b.install)
-			if len(questions) != 1 {
+			if len(questions) != 1 || channel.LaneStopCommand(questions[0]) != "metasystem landing return b --cause own --reason TEXT" {
 				t.Fatalf("questions=%+v", questions)
 			}
 			q := questions[0]
-			q.State, q.Answer = "answered", &channel.Answer{Text: "return a"}
+			q.State, q.Answer = "answered", &channel.Answer{Text: "return b"}
 			data, err := json.Marshal(q)
 			if err != nil {
 				t.Fatal(err)
@@ -208,10 +215,12 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 				t.Fatalf("an answer lifted the stop: %+v", run)
 			}
 			if act == "return" {
-				if code, out := b.run(t, b.root, "return", "a", "--cause", "own", "--reason", "person chose a"); code != 0 {
+				b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+				b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+				if code, out := b.run(t, b.root, "return", "b", "--cause", "own", "--reason", "person chose b"); code != 0 {
 					t.Fatalf("person return: %d %s", code, out)
 				}
-			} else if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "a", SHA: "new-sha"}); err != nil {
+			} else if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "b", SHA: "new-sha"}); err != nil {
 				t.Fatal(err)
 			}
 			// Reconciliation must happen even when the next launch is still alive.
@@ -219,6 +228,9 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			keeper.Run()
 			if ended, err := channel.ReadQuestion(b.install, q.ID); err != nil || ended.State != "closed" {
 				t.Fatalf("the later act did not withdraw: %+v %v", ended, err)
+			}
+			if open, err := plain.OpenStops(b.install); err != nil || len(open) != 0 {
+				t.Fatalf("the goal act left its proof or return stop open: %+v %v", open, err)
 			}
 		})
 	}

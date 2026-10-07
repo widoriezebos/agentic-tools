@@ -15,6 +15,14 @@ import (
 // isolated replay over its subject's trees; every repeat uses its existing
 // allowance, including a registered flake's repeat in the current worktree.
 func classifyRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput, result, previous Result, report checkReport, runErr error, replay func(Result, Result) Result) Result {
+	result = observeRed(seams, install, running, decision, observed, result, previous, report, runErr)
+	if result.executionErr != nil {
+		return result
+	}
+	return continueRed(seams, install, checkout, command, dir, running, decision, output, result, previous, replay)
+}
+
+func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
 	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
 	var exit *exec.ExitError
@@ -28,14 +36,30 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if result.Cause.Kind == "environment" && previous.Result == "" {
 		result.Repeat = "allowed"
 	}
-	if report.kind != "complete" {
-		return result
-	}
-	if result.Cause.Kind == "environment" {
-		return result
-	}
 	result.Failed = report.failed
 	result.Cause.Tests = failingTests(result.Failed)
+	result.Person, result.Executions = running.Person, running.Executions
+	result.ClassificationOf = running.ClassificationOf
+	result.ClassificationPending = true
+	if err := withLock(install, func() error {
+		if err := appendLine(seams.resultsPath(install), result); err != nil {
+			return err
+		}
+		return redContinuationLocked(install, result, seams)
+	}); err != nil {
+		result.Reason += "; " + err.Error()
+		result.executionErr = err
+		return result
+	}
+	return result
+}
+
+// continueRed uses the recorded report; it never repeats the original full admission.
+func continueRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, result, previous Result, replay func(Result, Result) Result) Result {
+	result.ClassificationPending = false
+	if result.Cause.Kind == "environment" || len(result.Failed) == 0 {
+		return result
+	}
 	known := len(result.Failed) > 0
 	if seams.Judge != nil {
 		judged, err := seams.Judge(checkout, running.Commit, result.Failed)
@@ -146,7 +170,7 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 // isolated green. It neither turns the full red green nor spends a repeat.
 func classifyReplay(seams ProveSeams, install, checkout, command string, running Running, result, previous Result, trees []replayTree) Result {
 	for i, prefix := range trees {
-		if !running.Trunk {
+		if !running.Trunk && result.ClassificationPerson == nil {
 			if _, err := CheckBatch(install, checkout, prefix.Commit, "", true, seams); err != nil {
 				result.Reason += "; " + err.Error()
 				return result
@@ -263,9 +287,12 @@ func subsetGoals(goals, first []GoalSHA) bool {
 
 // checkProofBudget runs under the lane lock, before a start or repeat marker.
 func checkProofBudget(install, checkout, commit string, seams ProveSeams) error {
-	results, err := Results(install)
+	results, skipped, err := countedLines[Result](resultsPath(install))
 	if err != nil {
 		return err
+	}
+	if skipped != 0 {
+		return fmt.Errorf("the full-check history contains unreadable lines; a person may request one fresh check")
 	}
 	var first []GoalSHA
 	firstRed := false

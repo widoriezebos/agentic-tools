@@ -73,7 +73,7 @@ func TestExceptionWorkLandTrunkRedBelongsToOneQueueLine(t *testing.T) {
 	if err != nil || string(before) != string(after) {
 		t.Fatalf("repeat wrote queue: %v", err)
 	}
-	if _, _, err := plain.Return(install, bedGoal, "own failure", time.Now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "own failure", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.do("work", "land", bedGoal, "--again")

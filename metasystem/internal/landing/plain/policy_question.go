@@ -16,11 +16,13 @@ import (
 
 // PolicySubject identifies an act request independently of its notification.
 type PolicySubject struct {
-	Lane    lane.Record `json:"lane"`
-	Policy  string      `json:"policy"`
-	Act     string      `json:"act"`
-	BatchID string      `json:"batch-id,omitempty"`
-	Members []GoalSHA   `json:"members,omitempty"`
+	ProofAttempt string      `json:"proof-attempt,omitempty"`
+	Tree         string      `json:"tree,omitempty"`
+	Lane         lane.Record `json:"lane"`
+	Policy       string      `json:"policy"`
+	Act          string      `json:"act"`
+	BatchID      string      `json:"batch-id,omitempty"`
+	Members      []GoalSHA   `json:"members,omitempty"`
 }
 
 type PolicyRequest struct {
@@ -76,6 +78,35 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 				return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
 			}); err != nil {
 				return err
+			}
+		}
+		// Recorded effects recover closure after an interrupted question sync.
+		returns, err := readLines[Line](queuePath(install))
+		if err != nil {
+			return err
+		}
+		for _, returned := range returns {
+			latest, known, readErr := Latest(install, returned.Goal)
+			if readErr != nil {
+				return readErr
+			}
+			if known && latest.State == StateReturned && latest.SHA == returned.SHA && latest.ReturnedAt == returned.At && returned.Outcome == StateReturned && returned.ReturnOrigin != nil {
+				if err := closeGoalStopsLocked(install, returned.Goal, "recorded return "+returned.Goal, now, returned.SHA); err != nil {
+					return err
+				}
+			}
+		}
+		for _, path := range []string{resultsPath(install), gatesPath(install)} {
+			results, err := readLines[Result](path)
+			if err != nil {
+				return err
+			}
+			for _, result := range results {
+				if result.ClassificationPerson != nil && !result.ClassificationPending {
+					if err := closeSubjectStopsLocked(install, "lane-classify", result.Attempt, "recorded person classification", now); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		requests, err := PolicyRequests(install)
