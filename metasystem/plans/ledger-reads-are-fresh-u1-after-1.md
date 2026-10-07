@@ -1,0 +1,12 @@
+# Brief: ledger-reads-are-fresh U1, correction 1
+
+Working Mode: Implement
+The unit is uncommitted in this worktree. One Opus read found four material defects; fix exactly these.
+
+1. A timed-out read leaves its temporary refs under load (reproduced): internal/goal/fresh.go:58-60, :71 and repository.go:111-116 give cleanup the read's own expired deadline, so boundedexec runContext returns DeadlineExceeded before `git update-ref -d` starts. Give cleanup its own short bound starting when cleanup starts (WithoutCancel plus a fresh 2 s timeout); delete both refs (fetch and txn read-*) in one `git update-ref --stdin` process; and have the next fresh read sweep leftover refs/metasystem/goals/{fetch,txn}/read-* refs. Test with a deterministic seam (an injected clock or a context cancelled after the handshake), never a real deadline race: a cancelled read's refs are gone (mutation: cleanup under the read's context, red); leftover refs from an earlier read are swept.
+2. Wall-clock tests: internal/goal/fresh_adapter_test.go:46 (real 2 s deadline) and cmd/metasystem/ledger_fresh_test.go:387, :401 (real-clock gaps). Use a cancel-only context in the adapter proof (cancel after the handshake); FreshProjection takes its allowance from an injected clock or timer so the reserve is asserted deterministically. Wido's rule: artificial clocks, never load-fragile tests.
+3. cmd/metasystem/hook_entry.go:73-77: the `supplied != nil` branch of runHookEntryWithInvocation exists only for tests (production passes nil at :48). Inject the invocation and owners through a field production also builds, or fold the branch into the default construction; the offline-hook test still drives the real hookOwners.Up.
+4. cmd/metasystem/goal_cli_bed_test.go:224: proveTerminal was loosened from t.Fatal for every test to proving silently. Restore the fatal by default; allow terminal proof only through a bed option the next/claim fixtures set, with a comment why.
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 30m ./internal/goal/ ./internal/up/ ./internal/hooks/ ./internal/boundedexec/ && go test -count=1 -timeout 30m -run 'TestGoalClaim|TestGoalNext|TestSession|TestUp|TestHook|TestIntentSession|TestGoalsync|TestGoalCLI|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static; then run the new deterministic tests 20 times in parallel (`-count=20`) and report.
+Never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.
