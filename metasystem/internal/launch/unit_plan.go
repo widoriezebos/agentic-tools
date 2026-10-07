@@ -13,6 +13,7 @@ import (
 )
 
 type UnitPlan struct {
+	FullArgv []string       `json:"fullArgv,omitempty"`
 	Estimate *UnitEstimate  `json:"estimate,omitempty"`
 	Whole    bool           `json:"whole,omitempty"`
 	Unit     string         `json:"unit"`
@@ -134,6 +135,7 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 	}
 	var raw struct {
 		rawUnitPlan
+		FullArgv []string      `json:"fullArgv"`
 		Estimate *UnitEstimate `json:"estimate"`
 	}
 	var target any = &raw.rawUnitPlan
@@ -180,9 +182,9 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 		}
 	}
 	plan := UnitPlan{Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
-		Estimate: raw.Estimate,
-		Build:    UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
-		Path:     abs}
+		Estimate: raw.Estimate, FullArgv: raw.FullArgv,
+		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
+		Path:  abs}
 	if read != nil {
 		for _, item := range []struct {
 			name    string

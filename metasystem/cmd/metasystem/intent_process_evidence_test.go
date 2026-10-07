@@ -134,7 +134,7 @@ func TestProcessEstimateAdmissionPublicBuild(t *testing.T) {
 					}
 				}
 				code, result, output := processEvidenceBuild(bed)
-				if !person && scenario != "optional check" {
+				if !person && scenario == "changed" {
 					if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "estimate unavailable") || len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
 						t.Fatalf("agent was not held before launch: %d %+v %s", code, result, output)
 					}
@@ -155,11 +155,24 @@ func TestProcessEstimateAdmissionPublicBuild(t *testing.T) {
 					t.Fatalf("unavailable estimate was fabricated: %+v %s", plan.Estimate, output)
 				}
 				if scenario == "missing" {
+					if person {
+						// An older admission may have retained a null estimate.
+						key := fmt.Sprintf("%x", sha256.Sum256([]byte("01M4189Q0RH1NSPD3PNAS6G177\x00"+bed.id+"\x00evidence")))
+						path := filepath.Join(filepath.Dir(filepath.Dir(plan.Path)), ".estimates", key+".json")
+						if err := os.WriteFile(path, []byte("null\n"), 0o600); err != nil {
+							t.Fatal(err)
+						}
+					}
 					next := newWorkBed(t)
 					next.unitRoot, next.lineage = bed.unitRoot, "builder"
 					processEstimatePage(t, next, "90", "2")
-					if code, result, _ := processEvidenceBuild(next); code != 1 || !strings.Contains(result.Summary, "estimate unavailable") || len(next.starter.launched()) != 0 {
-						t.Fatalf("later row replaced unavailable first admission: %d %+v", code, result)
+					code, result, _ := processEvidenceBuild(next)
+					if code != 0 || len(next.starter.launched()) == 0 {
+						t.Fatalf("later row did not repair unavailable first admission: %d %+v", code, result)
+					}
+					retained, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
+					if err != nil || retained.Estimate == nil || retained.Estimate.ElapsedMinutes != 90 {
+						t.Fatalf("later row did not become the denominator: %+v %v", retained.Estimate, err)
 					}
 				}
 			})
@@ -212,9 +225,13 @@ func TestProcessEstimateCommittedPagePublicBuild(t *testing.T) {
 	bed.lineage = "builder"
 	path, committed := designGatePage(t, bed, "- Critique: ruled by Wido 2026-10-07, accepted\n")
 	processCommittedPage(t, bed, path, committed)
-	if code, result, _ := processEvidenceBuild(bed); code != 1 || !strings.Contains(result.Summary, "estimate unavailable") {
-		t.Fatalf("missing committed row admitted: %d %+v", code, result)
+	if code, result, _ := processEvidenceBuild(bed); code != 0 {
+		t.Fatalf("missing committed row held: %d %+v", code, result)
 	}
+	next := newWorkBed(t)
+	next.lineage = "builder"
+	bed = next
+	path, committed = designGatePage(t, bed, "- Critique: ruled by Wido 2026-10-07, accepted\n")
 	_, local := processEstimatePage(t, bed, "90", "2")
 	processCommittedPage(t, bed, path, committed)
 	if code, result, _ := processEvidenceBuild(bed); code != 1 || !strings.Contains(result.Summary, "estimate unavailable") || len(bed.starter.launched()) != 0 {
@@ -259,10 +276,6 @@ func TestProcessEstimatePlanAdmissionPublicBuild(t *testing.T) {
 			}
 			code, result, output := bed.work("work", "build", "--plan", path)
 			switch scenario {
-			case "missing agent":
-				if code != 1 || !strings.Contains(result.Summary, "estimate unavailable") || len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
-					t.Fatalf("plan skipped estimate admission: %d %+v %s", code, result, output)
-				}
 			case "forged", "null":
 				if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, `unknown field "estimate"`) || len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
 					t.Fatalf("caller estimate field accepted: %d %+v %s", code, result, output)
@@ -275,7 +288,7 @@ func TestProcessEstimatePlanAdmissionPublicBuild(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if scenario == "accepted" && (retained.Estimate == nil || retained.Estimate.ElapsedMinutes != 17) || scenario == "missing person" && (retained.Estimate != nil || !strings.Contains(output, "estimate unavailable")) {
+				if scenario == "accepted" && (retained.Estimate == nil || retained.Estimate.ElapsedMinutes != 17) || (scenario == "missing person" || scenario == "missing agent") && (retained.Estimate != nil || !strings.Contains(output, "estimate unavailable")) {
 					t.Fatalf("wrong plan estimate: %+v %s", retained.Estimate, output)
 				}
 			}

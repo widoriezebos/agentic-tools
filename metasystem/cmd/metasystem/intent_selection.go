@@ -205,6 +205,11 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views, "designs": designs}}
+	if inv.input.has("work") && len(work) == 1 {
+		m := inv.unitMeasures(work[0])
+		views[0]["measures"] = m
+		result.text = append(result.text, fmt.Sprintf("  hours: build %s, check %s, read %s, correction %s; estimate %s minutes; job pending %s, collection %s; person %s (lower bound %t); input/cache-read/cache-creation/output tokens %s (%d/%d usage records); full suite minutes %s; elapsed finish unavailable", measureNumber(m.Hours["build"]), measureNumber(m.Hours["attest"]), measureNumber(m.Hours["read"]), measureNumber(m.Hours["correction"]), measureNumber(m.EstimateMinutes), measureNumber(m.Hours["pending"]), measureNumber(m.Hours["collection"]), measureNumber(m.Hours["person"]), m.PersonLowerBound, measureNumber(m.Tokens), m.UsageKnown, m.UsageExpected, measureNumber(m.SuiteMinutes)))
+	}
 	// The goal's own card line (D14-r2, R23).
 	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {
 		result.text = append(result.text, "  "+line)

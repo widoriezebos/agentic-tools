@@ -442,6 +442,11 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	runner.PlanProof = inv.unitProof
 	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {
+		full, _ := landingProofCommand(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, "origin/main", "proof.full", func(root string, args ...string) (string, error) {
+			data, err := inv.work().git(root, args...)
+			return string(data), err
+		})
+		plan.FullArgv = strings.Fields(full)
 		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
 		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 		if err == nil {
@@ -449,11 +454,14 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 			err = inv.freezeUnitEstimate(plan, inv.designGateFacts(inv.layout.InstallationRoot.Path(), plan.Goal), person)
 		}
 		if err != nil {
-			if !person {
-				return fmt.Errorf("estimate unavailable: %w; a person can run this build", err)
+			if !person && errors.Is(err, errEstimateChanged) {
+				return fmt.Errorf("estimate unavailable: %w; restore the accepted design page before building", err)
 			}
 			plan.Estimate = nil
 			fmt.Fprintf(inv.stderr, "warning: estimate unavailable (%s); the build goes on at your word\n", err)
+		}
+		if err == nil && plan.Estimate == nil {
+			fmt.Fprintln(inv.stderr, "warning: estimate unavailable; the build goes on")
 		}
 		return nil
 	}

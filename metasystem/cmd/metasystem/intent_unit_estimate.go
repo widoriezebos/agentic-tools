@@ -20,6 +20,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
+var errEstimateChanged = errors.New("the working design differs from the accepted page on origin/main")
+
 func (inv *intentInvocation) unitEstimate(f designgate.Facts, unit string) (*launch.UnitEstimate, error) {
 	if f.Error != nil {
 		return nil, f.Error
@@ -46,6 +48,9 @@ func (inv *intentInvocation) unitEstimate(f designgate.Facts, unit string) (*lau
 			return nil, fmt.Errorf("the design %s is not accepted for this goal on origin/main", design.Path)
 		}
 		design.SHA256 = fmt.Sprintf("%x", sha256.Sum256(data))
+		if local, err := os.ReadFile(path); err == nil && fmt.Sprintf("%x", sha256.Sum256(local)) != design.SHA256 {
+			return nil, errEstimateChanged
+		}
 		body, err := inv.designBodyDigest(design)
 		if err != nil {
 			return nil, err
@@ -96,9 +101,6 @@ func (inv *intentInvocation) unitEstimate(f designgate.Facts, unit string) (*lau
 			estimate = row
 		}
 	}
-	if estimate == nil {
-		return nil, fmt.Errorf("no accepted Estimates row names unit %s", unit)
-	}
 	return estimate, nil
 }
 
@@ -130,16 +132,15 @@ func (inv *intentInvocation) freezeUnitEstimate(plan *launch.UnitPlan, f designg
 		if decoder.Decode(new(any)) != io.EOF {
 			return fmt.Errorf("the retained estimate has trailing data")
 		}
-		if plan.Estimate == nil {
-			return fmt.Errorf("the first admission retained no estimate")
+		if plan.Estimate != nil {
+			return plan.Estimate.Validate(plan.Unit)
 		}
-		return plan.Estimate.Validate(plan.Unit)
 	}
-	if !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	plan.Estimate, err = inv.unitEstimate(f, plan.Unit)
-	if err != nil && !person {
+	if err != nil || plan.Estimate == nil {
 		return err
 	}
 	data, writeErr := json.Marshal(plan.Estimate)
