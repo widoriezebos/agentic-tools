@@ -2,6 +2,7 @@ package plain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -133,11 +134,14 @@ func holdProofLocked(install string, running Running, seams ProveSeams, code, re
 	if running.Gate {
 		stop.Loop, stop.Scope = "lane-gate", "gate"
 	}
-	last, err := NewestStop(install)
+	// Any open request for the same act, not only the newest stop, makes a repeat a no-op.
+	open, err := OpenStops(install)
 	if err != nil {
 		return err
 	}
-	if last == nil || last.Loop != stop.Loop || last.Subject != stop.Subject || last.Tree != stop.Tree || last.Class != stop.Class || last.Trunk != stop.Trunk {
+	if !slices.ContainsFunc(open, func(o Stop) bool {
+		return o.Loop == stop.Loop && o.Subject == stop.Subject && o.Tree == stop.Tree && o.Class == stop.Class && o.Trunk == stop.Trunk
+	}) {
 		if err := appendLine(stopsPath(install), stop); err != nil {
 			return err
 		}

@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -89,5 +90,45 @@ func TestLegacyStopClosureStillClosesEveryReader(t *testing.T) {
 				t.Fatalf("legacy closure duplicated: %+v %v", lines, err)
 			}
 		})
+	}
+}
+
+func TestRepeatedProofHoldOpensOneRequestBehindNewerStop(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	now := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	tick := 0
+	seams := ProveSeams{Now: func() time.Time { tick++; return now.Add(time.Duration(tick) * time.Second) }}
+	running := Running{Tree: "tree-a", BatchID: "batch-a"}
+	hold := func() {
+		t.Helper()
+		err := withLock(install, func() error {
+			return holdProofLocked(install, running, seams, "LANE_PROOF_PERSON", "full check needs a person")
+		})
+		var refusal *Refusal
+		if !errors.As(err, &refusal) {
+			t.Fatalf("hold did not refuse: %v", err)
+		}
+	}
+	hold()
+	other := Stop{Loop: "lane-proof", Subject: "other-goal", Decision: "stop", Handoff: "ask lane", At: now.Add(time.Minute).Format(time.RFC3339Nano), Tree: "tree-b"}
+	if err := withLock(install, func() error { return appendLine(stopsPath(install), other) }); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		hold()
+	}
+	open, err := OpenStops(install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holds := 0
+	for _, s := range open {
+		if s.Subject == "batch-a" {
+			holds++
+		}
+	}
+	if holds != 1 || len(open) != 2 {
+		t.Fatalf("repeated hold opened %d requests for one act (open stops %d): %+v", holds, len(open), open)
 	}
 }

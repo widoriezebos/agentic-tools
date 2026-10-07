@@ -99,6 +99,23 @@ func NewestStop(install string) (*Stop, error) {
 	return nil, err
 }
 
+// OpenStops are every stop no later decision closed, newest first.
+func OpenStops(install string) ([]Stop, error) {
+	lines, err := readLines[Stop](stopsPath(install))
+	closed := stopSet{}
+	var open []Stop
+	for i := len(lines) - 1; i >= 0; i-- {
+		s := lines[i]
+		if s.Decision == "close" {
+			closed.add(s)
+		}
+		if s.Decision == "stop" && !closed.contains(s) {
+			open = append(open, s)
+		}
+	}
+	return open, err
+}
+
 func stopKey(s Stop) string {
 	if s.Decision == "close" && s.StoppedAt != nil {
 		s.At = *s.StoppedAt
