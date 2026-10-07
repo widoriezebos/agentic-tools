@@ -19,8 +19,12 @@ import (
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
 	lane.View
-	Paused     bool `json:"paused"`
-	AgentAlive bool `json:"agent_alive"`
+	Drain        *Drain `json:"drain,omitempty"`
+	Admission    string `json:"admission,omitempty"`
+	DrainWaiting int    `json:"drain_waiting,omitempty"`
+	DrainUnknown string `json:"drain_unknown,omitempty"`
+	Paused       bool   `json:"paused"`
+	AgentAlive   bool   `json:"agent_alive"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
@@ -116,9 +120,9 @@ func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams))
 }
 
-func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) Status {
+func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) (status Status) {
 	pause, paused := lane.ReadPause(home)
-	status := Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
+	status = Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
 	if view.Root == nil {
 		// A registration that can't be read is a lane this read could not
 		// read, not a lane that is not there.
@@ -154,6 +158,13 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		return status
 	}
 	install := string(layout.Install)
+	progress := DrainProgress{}
+	progress.Drain, err = ReadDrain(install)
+	status.Drain = progress.Drain
+	if err != nil {
+		progress.Unknown = "read drain " + DrainPath(install) + ": " + err.Error()
+		said(progress.Unknown)
+	}
 	unread := func(what string, err error) {
 		if err != nil {
 			status.Problems = append(status.Problems, what+" can't be read: "+err.Error())
@@ -185,9 +196,21 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		}
 		unread("the stop's main incident", readErr)
 	}
+	defer func() {
+		for _, entry := range status.Queue {
+			if entry.State == StateWaiting {
+				progress.Waiting++
+			}
+		}
+		status.Admission, status.DrainWaiting, status.DrainUnknown = progress.Words(), progress.Waiting, progress.Unknown
+	}()
 	lines, skipped, err := countedLines[Line](queuePath(install))
 	unread("the queue", err)
 	damaged("the queue has", skipped, queuePath(install))
+	if _, membershipErr := queueMembership(install); membershipErr != nil && (progress.Drain != nil || progress.Unknown != "") {
+		progress.Unknown += " drain membership cannot be read: " + membershipErr.Error()
+		said(progress.Unknown)
+	}
 	if err == nil {
 		status.Queue = entriesOf(lines)
 	}
@@ -206,6 +229,9 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			err = errors.Join(err, again)
 		}
 		unread("whether main holds the queued work", err)
+		if err != nil && progress.Drain != nil {
+			progress.Unknown += " drain membership: " + err.Error()
+		}
 	}
 	regenerating, err := ReadRunningRegeneration(install, seams)
 	unread("the running regeneration", err)
@@ -213,6 +239,12 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	running, err := readRunningProof(install, seams)
 	unread("the running proof", err)
 	status.RunningProof = running
+	if progress.Drain != nil {
+		if _, executionErr := drainExecution(install, seams); executionErr != nil {
+			progress.Unknown += " drain progress cannot be read: " + executionErr.Error()
+			said(progress.Unknown)
+		}
+	}
 	if running != nil && running.State == "running" && running.Commit != "" {
 		running.Goals, err = proving(status.Queue, running.Commit, git.contains)
 		unread("what the running proof holds", err)

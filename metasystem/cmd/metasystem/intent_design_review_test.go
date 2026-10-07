@@ -66,6 +66,8 @@ func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *design
 		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
+		// Claim admission reads lane membership; this fixture has no lane.
+		laneRoot: func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
 	b.owners.calls = processBackedOwnerCalls(b.owners.executable, b.owners.process)
 	var home string

@@ -218,7 +218,9 @@ func TestARefusedCompareAndSetIsTheEnginesRefusal(t *testing.T) {
 	refusal := refusalOf(t, authority.Approve("ui-settle", box()))
 	testutil.Expect(t, "the engine refused it", refusal.Kind, KindEngine)
 	testutil.Expect(t, "under the code it always had", refusal.Code, "refused")
-	testutil.Expect(t, "in the engine's own sentence", refusal.Message, "the rebuild's fetch failed")
+	// Publication transport failures name the publication boundary so the
+	// caller can distinguish them from an unavailable advisory fresh read.
+	testutil.Expect(t, "in the engine's own sentence", refusal.Message, "the remote ledger could not be reached during publication: the rebuild's fetch failed")
 
 	entry, err := goal.ReadEntry(bed.root, operation)
 	if err != nil {

@@ -169,10 +169,16 @@ func TestGoalPrioritySelection(t *testing.T) {
 		fixture := prioritySelectionFixture(t, commandApprovedPriorityGoal("fetch-candidate", 1, 1, ""))
 		root := fixture.root()
 		fixture.repo.captureErr = fmt.Errorf("git fetch from missing-remote failed")
+		// People may see explicitly stale advice; an agent must refuse a
+		// failed fresh read rather than select from the accepted snapshot.
+		dependencies := fixture.dependencies()
+		dependencies.proveTerminal = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
+			return humanauthority.Proof{}, fmt.Errorf("the caller is an agent")
+		}
 		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
-			return fixture.next([]string{"--root", root, "--machine", "m1", "--fetch"}, stdout, stderr)
+			return runGoalNextWithInputs([]string{"--root", root, "--machine", "m1", "--fetch"}, withStreams(dependencies, stdout, stderr), fixture.commandNow, stdout, stderr)
 		})
-		if code == 0 || !strings.Contains(stderr, "git fetch") || strings.Contains(stdout, "no claimable goal") {
+		if code == 0 || !strings.Contains(stderr, "git fetch") || stdout != "" {
 			t.Fatalf("failed fresh fetch became an empty selection: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 		}
 	})

@@ -1519,7 +1519,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"landing": {
 		{"Read", []string{"status"}},
-		{"Work", []string{"run", "start", "stop", "prove", "push", "return", "resolve"}},
+		{"Work", []string{"run", "start", "drain", "stop", "prove", "push", "return", "resolve"}},
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {

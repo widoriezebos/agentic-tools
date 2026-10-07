@@ -91,8 +91,10 @@ type AgentKeeper struct {
 	Fingerprint func(root string) (string, error)
 	// BarrenStop records the existing barren hold, or its clearing, at its owner.
 	BarrenStop func(record Record, state AgentState) error
-	// Observe reconciles the lane's own stop question on every keeper tick.
+	// Observe advances progress and synchronizes the stop question after releasing the home lock.
 	Observe func(Record) error
+	// AdmitWake rereads execution fences under the home lock, without taking the install lock.
+	AdmitWake func(string, Wake) (Wake, error)
 	// Explicit is a start asked for by name (landing run), not the keeper's
 	// own: barren runs do not hold it, and it clears their count.
 	Explicit bool
@@ -128,11 +130,12 @@ const (
 // AgentRun is one keeper step's result: its outcome, the launch it started
 // or found running, the wake it started for, and the line a steward prints.
 type AgentRun struct {
-	Outcome AgentOutcome
-	Launch  string
-	Root    string
-	Reasons []string
-	Line    string
+	Outcome  AgentOutcome
+	Launch   string
+	Root     string
+	Reasons  []string
+	Line     string
+	Problems []string
 }
 
 func agentRun(outcome AgentOutcome, root, line string) AgentRun {
@@ -144,11 +147,25 @@ func agentRun(outcome AgentOutcome, root, line string) AgentRun {
 // registered or this steward does not keep it.
 func (k AgentKeeper) Step() string { return k.Run().Line }
 
+// ObservationError preserves independent progress and question failures.
+// Progress is advisory and must not prevent admitted work from running.
+type ObservationError struct{ Progress, StopQuestion error }
+
+func (e *ObservationError) Error() string   { return errors.Join(e.Progress, e.StopQuestion).Error() }
+func (e *ObservationError) Unwrap() []error { return []error{e.Progress, e.StopQuestion} }
+
 // Run is Step with its outcome. The decision is taken under the lane flock;
 // the wake read and the start run outside it, so a person's landing stop
 // never waits for them, and the start is re-checked under the flock before
 // and after.
-func (k AgentKeeper) Run() AgentRun {
+func (k AgentKeeper) Run() (out AgentRun) {
+	var observations []string
+	defer func() {
+		out.Problems = append(out.Problems, observations...)
+		if len(observations) > 0 {
+			out.Line += "; " + strings.Join(observations, "; ")
+		}
+	}()
 	var root string
 	var result AgentRun
 	var registered Record
@@ -177,8 +194,21 @@ func (k AgentKeeper) Run() AgentRun {
 		}
 	}
 	if k.own(registered) && !gone(root) && k.Observe != nil {
-		if err := k.Observe(registered); err != nil && !k.Explicit {
-			return agentRun(AgentHeld, root, "the lane's stop question cannot be reconciled: "+err.Error())
+		if err := k.Observe(registered); err != nil {
+			var observation *ObservationError
+			if errors.As(err, &observation) {
+				if observation.Progress != nil {
+					observations = append(observations, observation.Progress.Error())
+				}
+				if observation.StopQuestion != nil {
+					observations = append(observations, observation.StopQuestion.Error())
+				}
+				if observation.StopQuestion != nil && !k.Explicit {
+					return agentRun(AgentHeld, root, "the lane's stop question synchronization failed")
+				}
+			} else if !k.Explicit {
+				return agentRun(AgentHeld, root, "the lane observation failed: "+err.Error())
+			}
 		}
 	}
 	if !proceed {
@@ -221,6 +251,18 @@ func (k AgentKeeper) Run() AgentRun {
 		if reason, held := k.held(root); held {
 			result = agentRun(AgentHeld, root, reason)
 			return nil
+		}
+		if k.AdmitWake != nil {
+			checked, err := k.AdmitWake(root, wake)
+			if err != nil {
+				result = agentRun(AgentHeld, root, "the landing start admission cannot be read: "+err.Error())
+				return nil
+			}
+			wake = checked
+			if len(wake.Reasons) == 0 {
+				result = agentRun(AgentIdle, root, "the landing lane is idle; no admitted work needs an agent")
+				return nil
+			}
 		}
 		current, err := ReadAgentState(k.Home)
 		if err != nil {
@@ -427,7 +469,7 @@ func UnreadableAgentRecord(home string) string {
 }
 
 // RepairAgentRecord replaces a keeper record that cannot be read, at a
-// person's landing start, keeping nothing (its launch, if any, is left to
+// landing start, keeping nothing (its launch, if any, is left to
 // the launch store); a readable record is left as it is.
 func RepairAgentRecord(home string) error {
 	return withLock(home, func() error {

@@ -205,6 +205,11 @@ func (f hostLoadGitFixture) answer(argv []string, input []byte) (string, []byte,
 		}
 	}
 	if cwd == root && len(input) == 0 {
+		// Fresh projection's repository owner reads commit age from the
+		// repository directory, separately from the observation time.
+		if slices.Equal(argv, []string{"log", "-1", "--format=%ct", tip}) {
+			return "log", []byte(os.Getenv("HOSTLOAD_GIT_NOW") + "\n"), 0, nil
+		}
 		for _, config := range []struct {
 			key, kind, value string
 			status           int

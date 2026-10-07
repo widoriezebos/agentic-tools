@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); 0 waiting, 0 returned in the queue",
+  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); 0 waiting, 0 returned in the queue; admission open",
   "data": {
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
@@ -32,6 +32,7 @@ exit 0
       "unread": []
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928)",
+    "admission": "admission open",
     "paused": false,
     "agent_alive": true,
     "queue": [],

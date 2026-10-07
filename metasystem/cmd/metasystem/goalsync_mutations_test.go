@@ -1908,7 +1908,13 @@ func TestForeignLandedAuthorityKeepsGoalTreeUsable(t *testing.T) {
 			return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, resolve, stdout, stderr)
 		},
 		"next": func(stdout, stderr io.Writer) int {
-			return runGoalNextWithInputs([]string{"--root", root}, fixture.dependencies(), fixture.commandNow, stdout, stderr)
+			// Explicit next checks person authority before its fresh read.
+			// This reader is an agent; the landed authority is a ledger fact.
+			dependencies := fixture.dependencies()
+			dependencies.proveTerminal = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("the caller is an agent")
+			}
+			return runGoalNextWithInputs([]string{"--root", root}, dependencies, fixture.commandNow, stdout, stderr)
 		},
 		"fetch": func(stdout, stderr io.Writer) int {
 			return runGoalFetchWithResolver([]string{"--root", root}, resolve, stdout, stderr)

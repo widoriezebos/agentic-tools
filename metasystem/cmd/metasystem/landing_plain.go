@@ -7,6 +7,7 @@ package main
 // goal itself.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -230,9 +231,15 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	previous, seen, err := plain.Latest(install, goalID)
 	added := false
 	if err == nil {
-		_, added, err = plain.HandIn(install, line)
+		by, _ := inv.landing().person(inv.layout.InstallationRoot.Path())
+		_, added, err = plain.HandIn(install, line, by)
 	}
 	if err != nil {
+		var closed *plain.AdmissionClosed
+		if errors.As(err, &closed) {
+			laneRoot, _, _ := inv.laneCheck(targets)
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: closed.Error() + "; nothing was handed in", next: inv.sameCommand(), nextReason: "retry after a person reopens admission and metasystem landing status --repo " + laneRoot + " reports admission open"}
+		}
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
 			Summary: "the landing lane's queue can't be written, so nothing was handed in",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
@@ -248,6 +255,9 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		subject += "'s records"
 	}
 	summary := fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha))
+	if entry.DrainBy != "" {
+		summary += "; " + entry.DrainBy + " extended the drain with this hand-in"
+	}
 	if line.Again && seen && previous.SHA == sha && previous.State == plain.StateReturned {
 		summary += "; re-queued after a return that needed no change"
 	}

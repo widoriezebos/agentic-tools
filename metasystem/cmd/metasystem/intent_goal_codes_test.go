@@ -16,6 +16,8 @@ import (
 func TestGoalRefusalCodesReachJSON(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
+	// Claim proves the checkout holder before reading the ledger fresh.
+	announceProofFixtureHolder(t, bed.root())
 	other := *bed.goalFile(bedGoal)
 	other.Id, other.State, other.Claimed = "other-work", goal.StateApproved, nil
 	for index := range other.History {

@@ -3,3 +3,6 @@ The landing lane's agent is at work
 Lane  ~/GitHub/agentic-tools-landing
   registered   by Wido, 08:58
   agent        running since 10:53 · pid 38928
+
+Admission
+  admission open
