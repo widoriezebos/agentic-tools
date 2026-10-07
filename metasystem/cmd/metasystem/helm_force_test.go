@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -173,9 +172,9 @@ func TestHelmReturnDoesNotAskToForceFromAShellThatIsNotThePersons(t *testing.T) 
 	b.owners.helm.pid = func() int64 { return 80 }
 	b.refuse = forceReadRefusal
 	b.answers = []string{"y", "", "n"}
-	out := b.wantReturn(0, "to conclude anyway, take the helm again at your terminal and run: "+forcedCommand+"\n")
-	if len(b.done) != 1 || slices.Contains(b.asked, forceQuestion) || !strings.Contains(out, "goal done g1: refused: goal g1 has open review notes r1-1") {
-		t.Fatalf("done %+v asked %q\n%s", b.done, b.asked, out)
+	b.wantReturn(3, "an agent started this shell")
+	if len(b.done) != 0 || len(b.asked) != 0 || !helm.Active(b.root).Active {
+		t.Fatalf("agent return acted: done %+v asked %q", b.done, b.asked)
 	}
 }
 

@@ -152,18 +152,15 @@ func fleetNames(report seat.Report) map[string]bool {
 	return names
 }
 
-// discoverHostMachines names this computer's machines: of the checkouts the
-// host registry records and this checkout, each once by its Git root, those
-// with a nickname that are armed or that fleet names; and the landing lane's
-// checkout. This checkout comes first, then by name. The other registered
-// checkouts are counted in OtherRegistered, never listed or stopped.
-func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostReading {
+type hostCheckout struct{ path, source string }
+
+// discoverHostCheckouts reads local registrations without machine filtering.
+func (inv *intentInvocation) discoverHostCheckouts() ([]hostCheckout, hostReading) {
 	owners := inv.machineSeams()
 	reading := hostReading{LaunchesElsewhere: []machineLaunch{}, NotOurs: []machineProcess{}}
-	type candidate struct{ path, source string }
-	var candidates []candidate
+	var candidates []hostCheckout
 	if inv.layout.GitRoot != "" {
-		candidates = append(candidates, candidate{inv.layout.GitRoot, "this checkout"})
+		candidates = append(candidates, hostCheckout{inv.layout.GitRoot, "this checkout"})
 	}
 	if path, err := owners.registryPath(); err != nil {
 		reading.RegistryProblem = "the host registry cannot be located: " + err.Error()
@@ -178,7 +175,7 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 			if checkout.Armed {
 				source = "registry: armed"
 			}
-			candidates = append(candidates, candidate{checkout.Path, source})
+			candidates = append(candidates, hostCheckout{checkout.Path, source})
 		}
 	}
 	landing := inv.landing()
@@ -188,8 +185,19 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 		reading.LaneProblem = "the landing lane cannot be read: " + err.Error()
 	} else if ok {
 		reading.laneHome = home
-		candidates = append(candidates, candidate{record.Root, "landing lane"})
+		candidates = append(candidates, hostCheckout{record.Root, "landing lane"})
 	}
+	return candidates, reading
+}
+
+// discoverHostMachines names this computer's machines: of the checkouts the
+// host registry records and this checkout, each once by its Git root, those
+// with a nickname that are armed or that fleet names; and the landing lane's
+// checkout. This checkout comes first, then by name. The other registered
+// checkouts are counted in OtherRegistered, never listed or stopped.
+func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostReading {
+	owners := inv.machineSeams()
+	candidates, reading := inv.discoverHostCheckouts()
 	byRoot := map[string]*hostMachine{}
 	for _, current := range candidates {
 		root := current.path

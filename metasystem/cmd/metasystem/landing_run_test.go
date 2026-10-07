@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -135,6 +136,9 @@ func TestLandingRunAtTheHelmIsRefused(t *testing.T) {
 	code, stdout, stderr := bed.run(t, "landing", "run")
 	if code == 0 || !strings.Contains(stderr, "at the helm") || !strings.Contains(oneSpaced(stderr), "metasystem helm return --repo "+bed.landingA) {
 		t.Fatalf("landing run at the helm = %d %q %q; want refused with helm return", code, stdout, stderr)
+	}
+	if !strings.Contains(oneSpaced(stderr), humanauthority.PersonActRemedy(shellCommand([]string{"metasystem", "helm", "return", "--repo", bed.landingA}))) {
+		t.Fatalf("the return must be the person's act at their enrolled terminal:\n%s", stderr)
 	}
 	if launches := landingLaunches(t, store); len(launches) != 0 {
 		t.Fatalf("a helmed lane started a landing agent: %+v", launches)

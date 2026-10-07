@@ -1,8 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // helm status reads who holds the helm, since when and why, and changes
@@ -20,8 +25,30 @@ func TestHelmStatusReadsTheHelm(t *testing.T) {
 	before, _ := b.signature()
 	code, out = b.run("helm", "status")
 	after, _ := b.signature()
-	if code != 0 || !strings.Contains(out, "Wido") || !strings.Contains(out, "coordinating by hand") || before != after {
+	if code != 0 || !strings.Contains(out, "Wido") || !strings.Contains(out, "coordinating by hand") || !reflect.DeepEqual(before, after) {
 		t.Fatalf("helm status while taken = %d:\n%s", code, out)
+	}
+}
+
+func TestHelmStatusReturnRemedyNamesThePerson(t *testing.T) {
+	t.Parallel()
+	for _, malformed := range []bool{false, true} {
+		name := "held"
+		if malformed {
+			name = "malformed"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newHelmBed(t, 20, true)
+			b.wantTake(nil, 0, "proven", "Wido")
+			if malformed {
+				helmMust(t, os.WriteFile(filepath.Join(b.root, ".git", "metasystem", "helm.json"), []byte("{"), 0600))
+			}
+			code, out := b.run("helm", "status", "--json")
+			if code != 0 || !strings.Contains(out, "metasystem helm return --repo ") || !strings.Contains(out, humanauthority.PersonActRemedy("")[:20]) {
+				t.Fatalf("status must name the person's return at their enrolled terminal: exit %d:\n%s", code, out)
+			}
+		})
 	}
 }
 

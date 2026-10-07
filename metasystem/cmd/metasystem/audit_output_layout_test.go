@@ -144,7 +144,8 @@ func helpLayoutBed(t *testing.T) layoutBed { return layoutBed{cwd: t.TempDir()} 
 func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 	return func(t *testing.T) layoutBed {
 		b := newProcessBed(t)
-		root := realpath.Resolve(b.root())
+		b.facts.root = realpath.Resolve(b.root())
+		root := b.root()
 		if busy {
 			item := func(family, component string, pid int64, line string) *machineItem {
 				return machineFixtureItem(family, component, "", pid, line)

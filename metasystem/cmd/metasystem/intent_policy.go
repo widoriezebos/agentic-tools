@@ -23,15 +23,16 @@ import (
 func (inv *intentInvocation) policyReaders() config.PolicyReaders {
 	readers := inv.owners.policies
 	if readers.Registry == nil {
-		readers.Registry = func(checkout string) (config.PolicyRegistry, error) {
-			result := config.PolicyRegistry{}
+		readers.Registry = func(checkout string) (result config.PolicyRegistry, err error) {
+			var laneProblem error
+			defer func() { err = errors.Join(laneProblem, err) }()
 			home, err := inv.boardHome()
 			if err != nil {
 				return result, err
 			}
 			record, present, _, err := lane.ReadGuarded(home)
 			if err != nil {
-				return result, &config.PolicyReadError{Source: "lane", Err: err}
+				laneProblem = &config.PolicyReadError{Source: "lane", Err: err}
 			}
 			if present {
 				result.Lane = record.Root
@@ -180,7 +181,7 @@ func (inv *intentInvocation) runPolicyShow(key string) int {
 					result.nextReason = "a person registers the landing checkout again, replacing the unreadable lane record"
 				case "helm":
 					result.next = []string{"metasystem", "helm", "return", "--repo", problem.Checkout}
-					result.nextReason = "return the helm to remove its unreadable signature, then repeat the read"
+					result.nextReason = humanauthority.PersonActRemedy(shellCommand(result.next))
 				}
 			}
 		}

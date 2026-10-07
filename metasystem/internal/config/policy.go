@@ -37,13 +37,7 @@ type PolicyContext struct {
 	Readers                   PolicyReaders
 }
 
-type PolicyValue struct {
-	Value    string    `json:"value"`
-	Source   string    `json:"source"`
-	Checkout string    `json:"checkout"`
-	SetBy    string    `json:"set-by"`
-	At       time.Time `json:"at,omitempty"`
-}
+type PolicyValue = helm.PolicyValue
 
 type PolicyResolution struct {
 	Name string `json:"name"`

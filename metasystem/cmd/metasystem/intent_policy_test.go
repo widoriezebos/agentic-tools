@@ -543,8 +543,14 @@ func TestPolicySettingsExecutableReadAndRefusal(t *testing.T) {
 	}
 	t.Logf("settings show with a malformed helm signature: %s", output)
 	output, err = run(append(envelope.Next.Argv[1:], "--json")...)
-	if err != nil {
-		t.Fatalf("executable helm return: %v %s", err, output)
+	if err == nil || !helm.Active(b.lane).Active || !bytes.Contains(output, []byte("terminal")) {
+		t.Fatalf("nonterminal return: %v %s", err, output)
+	}
+	// The remedy is the person's act at their terminal, through the public verb.
+	b.owners.helm = helmOwners{reader: person(), pid: func() int64 { return 20 }, now: func() time.Time { return b.now }, stdinTerminal: func() bool { return false }}
+	var returned bytes.Buffer
+	if code := runIntentIn(mustIntentCommand(t, "helm return"), envelope.Next.Argv[3:], &returned, &returned, b.lane, b.owners); code != 0 {
+		t.Fatalf("person's remedy: %d %s", code, returned.String())
 	}
 	output, err = run("settings", "show", "landing.batch", "--repo", b.lane, "--json")
 	if err != nil || !bytes.Contains(output, []byte(`"value": "auto"`)) {
@@ -606,6 +612,7 @@ func TestPolicySettingsShowRemedies(t *testing.T) {
 			t.Parallel()
 			b := newPolicyBed(t)
 			b.owners.prove = enrolledPersonProver(t, b.lane, b.now)
+			b.owners.helm = helmOwners{reader: person(), pid: func() int64 { return 20 }, now: func() time.Time { return b.now }, stdinTerminal: func() bool { return false }}
 			key := "landing.batch"
 			registryHome := t.TempDir()
 			lookup := map[string]string{"METASYSTEM_SUPERVISION_REGISTRY_HOME": registryHome}

@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +197,22 @@ func TestHelmTakeIsIdempotent(t *testing.T) {
 	t.Run("HM-2", witnessHelmTakeRepeat)
 }
 
+func TestHelmRepeatTakeRepairsStaleCheckout(t *testing.T) {
+	t.Parallel()
+	b := newHelmBed(t, 20, true)
+	first := b.wantTake(nil, 0, "proven", "Wido")
+	stale := first
+	stale.Checkout = filepath.Join(b.root, "old-checkout")
+	data, err := json.Marshal(stale)
+	helmMust(t, err, os.WriteFile(filepath.Join(b.root, ".git", "metasystem", "helm.json"), data, 0600))
+	b.owners.helm.now = func() time.Time { return helmNow.Add(time.Hour) }
+	code, out := b.run("helm", "take", "--reason", "by hand", "--json")
+	after, present := b.signature()
+	if code != 0 || !present || !reflect.DeepEqual(first, after) || strings.Contains(out, stale.Checkout) {
+		t.Fatalf("repeat did not repair the checkout while retaining the take: exit %d, record %+v:\n%s", code, after, out)
+	}
+}
+
 // witnessHelmTakeRepeat is HM-2's take leg, also U-idem's helm take witness.
 func witnessHelmTakeRepeat(t *testing.T) {
 	{
@@ -245,14 +263,14 @@ func witnessHelmReturnRepeat(t *testing.T) {
 	}
 }
 
-func TestHelmReturnByAgentAllowed(t *testing.T) {
+func TestHelmReturnByAgentRefused(t *testing.T) {
 	t.Parallel()
 	t.Run("HM-2", func(t *testing.T) {
 		b := newHelmBed(t, 20, true)
 		b.wantTake(nil, 0, "proven", "Wido")
 		b.owners.helm.pid = func() int64 { return 80 }
-		if b.wantReturn(0, "returned the helm Wido held"); helm.Active(b.root).Active {
-			t.Fatal("an agent's return left the helm taken")
+		if b.wantReturn(3, "an agent started this shell"); !helm.Active(b.root).Active {
+			t.Fatal("an agent returned a person's helm")
 		}
 	})
 }
@@ -320,7 +338,12 @@ func TestHelmStatusLinesInLocalTime(t *testing.T) {
 	b.wantTake(nil, 0, "proven", "Wido")
 	inv := &intentInvocation{owners: b.owners}
 	result := inv.withHelm(intentResult{Summary: "status of " + b.root, text: []string{"machinery: stopped"}, Data: map[string]any{}}, b.root)
-	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido: by hand — metasystem helm return ends it"
+	seat, err := helm.Locate(b.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The return names the held checkout, so the line is right wherever it is printed.
+	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido: by hand — " + humanauthority.PersonActRemedy("metasystem helm return --repo "+seat.Checkout)
 	lines, _ := result.Data.(map[string]any)["helm"].([]string)
 	if result.Summary != want || len(lines) < 2 || !strings.HasPrefix(lines[1], "the helm holder's terminal is enrolled as Wido (session leader sshd") ||
 		result.headline == nil || *result.headline != "status of "+b.root || result.text[0] != "machinery: stopped" {

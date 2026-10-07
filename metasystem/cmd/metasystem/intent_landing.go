@@ -789,9 +789,11 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	// The steward skips the keeper while the lane checkout is at the helm;
 	// landing run does the same.
 	if owners.helm(root).Active {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "the landing checkout " + root + " is at the helm, so no landing agent was started",
-			next:    []string{"metasystem", "helm", "return", "--repo", root}, nextReason: "gives it back to the machinery; then run metasystem landing run again"})
+			next:    []string{"metasystem", "helm", "return", "--repo", root}}
+		result.nextReason = humanauthority.PersonActRemedy(shellCommand(result.next)) + "; then run metasystem landing run again"
+		return inv.render(result)
 	}
 	if refused := inv.laneNotReady(owners, root); refused != nil {
 		return inv.render(*refused)
