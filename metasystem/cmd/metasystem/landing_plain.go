@@ -133,14 +133,14 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
 
-func (inv *intentInvocation) handInTrunkInputs() (lane.Record, plain.ProveSeams, []goal.TrunkRedEntry, error, *intentResult) {
+func (inv *intentInvocation) handInTrunkInputs() (lane.Record, plain.ProveSeams, []goal.TrunkRedEntry, *intentResult, error) {
 	owners, home, record, problem := inv.laneContext(true)
 	if problem != nil {
-		return record, plain.ProveSeams{}, nil, nil, problem
+		return record, plain.ProveSeams{}, nil, problem, nil
 	}
 	seams := inv.laneBatchSeams(home, record, owners.plainProve)
 	incidents, err := plain.TrunkInputs(record, seams)
-	return record, seams, incidents, err, nil
+	return record, seams, incidents, nil, err
 }
 
 func (inv *intentInvocation) landIncidentHold(goalID string, tips ...string) *intentResult {
@@ -161,7 +161,7 @@ func (inv *intentInvocation) landIncidentHold(goalID string, tips ...string) *in
 		}
 		return nil
 	}
-	record, seams, incidents, readErr, problem := inv.handInTrunkInputs()
+	record, seams, incidents, problem, readErr := inv.handInTrunkInputs()
 	if problem != nil {
 		return problem
 	}
@@ -212,7 +212,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	var exceptionSeams plain.ProveSeams
 	exceptionWarnings := []string{}
 	if inv.laneException != nil {
-		record, seams, incidents, readErr, problem := inv.handInTrunkInputs()
+		record, seams, incidents, problem, readErr := inv.handInTrunkInputs()
 		if problem != nil {
 			return *problem
 		}

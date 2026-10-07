@@ -150,7 +150,9 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 		}
 	}}
 	now, starts, proofAlive := laneTestNow, 0, false
-	keeper := newLandingAgentKeeper(root, home, landingAgent{now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
+	// Lane policy observation reads the same main and incident facts as selection
+	// (plans/designs/lane-reads-its-policies.md, Decisions 3 and 5).
+	keeper := newLandingAgentKeeper(root, home, landingAgent{proofEffects: bed.plainProve, now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
 	keeper.Prepare = func(record lane.Record) error {
 		_, err := plain.SelectBatch(record.Install, record.Root, record, bed.plainProve)
 		return err

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,15 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	b.owners.laneInstall = func(string) (string, error) { return l.install, nil }
 	code, result := b.do("incident", "claim", holdIncidentID, "--goal", bedGoal, "--by", "Wido")
 	expectOutcome(t, "claim", code, result, intentConfirmed)
+	// The lane observes the claim from main's current register, rather than
+	// the register from before the claim (lane-reads-its-policies, Decision 5).
+	l.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+		entries, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"])
+		if len(problems) != 0 {
+			return nil, fmt.Errorf("incident register: %v", problems)
+		}
+		return entries, nil
+	}
 	code, result = b.do("work", "land", bedGoal)
 	expectOutcome(t, "fix hand-in", code, result, intentConfirmed)
 	data, err := os.ReadFile(filepath.Join(plain.Dir(l.install), "queue.jsonl"))
@@ -90,7 +100,7 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	}
 	code, words = l.run(t, l.root, "status", "--json")
 	var status struct{ Data plain.Status }
-	if code != 0 || json.Unmarshal([]byte(words), &status) != nil || len(status.Data.Queue) != 1 || status.Data.Queue[0].Held || !slices.Contains(status.Data.Wake.Reasons, plain.WakeQueued) {
+	if code != 0 || json.Unmarshal([]byte(words), &status) != nil || len(status.Data.Queue) != 1 || status.Data.Queue[0].Held || len(status.Data.PendingActions) != 0 || !slices.Contains(status.Data.Wake.Reasons, plain.WakeQueued) {
 		t.Fatalf("fix remains held in status: %d %s", code, words)
 	}
 }

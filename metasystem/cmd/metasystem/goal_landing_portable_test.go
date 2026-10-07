@@ -137,7 +137,10 @@ func (fixture *portableProofFixture) writeGoal() {
 	now := time.Now().UTC().Truncate(time.Second)
 	opened, claimed, approved := now.Add(-10*time.Minute).Format(time.RFC3339), now.Add(-5*time.Minute).Format(time.RFC3339), now.Add(-4*time.Minute).Format(time.RFC3339)
 	risk := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "The application has two small command checks."}
-	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 2, ReviewRoundLimit: 2}
+	// Tier-one execution stays within its minute norm and has no review rounds
+	// (docs/backlog-mechanism.md, Split before slicing; docs/orchestration.md,
+	// Part One's review-round member).
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 360, ActiveJobLimit: 2, ReviewRoundLimit: 0}
 	root := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	fixture.writeBytes("plans/goals/backlog.md", goal.RenderRoot(root), 0o644)
 	for _, entry := range []struct{ id, prefix string }{{"portable", "B"}, {"goal-a", "C"}, {"goal-b", "D"}, {"goal-c", "E"}} {

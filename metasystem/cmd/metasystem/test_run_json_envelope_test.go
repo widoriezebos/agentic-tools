@@ -22,6 +22,7 @@ import (
 // is confirmed, a sufficient reuse unchanged, a red run failed and a retry
 // required refused with its code.
 func TestProofRunJSONPrintsOneEnvelope(t *testing.T) {
+	t.Parallel()
 	fixture := newPortableProofFixture(t)
 	run := func(tree string, extra ...string) (verbresult.Result, string) {
 		t.Helper()

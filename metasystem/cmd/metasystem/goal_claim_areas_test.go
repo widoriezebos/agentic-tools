@@ -457,6 +457,9 @@ func TestWorkLandReleasedAreasAgentRetry(t *testing.T) {
 	}
 	owners := bed.intentBed.owners()
 	owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+	// Decision 5 in plans/designs/lane-reads-its-policies.md checks trunk
+	// permission at the registered lane before the hand-in's area admission.
+	bed.laneInputs(&owners)
 	code, stdout, stderr := bed.run(owners, "work", "land", bedGoal, "--again")
 	if code == 0 || !strings.Contains(stdout+stderr, shellCommand(want[:len(want)-1])) || strings.Contains(stdout+stderr, "goal claim") {
 		t.Fatalf("printed refusal does not retry the hand-in: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -485,7 +488,10 @@ func TestWorkLandReleasedAreasNeedsTerminalProof(t *testing.T) {
 	reader.terminalID = "ttys:another"
 	owners := bed.intentBed.owners()
 	owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+	bed.laneInputs(&owners)
+	proofCalls := 0
 	owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
+		proofCalls++
 		if root != bed.root() {
 			t.Fatalf("terminal proof root = %q, want %q", root, bed.root())
 		}
@@ -493,8 +499,8 @@ func TestWorkLandReleasedAreasNeedsTerminalProof(t *testing.T) {
 	}
 	code, result := bed.runJSON(owners, "work", "land", bedGoal, "--again")
 	entries, err := plain.Entries(install)
-	if code == 0 || result.Outcome != intentRefused || err != nil || len(entries) != 1 || entries[0].State != plain.StateReturned {
-		t.Fatalf("empty lineage bypassed terminal proof: exit=%d %+v entries=%+v err=%v", code, result, entries, err)
+	if code == 0 || result.Outcome != intentRefused || proofCalls == 0 || err != nil || len(entries) != 1 || entries[0].State != plain.StateReturned {
+		t.Fatalf("empty lineage bypassed terminal proof: exit=%d %+v proof calls=%d entries=%+v err=%v", code, result, proofCalls, entries, err)
 	}
 }
 

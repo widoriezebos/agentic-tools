@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
@@ -412,18 +413,31 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "advance main")
 	mainTip := goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
 	goalSyncMutationGit(t, f.mainRoot, "push", "-q", "upstream", "HEAD:main")
-	lane := filepath.Join(t.TempDir(), "landing")
-	goalSyncMutationGit(t, filepath.Dir(lane), "clone", "-q", "-b", "main", f.upstream, lane)
+	laneRoot := filepath.Join(t.TempDir(), "landing")
+	goalSyncMutationGit(t, filepath.Dir(laneRoot), "clone", "-q", "-b", "main", f.upstream, laneRoot)
 	owners := defaultIntentOwners()
 	owners.dependencies.ownerLineage = func() string { return "m1" }
 	owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
-	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return lane, true, nil }
+	delivery.laneRoot = func(string, time.Time) (string, bool, error) { return laneRoot, true, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Fatalf("the hand-in ran a subprocess %v", process.argv)
 		return intentProcessResult{}
 	}
 	owners.delivery = delivery
+	// Hand-in reads trunk permission at the registered destination
+	// (plans/designs/lane-reads-its-policies.md, Decision 5).
+	layout, err := lane.NewLayout(laneRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	record, err := json.Marshal(lane.Record{Root: string(layout.Checkout), Install: string(layout.Install), CustodyEpoch: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestingFixtureFile(t, lane.RecordPath(home), record, 0o600)
+	owners.landing.home = func() (string, error) { return home, nil }
 	run := func(verb string) intentResult {
 		t.Helper()
 		command, _ := findIntentCommand("work " + verb)
@@ -476,7 +490,7 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 			lines++
 		}
 	}
-	entries, err := plain.Entries(filepath.Join(lane, "metasystem"))
+	entries, err := plain.Entries(filepath.Join(laneRoot, "metasystem"))
 	if lines != 1 || err != nil || len(entries) != 1 || entries[0].SHA != branchTip {
 		t.Fatalf("history lines=%d, queue=%+v %v", lines, entries, err)
 	}
