@@ -314,6 +314,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			out.Entry, out.Outcome = &returned, "returned"
 			if returned.State == StateWaiting {
 				out.Held, out.Outcome = true, "held"
+				return errors.Join(cause, returnErr, resolveWaitingLocked(install, entry, nil, true, &out))
 			}
 			return errors.Join(cause, returnErr)
 		}
