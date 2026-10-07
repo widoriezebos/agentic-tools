@@ -1,0 +1,10 @@
+# Task: revise plans/designs/lane-reads-its-policies.md after critique round 1
+
+Working Mode: Design
+Fold each of the 3 material findings exactly; keep everything else; Status stays draft. Never open any metasystem.conf.local. Edit only this page.
+
+M1 (Decision 2 U2, U3 budget): removing the claimLineage() != landing-agent shortcut that calls CloseProofLoop (intent_landing.go:799-807) leaves Stop.Command printing `metasystem landing run` for a repeated environment cause and for the barren hold (internal/landing/plain/stop.go:43-44), and 1a names landing run as the person's act that closes the proof loop (lane-lands-finished-goals.md:183, :273, test 15 :372): followed, it loops. In U3 the environment-repeat stop and the budget refusal print the exact `landing prove` act, run through the six-act matrix; in U2 name the person act that closes the barren lane-return stop (subject lane only, reopening no proof budget); rewrite 1a's test 15 to follow each new printed command to its effect and to the question closing.
+M2 (U1 test): run the U1 CheckBatch scenario on real local Git repositories (as internal/landing/plain/plain_test.go and cmd/metasystem/landing_plain_verbs_test.go do); inject only fetch and push to origin; the transitive-third-hand-in and omit-CheckBatch mutations must turn it red.
+M3 (U2 size): cut U2 into U2a (lanePerson, run --goals with its record, cross-checkout routing, the subject question and its closure) and U2b (execution under helm, pause and drain: intent_landing.go:791, intent_landing_prove.go:104, landing_agent.go:221, lane/agent.go:147, wake.go:39, steward/runner.go:361, and the dead-launcher retry), each with its own mutations.
+Notes, one sentence each: correct the six citation offsets (queue.go:315, :372; design_gate.go:33/42; intent_landing_return.go:39; landing_plain.go:162); drop U3's process-identity binding (claim-once under the lane lock suffices) and U4's classification checkpoint (a restart reruns, costing time not safety); say whether --by matching tolerates the human: prefix; make Decision 5's proof-root wording match Decision 2.
+Re-estimate. Return the units table and one line per finding.

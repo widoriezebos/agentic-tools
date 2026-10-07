@@ -1,0 +1,9 @@
+# Task: fold critique round 2 into plans/designs/lane-reads-its-policies.md and accept it
+
+Working Mode: Design
+Round 2 found 3 material (round 1: 3); two repeat the remedy class, but every unit depends on U2a's person helper, so a split leaves nothing buildable: under the plan's design stop rule the three findings are folded as acceptance items (a line "Acceptance item (round 2): ..." under the unit), and the page is accepted. Set Status: accepted and add under the header lines "- Critique: closed at round 2 on 3 material findings folded as acceptance items (rounds 3, 3; a split would have left no buildable unit)". Never open any metasystem.conf.local. Edit only this page.
+
+1. U2a: barrenHold clears on Explicit only when a recorded person selection exists (cmd/metasystem/intent_landing.go:776, :810 set Explicit with no proof; internal/landing/lane/agent.go:361-367; plain/stop.go:206-208); a generic landing run retries that selection and otherwise leaves the count and the stop; add these sites to the readers; scenario: a machinery agent's generic landing run leaves the barren stop open; mutation "Explicit clears barren".
+2. U3: Stop.Command picks the act from the stop's loop and scope: `landing prove --gate` for lane-gate (no proof-policy question), `landing prove --trunk` for trunk results, `landing prove` otherwise (stop.go:43-44, :156-159, :197); U3 and the replacement of 1a test 15 trigger the environment repeat on a gate and on a trunk proof, follow each command and assert the matching stop closes; mutation: plain prove for a gate.
+3. U2a: when no waiting goal is eligible (full-due wake with all lines held, wake.go:72-77; a launch that changed nothing, agent.go:344-355), the barren remedy prints `metasystem landing prove --trunk`; add the case to U2a's scenario.
+Return the final units table.

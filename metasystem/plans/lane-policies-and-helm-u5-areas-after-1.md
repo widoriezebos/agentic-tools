@@ -1,0 +1,11 @@
+# Brief: lane-policies-and-helm U5, correction 1
+
+Working Mode: Implement
+The unit is uncommitted in this worktree. One Opus read found three material defects; fix exactly these.
+
+1. cmd/metasystem/landing_plain.go:168-179: handIn calls inv.acquireClaim for a non-records hand-in of an unclaimed goal, so a person's `work land G` is refused (goal.Claim refuses humans, internal/goal/verbs.go:1387-1388) and an agent's hits the claim quota or approval. Remove the acquireClaim branch: a code hand-in of an unclaimed goal takes the ClaimAreas check plus snapshot path, as records hand-ins do. Test: a person re-hands-in a released goal with disjoint areas and it is admitted; with an overlapping claimed goal it is refused naming the blocker (mutation: acquire a claim again, red).
+2. internal/goal/txn.go:889-892 with verbs.go:4481-4490 and areas.go:224-233: on areaBindingChanged the transaction retries with no stopAt or attempt bound, and the arc Validate checks every arc member with a claim, including members the mutate skips as already ours and never re-pins (a design edit changes the digest; resume, steal, reconcile drop the snapshot via bindClaim). Validate only the members bound in this attempt, and bound the reread by stopAt and a small attempt cap (3), ending in a refusal that names the changed design. Test: an arc claim whose already-owned member's design digest changed completes (mutation: validate every member, the test hits the bound and fails).
+3. landing_plain.go:188-201: a records hand-in of an unclaimed goal runs ClaimAreas and can be refused with `goal claim` as its remedy, which cannot succeed for a done goal. Records-only hand-ins inherit their goal's areas for exclusion but are never admission-checked. Test: a records hand-in of a done goal beside an overlapping claim is admitted (mutation: admission-check records, red).
+
+Check: go build ./... && go vet ./cmd/metasystem/ ./internal/goal/... ./internal/launch/ && go test -count=1 -timeout 30m ./internal/goal/... ./internal/launch/ && go test -count=1 -timeout 30m -run 'TestGoalClaim|TestWorkLand|TestClaim|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+t.Parallel(); never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

@@ -1,0 +1,9 @@
+# Task: revise plans/designs/person-claims.md after critique round 1
+
+Working Mode: Design
+Fold both material findings exactly; keep everything else; Status stays draft. Never open any metasystem.conf.local. Edit only this page.
+
+1. Decision 3 / U1: the steward's generic revival still launches from an unapproved reservation: decideSeat falls to the generic ladder (seat_start.go:389-399, :433, any non-steward-seat lineage), classifySharedBacklog (openwork.go:100-115) counts any claimed goal as WorkOwned, Decide (verdict.go:151) returns ActRevive, runner.go:396-407 -> stewardRevive (steward_verbs.go:200-270) launches `internal delegate --revive` with no goal binding (dispatch_phase.go:116-137). Apply ClaimExecutionEligibility where open work is classified (classifySharedBacklog / readOpenWorkShared): a non-executable claim never counts as WorkOwned; it gets a non-reviving notify verdict carrying its wait; keep the seat-ladder notification; add to the readers row. Test: the runner tick with the seat launcher absent, and with a non-seat-lineage reservation: no delegate --revive call (mutation: classify by claim presence, red).
+2. Decision 3 / U1: an approved, budgeted epoch-0 steward-seat reservation must be StepDue, so the ActRevive seat start adopts it through its own session start (StartSeat's recheck still applies). Test: approved reservation, no live seat, one tick: a seat launch selected for that goal, then adoption with ownership and accounting unchanged (mutation: epoch 0 non-due, red).
+Notes, one sentence each: leave holdsUnderSeatLineage unchanged (finding 1 makes the change moot); state that reusing requireApprovedForClaim brings approval expiry and norm coverage and fails toward not launching; ClaimAreas' person branch takes a verified-person input, never goal.Actor.Human from --by.
+Re-estimate. Return the units table and one line per finding.

@@ -1,0 +1,10 @@
+# Brief: lane-drain-and-fresh-claims U3, correction 1
+
+Working Mode: Implement
+The unit is uncommitted in this worktree. One Opus read found one material defect; fix exactly this.
+
+internal/steward/runner.go:754-763 with rearm_resolver.go:514-531: when checkout HEAD is BEHIND the engine's source, the old code deferred the re-arm (deferRearm: note written, re-arm once the checkout catches up); the new code goes straight to verifyEnrollmentBuildSourceWithDeps, whose `merge-base --is-ancestor source HEAD` fails (ErrNotOwned), so the result is ErrEnrollmentDrift and up.enrollmentDrift sends the seat to a person (`system start` from an agent-free terminal) for a state that fixes itself on the next pull. The same cause at session start: VerifySourceAtCheckout (up.go:770-781) gives the generic remedy. Fix: before the projection comparison, keep the deferral when HEAD is an ancestor of the source but the source is not an ancestor of HEAD; in VerifySourceAtCheckout give that case the defer/pull remedy. Restore TestRearmBehindCheckoutDefersOncePerPush's behind premise (the fake `merge-base --is-ancestor main head` exits 1; no injected go.mod difference) and assert ErrRearmDeferred (mutation: no deferral for behind, red).
+Also (small, not material): the session-start refusal of a dev or unlanded engine names "rebuild from a clean tree"; engineGitDeps passes the caller's context and the configured rearm-resolve-seconds.
+
+Check: go build ./... && go vet ./internal/steward/ ./internal/delegation/ ./internal/up/ ./cmd/metasystem/ && go test -count=1 -timeout 30m ./internal/steward/ ./internal/delegation/ ./internal/up/ && go test -count=1 -timeout 30m -run 'TestRearm|TestEngine|TestSkew|TestWorkBuild|TestSession|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+t.Parallel(); no wall-clock waits; never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

@@ -28,7 +28,9 @@ The lane's decisions become policies a person can read and set as settings, with
 | U4 the helm sets every policy | `helm take` in a seat checkout sets that seat's policies to `person`, keeping the previous values in the policy record; in the lane checkout it also drains the lane; `helm take --all` does it for every machine on this computer (the form of `machine stop --all`); `helm return` and `helm return --all` restore the previous values and end the drain; `helm status` and `helm status --all` say who holds what and which policies are overridden. An agent is still refused the helm. | 100 |
 | U5 areas on the claim | A design page's Units table gains an `areas` column (paths or globs the unit edits), or a page-level `Areas:` line; `goal claim` copies the goal's areas onto the claim; a second claim whose areas overlap a claimed goal's, or a goal waiting in the lane's queue (1a's claim-and-queue view), is sequenced behind it (`auto`: refused with the blocking goal named and `goal claim` as the next step when it lands; `person`: allowed with a warning); areas are released when the goal lands or is dropped. The overlap check is a reader of the claim, never a lock on files. | 100 |
 
-Build order: U1, U3, U4, U2, U5. Each unit: one build, at most two corrections, material must fall, a class repeat stops the unit. Each unit's acceptance has one test through the public verb (`settings set/show/check`, `landing drain/status`, `helm take/return/status`, `goal claim`).
+| U6 a ledger-only move is no move | Finding 3's smallest form, seen again starting 1a on 10-06: every reader that decides from the ledger (`goal claim`, `goal next`, `session start`) fetches the accepted ledger itself first, never a cached view hours old; the engine re-arm after a fetch (rearm-after-fetch) compares the commits that change the engine's code, so ledger, records and settings commits never defer `session start`; a person's `goal claim` needs no live session, and an agent's claim starts the one it needs. The records ref itself stays a later decision, taken with the data this unit's readers produce. | 70 |
+
+Build order: U1, U3, U4, U2, U5, U6. Each unit: one build, at most two corrections, material must fall, a class repeat stops the unit. Each unit's acceptance has one test through the public verb (`settings set/show/check`, `landing drain/status`, `helm take/return/status`, `goal claim`).
 
 ## Estimates
 
@@ -36,7 +38,7 @@ About 70 minutes per unit when the first read is clean; five units, about 6 to 8
 
 ## Not in this goal
 
-The trunk check, red classification, the stop and question records (1a). The driver (`seat.driver` is declared here, consumed by runs-advance). The budget raise policy's behaviour (`goal.raise` declared here, consumed by goal-budget-follows-its-plan). The boundary (runs-advance). The records ref (finding 3).
+The trunk check, red classification, the stop and question records (1a). The driver (`seat.driver` is declared here, consumed by runs-advance). The budget raise policy's behaviour (`goal.raise` declared here, consumed by goal-budget-follows-its-plan). The boundary (runs-advance). The records ref (finding 3) beyond U6.
 
 ## Readers of what this goal changes
 

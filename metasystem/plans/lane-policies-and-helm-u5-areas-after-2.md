@@ -1,0 +1,9 @@
+# Brief: lane-policies-and-helm U5, correction 2 (the last)
+
+Working Mode: Implement
+The unit is uncommitted in this worktree. The second read found one material defect, caused by correction 1's brief; fix exactly this.
+
+cmd/metasystem/landing_plain.go:185-187 with the message at internal/goal/areas.go:169: a `work land G` refused for overlapping areas prints `metasystem goal claim`, which never re-hands-in G (and goal.Claim refuses every person, verbs.go:1387-1388); and a person's hand-in is refused for an overlap, which is not damage (the rule: a person's act is never refused except to prevent damage). Fix: for an agent, keep the refusal and make its next step the same command, `metasystem work land G` (inv.sameCommand()), after the blocking goal lands or is dropped, naming the blocker and both patterns; for a person (proved at the enrolled terminal, as the existing person verbs check), admit the hand-in and record the overlap as a warning on the line and in the result. Tests through `work land`: an agent's overlapping hand-in is refused and its printed next step is `work land G` (mutation: print goal claim again, red); once the blocker lands, following that printed command admits it; a person's overlapping hand-in is admitted with the warning (mutation: refuse the person, red). Fix TestWorkLandReleasedAreasAdmission, which treated an empty lineage as a person and expected a refusal.
+
+Check: go build ./... && go vet ./cmd/metasystem/ ./internal/goal/... && go test -count=1 -timeout 30m ./internal/goal/... && go test -count=1 -timeout 30m -run 'TestGoalClaim|TestWorkLand|TestClaim|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+t.Parallel(); never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

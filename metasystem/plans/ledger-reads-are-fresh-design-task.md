@@ -1,0 +1,8 @@
+# Task: write the design for ledger-reads-are-fresh
+
+Working Mode: Design
+Write plans/designs/ledger-reads-are-fresh.md from plans/ledger-reads-are-fresh-design-brief.md (split from lane-drain-and-fresh-claims under the design stop rule; it carries that design's round-2 finding 1 about the session-start hook's 15-second budget). It is small: say so, and keep it to the smallest form. Read first: the brief; plans/designs/lane-drain-and-fresh-claims.md (accepted); plans/designs/machinery-mechanisms.md (binding); plans/machinery-open-findings-plan-2026-10-06.md (finding 3; the stop table and materiality paragraph). Code: main in this checkout; read every site you cite (the three callers: hook_entry.go:356, up.go:239, intent_process.go:682; project.go:46 defaultFreshProjectionTimeout; runtime_hook_start.go:625; .claude/settings.json SessionStart timeout). Never open any metasystem.conf.local. Edit no other file.
+
+Shape as the accepted designs: header (Kind: design, Id: a new ULID, Status: draft, Goals: ledger-reads-are-fresh), what it delivers, Decisions with sites, Units table (unit, intent, lines, areas), Estimates, a public-verb test per unit failing under its mutation, readers. Answer the five questions for every new function, record and act: who calls it in production; how fresh is every state a decision reads; person or agent; can every refusal's remedy succeed when followed without undoing the gate; does every unreadable input fail safe for the agent and never refuse a person. Decide with the mechanisms page where possible and record under "Decided by m1e for Wido".
+
+Return: page path, units with estimates.
