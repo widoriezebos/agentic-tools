@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -173,6 +174,12 @@ func (r *obligationRepository) Release(opid string) error {
 }
 
 var _ goal.Repository = (*obligationRepository)(nil)
+
+// Explicit decision reads require cancellation without replacing the
+// transaction and publication effects this fixture checks.
+func (r *obligationRepository) WithContext(ctx context.Context) goal.Repository {
+	return freshCommandRepository{Repository: r, ctx: ctx, attempts: new(int)}
+}
 
 type obligationCommandFixture struct {
 	t     *testing.T

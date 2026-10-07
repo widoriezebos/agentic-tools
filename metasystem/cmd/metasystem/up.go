@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -110,62 +111,100 @@ func answerUp(result up.Result, asJSON bool, stdout, stderr io.Writer) int {
 	return result.ExitCode()
 }
 
-func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
-	if !goal.NewWorld(root) {
-		return up.StopCapabilityRestampResult{}, nil
-	}
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return up.StopCapabilityRestampResult{}, err
-	}
-	now, err := goalCommandNow(root)
-	if err != nil {
-		return up.StopCapabilityRestampResult{}, err
-	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return up.StopCapabilityRestampResult{}, err
-	}
-	machine, err := goal.ResolveMachine(root)
-	if err != nil {
-		return up.StopCapabilityRestampResult{}, err
-	}
-	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
-		file := projection.Tree.Live[id]
-		if file.State != goal.StateClaimed || file.Claimed == nil ||
-			file.Claimed.Machine != machine || file.Claimed.Lineage != lineage {
-			continue
+func restampStopCapabilityWith(dependencies syncRequestDependencies, clock func(string) (time.Time, error), fresh bool) func(string, string, int64) (up.StopCapabilityRestampResult, error) {
+	return func(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
+		endpoint, err := dependencies.endpoint(root)
+		if err != nil {
+			return up.StopCapabilityRestampResult{}, err
 		}
-		result := up.StopCapabilityRestampResult{GoalID: id, ToEpoch: claimEpoch}
-		if file.StopCapability == nil {
-			return result, fmt.Errorf("claimed goal %s has no stop capability", id)
+		if !fresh && !goal.NewWorldAtEndpoint(endpoint) {
+			return up.StopCapabilityRestampResult{}, nil
 		}
-		result.FromEpoch = file.StopCapability.ClaimEpoch
-		if result.FromEpoch == claimEpoch {
+		var projection goal.Projection
+		var observation *goal.Observation
+		if fresh {
+			var observed goal.Observation
+			projection, observed, err = goal.FreshProjection(dependencies.readContext(), endpoint, func() (time.Time, error) { return clock(root) })
+			observation = &observed
+		} else {
+			now, clockErr := clock(root)
+			if clockErr != nil {
+				return up.StopCapabilityRestampResult{}, clockErr
+			}
+			projection, err = goal.Project(endpoint, false, now)
+		}
+		if err != nil {
+			return up.StopCapabilityRestampResult{Observation: observation}, err
+		}
+		machine, err := dependencies.machine(root)
+		if err != nil {
+			return up.StopCapabilityRestampResult{}, err
+		}
+		for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
+			file := projection.Tree.Live[id]
+			if file.State != goal.StateClaimed || file.Claimed == nil ||
+				file.Claimed.Machine != machine || file.Claimed.Lineage != lineage {
+				continue
+			}
+			result := up.StopCapabilityRestampResult{GoalID: id, ToEpoch: claimEpoch, Observation: observation}
+			if file.StopCapability == nil {
+				return result, fmt.Errorf("claimed goal %s has no stop capability", id)
+			}
+			result.FromEpoch = file.StopCapability.ClaimEpoch
+			if result.FromEpoch == claimEpoch {
+				return result, nil
+			}
+			if result.FromEpoch > claimEpoch {
+				return result, fmt.Errorf("the stop permission is newer (%d) than this checkout's claim (%d)", result.FromEpoch, claimEpoch)
+			}
+			classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &claimEpoch}
+			request, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(root, "", lineage, nil, classification, false, clock, dependencies)
+			if err != nil {
+				return result, err
+			}
+			published, err := goal.Restamp(request, id)
+			if err != nil {
+				return result, err
+			}
+			if published.Outcome != goal.OutcomeConfirmed {
+				return result, fmt.Errorf("goal restamp ended %s: %s", published.Outcome, published.Detail)
+			}
+			result.Restamped = true
 			return result, nil
 		}
-		if result.FromEpoch > claimEpoch {
-			return result, fmt.Errorf("the stop permission is newer (%d) than this checkout's claim (%d)", result.FromEpoch, claimEpoch)
-		}
-		classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &claimEpoch}
-		request, err := syncReqClassified(root, "", lineage, nil, classification)
-		if err != nil {
-			return result, err
-		}
-		published, err := goal.Restamp(request, id)
-		if err != nil {
-			return result, err
-		}
-		if published.Outcome != goal.OutcomeConfirmed {
-			return result, fmt.Errorf("goal restamp ended %s: %s", published.Outcome, published.Detail)
-		}
-		result.Restamped = true
-		return result, nil
+		return up.StopCapabilityRestampResult{Observation: observation}, nil
 	}
-	return up.StopCapabilityRestampResult{}, nil
+}
+
+type upCommandInputs struct {
+	dependencies syncRequestDependencies
+	clock        func(string) (time.Time, error)
+	executable   func() (string, error)
+	run          func(up.Options) up.Result
+}
+
+func (inputs upCommandInputs) defaults() upCommandInputs {
+	if inputs.dependencies.endpoint == nil {
+		inputs.dependencies = defaultSyncRequestDependencies()
+	}
+	if inputs.clock == nil {
+		inputs.clock = goalCommandNow
+	}
+	if inputs.executable == nil {
+		inputs.executable = os.Executable
+	}
+	if inputs.run == nil {
+		inputs.run = up.Run
+	}
+	return inputs
 }
 
 func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
+	return runUpWithInputs(args, repositoryTop, stdout, stderr, upCommandInputs{})
+}
+
+func runUpWithInputs(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer, inputs upCommandInputs) int {
+	inputs = inputs.defaults()
 	flags := newFlagSet("up", stdout, stderr)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
@@ -218,7 +257,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 	if err != nil {
 		return refuse(2, "up: "+err.Error())
 	}
-	binary, err := os.Executable()
+	binary, err := inputs.executable()
 	if err != nil {
 		return refuse(1, "up: "+err.Error())
 	}
@@ -236,7 +275,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityForUp,
+		RestampStopCapability: restampStopCapabilityWith(inputs.dependencies, inputs.clock, true), AdoptionRemedy: "metasystem up",
 	}
 	if *printScheduler {
 		fmt.Fprintln(stdout, up.SchedulerEntry(options))
@@ -252,5 +291,5 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 	if *shutdown {
 		return answerUp(up.Shutdown(options), *asJSON, stdout, stderr)
 	}
-	return answerUp(up.Run(options), *asJSON, stdout, stderr)
+	return answerUp(inputs.run(options), *asJSON, stdout, stderr)
 }

@@ -489,6 +489,7 @@ var (
 )
 
 type syncRequestDependencies struct {
+	ctx            context.Context
 	authorityFacts goalAuthorityReadFacts
 	endpoint       func(string) (goal.Endpoint, error)
 	machine        func(string) (string, error)
@@ -509,6 +510,13 @@ type syncRequestDependencies struct {
 	// the process's own. A caller that owns its streams (a parallel test)
 	// sets both, so no other goroutine's output can reach them.
 	stdout, stderr io.Writer
+}
+
+func (d syncRequestDependencies) readContext() context.Context {
+	if d.ctx != nil {
+		return d.ctx
+	}
+	return context.Background()
 }
 
 func (d syncRequestDependencies) helmState(root string) helm.State {
@@ -574,18 +582,6 @@ func syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag string, obse
 		return goal.VerbRequest{}, classifyErr
 	}
 	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, false, commandNow, dependencies)
-}
-
-func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult) (goal.VerbRequest, error) {
-	return syncReqClassifiedAt(root, by, lineageFlag, observedProof, classification, goalCommandNow)
-}
-
-func syncReqClassifiedAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, false, commandNow)
-}
-
-func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, allowTerminal, commandNow, defaultSyncRequestDependencies())
 }
 
 func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {

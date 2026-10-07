@@ -45,6 +45,15 @@ import (
 // engine serves the entry at all; `system setup` asks it before connecting a
 // checkout's hooks.
 func runHookEntry(args []string, stdout, stderr io.Writer) int {
+	return runHookEntryWithInputs(args, stdout, stderr, defaultHookEntryInputs)
+}
+
+type hookEntryInputs struct {
+	invocation hooks.Invocation
+	operations hooks.Ops
+}
+
+func runHookEntryWithInputs(args []string, stdout, stderr io.Writer, build func(string, string, chan os.Signal, io.Writer) hookEntryInputs) int {
 	if len(args) == 1 && args[0] == "--accepts" {
 		return 0
 	}
@@ -66,14 +75,21 @@ func runHookEntry(args []string, stdout, stderr io.Writer) int {
 		signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 		defer signal.Stop(signals)
 	}
+	inputs := build(installation, event, signals, stderr)
+	inputs.invocation.Runtime, inputs.invocation.Event = runtime, event
+	inputs.invocation.Stdout, inputs.invocation.Stderr = stdout, stderr
+	return hooks.RunRuntimeHook(inputs.invocation, inputs.operations)
+}
+
+func defaultHookEntryInputs(installation, event string, signals chan os.Signal, stderr io.Writer) hookEntryInputs {
 	origin := time.Now()
 	owners := hookOwners{diagnostics: io.Discard}
 	if event == "start" {
 		owners.diagnostics = stderr
 	}
-	return hooks.RunRuntimeHook(hooks.Invocation{
-		Runtime: runtime, Event: event,
-		Stdin: os.Stdin, Stdout: stdout, Stderr: stderr,
+	return hookEntryInputs{invocation: hooks.Invocation{
+		Event:  event,
+		Stdin:  os.Stdin,
 		Lookup: os.LookupEnv, Pid: os.Getpid(), Ppid: os.Getppid(), Installation: installation,
 		Now:       time.Now,
 		Monotonic: func() time.Duration { return time.Since(origin) },
@@ -87,7 +103,7 @@ func runHookEntry(args []string, stdout, stderr io.Writer) int {
 			BootClock: identity.BootClock, Prober: identity.KernelProber{}, ParentPid: identity.ParentPid,
 			EventInterval: 20 * time.Millisecond, FixtureDeadline: stopDeadlineFixtureEvent,
 		},
-	}, owners)
+	}, operations: owners}
 }
 
 // stopDeadlineFixtureEventEnvironment names a file whose appearance a
@@ -133,7 +149,9 @@ type hookOwners struct {
 	// engineBuild makes the bootstrap build command, run in the
 	// installation; nil is `go run ./cmd/devgate build`. Tests stand in for
 	// the Go toolchain here.
-	engineBuild func() *exec.Cmd
+	engineBuild   func() *exec.Cmd
+	upInputs      upCommandInputs
+	repositoryTop func(string) (string, error)
 }
 
 func (o hookOwners) diagnose(format string, args ...any) {
@@ -325,12 +343,17 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
-	scope, err := upRepositoryScopeWith(request.Repo, stateroot.RepositoryTop)
+	inputs := o.upInputs.defaults()
+	top := o.repositoryTop
+	if top == nil {
+		top = stateroot.RepositoryTop
+	}
+	scope, err := upRepositoryScopeWith(request.Repo, top)
 	if err != nil {
 		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
-	binary, err := os.Executable()
+	binary, err := inputs.executable()
 	if err == nil {
 		binary, err = canonicalPath(binary)
 	}
@@ -353,13 +376,13 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 		RuntimeSession: request.RuntimeSession, NoRuntimeSession: request.NoRuntimeSession, StartSource: request.StartSource,
 		RecoverOnly: request.RecoverOnly, IfDown: request.IfDown, WaitScaleMilli: scale,
 		CallerPid:             int64(request.CallerPid),
-		RestampStopCapability: restampStopCapabilityForUp,
+		RestampStopCapability: restampStopCapabilityWith(inputs.dependencies, inputs.clock, false),
 	}
 	var result up.Result
 	if request.Retire {
 		result = up.Retire(options)
 	} else {
-		result = up.Run(options)
+		result = inputs.run(options)
 	}
 	for _, line := range result.Lines() {
 		fmt.Fprintln(stdout, line)

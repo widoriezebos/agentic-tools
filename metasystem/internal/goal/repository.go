@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -30,15 +31,27 @@ func (e Endpoint) repository() Repository {
 }
 
 // gitRepository keeps the production Git implementation in the goal package.
-type gitRepository struct{ endpoint Endpoint }
+type gitRepository struct {
+	endpoint      Endpoint
+	ctx           context.Context
+	totalDeadline time.Time
+}
 
-func (g gitRepository) Capture(opid string) (string, error) { return CaptureTip(g.endpoint, opid) }
+func (g gitRepository) Capture(opid string) (string, error) {
+	if g.ctx != nil {
+		return g.capture(opid)
+	}
+	return CaptureTip(g.endpoint, opid)
+}
 func (g gitRepository) Accepted() (string, bool, error) {
+	if g.ctx != nil {
+		return acceptedTipWithRun(g.endpoint.Root, g.git)
+	}
 	return acceptedTipForGates(g.endpoint.Root)
 }
 func (g gitRepository) Files(commit string, prefixes ...string) (map[string][]byte, error) {
 	args := append([]string{"ls-tree", "-r", "--name-only", commit, "--"}, prefixes...)
-	out, err := gitIn(g.endpoint.Root, args...)
+	out, err := g.git(args...)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list committed files at %s: %w", commit, err)
 	}
@@ -47,6 +60,9 @@ func (g gitRepository) Files(commit string, prefixes ...string) (map[string][]by
 		if path := strings.TrimSpace(line); path != "" {
 			paths = append(paths, path)
 		}
+	}
+	if g.ctx != nil {
+		return readCommitGoalBlobsWithRun(g.endpoint.Root, commit, paths, g.endpoint.commandEnv, g.run)
 	}
 	return readCommitGoalBlobs(g.endpoint.Root, commit, paths, nil)
 }
@@ -57,9 +73,20 @@ func (g gitRepository) Publish(parent, commit string) (CASOutcome, error) {
 	return PublishCAS(g.endpoint, parent, commit)
 }
 func (g gitRepository) AcceptedCAS(old, next string) error {
+	if g.ctx != nil {
+		_, err := g.git("update-ref", AcceptedRef, next, old)
+		return err
+	}
 	return setAcceptedTo(g.endpoint.Root, next, old)
 }
 func (g gitRepository) IsAncestor(ancestor, descendant string) (bool, error) {
+	if g.ctx != nil {
+		_, err := g.git("merge-base", "--is-ancestor", ancestor, descendant)
+		if gitExitCode(err) == 1 {
+			return false, nil
+		}
+		return err == nil, err
+	}
 	return IsAncestor(g.endpoint.Root, ancestor, descendant)
 }
 func (g gitRepository) TrailerPresent(tip, opid string) (bool, error) {
@@ -69,7 +96,7 @@ func (g gitRepository) CommitWithTrailer(revision, key, value string) (string, e
 	return commitWithTrailer(g.endpoint.Root, revision, key, value)
 }
 func (g gitRepository) CommitTime(commit string) (time.Time, error) {
-	out, err := goalGit(g.endpoint.Root, nil, "log", "-1", "--format=%ct", commit)
+	out, err := g.git("log", "-1", "--format=%ct", commit)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -79,7 +106,13 @@ func (g gitRepository) CommitTime(commit string) (time.Time, error) {
 	}
 	return time.Unix(epoch, 0), nil
 }
-func (g gitRepository) Release(opid string) error { CleanupRefs(g.endpoint, opid); return nil }
+func (g gitRepository) Release(opid string) error {
+	if g.ctx != nil {
+		return g.deleteRefs(fetchRefFor(opid), txnRefFor(opid))
+	}
+	CleanupRefs(g.endpoint, opid)
+	return nil
+}
 
 func readCommitFiles(e Endpoint, commit string, prefixes ...string) (map[string][]byte, error) {
 	return e.repository().Files(commit, prefixes...)

@@ -1192,7 +1192,12 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		}
 		return result
 	case report.failure != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
+		outcome := intentRefused
+		var captureFailure goal.PublicationCaptureFailure
+		if errors.As(report.failure, &captureFailure) {
+			outcome = intentFailed
+		}
+		return intentResult{Outcome: outcome, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
 			Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
 	case landed && code == 0:
 		confirmed.Outcome = intentConfirmed

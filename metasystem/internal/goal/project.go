@@ -141,9 +141,21 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 	if !present {
 		return Projection{}, ErrLedgerNotFetched
 	}
+	return projectTip(e, tip, now)
+}
+
+func projectTip(e Endpoint, tip string, now time.Time) (Projection, error) {
+	return projectTipClock(e, tip, func() (time.Time, error) { return now, nil })
+}
+
+func projectTipClock(e Endpoint, tip string, clock func() (time.Time, error)) (Projection, error) {
 	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return Projection{}, err
+	}
+	now, err := clock()
+	if err != nil {
+		return Projection{}, fmt.Errorf("ledger observation clock: %w", err)
 	}
 	p := Projection{Root: e.Root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}
 

@@ -12,6 +12,7 @@ package goal
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -28,6 +29,10 @@ type AdvanceResult struct {
 // A refusal returns an error naming the file and rule; the accepted
 // ref is untouched.
 func FetchAdvance(e Endpoint) (AdvanceResult, error) {
+	return fetchAdvance(e, func(nonce string) (string, error) { return CaptureTip(e, nonce) }, func(nonce string) error { CleanupRefs(e, nonce); return nil })
+}
+
+func fetchAdvance(e Endpoint, capture func(string) (string, error), cleanup func(string) error) (result AdvanceResult, err error) {
 	nonce, err := readNonce()
 	if err != nil {
 		return AdvanceResult{}, err
@@ -35,8 +40,13 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	// Armed before the capture: git writes this opid's ref during the fetch, so
 	// a capture that fails partway has already created one. CleanupRefs deletes
 	// both refs and ignores whether they existed.
-	defer CleanupRefs(e, nonce)
-	fetched, err := CaptureTip(e, nonce)
+	defer func() {
+		if cleanupErr := cleanup(nonce); cleanupErr != nil {
+			result = AdvanceResult{}
+			err = errors.Join(err, fmt.Errorf("cleanup of temporary ref %s failed: %w", fetchRefFor(nonce), cleanupErr))
+		}
+	}()
+	fetched, err := capture(nonce)
 	if err != nil {
 		return AdvanceResult{}, err
 	}

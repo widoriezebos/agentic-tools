@@ -339,6 +339,9 @@ func (f *goalListRepositoryFixture) publish(files ...*goal.GoalFile) {
 }
 
 func (f *goalListRepositoryFixture) next(args []string, stdout, stderr io.Writer) int {
+	// Next proves the caller before selecting from a fresh, cancellable read.
+	reader := goalSyncTerminalReader(f.t, f.root(), "priority-terminal")
+	f.facts.reader = &reader
 	return runGoalNextWithInputs(args, withStreams(f.dependencies(), stdout, stderr), f.facts.commandNow, stdout, stderr)
 }
 

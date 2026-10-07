@@ -11,7 +11,7 @@ import (
 )
 
 // The transition-authority fold (review r1, F12/F13): claim is
-// agent-only, the pair is the ownership key, human-origin goals are
+// terminal proof guards human acts, the pair is the ownership key, human-origin goals are
 // human-reserved, edit checks authority, steal cascades, reopen
 // adopts the arc's standing state, set-arc composes under the
 // membership matrix, prune's closure seeds from keep survivors, and
@@ -130,28 +130,25 @@ func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
 	}
 }
 
-func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
+func TestClaimRequiresAuthorityAndKeepsPair(t *testing.T) {
 	t.Parallel()
 	a, _ := fakeGoalEndpoint(t)
 	if res, err := Open(verbReqFor(a, "01J5X00000000000000000AK00", "mac-a"), "pair-keyed", "Pair semantics.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
-	// Claim under a human name refuses up front, and guides (rule H1): a
-	// person's claim would bind no session to work the goal, so the
-	// refusal names the public commands that steer or move the claim.
+	// A name alone grants no person authority at publication.
 	humanClaim := verbReqFor(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "made by the agent session") ||
-		!strings.Contains(err.Error(), "run: metasystem goal prioritize pair-keyed 1") ||
-		!strings.Contains(err.Error(), "not by a person") {
-		t.Fatalf("humans cannot claim, and are guided: %v", err)
+	if result, err := Claim(humanClaim, "pair-keyed"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof") {
+		t.Fatalf("unproved person claim passed: %+v %v", result, err)
 	}
 	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "open --claim is gone") {
-		t.Fatalf("humans cannot open --claim: %v", err)
+		t.Fatalf("open --claim passed: %v", err)
 	}
-	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "not by a person") {
-		t.Fatalf("humans cannot claim arcs: %v", err)
+	humanClaim.Ulid = "01J5X00000000000000000AK11"
+	if result, err := ClaimArc(humanClaim, "pair-keyed"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof") {
+		t.Fatalf("unproved person arc claim passed: %+v %v", result, err)
 	}
 
 	if res, err := claimApprovedForTest(t, verbReqFor(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {

@@ -1376,17 +1376,15 @@ func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFil
 }
 
 // Claim takes ownership of a human-approved goal for the actor's pair.
-// Claim is AGENT-ONLY: humans direct agents; no human
-// lineage exists, so no human claim row.
+// A named person also reaches the publication transaction; approval,
+// ownership and session binding are checked against its captured tip.
 const ClaimQuotaCode = "GOAL_CLAIM_QUOTA"
 
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
-	}
+
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
 	}
@@ -1414,7 +1412,7 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string) ([]Change, e
 			var err error
 			state, err = r.ClaimLaneState(heldID, tip)
 			if err != nil {
-				return nil, err
+				state = ""
 			}
 		}
 		switch state {
@@ -1563,6 +1561,11 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
+			if r.Actor.Human != "" {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "claim", Name: "named claim", Missing: "a person's named claim requires terminal proof"}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
+			}
 			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
@@ -4378,9 +4381,7 @@ func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error
 	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
-	}
+
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
 	}
@@ -4401,6 +4402,11 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
+			if r.Actor.Human != "" {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "claim", Name: "named claim", Missing: "a person's named claim requires terminal proof"}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
+			}
 			boundIDs = nil
 			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {

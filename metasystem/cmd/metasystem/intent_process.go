@@ -679,15 +679,27 @@ func runIntentSessionStart(inv *intentInvocation) int {
 	result := owners.up(up.Options{
 		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
 		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityForUp,
+		RestampStopCapability: restampStopCapabilityWith(inv.owners.dependencies, inv.owners.commandNow, true),
 	})
 	outcome := intentConfirmed
+	remedy := result.Remedy
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
+		outcome = intentPartial
+		remedy = result.Adoption.Remedy
+	}
 	if result.ExitCode() != 0 {
 		outcome = intentRefused
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
-		Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
-		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy}})
+		Summary: sessionPreparationSummary(result), text: result.Lines(), Decision: remedy,
+		Data: map[string]any{"outcome": result.Outcome, "adoption": result.Adoption, "lines": nonNilLines(result.Lines()), "remedy": remedy}})
+}
+
+func sessionPreparationSummary(result up.Result) string {
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
+		return "session preparation is partial: adoption pending; " + result.Adoption.Cause
+	}
+	return "session start: " + result.Outcome
 }
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.
