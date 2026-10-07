@@ -116,6 +116,8 @@ type UnitStep struct {
 	LaunchIDs   []string            `json:"launchIds,omitempty"`
 	Retained    *StartSpec          `json:"retained,omitempty"`
 	Before      *repositorySnapshot `json:"before,omitempty"`
+	Comparison  *unitComparison     `json:"comparison,omitempty"`
+	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -159,6 +161,8 @@ type UnitRunner struct {
 	InheritedFindings func(string, string) ([]readsubject.Finding, error)
 	ReviewPolicy      func() (string, error)
 	ExaminationRead   func(string, string) (readsubject.Read, error)
+	KnownFlake        func(Record) (bool, error)
+	RecordMain        func(Record, string, string) error
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
@@ -506,6 +510,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds}
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
+			return runner.result(*record, round, &round.Steps[index], capped), err
+		}
+		if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
 		red = red || round.Steps[index].State != StepPassed

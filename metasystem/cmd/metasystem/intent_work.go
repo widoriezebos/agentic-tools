@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
@@ -470,6 +471,46 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	}
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	runner.PlanProof = inv.unitProof
+	judge := landingFlakeJudge(inv.layout.InstallationRoot.Path(), func(root string, args ...string) (string, error) {
+		data, err := inv.work().git(root, args...)
+		return string(data), err
+	}, inv.layout.InstallationRel)
+	runner.KnownFlake = func(record launch.Record) (bool, error) {
+		state, err := runner.Manager.Store.StateDir(record.ID)
+		if err != nil {
+			return false, err
+		}
+		data, err := os.ReadFile(filepath.Join(state, "exec.log"))
+		if err != nil {
+			return false, err
+		}
+		failed := plain.FailedChecks(data)
+		if len(failed) == 0 {
+			return false, nil
+		}
+		root, err := inv.work().git(record.WorkingDirectory, "rev-parse", "--show-toplevel")
+		if err != nil {
+			return false, err
+		}
+		judgements, err := judge(strings.TrimSpace(string(root)), "HEAD", failed)
+		known := err == nil
+		for _, unit := range failed {
+			known = known && judgements[unit.Unit].Known && !judgements[unit.Unit].Affected
+		}
+		return known, err
+	}
+	runner.RecordMain = func(record launch.Record, commit, tree string) error {
+		state, err := runner.Manager.Store.StateDir(record.ID)
+		if err != nil {
+			return err
+		}
+		log := filepath.Join(state, "exec.log")
+		data, err := os.ReadFile(log)
+		if err != nil {
+			return err
+		}
+		return inv.landing().landingIncidentRecorder(inv.layout.InstallationRoot.Path())([]plain.Result{{Result: plain.Red, Commit: commit, Tree: tree, Attempt: record.ID, Log: log, Failed: plain.FailedChecks(data)}})
+	}
 	if runner.ReviewPolicy == nil {
 		runner.ReviewPolicy = func() (string, error) {
 			params, err := inv.policyParams("review.stop")
