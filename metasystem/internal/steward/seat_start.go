@@ -383,7 +383,7 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 // seatDecision owns the start guards for both the tick and its health reading.
 func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
-	owned := work == WorkOwned
+	owned := work == WorkOwned || work == WorkWaiting
 	if work != WorkClaimable && !owned {
 		return Decision{}, nil, false
 	}
@@ -429,7 +429,7 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 		shared.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
 	}
 	world := SeatWorldFrom(shared, live, settings, tips, now)
-	if owned && !seatStepDue(world) && holdsForeign(world) {
+	if work != WorkWaiting && owned && !seatStepDue(world) && holdsForeign(world) {
 		return Decision{}, nil, false
 	}
 	verdict := VerdictIdleBacklogDead

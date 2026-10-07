@@ -314,7 +314,12 @@ func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 // newWorkBedWith is the work bed with its goal record shaped by amend.
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
-	bed := &workBed{intentBed: newIntentBed(t, false, amend), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
+	bed := &workBed{intentBed: newIntentBed(t, false, func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+		if amend != nil {
+			amend(file)
+		}
+	}), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
 	bed.designGate = designGateOwners{
 		chains:   func(string, string, string) ([]designgate.Chain, error) { return nil, nil },
 		identity: func(stateroot.Installation) (string, error) { return "01M4189Q0RH1NSPD3PNAS6G177", nil },

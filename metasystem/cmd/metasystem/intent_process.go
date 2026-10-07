@@ -421,6 +421,7 @@ func processIntentCommands() []intentCommand {
 // processIntentOwners are the owners the process and question commands call.
 type processIntentOwners struct {
 	process        processOwners
+	adoptionReads  *claimAdoptionReads
 	up             func(up.Options) up.Result
 	health         func(repo, installation string, now time.Time) steward.HealthVerdict
 	healthNow      func(root string) (time.Time, error)
@@ -679,15 +680,18 @@ func runIntentSessionStart(inv *intentInvocation) int {
 	result := owners.up(up.Options{
 		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
 		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityForUp,
+		RestampStopCapability: owners.adoptionReads.Restamp,
 	})
 	outcome := intentConfirmed
+	if result.Adoption != nil && result.Adoption.Pending {
+		outcome = intentPartial
+	}
 	if result.ExitCode() != 0 {
 		outcome = intentRefused
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
 		Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
-		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy}})
+		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy, "adoption": result.Adoption}})
 }
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.

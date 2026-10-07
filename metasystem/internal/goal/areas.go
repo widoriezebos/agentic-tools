@@ -166,6 +166,10 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 			return nil
 		}
 		if overlap != nil {
+			if claimant.personProof != nil && claimant.personProof.ValidFor(endpoint.Root) && claimant.personProof.Helm == nil {
+				warnings = append(warnings, fmt.Sprintf("goal %s overlaps goal %s: declared areas %q and %q overlap", id, other, overlap.Left, overlap.Right))
+				return nil
+			}
 			return coded(ClaimAreasCode, fmt.Errorf("goal %s overlaps goal %s: declared areas %q and %q overlap (literal prefixes %q and %q)\nrun: metasystem goal claim  (after goal %s lands or is dropped)", id, other, overlap.Left, overlap.Right, overlap.LeftPrefix, overlap.RightPrefix, other))
 		}
 		return nil
@@ -205,6 +209,13 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 }
 
 func admitClaimAreas(t *TreeGoals, r VerbRequest, tip, id string) (AreaSnapshot, error) {
+	person, err := r.personalClaim()
+	if err != nil {
+		return AreaSnapshot{}, err
+	}
+	if person {
+		r.Actor.personProof = r.Authority
+	}
 	snapshot := snapshotFor(r.ClaimAreaReaders, r.Endpoint, tip, id)
 	warnings, err := ClaimAreas(t, r.Endpoint, tip, id, snapshot, r.ClaimAreaReaders, r.Actor)
 	snapshot.Warnings = warnings

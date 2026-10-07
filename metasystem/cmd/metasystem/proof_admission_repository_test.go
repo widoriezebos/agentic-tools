@@ -470,6 +470,10 @@ func newProofAdmissionRepositoryFixture(t *testing.T, now time.Time, extension b
 			file.Budget.AttemptLimit = 1
 			file.Budget.ReservedJobMinutesLimit = 10000
 			file.Budget.ActiveJobLimit = 10
+			// Proof admission checks scope before spending. The exception
+			// covers this large budget and its one earned doubling, so the
+			// extension can be published under the same approval.
+			file.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "fixture-terminal", Minutes: 2 * file.Budget.ReservedJobMinutesLimit, ReviewRounds: file.Budget.ReviewRoundLimit, GoalRevision: file.Approved.Revision}
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		})
 		receiptAt := now.Add(-time.Hour)

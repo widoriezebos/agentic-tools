@@ -130,6 +130,7 @@ func stopDeadlineFixtureEvent(ctx context.Context, installation stateroot.Instal
 // diagnostics reach the hook's stderr as the verbs' did.
 type hookOwners struct {
 	diagnostics io.Writer
+	processes   *processIntentOwners
 	// engineBuild makes the bootstrap build command, run in the
 	// installation; nil is `go run ./cmd/devgate build`. Tests stand in for
 	// the Go toolchain here.
@@ -306,6 +307,10 @@ func (o hookOwners) BrainStartDelivered(root, repo, declarationSHA, digestCursor
 }
 
 func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
+	owners := defaultProcessIntentOwners()
+	if o.processes != nil {
+		owners = *o.processes
+	}
 	var pid, start int64
 	var err error
 	if request.Pid != "" {
@@ -325,12 +330,12 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
-	scope, err := upRepositoryScopeWith(request.Repo, stateroot.RepositoryTop)
+	scope, err := upRepositoryScopeWith(request.Repo, owners.process.repositoryTop)
 	if err != nil {
 		fmt.Fprintln(stderr, "up:", err)
 		return 2
 	}
-	binary, err := os.Executable()
+	binary, err := owners.executable()
 	if err == nil {
 		binary, err = canonicalPath(binary)
 	}
@@ -353,13 +358,13 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 		RuntimeSession: request.RuntimeSession, NoRuntimeSession: request.NoRuntimeSession, StartSource: request.StartSource,
 		RecoverOnly: request.RecoverOnly, IfDown: request.IfDown, WaitScaleMilli: scale,
 		CallerPid:             int64(request.CallerPid),
-		RestampStopCapability: restampStopCapabilityForUp,
+		RestampStopCapability: owners.adoptionReads.Restamp,
 	}
 	var result up.Result
 	if request.Retire {
 		result = up.Retire(options)
 	} else {
-		result = up.Run(options)
+		result = owners.up(options)
 	}
 	for _, line := range result.Lines() {
 		fmt.Fprintln(stdout, line)

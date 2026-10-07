@@ -388,6 +388,9 @@ func TestGoalCLIBrainClassificationFails(t *testing.T) {
 	gcliBrainWrite(t, supervision, []byte("{broken\n"))
 	steal := func() (int, string) {
 		return bed.ownerRun(func(d syncRequestDependencies) int {
+			d.proveHuman = func(root string, pid int64, reader humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+				return fixedFixtureGoalAuthority(root, pid, reader, "", "", now)
+			}
 			return gcliBrainSyncOnly("steal", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 				return goal.Steal(req, f.id)
 			}, "id")(bed, d, []string{"--root", bed.root(), "--id", "classification-target", "--by", "Wido"})

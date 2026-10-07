@@ -135,10 +135,10 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentEdit,
 		},
 		{
-			object: "goal", action: "claim", audience: "agent", summary: "claim a goal for this session, or the next ready goal",
+			object: "goal", action: "claim", audience: "both", summary: "reserve a named goal as a person, or claim work for this session",
 			usage: []string{"metasystem goal claim [G]", "metasystem goal claim G --take-over --reason TEXT"},
 			details: []string{
-				"Without G the machine's ready frontier chooses; a goal this machine already holds is continued, never switched.",
+				"An agent without G takes its ready frontier; a person names the goal to reserve. A reservation awaits session start before work can execute.",
 				"--take-over displaces another machine's claim; it is a person's act and never a fallback of an ordinary claim.",
 			},
 			flags: withFlags([]intentFlag{
@@ -1100,9 +1100,23 @@ func runIntentClaim(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	_, proof, actorProblem := inv.actingAs("claim", id, actorEither)
+	if actorProblem != nil {
+		return inv.render(*actorProblem)
+	}
+	person := proof != nil && proof.ValidFor(inv.stateRoot) && proof.Helm == nil
+	if _, err := brainHumanWordClassificationWithFacts("claim", inv.layout.InstallationRoot.Path(), inv.input.text("by"), proof, inv.owners.dependencies.authorityFacts); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "who started this command could not be confirmed, so no goal was selected", Decision: err.Error(), Details: []string{err.Error()}, next: inv.publicArgv("session", "start")})
+	}
 	projection, _, problem := inv.projection()
 	if problem != nil {
+		if person && id != "" && box == "" && !inv.input.has("label") {
+			return inv.render(inv.claimGoal(id, "", goal.Projection{}))
+		}
 		return inv.render(*problem)
+	}
+	if person && id == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to reserve; name one of the available goals", next: inv.typedArgvFor("GOAL"), Data: map[string]any{"candidates": goal.SortedGoalIds(projection.Tree.Live)}})
 	}
 	named := id != ""
 	if id == "" {
@@ -1126,7 +1140,7 @@ func runIntentClaim(inv *intentInvocation) int {
 	// have taken it since. The seat then takes what a claim without a goal
 	// picks, never stalling on the taken one; any other session or person
 	// named it deliberately and keeps the refusal.
-	seat := named && !inv.input.switched("arc") && box == "" && inv.claimLineage() == launch.SeatOwnerLineage
+	seat := !person && named && !inv.input.switched("arc") && box == "" && inv.claimLineage() == launch.SeatOwnerLineage
 	asked, taken := id, ""
 	if seat {
 		next, holder, problem := inv.seatFallback(projection, id)
@@ -1317,6 +1331,26 @@ func (inv *intentInvocation) acquireClaim(id string) intentResult {
 // takeOver displaces another machine's claim through the steal owner; it is
 // a person's explicit act with its reason.
 func (inv *intentInvocation) takeOver() int {
+	id, problem := inv.singleTarget()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	actor, proof, problem := inv.actingAs("steal", id, actorHuman)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if proof == nil || !proof.ValidFor(inv.stateRoot) || proof.Helm != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "only a person may take a goal over", Decision: humanauthority.PersonActRemedy("metasystem goal claim GOAL --take-over --reason TEXT")})
+	}
+	if _, err := brainHumanWordClassificationWithFacts("steal", inv.layout.InstallationRoot.Path(), inv.input.text("by"), proof, inv.owners.dependencies.authorityFacts); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "who started this command could not be confirmed, so no goal was selected", Decision: err.Error(), Details: []string{err.Error()}, next: inv.publicArgv("session", "start")})
+	}
+	if id == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to take over; name the goal", next: inv.typedArgvFor("GOAL")})
+	}
 	id, code, ok := inv.namedGoal(func(file *goal.GoalFile) bool { return file.State == goal.StateClaimed })
 	if !ok {
 		return code
@@ -1337,10 +1371,6 @@ func (inv *intentInvocation) takeOver() int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--" + definition.name + " does not apply to a take-over; nothing was done",
 				next: inv.typedArgvLess(definition.name), nextReason: "without --" + definition.name})
 		}
-	}
-	actor, proof, problem := inv.actingAs("steal", id, actorHuman)
-	if problem != nil {
-		return inv.render(*problem)
 	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	return inv.render(inv.goalAct(id, "take over", inv.syncOwner("steal", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {

@@ -210,7 +210,7 @@ func ValidateTree(t *TreeGoals) []Problem {
 	if t.Root != nil && t.Root.FormatVersion == "1" {
 		checkFormat := func(path string, f *GoalFile) {
 			for _, history := range f.History {
-				if history.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
+				if history.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven && history.Verb != "claim" && history.Verb != "steal" {
 					addf("%s: HUMAN_AUTHORITY_PROVEN requires ledger FormatVersion 2", path)
 				}
 				if history.Verb == "carrying" || history.Verb == "carried" {
@@ -368,14 +368,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 			continue
 		}
 		for _, dep := range f.Blocked {
-			if stateOf(dep) != StateDone {
+			if !f.PersonalReservation() && stateOf(dep) != StateDone {
 				addf("%s%s.md: claimed while blocker %s is not done", goalsPrefix, id, dep)
 			}
 		}
-		if f.Pinned != "" && f.Claimed.Machine != f.Pinned {
+		if !f.PersonalReservation() && f.Pinned != "" && f.Claimed.Machine != f.Pinned {
 			addf("%s%s.md: pinned to machine %s but claimed by %s; ownership contradicts the pin", goalsPrefix, id, f.Pinned, f.Claimed.Machine)
 		}
-		if f.Approved == nil && t.Root != nil && t.Root.ApprovalGate != nil {
+		if !f.PersonalReservation() && f.Approved == nil && t.Root != nil && t.Root.ApprovalGate != nil {
 			claimedAt, claimErr := time.Parse(time.RFC3339, f.Claimed.At)
 			gateAt, gateErr := time.Parse(time.RFC3339, t.Root.ApprovalGate.Since)
 			if claimErr == nil && gateErr == nil && !claimedAt.Before(gateAt) {
@@ -456,6 +456,9 @@ func ValidateTree(t *TreeGoals) []Problem {
 			continue
 		}
 		if f.State == StateClaimed && f.Claimed != nil {
+			if f.PersonalReservation() {
+				continue
+			}
 			claimsByMachine[f.Claimed.Machine] = append(claimsByMachine[f.Claimed.Machine], f)
 		}
 	}

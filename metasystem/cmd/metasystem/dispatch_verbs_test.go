@@ -154,7 +154,7 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	repository, _ := proofAdmissionExtensionFixture(t)
 	root, reads := repository.root, repository.reads()
-	config := []byte("metasystem.template=true\nmetasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n")
+	config := []byte("metasystem.template=true\nmetasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/10000m/1/3\n")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 			file.Budget.AttemptLimit = 20
-			file.Budget.ReservedJobMinutesLimit = 10000
+			file.Budget.ReservedJobMinutesLimit = 1200
 			file.Budget.ActiveJobLimit = 1
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		})
@@ -465,4 +465,30 @@ func captureStderr(t *testing.T, fn func(stdout, stderr io.Writer) int) (string,
 	var stderr streamBuffer
 	code := fn(t.Output(), &stderr)
 	return stderr.String(), code
+}
+
+func TestGoalRevisionAdmissionCommandRequiresScopeException(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, true)
+	reads, commandNow := repository.reads(), repository.commandNow(now)
+	file := repository.goalFile(t, "standing-validation")
+	proof := *file.NormApproval
+	before := string(goal.RenderFile(file))
+	verdict, err := goalRevisionAdmissionVerdict(repository.root, 1, "implementer", reads, commandNow)
+	if err != nil || verdict.Refused() {
+		t.Fatalf("covered proof budget was refused: %+v err=%v", verdict, err)
+	}
+	if got := string(goal.RenderFile(repository.goalFile(t, file.Id))); got != before {
+		t.Fatal("admission changed ownership, approval or accounting")
+	}
+	repository.amend(t, file.Id, func(file *goal.GoalFile) { file.NormApproval = nil })
+	verdict, err = goalRevisionAdmissionVerdict(repository.root, 1, "implementer", reads, commandNow)
+	if err == nil || !strings.Contains(err.Error(), "over its tier's") || verdict.Extension != nil {
+		t.Fatalf("uncovered proof budget reached spending admission: %+v err=%v", verdict, err)
+	}
+	repository.amend(t, file.Id, func(file *goal.GoalFile) { file.NormApproval = &proof })
+	if verdict, err = goalRevisionAdmissionVerdict(repository.root, 1, "implementer", reads, commandNow); err != nil || verdict.Refused() {
+		t.Fatalf("restored scope exception did not clear admission: %+v err=%v", verdict, err)
+	}
 }

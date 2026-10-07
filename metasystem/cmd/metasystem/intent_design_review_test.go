@@ -362,6 +362,8 @@ func TestDesignCritiqueRejoinKeepsTheBrief(t *testing.T) {
 func TestIntentDesignCritiqueAdmission(t *testing.T) {
 	t.Parallel()
 	b := newDesignReviewBed(t)
+	b.lineage = "m1"
+	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 	file := b.goalFile(bedGoal)
 	workApprovedBox(file)
 	file.State, file.Claimed, file.StopCapability, file.StopFence = goal.StateApproved, nil, nil, nil

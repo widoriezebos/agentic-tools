@@ -336,6 +336,7 @@ func (h HandedOver) present() bool {
 
 // ClaimRecord is the ownership record of a claimed goal.
 type ClaimRecord struct {
+	By string `json:",omitempty"`
 	AreaSnapshot
 	Machine    string
 	Lineage    string
@@ -655,6 +656,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
+	if f.Claimed != nil && f.Claimed.By != "" && !f.PersonalReservation() {
+		addProblem("Claimed by has no matching person-origin history")
+	}
 	if err := f.ValidateClaimRevision(); err != nil {
 		addProblem("BUDGET_UNKNOWN %v", err)
 	}
@@ -743,7 +747,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	}
 	if f.StopCapability != nil {
 		capability := f.StopCapability
-		if capability.Generation == 0 || capability.Revision == 0 || capability.Machine == "" || capability.ClaimEpoch < 1 {
+		if capability.Generation == 0 || capability.Revision == 0 || capability.Machine == "" || capability.ClaimEpoch < 0 || capability.ClaimEpoch == 0 && !f.PersonalReservation() {
 			addProblem("StopCapability is incomplete")
 		} else if f.State != StateAbandoned && (f.Claimed == nil || capability.Revision != f.Claimed.Revision || capability.Machine != f.Claimed.Machine) {
 			addProblem("StopCapability contradicts the claim binding")
@@ -1398,7 +1402,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
 		// missing; the value never enters GoalFile.
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "idleSeconds", "appetite", "areas-known"}, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "idleSeconds", "appetite", "areas-known", "by"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
@@ -1460,7 +1464,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 				return
 			}
 		}
-		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
+		f.Claimed = &ClaimRecord{By: rec["by"], Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
 			AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
 			EpisodeObligationRevision: episodeObligationRevision, IdleSeconds: idleSeconds}
 		f.Claimed.Source = areaFields["areas-source"]
@@ -1540,7 +1544,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		claimEpoch, claimEpochErr := strconv.ParseInt(rec["claimEpoch"], 10, 64)
 		fenceEpoch, fenceEpochErr := strconv.ParseUint(rec["fenceEpoch"], 10, 64)
 		if generationErr != nil || generation == 0 || revisionErr != nil || revision == 0 ||
-			claimEpochErr != nil || claimEpoch < 1 || fenceEpochErr != nil {
+			claimEpochErr != nil || claimEpoch < 0 || fenceEpochErr != nil {
 			addProblem("StopCapability has invalid numeric coordinates")
 			return
 		}
@@ -1899,6 +1903,9 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
+		if f.Claimed.By != "" {
+			fmt.Fprintf(&b, " by=%s", f.Claimed.By)
+		}
 		if f.Claimed.Known || len(f.Claimed.Areas) > 0 || len(f.Claimed.Warnings) > 0 {
 			areas, _ := json.Marshal(f.Claimed.Areas)
 			warnings, _ := json.Marshal(f.Claimed.Warnings)

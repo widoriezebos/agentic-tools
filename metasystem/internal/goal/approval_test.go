@@ -459,9 +459,14 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 		publishGoalFixturesForEndpoint(t, endpoint, legacyClaimedFixture("unapproved-steal", testBudget()))
 		request := verbReqFor(endpoint, "01J5X00000000000000000KS10", "mac-b")
 		request.Actor.Human = "Wido"
+		request.Authority = testHumanAuthority(t, endpoint.Root, request.Now)
 		result, err := Steal(request, "unapproved-steal")
-		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_REQUIRED") {
-			t.Fatalf("unapproved steal did not fail closed: %+v %v", result, err)
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("person could not reserve unapproved takeover: %+v %v", result, err)
+		}
+		tree, _ := loadTreeFor(endpoint, result.Tip)
+		if file := tree.Live["unapproved-steal"]; file.Approved != nil || ClaimExecutionEligibility(endpoint.Root, tree, file, request.Now).Ready {
+			t.Fatal("takeover approved execution")
 		}
 	})
 
@@ -514,6 +519,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 		}
 		request := verbReqFor(endpoint, "01J5X00000000000000000KZ10", "mac-a")
 		request.Actor.Human = "Wido"
+		request.Authority = testHumanAuthority(t, request.Endpoint.Root, request.Now)
 		result, err := Resume(ResumeRequest{VerbRequest: request, GoalID: file.Id, Budget: budget, Authority: testHumanAuthority(t, root, request.Now)})
 		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_REQUIRED") {
 			t.Fatalf("unapproved resume did not fail closed: %+v %v", result, err)
@@ -554,8 +560,15 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 
 		request := verbReqFor(endpoint, "01J5X00000000000000000NS10", "mac-b")
 		request.Actor.Human = "Wido"
+		request.Authority = testHumanAuthority(t, root, request.Now)
 		result, err := Steal(request, file.Id)
-		assertNormRefused(t, result, err)
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("person's takeover refused norm advice: %+v %v", result, err)
+		}
+		tree, _ := loadTreeFor(endpoint, result.Tip)
+		if ClaimExecutionEligibility(root, tree, tree.Live[file.Id], request.Now).Ready {
+			t.Fatal("uncovered norm budget became executable")
+		}
 	})
 
 	t.Run("resume", func(t *testing.T) {
@@ -580,6 +593,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 
 		request := verbReqFor(endpoint, "01J5X00000000000000000NR10", "mac-a")
 		request.Actor.Human = "Wido"
+		request.Authority = testHumanAuthority(t, request.Endpoint.Root, request.Now)
 		result, err := Resume(ResumeRequest{VerbRequest: request, GoalID: file.Id, Budget: over, Authority: testHumanAuthority(t, root, request.Now)})
 		assertNormRefused(t, result, err)
 	})
@@ -728,9 +742,14 @@ func TestFleetEnrollmentExpiresRelayedClaimAndStealEverywhere(t *testing.T) {
 	}
 	steal := verbReqFor(endpointB, "01J5X00000000000000000FE60", "mac-b")
 	steal.Actor.Human = "Wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	stolen, err := Steal(steal, "relay-running")
-	if err != nil || stolen.Outcome != OutcomeRejected || !(stolen.Code == "APPROVAL_EXPIRED") {
-		t.Fatalf("expired approval created a fresh stolen revision: %+v %v", stolen, err)
+	if err != nil || stolen.Outcome != OutcomeConfirmed {
+		t.Fatalf("person's reservation refused an expired approval: %+v %v", stolen, err)
+	}
+	tree, _ := loadTreeFor(endpointB, stolen.Tip)
+	if ClaimExecutionEligibility(endpointB.Root, tree, tree.Live["relay-running"], steal.Now).Ready {
+		t.Fatal("expired approval admitted the reserved takeover")
 	}
 }
 

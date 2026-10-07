@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -600,10 +601,36 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 	if ledgerRoot == "" {
 		ledgerRoot = inv.layout.GitRoot
 	}
+	var view board.View
 	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
-		return inv.owners.delivery.boardView(ledgerRoot, now)
+		view = inv.owners.delivery.boardView(ledgerRoot, now)
+	} else {
+		view = batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
+	hasGoals := false
+	for _, seat := range view.Seats {
+		if len(seat.Goals) > 0 {
+			hasGoals = true
+			break
+		}
+	}
+	if !hasGoals || inv.owners.dependencies.endpoint == nil {
+		return view
+	}
+	endpoint, err := inv.owners.dependencies.endpoint(ledgerRoot)
+	if err != nil {
+		return view
+	}
+	if projection, err := goal.Project(endpoint, false, now); err == nil {
+		for i := range view.Seats {
+			for j := range view.Seats[i].Goals {
+				entry := &view.Seats[i].Goals[j]
+				file := projection.Tree.Live[entry.Goal]
+				entry.Reserved = file != nil && file.Claimed != nil && file.Claimed.Machine == view.Seats[i].Machine && file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0
+			}
+		}
+	}
+	return view
 }
 
 func (inv *intentInvocation) boardNow() time.Time {

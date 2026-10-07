@@ -28,6 +28,7 @@ import (
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
+	ClaimHolder            func(string) (ClaimHolderFacts, error)
 	Root                   string     // repository worktree root
 	Remote                 string     // goal.sync-remote; "local" is single-machine mode
 	Branch                 string     // goal.sync-branch, fully qualified

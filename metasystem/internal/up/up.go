@@ -59,15 +59,29 @@ type Options struct {
 
 // StopCapabilityRestampResult reports the accepted claim inspected during
 // arming and whether its capability moved.
+type GoalAdoptionOutcome struct {
+	GoalID    string `json:"goal"`
+	Outcome   string `json:"outcome"`
+	FromEpoch int64  `json:"fromEpoch"`
+	ToEpoch   int64  `json:"toEpoch"`
+	Cause     string `json:"cause,omitempty"`
+	Remedy    string `json:"remedy,omitempty"`
+	Operation string `json:"operation,omitempty"`
+}
+
 type StopCapabilityRestampResult struct {
-	GoalID    string
-	FromEpoch int64
-	ToEpoch   int64
-	Restamped bool
+	Goals       []GoalAdoptionOutcome `json:"goals,omitempty"`
+	Pending     bool                  `json:"pending"`
+	Observation string                `json:"observation,omitempty"`
+	GoalID      string
+	FromEpoch   int64
+	ToEpoch     int64
+	Restamped   bool
 }
 
 // ComponentOutcome is one typed and actionable component result.
 type ComponentOutcome struct {
+	Adoption  *StopCapabilityRestampResult
 	Component string
 	Outcome   string
 	Detail    string
@@ -76,6 +90,7 @@ type ComponentOutcome struct {
 
 // Result carries every component line and the one aggregate outcome.
 type Result struct {
+	Adoption          *StopCapabilityRestampResult
 	Components        []ComponentOutcome
 	RawLines          []string
 	Outcome           string
@@ -91,14 +106,15 @@ type Result struct {
 // Data is what up's --json envelope carries for a parent to branch on:
 // up's outcome, the component it stopped at, and what it re-armed.
 type Data struct {
-	Outcome string `json:"outcome"`
-	Failed  string `json:"failed,omitempty"`
-	ReArmed string `json:"reArmed,omitempty"`
+	Adoption *StopCapabilityRestampResult `json:"adoption,omitempty"`
+	Outcome  string                       `json:"outcome"`
+	Failed   string                       `json:"failed,omitempty"`
+	ReArmed  string                       `json:"reArmed,omitempty"`
 }
 
 // Data is the result's typed facts for the envelope.
 func (r Result) Data() Data {
-	return Data{Outcome: r.Outcome, Failed: r.Failed, ReArmed: r.ReArmed}
+	return Data{Outcome: r.Outcome, Failed: r.Failed, ReArmed: r.ReArmed, Adoption: r.Adoption}
 }
 
 // ExitCode is zero for armed, advisor, and successful recovery outcomes.
@@ -125,6 +141,21 @@ func (r Result) Lines() []string {
 			line += " remedy=" + quoteField(component.Remedy)
 		}
 		lines = append(lines, line)
+		if component.Adoption != nil {
+			for _, outcome := range component.Adoption.Goals {
+				record := fmt.Sprintf("goal=%s adoption=%s from=%d to=%d", outcome.GoalID, outcome.Outcome, outcome.FromEpoch, outcome.ToEpoch)
+				if outcome.Cause != "" {
+					record += " cause=" + quoteField(outcome.Cause)
+				}
+				if outcome.Remedy != "" && outcome.Outcome == "pending" {
+					record += " remedy=" + quoteField(outcome.Remedy)
+				}
+				if outcome.Operation != "" {
+					record += " operation=" + quoteField(outcome.Operation)
+				}
+				lines = append(lines, record)
+			}
+		}
 	}
 	lines = append(lines, r.RawLines...)
 	aggregate := "up outcome=" + r.Outcome
@@ -163,14 +194,31 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 	}
 	result, err := options.RestampStopCapability(options.Root, lineage, claimEpoch)
 	if err != nil {
-		goalID := result.GoalID
-		if goalID == "" {
-			goalID = "<goal>"
-		}
+		result.Pending = true
 		return ComponentOutcome{
-			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
+			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(), Adoption: &result,
 			Remedy: "metasystem session start",
 		}
+	}
+	if result.Pending || result.Observation != "" || len(result.Goals) > 0 {
+		outcome := "no-claimed-goal"
+		if len(result.Goals) > 0 {
+			outcome = "current"
+		}
+		for _, g := range result.Goals {
+			if g.Outcome == "restamped" {
+				outcome = "restamped"
+			}
+		}
+		if result.Pending {
+			outcome = "deferred"
+		}
+		component := ComponentOutcome{Component: "stop-capability", Outcome: outcome, Adoption: &result}
+		if result.Pending && len(result.Goals) == 0 {
+			component.Detail = "claim adoption is pending"
+			component.Remedy = "metasystem session start"
+		}
+		return component
 	}
 	if result.GoalID == "" {
 		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal"}
@@ -713,7 +761,14 @@ func ordinary(options Options) Result {
 func ordinaryBody(options Options) (Result, rearmFact) {
 	components := []ComponentOutcome{}
 	fact := rearmFact{}
-	finish := func(result Result) (Result, rearmFact) { return result, fact }
+	finish := func(result Result) (Result, rearmFact) {
+		for _, component := range result.Components {
+			if component.Adoption != nil {
+				result.Adoption = component.Adoption
+			}
+		}
+		return result, fact
+	}
 	components = append(components, ComponentOutcome{Component: "host-preflight", Outcome: "verified"})
 	enrolled, rearmed, err := openInvokingEnrollment(options, true)
 	if rearmed.Stage == steward.StageMinted {
@@ -824,10 +879,12 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			lineage = view.MainId
 		}
 		if view.ClaimEpoch == nil {
+			pending := StopCapabilityRestampResult{Pending: true}
 			components = append(components, ComponentOutcome{
 				Component: "stop-capability", Outcome: "deferred",
-				Detail: "the holder classification has no claim epoch",
-				Remedy: "metasystem session start",
+				Detail:   "the holder classification has no claim epoch",
+				Remedy:   "metasystem session start",
+				Adoption: &pending,
 			})
 		} else {
 			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))

@@ -219,9 +219,10 @@ func answerGoalChange(t *TreeGoals, id, qid, text, reason, opid, at string, proo
 // execution — the opid attributes execution, the History actor
 // attributes authority).
 type Actor struct {
-	Machine string
-	Lineage string
-	Human   string // empty for agent-directed verbs
+	Machine     string
+	Lineage     string
+	Human       string // empty for agent-directed verbs
+	personProof *humanauthority.Proof
 }
 
 func (a Actor) historyActor() string {
@@ -279,6 +280,7 @@ type VerbRequest struct {
 	// main tip. nil preserves the quota on computers without a lane.
 	ClaimLaneState   func(goalID, main string) (string, error)
 	ClaimAreaReaders ClaimAreaReaders
+	ClaimWarnings    []string
 	// ForceBy names the person at the helm who concludes a goal despite
 	// its open read items, review obligations, carry word or unfinished
 	// blockers; each is recorded as overridden. Only goal done reads it; the
@@ -317,7 +319,7 @@ func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	if r.EpochAuthority != "" {
 		return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("the claim renewal names an unknown source %q, so it was refused", r.EpochAuthority))
 	}
-	if f != nil && f.StopCapability != nil && f.StopCapability.ClaimEpoch >= 1 {
+	if f != nil && f.StopCapability != nil && (f.StopCapability.ClaimEpoch >= 1 || f.StopCapability.ClaimEpoch == 0 && f.PersonalReservation()) {
 		return f.StopCapability.ClaimEpoch, nil
 	}
 	id := "the claimed goal"
@@ -455,8 +457,16 @@ func newClaimRecord(machine, lineage, at string, revision uint64) *ClaimRecord {
 	return &ClaimRecord{Machine: machine, Lineage: lineage, At: at, Revision: revision, AccountingRevision: revision}
 }
 
-func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimEpoch int64) error {
-	if claimEpoch < 1 {
+func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimEpoch int64, requests ...VerbRequest) error {
+	person := false
+	if len(requests) > 0 {
+		var err error
+		person, err = requests[0].personalClaim()
+		if err != nil {
+			return err
+		}
+	}
+	if claimEpoch < 0 || claimEpoch == 0 && !person {
 		return errors.New("only the session that holds this checkout can claim; start one with metasystem session start")
 	}
 	f.Claimed = newClaimRecord(machine, lineage, at, revision)
@@ -597,10 +607,15 @@ func rebindClaimKeepEpisode(f *GoalFile, at string, revision uint64, claimEpoch 
 		episodeObligationRevision = f.Obligation.Revision
 	}
 	snapshot := f.Claimed.AreaSnapshot
+	by := f.Claimed.By
 	idleSeconds, landing := f.Claimed.IdleSeconds, f.Landing
-	if err := bindClaim(f, machine, lineage, at, revision, claimEpoch); err != nil {
-		return err
+	if claimEpoch < 0 || claimEpoch == 0 && !f.PersonalReservation() {
+		return fmt.Errorf("the claim has no confirmed session binding; run metasystem session start")
 	}
+	f.Claimed = newClaimRecord(machine, lineage, at, revision)
+	f.StopCapability = &StopCapability{Generation: revision, Revision: revision, Machine: machine, ClaimEpoch: claimEpoch}
+	f.StopFence, f.Obligation, f.Episode = nil, nil, nil
+	f.Claimed.By = by
 	f.Claimed.AreaSnapshot = snapshot
 	f.Claimed.EpisodeAt = episodeAt
 	f.Claimed.EpisodeRevision = episodeRevision
@@ -1375,17 +1390,19 @@ func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFil
 	return touched
 }
 
-// Claim takes ownership of a human-approved goal for the actor's pair.
-// Claim is AGENT-ONLY: humans direct agents; no human
-// lineage exists, so no human claim row.
+// Claim binds approved work to an agent session, or records a proved
+// person's reservation for the session that will work it.
 const ClaimQuotaCode = "GOAL_CLAIM_QUOTA"
 
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
-	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
-		return PublishResult{}, fmt.Errorf("%s", detail)
+	person, err := r.personalClaim()
+	if err != nil {
+		return PublishResult{}, err
 	}
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
+	if !person {
+		if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
+			return PublishResult{}, fmt.Errorf("%s", detail)
+		}
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
@@ -1393,7 +1410,7 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
 
-func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string) ([]Change, error) {
+func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string, recordWaiting ...bool) ([]Change, error) {
 	target := t.Live[id]
 	var held, slots []string
 	var waiting []*GoalFile
@@ -1443,7 +1460,9 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string) ([]Change, e
 	}
 	var changes []Change
 	for _, file := range waiting {
-		changes = append(changes, recordLandReady(file, r))
+		if len(recordWaiting) == 0 || recordWaiting[0] {
+			changes = append(changes, recordLandReady(file, r))
+		}
 	}
 	return changes, nil
 }
@@ -1567,6 +1586,10 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
+			person, err := r.personalClaim()
+			if err != nil {
+				return nil, err
+			}
 			f, exists := t.Live[id]
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to claim", id)
@@ -1583,37 +1606,45 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
-			if f.State != StateApproved {
+			if f.State != StateApproved && !(person && f.State == StateQueued) {
 				return nil, approvalRequired(f, "claim")
 			}
-			if f.Pinned != "" && f.Pinned != r.Actor.Machine {
-				return nil, fmt.Errorf("goal %s is pinned to machine %s, not %s\nrun: metasystem goal pin %s %s", id, f.Pinned, r.Actor.Machine, id, r.Actor.Machine)
-			}
-			for _, dep := range f.Blocked {
-				if depState(t, dep) != StateDone {
-					return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
+			warnings := []string{}
+			if person {
+				warnings = reservationWarnings(t, r, f, tip)
+			} else {
+				if err := pinRefusal(f, r.Actor.Machine, "claim"); err != nil {
+					return nil, err
+				}
+				for _, dep := range f.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
+					}
+				}
+				if _, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "claim"); err != nil {
+					return nil, err
 				}
 			}
 			if supplied != nil || r.ApprovedRef != "" {
 				return nil, fmt.Errorf("the budget was bound by the human's approval; claim carries no tuple")
 			}
-			budget, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "claim")
-			if err != nil {
-				return nil, err
-			}
 			snapshot, areaErr := admitClaimAreas(t, r, tip, id)
 			if areaErr != nil {
 				return nil, areaErr
 			}
-			changes, refusal := claimQuotaRefusal(t, r, id, tip)
+			var changes []Change
+			var refusal error
+			if !person {
+				changes, refusal = claimQuotaRefusal(t, r, id, tip)
+			}
 			if refusal != nil {
 				return nil, refusal
 			}
 			f.State = StateClaimed
-			f.Budget = &budget
+			snapshot.Warnings = append(snapshot.Warnings, warnings...)
 			kept := f.Episode
 			touch(f, r, "claim", []string{id})
-			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
+			if err := bindReservation(f, r); err != nil {
 				return nil, err
 			}
 			f.Claimed.AreaSnapshot = snapshot
@@ -1874,7 +1905,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				// box, never the holder's claim epoch: the actor's own lease
 				// epoch names its checkout, not the goal's claim.
 				var claimEpoch int64
-				if displaced != "" && f.StopCapability != nil && f.StopCapability.ClaimEpoch >= 1 {
+				if f.StopCapability != nil && (r.Actor.Human != "" || displaced != "") {
 					claimEpoch = f.StopCapability.ClaimEpoch
 				} else if claimEpoch, err = ClaimEpochForRebind(f, r); err != nil {
 					return nil, err
@@ -4107,6 +4138,12 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
+			if person, err := r.personalClaim(); err != nil || !person {
+				if err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("only a person takes over a claim")
+			}
 			f, exists := t.Live[id]
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to steal", id)
@@ -4132,14 +4169,8 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 				if member.StopFence != nil {
 					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
 				}
-				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s is pinned to machine %s, not %s, so it can't be taken over here\nrun: metasystem goal pin %s --clear", member.Id, member.Pinned, r.Actor.Machine, member.Id)
-				}
 				if r.ApprovedRef != "" {
-					return nil, fmt.Errorf("steal uses the standing approval and does not take --approved-ref")
-				}
-				if _, err := requireApprovedForClaim(r.Endpoint.Root, t, member, r.Now, "steal"); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("steal does not take --approved-ref")
 				}
 			}
 			targets := make([]string, 0, len(members))
@@ -4151,12 +4182,19 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 				if m.State != StateClaimed || !ownPair(m.Claimed, Actor{Machine: oldPair.Machine, Lineage: oldPair.Lineage}) {
 					continue // independently owned or idle members stay untouched
 				}
+				snapshot, err := admitClaimAreas(t, r, tip, m.Id)
+				if err != nil {
+					return nil, err
+				}
+				snapshot.Warnings = append(snapshot.Warnings, reservationWarnings(t, r, m, tip)...)
 				displaced := pairMarker(m.Claimed)
 				touchDisplaced(m, r, "steal", targets, displaced)
 				recordHistoryReason(m, reason)
-				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
+				if err := bindReservation(m, r); err != nil {
 					return nil, err
 				}
+				m.Claimed.AreaSnapshot = snapshot
+				recordHistoryReason(m, strings.Join(append([]string{reason}, snapshot.Warnings...), "; "))
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			return ackDisplacements(t, r, changes), nil
@@ -4371,15 +4409,18 @@ func classifyArcJoin(t *TreeGoals, arc, excludeID string, actor Actor) arcJoinSt
 	return state
 }
 
-// ClaimArc is an opt-in cascade over one planning arc. It claims approved
-// members, skips already-owned and parked members, and loses atomically to
-// any foreign claim it encounters.
+// ClaimArc takes approved members for an agent or reserves queued and
+// approved members for a proved person. It skips owned and parked members
+// and loses atomically to any foreign claim in the selected arc.
 func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
-	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
-		return PublishResult{}, fmt.Errorf("%s", detail)
+	person, err := r.personalClaim()
+	if err != nil {
+		return PublishResult{}, err
 	}
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
+	if !person {
+		if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
+			return PublishResult{}, fmt.Errorf("%s", detail)
+		}
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
@@ -4403,6 +4444,10 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 		Mutate: func(tip string) ([]Change, error) {
 			boundIDs = nil
 			t, err := loadTreeFor(r.Endpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			person, err := r.personalClaim()
 			if err != nil {
 				return nil, err
 			}
@@ -4432,32 +4477,36 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if m.State == StateParked {
 					continue // parked members are not movable; claim the queued remainder
 				}
-				if m.State == StateQueued {
+				if m.State == StateQueued && !person {
 					return nil, approvalRequired(m, "arc claim")
 				}
-				if m.State != StateApproved {
+				if m.State != StateApproved && !(person && m.State == StateQueued) {
 					return nil, fmt.Errorf("arc member %s is %s; the cascade claims approved members only", m.Id, m.State)
 				}
-				for _, dep := range m.Blocked {
-					if depState(t, dep) != StateDone {
-						return nil, fmt.Errorf("arc member %s is blocked by %s, which is not done", m.Id, dep)
+				warnings := []string{}
+				if person {
+					warnings = reservationWarnings(t, r, m, tip)
+				} else {
+					for _, dep := range m.Blocked {
+						if depState(t, dep) != StateDone {
+							return nil, fmt.Errorf("goal %s is blocked by %s", m.Id, dep)
+						}
+					}
+					if err := pinRefusal(m, r.Actor.Machine, "the arc claim"); err != nil {
+						return nil, err
+					}
+					if _, err := requireApprovedForClaim(r.Endpoint.Root, t, m, r.Now, "arc claim"); err != nil {
+						return nil, err
 					}
 				}
-				if err := pinRefusal(m, r.Actor.Machine, "the arc claim"); err != nil {
-					return nil, err
-				}
 				if supplied != nil || r.ApprovedRef != "" {
-					return nil, fmt.Errorf("the budget was bound by the human's approval; claim carries no tuple")
-				}
-				budget, err := requireApprovedForClaim(r.Endpoint.Root, t, m, r.Now, "arc claim")
-				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("claim carries no budget tuple")
 				}
 				snapshot, areaErr := admitClaimAreas(t, r, tip, m.Id)
 				if areaErr != nil {
 					return nil, areaErr
 				}
-				if !quotaChecked {
+				if !person && !quotaChecked {
 					var refusal error
 					changes, refusal = claimQuotaRefusal(t, r, id, tip)
 					if refusal != nil {
@@ -4466,9 +4515,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 					quotaChecked = true
 				}
 				m.State = StateClaimed
-				m.Budget = &budget
+				snapshot.Warnings = append(snapshot.Warnings, warnings...)
 				touch(m, r, "claim", targets)
-				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
+				if err := bindReservation(m, r); err != nil {
 					return nil, err
 				}
 				m.Claimed.AreaSnapshot = snapshot

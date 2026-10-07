@@ -98,6 +98,16 @@ func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, e
 	if work.HasInFlight() {
 		return WorkInFlight, fmt.Sprintf("live backlog activity: %s", strings.Join(work.InFlight, ", ")), nil
 	}
+	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
+		eligible := work.Eligibility[id]
+		if !eligible.Ready {
+			wait := eligible.Wait
+			if wait == "" {
+				wait = "execution eligibility has not been established"
+			}
+			return WorkWaiting, id + ": " + wait, nil
+		}
+	}
 	if len(work.Claimable) > 0 {
 		return WorkClaimable, fmt.Sprintf("claimable shared goals await a live claim or job: %s", strings.Join(work.Claimable, ", ")), nil
 	}
