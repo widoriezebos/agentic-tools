@@ -1899,7 +1899,7 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
-		if f.Claimed.Source != "" || len(f.Claimed.Warnings) > 0 || f.Claimed.Known {
+		if f.Claimed.Known || len(f.Claimed.Areas) > 0 || len(f.Claimed.Warnings) > 0 {
 			areas, _ := json.Marshal(f.Claimed.Areas)
 			warnings, _ := json.Marshal(f.Claimed.Warnings)
 			fmt.Fprintf(&b, " areas=%s areas-source=%s areas-known=%t areas-warnings=%s", strconv.Quote(string(areas)), strconv.Quote(f.Claimed.Source), f.Claimed.Known, strconv.Quote(string(warnings)))
