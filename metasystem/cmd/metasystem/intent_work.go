@@ -492,12 +492,17 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if err != nil {
 			return false, err
 		}
+		// A judge error (a unit new on main, a unit id that is not a path) means
+		// "not a known flake", as at landing (plain/replay.go): the base comparison decides.
 		judgements, err := judge(strings.TrimSpace(string(root)), "HEAD", failed)
-		known := err == nil
+		if err != nil {
+			return false, nil
+		}
+		known := true
 		for _, unit := range failed {
 			known = known && judgements[unit.Unit].Known && !judgements[unit.Unit].Affected
 		}
-		return known, err
+		return known, nil
 	}
 	runner.RecordMain = func(record launch.Record, commit, tree string) error {
 		state, err := runner.Manager.Store.StateDir(record.ID)

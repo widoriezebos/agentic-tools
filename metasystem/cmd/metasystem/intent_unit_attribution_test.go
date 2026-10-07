@@ -51,15 +51,20 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 
 func TestUnitBuildRepeatsFlakeFromMainRegister(t *testing.T) {
 	t.Parallel()
-	unitFlakeBuild(t, false)
+	unitFlakeBuild(t, false, false)
 }
 
 func TestUnitBuildAttributesAffectedRegisteredFlake(t *testing.T) {
 	t.Parallel()
-	unitFlakeBuild(t, true)
+	unitFlakeBuild(t, true, false)
 }
 
-func unitFlakeBuild(t *testing.T, affected bool) {
+func TestUnitBuildAttributesUnitNewOnMainAfterJudgeError(t *testing.T) {
+	t.Parallel()
+	unitFlakeBuild(t, true, true)
+}
+
+func unitFlakeBuild(t *testing.T, affected, newOnMain bool) {
 	t.Helper()
 	bed := newWorkBed(t)
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
@@ -80,6 +85,7 @@ func unitFlakeBuild(t *testing.T, affected bool) {
 		Failures: []goal.TrunkRedFailure{{Report: "red.log", Classname: "u/a", Name: "TestBroken"}}, Holds: []string{}, Opened: "2026-10-04T10:00:00Z",
 		Sightings: []goal.TrunkRedSighting{{Attempt: "red", BaseCommit: "old", SeenAt: "2026-10-04T10:00:00Z", Opid: "01J5X0000000000000000000F1-lane-12345678"}}}
 	reads := 0
+	missingUnitReads := 0
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		units := owners.units
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
@@ -103,6 +109,9 @@ func unitFlakeBuild(t *testing.T, affected bool) {
 					t.Fatalf("main register read in %s, want repository root %s", dir, bed.worktree)
 				}
 				reads++
+				if newOnMain {
+					return goal.RenderTrunkRed(nil), nil
+				}
 				return goal.RenderTrunkRed([]goal.TrunkRedEntry{entry}), nil
 			case strings.Join(args, " ") == "diff --name-only origin/main...HEAD":
 				if affected {
@@ -110,6 +119,10 @@ func unitFlakeBuild(t *testing.T, affected bool) {
 				}
 				return nil, nil
 			case strings.Join(args, " ") == "ls-tree -z origin/main:u/a":
+				if newOnMain {
+					missingUnitReads++
+					return nil, errors.New("git ls-tree: exit status 128: u/a does not exist on origin/main")
+				}
 				return []byte("100644 blob abc\tunit.go\x00"), nil
 			}
 			return previous(dir, args...)
@@ -153,7 +166,17 @@ func unitFlakeBuild(t *testing.T, affected bool) {
 	if affected {
 		record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(resultData(t, result)["run"].(string))
 		if err != nil || record.Rounds[0].Cause != "own" || record.Rounds[0].Steps[1].FlakeRepeat || record.Rounds[0].Steps[1].Comparison == nil {
-			t.Fatalf("affected registered test: %+v err=%v", record, err)
+			t.Fatalf("failed check attribution: %+v err=%v", record, err)
+		}
+		if newOnMain {
+			step := record.Rounds[0].Steps[1]
+			if missingUnitReads != 1 || step.Cause != "own" || !step.Comparison.Verified {
+				t.Fatalf("new unit attribution: missing unit reads=%d step=%+v", missingUnitReads, step)
+			}
+			base, err := bed.manager.Store.Read(step.Comparison.LaunchID)
+			if err != nil || base.State != launch.Completed || base.ExitCode == nil || *base.ExitCode != 0 {
+				t.Fatalf("new unit base comparison: %+v err=%v", base, err)
+			}
 		}
 	}
 	kinds := bed.starter.launched()
