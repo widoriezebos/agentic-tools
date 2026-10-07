@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -113,8 +117,35 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-lane.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Keeper launches prepare a selection from these queue and main facts;
+	// no external Git repository or host policy participates in this fixture.
+	bed.policies = config.PolicyReaders{
+		Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil },
+		ConfPath: func(string) (string, error) { return filepath.Join(root, "metasystem.conf"), nil },
+		Helm:     func(string) helm.State { return helm.State{} },
+	}
+	falseState := replayFalseState(t)
+	bed.plainProve = plain.ProveSeams{Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
+		switch args[0] {
+		case "fetch":
+			return "", nil
+		case "rev-parse":
+			return "main", nil
+		case "cat-file":
+			return "", nil
+		case "merge-base":
+			return "", &exec.ExitError{ProcessState: falseState}
+		default:
+			t.Fatalf("unstubbed selection Git: %v", args)
+			return "", nil
+		}
+	}}
 	now, starts, proofAlive := laneTestNow, 0, false
 	keeper := newLandingAgentKeeper(root, home, landingAgent{now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
+	keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, bed.plainProve)
+		return err
+	}
 	if keeper.Fingerprint == nil {
 		t.Fatal("the landing keeper has no lane fingerprint, so barren runs cannot hold it")
 	}

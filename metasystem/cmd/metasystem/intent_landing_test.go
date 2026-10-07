@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -34,8 +36,10 @@ type laneVerbBed struct {
 	wake []string
 	// keeper is the landing agent's keeper landing run steps; helmed is a
 	// lane checkout at the helm.
-	keeper func(home, root string) lane.AgentKeeper
-	helmed bool
+	keeper     func(home, root string) lane.AgentKeeper
+	helmed     bool
+	plainProve plain.ProveSeams
+	policies   config.PolicyReaders
 	// pause replaces the write of a person's stop; nil writes it.
 	pause func(home, by, reason string, now time.Time) (bool, error)
 }
@@ -57,8 +61,9 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
-	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-		home: func() (string, error) { return bed.home, nil },
+	return intentOwners{policies: bed.policies, resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
+		plainProve: bed.plainProve,
+		home:       func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil

@@ -153,6 +153,9 @@ func TestLandingAgentSkillUsesTheVerbsAsDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(string(data), "`metasystem landing run`") || !strings.Contains(string(data), "The keeper prepares the batch before launching you") {
+		t.Fatal("the skill must use the keeper's prepared selection, without sending a running agent to landing run")
+	}
 	spans := strings.Split(string(data), "`")
 	for index := 1; index < len(spans); index += 2 {
 		words := strings.Fields(spans[index])

@@ -17,10 +17,11 @@ import (
 
 type replayVerbBed struct {
 	*resolveVerbFixture
-	head string
-	full int
-	runs []string
-	fail func(*exec.Cmd, string) (string, error)
+	head  string
+	trunk bool
+	full  int
+	runs  []string
+	fail  func(*exec.Cmd, string) (string, error)
 }
 
 func newReplayVerbBed(t *testing.T) *replayVerbBed {
@@ -29,6 +30,7 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Queue history differs from the assembly's merge order.
 	for _, g := range []string{"c", "b", "a"} {
 		if _, _, err := plain.HandIn(b.install, plain.Line{Goal: g, SHA: "sha-" + g}); err != nil {
 			t.Fatal(err)
@@ -61,15 +63,17 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 				return "main", nil
 			case len(args) == 3 && args[0] == "rev-parse" && strings.HasSuffix(args[2], "^{tree}"):
 				return strings.TrimSuffix(args[2], "^{tree}") + "-tree", nil
+			case args[0] == "fetch":
+				return "", nil
 			case len(args) == 3 && args[0] == "cat-file":
 				return "", nil
 			case len(args) == 4 && args[0] == "merge-base":
-				inside := strings.TrimPrefix(args[2], "sha-") <= strings.TrimPrefix(args[3], "merge-") && strings.HasPrefix(args[3], "merge-")
+				inside := args[2] == args[3] || args[2] == "main" && (strings.HasPrefix(args[3], "merge-") || strings.HasPrefix(args[3], "main")) || strings.TrimPrefix(args[2], "sha-") <= strings.TrimPrefix(args[3], "merge-") && strings.HasPrefix(args[3], "merge-")
 				if inside {
 					return "", nil
 				}
 				return "", fmt.Errorf("git merge-base: %w", &exec.ExitError{ProcessState: falseState})
-			case args[0] == "log":
+			case args[0] == "log" || args[0] == "rev-list" && len(args) == 5 && args[1] == "--first-parent":
 				var lines []string
 				parent := "main"
 				for _, g := range []string{"a", "b", "c"} {
@@ -124,6 +128,32 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 	return b
 }
 
+// Replay isolates the recorded assembly order even when queue history differs.
+func (b *replayVerbBed) prepareBatch(t *testing.T) {
+	t.Helper()
+	if selected, err := plain.ReadBatch(b.install); err != nil {
+		t.Fatal(err)
+	} else if selected != nil {
+		return
+	}
+	record, present, err := lane.Read(b.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	members := []plain.GoalSHA{{Goal: "a", SHA: "sha-a"}, {Goal: "b", SHA: "sha-b"}}
+	if b.head == "merge-c" {
+		members = append(members, plain.GoalSHA{Goal: "c", SHA: "sha-c"})
+	}
+	selected := plain.Batch{ID: "replay-selection", Lane: record, Base: "main", Members: members, Selector: plain.PolicyValue{Value: "auto", Source: "fixture"}, CreatedAt: laneTestNow.Format(time.RFC3339), State: plain.BatchPrepared}
+	data, err := json.Marshal(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(b.install), "batch.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func replayFalseState(t *testing.T) *os.ProcessState {
 	t.Helper()
 	cmd := exec.Command("false")
@@ -137,7 +167,13 @@ const replayFailure = "LANDING-FAILED\tu/a\tTestBroken\nLANDING-CHECKED\t1\n"
 
 func (b *replayVerbBed) prove(t *testing.T) plain.Result {
 	t.Helper()
-	code, out := b.run(t, b.root, "prove", "--wait", "--json")
+	words := []string{"prove", "--wait", "--json"}
+	if b.trunk {
+		words = append(words, "--trunk")
+	} else {
+		b.prepareBatch(t)
+	}
+	code, out := b.run(t, b.root, words...)
 	var result struct{ Data plain.Result }
 	if err := json.Unmarshal([]byte(out), &result); err != nil || code != 1 || result.Data.Result != plain.Red {
 		t.Fatalf("prove = %d %s (%v)", code, out, err)
@@ -151,6 +187,10 @@ func TestLandingReplayFindsOwnOrMainThroughProve(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			b := newReplayVerbBed(t)
+			entries, err := plain.Entries(b.install)
+			if err != nil || len(entries) != 3 || entries[0].Goal != "c" || entries[1].Goal != "b" || entries[2].Goal != "a" {
+				t.Fatalf("queue order: %+v %v", entries, err)
+			}
 			b.fail = func(cmd *exec.Cmd, only string) (string, error) {
 				_, exists := os.Stat(filepath.Join(cmd.Dir, "b"))
 				if only == "" || kind == "main" || exists == nil {

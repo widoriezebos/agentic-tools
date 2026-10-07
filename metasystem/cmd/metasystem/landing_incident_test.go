@@ -49,18 +49,31 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 	lane.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
 		switch {
-		case joined == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+		case joined == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}" || joined == "rev-parse --verify origin/main^{commit}":
 			return mainCommit, nil
 		case joined == "rev-parse --verify "+mainCommit+"^{tree}":
 			return mainTree, nil
 		case joined == "rev-parse --verify HEAD^{tree}" && unchanged:
 			return mainTree, nil
-		case args[0] == "log":
+		case joined == "merge-base --is-ancestor main "+mainCommit:
+			return "", nil
+		case args[0] == "log" || args[0] == "rev-list" && len(args) == 5 && args[1] == "--first-parent":
 			if unchanged {
 				return "", nil
 			}
+			if args[0] == "rev-list" && strings.HasSuffix(args[len(args)-1], ".."+mainCommit) {
+				if mainCommit == "main" {
+					return "", nil
+				}
+				return mainCommit + " main", nil
+			}
 			text, err := git(dir, args...)
-			return strings.ReplaceAll(text, " main ", " "+mainCommit+" "), err
+			text = strings.ReplaceAll(text, " main ", " "+mainCommit+" ")
+			if args[0] == "rev-list" && mainCommit != "main" {
+				// The refreshed assembly keeps the original main as its ancestor.
+				text = mainCommit + " main\n" + text
+			}
+			return text, err
 		default:
 			return git(dir, args...)
 		}
@@ -88,6 +101,23 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 			return "LANDING-FAILED\tu/a\tTestOne TestTwo\nLANDING-FAILED\tu/green\tTestBatchOnly\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t3\n", errors.New("red")
 		}
 	}
+	// A plain proof of main can follow a closed selection without --trunk.
+	lane.prepareBatch(t)
+	if unchanged {
+		for _, g := range []string{"a", "b", "c"} {
+			if _, _, err := plain.Return(lane.install, g, "not in this assembly", laneTestNow); err != nil {
+				t.Fatal(err)
+			}
+		}
+		batch, err := plain.ReadBatch(lane.install)
+		if err != nil || batch == nil {
+			t.Fatalf("fixture selection: %+v %v", batch, err)
+		}
+		selected, err := plain.SelectBatch(lane.install, lane.root, batch.Lane, lane.owners.landing.plainProve)
+		if err != nil || selected == nil || selected.State != plain.BatchClosed {
+			t.Fatalf("closed main batch: %+v %v", selected, err)
+		}
+	}
 	return lane, register, move
 }
 
@@ -99,6 +129,9 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 			lane, b, move := incidentProveFixture(t, unchanged)
 			before := b.repo.canonical
 			check := lane.prove(t)
+			if unchanged && check.Trunk {
+				t.Fatal("unchanged main must use plain prove")
+			}
 			if check.Cause == nil || check.Cause.Kind != "main" || check.Scope != "full" || !check.CountedFull || b.repo.canonical == before {
 				t.Fatalf("main's red was not recorded: %+v tip=%s", check, b.repo.canonical)
 			}
@@ -459,6 +492,8 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 	t.Parallel()
 	b, register, _ := incidentProveFixture(t, false)
+	// Selection precedes the proof that creates the incident on main.
+	b.prepareBatch(t)
 	if err := os.WriteFile(filepath.Join(b.install, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

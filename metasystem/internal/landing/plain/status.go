@@ -19,8 +19,9 @@ import (
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
 	lane.View
-	Paused     bool `json:"paused"`
-	AgentAlive bool `json:"agent_alive"`
+	BatchPolicy *PolicyValue `json:"batch-policy,omitempty"`
+	Paused      bool         `json:"paused"`
+	AgentAlive  bool         `json:"agent_alive"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
@@ -45,10 +46,12 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
-	Gate   bool   `json:"gate,omitempty"`
-	Tree   string `json:"tree"`
-	Commit string `json:"commit,omitempty"`
-	Since  string `json:"since"`
+	BatchID      string    `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
+	Gate         bool      `json:"gate,omitempty"`
+	Tree         string    `json:"tree"`
+	Commit       string    `json:"commit,omitempty"`
+	Since        string    `json:"since"`
 	// Attempt and Log name the run; State is running while its process
 	// runs, died when it ended without a result (the next prove runs it
 	// again).
@@ -157,6 +160,18 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	unread := func(what string, err error) {
 		if err != nil {
 			status.Problems = append(status.Problems, what+" can't be read: "+err.Error())
+		}
+	}
+	selected, err := ReadBatch(install)
+	if selected != nil {
+		status.Batch = selected
+	}
+	unread("the batch selection", err)
+	if seams.Policy != nil {
+		policy, err := seams.batchPolicy()
+		unread("the batch policy", err)
+		if err == nil {
+			status.BatchPolicy = &policy
 		}
 	}
 	// damaged says the lines of a record file that do not decode: the lane's
@@ -370,5 +385,5 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	return &RunningProof{BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

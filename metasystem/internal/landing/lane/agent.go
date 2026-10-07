@@ -93,6 +93,8 @@ type AgentKeeper struct {
 	BarrenStop func(record Record, state AgentState) error
 	// Observe reconciles the lane's own stop question on every keeper tick.
 	Observe func(Record) error
+	// Prepare records the work selection before launch, outside the home lock.
+	Prepare func(Record) error
 	// Explicit is a start asked for by name (landing run), not the keeper's
 	// own: barren runs do not hold it, and it clears their count.
 	Explicit bool
@@ -183,6 +185,11 @@ func (k AgentKeeper) Run() AgentRun {
 	}
 	if !proceed {
 		return result
+	}
+	if k.Prepare != nil {
+		if err := k.Prepare(registered); err != nil {
+			return agentRun(AgentHeld, root, err.Error())
+		}
 	}
 	if reason, held := k.held(root); held {
 		return agentRun(AgentHeld, root, reason)

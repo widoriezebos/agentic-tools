@@ -187,6 +187,11 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 				t.Fatal(err)
 			}
 			keeper := newLandingAgentKeeper(b.root, b.home, agent)
+			// This keeper continues the selection already proved by the fixture.
+			keeper.Prepare = func(record lane.Record) error {
+				_, err := plain.SelectBatch(record.Install, record.Root, record, b.owners.landing.plainProve)
+				return err
+			}
 			keeper.Running = func() (string, bool, error) { return "", false, nil }
 			keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 			keeper.Fingerprint = nil

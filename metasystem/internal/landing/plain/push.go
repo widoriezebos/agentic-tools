@@ -31,10 +31,12 @@ func (r *Refusal) Error() string { return r.Code + ": " + r.Reason }
 
 // Pushed is one line of pushes.jsonl.
 type Pushed struct {
-	Old    string `json:"old"`
-	Commit string `json:"commit"`
-	Tree   string `json:"tree"`
-	At     string `json:"at"`
+	BatchID      string    `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
+	Old          string    `json:"old"`
+	Commit       string    `json:"commit"`
+	Tree         string    `json:"tree"`
+	At           string    `json:"at"`
 }
 
 // PushOutcome is what a push did: main moved from Old to Commit
@@ -53,32 +55,57 @@ func Push(install, checkout string, now time.Time) (PushOutcome, error) {
 
 // PushChecked runs before with fetched main and HEAD after the push's own
 // checks pass. An error from before prevents publication and its push record.
-func PushChecked(install, checkout string, now time.Time, before func(old, head string) error) (PushOutcome, error) {
-	head, tree, err := Head(checkout)
+func PushChecked(install, checkout string, now time.Time, before func(old, head string) error, effects ...ProveSeams) (PushOutcome, error) {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	head, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return PushOutcome{}, err
 	}
 	outcome := PushOutcome{Commit: head, Tree: tree}
-	if err := (ProveSeams{}).fetchMain(checkout); err != nil {
+	if err := seams.fetchMain(checkout); err != nil {
 		return outcome, err
 	}
-	old, err := Git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+	old, err := seams.git(checkout, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 	if err != nil {
 		return outcome, fmt.Errorf("read origin's main: %w", err)
 	}
 	outcome.Old = old
-	onMain, err := IsAncestor(checkout, head, old)
+	onMain, err := checkoutGit(checkout, seams).contains(old, head)
 	if err != nil {
 		return outcome, err
 	}
 	if onMain {
 		outcome.Commit = old
-		return outcome, nil
+		return outcome, withLock(install, func() error {
+			batch, err := ReadBatch(install)
+			if err != nil || batch == nil {
+				return err
+			}
+			if err := seams.batchLane(batch); err != nil {
+				return err
+			}
+			terminal, err := batchTerminal(install, checkout, old, batch, seams)
+			if err != nil {
+				return err
+			}
+			idle, err := batchIdle(install, seams)
+			if err != nil {
+				return err
+			}
+			if terminal && idle {
+				batch.State, batch.ClosureReason = BatchClosed, "fetched main accounts for the selected members"
+				return writeBatch(install, batch)
+			}
+			return nil
+		})
 	}
 	if refusal := provenGreen(install, tree); refusal != nil {
 		return outcome, refusal
 	}
-	forward, err := IsAncestor(checkout, old, head)
+	forward, err := checkoutGit(checkout, seams).contains(head, old)
 	if err != nil {
 		return outcome, err
 	}
@@ -87,24 +114,61 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			Reason: "HEAD does not contain origin's main " + Short(old) + ", so pushing it would rewrite main; nothing was pushed",
 			Next:   "merge origin/main into the lane checkout, prove it and push again"}
 	}
+	if batch, err := CheckBatch(install, checkout, head, old, false, seams); err != nil {
+		return outcome, err
+	} else if batch != nil && batch.State != BatchRunning {
+		return outcome, batchRefusal("the recorded selection has not been admitted for execution")
+	}
 	if before != nil {
 		if err := before(old, head); err != nil {
 			return outcome, err
 		}
 	}
-	if _, err := Git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
-		return outcome, fmt.Errorf("push %s to main: %w", Short(head), err)
-	}
-	outcome.Changed = true
-	return outcome, withLock(install, func() error {
-		if err := appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}); err != nil {
+	err = withLock(install, func() error {
+		batch, err := checkBatchLocked(install, checkout, head, old, false, false, seams)
+		if err != nil {
 			return err
+		}
+		if batch != nil && batch.State != BatchRunning {
+			return batchRefusal("the recorded selection has not been admitted for execution")
+		}
+		operation := seams
+		operation.AgentRunning = nil
+		idle, err := batchIdle(install, operation)
+		if err != nil {
+			return err
+		}
+		// The landing agent owns this push; only another proof or regeneration
+		// is a conflicting operation. Its own launch is expected to be alive.
+		if !idle {
+			return batchRefusal("a test run or conflict regeneration still owns the batch")
+		}
+		if refusal := provenGreen(install, tree); refusal != nil {
+			return refusal
+		}
+		if _, err := seams.git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
+			return fmt.Errorf("push %s to main: %w", Short(head), err)
+		}
+		outcome.Changed = true
+		pushed := Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}
+		if batch != nil {
+			pushed.BatchID, pushed.BatchMembers = batch.ID, batch.Members
+		}
+		if err := appendLine(pushesPath(install), pushed); err != nil {
+			return err
+		}
+		if batch != nil {
+			batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
+			if err := writeBatch(install, batch); err != nil {
+				return err
+			}
 		}
 		if err := closeProofLoop(install); err != nil {
 			return err
 		}
 		return closeStopsLocked(install, "", "push", now)
 	})
+	return outcome, err
 }
 
 func (s ProveSeams) fetchMain(checkout string) error {

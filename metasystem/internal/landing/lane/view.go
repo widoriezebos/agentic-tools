@@ -26,10 +26,9 @@ type View struct {
 	RegisteredBy *string   `json:"registered_by"`
 	RegisteredAt *string   `json:"registered_at"`
 	Owner        OwnerView `json:"owner"`
-	// Batch and Next are always null: the interface's committed bundle
-	// still reads them (internal/ui/web/_app/src/fleet/LandingLane.tsx)
-	// until it is rebuilt without them.
-	Batch *struct{} `json:"batch"`
+	// The plain lane's status reader supplies its recorded selection here.
+	// A view of the host registration alone has no selection to report.
+	Batch any       `json:"batch"`
 	Next  *struct{} `json:"next"`
 	// Wake is why the landing agent would run now (§3 Wake): the reasons the
 	// keeper wakes it on, read the same way; null with no lane.

@@ -147,6 +147,13 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 // isolated green. It neither turns the full red green nor spends a repeat.
 func classifyReplay(seams ProveSeams, install, checkout, command string, running Running, result, previous Result, trees []replayTree) Result {
 	for i, prefix := range trees {
+		if !running.Trunk {
+			if _, err := CheckBatch(install, checkout, prefix.Commit, "", true, seams); err != nil {
+				result.Reason += "; " + err.Error()
+				return result
+			}
+		}
+		prefix.BatchID, prefix.BatchMembers = running.BatchID, running.BatchMembers
 		prefix.Attempt = fmt.Sprintf("%s-replay-%d", running.Attempt, i+1)
 		var err error
 		prefix.Tree, err = seams.git(checkout, "rev-parse", "--verify", prefix.Commit+"^{tree}")

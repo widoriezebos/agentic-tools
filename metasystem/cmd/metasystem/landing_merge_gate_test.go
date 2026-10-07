@@ -40,6 +40,7 @@ func newMergeGateBed(t *testing.T) *replayVerbBed {
 
 func gateResult(t *testing.T, b *replayVerbBed, want int) plain.Result {
 	t.Helper()
+	b.prepareBatch(t)
 	code, out := b.run(t, b.root, "prove", "--gate", "--wait", "--json")
 	var result struct{ Data plain.Result }
 	if err := json.Unmarshal([]byte(out), &result); err != nil || code != want || result.Data.Result == "" {
@@ -98,6 +99,7 @@ func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
 					}
 					return 999999, nil
 				}
+				b.prepareBatch(t)
 				if code, out := b.run(t, b.root, "prove", "--gate"); code != 0 {
 					t.Fatalf("start gate = %d %s", code, out)
 				}
@@ -309,6 +311,8 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	}
 	bed.git(t, bed.checkout, "add", "metasystem/metasystem.conf")
 	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "proof declarations")
+	bed.git(t, bed.checkout, "push", "--quiet", "origin", "main")
+	bed.main = bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	bed.git(t, bed.checkout, "checkout", "--quiet", "-b", "goal/g")
 	if err := os.WriteFile(filepath.Join(bed.installation, "goal.go"), []byte("package fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -320,6 +324,13 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "-m", "merge goal", sha)
 	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: "g", SHA: sha}); err != nil {
 		t.Fatal(err)
+	}
+	record, present, err := lane.Read(bed.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
+		t.Fatalf("prepare fixture selection: %v", err)
 	}
 	var stdout, stderr strings.Builder
 	code := runIntentIn(mustIntentCommand(t, "landing prove"), []string{"--gate", "--wait", "--json"}, &stdout, &stderr, bed.checkout, bed.owners)

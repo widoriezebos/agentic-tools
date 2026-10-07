@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -36,14 +37,16 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
-	Trunk   bool   `json:"trunk,omitempty"`
-	Gate    bool   `json:"gate,omitempty"`
-	Attempt string `json:"attempt"`
-	Tree    string `json:"tree"`
-	Commit  string `json:"commit"`
-	Log     string `json:"log"`
-	Since   string `json:"since"`
-	Pid     int64  `json:"pid"`
+	BatchID      string    `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
+	Trunk        bool      `json:"trunk,omitempty"`
+	Gate         bool      `json:"gate,omitempty"`
+	Attempt      string    `json:"attempt"`
+	Tree         string    `json:"tree"`
+	Commit       string    `json:"commit"`
+	Log          string    `json:"log"`
+	Since        string    `json:"since"`
+	Pid          int64     `json:"pid"`
 	// Process is the exact identity of Pid, so a reused pid is not read as
 	// the proof.
 	Process string `json:"process,omitempty"`
@@ -51,7 +54,9 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
-	Trunk bool `json:"trunk,omitempty"`
+	BatchID      string    `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
+	Trunk        bool      `json:"trunk,omitempty"`
 	// CountedFull identifies a whole execution with a complete report.
 	CountedFull bool `json:"countedFull,omitempty"`
 	// LoopClosed ends the batch budget without changing the proof verdict.
@@ -110,6 +115,11 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Policy resolves only the policy requested at its effect boundary.
+	Policy func(string) (PolicyValue, error)
+	// Lane reads the host registration again before a selection or admission.
+	Lane         func() (lane.Record, error)
+	AgentRunning func() (bool, error)
 	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.
@@ -235,6 +245,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	}
 	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
+	red.BatchID, red.BatchMembers = running.BatchID, running.BatchMembers
 	if running.Gate {
 		red.Scope = "gate"
 	}
@@ -279,11 +290,6 @@ func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) 
 		return Running{}, true, false, nil
 	}
 	return running, true, seams.alive(running), nil
-}
-
-// Head is the commit and tree of the checkout's HEAD.
-func Head(checkout string) (commit, tree string, err error) {
-	return head(Git, checkout)
 }
 
 func head(git func(string, ...string) (string, error), checkout string) (commit, tree string, err error) {
@@ -333,6 +339,13 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 			return &Busy{Running: running}
 		}
+		var batch *Batch
+		if !seams.Trunk {
+			batch, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
+			if err != nil {
+				return err
+			}
+		}
 		if !seams.Trunk {
 			result, found, err := seams.checkBound(install, tree)
 			if err != nil {
@@ -368,6 +381,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
 		}
 		started = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
+		if batch != nil {
+			started.BatchID, started.BatchMembers = batch.ID, batch.Members
+		}
 		return writeRunning(install, started)
 	})
 	return started, already, err
@@ -398,6 +414,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		if result, ok, err := seams.checkBound(install, tree); err != nil || ok {
 			settled, found = result, ok && result.reusableGreen(seams.now())
+			if found {
+				_, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
+			}
 			return err
 		}
 		if recorded && alive || seams.Gate {
@@ -409,6 +428,13 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
 			Reason: inheritedReason(from)}
+		batch, err := checkBatchLocked(install, checkout, commit, "", false, true, seams)
+		if err != nil {
+			return err
+		}
+		if batch != nil {
+			settled.BatchID, settled.BatchMembers = batch.ID, batch.Members
+		}
 		settled, err = inheritScope(install, settled, from)
 		if err != nil {
 			return err
@@ -458,6 +484,15 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if recorded && alive && (current.Attempt != attempt || current.Gate != seams.Gate || current.Trunk != seams.Trunk) {
 			return &Busy{Running: current}
+		}
+		if !running.Trunk {
+			batch, err := checkBatchLocked(install, checkout, running.Commit, "", seams.Gate, true, seams)
+			if err != nil {
+				return err
+			}
+			if batch != nil {
+				running.BatchID, running.BatchMembers = batch.ID, batch.Members
+			}
 		}
 		if seams.CommandForCommit != nil {
 			command, err = seams.CommandForCommit(running.Commit)
@@ -516,6 +551,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return result, err
 	}
 	result = Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result.BatchID, result.BatchMembers = running.BatchID, running.BatchMembers
 	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
 		return result, err

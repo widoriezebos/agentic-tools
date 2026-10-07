@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,7 @@ You are this computer's landing agent, in the landing lane %s. Follow the landin
 
 The keeper woke you for: %s.
 metasystem landing status --json shows the lane's state and its wake reasons; stop when none is left.
+Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector is not admitted.
 `, root, strings.Join(wake.Reasons, ", "))
 }
 
@@ -224,6 +226,28 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		machine = goal.ResolveMachine
 	}
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
+		Prepare: func(record lane.Record) error {
+			seams := plain.ProveSeams{Now: agent.now}
+			// An empty queue has no selection decision. Resolve its policy only
+			// when SelectBatch needs to prepare or reconsider selected members.
+			seams.Policy = func(key string) (plain.PolicyValue, error) {
+				inv, err := landingDesignInvocation(record.Install, io.Discard)
+				if err != nil {
+					return plain.PolicyValue{}, err
+				}
+				return inv.laneBatchSeams(home, record, seams).Policy(key)
+			}
+			seams.Lane = func() (lane.Record, error) {
+				current, present, err := lane.Read(home)
+				if err == nil && !present {
+					err = errors.New("the landing lane is no longer registered")
+				}
+				return current, err
+			}
+			seams.AgentRunning = func() (bool, error) { _, running, err := agent.running(); return running, err }
+			_, err := plain.SelectBatch(record.Install, record.Root, record, seams)
+			return err
+		},
 		Observe: func(record lane.Record) error { return plain.SyncStopQuestion(record.Install, machine, agent.now()) },
 		Holds: []func(string) (string, error){
 			plain.KeeperProofHold,

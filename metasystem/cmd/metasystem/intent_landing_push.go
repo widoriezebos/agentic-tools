@@ -235,6 +235,8 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: outcome, Summary: refusal.Reason,
 			Details: []string{"refused because: " + refusal.Code}}
 		switch refusal.Code {
+		case plain.CodeBatch:
+			result.Decision = refusal.Next
 		case plain.CodeUnproven:
 			result.next, result.nextReason = inv.publicArgv("landing", "prove"), "proves HEAD's tree; then push again"
 		case plain.CodeRed:

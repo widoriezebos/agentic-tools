@@ -92,12 +92,23 @@ func (bed *plainVerbBed) script(t *testing.T, name string, code int) string {
 
 func (bed *plainVerbBed) setCommand(t *testing.T, command string) {
 	t.Helper()
-	// Proof commands belong to the repository configuration, not the seat's local settings.
-	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full="+command+"\n"), 0o644); err != nil {
+	bed.advanceMain(t, "metasystem/metasystem.conf", "metasystem.template=true\nproof.full="+command+"\n")
+}
+
+// Main's fixture changes arrive through a main merge, keeping hand-in commits pinned.
+func (bed *plainVerbBed) advanceMain(t *testing.T, path, text string) {
+	t.Helper()
+	writer := filepath.Join(t.TempDir(), "main-writer")
+	bed.git(t, filepath.Dir(bed.checkout), "clone", "--quiet", bed.origin, writer)
+	if err := os.WriteFile(filepath.Join(writer, path), []byte(text), 0644); err != nil {
 		t.Fatal(err)
 	}
-	bed.git(t, bed.checkout, "add", "metasystem/metasystem.conf")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "declare the proof command")
+	bed.git(t, writer, "add", path)
+	bed.git(t, writer, "commit", "--quiet", "-m", "advance main fixture")
+	bed.git(t, writer, "push", "--quiet", "origin", "HEAD:main")
+	bed.main = bed.git(t, writer, "rev-parse", "HEAD")
+	bed.git(t, bed.checkout, "fetch", "--quiet", "origin")
+	bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "--no-edit", "origin/main")
 }
 
 // seat pushes goal/G from a seat clone and hands it in, as work land does.
@@ -123,6 +134,13 @@ func (bed *plainVerbBed) seat(t *testing.T, goal string) string {
 func (bed *plainVerbBed) merge(t *testing.T, shas ...string) string {
 	t.Helper()
 	bed.git(t, bed.checkout, "fetch", "--quiet", "origin")
+	record, present, err := lane.Read(bed.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
+		t.Fatalf("prepare fixture selection: %v", err)
+	}
 	bed.git(t, bed.checkout, "checkout", "--quiet", "--detach", "origin/main")
 	for _, sha := range shas {
 		bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "--no-edit", sha)
@@ -262,20 +280,12 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 		t.Fatalf("a red prove = %d\n%s", code, text)
 	}
 	refused("red", "not green")
-	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("fix\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bed.git(t, bed.checkout, "add", "-A")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "fix red tree")
+	bed.advanceMain(t, "metasystem/fix.txt", "fix\n")
 	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("a green prove = %d\n%s", code, text)
 	}
-	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("another fix\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bed.git(t, bed.checkout, "add", "-A")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "another tree")
+	bed.advanceMain(t, "metasystem/fix.txt", "another fix\n")
 	refused("other tree", "never proven")
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("a green prove = %d\n%s", code, text)

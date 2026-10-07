@@ -114,6 +114,8 @@ var Rows = []Row{
 	{Code: "LANE_PUSH_UNPROVEN", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_RED", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/plain", Site: "push.go#PushChecked", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_BATCH_MEMBERSHIP", Owner: "internal/landing/plain", Site: "batch.go#batchRefusal", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_BATCH_PERSON", Owner: "internal/landing/plain", Site: "batch.go#PolicyDecision", Shape: Question, H1: StandingInput},
 	{Code: "LANDING_LANE_UNSETTING", Owner: "internal/landing/lane", Site: "unset.go#unsettingRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},
 	{Code: "MACHINE_ON_ANOTHER_COMPUTER", Owner: "cmd/metasystem", Site: "intent_machine.go#intentInvocation.matchMachine", Shape: Question, H1: StandingGuide, Forward: "system stop"},
 	{Code: "BRIDGE_SOCKET_PATH_OCCUPIED", Owner: "internal/board", Site: "bridge.go#Listen", Shape: Question, H1: StandingInput},

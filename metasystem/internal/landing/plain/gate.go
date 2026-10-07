@@ -47,6 +47,14 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 		return baseline, false, decision
 	}
 	parent := strings.Fields(parents)[0]
+	batch, checkErr := CheckBatch(install, checkout, parent, "", true, seams)
+	if checkErr != nil {
+		baseline.Reason = checkErr.Error()
+		return baseline, false, decision
+	}
+	if batch != nil {
+		baseline.BatchID, baseline.BatchMembers = batch.ID, batch.Members
+	}
 	tree, err := seams.git(checkout, "rev-parse", "--verify", parent+"^{tree}")
 	if err != nil {
 		baseline.Reason = "the tree before the merge could not be read: " + err.Error()
@@ -66,6 +74,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 	}
 	baseRun := Running{Gate: true, Commit: parent, Tree: tree, Attempt: running.Attempt + "-baseline",
 		Log: filepath.Join(Dir(install), "proofs", running.Attempt+"-baseline.log")}
+	baseRun.BatchID, baseRun.BatchMembers = running.BatchID, running.BatchMembers
 	baseline.Commit, baseline.Tree, baseline.Attempt, baseline.Log = parent, tree, baseRun.Attempt, baseRun.Log
 	baseline.Cause.Evidence = baseRun.Log
 	baseline.Goals, err = goalsInCommit(install, checkout, parent, seams.git)

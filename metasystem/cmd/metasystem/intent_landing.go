@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -130,7 +131,17 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.stopRegeneration = plain.StopRegeneration
 	}
 	if owners.push == nil {
-		owners.push = plain.PushChecked
+		owners.push = func(install, checkout string, now time.Time, before func(string, string) error) (plain.PushOutcome, error) {
+			home, err := owners.home()
+			if err != nil {
+				return plain.PushOutcome{}, err
+			}
+			record, _, err := lane.Read(home)
+			if err != nil {
+				return plain.PushOutcome{}, err
+			}
+			return plain.PushChecked(install, checkout, now, before, inv.laneBatchSeams(home, record, owners.plainProve))
+		}
 	}
 	if owners.pause == nil {
 		owners.pause = lane.SetPauseBecause
@@ -294,7 +305,9 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	}
 	view := inv.laneView(owners, home)
 	record, _, unreadable := lane.Read(home)
+	owners.plainProve = inv.laneBatchSeams(home, record, owners.plainProve)
 	data := landingStatus(owners, home, record, view)
+	view.Batch = data.Batch
 	waiting := slices.ContainsFunc(data.Queue, func(entry plain.Entry) bool { return entry.State == plain.StateWaiting })
 	if view.Root != nil && view.Owner.State == lane.OwnerIdle {
 		view.Summary = view.SummaryWithWaiting(waiting)
@@ -349,6 +362,19 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		view(page)
 		if data.Root == nil {
 			return
+		}
+		if policy := data.BatchPolicy; policy != nil {
+			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)
+		}
+		if batch, ok := data.Batch.(*plain.Batch); ok && batch != nil {
+			section := page.Section("Selected batch", "")
+			section.Text(batch.ID + ": " + batch.State + "; base main " + shortLandingID(batch.Base))
+			for _, member := range batch.Members {
+				section.Text(member.Goal + " at " + shortLandingID(member.SHA))
+			}
+			if batch.ClosureReason != "" {
+				section.Text(batch.ClosureReason)
+			}
 		}
 		if stop := data.Stop; stop != nil {
 			section := page.Section("", "")
@@ -801,7 +827,20 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	if inv.claimLineage() != lane.AgentLineage {
 		layout, err := record.Layout()
 		if err == nil {
-			err = plain.CloseProofLoop(string(layout.Install))
+			var selected *plain.Batch
+			selected, err = plain.ReadBatch(string(layout.Install))
+			reopen := selected == nil || selected.State == plain.BatchClosed
+			if err == nil && !reopen {
+				var last plain.Result
+				var present bool
+				last, present, err = plain.LastResult(string(layout.Install))
+				// A person's run may reopen a stopped red proof. Retrying a
+				// green batch after main moved keeps its original proof history.
+				reopen = present && last.Result == plain.Red
+			}
+			if err == nil && reopen {
+				err = plain.CloseProofLoop(string(layout.Install))
+			}
 		}
 		if err != nil {
 			return inv.render(landingLaneFailure(targets, "the batch's allowance for full checks could not be reopened", err))
@@ -809,6 +848,10 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	// A start asked for by name is not held by the agent's barren runs.
 	keeper := owners.keeper(home, root)
+	keeper.Prepare = func(current lane.Record) error {
+		_, err := plain.SelectBatch(current.Install, current.Root, current, inv.laneBatchSeams(home, current, owners.plainProve))
+		return err
+	}
 	keeper.Explicit = true
 	run := keeper.Run()
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons}
@@ -853,6 +896,40 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state"})
 	}
+}
+
+// laneBatchSeams supplies the registered owner and the original caller to
+// policy resolution. Selection never borrows a seat's configuration.
+func (inv *intentInvocation) laneBatchSeams(home string, record lane.Record, seams plain.ProveSeams) plain.ProveSeams {
+	seams.Lane = func() (lane.Record, error) {
+		current, present, err := lane.Read(home)
+		if err == nil && !present {
+			err = errors.New("the landing lane is no longer registered")
+		}
+		return current, err
+	}
+	seams.Policy = func(key string) (plain.PolicyValue, error) {
+		params, err := inv.policyParams(key)
+		if err != nil {
+			// Outside every checkout, the registered target is the calling
+			// checkout for this lane act. A failing in-checkout read still holds.
+			if _, callingErr := helm.Locate(inv.cwd); callingErr != nil {
+				params = config.GetParams{Key: key, LookupEnv: inv.owners.lookupEnv, Policy: &config.PolicyContext{Checkout: record.Root, CallingCheckout: record.Root, Readers: inv.policyReaders()}}
+				err = nil
+			}
+		}
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		params.Policy.Checkout = record.Root
+		params.ConfPath, err = params.Policy.Readers.ConfPath(record.Root)
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		value, err := config.ResolvePolicy(params)
+		return plain.PolicyValue{Value: value.Value, Source: value.Source, Checkout: value.Checkout, SetBy: value.SetBy, At: value.At}, err
+	}
+	return seams
 }
 
 // insideLaneCheckout says whether landing run was called in the lane

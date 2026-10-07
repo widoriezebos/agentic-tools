@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -189,6 +190,7 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
 		t.Fatal(err)
 	}
+	falseState := replayFalseState(t)
 	b.owners.landing.plainProve = plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Git: func(dir string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case "rev-parse --verify HEAD^{commit}":
@@ -197,7 +199,15 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 			return "tree", nil
 		case "show head:metasystem/metasystem.conf":
 			return "proof.full=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n", nil
-		case "cat-file -e head^{commit}", "cat-file -e waiting^{commit}", "merge-base --is-ancestor waiting head":
+		case "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main", "cat-file -e main^{commit}", "cat-file -e head^{commit}", "cat-file -e waiting^{commit}", "merge-base --is-ancestor waiting head", "merge-base --is-ancestor main head":
+			return "", nil
+		case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+			return "main", nil
+		case "rev-list --first-parent --reverse --parents main..head":
+			return "head main waiting", nil
+		case "merge-base --is-ancestor waiting main", "merge-base --is-ancestor head main":
+			return "", &exec.ExitError{ProcessState: falseState}
+		case "ls-tree --name-only main -- metasystem/plans/goals/trunk-red.json":
 			return "", nil
 		case "show origin/main:metasystem/testing.json", "show origin/main:metasystem/plans/goals/trunk-red.json":
 			return "", errors.New("not declared")
@@ -212,6 +222,7 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected stub Git: %v", args)
 	}}
+	b.prepareBatch(t)
 	code, output := b.run(t, b.root, "prove", "--wait", "--json")
 	var result struct {
 		Data plain.Result `json:"data"`
@@ -221,7 +232,7 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 	}
 	proof := result.Data
 	if code != 1 || proof.Cause == nil || proof.Cause.Kind != "unclassified" || proof.Cause.Evidence != proof.Log || !reflect.DeepEqual(proof.Cause.Tests, []string{"u/a TestA"}) || !reflect.DeepEqual(proof.Goals, []plain.GoalSHA{{Goal: "goal", SHA: "waiting"}}) {
-		t.Fatalf("proof omitted cause or hand-in: %d %+v", code, proof)
+		t.Fatalf("proof omitted cause or hand-in: %d %+v\n%s", code, proof, output)
 	}
 	stored, _, err := plain.LastResult(b.install)
 	if err != nil || !reflect.DeepEqual(stored, proof) {

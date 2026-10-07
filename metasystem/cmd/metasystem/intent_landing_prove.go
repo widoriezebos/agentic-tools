@@ -165,6 +165,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(*refused)
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
+	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
 	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
@@ -280,6 +281,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 
 // landingProveRefusal renders a prove that could not start or run.
 func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
+	var batch *plain.Refusal
+	if errors.As(err, &batch) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: batch.Reason, Decision: batch.Next, Details: []string{batch.Code}}
+	}
 	var budget *plain.ProofBudget
 	if errors.As(err, &budget) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "this batch has used its two full checks; the waiting goals hold",

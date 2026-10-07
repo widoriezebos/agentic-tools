@@ -246,7 +246,7 @@ func TestProofModesRefuseAnotherRunningModeOnTheSameTree(t *testing.T) {
 				assertBusy := func(err error) {
 					t.Helper()
 					var busy *Busy
-					if !errors.As(err, &busy) || busy.Running != running {
+					if !errors.As(err, &busy) || !reflect.DeepEqual(busy.Running, running) {
 						t.Fatalf("mode mismatch did not preserve the running check: %v", err)
 					}
 				}

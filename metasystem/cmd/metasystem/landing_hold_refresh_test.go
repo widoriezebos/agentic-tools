@@ -19,6 +19,11 @@ import (
 func holdRefreshKeeper(b *resolveVerbFixture) (*lane.AgentKeeper, *int) {
 	starts := 0
 	keeper := newLandingAgentKeeper(b.root, b.home, landingAgent{now: func() time.Time { return laneTestNow }})
+	// Keep the production selection owner and the fixture's bounded Git reader.
+	keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, b.owners.landing.plainProve)
+		return err
+	}
 	keeper.Sources = b.owners.landing.wake(b.home)
 	keeper.Running = func() (string, bool, error) { return "", false, nil }
 	keeper.Start = func(string, lane.Wake) (string, error) { starts++; return "hold-launch", nil }
@@ -63,8 +68,8 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	l, _ := holdLaneFixture(t, register)
 	git := l.owners.landing.plainProve.Git
 	l.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if args[0] == "fetch" {
-			t.Fatal("a fix hand-in should wake without fetching its claim")
+		if args[0] == "fetch" && strings.Join(args, " ") != "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main" {
+			t.Fatal("selection may fetch main, but must not fetch the fix claim")
 		}
 		return git(dir, args...)
 	}
@@ -155,6 +160,10 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 			keeper, starts := holdRefreshKeeper(l)
 			run := keeper.Run()
 			wantFetch, wantStarts := 1, 0
+			if mode == "still open" {
+				// Selection fetches once; the wake then refreshes the incident hold once.
+				wantFetch = 2
+			}
 			if mode == "closed" {
 				wantStarts = 1
 			}
