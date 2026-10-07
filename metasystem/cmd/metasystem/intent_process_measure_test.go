@@ -119,6 +119,8 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 		}
 		return measures
 	}
+	// The run is finished: its window ends at the last collection, so the open
+	// question is clipped there and the person time is exact, not a lower bound.
 	for repeat := 0; repeat < 2; repeat++ {
 		m := status()
 		for kind, minutes := range map[string]float64{"build": 1, "attest": 4, "read": 2, "correction": 1, "pending": 16, "collection": 160, "person": 179} {
@@ -126,7 +128,7 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 				t.Fatalf("%s time: %+v, want %g hours", kind, m, minutes/60)
 			}
 		}
-		if m.SuiteMinutes == nil || *m.SuiteMinutes != 2 || m.Run != run || m.Corrections != 1 || !m.PersonLowerBound || m.WorkLowerBound || m.EstimateMinutes == nil || *m.EstimateMinutes != 70 || m.ElapsedFinish != nil || len(m.Sources) != 8 || m.UsageKnown != 4 || m.UsageExpected != 4 || m.Tokens == nil || *m.Tokens != (processmeasure.Tokens{Input: 40, CacheRead: 80, CacheCreation: 120, Output: 160}) {
+		if m.SuiteMinutes == nil || *m.SuiteMinutes != 2 || m.Run != run || m.Corrections != 1 || m.PersonLowerBound || m.WorkLowerBound || m.EstimateMinutes == nil || *m.EstimateMinutes != 70 || m.ElapsedFinish != nil || len(m.Sources) != 8 || m.UsageKnown != 4 || m.UsageExpected != 4 || m.Tokens == nil || *m.Tokens != (processmeasure.Tokens{Input: 40, CacheRead: 80, CacheCreation: 120, Output: 160}) {
 			t.Fatalf("cost/coverage: %+v", m)
 		}
 	}
@@ -196,5 +198,131 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	processCommittedPage(t, noRow, page, accepted)
 	if code, result, output := processEvidenceBuild(noRow); code != 0 || !strings.Contains(output, "estimate unavailable") {
 		t.Fatalf("missing row held build: %d %+v %s", code, result, output)
+	}
+}
+
+func processCostStatus(t *testing.T, bed *workBed) processmeasure.Measures {
+	t.Helper()
+	code, result, output := bed.work("work", "status", bed.id, "--work", "evidence")
+	if code != 0 {
+		t.Fatalf("status exit %d: %+v %s", code, result, output)
+	}
+	work := resultData(t, result)["work"].([]any)[0].(map[string]any)
+	data, err := json.Marshal(work["measures"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var measures processmeasure.Measures
+	if err := json.Unmarshal(data, &measures); err != nil {
+		t.Fatal(err)
+	}
+	return measures
+}
+
+func processCostQuestion(t *testing.T, bed *workBed, question channel.Question) {
+	t.Helper()
+	path := filepath.Join(bed.root(), "artifacts", "agents", "channel", "questions", question.ID+".json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(question)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProcessFinishedRunPersonTimePublicStatus(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	start := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	clock := &workClock{now: start}
+	bed.manager.Now = clock.Now
+	bed.manager.Supervisor = processCostStarter{bed.starter, clock}
+	code, built, output := processEvidenceBuild(bed)
+	if code != 0 {
+		t.Fatalf("build exit %d: %+v %s", code, built, output)
+	}
+	run := resultData(t, built)["run"].(string)
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lastCollection time.Time
+	for _, round := range record.Rounds {
+		for _, step := range round.Steps {
+			at, err := time.Parse(time.RFC3339Nano, step.FinishedAt)
+			if err != nil || (step.State != launch.StepPassed && step.State != launch.StepFailed) {
+				t.Fatalf("step is not finished with a collection time: %+v", step)
+			}
+			if at.After(lastCollection) {
+				lastCollection = at
+			}
+		}
+	}
+	if lastCollection.IsZero() {
+		t.Fatal("finished run has no collection time")
+	}
+	processCostQuestion(t, bed, channel.Question{ID: "this-unit", Goal: bed.id, State: "answered",
+		OpenedAt: start.Add(5 * time.Minute), Answer: &channel.Answer{At: start.Add(15 * time.Minute)}})
+	before := processCostStatus(t, bed)
+	if before.Run != run || before.Hours["person"] == nil || *before.Hours["person"] != (10*time.Minute).Hours() || before.PersonLowerBound {
+		t.Fatalf("finished run person time: %+v", before)
+	}
+	clock.Sleep(time.Hour)
+	// A later unit's question belongs to the same goal, outside this run's window.
+	for _, offset := range []time.Duration{time.Minute, 0} {
+		opened := lastCollection.Add(offset)
+		processCostQuestion(t, bed, channel.Question{ID: "later-unit", Goal: bed.id, State: "answered",
+			OpenedAt: opened, Answer: &channel.Answer{At: opened.Add(10 * time.Minute)}})
+		after := processCostStatus(t, bed)
+		if after.Run != run || after.Hours["person"] == nil || *after.Hours["person"] != *before.Hours["person"] || after.PersonLowerBound {
+			t.Fatalf("question opened %s after collection changed finished run person hours: before %s, after %s (lower bound %t)", offset, measureNumber(before.Hours["person"]), measureNumber(after.Hours["person"]), after.PersonLowerBound)
+		}
+	}
+	clock.Sleep(time.Hour)
+	if after := processCostStatus(t, bed); after.Hours["person"] == nil || *after.Hours["person"] != *before.Hours["person"] || after.PersonLowerBound {
+		t.Fatalf("later observation changed finished run person time: %+v", after)
+	}
+}
+
+func TestProcessUnstartedRunPersonTimePublicStatus(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	code, built, output := processEvidenceBuild(bed)
+	if code != 0 {
+		t.Fatalf("build exit %d: %+v %s", code, built, output)
+	}
+	run := resultData(t, built)["run"].(string)
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retain the named run's binding with only its initial, unstarted build step.
+	record.State = "running"
+	record.Rounds = []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{{Name: "build", Kind: "build", State: launch.StepPending}}}}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	measures := processCostStatus(t, bed)
+	if measures.Run != run || measures.Hours["person"] != nil || !slices.Contains(measures.Unknown, "person time unavailable") {
+		t.Fatalf("unstarted run must report person time unavailable: %+v", measures)
+	}
+	command, rest, ok := resolveIntentArgv([]string{"work", "status", bed.id, "--work", "evidence"})
+	if !ok {
+		t.Fatal("status did not resolve")
+	}
+	var stdout, stderr bytes.Buffer
+	if code := runIntentIn(command, rest, &stdout, &stderr, bed.root(), bed.workOwners()); code != 0 {
+		t.Fatalf("text status exit %d: %s %s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(strings.Join(strings.Fields(stdout.String()), " "), "person unavailable") {
+		t.Fatalf("text status must report person time unavailable: %s", stdout.String())
 	}
 }

@@ -42,16 +42,34 @@ func (inv *intentInvocation) unitMeasures(work launch.NamedWork) processmeasure.
 	}
 	// A question binds to this run only within the run's window: the goal's
 	// questions from earlier units or runs are not this unit's person wait.
-	var runStart time.Time
+	// A finished run's window ends at its last collection, so later questions
+	// never grow it; a run with no started step has no window and no person number.
+	var runStart, runEnd time.Time
+	finished := len(in.Steps) > 0
 	for _, step := range in.Steps {
 		if at, err := time.Parse(time.RFC3339Nano, step.Pending); err == nil && (runStart.IsZero() || at.Before(runStart)) {
 			runStart = at
 		}
+		at, err := time.Parse(time.RFC3339Nano, step.Collected)
+		if !step.Terminal || err != nil {
+			finished = false
+		} else if at.After(runEnd) {
+			runEnd = at
+		}
+	}
+	if !finished {
+		runEnd = time.Time{}
 	}
 	questions, unreadable := channel.WalkQuestions(inv.stateRoot)
 	in.Unknown = unreadable
+	if work.Record != nil && runStart.IsZero() {
+		in.Questions = append(in.Questions, processmeasure.Interval{End: time.Time{}.Add(time.Nanosecond)})
+	}
 	for _, question := range questions {
 		if work.Record == nil || question.Goal != work.Record.Goal || runStart.IsZero() {
+			continue
+		}
+		if !runEnd.IsZero() && !question.OpenedAt.Before(runEnd) {
 			continue
 		}
 		interval := processmeasure.Interval{Start: question.OpenedAt}
@@ -68,6 +86,9 @@ func (inv *intentInvocation) unitMeasures(work launch.NamedWork) processmeasure.
 		}
 		if interval.Start.Before(runStart) {
 			interval.Start = runStart
+		}
+		if !runEnd.IsZero() && (interval.End.IsZero() || interval.End.After(runEnd)) && interval.End != (time.Time{}.Add(time.Nanosecond)) {
+			interval.End = runEnd
 		}
 		in.Questions = append(in.Questions, interval)
 	}
