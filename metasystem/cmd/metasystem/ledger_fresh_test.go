@@ -15,9 +15,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -188,6 +190,57 @@ func TestLedgerFreshClaimAndNextObserveRemote(t *testing.T) {
 			}
 			if attempts != 1 || b.tip() != remote {
 				t.Fatalf("fresh decision attempts=%d accepted=%s wanted=%s", attempts, b.tip(), remote)
+			}
+		})
+	}
+}
+
+func TestGoalNextNonHolderGetsFreshAdviceButCannotClaim(t *testing.T) {
+	t.Parallel()
+	for _, unavailable := range []bool{false, true} {
+		t.Run(fmt.Sprintf("transport unavailable=%t", unavailable), func(t *testing.T) {
+			t.Parallel()
+			b := newGoalCLIBed(t, goalCLISeed{amend: func(files map[string]*goal.GoalFile) {
+				files["fix-docs"] = commandApprovedPriorityGoal("fix-docs", 0, 0, "")
+			}})
+			b.setNow(time.Date(2026, 9, 8, 10, 1, 0, 0, time.UTC))
+			b.machine = "clone-machine"
+			exact, state, err := (identity.KernelProber{}).Probe(agentChildPid(t))
+			if err != nil || state != identity.Alive {
+				t.Fatalf("probe the agent caller: state=%s err=%v", state, err)
+			}
+			b.caller = ownercall.Process{Pid: exact.Pid, StartedAt: exact.StartedAt.Unix()}
+			attempts, publications := 0, 0
+			r := freshCommandRepository{Repository: b.repo, attempts: &attempts, publications: &publications}
+			if unavailable {
+				r.capture = func(context.Context, string) (string, error) {
+					return "", errors.New("transport unavailable")
+				}
+			}
+			d := freshDependencies(b, r)
+			d.proveTerminal = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("agent terminal")
+			}
+			classification, err := brainHumanWordClassificationWithFacts("next", b.root, "", nil, d.authorityFacts)
+			if err != nil || classification.Class != lease.ClassDelegate || classification.Holder {
+				t.Fatalf("the fixture must be an agent without holder authority: %+v %v", classification, err)
+			}
+			before := b.tip()
+			var out, diagnostic bytes.Buffer
+			code := runGoalNextWithInputs([]string{"--root", b.root}, d, b.commandNow, &out, &diagnostic)
+			if unavailable {
+				if code == 0 || out.Len() != 0 || !strings.Contains(diagnostic.String(), "transport unavailable") {
+					t.Fatalf("non-holder advice used stale work: exit=%d out=%s err=%s", code, &out, &diagnostic)
+				}
+			} else if code != 0 || !strings.Contains(out.String(), "next ready goal: fix-docs") {
+				t.Fatalf("non-holder lost advisory orientation: exit=%d out=%s err=%s", code, &out, &diagnostic)
+			}
+			if attempts != 1 || publications != 0 || b.tip() != before {
+				t.Fatalf("advice must freshly read without claiming: attempts=%d publications=%d tip=%s", attempts, publications, b.tip())
+			}
+			code, output := freshPublic(b, d, "goal", "claim", "fix-docs")
+			if code == 0 || !strings.Contains(output, "authority") || attempts != 1 || publications != 0 || b.tip() != before {
+				t.Fatalf("advice granted claim authority: exit=%d attempts=%d publications=%d output=%s", code, attempts, publications, output)
 			}
 		})
 	}

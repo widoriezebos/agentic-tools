@@ -419,8 +419,8 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 	return line
 }
 
-// runGoalNext prints the one orientation line any runtime's main can read
-// by instruction — the universal fallback transport.
+// runGoalNext prints advisory orientation for a checkout, including a clone
+// with no announced holder. Claiming work requires its own authority check.
 func runGoalNext(args []string, stdout, stderr io.Writer) int {
 	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow, stdout, stderr)
 }
@@ -481,13 +481,7 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 			return 1
 		}
 		proof, proofErr := dependencies.proveTerminal(*root, dependencies.authorityFacts.caller.Pid, nil, now)
-		classification, classifyErr := brainHumanWordClassificationWithFacts("next", *root, "", nil, dependencies.authorityFacts)
 		person := proofErr == nil && proof.Helm == nil && proof.TerminalValidFor(*root)
-		if !person && (classifyErr != nil || classification.Class != lease.ClassMain || !classification.Holder) {
-			fmt.Fprintln(stderr, "this session's authority cannot select work")
-			fmt.Fprintln(stderr, "run: metasystem internal goal next after repairing authority")
-			return 1
-		}
 		read := func(e goal.Endpoint, _ bool, _ time.Time) (goal.Projection, error) {
 			p, _, err := goal.FreshProjection(dependencies.readContext(), e, func() (time.Time, error) { return commandNow(*root) })
 			if err != nil && person {

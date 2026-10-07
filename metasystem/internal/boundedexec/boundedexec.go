@@ -91,23 +91,23 @@ func Run(cmd *exec.Cmd, bound Bound, what string) error {
 // RunWithDeadline is the seam for callers whose tests drive the expiry.
 // Production callers use Run.
 func RunWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
-	return runContext(context.Background(), cmd, bound, what, deadline)
+	return runContext(context.Background(), cmd, bound, what, deadline, time.Now)
 }
 
 // RunContext cancels the whole process group and includes reaping in the caller's total deadline.
 func RunContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string) error {
-	return runContext(ctx, cmd, bound, what, time.After)
+	return runContext(ctx, cmd, bound, what, time.After, time.Now)
 }
 
-func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
+func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time, now func() time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !bound.TotalDeadline.IsZero() && !time.Now().Before(bound.TotalDeadline) {
+	if !bound.TotalDeadline.IsZero() && !now().Before(bound.TotalDeadline) {
 		return context.DeadlineExceeded
 	}
 	if !bound.TotalDeadline.IsZero() {
-		bound.Limit = min(bound.Limit, time.Until(bound.TotalDeadline))
+		bound.Limit = min(bound.Limit, bound.TotalDeadline.Sub(now()))
 	}
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -134,7 +134,7 @@ func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, de
 	// cannot hang the caller either.
 	grace := killGraceWindow
 	if !bound.TotalDeadline.IsZero() {
-		grace = min(grace, max(0, time.Until(bound.TotalDeadline)))
+		grace = min(grace, max(0, bound.TotalDeadline.Sub(now())))
 	}
 	select {
 	case <-done:
