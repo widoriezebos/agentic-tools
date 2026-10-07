@@ -2364,7 +2364,10 @@ func runIntentIncidents(inv *intentInvocation) int {
 		if entry.Closed != nil && !inv.input.switched("all") {
 			continue
 		}
-		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {
+		if entry.EntryClass() == goal.TrunkRedClassFlake && !slices.ContainsFunc(entry.Sightings, func(s goal.TrunkRedSighting) bool { return s.Where == "" }) {
+			continue
+		}
+		if entry.EntryClass() != goal.TrunkRedClassTrunkRed && entry.EntryClass() != goal.TrunkRedClassFlake {
 			tracked = append(tracked, entry)
 			continue
 		}

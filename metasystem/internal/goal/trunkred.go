@@ -26,6 +26,7 @@ const (
 // trunk red holds a landing.
 const (
 	TrunkRedClassTrunkRed     = "trunk-red"
+	TrunkRedClassFlake        = "flake"
 	TrunkRedClassPendingFlake = "pending-flake"
 	TrunkRedClassKnownFlake   = "known-flake"
 	TrunkRedClassHang         = "hang"
@@ -135,6 +136,8 @@ type TrunkRedClosure struct {
 }
 
 type TrunkRedEntry struct {
+	TestUnit     string             `json:"testUnit,omitempty"`
+	TestName     string             `json:"testName,omitempty"`
 	ID           string             `json:"id"`
 	Identity     string             `json:"identity"`
 	Group        string             `json:"group"`
@@ -341,7 +344,7 @@ func validateTrunkRedOwner(label string, owner TrunkRedOwner, addf func(string, 
 
 func validateTrunkRedClass(label string, entry *TrunkRedEntry, addf func(string, ...any)) {
 	switch entry.Class {
-	case "", TrunkRedClassTrunkRed, TrunkRedClassPendingFlake, TrunkRedClassHang, TrunkRedClassQuality:
+	case "", TrunkRedClassTrunkRed, TrunkRedClassFlake, TrunkRedClassPendingFlake, TrunkRedClassHang, TrunkRedClassQuality:
 		if entry.AllowanceUntil != "" {
 			addf("%s allowanceUntil belongs to a known flake only", label)
 		}
@@ -351,6 +354,16 @@ func validateTrunkRedClass(label string, entry *TrunkRedEntry, addf func(string,
 		}
 	default:
 		addf("%s has unknown class %q", label, entry.Class)
+	}
+	if entry.Class == TrunkRedClassFlake {
+		if entry.TestUnit == "" || entry.TestName == "" || entry.Group != entry.TestUnit || entry.Identity != FlakeIdentity(entry.TestUnit, entry.TestName) || len(entry.Failures) != 1 || entry.Failures[0].Name != entry.TestName || entry.Failures[0].Classname != entry.TestUnit {
+			addf("%s flake needs its exact unit, test name, identity, and failure", label)
+		}
+		for _, sighting := range entry.Sightings {
+			if sighting.BaseTree == "" || sighting.Where == "tip" && sighting.Tree != sighting.BaseTree || sighting.LogPath == "" || sighting.Rerun == nil || sighting.Rerun.Attempt == sighting.Attempt || sighting.Rerun.LogPath == "" {
+				addf("%s flake needs both attempts and log paths on one tree", label)
+			}
+		}
 	}
 	if proof := entry.FixProof; proof != nil {
 		if entry.EntryClass() == TrunkRedClassTrunkRed || proof.Commit == "" || len(proof.Passes) > flakeClosingPasses {
@@ -388,7 +401,7 @@ func validateTrunkRedClosure(label string, closed *TrunkRedClosure, addf func(st
 func stringContainsLineBreak(entry *TrunkRedEntry) bool {
 	stringsToCheck := []string{entry.ID, entry.Identity, entry.Group, entry.Status, entry.NotRunReason,
 		entry.Owner.Machine, entry.Owner.Since, entry.Owner.How, entry.Owner.By, entry.FixGoal,
-		entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State, entry.Opened, entry.Class, entry.AllowanceUntil}
+		entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State, entry.Opened, entry.Class, entry.AllowanceUntil, entry.TestUnit, entry.TestName}
 	for _, failure := range entry.Failures {
 		stringsToCheck = append(stringsToCheck, failure.Report, failure.Classname, failure.Name, failure.Status, failure.Reason)
 	}
@@ -574,6 +587,10 @@ func validateTrunkRedRecordClass(args TrunkRedRecordArgs) error {
 		if args.Approver == "" || !validTrunkRedTime(args.AllowanceUntil) {
 			return coded("TRUNK_RED_FLAKE_NEEDS_MAIN", errors.New("a known flake needs an owner and a date until which it is allowed"))
 		}
+	case TrunkRedClassFlake:
+		if args.BaseCommit == "" || args.BaseTree == "" || !rerunOK || args.Rerun.LogPath == "" || args.Where != "" && (args.Where != "tip" || args.Tree != args.BaseTree) {
+			return fmt.Errorf("an observed flake needs both attempts and logs on the captured tree")
+		}
 	case TrunkRedClassPendingFlake:
 		if args.Where != "tip" || args.Tree == "" || !rerunOK {
 			return coded("TRUNK_RED_FLAKE_NEEDS_MAIN", errors.New("a suspected flake needs both runs on the same batch tree"))
@@ -676,7 +693,11 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					if class == TrunkRedClassKnownFlake {
 						owner, allowance = approver, args.AllowanceUntil
 					}
-					tree.TrunkRed = append(tree.TrunkRed, TrunkRedEntry{ID: id, Identity: group.Identity, Group: group.Group,
+					testUnit, testName := "", ""
+					if class == TrunkRedClassFlake && len(group.Failures) == 1 {
+						testUnit, testName = group.Group, group.Failures[0].Name
+					}
+					tree.TrunkRed = append(tree.TrunkRed, TrunkRedEntry{ID: id, Identity: group.Identity, Group: group.Group, TestUnit: testUnit, TestName: testName,
 						Status: group.Status, Failures: append([]TrunkRedFailure(nil), group.Failures...), NotRunReason: group.NotRunReason,
 						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt, Class: class, AllowanceUntil: allowance})
 					continue

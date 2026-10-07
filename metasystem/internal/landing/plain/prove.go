@@ -120,9 +120,9 @@ type UnitJudgement struct {
 // FlakeRecord carries both checks of a unit to its register and fix goal.
 type FlakeRecord struct {
 	FailedUnit
-	Commit, Tree, Attempt, Log       string
-	Load                             float64
-	Repeat, RepeatAttempt, RepeatLog string
+	Commit, Tree, Attempt, Log, Where string
+	Load                              float64
+	Repeat, RepeatAttempt, RepeatLog  string
 }
 
 // FlakeRecorded is the confirmed record's fix goal and sighting count.

@@ -13,7 +13,7 @@ type FlakeRecordArgs struct {
 	Unit, Batch, Commit, Tree, Attempt, LogPath, LogDigest string
 	Tests, Surfaces                                        []string
 	Load                                                   float64
-	Repeat                                                 string
+	Repeat, Where                                          string
 	Rerun                                                  TrunkRedRerun
 }
 
@@ -48,8 +48,8 @@ func recordFlake(r VerbRequest, args FlakeRecordArgs, publish func(Endpoint, Pub
 	if err != nil {
 		return result, err
 	}
-	for _, entry := range tree.TrunkRed {
-		if entry.Identity != "flaky:"+args.Unit || !trunkRedSightingExists([]TrunkRedEntry{entry}, entry.Identity, r.opid()) {
+	for _, entry := range FlakeFacts(tree.TrunkRed) {
+		if entry.TestUnit != args.Unit || len(entry.Sightings) < result.Sightings || !trunkRedSightingExists(entry.Sources, entry.Identity, r.opid()) {
 			continue
 		}
 		result.FixGoal, result.Sightings, result.Action = entry.FixGoal, len(entry.Sightings), "extended"
@@ -68,6 +68,8 @@ func recordFlake(r VerbRequest, args FlakeRecordArgs, publish func(Endpoint, Pub
 				result.Action = "reopened"
 			}
 		}
+	}
+	if result.Sightings > 0 {
 		return result, nil
 	}
 	return result, fmt.Errorf("the shared goal list did not retain the flaky test sighting for %s", args.Unit)
@@ -83,13 +85,27 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 	if math.IsNaN(args.Load) || math.IsInf(args.Load, 0) || args.Load < 0 {
 		return PublishRequest{}, fmt.Errorf("a flaky test sighting needs a finite, non-negative load")
 	}
-	failures := make([]TrunkRedFailure, 0, len(args.Tests))
+	where := args.Where
+	if where == "" {
+		where = "tip"
+	}
+	if where != "tip" && where != "main" {
+		return PublishRequest{}, fmt.Errorf("a flaky test observation needs its captured tip or main location")
+	}
+	if where == "main" {
+		where = ""
+	}
+	groups := make([]TrunkRedRecordGroup, 0, len(args.Tests))
 	for _, name := range sortedUnique(args.Tests) {
-		failures = append(failures, TrunkRedFailure{Report: args.LogPath, Classname: args.Unit, Name: name, Status: "failed"})
+		if strings.TrimSpace(name) == "" {
+			return PublishRequest{}, fmt.Errorf("a flaky test observation needs a named failure")
+		}
+		groups = append(groups, TrunkRedRecordGroup{Identity: FlakeIdentity(args.Unit, name), Group: args.Unit, Status: "failed", LogPath: args.LogPath, LogDigest: args.LogDigest,
+			Failures: []TrunkRedFailure{{Report: args.LogPath, Classname: args.Unit, Name: name, Status: "failed"}}})
 	}
 	red := TrunkRedRecordArgs{Batch: args.Batch, Attempt: args.Attempt, BaseCommit: args.Commit, BaseTree: args.Tree,
-		SeenAt: r.stamp(), Class: TrunkRedClassPendingFlake, Where: "tip", Tree: args.Tree, Rerun: &args.Rerun,
-		Groups: []TrunkRedRecordGroup{{Identity: "flaky:" + args.Unit, Group: args.Unit, Status: "failed", LogPath: args.LogPath, LogDigest: args.LogDigest, Failures: failures}}}
+		SeenAt: r.stamp(), Class: TrunkRedClassFlake, Where: where, Tree: args.Tree, Rerun: &args.Rerun,
+		Groups: groups}
 	if err := validateTrunkRedRecordClass(red); err != nil {
 		return PublishRequest{}, err
 	}
@@ -112,22 +128,24 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 			return nil, fmt.Errorf("the flaky test register could not be read: %v", problems)
 		}
 		entry := openTrunkRedByIdentity(entries, red.Groups[0].Identity)
-		for _, failure := range failures {
-			found := false
-			for _, prior := range entry.Failures {
-				if prior.Name == failure.Name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				entry.Failures = append(entry.Failures, failure)
+		for _, group := range groups {
+			current := openTrunkRedByIdentity(entries, group.Identity)
+			sighting := &current.Sightings[len(current.Sightings)-1]
+			sighting.Load, sighting.Surfaces, sighting.Repeat = args.Load, args.Surfaces, args.Repeat
+		}
+		count := len(entry.Sightings)
+		for _, prior := range tree.TrunkRed {
+			if prior.FixGoal != "" && (prior.TestUnit == args.Unit || prior.Identity == "flaky:"+args.Unit) {
+				entry.FixGoal = prior.FixGoal
 			}
 		}
-		sighting := &entry.Sightings[len(entry.Sightings)-1]
-		sighting.Load, sighting.Surfaces, sighting.Repeat = args.Load, args.Surfaces, args.Repeat
-		seen := fmt.Sprintf("seen %d times.", len(entry.Sightings))
-		if len(entry.Sightings) == 1 {
+		for _, fact := range FlakeFacts(entries) {
+			if fact.TestUnit == args.Unit && fact.TestName == entry.TestName {
+				count = len(fact.Sightings)
+			}
+		}
+		seen := fmt.Sprintf("seen %d times.", count)
+		if count == 1 {
 			seen = "seen once."
 		}
 		line := fmt.Sprintf("Flaky: %s (%s) failed in the lane's check of %s on %s, passed when repeated (%s); load %g; log %s; %s",
@@ -172,7 +190,9 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 			touch(f, r, "record-flake", []string{id})
 			changes = append(changes, Change{Path: livePath(id), Content: RenderFile(f)})
 		}
-		entry.FixGoal = id
+		for _, group := range groups {
+			openTrunkRedByIdentity(entries, group.Identity).FixGoal = id
+		}
 		changes[0].Content = renderTrunkRedState(entries, tree.Cadence, tree.CadenceClaim)
 		return changes, nil
 	}
