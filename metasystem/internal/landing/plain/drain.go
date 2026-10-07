@@ -91,6 +91,26 @@ func ClearDrain(install string) (changed bool, err error) {
 	return
 }
 
+// ClearHelmDrain compares the originating signature under the queue lock.
+// A manual, replaced or unreadable drain remains for a person's explicit start.
+func ClearHelmDrain(install string, source DrainSource) (changed bool, err error) {
+	err = withLock(install, func() error {
+		drain, err := ReadDrain(install)
+		if err != nil || drain == nil {
+			return err
+		}
+		if source.Kind != "helm" || source.Checkout == "" || source.By == "" || source.At == "" || drain.Source != source {
+			return nil
+		}
+		if err := os.Remove(DrainPath(install)); err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	return
+}
+
 // AdmissionClosed carries the fence's cause separately from queue write failures.
 type AdmissionClosed struct {
 	Drain      *Drain
