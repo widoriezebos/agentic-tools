@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -628,6 +629,9 @@ type intentInvocation struct {
 	owners    intentOwners
 	layout    stateroot.Layout
 	stateRoot string
+	// claimPreparation retains preparation facts when an acquired claim lets
+	// work proceed despite another reservation awaiting adoption.
+	claimPreparation *up.Result
 	// reviewWork is set while review G examines one work item's subject.
 	reviewWork *reviewWorkContext
 	// inferredChain is the one examination root inferred from the goal's
@@ -840,6 +844,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	result = result.withClaimPreparation(inv.claimPreparation)
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
 	if result.Targets == nil {

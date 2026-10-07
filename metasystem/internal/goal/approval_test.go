@@ -465,7 +465,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 			t.Fatalf("person could not reserve unapproved takeover: %+v %v", result, err)
 		}
 		tree, _ := loadTreeFor(endpoint, result.Tip)
-		if file := tree.Live["unapproved-steal"]; file.Approved != nil || ClaimExecutionEligibility(endpoint.Root, tree, file, request.Now).Ready {
+		if file := tree.Live["unapproved-steal"]; file.Approved != nil || claimExecutionEligibility(newClaimAdmissionContext(endpoint.Root), tree, file, request.Now).Ready {
 			t.Fatal("takeover approved execution")
 		}
 	})
@@ -566,7 +566,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 			t.Fatalf("person's takeover refused norm advice: %+v %v", result, err)
 		}
 		tree, _ := loadTreeFor(endpoint, result.Tip)
-		if ClaimExecutionEligibility(root, tree, tree.Live[file.Id], request.Now).Ready {
+		if claimExecutionEligibility(newClaimAdmissionContext(root), tree, tree.Live[file.Id], request.Now).Ready {
 			t.Fatal("uncovered norm budget became executable")
 		}
 	})
@@ -748,7 +748,7 @@ func TestFleetEnrollmentExpiresRelayedClaimAndStealEverywhere(t *testing.T) {
 		t.Fatalf("person's reservation refused an expired approval: %+v %v", stolen, err)
 	}
 	tree, _ := loadTreeFor(endpointB, stolen.Tip)
-	if ClaimExecutionEligibility(endpointB.Root, tree, tree.Live["relay-running"], steal.Now).Ready {
+	if claimExecutionEligibility(newClaimAdmissionContext(endpointB.Root), tree, tree.Live["relay-running"], steal.Now).Ready {
 		t.Fatal("expired approval admitted the reserved takeover")
 	}
 }

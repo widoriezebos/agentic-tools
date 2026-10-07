@@ -178,7 +178,7 @@ var Rows = []Row{
 	{Code: "HANDOFF_WAIT_UNENDABLE", Owner: "internal/steward", Site: "handoff_waits.go#EndInFlightWaits", Shape: Question, H1: StandingInput},
 
 	{Code: "APPROVAL_REQUIRED", Owner: "internal/goal", Site: "approval.go#approvalRequired", Shape: Agent, Override: "goal approve", Commands: 1},
-	{Code: "APPROVAL_EXPIRED", Owner: "internal/goal", Site: "approval.go#requireApprovedForClaimWithContext", Shape: Agent, Override: "goal approve", Commands: 1},
+	{Code: "APPROVAL_EXPIRED", Owner: "internal/goal", Site: "approval.go#requireCurrentApproval", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "RELAY_AFTER_ENROLLMENT", Owner: "internal/goal", Site: "approval.go#refuseRelayedAfterFleetEnrollment", Shape: Identity},
 	{Code: "GOAL_NORM_REFUSED", Owner: "internal/goal", Site: "norm.go#refuseGoalNorm", Shape: Agent, Override: "goal budget then --approved-ref", Commands: 2},
 	{Code: "GOAL_APPROVED_REF_REFUSED", Owner: "internal/goal", Site: "norm.go#goalNormApproval", Shape: Question, H1: StandingInput},

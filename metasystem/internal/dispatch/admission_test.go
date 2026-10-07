@@ -20,6 +20,35 @@ func legacyBudgetApprovalDigest(intent string, budget goal.Budget) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte("intent="+intent+"\n"+"budget="+record+"\n")))
 }
 
+func TestExistingClaimProofAdmissionDoesNotAddTierNormCoverage(t *testing.T) {
+	t.Parallel()
+	bed := newBudgetReceiptBed(t, 10, 5000, 10)
+	goalPath := filepath.Join(bed.root, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	file.Tier, file.NormApproval = 3, nil
+	file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.accept(t)
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	binding, err := bed.binding(file.Id, now)
+	if err != nil || !binding.Eligibility.Ready {
+		t.Fatalf("proof binding added a tier norm requirement: %+v %v", binding, err)
+	}
+	verdict, err := bed.revisionAdmission(file.Id, file.Claimed.Revision, 1, now)
+	if err != nil || verdict.Refused() {
+		t.Fatalf("proof admission added a tier norm requirement: %+v %v", verdict, err)
+	}
+}
+
 func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 	t.Run("attempt-only refusal", func(t *testing.T) {
 		bed := newBudgetReceiptBed(t, 1, 10000, 10)

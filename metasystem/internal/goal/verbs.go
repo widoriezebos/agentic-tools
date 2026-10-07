@@ -1910,7 +1910,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				// box, never the holder's claim epoch: the actor's own lease
 				// epoch names its checkout, not the goal's claim.
 				var claimEpoch int64
-				if f.StopCapability != nil && (r.Actor.Human != "" || displaced != "") {
+				if f.StopCapability != nil && (f.PersonalReservation() && r.Actor.Human != "" || displaced != "") {
 					claimEpoch = f.StopCapability.ClaimEpoch
 				} else if claimEpoch, err = ClaimEpochForRebind(f, r); err != nil {
 					return nil, err

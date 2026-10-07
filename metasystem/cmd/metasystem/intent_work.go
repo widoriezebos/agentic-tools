@@ -675,7 +675,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		// An approved goal nobody holds is claimed through the claim owner,
 		// with its readiness, quota and elapsed checks; its refusal is the
 		// build's answer.
-		if claimed := inv.acquireClaim(id); claimed.Outcome != intentConfirmed {
+		if claimed, granted := inv.acquireClaim(id); !granted {
 			claimed.Summary = fmt.Sprintf("build claims goal %s first, and the claim was not granted: %s; nothing was built", id, strings.TrimSpace(claimed.Summary))
 			return inv.render(claimed)
 		}
@@ -699,7 +699,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			Details: refusalCodeDetails(goal.RefusalCode(err))})
 	}
 
-	if eligible := goal.ClaimExecutionEligibility(inv.layout.InstallationRoot.Path(), projection.Tree, file, projection.Horizon.Now); !eligible.Ready {
+	if eligible := goal.ClaimApprovalEligibility(projection.Tree, file, projection.Horizon.Now); !eligible.Ready {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "goal " + id + " cannot execute: " + eligible.Wait + "; nothing was built", Decision: eligible.Wait})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)

@@ -125,7 +125,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	}
 
 	if file.State != goal.StateClaimed {
-		if claimed := inv.acquireClaim(id); claimed.Outcome != intentConfirmed {
+		if claimed, granted := inv.acquireClaim(id); !granted {
 			claimed.Details = append(claimed.Details, "submitting work claims the goal first: "+strings.TrimSpace(claimed.Summary))
 			claimed.Summary = fmt.Sprintf("goal %s couldn't be claimed for this work, so nothing was submitted", id)
 			return claimed

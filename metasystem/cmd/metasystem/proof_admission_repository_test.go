@@ -323,7 +323,9 @@ func (r *proofAdmissionRepository) reads() dispatchcore.ProofAdmissionReads {
 			if root != r.root {
 				return goal.Endpoint{}, fmt.Errorf("proof endpoint root %q differs from %q", root, r.root)
 			}
-			return goal.Endpoint{Root: r.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: r}, nil
+			// Restamp uses the real checkout holder even when ledger transport is supplied.
+			return goal.Endpoint{Root: r.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: r,
+				ClaimHolder: (claimHolderReaders{}).Facts}, nil
 		},
 		ResolveMachine: func(root string) (string, error) {
 			if root != r.root {

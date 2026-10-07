@@ -91,11 +91,19 @@ type ClaimEligibility struct {
 	Wait  string
 }
 
-func ClaimExecutionEligibility(root string, tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
-	return claimExecutionEligibility(newClaimAdmissionContext(root), tree, f, now)
+func claimExecutionEligibility(context *claimAdmissionContext, tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
+	if eligibility := ClaimApprovalEligibility(tree, f, now); !eligibility.Ready {
+		return eligibility
+	}
+	if _, err := requireApprovedForClaimWithContext(context, tree, f, now, "work"); err != nil {
+		return ClaimEligibility{Wait: err.Error()}
+	}
+	return ClaimEligibility{Ready: true}
 }
 
-func claimExecutionEligibility(context *claimAdmissionContext, tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
+// ClaimApprovalEligibility admits spending on an existing claim under its
+// current approval. Claim and steward selection also require tier norm coverage.
+func ClaimApprovalEligibility(tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
 	if tree == nil || f == nil || f.State != StateClaimed || f.Claimed == nil {
 		return ClaimEligibility{Wait: "the owned claim is unreadable"}
 	}
@@ -108,7 +116,7 @@ func claimExecutionEligibility(context *claimAdmissionContext, tree *TreeGoals, 
 	if f.Approved == nil || f.Budget == nil {
 		return ClaimEligibility{Wait: fmt.Sprintf("awaits a person's approval; run: metasystem goal approve %s (as a person)", f.Id)}
 	}
-	if _, err := requireApprovedForClaimWithContext(context, tree, f, now, "work"); err != nil {
+	if _, err := requireCurrentApproval(tree, f, now, "work"); err != nil {
 		return ClaimEligibility{Wait: err.Error()}
 	}
 	return ClaimEligibility{Ready: true}

@@ -96,7 +96,7 @@ func resolveGoalBindingWithReads(root, id string, now time.Time, reads goalAdmis
 	}
 	return GoalBinding{
 		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, GateWidth: gateWidth, Machine: file.Claimed.Machine,
-		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file, Eligibility: goal.ClaimExecutionEligibility(root, projection.Tree, file, now),
+		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file, Eligibility: goal.ClaimApprovalEligibility(projection.Tree, file, now),
 	}, nil
 }
 

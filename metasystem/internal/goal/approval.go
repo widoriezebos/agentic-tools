@@ -356,11 +356,8 @@ func requireApprovedForClaim(repoRoot string, t *TreeGoals, f *GoalFile, now tim
 }
 
 func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeGoals, f *GoalFile, now time.Time, verb string) (Budget, error) {
-	if f == nil || f.Approved == nil || f.Budget == nil {
-		return Budget{}, refuseGoalAdmission(approvalRequired(f, verb))
-	}
-	if err := f.ValidateApprovalRecord(); err != nil {
-		return Budget{}, refuseGoalAdmission(coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s's approval record is damaged (%v)\nrun: metasystem goal approve %s", f.Id, err, f.Id)))
+	if err := requireApprovalRecord(f, verb); err != nil {
+		return Budget{}, err
 	}
 	box, covered, err := budgetHasNormCoverageWithContext(context, f, *f.Budget)
 	if err != nil {
@@ -368,6 +365,25 @@ func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeG
 	}
 	if !covered {
 		return Budget{}, refuseGoalAdmission(refuseGoalNorm(f.Id, *f.Budget, box))
+	}
+	return requireCurrentApproval(t, f, now, verb)
+}
+
+func requireApprovalRecord(f *GoalFile, verb string) error {
+	if f == nil || f.Approved == nil || f.Budget == nil {
+		return refuseGoalAdmission(approvalRequired(f, verb))
+	}
+	if err := f.ValidateApprovalRecord(); err != nil {
+		return refuseGoalAdmission(coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s's approval record is damaged (%v)\nrun: metasystem goal approve %s", f.Id, err, f.Id)))
+	}
+	return nil
+}
+
+// requireCurrentApproval checks the standing permission to spend. Tier norms
+// belong to claim and revival admission, not proof of already claimed work.
+func requireCurrentApproval(t *TreeGoals, f *GoalFile, now time.Time, verb string) (Budget, error) {
+	if err := requireApprovalRecord(f, verb); err != nil {
+		return Budget{}, err
 	}
 	if expired, why := f.ApprovalExpired(approvalHorizon(t, now)); expired {
 		return Budget{}, refuseGoalAdmission(coded("APPROVAL_EXPIRED", fmt.Errorf("goal %s's relayed approval (review by %s) no longer admits new work: %s\nrun: metasystem goal approve %s",

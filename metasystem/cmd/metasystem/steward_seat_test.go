@@ -171,6 +171,9 @@ func seatLandingBed(t *testing.T) *intentBed {
 	bed := newIntentBed(t, false, func(file *goal.GoalFile) {
 		waitingToLandBed(file)
 		file.Claimed.Lineage = steward.SeatLineage
+		// A landing successor needs the stop capability of a session-bound claim.
+		file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision,
+			Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
 	})
 	bed.lineage = steward.SeatLineage
 	return bed

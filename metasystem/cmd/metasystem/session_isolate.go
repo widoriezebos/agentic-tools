@@ -23,6 +23,12 @@ import (
 // (launch.SecondSession): `session isolate [--root INSTALLATION] [NAME]`. It
 // prints the command that enters the new checkout.
 func runSessionIsolate(args []string, stdout, stderr io.Writer) int {
+	return runSessionIsolateWith(args, stdout, stderr, nil)
+}
+
+// runSessionIsolateWith keeps the public parser and worktree owner while
+// allowing the repository and process effects to be supplied by the caller.
+func runSessionIsolateWith(args []string, stdout, stderr io.Writer, effects func(*launch.SecondSessionOptions)) int {
 	flags := newFlagSet("session isolate", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation whose checkout the session isolates from (default: this engine's)")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
@@ -47,7 +53,7 @@ func runSessionIsolate(args []string, stdout, stderr io.Writer) int {
 	}
 	// Git's own words stay off the page: the refusal says what failed.
 	var gitErrors bytes.Buffer
-	destination, err := launch.SecondSession(launch.SecondSessionOptions{
+	options := launch.SecondSessionOptions{
 		HarnessRoot: harness, Name: flags.Arg(0), Pid: int64(os.Getpid()),
 		Git: func(args ...string) (string, error) {
 			command := exec.Command("git", args...)
@@ -83,7 +89,11 @@ func runSessionIsolate(args []string, stdout, stderr io.Writer) int {
 			command.Stdout, command.Stderr = io.Discard, stderr
 			return command.Run()
 		},
-	})
+	}
+	if effects != nil {
+		effects(&options)
+	}
+	destination, err := launch.SecondSession(options)
 	var isolated *launch.SecondSessionIsolated
 	page := passthroughPage(stdout, "", false)
 	if errors.As(err, &isolated) {

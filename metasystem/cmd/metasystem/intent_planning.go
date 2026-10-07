@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The planning commands author, claim and steer goals: open and edit a goal,
@@ -1105,23 +1106,38 @@ func runIntentClaim(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--label picks among ready goals, and a goal is named; nothing was done",
 			next: inv.typedArgvLess("label"), nextReason: "claims the named goal"})
 	}
+	result, _ := inv.claimResult(id, box, true)
+	return inv.render(result)
+}
+
+// claimResult prepares an agent before reading the ledger used for selection.
+// Direct acquisition keeps its named target rather than selecting a substitute.
+func (inv *intentInvocation) claimResult(id, box string, fallback bool) (result intentResult, granted bool) {
+	var preparation *up.Result
+	defer func() {
+		granted = result.Outcome == intentConfirmed
+		result = result.withClaimPreparation(preparation)
+	}()
 	actor, proof, problem := inv.actingAs("claim", id, actorEither)
 	if problem != nil {
-		return inv.render(*problem)
+		return *problem, false
 	}
 	person := proof != nil && proof.Helm == nil && proof.ValidFor(inv.layout.InstallationRoot.Path())
 	if !person {
 		facts := inv.owners.dependencies.authorityFacts
 		if detail := brain.Fence(inv.layout.InstallationRoot.Path(), "claim", facts.ledgerIdentity(inv.stateRoot)); detail != "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: detail, next: inv.typedArgv(), nextReason: "from a node's checkout"})
+			return intentResult{Outcome: intentRefused, code: 1, Summary: detail, next: inv.typedArgv(), nextReason: "from a node's checkout"}, false
 		}
-		if classification, err := brainHumanWordClassificationWithFacts("claim", inv.layout.InstallationRoot.Path(), "", nil, inv.owners.dependencies.authorityFacts); err != nil || classification.Class != lease.ClassMain || !classification.Holder {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this session's authority can't be read; nothing was claimed", next: inv.typedArgv(), nextReason: "after repairing authority"})
+		var lineage string
+		lineage, preparation, problem = inv.prepareAgentClaim()
+		if problem != nil {
+			return *problem, false
 		}
+		actor = append(withoutOption(actor, "lineage"), "--lineage", lineage)
 	}
 	endpoint, err := inv.owners.dependencies.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.typedArgv()})
+		return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.typedArgv()}, false
 	}
 	projection, observation, err := goal.FreshProjection(inv.owners.dependencies.readContext(), endpoint, func() (time.Time, error) { return inv.owners.commandNow(inv.layout.InstallationRoot.Path()) })
 	if err != nil {
@@ -1143,7 +1159,7 @@ func runIntentClaim(inv *intentInvocation) int {
 			if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 				result.next, result.nextReason = inv.typedArgv(), "after repairing the reported cause"
 			}
-			return inv.render(result)
+			return result, false
 		}
 		result := intentResult{Outcome: intentFailed, code: 1, Summary: "the ledger could not be freshly read; nothing was claimed: " + err.Error(), next: inv.typedArgv(), nextReason: "after repairing the reported cause", Data: map[string]any{"observation": observation}}
 		if person {
@@ -1156,41 +1172,41 @@ func runIntentClaim(inv *intentInvocation) int {
 			}
 			result.Details = []string{err.Error(), "the accepted snapshot is stale and non-authoritative"}
 		}
-		return inv.render(result)
+		return result, false
 	}
 	if person && id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to reserve; name one of the available goals", next: inv.typedArgvFor("GOAL"), Data: map[string]any{"candidates": goal.SortedGoalIds(projection.Tree.Live), "observation": observation}})
+		return intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to reserve; name one of the available goals", next: inv.typedArgvFor("GOAL"), Data: map[string]any{"candidates": goal.SortedGoalIds(projection.Tree.Live), "observation": observation}}, false
 	}
 
 	named := id != ""
 	if id == "" {
 		if inv.input.switched("arc") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--arc needs the goal whose arc to claim; nothing was done",
-				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
+			return intentResult{Outcome: intentRefused, code: 2, Summary: "--arc needs the goal whose arc to claim; nothing was done",
+				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"}, false
 		}
 		next, problem := inv.frontierPick(projection)
 		if problem != nil {
-			return inv.render(*problem)
+			return *problem, false
 		}
 		id = next
 	}
 	if file, _ := goalRecord(projection, id); file == nil {
-		return unknownGoal(inv, id)
+		return intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: fmt.Sprintf("no goal %s on the accepted ledger; nothing was done", shellCommand([]string{id})), next: inv.publicArgv("goal", "list", "--all"), nextReason: "list the goals by id"}, false
 	}
 	// A steward seat names the goal its brief named; another machine may
 	// have taken it since. The seat then takes what a claim without a goal
 	// picks, never stalling on the taken one; any other session or person
 	// named it deliberately and keeps the refusal.
-	seat := !person && named && !inv.input.switched("arc") && box == "" && inv.claimLineage() == launch.SeatOwnerLineage
+	seat := fallback && !person && named && !inv.input.switched("arc") && box == "" && inv.claimLineage() == launch.SeatOwnerLineage
 	asked, taken := id, ""
 	if seat {
 		next, holder, problem := inv.seatFallback(projection, id)
 		if problem != nil {
-			return inv.render(*problem)
+			return *problem, false
 		}
 		id, taken = next, holder
 	}
-	result := inv.claimGoalAs(id, box, projection, actor, proof)
+	result = inv.claimGoalAs(id, box, projection, actor, proof)
 	data, ok := result.Data.(map[string]any)
 	if !ok {
 		data = map[string]any{"claim": result.Data}
@@ -1203,7 +1219,48 @@ func runIntentClaim(inv *intentInvocation) int {
 		result.view = func(page *textui.Page) { page.Done(summary) }
 		result.next, result.nextReason = inv.publicArgv("goal", "show", id), "the claimed goal and its next step"
 	}
-	return inv.render(result)
+	return result, false
+}
+
+// withClaimPreparation reports the session and adoption facts independently
+// of whether the command's own act succeeded.
+func (result intentResult) withClaimPreparation(preparation *up.Result) intentResult {
+	if preparation == nil {
+		return result
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok {
+		data = map[string]any{"claim": result.Data}
+	}
+	data["preparation"] = preparation
+	data["adoption"] = preparation.Adoption
+	result.Data = data
+	result.Details = append(result.Details, preparation.Lines()...)
+	lines := []string{sessionPreparationSummary(*preparation)}
+	if preparation.Adoption != nil {
+		for _, adopted := range preparation.Adoption.Goals {
+			line := adopted.GoalID + ": adoption " + adopted.Outcome
+			if adopted.Cause != "" {
+				line += "; " + adopted.Cause
+			}
+			if adopted.Outcome == "pending" && adopted.Remedy != "" {
+				line += "; " + adopted.Remedy
+			}
+			lines = append(lines, line)
+		}
+	}
+	result.text = append(result.text, lines...)
+	if view := result.view; view != nil {
+		result.view = func(page *textui.Page) {
+			view(page)
+			page.Legacy(lines...)
+		}
+	}
+	if preparation.Adoption != nil && preparation.Adoption.Pending && result.Outcome == intentConfirmed {
+		result.Outcome = intentPartial
+		result.Summary += "; session adoption remains pending"
+	}
+	return result
 }
 
 // frontierPick is the goal a claim without a goal takes: this machine's next
@@ -1360,19 +1417,15 @@ func (inv *intentInvocation) claimGoalAs(id, box string, projection goal.Project
 }
 
 // acquireClaim claims one named goal for this session exactly as claim G
-// does, and returns the owner's result.
-func (inv *intentInvocation) acquireClaim(id string) intentResult {
-	actor, proof, problem := inv.actingAs("claim", id, actorEither)
-	if problem != nil {
-		return *problem
+// does. The claim's grant is independent of pending session adoption.
+func (inv *intentInvocation) acquireClaim(id string) (intentResult, bool) {
+	result, granted := inv.claimResult(id, "", false)
+	if granted {
+		if data, ok := result.Data.(map[string]any); ok {
+			inv.claimPreparation, _ = data["preparation"].(*up.Result)
+		}
 	}
-	laneState := inv.claimLaneReader()
-	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
-	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		req.ClaimLaneState = laneState
-		req.ClaimAreaReaders = inv.claimAreaReaders()
-		return goal.Claim(req, f.id)
-	}, "id"))
+	return result, granted
 }
 
 // takeOver displaces another machine's claim through the steal owner; it is

@@ -332,7 +332,11 @@ func resolveSessionIdentity(options Options) (sessionIdentity, error) {
 		if findAncestor == nil {
 			findAncestor = census.FindAncestorProduction
 		}
-		ancestor, err := findAncestor(installationRoot(options), int64(os.Getppid()), runtimeName)
+		callerPid := options.CallerPid
+		if callerPid == 0 {
+			callerPid = int64(os.Getppid())
+		}
+		ancestor, err := findAncestor(installationRoot(options), callerPid, runtimeName)
 		if err != nil {
 			return sessionIdentity{}, fmt.Errorf("this process could not be traced back to its session: %w", err)
 		}
