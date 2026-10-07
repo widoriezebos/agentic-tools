@@ -310,7 +310,8 @@ type session struct {
 	tag  string
 	trap func(code int) error
 
-	leaseReentry bool
+	leaseReentry                  bool
+	unknownExaminationRetrySource string
 
 	capAuthorityHeld bool
 	goalLockHeld     bool

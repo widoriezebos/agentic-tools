@@ -28,6 +28,7 @@ import (
 // fills the attempt and the subject's retain once it bound them.
 type reviewWorkContext struct {
 	goal, work string
+	run        string
 	repair     bool
 	retry      int64
 	attempt    int
@@ -112,6 +113,32 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	returnPath := inv.returnPathAt(root, rootJob, round)
 	digest, _, readErr := reviewReturnDigest(returnPath)
 	findings, verdict, parseErr := readIntentFindings(returnPath)
+	decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
+	for _, decision := range decisions {
+		if strings.HasPrefix(decision, "dropped:") {
+			return inv.refuseReviewDrop(targets, work)
+		}
+	}
+	if work.subject != nil && (status == "completed" || status == "failed") && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round || work.subject.ExaminationReturnPath != returnPath) {
+		work.subject.Examination, work.subject.ExaminationRound, work.subject.ExaminationReturnPath = rootJob, round, returnPath
+		work.subject.ExaminationJob = recordText(newest, "jobId")
+		if work.retry > 0 {
+			work.subject.UnknownRetries = 1
+		}
+		if err := work.retain(*work.subject); err != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: again}
+		}
+	}
+	if work.run != "" {
+		if stopped := inv.reviewStoppedUnit(targets, root, rootJob, returnPath, work); stopped != nil {
+			return stopped
+		}
+	}
+	for _, decision := range decisions {
+		if strings.HasPrefix(decision, "split:") {
+			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "split: needs a recorded stop; nothing was retained or closed", next: again, nextReason: "decide the current findings without a split"}
+		}
+	}
 	if status != "completed" || readErr != nil || parseErr != nil {
 		cause := status
 		if readErr != nil || parseErr != nil {
@@ -206,7 +233,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		}
 		var accepted, excepted []string
 		for _, finding := range findings {
-			if finding.Material && decisions[finding.ID] == "accepted" {
+			if finding.Material && (decisions[finding.ID] == "accepted" || decisions[finding.ID] == "fixed") {
 				if risks[finding.ID] {
 					excepted = append(excepted, finding.ID)
 					continue
@@ -277,6 +304,12 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		closed.text = []string{"The decisions are kept; nothing was accepted and no read was collected."}
 	}
 	return &closed
+}
+
+func (inv *intentInvocation) refuseReviewDrop(targets []intentTarget, work *reviewWorkContext) *intentResult {
+	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		Summary: "Drop effects are not built yet; goal review-drops-and-design-convergence owns them. Use work revise.",
+		next:    inv.publicArgv("work", "revise", work.goal, "--work", work.work, "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), nextReason: "requests a reasoned correction while retaining this unit's code"}
 }
 
 func mergeData(into map[string]any, extra any) map[string]any {

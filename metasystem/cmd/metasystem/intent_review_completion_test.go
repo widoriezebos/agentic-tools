@@ -119,8 +119,14 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// A material finding stops at the author's decision with a bound file.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	returnPath := filepath.Join(install, "artifacts", "agents", "crit1", "rounds", "1", "return.json")
-	c.writeJSON(returnPath, map[string]any{"jobId": "crit1", "round": 1, "verdict": "1 finding",
-		"findings": []any{map[string]any{"id": "F1", "material": true, "title": "the proof misses a case"}}})
+	// Stop decisions require typed material evidence bound to this commit's tree.
+	finding := stopFinding("regression", "connect.txt")
+	finding.ID, finding.Claim = "crit1:1", "the proof misses a case"
+	c.writeJSON(returnPath, map[string]any{"jobId": "crit1", "round": 1, "verdict": "1 finding", "verdictMaterialCount": 1,
+		"reviewedTree": connectionGit(t, install, "rev-parse", first+"^{tree}"), "findings": []any{finding}})
+	if err := os.WriteFile(filepath.Join(filepath.Dir(returnPath), "return.md"), []byte("VERDICT: FIX material=1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	// The commit form of the same build joins its read, records the
 	// examination with the work's attempt and writes the bound template.
 	_, result = c.do("work", "review", "--commit", first, "--goal", c.id)
@@ -134,7 +140,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	template, _ := resultData(t, result)["template"].(string)
 	body, _ := os.ReadFile(template)
 	if result.Outcome != intentInProgress || !strings.Contains(string(body), "Review binding: goal="+c.id+" work=connect attempt=1 subject="+first) ||
-		!strings.Contains(string(body), "| F1 | DECIDE |") || result.Next == nil || !slices.Contains(result.Next.Argv, "--dispositions") || len(c.closes) != 0 {
+		!strings.Contains(string(body), "| crit1:1 | DECIDE |") || result.Next == nil || !slices.Contains(result.Next.Argv, "--dispositions") || len(c.closes) != 0 {
 		t.Fatalf("findings stop at the author's bound decision: %+v %q", result, body)
 	}
 	if subjects := c.runRecord(run).Subjects; subjects[0].Examination != "crit1" || subjects[0].ExaminationRound != 1 {
@@ -149,7 +155,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	}
 	// An accepted material finding requires a correction, never a close.
 	decided := filepath.Join(c.root(), "decided.md")
-	os.WriteFile(decided, []byte(strings.Replace(string(body), "| F1 | DECIDE | | |", "| F1 | accepted | the case is real | add it |", 1)), 0o600)
+	os.WriteFile(decided, []byte(strings.Replace(string(body), "| crit1:1 | DECIDE | | |", "| crit1:1 | accepted | the case is real | add it |", 1)), 0o600)
 	_, result = c.do("work", "review", c.id, "--dispositions", decided)
 	if result.Outcome != intentRefused || result.Next == nil || !slices.Contains(result.Next.Argv, "revise") ||
 		!slices.Contains(result.Next.Argv, "--dispositions") || len(c.closes) != 0 || c.commitReads != 0 {
@@ -159,7 +165,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// The correction carries the reviewed findings and decisions; repeating
 	// it rejoins the same attempt without another launch.
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
-	fix := c.brief("fix.md", "Fix F1.\n\n## Decisions on round 1\n\n| F1 | fixed | connect.txt:1 |\n")
+	fix := c.brief("fix.md", "Fix crit1:1.\n\n## Decisions on round 1\n\n| crit1:1 | fixed | connect.txt:1 |\n")
 	code, result = c.do("work", "revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("revise: code=%d %+v", code, result)
@@ -169,7 +175,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 		t.Fatalf("one retained correction with frozen decisions: %+v", record.Revisions)
 	}
 	frozen, _ := os.ReadFile(record.Revisions[0].Decisions)
-	if !strings.Contains(string(frozen), "| F1 | accepted |") || !strings.Contains(string(frozen), "the proof misses a case") {
+	if !strings.Contains(string(frozen), "| crit1:1 | accepted |") || !strings.Contains(string(frozen), "the proof misses a case") {
 		t.Fatalf("the frozen document carries the decisions and the findings: %q", frozen)
 	}
 	launched := len(c.starter.launched())
@@ -186,7 +192,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	second := c.runRecord(run).Subjects[1].Commit
 	c.writeCritic(install, "crit2", second, "completed", false)
 	c.writeJSON(filepath.Join(install, "artifacts", "agents", "crit2", "rounds", "1", "return.json"),
-		map[string]any{"jobId": "crit2", "round": 1, "verdict": "clean", "findings": []any{}})
+		map[string]any{"jobId": "crit2", "round": 1, "verdict": "clean", "verdictMaterialCount": 0, "reviewedTree": connectionGit(t, install, "rev-parse", second+"^{tree}"), "findings": []any{}})
 	// The whole close fails once (its mirror is missing): nothing is
 	// collected, and repair review replays the close with the retained
 	// decisions.

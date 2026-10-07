@@ -9,25 +9,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
 type stubGit struct {
-	once     sync.Once
-	stub     *testgit.Stub
-	makeStub func() *testgit.Stub
+	once      sync.Once
+	stub      *testgit.Stub
+	makeStub  func() *testgit.Stub
+	normalize func([]string) []string
 }
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
 	git.once.Do(func() { git.stub = git.makeStub() })
+	if git.normalize != nil {
+		args = git.normalize(args)
+	}
 	result := git.stub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
 	return result.Stdout, result.Err
 }
@@ -51,6 +58,9 @@ type completingStarter struct {
 	readOutput         string
 	readVerdict        string
 	readCounts         []bool
+	readClass          string
+	readWhere          string
+	skipStructured     bool
 	onStart            func(Record) error
 }
 
@@ -81,7 +91,39 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 				yes = starter.readCounts[0]
 				starter.readCounts = starter.readCounts[1:]
 			}
-			current.VerdictCounts, current.Measurement.Verdict = &yes, choose(starter.readVerdict, "pass")
+			material := max(0, 4-record.Round)
+			verdict := starter.readVerdict
+			if verdict == "" {
+				verdict = fmt.Sprintf("fix first (%d material findings)", material)
+			}
+			if match := regexp.MustCompile(`([0-9]+) material findings?`).FindStringSubmatch(verdict); len(match) == 2 {
+				material, _ = strconv.Atoi(match[1])
+			} else if strings.EqualFold(verdict, "land") {
+				material = 0
+			}
+			current.VerdictCounts, current.Measurement.Verdict = &yes, verdict
+			if current.State == Completed && !starter.skipStructured {
+				paths, err := declaredOutputPaths(*current)
+				if err != nil {
+					return err
+				}
+				for _, path := range paths {
+					if filepath.Base(path) == "return.json" {
+						if _, err := os.Stat(path); os.IsNotExist(err) {
+							if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+								return err
+							}
+							if err := os.WriteFile(path, []byte(structuredUnitReturn(material, choose(starter.readClass, []string{"regression", "scope", "incomplete-item", "missing-reader"}[max(0, record.Round-1)%4]), choose(starter.readWhere, fmt.Sprintf("round-%d.go", record.Round)))), 0600); err != nil {
+								return err
+							}
+						}
+					} else if filepath.Base(path) == "report.md" {
+						if err := os.WriteFile(path, []byte("Retained examination evidence\n"), 0600); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			if starter.readOutput != "" {
 				current.Outputs = []Output{{Path: starter.readOutput, Bytes: 4}}
 			}
@@ -89,6 +131,29 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 		return nil
 	})
 	return ref(10), nil
+}
+
+func structuredUnitReturn(material int, class, where string) string {
+	findings := []map[string]any{}
+	for n := 0; n < material; n++ {
+		findings = append(findings, map[string]any{"material": true, "class": class, "severity": "high", "claim": fmt.Sprintf("Finding %d", n+1), "evidence": "The result is discarded", "change": "Preserve the result", "where": where, "relation": "new"})
+	}
+	findings = append(findings, map[string]any{"material": false, "class": "regression", "severity": "low", "claim": "Non-gating observation", "evidence": "The result is retained", "change": "Keep the result observable", "where": "observation.go", "relation": "fold-not-holding"})
+	data, _ := json.Marshal(map[string]any{"findings": findings, "verdictMaterialCount": material})
+	return string(data)
+}
+
+func correctionBrief(record UnitRunRecord, text string) []byte {
+	round := record.Rounds[len(record.Rounds)-1]
+	brief := text + fmt.Sprintf("\n## Decisions on round %d\n", round.Number)
+	for _, read := range round.Reads {
+		for _, finding := range read.Findings {
+			if finding.Material {
+				brief += fmt.Sprintf("| %s | fixed | file.go:12 |\n", finding.ID)
+			}
+		}
+	}
+	return []byte(brief)
 }
 
 type unitFixture struct {
@@ -138,12 +203,28 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	if defaultEvents {
 		events = []string{"branch", "round"}
 	}
+	var expanded []string
+	rounds := 0
+	for i, event := range events {
+		expanded = append(expanded, event)
+		if event == "new" || event == "resolve" {
+			rounds = 0
+		}
+		if event == "round" {
+			rounds++
+			if rounds > 1 && (i+1 == len(events) || events[i+1] != "warm") {
+				expanded = append(expanded, "warm")
+			}
+		}
+	}
+	events = expanded
 	var expected []testgit.Expectation
 	add := func(dir string, output string, check func(testgit.Call) error, args ...string) {
 		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: dir, Args: args}, Result: testgit.Result{Stdout: []byte(output)}, Check: check})
 	}
 	for _, event := range events {
 		switch event {
+		case "new", "resolve":
 		case "branch":
 			add(fixture.worktree, "goal/goal\n", nil, "symbolic-ref", "--short", "HEAD")
 		case "main":
@@ -183,8 +264,14 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			}
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", check, "read-tree", "base")
+			if diff != "" {
+				add(fixture.worktree, "", check, "apply", "--cached", "--binary", "retained-worktree.diff")
+			}
 			add(fixture.worktree, "previous-tree\n", check, "write-tree")
 			add(fixture.worktree, "", check, "read-tree", "base")
+			if diff != "" {
+				add(fixture.worktree, "", check, "apply", "--cached", "--binary", "retained-worktree.diff")
+			}
 			add(fixture.worktree, "+fixed line\n", check, "diff", "--cached", "--binary", "previous-tree", "--", ".")
 		default:
 			t.Fatalf("unknown Git fixture event %q", event)
@@ -196,6 +283,17 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 		}
 		return testgit.New(t, expected...)
 	}}
+	fixture.git.normalize = func(args []string) []string {
+		if len(args) == 4 && args[0] == "apply" && args[1] == "--cached" && args[2] == "--binary" {
+			data, err := os.ReadFile(args[3])
+			if err != nil || string(data) != diff {
+				t.Fatalf("warm read applied changed or missing retained diff: %s %v", data, err)
+			}
+			args = append([]string(nil), args...)
+			args[3] = "retained-worktree.diff"
+		}
+		return args
+	}
 	fixture.runner.Git = fixture.git
 	return fixture
 }
@@ -449,9 +547,9 @@ func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
 	}{
 		{"lost-build", "build", "build", "", "process-lost", "process-lost", false},
 		{"red-proof", "proof", "proof", "", "", "process-lost", false},
-		{"no-findings", "read", "", "", "read-no-findings", "read-no-findings", false},
-		{"findings", "read", "", "report", "", "", false},
-		{"counted-read", "read", "", "", "", "read-no-findings", true},
+		{"no-findings", "read", "", "", "environment", "read-no-findings", false},
+		{"findings", "read", "", "report", "environment", "", false},
+		{"counted-read", "read", "", "", "environment", "read-no-findings", true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -744,13 +842,14 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 }
 
 func TestFollowUpRefusedUnlessAwaitingJudgement(t *testing.T) {
+	t.Parallel()
 	fixture := newUnitFixture(t, "", "branch", "branch")
 	fixture.starter.holdKind = "build"
 	result, _ := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	follow := filepath.Join(t.TempDir(), "follow")
 	os.WriteFile(follow, []byte("x"), 0o600)
 	_, err := fixture.runner.Advance(UnitRequest{Resume: result.Record.ID, FollowUp: follow})
-	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RUN_NOT_AWAITING") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_STOPPED") {
 		t.Fatalf("err=%v", err)
 	}
 	result.Record.State = "awaiting-judgement"
@@ -965,6 +1064,7 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 }
 
 func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
+	t.Parallel()
 	fixture, repo := newGitUnitFixture(t)
 	before := repositoryDigest(t, repo)
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
@@ -982,10 +1082,10 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	}
 	git := fixture.runner.Git.(*recordingOSGit)
 	for index, call := range git.calls {
-		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "diff-index", "add", "diff"}, call[0]) {
+		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "diff-index", "add", "diff", "read-tree", "write-tree", "apply"}, call[0]) {
 			t.Fatalf("git call=%v", call)
 		}
-		if call[0] == "add" && !envOutside(git.envs[index], first.Record.Worktree) {
+		if slices.Contains([]string{"add", "read-tree", "write-tree", "apply"}, call[0]) && !envOutside(git.envs[index], first.Record.Worktree) {
 			t.Fatalf("add env=%v", git.envs[index])
 		}
 	}
@@ -1194,7 +1294,7 @@ func TestCountedCapRefusesTheNextRound(t *testing.T) {
 	if err != nil || second.Record.CountedCap != 2 {
 		t.Fatalf("second=%+v err=%v", second, err)
 	}
-	assertCapAdmissions(t, fixture, second.Record, "UNIT_ROUND_CAP")
+	assertCapAdmissions(t, fixture, second.Record, "UNIT_STOPPED")
 }
 
 // A refused admission leaves the retained record, round directories and launches alone.
@@ -1221,28 +1321,44 @@ func assertCapAdmissions(t *testing.T, fixture unitFixture, record UnitRunRecord
 	}
 }
 
-func TestEnvironmentRoundIsNotCounted(t *testing.T) {
+func TestUnknownReadDoesNotConsumeCorrectionRound(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round", "branch")
-	fixture.manager.Settings.UnitCountedRounds = 1
-	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-	if err != nil {
-		t.Fatal(err)
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprintf("fresh-available=%t", available), func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "", "branch", "round", "branch")
+			fixture.manager.Settings.UnitCountedRounds = 1
+			fixture.starter.skipStructured = true
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counted, environment := countedRounds(first.Record); counted != 0 || environment != 1 {
+				t.Fatalf("unknown read consumed budget: counted=%d environment=%d", counted, environment)
+			}
+			fixture.starter.skipStructured = !available
+			fresh, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+			if err != nil || len(fresh.Record.Rounds) != 1 || fresh.Record.Rounds[0].UnknownRetries != 1 {
+				t.Fatalf("fresh examination changed attempt: %+v %v", fresh, err)
+			}
+			wantCounted, wantEnvironment := 0, 1
+			if available {
+				wantCounted, wantEnvironment = 1, 0
+			}
+			if counted, environment := countedRounds(fresh.Record); counted != wantCounted || environment != wantEnvironment {
+				t.Fatalf("completed examination count: counted=%d environment=%d", counted, environment)
+			}
+			launched := len(fixture.starter.order)
+			if _, err := fixture.runner.RetryUnknownRead(first.Record.ID); !IsCode(err, "UNIT_STOPPED") {
+				t.Fatalf("another examination was admitted: %v", err)
+			}
+			if len(fixture.starter.order) != launched {
+				t.Fatal("another examination launched")
+			}
+			assertCapAdmissions(t, fixture, fresh.Record, "UNIT_STOPPED")
+
+		})
 	}
-	record := first.Record
-	record.MaxRounds, record.Rounds[0].Cause = 2, "provider-limit"
-	if err := fixture.runner.save(record); err != nil {
-		t.Fatal(err)
-	}
-	second, err := fixture.runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)})
-	if err != nil || len(second.Record.Rounds) != 2 {
-		t.Fatalf("environment round consumed the cap: %+v %v", second, err)
-	}
-	counted, machinery := countedRounds(second.Record)
-	if counted != 1 || machinery != 1 {
-		t.Fatalf("counted=%d machinery=%d", counted, machinery)
-	}
-	assertCapAdmissions(t, fixture, second.Record, "UNIT_ROUND_LIMIT")
 }
 
 func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
@@ -1254,8 +1370,8 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 		{"material", "fix first (2 material findings)", "", "work build G --work NEW --brief FILE --check ...", "worktree as it stands", false},
 		{"clean", "land", "", "work review G --work U", "goal notes G --read R --add TEXT", false},
 		{"committed", "fix first (2 material findings)", "", "work build G --work NEW", "goal accept-risk G --finding F naming NEW", true},
-		{"examination overrides clean read", "land", `{"findings":[{"material":true},{"material":false}]}`, "work build G --work NEW", "goal accept-risk", true},
-		{"clean examination overrides material read", "fix first (2 material findings)", `{"findings":[]}`, "work review G --work U", "goal notes", true},
+		{"examination overrides clean read", "land", structuredUnitReturn(1, "regression", "code.go"), "work build G --work NEW", "goal accept-risk", true},
+		{"clean examination overrides material read", "fix first (2 material findings)", structuredUnitReturn(0, "regression", "code.go"), "work review G --work U", "goal notes", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -1263,6 +1379,14 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 			yes := true
 			record := UnitRunRecord{ID: "R", Unit: "U", Goal: "G", CountedCap: 2,
 				Rounds: []UnitRound{{Number: 1}, {Number: 2, Steps: []UnitStep{{Name: "read", Verdict: test.verdict, VerdictCounts: &yes}}}, {Number: 3, Cause: "provider-limit"}}}
+			read, err := readsubject.Collect("launch", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(2, "regression", "code.go")), test.verdict)
+			if strings.EqualFold(test.verdict, "land") {
+				read, err = readsubject.Collect("launch", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(0, "regression", "code.go")), test.verdict)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Rounds[1].Reads = []readsubject.Read{read}
 			if test.committed {
 				record.Subjects = []UnitSubject{{Round: 2, Commit: "commit"}}
 			}
@@ -1275,8 +1399,13 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 					t.Fatal(err)
 				}
 				writeFile(t, path, test.examination)
+				read, err := readsubject.Collect("critic", readsubject.ReadSubject{}, "engine", "model", path, []byte(test.examination), "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				record.Rounds[1].Reads = []readsubject.Read{read}
 			}
-			err := fixture.runner.countedCap(record)
+			err = fixture.runner.countedCap(record)
 			var cap *CodedError
 			if !errors.As(err, &cap) || cap.Code != "UNIT_ROUND_CAP" || !strings.Contains(cap.Run, test.next) || !strings.Contains(cap.Reason.Error(), test.reason) ||
 				!strings.Contains(cap.Facts, "run=R counted=2 cap=2 machinery=1") || !strings.HasPrefix(cap.Reason.Error(), "unit U has used its 2 counted rounds; nothing was started") {
@@ -1286,36 +1415,41 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 	}
 }
 
-func TestRunWithoutCountedCapIsNotCapped(t *testing.T) {
+func TestLegacyRunWithoutStopRequiresRead(t *testing.T) {
 	t.Parallel()
 	for _, revise := range []bool{false, true} {
 		t.Run(fmt.Sprint(revise), func(t *testing.T) {
 			t.Parallel()
-			fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
+			events := []string{"branch", "round"}
+			if !revise {
+				events = append(events, "branch")
+			}
+			fixture := newUnitFixture(t, "", events...)
 			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 			if err != nil {
 				t.Fatal(err)
 			}
 			record := first.Record
 			record.CountedCap = 0
-			for number := 2; number <= 6; number++ {
-				round := record.Rounds[0]
-				round.Number = number
-				record.Rounds = append(record.Rounds, round)
-			}
+			record.Rounds[0].Reads = nil
+			record.Rounds[0].Stop = nil
+			record.Rounds[0].Material = -1
 			if err := fixture.runner.save(record); err != nil {
 				t.Fatal(err)
 			}
+			launched := len(fixture.starter.order)
 			if revise {
 				_, err = fixture.runner.Revise(UnitRevisionRequest{Run: record.ID, Brief: []byte("Declared size: 1 changed lines\n")})
 			} else {
 				_, err = fixture.runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)})
 			}
-			if err != nil {
-				t.Fatalf("zero-cap record was capped: %v", err)
+			if !IsCode(err, "UNIT_STOPPED") || !strings.Contains(err.Error(), "no recorded decision") {
+				t.Fatalf("legacy input must require a read: %v", err)
 			}
-			requireRecordedRounds(t, fixture, record.ID, 7)
-			requireLaunchedOnce(t, fixture, 6)
+			requireRecordedRounds(t, fixture, record.ID, 1)
+			if len(fixture.starter.order) != launched {
+				t.Fatal("unknown legacy input launched work")
+			}
 		})
 	}
 }
@@ -1324,12 +1458,35 @@ func TestRoundMaterialAndJudgement(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", []string{}...)
 	yes, no := true, false
-	record := UnitRunRecord{ID: "round-material", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Steps: []UnitStep{
-		{Name: "read:a", Verdict: "fix first (2 material findings)", VerdictCounts: &yes},
-		{Name: "read:b", Verdict: "VERDICT: fix first (3 material findings)", VerdictCounts: &yes},
-		{Name: "read:c", Verdict: "fix first (9 material findings)", VerdictCounts: &no},
-		{Name: "read:d", Verdict: "land", VerdictCounts: &yes},
-	}}}}
+	record := UnitRunRecord{ID: "round-material", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Directory: filepath.Join(fixture.runner.Root, "round-material", "round-2")}}}
+	os.MkdirAll(record.Rounds[1].Directory, 0700)
+	for _, item := range []struct {
+		id       string
+		material int
+		counts   bool
+	}{{"a", 2, yes}, {"b", 3, yes}, {"c", 9, no}, {"d", 0, yes}} {
+		// The fixture retains immutable evidence under the launch's own state.
+		stateDir, err := fixture.manager.Store.StateDir(item.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(stateDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(stateDir, "return.json")
+		writeFile(t, path, structuredUnitReturn(item.material, "regression", item.id+".go"))
+		counts := item.counts
+		launch := Record{ID: item.id, Kind: "read", State: Completed, VerdictCounts: &counts, AdapterData: map[string]json.RawMessage{}, Measurement: Measurement{Verdict: fmt.Sprintf("fix first (%d material findings)", item.material)}}
+		setStrings(launch.AdapterData, "declaredOutputs", []string{path})
+		diff := filepath.Join(filepath.Dir(path), "read.diff")
+		writeFile(t, diff, "reviewed diff")
+		setString(launch.AdapterData, "readDiff", diff)
+		if err := fixture.manager.Store.Create(launch); err != nil {
+			t.Fatal(err)
+		}
+		record.Rounds[1].Steps = append(record.Rounds[1].Steps, UnitStep{Name: "read:" + item.id, LaunchID: item.id, Verdict: launch.Measurement.Verdict, VerdictCounts: &counts, State: StepPassed})
+	}
+
 	finished, err := fixture.runner.finish(&record, &record.Rounds[1], "green")
 	if err != nil || finished.Record.Rounds[1].Material != 5 {
 		t.Fatalf("finish=%+v err=%v", finished, err)

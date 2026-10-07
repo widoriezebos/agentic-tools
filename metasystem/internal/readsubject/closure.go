@@ -188,6 +188,11 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 			entry = maps.Clone(entry)
 			delete(entry, "placeholderRound")
 		}
+		transferStop := stringValue(entry["transferStop"])
+		entry = maps.Clone(entry)
+		for _, field := range []string{"class", "where", "change", "resolves", "relation", "transferStop"} {
+			delete(entry, field)
+		}
 		legacy := hasExactFields(entry,
 			"findingId", "critic", "rigorClass", "factsDigest", "status", "evidenceDigest", "multiplicity")
 		modern := hasExactFields(entry,
@@ -229,7 +234,7 @@ func classifyRegister(value any) (bool, bool, []AcceptedRisk, error) {
 		pairIsClean := status == "resolved" && (resolution == "withdrawn" || resolution == "folded") || superseded
 		pairIsNonClean := (status == "open" || status == "disputed") && resolution == "" ||
 			status == "resolved" && (resolution == "out-of-scope" || resolution == "refuted" || resolution == "accepted") ||
-			status == "deferred" && resolution == "deferred" ||
+			status == "deferred" && resolution == "deferred" || status == "transferred" && resolution == "transferred" && transferStop != "" ||
 			status == "accepted-risk" && resolution == "accepted-risk"
 		if !pairIsClean && !pairIsNonClean {
 			return false, false, nil, fmt.Errorf("finding register entry %d has status/resolution mismatch %q/%q", index, status, resolution)

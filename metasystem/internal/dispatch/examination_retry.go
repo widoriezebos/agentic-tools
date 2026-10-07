@@ -9,12 +9,10 @@ import (
 	"strconv"
 )
 
-// ExaminationRetryAdmissible decides whether a critic chain's newest round,
-// which ended without a findings return, may be followed by one fresh
-// examination round of the same chain. The chain's round cap, subject and
-// records stay the follow-up's own; this only admits the retry. A round that
-// is still live, that completed, that was cancelled, or that wrote a return
-// is refused, and so is one whose recorded process is not proven dead.
+// ExaminationRetryAdmissible admits an environment failure without a return,
+// or one fresh code examination when a completed return has unavailable stop
+// inputs. Readable completed findings are decided instead of retried. Live
+// processes, cancellation and an already reserved unknown-input retry hold.
 func ExaminationRetryAdmissible(repoRoot string, latest map[string]any) error {
 	return examinationRetryAdmissible(repoRoot, latest, CustodyDeathDependencies{})
 }
@@ -41,7 +39,27 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 	case !TerminalStatus(status):
 		return fmt.Errorf("examination round %d is still %s; a live examination is never retried", round, status)
 	case status == "completed":
-		return fmt.Errorf("examination round %d completed; its findings are decided, not retried", round)
+		if role != "code-critic" {
+			return fmt.Errorf("examination round %d completed; its findings are decided, not retried", round)
+		}
+		state := loadCritiqueState(repoRoot)
+		persisted, present := state.records[asString(latest["jobId"])]
+		if !present || asString(persisted["status"]) != "completed" {
+			return fmt.Errorf("completed examination has no matching retained completed record")
+		}
+		if _, err := CollectExamination(repoRoot, asString(latest["jobId"])); err == nil {
+			return fmt.Errorf("examination round %d completed with readable stop inputs; its findings are decided, not retried", round)
+		}
+		root := state.records[state.chainRoot(asString(latest["jobId"]))]
+		if asString(root["unknownExaminationRetryFrom"]) != "" {
+			return fmt.Errorf("the fresh examination has already been reserved; unavailable stop inputs hold the unit")
+		}
+		if latest["pid"] != nil && asString(latest["groupDeathProvenAt"]) == "" {
+			if death := ProveCustodyDeath(repoRoot, latest, custody); death.Outcome != CustodyDeathProven {
+				return fmt.Errorf("completed examination round %d is not proven quiescent", round)
+			}
+		}
+		return nil
 	case status == "cancelled":
 		return fmt.Errorf("examination round %d was cancelled; a cancellation is not retried", round)
 	}
@@ -66,4 +84,40 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		return err
 	}
 	return nil
+}
+
+// ReserveUnknownExaminationRetry consumes the one fresh examination before
+// dispatch. Failure after this record leaves the unit held, never granting a
+// second automatic launch.
+func ReserveUnknownExaminationRetry(repoRoot, jobID string) error {
+	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
+		state := loadCritiqueState(repoRoot)
+		latest, present := state.records[jobID]
+		if !present || asString(latest["status"]) != "completed" {
+			return "", fmt.Errorf("unknown-input retry needs its completed examination")
+		}
+		if err := ExaminationRetryAdmissible(repoRoot, latest); err != nil {
+			return "", err
+		}
+		rootID := state.chainRoot(jobID)
+		err := withRecordLock(repoRoot, rootID, func(path string) error {
+			root, err := readObject(path)
+			if err != nil {
+				return err
+			}
+			if asString(root["unknownExaminationRetryFrom"]) != "" {
+				return fmt.Errorf("the one fresh examination is already reserved")
+			}
+			root["unknownExaminationRetryFrom"] = jobID
+			round, _ := numInt(latest["round"])
+			folded, _ := numInt(root[findingRegisterRoundField])
+			if round == folded+1 {
+				root[findingRegisterRoundField] = round
+				delete(root, findingRegisterSubjectDigestField)
+			}
+			return writeRecord(path, root)
+		})
+		return "", err
+	})
+	return err
 }

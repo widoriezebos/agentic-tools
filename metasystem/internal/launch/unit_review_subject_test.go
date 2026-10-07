@@ -31,8 +31,8 @@ func TestReviewSubjectMaterialUsesRetainedReturnPath(t *testing.T) {
 		writeFile(t, path, content)
 		return path
 	}
-	returnAt(fixture.runner.ExaminationRoot, `{"findings":[{"material":true},{"material":true}]}`)
-	path := returnAt(t.TempDir(), `{"findings":[{"material":true},{"material":false}]}`)
+	returnAt(fixture.runner.ExaminationRoot, structuredUnitReturn(2, "regression", "wrong.go"))
+	path := returnAt(t.TempDir(), structuredUnitReturn(1, "regression", "code.go"))
 	err = fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
 		return retain(UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest,
 			Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
@@ -50,7 +50,7 @@ func TestReviewSubjectMaterialUsesRetainedReturnPath(t *testing.T) {
 	}
 }
 
-func TestReviewSubjectMissingReturnRetainsCountedRound(t *testing.T) {
+func TestReviewSubjectMissingReturnRetainsUnknownRound(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"no return", "missing file", "malformed return"} {
 		t.Run(name, func(t *testing.T) {
@@ -79,11 +79,12 @@ func TestReviewSubjectMissingReturnRetainsCountedRound(t *testing.T) {
 			if err != nil || len(record.Subjects) != 1 || record.Subjects[0].Examination != "critic" || record.Subjects[0].ExaminationRound != 1 || record.Rounds[0].Material != -1 {
 				t.Fatalf("retain the examination with an unknown material count: %+v err=%v", record, err)
 			}
-			if counted, environment := countedRounds(record); counted != 1 || environment != 0 {
-				t.Fatalf("missing findings must still count the round: counted=%d environment=%d", counted, environment)
+			if counted, environment := countedRounds(record); counted != 0 || environment != 1 {
+				t.Fatalf("missing findings must remain an environment failure: counted=%d environment=%d", counted, environment)
 			}
-			if path != "" && (len(record.Notes) != 1 || !strings.Contains(record.Notes[0], "material count") || !strings.Contains(record.Notes[0], path)) {
-				t.Fatalf("the count failure must be noted on the run: %v", record.Notes)
+			round := record.Rounds[0]
+			if round.Stop == nil || round.Stop.Decision != "stop" || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || len(round.Reads) != 0 {
+				t.Fatalf("the count failure must remain a stopped unknown read: %+v", round)
 			}
 		})
 	}

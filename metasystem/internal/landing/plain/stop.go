@@ -12,64 +12,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
-// Stop records a lane loop's decision and the evidence for its handoff.
-type Stop struct {
-	Loop    string `json:"loop"`
-	Subject string `json:"subject"`
-	Attempt int    `json:"attempt"`
-	Budget  int    `json:"budget"`
-	Measure struct {
-		Name     string   `json:"name"`
-		Previous []string `json:"previous"`
-		Now      []string `json:"now"`
-	} `json:"measure"`
-	Class    string `json:"class"`
-	Decision string `json:"decision"`
-	Handoff  string `json:"handoff"`
-	Cause    *Cause `json:"cause"`
-	Evidence string `json:"evidence"`
-	At       string `json:"at"`
-}
+// Stop retains the shared loop decision beside the lane.
+type Stop = loopstop.Stop
 
 func stopsPath(install string) string { return filepath.Join(Dir(install), "stops.jsonl") }
-
-// Command is the one act that resolves this stop.
-func (s Stop) Command() string {
-	if strings.HasPrefix(s.Handoff, "hold ") {
-		return "metasystem incident list"
-	}
-	if s.Loop == "lane-return" || s.Cause != nil && s.Cause.Kind == "environment" {
-		return "metasystem landing run"
-	}
-	goal := "GOAL"
-	if s.Cause != nil && s.Cause.Goal != "" {
-		goal = s.Cause.Goal
-	}
-	return "metasystem landing return " + goal + " --cause own --reason TEXT"
-}
-
-func (s Stop) Words() string {
-	why := s.Class
-	if s.Loop == "lane-return" {
-		why = fmt.Sprintf("%d launches left the lane unchanged", s.Attempt)
-	} else if s.Cause != nil && s.Cause.Kind == "environment" {
-		why = "the check could not complete twice"
-	} else if s.Attempt >= s.Budget && s.Measure.Name == "red set" {
-		why = fmt.Sprintf("%d full proofs went red; the latest failures are %s", s.Attempt, s.Class)
-		if !slices.ContainsFunc(s.Measure.Previous, func(test string) bool { return !slices.Contains(s.Measure.Now, test) }) {
-			why += "; the second showed no smaller red set"
-		}
-	}
-	if s.Cause != nil {
-		why += "; cause: " + s.Cause.Kind
-		if s.Cause.Kind == "main" && s.Cause.Name != "" {
-			why += "; incident: " + s.Cause.Name
-		}
-	}
-	return "the lane stopped: " + why + ". Subject: " + s.Subject
-}
 
 // NewestStop is the newest stop for which no later decision closed its loop.
 func NewestStop(install string) (*Stop, error) {
@@ -78,9 +27,9 @@ func NewestStop(install string) (*Stop, error) {
 	for i := len(lines) - 1; i >= 0; i-- {
 		s := lines[i]
 		if s.Decision == "close" {
-			closed[s.Loop] = true
+			closed[s.Loop+"\x00"+s.Subject] = true
 		}
-		if s.Decision == "stop" && !closed[s.Loop] {
+		if s.Decision == "stop" && !closed[s.Loop+"\x00"+s.Subject] {
 			return &s, err
 		}
 	}
@@ -94,11 +43,16 @@ func closeStopsLocked(install, loop, act string, now time.Time) error {
 	}
 	latest := map[string]Stop{}
 	for _, s := range lines {
-		latest[s.Loop] = s
+		latest[s.Loop+"\x00"+s.Subject] = s
 	}
-	for _, name := range []string{"lane-proof", "lane-gate", "lane-return"} {
-		s, ok := latest[name]
-		if !ok || s.Decision == "close" || loop != "" && loop != name {
+	var keys []string
+	for key := range latest {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		s := latest[key]
+		if !slices.Contains([]string{"lane-proof", "lane-gate", "lane-return"}, s.Loop) || s.Decision == "close" || loop != "" && loop != s.Loop {
 			continue
 		}
 		s.Decision, s.Handoff, s.At = "close", act, now.UTC().Format(time.RFC3339Nano)
@@ -197,6 +151,10 @@ func recordProofStop(install string, result Result) error {
 	}
 	if mode.Gate && s.Decision == "repeat" {
 		s.Handoff = "landing prove --gate"
+	}
+	s = loopstop.Decide(loopstop.Input{Stop: s, Continue: s.Decision == "repeat"})
+	if s.Decision == "continue" {
+		s.Decision = "repeat"
 	}
 	return appendLine(stopsPath(install), s)
 }

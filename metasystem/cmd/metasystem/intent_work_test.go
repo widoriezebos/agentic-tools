@@ -22,7 +22,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -290,7 +292,10 @@ func TestReadBriefAsksForTheRule(t *testing.T) {
 func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("revise.md", "Build the unit.\n")
+	// Correction admission consumes the collected read, including its
+	// examination-qualified finding ids, rather than a prose count.
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "a.go")}}}
+	brief := bed.brief("revise.md", "Read each round: yes\nBuild the unit.\n")
 	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "decisions", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	if code != 0 {
 		t.Fatalf("build: %+v", built)
@@ -300,12 +305,10 @@ func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := bed.brief("return.json", `{"findings":[{"id":"F-1","material":true}]}`)
-	record.Subjects = []launch.UnitSubject{{Round: 1, Examination: "critic", ExaminationReturnPath: filepath.Join(bed.root(), report)}}
-	writeQuestionFixture(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+	finding := record.Rounds[0].Reads[0].Findings[0].ID
 	launched := len(bed.starter.launched())
 	code, refused, _ := bed.work("work", "revise", bed.id, "--work", "decisions", "--brief", brief)
-	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding F-1 of round 1 has no decision; nothing was started" ||
+	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding "+finding+" of round 1 has no decision; nothing was started" ||
 		!strings.Contains(resultWords(refused), "UNIT_REVISE_UNDECIDED") || refused.Next == nil || !slices.Contains(refused.Next.Argv, "1") || !strings.Contains(refused.Next.Reason, "Decisions on round") || len(bed.starter.launched()) != launched {
 		t.Fatalf("revise: %+v", refused)
 	}
@@ -380,7 +383,10 @@ func (b *workBed) workOwners() intentOwners {
 		designGate: b.designGate,
 		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
-			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot}
+			// Repository and policy observations belong to this fixture's
+			// unit owner; neither reads the machine's checkout state.
+			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot,
+				ReviewPolicy: func() (string, error) { return "auto", nil }}
 		},
 		git: func(dir string, args ...string) ([]byte, error) {
 			joined := strings.Join(args, " ")
@@ -1204,7 +1210,8 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	bed.manager.Settings.UnitCountedRounds = 1
-	brief := bed.brief("cap.md", "Build the unit.\n")
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "a.go")}}}
+	brief := bed.brief("cap.md", "Read each round: yes\nBuild the unit.\n")
 	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "capped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	if code != 0 {
 		t.Fatalf("build: code=%d %+v", code, built)
@@ -1216,8 +1223,11 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 		{"work", "revise", "run:" + run, "--brief", brief},
 	} {
 		code, refused, _ := bed.work(args...)
-		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_CAP") ||
-			!strings.Contains(refused.Summary, "unit capped unit has used its 1 counted rounds; nothing was started") ||
+		// The frozen allowance is decided when the read arrives, before
+		// another correction asks the runner for a round.
+		stop := resultData(t, refused)["stop"].(map[string]any)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_STOPPED") ||
+			stop["class"] != "correction allowance spent" || stop["attempt"] != float64(1) || stop["budget"] != float64(1) ||
 			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "capped unit"}) || len(bed.starter.launched()) != launched {
 			t.Fatalf("cap refusal: code=%d %+v launches=%v", code, refused, bed.starter.launched())
 		}
@@ -1238,10 +1248,29 @@ func TestIntentReviseHonoursDivergence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yes := true
 	record.MaxRounds = 20
-	record.Rounds = []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}},
-		{Number: 2, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}}}
+	// Structured completed reads own progress; prose verdicts cannot
+	// supply a missing count or replace their collection decision.
+	collect := func(id, class, prefix string) readsubject.Read {
+		var findings []readsubject.Finding
+		for index := range 3 {
+			findings = append(findings, stopFinding(class, fmt.Sprintf("%s%d.go", prefix, index)))
+		}
+		data, err := json.Marshal(map[string]any{"findings": findings, "verdictMaterialCount": 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		read, err := readsubject.Collect(id, readsubject.ReadSubject{}, "fixture-engine", "fixture-reader", "return.json", data, "material=3")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return read
+	}
+	prior := collect("read-1", "regression", "old")
+	current := collect("read-2", "scope", "new")
+	stop := loopstop.Decide(loopstop.Input{Stop: loopstop.Stop{Loop: "unit-round", Subject: bed.id + "/stopped unit/" + run, Attempt: 2, Budget: 3, Handoff: "split correction"}, Prior: []readsubject.Read{prior}, Read: &current, Policy: "auto"})
+	record.Rounds = []launch.UnitRound{{Number: 1, Reads: []readsubject.Read{prior}},
+		{Number: 2, Reads: []readsubject.Read{current}, Stop: &stop}}
 	data, _ := json.Marshal(record)
 	if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), data, 0o600); err != nil {
 		t.Fatal(err)
@@ -1249,9 +1278,12 @@ func TestIntentReviseHonoursDivergence(t *testing.T) {
 	launched := len(bed.starter.launched())
 	for _, args := range [][]string{{"work", "revise", bed.id, "--work", "stopped unit", "--brief", brief}, {"work", "revise", "run:" + run, "--brief", brief}} {
 		code, refused, _ := bed.work(args...)
-		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_DIVERGENT") ||
-			refused.Summary != "the last two reads of stopped unit found 3, then 3 material findings, 0 of them repeats; nothing was started" ||
-			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "build", bed.id, "--work", "NEW", "--brief", "FILE", "--check", "..."}) || len(bed.starter.launched()) != launched {
+		decision := resultData(t, refused)["stop"].(map[string]any)
+		measure := decision["measure"].(map[string]any)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_STOPPED") ||
+			decision["class"] != "material findings did not fall" ||
+			!reflect.DeepEqual(measure["previous"], []any{"3"}) || !reflect.DeepEqual(measure["now"], []any{"3"}) ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "stopped unit"}) || len(bed.starter.launched()) != launched {
 			t.Fatalf("divergence refusal: code=%d %+v", code, refused)
 		}
 	}

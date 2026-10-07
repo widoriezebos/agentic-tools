@@ -81,9 +81,14 @@ func TestGoalNotesMaterialityThroughPublicVerb(t *testing.T) {
 				t.Fatalf("added notes lost materiality: %+v %v", file.ReadItems, problems)
 			}
 			if flag != "--not-material" {
-				out := gcliLedgerRefused(t, bed, "critic-11", "goal", "done", "fix-docs", "--reason", "Finished.", "--by", "Wido", "--json")
+				// The impact is printed on stderr before the person's act; JSON remains on stdout.
+				before := bed.tip()
+				code, out, errOut := bed.public("goal", "done", "fix-docs", "--reason", "Finished.", "--by", "Wido", "--json")
+				if code == 0 || bed.tip() != before || !strings.Contains(errOut, "Impact:") {
+					t.Fatalf("material refusal changed state or lost impact: code=%d out=%q err=%q", code, out, errOut)
+				}
 				var result intentResult
-				if json.Unmarshal([]byte(out), &result) != nil || strings.Contains(result.Summary, "critic-1,") || !slices.Contains(result.Details, "refusal code: "+goal.DoneReadItemsOpenCode) {
+				if json.Unmarshal([]byte(out), &result) != nil || !strings.Contains(result.Summary, "critic-11") || strings.Contains(result.Summary, "critic-1,") || !slices.Contains(result.Details, "refusal code: "+goal.DoneReadItemsOpenCode) {
 					t.Fatalf("refusal must name only the material note: %s", out)
 				}
 				return

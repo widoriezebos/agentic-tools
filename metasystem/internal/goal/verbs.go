@@ -2429,18 +2429,32 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 			if f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s defer-findings requires its owning pair", id)
 			}
+			changed := false
 			for _, incoming := range obligations {
+				if err := validateTransfer(incoming); err != nil {
+					return nil, err
+				}
+				if err := validateTransferGraph(f.ReviewObligations, obligations); err != nil {
+					return nil, err
+				}
 				found := false
 				for _, existing := range f.ReviewObligations {
 					if existing.Finding == incoming.Finding && existing.Chain == incoming.Chain {
+						if incoming.TargetUnit != "" && (existing.TargetUnit != incoming.TargetUnit || existing.SourceUnit != incoming.SourceUnit || existing.StopReference != incoming.StopReference) {
+							return nil, fmt.Errorf("finding %s has already been transferred; a second stop requires a person's act", incoming.Finding)
+						}
 						found = true
 						break
 					}
 				}
 				if !found {
+					changed = true
 					incoming.State = "open"
 					f.ReviewObligations = append(f.ReviewObligations, incoming)
 				}
+			}
+			if !changed {
+				return nil, AlreadyHolds{Reason: "these review obligations are already published"}
 			}
 			touch(f, r, "defer-findings", []string{id})
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
@@ -2449,6 +2463,7 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 
 type DischargeEvidence struct {
 	Root, ImplementationChain, Artifact, ResultRunID, CriticRoot string
+	Transfer                                                     *TransferCoverage
 }
 
 func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation string, supplied ...DischargeEvidence) (PublishResult, error) {
@@ -2482,7 +2497,18 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 				return nil, matchErr
 			}
 			obligation := f.ReviewObligations[match]
-			if obligation.Fixture != "" {
+			if obligation.TargetUnit != "" {
+				var evidence DischargeEvidence
+				if len(supplied) == 1 {
+					evidence = supplied[0]
+				}
+				if err := proveTransferCoverage(obligation, evidence.Transfer); err != nil {
+					return nil, err
+				}
+				f.ReviewObligations[match].CoverageRead = evidence.Transfer.ReadID
+				f.ReviewObligations[match].CoverageCommit = evidence.Transfer.Commit
+				citation = "covered: " + evidence.Transfer.ReadID + " commit=" + evidence.Transfer.Commit
+			} else if obligation.Fixture != "" {
 				var evidence DischargeEvidence
 				if len(supplied) == 1 {
 					evidence = supplied[0]

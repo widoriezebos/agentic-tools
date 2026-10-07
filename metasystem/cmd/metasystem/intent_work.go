@@ -20,9 +20,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
@@ -31,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
@@ -439,8 +442,47 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
 	runner := inv.work().units(inv.layout)
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
+	runner.ExaminationRead = dispatchcore.CollectExamination
+	runner.InheritedFindings = func(id, unit string) ([]readsubject.Finding, error) {
+		if id == "" {
+			return nil, nil
+		}
+		if inv.stateRoot == "" {
+			if problem := inv.selectRoot(); problem != nil {
+				return nil, fmt.Errorf("the inherited goal evidence cannot be located: %s", problem.Summary)
+			}
+		}
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return nil, fmt.Errorf("the inherited goal evidence cannot be read: %s", problem.Summary)
+		}
+		file, _ := goalRecord(projection, id)
+		if file == nil {
+			return nil, fmt.Errorf("goal %s is unavailable", id)
+		}
+		var findings []readsubject.Finding
+		for _, obligation := range file.ReviewObligations {
+			if obligation.TargetUnit == unit {
+				findings = append(findings, obligation.OriginalEvidence)
+			}
+		}
+		return findings, nil
+	}
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	runner.PlanProof = inv.unitProof
+	if runner.ReviewPolicy == nil {
+		runner.ReviewPolicy = func() (string, error) {
+			params, err := inv.policyParams("review.stop")
+			if err != nil {
+				return "", fmt.Errorf("review.stop cannot be read; run metasystem settings set review.stop auto: %w", err)
+			}
+			policy, err := config.ResolvePolicy(params)
+			if err != nil {
+				return "", fmt.Errorf("review.stop cannot be read; run metasystem settings set review.stop auto: %w", err)
+			}
+			return policy.Value, err
+		}
+	}
 	return runner
 }
 
@@ -1216,6 +1258,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_STOPPED"):
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "review"), nextReason: "applies the unit's recorded review decision"}
 		case launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
 			var divergence *launch.CodedError
 			if errors.As(err, &divergence) {
@@ -1350,6 +1395,7 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 		return data
 	}
 	round := record.Rounds[len(record.Rounds)-1]
+	data["stop"], data["reads"], data["unknownRetries"] = round.Stop, round.Reads, round.UnknownRetries
 	data["round"], data["outcome"], data["steps"], data["directory"] = round.Number, round.Outcome, round.Steps, round.Directory
 	path := filepath.Join(round.Directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {
@@ -1397,6 +1443,48 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()
+	if inv.input.has("reason") || inv.input.has("by") {
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		actor, _, problem := inv.actingAs("revise", run, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		person := ""
+		for i, v := range actor {
+			if v == "--by" && i+1 < len(actor) {
+				person = actor[i+1]
+			}
+		}
+		reason := inv.input.text("reason")
+		if reason == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a person's revision needs its reason", next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "give the reason for this revision"})
+		}
+		impact := "Impact: this admits one correction despite the recorded review.\nThe unit needs another read; its automatic allowance remains.\nCancel the admitted run to undo the request."
+		current, err := runner.Status(run)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
+		}
+		if err := inv.recordUnitStopOverride(current.Goal, "work-revise", reason, impact, person); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
+		}
+		bytes, err := os.ReadFile(brief)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "uses the corrected brief path"})
+		}
+		result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: bytes, Person: person, Reason: reason, Impact: impact})
+		if result.Revision.Attempt > 0 && len(result.Revision.Findings) > 0 && len(current.Rounds) > 0 {
+			stop := current.Rounds[len(current.Rounds)-1].Stop
+			if stop != nil {
+				actErr := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: result.Record.ID + ":" + fmt.Sprint(result.Revision.Attempt), Goal: current.Goal, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Findings: result.Revision.Findings, Kind: "work-revise", Reason: reason, At: inv.unitStopNow()})
+				if actErr != nil {
+					return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision was admitted, but its questions need reconciliation", Details: []string{actErr.Error()}, next: inv.sameCommand(), nextReason: "reconciles the same recorded admission"})
+				}
+			}
+		}
+		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
+	}
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
 	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
 }

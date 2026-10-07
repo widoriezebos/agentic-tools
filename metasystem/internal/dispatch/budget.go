@@ -478,6 +478,16 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				consumes = false
 			}
 		}
+		unknownRetry := false
+		if prior := asString(record["examinationRetryOf"]); prior != "" {
+			state := loadCritiqueState(repoRoot)
+			owner := state.records[state.chainRoot(prior)]
+			if asString(record["role"]) != "code-critic" || asString(record["parentJob"]) != prior || asString(owner["unknownExaminationRetryFrom"]) != prior {
+				return unknownBudget(file.Id, revision, logicalPath, "the fresh examination does not match its recorded retry")
+			}
+			consumes = false
+			unknownRetry = true
+		}
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
@@ -500,6 +510,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			projection.Attempts++
 		}
 		charge := capMinutes
+		if unknownRetry {
+			charge = 0
+		}
 		terminal := TerminalStatus(status)
 		if terminal && consumes {
 			if !recordHasProcessIdentity(record) {

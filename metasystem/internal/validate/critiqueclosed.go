@@ -149,6 +149,12 @@ func readFindings(path string, violation func(string, ...any)) ([]string, map[st
 			continue
 		}
 		id, ok := finding["id"].(string)
+		if version, yes := object["schemaVersion"].(float64); yes && version >= 6 {
+			if job, yes := object["jobId"].(string); yes && job != "" {
+				id = job + ":" + fmt.Sprint(index+1)
+				ok = true
+			}
+		}
 		if !ok || strings.TrimSpace(id) == "" || id != strings.TrimSpace(id) {
 			violation("return JSON is unjoinable: %s.id must be a non-empty string without surrounding whitespace", fieldPath)
 			joinable = false
@@ -265,7 +271,7 @@ func readDispositions(path string, violation func(string, ...any)) ([]string, ma
 		} else {
 			seen[findingID] = true
 		}
-		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" && disposition != "out-of-scope" && disposition != "accepted-risk" {
+		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" && disposition != "out-of-scope" && disposition != "accepted-risk" && disposition != "fixed" && !strings.HasPrefix(disposition, "split: ") && !strings.HasPrefix(disposition, "dropped: ") {
 			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted, out-of-scope, accepted-risk",
 				findingID, disposition)
 		}

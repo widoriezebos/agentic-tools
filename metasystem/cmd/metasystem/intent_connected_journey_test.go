@@ -313,11 +313,12 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		t.Fatalf("all three units must be read on the published branch: %+v", status)
 	}
 
+	// A clean read ends automatic corrections, so a person requests this amend.
 	// A same-unit correction: fold A, review it again. B's unit survives
 	// with its exact bytes and its exact change; A's old read does not carry
 	// over.
 	c.edits = map[string]string{"a.txt": "amended A\nl2\nl3\nthe C line\nl5\n"}
-	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n"), "--reason", "Amend the already reviewed unit", "--by", "Wido"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("fold unit A: code=%d %+v", code, result)
 	}
 	criticA2, commitA2 := reviewed(runA)

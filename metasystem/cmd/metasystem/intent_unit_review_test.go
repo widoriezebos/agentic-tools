@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
@@ -109,7 +110,7 @@ func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionB
 
 // StartSupervisor is the fake model and proof process: a build writes the
 // test's edits into the worktree it runs in; a proof may write too.
-func (c *connectionBed) StartSupervisor(id, _ string) (identity.Ref, error) {
+func (c *connectionBed) StartSupervisor(id, state string) (identity.Ref, error) {
 	record, _ := c.manager.Store.Read(id)
 	c.mu.Lock()
 	switch record.Kind {
@@ -132,7 +133,19 @@ func (c *connectionBed) StartSupervisor(id, _ string) (identity.Ref, error) {
 			current.State, current.Reason, current.ExitCode = launch.Failed, "fixture-read-failed", &failed
 		} else if record.Kind == "read" {
 			yes := true
-			current.VerdictCounts, current.Measurement.Verdict = &yes, "pass"
+			// Successful fixture reads supply the structured evidence required by collection.
+			current.VerdictCounts, current.Measurement.Verdict = &yes, "LAND"
+			if err := os.MkdirAll(state, 0700); err != nil {
+				return err
+			}
+			structured, report := filepath.Join(state, "return.json"), filepath.Join(state, "report.md")
+			if err := os.WriteFile(structured, []byte(`{"findings":[],"verdictMaterialCount":0}`), 0600); err != nil {
+				return err
+			}
+			if err := os.WriteFile(report, []byte("VERDICT: LAND\n"), 0600); err != nil {
+				return err
+			}
+			current.Outputs = append(current.Outputs, launch.Output{Path: structured}, launch.Output{Path: report})
 		}
 		return nil
 	})
@@ -315,22 +328,28 @@ func (c *connectionBed) criticDispatch(install string) func(string, string, stri
 func (c *connectionBed) writeCritic(install, job, commit, status string, closed bool) {
 	c.t.Helper()
 	record := map[string]any{"jobId": job, "role": "code-critic", "round": 1, "status": status,
+		"engineBuild": "fixture-engine", "effectiveModel": "fixture-critic",
 		"reviews": "commit:" + commit, "goalId": c.id, "goalRevision": 1, "findingRegister": []any{},
 		// A dispatched critic root carries its register round and round limit.
 		"findingRegisterRound": 0, "reviewRoundLimit": 3, "criticRoundsConsumed": 0}
-	if closed {
+	if closed || status == "completed" {
 		subject, present, err := dispatchcore.ComputeReadSubject(dispatchcore.ReadSubjectRequest{RepoRoot: install, Role: "code-critic", Reviews: "commit:" + commit})
 		if err != nil || !present {
 			c.t.Fatalf("critic subject present=%v err=%v", present, err)
 		}
-		record["chainClosed"], record["findingRegisterRound"], record["findingRegisterSubjectDigest"] = true, 1, subject.Digest()
-		record["closure"] = map[string]any{"criticRoot": job, "round": 1, "subject": subject, "mechanism": "clean"}
-		c.writeJSON(filepath.Join(install, "artifacts", "agents", job, "rounds", "1", "subject.json"), subject)
-		c.writeJSON(filepath.Join(install, "artifacts", "agents", job, "rounds", "1", "return.json"),
-			map[string]any{"jobId": job, "round": 1, "findings": []any{map[string]any{"id": "F1", "material": false}}, "verdict": "1 finding", "reviewedTree": subject.Tree})
-	} else if status == "completed" {
-		c.writeJSON(filepath.Join(install, "artifacts", "agents", job, "rounds", "1", "return.json"),
-			map[string]any{"jobId": job, "round": 1, "findings": []any{map[string]any{"id": "F1", "material": false}}, "verdict": "1 finding"})
+		if closed {
+			record["chainClosed"], record["findingRegisterRound"], record["findingRegisterSubjectDigest"] = true, 1, subject.Digest()
+			record["closure"] = map[string]any{"criticRoot": job, "round": 1, "subject": subject, "mechanism": "clean"}
+		}
+		dir := filepath.Join(install, "artifacts", "agents", job, "rounds", "1")
+		c.writeJSON(filepath.Join(dir, "subject.json"), subject)
+		// Completed examinations supply structured stop evidence and matching prose.
+		finding := stopFinding("regression", "connect.txt")
+		finding.ID, finding.Material = "F1", false
+		c.writeJSON(filepath.Join(dir, "return.json"), map[string]any{"jobId": job, "round": 1, "findings": []any{finding}, "verdict": "1 finding", "verdictMaterialCount": 0, "reviewedTree": subject.Tree})
+		if err := os.WriteFile(filepath.Join(dir, "return.md"), []byte("VERDICT: LAND\n"), 0600); err != nil {
+			c.t.Fatal(err)
+		}
 	}
 	c.writeJSON(filepath.Join(install, "artifacts", "agents", "jobs", job+".json"), record)
 }
@@ -571,13 +590,14 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("later unit: code=%d %+v", code, result)
 	}
 
+	// The clean read ends automatic corrections; a person requests this amend.
 	// Same-unit follow-up: the finding is folded and the unit's commit is
 	// amended with a lost commit response. The replacement unit (not the
 	// replayed tip) is the subject, its old read is dropped, the later unit
 	// is replayed, and a new critic reads the replacement.
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
 	followUp := c.brief("follow-up.md", "Fix F1.\n")
-	code, result = c.do("work", "revise", "run:"+run, "--brief", followUp)
+	code, result = c.do("work", "revise", "run:"+run, "--brief", followUp, "--reason", "Amend the already reviewed unit", "--by", "Wido")
 	if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[2] != "review" {
 		t.Fatalf("fold unit: code=%d %+v", code, result)
 	}
@@ -834,10 +854,15 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	// Use the review-close bed's files in the work bed's separate checkout.
 	b := &deliveryBed{intentBed: w.intentBed, install: w.worktree}
 	b.writeFile(filepath.Join(b.install, "metasystem.conf"), "")
-	b.writeJob(map[string]any{"jobId": "critic", "role": "code-critic", "status": "completed", "round": 1, "parentJob": nil})
+	b.writeJob(map[string]any{"jobId": "critic", "role": "code-critic", "status": "completed", "round": 1, "parentJob": nil, "engineBuild": "fixture-engine", "effectiveModel": "fixture-critic"})
 	path := filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1", "return.json")
-	b.writeJSON(path, map[string]any{"jobId": "critic", "round": 1, "verdict": "1 finding", "findings": []any{
-		map[string]any{"id": "F1", "material": true}, map[string]any{"id": "N1", "material": false}}})
+	// The worktree owns a complete immutable read, including subject and provenance.
+	readSubject := readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40), DiffDigest: "fixture-diff"}
+	b.writeJSON(filepath.Join(filepath.Dir(path), "subject.json"), readSubject)
+	material, note := stopFinding("regression", "cap.go"), stopFinding("scope", "notes.go")
+	material.ID, note.ID, note.Material = "F1", "N1", false
+	b.writeJSON(path, map[string]any{"jobId": "critic", "round": 1, "verdict": "1 finding", "verdictMaterialCount": 1, "reviewedTree": readSubject.Tree, "findings": []any{material, note}})
+	b.writeFile(filepath.Join(filepath.Dir(path), "return.md"), "VERDICT: FIX material=1\n")
 	owners := w.workOwners()
 	owners.delivery = &intentDeliveryOwners{branchRead: func([]string) (branch.BranchReadResult, int, error) {
 		return branch.BranchReadResult{State: "closed", RootJob: "critic"}, 0, nil

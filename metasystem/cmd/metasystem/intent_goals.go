@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -914,11 +915,22 @@ func runIntentDone(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	if slices.Contains(actor, "--by") {
+		impact := "Impact: concluding this goal closes its remaining review questions with your reason.\nResidual findings remain recorded; conclusion does not certify clean reads.\nOpen a new goal to resume unfinished work."
+		if err := inv.recordUnitStopOverride(id, "goal-done", reason, impact, unitStopActor(actor)); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the conclusion impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "records the impact before concluding"})
+		}
+	}
 	args := append(append([]string{"--root", inv.stateRoot, "--id", id, "--conclude", reason}, actor...), inv.forward("force")...)
 	return inv.callOwner(inv.targets(id), func(dependencies syncRequestDependencies) int {
 		code, _ := trySyncMutationWithCompletion("done", args, inv.owners.commandNow, dependencies, inv.owners.parkBranchCheck, inv.owners.completion)
 		return code
-	}, func() intentResult { return inv.afterGoalAct(id, "done") })
+	}, func() intentResult {
+		if err := channel.CloseGoalUnitStopQuestions(inv.layout.InstallationRoot.Path(), id, reason, inv.unitStopNow()); err != nil {
+			return intentResult{Outcome: intentFailed, code: 1, Summary: "the goal concluded, but question cleanup is pending", Details: []string{err.Error()}, next: inv.publicArgv("system", "check"), nextReason: "diagnoses the retained question records"}
+		}
+		return inv.afterGoalAct(id, "done")
+	})
 }
 
 // runIntentDoneJob completes one finished job chain's records through the

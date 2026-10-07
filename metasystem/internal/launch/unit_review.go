@@ -40,8 +40,11 @@ type UnitSubject struct {
 	// Examination is the critic chain whose completed return examined this
 	// subject; ExaminationRound is that return's round. A failed critic
 	// round with no return never sets them.
-	Examination      string `json:"examination,omitempty"`
-	ExaminationRound int64  `json:"examinationRound,omitempty"`
+	UnknownRetries   int      `json:"unknownRetries,omitempty"`
+	ExaminationJob   string   `json:"examinationJob,omitempty"`
+	TransferredTo    []string `json:"transferredTo,omitempty"`
+	Examination      string   `json:"examination,omitempty"`
+	ExaminationRound int64    `json:"examinationRound,omitempty"`
 	// ExaminationReturnPath is the return in the store the review resolved.
 	ExaminationReturnPath string `json:"examinationReturnPath,omitempty"`
 }
@@ -156,16 +159,38 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 			return fmt.Errorf("a subject binds only the latest completed round %d", round.Number)
 		}
 		replaced := false
+		sameExamination := false
 		for index := range record.Subjects {
 			if record.Subjects[index].Round == subject.Round {
+				previous := record.Subjects[index]
+				sameExamination = previous.Examination == subject.Examination && previous.ExaminationRound == subject.ExaminationRound &&
+					previous.ExaminationReturnPath == subject.ExaminationReturnPath && previous.ExaminationJob == subject.ExaminationJob
 				record.Subjects[index], replaced = subject, true
 			}
 		}
 		if !replaced {
 			record.Subjects = append(record.Subjects, subject)
 		}
-		if subject.Examination != "" && record.CountedCap > 0 {
-			material, err := runner.roundMaterial(record, round)
+		if subject.UnknownRetries > record.Rounds[len(record.Rounds)-1].UnknownRetries {
+			record.Rounds[len(record.Rounds)-1].UnknownRetries = subject.UnknownRetries
+		}
+		if len(subject.TransferredTo) > 0 {
+			record.Rounds[len(record.Rounds)-1].Transferred = true
+		}
+		if subject.Examination != "" {
+			latest := &record.Rounds[len(record.Rounds)-1]
+			var err error
+			if sameExamination && len(latest.Reads) > 0 && latest.Stop != nil &&
+				(latest.Stop.Handoff == "stopped unreadable-policy" || latest.Stop.Handoff == "stopped unreadable-inherited-findings") {
+				// The examination is retained; only its decision inputs need another read.
+				err = runner.decideRound(&record, latest, "")
+			} else {
+				err = runner.CollectExamination(&record, latest, subject)
+			}
+			if err != nil {
+				return err
+			}
+			material, err := runner.roundMaterial(record, record.Rounds[len(record.Rounds)-1])
 			if err != nil {
 				record.Notes = append(record.Notes, fmt.Sprintf("attempt %d: material count is unknown: %v", round.Number, err))
 			}

@@ -447,7 +447,7 @@ func TestNamedUnitCorruptOrStaleEntryFailsWithoutOverwrite(t *testing.T) {
 
 func TestLegacyPlanAdvanceKeepsItsBehaviour(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "round", "new", "branch", "round")
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -31,6 +32,22 @@ import (
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
 	runner := inv.unitRunner()
+	if current, err := runner.Status(run); err == nil && len(current.Rounds) > 0 {
+		round := current.Rounds[len(current.Rounds)-1]
+		if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") && round.Stop.Handoff != "stopped unreadable-policy" && len(current.Subjects) == 0 && round.ReadModel != "" {
+			if round.UnknownRetries == 0 {
+				fresh, err := runner.RetryUnknownRead(run)
+				if err != nil || fresh.Capped {
+					return inv.unitOutcome(runner, fresh, err, targets, inv.workArgv(current, "wait"))
+				}
+				current = fresh.Record
+				round = current.Rounds[len(current.Rounds)-1]
+			}
+			if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") {
+				return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(current, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + round.Stop.Handoff + " holds this unit", next: inv.workArgv(current, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+			}
+		}
+	}
 	var result intentResult
 	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		result = inv.reviewUnitRound(runner, targets, review, retain)
@@ -308,6 +325,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
+		inv.reviewWork.run = record.ID
 	}
 	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
@@ -396,7 +414,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
-		result.next, result.nextReason = inv.goalNextStep(goalID)
+		if len(subject.TransferredTo) == 0 {
+			result.next, result.nextReason = inv.goalNextStep(goalID)
+		}
 	}
 	if bundle != nil && inv.input.has("model") {
 		result.Summary += "; --model was not used because no critic started"
@@ -420,6 +440,9 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 	if revision == 0 || len(report) == 0 || len(readJSON) == 0 || read.State != launch.Completed || read.Kind != "read" || !read.VerdictIsCounting() {
 		return nil, "the read's report, completed launch or goal revision is unavailable"
 	}
+	if read.Read != nil && read.Read.Material != 0 || read.Read == nil && len(read.AdapterData["unitStopInputs"]) > 0 {
+		return nil, "the structured read is unavailable or has material findings"
+	}
 	if step.State != launch.StepPassed || !branch.UnitReadVerdictIsLand(step.Verdict, string(report)) {
 		return nil, "the read did not pass with VERDICT: land"
 	}
@@ -440,13 +463,27 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 		return nil, "the run's base is not the commit's parent"
 	}
 	runtime := strings.TrimSuffix(strings.TrimSuffix(read.Adapter, "-exec"), "-headless")
-	return &branch.UnitReadBundle{SchemaVersion: 1, Goal: review.Record.Goal, Commit: subject.Commit, UnitRun: review.Record.ID,
+	var canonical []byte
+	var digest string
+	if read.Read != nil {
+		canonical, digest = read.Read.Canonical()
+	}
+	return &branch.UnitReadBundle{CanonicalRead: canonical, ReadDigest: digest, SchemaVersion: 1, Goal: review.Record.Goal, Commit: subject.Commit, UnitRun: review.Record.ID,
 		Round: review.Round.Number, ReadLaunch: step.LaunchID, ReadRuntime: runtime, ReadModel: readModel, BuildModel: buildModel,
 		ExaminedBase: review.Base, ExaminedTree: subject.StagedTree, GoalRevision: revision,
 		VerdictLine: "VERDICT: land", Report: string(report), LaunchRecord: string(readJSON)}, ""
 }
 
 func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject launch.UnitSubject, revision uint64, resolve func(runtime, model string) (string, error)) (*branch.UnitReadBundle, string) {
+	if runner.InheritedFindings != nil {
+		rows, err := runner.InheritedFindings(review.Record.Goal, review.Record.Unit)
+		if err != nil {
+			return nil, "the destination's inherited evidence cannot be read"
+		}
+		if len(rows) > 0 {
+			return nil, "the destination needs a committed read of its complete inherited change"
+		}
+	}
 	var build, read launch.Record
 	var report, readJSON []byte
 	if runner.Manager != nil {
@@ -455,8 +492,11 @@ func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject 
 				build, _ = runner.Manager.Store.Read(step.LaunchID)
 			} else if strings.HasPrefix(step.Name, "read") {
 				read, _ = runner.Manager.Store.Read(step.LaunchID)
-				if len(read.Outputs) == 1 {
-					report, _ = os.ReadFile(read.Outputs[0].Path)
+				for _, output := range read.Outputs {
+					if strings.HasSuffix(output.Path, ".md") {
+						report, _ = os.ReadFile(output.Path)
+						break
+					}
 				}
 				if dir, err := runner.Manager.Store.StateDir(step.LaunchID); err == nil {
 					readJSON, _ = os.ReadFile(filepath.Join(dir, "record.json"))
@@ -770,6 +810,15 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
 			Summary: fmt.Sprintf("the review is complete, but its result has not yet been published: %v", err),
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
+	}
+	if result.TransferCoverage != nil {
+		coverage := *result.TransferCoverage
+		completed := inv.goalAct(goalID, "complete transferred findings", inv.syncOwner("complete-transfers", []string{"--root", inv.stateRoot, "--id", goalID}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+			return goal.CompleteTransfers(req, goalID, coverage.TargetUnit, coverage)
+		}, "id"))
+		if completed.Outcome != intentConfirmed && completed.Outcome != intentUnchanged {
+			return completed
+		}
 	}
 	outcome := intentConfirmed
 	if result.State == "already-collected" && published.State == "current" {

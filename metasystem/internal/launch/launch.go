@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"runtime/debug"
 )
 
 const DefaultWaitTimeout = 240 * time.Second
@@ -51,6 +52,7 @@ type StartSpec struct {
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
 	Model, Effort, UnitsPage, DiffFile, Package, File  string
 	Wide                                               bool
+	StopInputs                                         bool
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
@@ -190,6 +192,26 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	record.AdapterData = data
 	setString(record.AdapterData, "brief", inputs[0].Path)
+	if spec.Kind == "read" && spec.StopInputs {
+		setString(record.AdapterData, "unitStopInputs", "true")
+		stateDir, stateErr := m.Store.StateDir(id)
+		if stateErr != nil {
+			return Record{}, stateErr
+		}
+		switch len(spec.Outputs) {
+		case 0:
+			spec.Outputs = []string{filepath.Join(stateDir, "report.md"), filepath.Join(stateDir, "return.json")}
+		case 1:
+			// Keep the caller's report in its writable directory. Structured evidence
+			// shares that directory and its declared-output lifecycle.
+			spec.Outputs = append(append([]string(nil), spec.Outputs...), spec.Outputs[0]+".json")
+		}
+		engine := "dev"
+		if info, ok := debug.ReadBuildInfo(); ok {
+			engine = info.String()
+		}
+		setString(record.AdapterData, "engine", engine)
+	}
 	setStrings(record.AdapterData, "declaredOutputs", spec.Outputs)
 	setString(record.AdapterData, "model", model)
 	setString(record.AdapterData, "effort", effort)
@@ -507,6 +529,16 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			record.State, record.Reason = Failed, "read-measure: "+measureErr.Error()
 		}
 		if record.Kind == "read" {
+			if record.State == Completed && measurement.Compactions == 0 && readString(record.AdapterData, "unitStopInputs") == "true" {
+				read, readErr := collectLaunchRead(*record, stateDir)
+				if readErr != nil {
+					record.ReadError = readErr.Error()
+				} else {
+					record.Read = &read
+					record.ReadError = ""
+					record.Measurement.MaterialCount = read.Material
+				}
+			}
 			counts := record.State == Completed && measurement.Compactions == 0
 			record.VerdictCounts = &counts
 		}

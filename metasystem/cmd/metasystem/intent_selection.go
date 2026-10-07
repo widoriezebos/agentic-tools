@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -65,7 +66,14 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	}
 	outcome := ""
 	if rounds := work.Record.Rounds; len(rounds) > 0 {
-		outcome = rounds[len(rounds)-1].Outcome
+		round := rounds[len(rounds)-1]
+		if round.Transferred {
+			return "transferred; its destinations remain required"
+		}
+		if round.Stop != nil && round.Stop.Decision == "stop" {
+			return "stopped: " + round.Stop.Class + "; " + round.Stop.Handoff
+		}
+		outcome = round.Outcome
 	}
 	if launch.UnitReviewReadyOutcomes[outcome] {
 		if subject := currentSubject(work); subject != nil && subject.Commit != "" {
@@ -143,6 +151,10 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
 			view["state"] = one.Record.State
+			if len(one.Record.Rounds) > 0 {
+				r := one.Record.Rounds[len(one.Record.Rounds)-1]
+				view["stop"], view["reads"] = r.Stop, r.Reads
+			}
 		}
 		views = append(views, view)
 		next, _ := inv.workContinuation(id, one, true)
@@ -534,6 +546,9 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		return runIntentReviewDischarge(inv, id)
 	}
 	for _, only := range []string{"test", "review", "implementation-chain", "artifact", "result", "critic", "by", "lineage", "fixture-human-authority"} {
+		if inv.input.has("dispositions") && (only == "by" || only == "fixture-human-authority") {
+			continue
+		}
 		if inv.input.has(only) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("--%s only goes with --finding, which resolves a review finding; nothing was done", only),
@@ -778,8 +793,28 @@ func runIntentRevise(inv *intentInvocation) int {
 			Summary: fmt.Sprintf("work %s of goal %s is still being reserved by its build; nothing was done", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
 	}
+	person, reason, impact := "", inv.input.text("reason"), ""
+	if strings.TrimSpace(reason) != "" || inv.input.has("by") {
+		actor, proof, problem := inv.actingAs("revise", id, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		_ = proof
+		for index, value := range actor {
+			if value == "--by" && index+1 < len(actor) {
+				person = actor[index+1]
+			}
+		}
+		if person == "" || strings.TrimSpace(reason) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a reasoned revision needs the person's name and reason", next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "give the reason for this revision"})
+		}
+		impact = "Impact: this admits one correction despite the recorded read.\nIts findings and automatic allowance remain. The result needs another read.\nCancel the admitted run to undo the request."
+		if err := inv.recordUnitStopOverride(id, "work-revise", reason, impact, person); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "records the impact before starting"})
+		}
+	}
 	var decisions []byte
-	if inv.input.has("dispositions") {
+	if person == "" && inv.input.has("dispositions") {
 		decisions, problem = inv.reviseDecisions(id, *selected, after)
 		if problem != nil {
 			return inv.render(*problem)
@@ -789,7 +824,19 @@ func runIntentRevise(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	runner := inv.unitRunner()
-	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions})
+	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions, Person: person, Reason: reason, Impact: impact})
+	if person != "" && revised.Revision.Attempt > 0 {
+		findings := revised.Revision.Findings
+		if len(findings) > 0 {
+			subject := selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop
+			if subject != nil {
+				actErr := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: revised.Record.ID + ":" + fmt.Sprint(revised.Revision.Attempt), Goal: id, Loop: subject.Loop, Subject: subject.Subject, Attempt: subject.Attempt, Findings: findings, Kind: "work-revise", Reason: reason, At: inv.unitStopNow()})
+				if actErr != nil {
+					return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision was admitted, but its questions need reconciliation", Details: []string{actErr.Error()}, next: inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--brief", inv.callerPath(inv.input.text("brief")), "--reason", reason, "--by", person), nextReason: "reconciles the same admission"})
+				}
+			}
+		}
+	}
 	again := inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))
 	if inv.input.has("dispositions") {
 		again = append(again, "--dispositions", inv.flagPath("dispositions"))

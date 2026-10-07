@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // ReturnComplete validates a canonical agent return against the shipped
@@ -189,7 +190,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		if version, present := resultObj["schemaVersion"]; present {
 			v, vOK := jsonInteger(version)
 			resultVersion = v
-			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4 && v != 5) || (v == 3 && !VersionThreeRoles[role]) || (v == 4 && !VersionFourRoles[role]) || (v == 5 && !VersionFiveRoles[role]) {
+			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4 && v != 5 && v != 6) || (v == 3 && !VersionThreeRoles[role]) || (v == 4 && !VersionFourRoles[role]) || (v == 5 && !VersionFiveRoles[role]) || (v == 6 && !VersionSixRoles[role]) {
 				c.violation("unknown return schema version for role %q: %v", role, version)
 			} else if schema != nil && v == 2 {
 				upgraded, err := VersionTwo(schema)
@@ -220,6 +221,14 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 					schema = upgraded
 				}
 			}
+			if schema != nil && v == 6 && VersionSixRoles[role] {
+				upgraded, err := VersionSix(schema)
+				if err != nil {
+					c.violation("role schema cannot version: %v", err)
+				} else {
+					schema = upgraded
+				}
+			}
 			applyRoleMembers(role, v, schema)
 		}
 	}
@@ -236,8 +245,14 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	resultObj, _ := result.(map[string]any)
 	if (role == "design-critic" || role == "code-critic" || role == "warden") && resultObj != nil {
 		c.checkMaterialCount(resultObj)
-		if resultVersion == 3 || resultVersion == 4 || resultVersion == 5 {
+		if resultVersion == 3 || resultVersion == 4 || resultVersion == 5 || resultVersion == 6 {
 			c.checkRigorRows(resultObj, resultVersion)
+		}
+	}
+	if role == "code-critic" && resultVersion == 6 && resultObj != nil {
+		data, _ := json.Marshal(resultObj)
+		if _, err := readsubject.Collect("schema-check", readsubject.ReadSubject{}, "", "", "", data, ""); err != nil {
+			c.violation("$.findings: %v", err)
 		}
 	}
 	if role == "behavior-judge" && resultObj != nil {
