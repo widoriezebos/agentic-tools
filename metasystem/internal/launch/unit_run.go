@@ -78,22 +78,27 @@ type UnitRound struct {
 }
 
 type UnitStep struct {
-	Name          string        `json:"name"`
-	LaunchID      string        `json:"launchId"`
-	State         UnitStepState `json:"state"`
-	Reason        string        `json:"reason"`
-	Cause         string        `json:"cause,omitempty"`
-	StartedAt     string        `json:"startedAt"`
-	FinishedAt    string        `json:"finishedAt"`
-	Model         string        `json:"model"`
-	Mode          string        `json:"mode,omitempty"`
-	Package       string        `json:"package,omitempty"`
-	File          string        `json:"file,omitempty"`
-	Brief         string        `json:"brief,omitempty"`
-	Units         []string      `json:"units,omitempty"`
-	Rerun         bool          `json:"rerun,omitempty"`
-	Verdict       string        `json:"verdict,omitempty"`
-	VerdictCounts *bool         `json:"verdictCounts,omitempty"`
+	Kind               string        `json:"kind,omitempty"`
+	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
+	ExecutionEndedAt   string        `json:"executionEndedAt,omitempty"`
+	Command            *ProofCommand `json:"command,omitempty"`
+	RevisionAfter      int           `json:"revisionAfter,omitempty"`
+	Name               string        `json:"name"`
+	LaunchID           string        `json:"launchId"`
+	State              UnitStepState `json:"state"`
+	Reason             string        `json:"reason"`
+	Cause              string        `json:"cause,omitempty"`
+	StartedAt          string        `json:"startedAt"`
+	FinishedAt         string        `json:"finishedAt"`
+	Model              string        `json:"model"`
+	Mode               string        `json:"mode,omitempty"`
+	Package            string        `json:"package,omitempty"`
+	File               string        `json:"file,omitempty"`
+	Brief              string        `json:"brief,omitempty"`
+	Units              []string      `json:"units,omitempty"`
+	Rerun              bool          `json:"rerun,omitempty"`
+	Verdict            string        `json:"verdict,omitempty"`
+	VerdictCounts      *bool         `json:"verdictCounts,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -134,6 +139,8 @@ type UnitRunner struct {
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
 	PlanProof func(UnitPlan) ([]ProofCommand, error)
+	// AdmitEstimate retains telemetry after admission and before reserving a run.
+	AdmitEstimate func(*UnitPlan) error
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
@@ -156,7 +163,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	var plan UnitPlan
 	var err error
 	if request.Plan != "" {
-		plan, err = ReadUnitPlan(request.Plan)
+		plan, err = ReadUnitPlanInput(request.Plan)
 		if err != nil {
 			return UnitResult{}, err
 		}
@@ -441,6 +448,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	red := false
 	for offset, command := range commands {
 		index := buildCount + offset
+		round.Steps[index].Command = &command
 		briefPath := filepath.Join(round.Directory, "proof-"+command.Name+".json")
 		if _, err := os.Stat(briefPath); os.IsNotExist(err) {
 			data, _ := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
@@ -679,6 +687,13 @@ func unitStepVerdictCounts(step UnitStep) bool {
 }
 
 func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec, deadline time.Time) (bool, error) {
+	if spec.Kind == "build" {
+		for _, revision := range record.Revisions {
+			if revision.Attempt == round.Number {
+				round.Steps[index].Kind, round.Steps[index].RevisionAfter = "correction", revision.After
+			}
+		}
+	}
 	return runner.driver(record, round).advanceStep(index, spec, deadline)
 }
 

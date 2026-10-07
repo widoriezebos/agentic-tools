@@ -51,7 +51,7 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if runner.Manager == nil {
 		return UnitResult{}, errors.New("unit launch manager is unavailable")
 	}
-	named, err := ReadUnitPlan(planPath)
+	named, err := ReadUnitPlanInput(planPath)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -64,7 +64,7 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 		return UnitResult{}, err
 	}
 	defer releaseUnitLock(lock)
-	return runner.advanceNamedLocked(named, worktree, key)
+	return runner.advanceNamedLocked(named, worktree, key, false)
 }
 
 // Continue advances a recorded run by its id, with an optional follow-up
@@ -181,12 +181,12 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	}
 	bound := *runner
 	bound.options = options
-	return bound.advanceNamedLocked(named, real, key)
+	return bound.advanceNamedLocked(named, real, key, true)
 }
 
 // advanceNamedLocked reserves or continues the named run; the caller holds
 // the unit's named lock.
-func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key string) (UnitResult, error) {
+func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key string, retained bool) (UnitResult, error) {
 	data, err := os.ReadFile(named.Path)
 	if err != nil {
 		return UnitResult{}, planInvalid("plan", err)
@@ -196,7 +196,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		return UnitResult{}, err
 	}
 	planDirectory := filepath.Dir(named.Path)
-	plan, err := readUnitPlan(staged, planDirectory)
+	plan, err := readUnitPlanInput(staged, planDirectory, retained)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -232,6 +232,18 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		}
 		if err := runner.admitRound(plan, plan.Build.Brief, nil); err != nil {
 			return UnitResult{}, err
+		}
+		if runner.AdmitEstimate != nil {
+			if err := runner.AdmitEstimate(&plan); err != nil {
+				return UnitResult{}, err
+			}
+			data, err := json.MarshalIndent(plan, "", "  ")
+			if err != nil {
+				return UnitResult{}, err
+			}
+			if _, err := atomicfile.WriteText(staged, string(data)+"\n", runner.root()); err != nil {
+				return UnitResult{}, err
+			}
 		}
 		id, err := newID(runner.Manager.Now())
 		if err != nil {

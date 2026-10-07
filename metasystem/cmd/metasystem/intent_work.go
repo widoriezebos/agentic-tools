@@ -441,6 +441,22 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.BeforeModelLaunch = inv.unitLaunchAuthority
 	runner.PlanProof = inv.unitProof
+	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {
+		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
+		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		if err == nil {
+			inv.stateRoot = root.Path()
+			err = inv.freezeUnitEstimate(plan, inv.designGateFacts(inv.layout.InstallationRoot.Path(), plan.Goal), person)
+		}
+		if err != nil {
+			if !person {
+				return fmt.Errorf("estimate unavailable: %w; a person can run this build", err)
+			}
+			plan.Estimate = nil
+			fmt.Fprintf(inv.stderr, "warning: estimate unavailable (%s); the build goes on at your word\n", err)
+		}
+		return nil
+	}
 	return runner
 }
 
@@ -569,7 +585,7 @@ func runIntentBuildPlan(inv *intentInvocation) int {
 		}
 	}
 	path := inv.callerPath(inv.input.text("plan"))
-	plan, err := launch.ReadUnitPlan(path)
+	plan, err := launch.ReadUnitPlanInput(path)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, Summary: err.Error() + "; nothing was built", code: 1,
 			next: inv.sameCommand(), nextReason: "once --plan names a readable plan"})

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 )
 
 type UnitPlan struct {
+	Estimate *UnitEstimate  `json:"estimate,omitempty"`
 	Whole    bool           `json:"whole,omitempty"`
 	Unit     string         `json:"unit"`
 	Goal     string         `json:"goal"`
@@ -21,6 +23,30 @@ type UnitPlan struct {
 	Read     UnitReadPlan   `json:"read,omitzero"`
 	Proof    []ProofCommand `json:"proof"`
 	Path     string         `json:"-"`
+}
+
+// UnitEstimate is the design row frozen at the goal unit's first admission.
+type UnitEstimate struct {
+	DesignID       string   `json:"designId"`
+	SourceSHA256   string   `json:"sourceSha256"`
+	BodySHA256     string   `json:"bodySha256"`
+	Unit           string   `json:"unit"`
+	ElapsedMinutes float64  `json:"elapsedMinutes"`
+	CheckMinutes   *float64 `json:"checkMinutes,omitempty"`
+}
+
+func (estimate *UnitEstimate) Validate(unit string) error {
+	if estimate == nil {
+		return nil
+	}
+	digest := regexp.MustCompile(`^[a-f0-9]{64}$`)
+	if estimate.Unit != unit || estimate.DesignID == "" || !digest.MatchString(estimate.SourceSHA256) || !digest.MatchString(estimate.BodySHA256) || estimate.ElapsedMinutes <= 0 || math.IsNaN(estimate.ElapsedMinutes) || math.IsInf(estimate.ElapsedMinutes, 0) {
+		return planInvalid("estimate", nil)
+	}
+	if estimate.CheckMinutes != nil && (*estimate.CheckMinutes < 0 || math.IsNaN(*estimate.CheckMinutes) || math.IsInf(*estimate.CheckMinutes, 0)) {
+		return planInvalid("estimate.checkMinutes", nil)
+	}
+	return nil
 }
 
 func (plan UnitPlan) HasRead() bool { return plan.Read.Brief != "" }
@@ -87,16 +113,36 @@ func ReadUnitPlan(path string) (UnitPlan, error) {
 	return readUnitPlan(abs, filepath.Dir(abs))
 }
 
+// ReadUnitPlanInput reads caller input without accepting retained telemetry.
+func ReadUnitPlanInput(path string) (UnitPlan, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return UnitPlan{}, planInvalid("plan", err)
+	}
+	return readUnitPlanInput(abs, filepath.Dir(abs), false)
+}
+
 func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
+	return readUnitPlanInput(path, relativeRoot, true)
+}
+
+func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, error) {
 	abs := path
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return UnitPlan{}, planInvalid("plan", err)
 	}
-	var raw rawUnitPlan
+	var raw struct {
+		rawUnitPlan
+		Estimate *UnitEstimate `json:"estimate"`
+	}
+	var target any = &raw.rawUnitPlan
+	if retained {
+		target = &raw
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := decoder.Decode(target); err != nil {
 		field := "json"
 		if match := unknownPlanField.FindStringSubmatch(err.Error()); len(match) == 2 {
 			field = match[1]
@@ -134,8 +180,9 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 		}
 	}
 	plan := UnitPlan{Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
-		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
-		Path:  abs}
+		Estimate: raw.Estimate,
+		Build:    UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
+		Path:     abs}
 	if read != nil {
 		for _, item := range []struct {
 			name    string
@@ -169,6 +216,9 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 }
 
 func (plan *UnitPlan) resolveAndValidate(root string) error {
+	if err := plan.Estimate.Validate(plan.Unit); err != nil {
+		return err
+	}
 	resolve := func(path string) string {
 		if filepath.IsAbs(path) {
 			return filepath.Clean(path)
