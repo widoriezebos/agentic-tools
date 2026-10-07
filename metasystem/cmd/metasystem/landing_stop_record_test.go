@@ -28,6 +28,8 @@ func newStopVerbBed(t *testing.T) *replayVerbBed {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Check admission reconciles requests before the keeper tick; both use the same machine.
+	b.owners.landing.machine = func(string) (string, error) { return "lane-machine", nil }
 	return b
 }
 
@@ -69,7 +71,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 	if code != 0 || !strings.Contains(oneSpaced(text), "the lane stopped:") || !strings.Contains(oneSpaced(text), command) || !strings.Contains(oneSpaced(text), "TestBroken") {
 		t.Fatalf("stop is not visible: %d %s", code, text)
 	}
-	// The keeper reconciles the stop question at its own tick.
+	// The keeper recovers the request already reconciled by check admission.
 	agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
 	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
 		t.Fatalf("keeper did not ask and hold: %q %v", hold, err)
@@ -150,7 +152,8 @@ func TestLandingStopCauseChoosesTheHandoff(t *testing.T) {
 					t.Fatalf("main must hold without a lane question: %+v questions=%+v", stop, questions)
 				}
 			case "environment":
-				if stop.Attempt != 0 || stop.Command() != "metasystem landing run" || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+				// Decision 4 requires the check act; generic run grants no repeat authority.
+				if stop.Attempt != 0 || stop.Command() != "metasystem landing prove" || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
 					t.Fatalf("environment spent a full attempt or chose a return: %+v questions=%+v", stop, questions)
 				}
 			}

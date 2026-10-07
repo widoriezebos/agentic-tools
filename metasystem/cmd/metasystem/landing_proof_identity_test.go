@@ -65,6 +65,9 @@ func TestLandingPausedPersonProofRefusesChildArgvReplay(t *testing.T) {
 			}
 			b.fail = func(*exec.Cmd, string) (string, error) { return "LANDING-CHECKED\t0\n", nil }
 			code, text := b.run(t, b.root, childArgv[1:]...)
+			if dead {
+				_, _ = b.run(t, b.root, "prove")
+			}
 			if code == 0 || !strings.Contains(text, "landing prove") || b.full != 0 || len(b.runs) != 0 {
 				t.Fatalf("agent replay: exit=%d executions=%v output=%s", code, b.runs, text)
 			}

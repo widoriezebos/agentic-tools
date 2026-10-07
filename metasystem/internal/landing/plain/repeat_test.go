@@ -215,11 +215,12 @@ func TestRepeatDetachedUnreadableIdentityKeepsAllowance(t *testing.T) {
 					if mode != "full" {
 						retry += " --" + mode
 					}
-					if err == nil || !strings.Contains(err.Error(), "environment") || !strings.HasSuffix(err.Error(), "retry: "+retry) || already || running.Attempt != "" {
+					if err == nil || !strings.Contains(err.Error(), "environment") || !strings.HasSuffix(err.Error(), "retry: "+retry) || already || running.Admission == nil || running.Admission.State != "failed" {
 						t.Errorf("unreadable launch was not refused with its retry: %+v already=%v err=%v", running, already, err)
 					}
-					if _, err := os.Stat(runningPath(b.install)); !errors.Is(err, os.ErrNotExist) {
-						t.Errorf("unreadable launch left a running record: %v", err)
+					failed, recorded, alive, readErr := ReadRunning(b.install, b.seams)
+					if readErr != nil || !recorded || alive || failed.Admission == nil || failed.Admission.State != "failed" {
+						t.Errorf("unreadable launch lost its failed admission: %+v %v", failed, readErr)
 					}
 					lines, err := readLines[Result](b.seams.resultsPath(b.install))
 					if err != nil || !reflect.DeepEqual(lines, []Result{before}) {
@@ -532,6 +533,49 @@ func TestRepeatInheritedGreenIncludesFlakeReason(t *testing.T) {
 			}
 			if green.Result != Green || !strings.HasSuffix(green.Reason, "; "+source.Reason) {
 				t.Fatalf("inherited reason: %+v", green)
+			}
+		})
+	}
+}
+
+func TestRepeatRedCannotBorrowInheritedGreenPermission(t *testing.T) {
+	t.Parallel()
+	for _, entry := range []string{"run", "start"} {
+		t.Run(entry, func(t *testing.T) {
+			t.Parallel()
+			b := newRepeatBed(t)
+			green := Result{Tree: "old", Commit: "old", Result: Green}
+			red := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Cause: &Cause{Kind: "environment"}}
+			if err := withLock(b.install, func() error {
+				if err := appendLine(resultsPath(b.install), green); err != nil {
+					return err
+				}
+				return appendLine(resultsPath(b.install), red)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			git := b.seams.Git
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				if strings.Join(args, " ") == "diff --name-only --no-renames old tree" {
+					return "metasystem/plans/goals/fix.md", nil
+				}
+				return git(dir, args...)
+			}
+			b.seams.Policy = func(string) (PolicyValue, error) { return PolicyValue{Value: "person"}, nil }
+			b.seams.Command = func(*exec.Cmd) error { t.Error("a red tree borrowed permission from an older green"); return nil }
+			b.seams.Launch = func([]string, string, string) (int64, error) {
+				t.Error("a red tree launched without fresh full-check permission")
+				return int64(os.Getpid()), nil
+			}
+			var err error
+			if entry == "run" {
+				_, err = Run(b.install, b.checkout, "exit 0", "", io.Discard, b.seams)
+			} else {
+				_, _, err = Start(b.install, b.checkout, b.seams)
+			}
+			var refusal *Refusal
+			if !errors.As(err, &refusal) || refusal.Code != "LANE_PROOF_PERSON" || len(b.lines()) != 2 {
+				t.Fatalf("repeat bypassed full-check permission or changed history: %v %+v", err, b.lines())
 			}
 		})
 	}

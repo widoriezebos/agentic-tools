@@ -48,12 +48,15 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
-	BatchID      string    `json:"batch-id,omitempty"`
-	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
-	Gate         bool      `json:"gate,omitempty"`
-	Tree         string    `json:"tree"`
-	Commit       string    `json:"commit,omitempty"`
-	Since        string    `json:"since"`
+	Admission    *ExecutionAdmission `json:"admission,omitempty"`
+	Person       *ActProvenance      `json:"person,omitempty"`
+	Trunk        bool                `json:"trunk,omitempty"`
+	BatchID      string              `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA           `json:"batch-members,omitempty"`
+	Gate         bool                `json:"gate,omitempty"`
+	Tree         string              `json:"tree"`
+	Commit       string              `json:"commit,omitempty"`
+	Since        string              `json:"since"`
 	// Attempt and Log name the run; State is running while its process
 	// runs, died when it ended without a result (the next prove runs it
 	// again).
@@ -394,5 +397,11 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	if running.Admission != nil && (running.Admission.State == "pending" || running.Admission.State == "failed") {
+		state = running.Admission.State
+		if state == "pending" && !alive {
+			state = "failed"
+		}
+	}
+	return &RunningProof{Admission: running.Admission, Person: running.Person, Trunk: running.Trunk, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

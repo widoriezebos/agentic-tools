@@ -94,14 +94,13 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 		if err != nil {
 			return err
 		}
-		seen := map[string]bool{}
+		seen := stopSet{}
 		for i := len(stops) - 1; i >= 0; i-- {
 			stop := stops[i]
-			key := stopKey(stop)
-			if seen[key] {
+			if seen.contains(stop) {
 				continue
 			}
-			seen[key] = true
+			seen.add(stop)
 			if stop.Decision == "stop" && strings.HasPrefix(stop.Handoff, "ask ") {
 				data, err := json.Marshal(stop)
 				if err != nil {

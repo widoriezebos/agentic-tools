@@ -107,6 +107,10 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 	if b.batch(t).ID != selected.ID || len(b.batch(t).Members) != 2 {
 		t.Fatal("retry changed selected membership")
 	}
+	// The worker's proof invocation has no direct terminal authority.
+	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Proof{}, errors.New("ordinary worker")
+	}
 	// Drive the worker's public gate/full/push path on those exact real commits.
 	b.assemble(t, a)
 	b.success(t, "landing", "prove", "--gate", "--wait")

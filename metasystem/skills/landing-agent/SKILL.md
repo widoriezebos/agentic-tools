@@ -24,6 +24,14 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 ## The loop
 
+When a full check needs a person, stop on its recorded request. The person uses
+`metasystem landing prove` (or `--trunk` for main); `landing run` grants no
+proof permission and restores no spent checks. A cheap-gate stop uses
+`metasystem landing prove --gate`. Follow the command in status for that scope.
+A detached proof carries one recorded admission; its child needs no new
+enrollment. A later full execution, including an escalation from scoped
+checks after an environment change, requires its own admission.
+
 1. Read `landing status --json` before each operation. If `paused`, continue only when `admitted-batch` matches your recorded batch identity; otherwise stop. If `running_proof` is set, end your turn.
    A `prepared` batch whose selector is `person` and has no recorded `person` act is a proposal; hold for the pending human-selection consumer.
    The keeper prepares the batch before launching you. If there is no active batch and no

@@ -328,8 +328,8 @@ func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 // landing prove without a proof command refuses in two lines naming the
 // setting; without --wait it starts the proof detached and returns; a
 // repeat while that tree's proof runs starts nothing; another tree is
-// refused while it runs; status shows the running proof; a paused lane
-// refuses prove and push.
+// refused while it runs; status shows the running proof; a pause holds push
+// while the active proof keeps ownership of its tree.
 func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
@@ -373,7 +373,12 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, verb := range []string{"prove", "push"} {
-		if code, text := bed.run(t, "landing", verb); code != 1 || !strings.Contains(text, "stopped") {
+		want := "stopped"
+		if verb == "prove" {
+			// Decision 4 admits direct checks through a pause, but never over a live tree owner.
+			want = "is being proven"
+		}
+		if code, text := bed.run(t, "landing", verb); code != 1 || !strings.Contains(text, want) || len(launched) != 1 {
 			t.Fatalf("a paused %s = %d\n%s", verb, code, text)
 		}
 	}

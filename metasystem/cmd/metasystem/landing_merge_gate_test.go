@@ -62,7 +62,7 @@ func commandEnv(cmd *exec.Cmd, key string) string {
 	return ""
 }
 
-func TestLandingPausedPersonProofUnreadableLaunchLeavesNoAttempt(t *testing.T) {
+func TestLandingPausedPersonProofUnreadableLaunchRetainsFailedAdmission(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
@@ -83,9 +83,10 @@ func TestLandingPausedPersonProofUnreadableLaunchLeavesNoAttempt(t *testing.T) {
 	if code != 1 || !strings.Contains(text, "environment") || !strings.Contains(text, "metasystem landing prove") {
 		t.Fatalf("unreadable launch lacks its environment refusal and retry: exit=%d output=%s", code, text)
 	}
-	_, recorded, _, err := plain.ReadRunning(b.install, b.owners.landing.plainProve)
-	if err != nil || recorded {
-		t.Fatalf("unreadable launch left a running proof: recorded=%v err=%v", recorded, err)
+	// Decision 4 keeps failed admission visible without spending an execution.
+	failed, recorded, alive, err := plain.ReadRunning(b.install, b.owners.landing.plainProve)
+	if err != nil || !recorded || alive || failed.Admission == nil || failed.Admission.State != "failed" {
+		t.Fatalf("unreadable launch lost its failed admission: %+v alive=%v err=%v", failed, alive, err)
 	}
 	results, err := plain.Results(b.install)
 	if err != nil || len(results) != 0 || len(b.runs) != 0 || b.full != 0 {

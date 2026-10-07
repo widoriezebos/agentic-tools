@@ -12,22 +12,28 @@ import (
 
 // Stop records a lane loop's decision and the evidence for its handoff.
 type Stop struct {
-	Loop    string `json:"loop"`
-	Subject string `json:"subject"`
-	Attempt int    `json:"attempt"`
-	Budget  int    `json:"budget"`
-	Measure struct {
+	ProofAttempt string `json:"proof-attempt,omitempty"`
+	Tree         string `json:"tree,omitempty"`
+	BatchID      string `json:"batch-id,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	Trunk        bool   `json:"trunk,omitempty"`
+	Loop         string `json:"loop"`
+	Subject      string `json:"subject"`
+	Attempt      int    `json:"attempt"`
+	Budget       int    `json:"budget"`
+	Measure      struct {
 		Name     string   `json:"name"`
 		Previous []string `json:"previous"`
 		Now      []string `json:"now"`
 	} `json:"measure"`
-	Class    string   `json:"class"`
-	Decision string   `json:"decision"`
-	Handoff  string   `json:"handoff"`
-	Cause    *Cause   `json:"cause"`
-	Evidence string   `json:"evidence"`
-	At       string   `json:"at"`
-	Required []string `json:"required,omitempty"`
+	Class     string   `json:"class"`
+	Decision  string   `json:"decision"`
+	Handoff   string   `json:"handoff"`
+	Cause     *Cause   `json:"cause"`
+	Evidence  string   `json:"evidence"`
+	StoppedAt *string  `json:"stopped-at,omitempty"`
+	At        string   `json:"at"`
+	Required  []string `json:"required,omitempty"`
 }
 
 func stopsPath(install string) string { return filepath.Join(Dir(install), "stops.jsonl") }
@@ -40,7 +46,13 @@ func (s Stop) Command() string {
 	if strings.HasPrefix(s.Handoff, "hold ") {
 		return "metasystem incident list"
 	}
-	if s.Loop == "lane-return" || s.Cause != nil && s.Cause.Kind == "environment" {
+	if (s.Loop == "lane-proof" || s.Loop == "lane-gate") && s.Cause != nil && s.Cause.Kind == "environment" {
+		if s.Scope == "regeneration" {
+			return "metasystem landing run"
+		}
+		return proofCommand(s.Loop == "lane-gate", s.Trunk)
+	}
+	if s.Loop == "lane-return" {
 		return "metasystem landing run"
 	}
 	goal := "GOAL"
@@ -74,37 +86,63 @@ func (s Stop) Words() string {
 // NewestStop is the newest stop for which no later decision closed its loop.
 func NewestStop(install string) (*Stop, error) {
 	lines, err := readLines[Stop](stopsPath(install))
-	closed := map[string]bool{}
+	closed := stopSet{}
 	for i := len(lines) - 1; i >= 0; i-- {
 		s := lines[i]
 		if s.Decision == "close" {
-			closed[stopKey(s)] = true
+			closed.add(s)
 		}
-		if s.Decision == "stop" && !closed[stopKey(s)] {
+		if s.Decision == "stop" && !closed.contains(s) {
 			return &s, err
 		}
 	}
 	return nil, err
 }
 
-func stopKey(s Stop) string { return fmt.Sprintf("%s/%s/%d", s.Loop, s.Subject, s.Attempt) }
+func stopKey(s Stop) string {
+	if s.Decision == "close" && s.StoppedAt != nil {
+		s.At = *s.StoppedAt
+	}
+	return fmt.Sprintf("%s/%s/%d/%s/%t/%s/%s", s.Loop, s.Subject, s.Attempt, s.Tree, s.Trunk, s.At, s.ProofAttempt)
+}
+
+// stopSet reads both timestamp-bound closures and the original loop identity.
+// An absent opening timestamp retains the original loop/subject/attempt match.
+type stopSet map[string]bool
+
+func legacyStopKey(s Stop) string {
+	return fmt.Sprintf("legacy/%s/%s/%d", s.Loop, s.Subject, s.Attempt)
+}
+
+func (seen stopSet) contains(s Stop) bool {
+	return seen[stopKey(s)] || seen[legacyStopKey(s)]
+}
+
+func (seen stopSet) add(s Stop) {
+	if s.Decision == "close" && s.StoppedAt == nil {
+		seen[legacyStopKey(s)] = true
+	} else {
+		seen[stopKey(s)] = true
+	}
+}
 
 func closeMatchingStopsLocked(install, act string, now time.Time, matches func(Stop) bool) error {
 	lines, err := readLines[Stop](stopsPath(install))
 	if err != nil {
 		return err
 	}
-	closed := map[string]bool{}
+	closed := stopSet{}
 	for i := len(lines) - 1; i >= 0; i-- {
 		s := lines[i]
-		key := stopKey(s)
-		if closed[key] {
+		if closed.contains(s) {
 			continue
 		}
-		closed[key] = true
+		closed.add(s)
 		if s.Decision != "stop" || !matches(s) {
 			continue
 		}
+		openedAt := s.At
+		s.StoppedAt = &openedAt
 		s.Decision, s.Handoff, s.At = "close", act, now.UTC().Format(time.RFC3339Nano)
 		if err := appendLine(stopsPath(install), s); err != nil {
 			return err
@@ -148,10 +186,10 @@ func CloseIncidentStop(install, incident string, now time.Time) error {
 
 // recordProofStop runs under the lane lock after attribution and before a repeat.
 func recordProofStop(install string, result Result) error {
-	if result.Trunk || result.Result != Red || result.Cause == nil {
+	if result.Result != Red || result.Cause == nil || result.Trunk && result.Cause.Kind != "environment" {
 		return nil
 	}
-	s := Stop{Loop: "lane-proof", Budget: 2, Cause: result.Cause, Class: strings.Join(result.Cause.Tests, ", "), Evidence: result.Cause.Evidence, At: result.At}
+	s := Stop{ProofAttempt: result.Attempt, Loop: "lane-proof", Tree: result.Tree, BatchID: result.BatchID, Scope: result.Scope, Trunk: result.Trunk, Budget: 2, Cause: result.Cause, Class: strings.Join(result.Cause.Tests, ", "), Evidence: result.Cause.Evidence, At: result.At}
 	if !result.CountedFull && len(result.Goals) == 1 && result.Cause.Kind == "unclassified" {
 		cause := *result.Cause
 		cause.Goal = result.Goals[0].Goal
@@ -254,6 +292,9 @@ func RecordBarrenStop(install string, state lane.AgentState, evidence string, no
 		s.Measure.Name, s.Measure.Previous, s.Measure.Now = "lane fingerprint", []string{state.Fingerprint}, []string{state.BarrenFingerprint}
 		last, err := NewestStop(install)
 		if err != nil || last != nil && last.Loop == s.Loop && last.Evidence == s.Evidence && slices.Equal(last.Required, s.Required) {
+			return err
+		}
+		if err := closeSubjectStopsLocked(install, s.Loop, s.Subject, "superseded by current lane remedy", now); err != nil {
 			return err
 		}
 		return appendLine(stopsPath(install), s)

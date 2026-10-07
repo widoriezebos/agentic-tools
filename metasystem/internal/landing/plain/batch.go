@@ -145,14 +145,13 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 		if err != nil {
 			return err
 		}
-		seenStops := map[string]bool{}
+		seenStops := stopSet{}
 		for i := len(stops) - 1; i >= 0; i-- {
 			stop := stops[i]
-			key := stopKey(stop)
-			if seenStops[key] {
+			if seenStops.contains(stop) {
 				continue
 			}
-			seenStops[key] = true
+			seenStops.add(stop)
 			if stop.Decision == "stop" && stop.Loop == "lane-return" && stop.Subject == "lane" {
 				batch.Person.BarrenStopAt = stop.At
 				break

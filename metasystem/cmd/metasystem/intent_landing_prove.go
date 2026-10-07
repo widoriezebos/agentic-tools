@@ -162,23 +162,18 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			Summary: "--gate and --trunk cannot be used together, so nothing was proven"})
 	}
 	var person *plain.ActProvenance
-	if refused := inv.lanePaused(admitted, "proven"); refused != nil {
-		// A direct act admits this proof only; it does not alter the selection.
-		if inv.input.text("attempt") != "" {
-			if !inv.input.switched("wait") {
-				return inv.render(*refused)
-			}
-			// The proof owner checks the recorded child's identity under its queue lock,
-			// after the parent's detached start has written the admission.
-		} else {
-			observed, problem := inv.lanePerson("prove the landing checkout", admitted.record.Root)
-			if problem != nil {
-				return inv.render(*refused)
-			}
+	// The detached child claims the recorded admission; only a fresh public
+	// invocation observes direct authority at the original calling checkout.
+	if inv.input.text("attempt") == "" {
+		observed, problem := inv.lanePerson("request this check", admitted.record.Root)
+		if problem == nil {
 			person = &plain.ActProvenance{Kind: "proof", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(),
 				TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
 		}
+	} else if !inv.input.switched("wait") {
+		return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "a background attempt must claim its admission with --wait", Next: "metasystem landing prove"}))
 	}
+
 	seams := admitted.owners.proveSeams(admitted.installation)
 	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
 	if person != nil {
@@ -221,9 +216,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
-		if recorded && running.Attempt == attempt {
-			commit = running.Commit
+		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk {
+			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
+		commit = running.Commit
 	}
 	command, err := seams.CommandForCommit(commit)
 	if err != nil {
@@ -248,6 +244,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 				next: next, nextReason: reason})
 		}
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
+		_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
@@ -275,6 +272,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		output = file
 	}
 	result, err := plain.Run(admitted.installation, checkout, command, attempt, output, seams)
+	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	if err != nil {
 		return inv.render(landingProveRefusal(inv, targets, err))
 	}
@@ -304,11 +302,6 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 	if errors.As(err, &batch) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: batch.Reason, Decision: batch.Next, Details: []string{batch.Code}}
 	}
-	var budget *plain.ProofBudget
-	if errors.As(err, &budget) {
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "this batch has used its two full checks; the waiting goals hold",
-			next: inv.publicArgv("landing", "run"), nextReason: "only a person's call reopens the batch's allowance for full checks"}
-	}
 	if errors.Is(err, errProofDeclaration) {
 		key := proveCommandKey
 		if inv.input.switched("gate") {
@@ -321,7 +314,7 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 	var noRepeat *plain.NoRepeat
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
-			next: inv.publicArgv("landing", "status"), nextReason: "shows the cause and the waiting goals"}
+			next: proofRetryArgv(inv), nextReason: "a person requests one execution while the prior allowance stays spent"}
 	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
@@ -352,13 +345,21 @@ func withRunningProof(view func(*textui.Page), running *plain.RunningProof) func
 			since = page.Env().Since(at)
 		}
 		words := "proving tree " + shortLandingID(running.Tree) + " as attempt " + running.Attempt + ", " + since
-		if running.State == "died" {
-			command := "landing prove"
-			if running.Gate {
-				command += " --gate"
-			}
-			words = "proving tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next " + command + " runs it again"
+		command := "metasystem landing prove"
+		if running.Gate {
+			command += " --gate"
+		} else if running.Trunk {
+			command += " --trunk"
 		}
+		switch running.State {
+		case "died":
+			words = "check of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; retry: " + command
+		case "pending":
+			words = "check admission pending for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command + " after admission ends"
+		case "failed":
+			words = "check admission failed for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command
+		}
+
 		page.Section("Proving", "").Text(words)
 	}
 }
@@ -370,4 +371,15 @@ func landingRedReason(reason string) string {
 		return ""
 	}
 	return " (" + reason + ")"
+}
+
+func proofRetryArgv(inv *intentInvocation) []string {
+	argv := inv.publicArgv("landing", "prove")
+	if inv.input.switched("gate") {
+		argv = append(argv, "--gate")
+	}
+	if inv.input.switched("trunk") {
+		argv = append(argv, "--trunk")
+	}
+	return argv
 }

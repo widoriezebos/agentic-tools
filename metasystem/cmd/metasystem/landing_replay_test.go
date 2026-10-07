@@ -333,9 +333,10 @@ func TestLandingReplayBudgetHoldsShrinkingBatchAndGenericRunCannotReopen(t *test
 		b.head = "merge-b"
 	}
 	b.head, culprit = "merge-a", "a"
+	// Decision 4 makes the exhausted-budget remedy one explicit check, never generic run.
 	for _, args := range [][]string{{"prove", "--wait"}, {"prove"}} {
 		code, out := b.run(t, b.root, args...)
-		if code != 1 || !strings.Contains(out, "two full checks") || !strings.Contains(out, "metasystem landing run") || b.full != 2 {
+		if code != 1 || !strings.Contains(out, "two full checks") || !strings.Contains(out, "metasystem landing prove") || b.full != 2 {
 			t.Fatalf("third = %d %s, whole runs=%d", code, out, b.full)
 		}
 	}
