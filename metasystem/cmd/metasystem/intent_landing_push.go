@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -190,6 +191,7 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	if refused := inv.lanePaused(admitted, "pushed"); refused != nil {
 		return inv.render(*refused)
 	}
+	admitted.owners.plainProve = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.plainProve)
 	owners = owners.withDefaults(inv, admitted)
 	checkout := string(admitted.layout.Checkout)
 	var designRefusal *intentResult
@@ -362,6 +364,7 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 }
 
 func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landingPushOwners, old, head string) *intentResult {
+	defer plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now(), admitted.owners.plainProve)
 	checkout := string(admitted.layout.Checkout)
 	entries, err := plain.Entries(admitted.installation)
 	// A records hand-in cannot hide the goal's current code from the hold.
@@ -374,6 +377,10 @@ func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landin
 		if found && current.SHA == entry.SHA {
 			entries[index] = current
 		}
+	}
+	sourceHeld := map[plain.GoalSHA]bool{}
+	for _, entry := range entries {
+		sourceHeld[plain.GoalSHA{Goal: entry.Goal, SHA: entry.SHA}] = entry.Held || len(entry.After) > 0
 	}
 	if err == nil && len(entries) == 0 {
 		return nil
@@ -393,14 +400,14 @@ func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landin
 		incidents, err = read(admitted.installation, checkout, old)
 		if err == nil {
 			couldHold := false
-			for _, entry := range plain.HoldEntries(entries, incidents) {
+			for _, entry := range plain.HoldEntries(entries, incidents, admitted.owners.plainProve) {
 				couldHold = couldHold || entry.State == plain.StateWaiting && (entry.Held || len(entry.After) > 0)
 			}
 			if !couldHold {
 				return nil
 			}
 			entries, err = plain.Landed(entries, owners.contains(checkout, old))
-			entries = plain.HoldEntries(entries, incidents)
+			entries = plain.HoldEntries(entries, incidents, admitted.owners.plainProve)
 		}
 	}
 	if err != nil {
@@ -417,9 +424,17 @@ func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landin
 			return &failed
 		}
 		if inside {
-			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
+			result := &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
 				Summary: "HEAD contains held goal " + entry.Goal + ": " + entry.Reason + "; nothing was pushed",
 				next:    []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}, nextReason: "rebuild the batch by merging only waiting goals that are not held, then metasystem landing prove"}
+			if !sourceHeld[plain.GoalSHA{Goal: entry.Goal, SHA: entry.SHA}] {
+				target := checkout
+				if filepath.IsAbs(entry.Seat) {
+					target = entry.Seat
+				}
+				result.next, result.nextReason = plain.ExceptionCommand(entry.Goal, target, inv.personName("")), "admits this exact hand-in; or metasystem landing prove --trunk proves main afresh"
+			}
+			return result
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -136,6 +137,7 @@ func TestWorkLandHandInWritesJoined(t *testing.T) {
 			owners := b.intentBed.owners()
 			owners.delivery, owners.connection = b.owners, b.connection
 			owners.work = b.work
+			b.laneInputs(&owners)
 			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
 			owners.landing.by = func(string) string { return "seat" }
 			code, result := b.runJSON(owners, "work", "land", card.Goal)
@@ -194,6 +196,7 @@ func TestWorkLandHandInCardDetails(t *testing.T) {
 			owners := b.intentBed.owners()
 			owners.delivery, owners.connection = b.owners, b.connection
 			owners.work = b.work
+			b.laneInputs(&owners)
 			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
 			owners.landing.by = func(string) string { return "seat" }
 			code, result := b.runJSON(owners, "work", "land", card.Goal)
@@ -207,6 +210,66 @@ func TestWorkLandHandInCardDetails(t *testing.T) {
 				}
 			} else if len(result.Details) != 0 {
 				t.Fatalf("hand-in without a single live card has details: %+v", result)
+			}
+		})
+	}
+}
+
+func TestWorkLandRepeatPreservesCard(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		stage      board.Stage
+		concurrent bool
+	}{
+		{"joined", board.StageJoined, false},
+		{"returned", board.StageReturned, false},
+		{"joined-before-append", board.StageJoined, true},
+		{"returned-before-append", board.StageReturned, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			b, tip, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
+			addQueue := func() {
+				_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: tip.status.BranchTip})
+				helmMust(t, err)
+				if test.stage == board.StageReturned {
+					_, _, err = plain.ReturnProven(install, bedGoal, "unclassified", "fix needed", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}})
+					helmMust(t, err)
+				}
+			}
+			if test.concurrent {
+				// Another hand-in can reach the queue after the public verb's
+				// first read and before its locked append.
+				gate := b.owners.landingGate
+				b.owners.landingGate = func(inv *intentInvocation, goalID, sha string) (string, error) {
+					addQueue()
+					return gate(inv, goalID, sha)
+				}
+			} else {
+				addQueue()
+			}
+			registry := t.TempDir()
+			home := filepath.Join(registry, ".metasystem")
+			card := board.Card{Seat: board.Seat{Machine: "seat", Installation: b.install}, Goal: bedGoal, Stage: test.stage, Landed: 2, Batch: "batch", Writer: board.Writer{At: laneTestNow.Add(-time.Hour)}}
+			helmMust(t, board.WriteAt(home, card))
+			path := filepath.Join(board.Dir(home), card.Seat.Machine, card.Goal+".json")
+			before, err := os.ReadFile(path)
+			helmMust(t, err)
+			owners := b.intentBed.owners()
+			owners.delivery, owners.connection, owners.work = b.owners, b.connection, b.work
+			b.laneInputs(&owners)
+			owners.lookupEnv = func(key string) (string, bool) { return registry, key == "METASYSTEM_SUPERVISION_REGISTRY_HOME" }
+			code, result := b.runJSON(owners, "work", "land", bedGoal)
+			outcome := intentUnchanged
+			if test.stage == board.StageReturned {
+				outcome = intentRefused
+			}
+			expectOutcome(t, "repeat hand-in", code, result, outcome)
+			after, err := os.ReadFile(path)
+			helmMust(t, err)
+			if !bytes.Equal(before, after) {
+				t.Fatalf("repeat hand-in changed %s card: before=%s after=%s", test.stage, before, after)
 			}
 		})
 	}

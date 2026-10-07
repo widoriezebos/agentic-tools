@@ -232,32 +232,37 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 	if machine == nil {
 		machine = goal.ResolveMachine
 	}
-	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, plain.ProveSeams{Now: agent.now, TimerHeld: func() bool { _, paused := lane.ReadPause(home); return paused || helm.Active(self).Active }}),
+	seams := plain.ProveSeams{Now: agent.now, TimerHeld: func() bool { _, paused := lane.ReadPause(home); return paused || helm.Active(self).Active }}
+	seams.Lane = func() (lane.Record, error) {
+		record, present, err := lane.Read(home)
+		if err == nil && !present {
+			err = errors.New("the landing lane is no longer registered")
+		}
+		return record, err
+	}
+	seams.Policy = func(key string) (plain.PolicyValue, error) {
+		record, err := seams.Lane()
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		inv, err := landingDesignInvocation(record.Install, io.Discard)
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		return inv.laneBatchSeams(home, record, seams).Policy(key)
+	}
+	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
 		Helmed:       func(root string) bool { return helm.Active(root).Active },
 		Continuation: func(record lane.Record) string { return plain.PersonBatchContinuation(record.Install, record, home) },
 		Prepare: func(record lane.Record) error {
-			seams := plain.ProveSeams{Now: agent.now}
-			// An empty queue has no selection decision. Resolve its policy only
-			// when SelectBatch needs to prepare or reconsider selected members.
-			seams.Policy = func(key string) (plain.PolicyValue, error) {
-				inv, err := landingDesignInvocation(record.Install, io.Discard)
-				if err != nil {
-					return plain.PolicyValue{}, err
-				}
-				return inv.laneBatchSeams(home, record, seams).Policy(key)
-			}
-			seams.Lane = func() (lane.Record, error) {
-				current, present, err := lane.Read(home)
-				if err == nil && !present {
-					err = errors.New("the landing lane is no longer registered")
-				}
-				return current, err
-			}
-			seams.AgentRunning = func() (bool, error) { _, running, err := agent.running(); return running, err }
-			_, err := plain.SelectBatch(record.Install, record.Root, record, seams)
+			selection := seams
+			selection.AgentRunning = func() (bool, error) { _, running, err := agent.running(); return running, err }
+			_, err := plain.SelectBatch(record.Install, record.Root, record, selection)
 			return err
 		},
-		Observe: func(record lane.Record) error { return plain.SyncPolicyQuestion(record.Install, machine, agent.now()) },
+		Observe: func(record lane.Record) error {
+			return plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
+		},
 		PersonSelection: func(record lane.Record) bool {
 			_, err := plain.RecordedPersonBatch(record.Install, record, "")
 			return err == nil
@@ -284,7 +289,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now(), plain.ProveSeams{Lane: func() (lane.Record, error) { return record, nil }})
 		},
 		Waiting: func(install, checkout string) (int, error) {
-			waiting, err := plain.Pending(install, checkout)
+			waiting, err := plain.Pending(install, checkout, seams)
 			return len(waiting), err
 		}}
 }

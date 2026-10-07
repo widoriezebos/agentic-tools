@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
@@ -50,6 +51,8 @@ func lockPath(install string) string    { return filepath.Join(Dir(install), "la
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
 // "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
+	Previous     *Entry        `json:"-"`
+	ExpectEmpty  bool          `json:"-"`
 	ReturnOrigin *ReturnOrigin `json:"return-origin,omitempty"`
 	goal.AreaSnapshot
 	Exception *Exception       `json:"exception,omitempty"`
@@ -265,15 +268,55 @@ func Latest(install, goal string) (Entry, bool, error) {
 // nothing is appended unless the repeat brings a new delivery sentence,
 // exception or fix incident for a waiting line. Again re-queues a returned
 // line; a waiting repeat writes only new delivery information.
-func HandIn(install string, line Line) (entry Entry, added bool, err error) {
+func HandIn(install string, line Line, effects ...ProveSeams) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
 	line.Outcome, line.Reason, line.Conflict, line.Cause, line.After, line.Held = "", "", nil, nil, nil, false
 	err = withLock(install, func() error {
-		entries, err := Entries(install)
+		readEntries := Entries
+		if len(effects) > 0 && line.Exception != nil {
+			readEntries = AreaEntries
+		}
+		entries, err := readEntries(install)
 		if err != nil {
 			return err
+		}
+		if len(effects) > 0 && line.Exception != nil {
+			current, known, err := Latest(install, line.Goal)
+			if err != nil {
+				return err
+			}
+			if line.ExpectEmpty && known || line.Previous != nil && (!known || current.SHA != line.Previous.SHA || current.State != line.Previous.State) {
+				return fmt.Errorf("the queued target changed; repeat the exception for the current hand-in")
+			}
+			seams := effects[0]
+			if seams.Lane == nil {
+				return fmt.Errorf("the exception's destination cannot be checked")
+			}
+			registered, err := seams.Lane()
+			if err != nil {
+				return err
+			}
+			if line.Exception.Person == nil || line.Exception.Person.Destination != registered {
+				return fmt.Errorf("the exception's lane registration changed; repeat the act")
+			}
+			if !line.Exception.BindingUnknown {
+				if line.Exception.Incidents == nil {
+					return fmt.Errorf("the exception has no bound incident set")
+				}
+				main, err := checkoutGit(registered.Root, seams).main()
+				if err != nil {
+					return err
+				}
+				incidents, err := seams.incidents(install, registered.Root, main)
+				if err != nil {
+					return fmt.Errorf("the incident set changed or became unreadable; repeat the exception: %w", err)
+				}
+				if !slices.Equal(line.Exception.Incidents.Open, openIncidents(incidents)) {
+					return fmt.Errorf("the incident set changed; repeat the exception for the current incidents")
+				}
+			}
 		}
 		for index := len(entries) - 1; index >= 0; index-- {
 			existing := entries[index]
@@ -282,7 +325,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 					break
 				}
 				entry = existing
-				if existing.State != StateWaiting || (line.Delivered == "" || line.Delivered == existing.Delivered) && (line.Exception == nil || existing.Exception != nil) && (line.Fix == "" || line.Fix == existing.Fix) {
+				if existing.State != StateWaiting || (line.Delivered == "" || line.Delivered == existing.Delivered) && (line.Exception == nil || sameException(line.Exception, existing.Exception)) && (line.Fix == "" || line.Fix == existing.Fix) {
 					return nil
 				}
 				// Delivery information belongs to the waiting line; it
@@ -412,8 +455,12 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 // Pending are the hand-ins the lane still has work for: neither returned
 // nor contained in origin's main as the lane checkout last fetched it. It
 // is the signal a keeper wakes the landing agent on.
-func Pending(install, checkout string) ([]Entry, error) {
-	return pending(install, checkout, ProveSeams{})
+func Pending(install, checkout string, effects ...ProveSeams) ([]Entry, error) {
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	return pending(install, checkout, seams)
 }
 
 func pending(install, checkout string, seams ProveSeams) ([]Entry, error) {
@@ -444,7 +491,7 @@ func pendingQueue(install, checkout string, seams ProveSeams, refresh bool) ([]E
 		if err != nil {
 			return nil, err
 		}
-		held := HoldEntries(derived, incidents)
+		held := HoldEntries(derived, incidents, seams)
 		if refresh && incidentOnlyHolds(derived, held) {
 			if err := seams.fetchMain(checkout); err != nil {
 				return nil, err

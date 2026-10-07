@@ -172,7 +172,10 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.Batch = selected
 	}
 	unread("the batch selection", err)
-	status.PendingActions, err = PolicyRequests(install)
+	if seams.Lane == nil {
+		seams.Lane = func() (lane.Record, error) { return record, nil }
+	}
+	status.PendingActions, err = PolicyRequests(install, seams)
 	unread("pending policy actions", err)
 	if seams.Policy != nil {
 		policy, err := seams.batchPolicy()
@@ -235,7 +238,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
 			unread("main's incidents", readErr)
 			if readErr == nil {
-				status.Queue = HoldEntries(status.Queue, incidents)
+				status.Queue = HoldEntries(status.Queue, incidents, seams)
 			}
 			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
 			err = errors.Join(err, again)

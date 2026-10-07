@@ -98,11 +98,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.wake == nil {
 		owners.wake = func(home string) lane.WakeSources {
-			return plain.KeeperWake(home, plain.ProveSeams{TimerHeld: func() bool {
-				record, _, _ := lane.Read(home)
-				_, paused := lane.ReadPause(home)
-				return paused || owners.helm(record.Root).Active
-			}})
+			record, _, _ := lane.Read(home)
+			seams := inv.laneBatchSeams(home, record, owners.plainProve)
+			return plain.KeeperWake(home, seams)
 		}
 	}
 	if owners.person == nil {

@@ -11,18 +11,21 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
 // PolicySubject identifies an act request independently of its notification.
 type PolicySubject struct {
-	ProofAttempt string      `json:"proof-attempt,omitempty"`
-	Tree         string      `json:"tree,omitempty"`
-	Lane         lane.Record `json:"lane"`
-	Policy       string      `json:"policy"`
-	Act          string      `json:"act"`
-	BatchID      string      `json:"batch-id,omitempty"`
-	Members      []GoalSHA   `json:"members,omitempty"`
+	Incidents    []IncidentIdentity `json:"incidents,omitempty"`
+	ProofAttempt string             `json:"proof-attempt,omitempty"`
+	Tree         string             `json:"tree,omitempty"`
+	Lane         lane.Record        `json:"lane"`
+	Policy       string             `json:"policy"`
+	Act          string             `json:"act"`
+	BatchID      string             `json:"batch-id,omitempty"`
+	Members      []GoalSHA          `json:"members,omitempty"`
 }
 
 type PolicyRequest struct {
@@ -41,6 +44,18 @@ func PolicyQuestionSatisfied(install string, q channel.Question) (bool, error) {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane policy: ")), &subject); err != nil {
 		return false, err
 	}
+	if subject.Policy == "landing.trunk-red" && subject.Act == "trunk-exception" && len(subject.Members) == 1 {
+		member := subject.Members[0]
+		entry, known, err := Latest(install, member.Goal)
+		if err != nil || !known || entry.State != StateWaiting || entry.SHA != member.SHA {
+			return false, err
+		}
+		incidents := []goal.TrunkRedEntry{}
+		for _, identity := range subject.Incidents {
+			incidents = append(incidents, goal.TrunkRedEntry{Identity: identity.Identity, Opened: identity.Opened, Sightings: []goal.TrunkRedSighting{{Opid: identity.FirstSeen}}})
+		}
+		return exceptionCovers(entry, incidents, subject.Lane), nil
+	}
 	batch, err := ReadBatch(install)
 	if err != nil {
 		return false, err
@@ -49,7 +64,7 @@ func PolicyQuestionSatisfied(install string, q channel.Question) (bool, error) {
 }
 
 // PolicyRequests observes pending selections; reading status selects nothing.
-func PolicyRequests(install string) ([]PolicyRequest, error) {
+func PolicyRequests(install string, effects ...ProveSeams) ([]PolicyRequest, error) {
 	batch, err := ReadBatch(install)
 	if err != nil {
 		return nil, err
@@ -62,12 +77,64 @@ func PolicyRequests(install string) ([]PolicyRequest, error) {
 		}
 		requests = append(requests, PolicyRequest{Subject: PolicySubject{Lane: batch.Lane, Policy: "landing.batch", Act: "selection", BatchID: batch.ID, Members: batch.Members}, Required: []string{"metasystem", "landing", "run", "--goals", strings.Join(goals, ",")}, Evidence: batchPath(install)})
 	}
+	if len(effects) > 0 && effects[0].Lane != nil {
+		seams := effects[0]
+		record, err := seams.Lane()
+		if err != nil {
+			return requests, err
+		}
+		waiting, err := Waiting(install)
+		if err != nil || len(waiting) == 0 {
+			return requests, err
+		}
+		main, err := checkoutGit(record.Root, seams).main()
+		if err != nil {
+			return requests, err
+		}
+		waiting, err = Landed(waiting, func(sha string) (bool, error) { return checkoutGit(record.Root, seams).contains(main, sha) })
+		if err != nil {
+			return requests, err
+		}
+		incidents, incidentErr := seams.incidents(install, record.Root, main)
+		value, policyErr := PolicyValue{Value: "auto"}, error(nil)
+		if seams.Policy != nil {
+			value, policyErr = seams.Policy("landing.trunk-red")
+		}
+		name := "NAME"
+		if enrollment, err := humanauthority.ReadEnrollment(record.Install); err == nil && enrollment.Human != "" {
+			name = enrollment.Human
+		}
+		for _, entry := range waiting {
+			personName := name
+			target := record.Root
+			if filepath.IsAbs(entry.Seat) {
+				target = entry.Seat
+				if enrollment, err := humanauthority.ReadEnrollment(entry.Seat); err == nil && enrollment.Human != "" {
+					personName = enrollment.Human
+				}
+			}
+			if entry.Exception != nil && entry.Exception.Person != nil {
+				personName = entry.Exception.Person.Person
+			}
+			if entry.State != StateWaiting {
+				continue
+			}
+			err := incidentErr
+			if err == nil {
+				err = TrunkDecision(entry, incidents, value, policyErr, record)
+			}
+			if err == nil {
+				continue
+			}
+			requests = append(requests, PolicyRequest{Subject: PolicySubject{Lane: record, Policy: "landing.trunk-red", Act: "trunk-exception", Members: []GoalSHA{{Goal: entry.Goal, SHA: entry.SHA}}, Incidents: openIncidents(incidents)}, Required: ExceptionCommand(entry.Goal, target, personName), Evidence: err.Error()})
+		}
+	}
 	return requests, nil
 }
 
 // SyncPolicyQuestion recovers requests and their closure from authoritative
 // effects. Its index is rebuildable; a failed sync never repeats the act.
-func SyncPolicyQuestion(install string, machine func(string) (string, error), now time.Time) error {
+func SyncPolicyQuestion(install string, machine func(string) (string, error), now time.Time, effects ...ProveSeams) error {
 	return withLock(install, func() error {
 		batch, err := ReadBatch(install)
 		if err != nil {
@@ -109,7 +176,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 				}
 			}
 		}
-		requests, err := PolicyRequests(install)
+		requests, err := PolicyRequests(install, effects...)
 		if err != nil {
 			return err
 		}
@@ -141,6 +208,30 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			}
 		}
 		questions, _ := channel.WalkQuestions(install)
+		if len(effects) == 0 {
+			for _, q := range questions {
+				if q.State == "closed" || channel.LaneStopCommand(q) == "" || !strings.HasPrefix(q.Facts[1], "lane policy: ") {
+					continue
+				}
+				var subject PolicySubject
+				if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane policy: ")), &subject) != nil || subject.Policy != "landing.trunk-red" {
+					continue
+				}
+				satisfied, err := PolicyQuestionSatisfied(install, q)
+				if err != nil {
+					return err
+				}
+				if !satisfied && len(subject.Members) == 1 {
+					current, known, err := Latest(install, subject.Members[0].Goal)
+					if err != nil {
+						return err
+					}
+					if known && current.State == StateWaiting && current.SHA == subject.Members[0].SHA {
+						pending = append(pending, q.Facts)
+					}
+				}
+			}
+		}
 		if len(pending) == 0 && !slices.ContainsFunc(questions, func(q channel.Question) bool { return channel.LaneStopCommand(q) != "" && q.State != "closed" }) {
 			return nil
 		}
@@ -164,7 +255,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 						return err
 					}
 					if answered {
-						because = "answered by recorded person selection " + batch.ID
+						because = "answered by the recorded person act"
 					}
 				}
 				if _, err := channel.Withdraw(install, q.ID, because, nil, channel.DestinationConfig{}); err != nil {
