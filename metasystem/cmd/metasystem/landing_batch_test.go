@@ -430,7 +430,7 @@ func TestLandingBatchAdapterPolicyAdmissionBoundaries(t *testing.T) {
 						t.Fatalf("person proposal: %+v", got)
 					}
 					b.assemble(t, a, second, third)
-					if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || b.executions(t) != 0 || !strings.Contains(text, "human-selection consumer is pending") {
+					if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || b.executions(t) != 0 || !strings.Contains(text, "requires a person's selection") {
 						t.Fatalf("person proposal admitted: %d %s", code, text)
 					}
 				} else if batch, err := plain.ReadBatch(b.installation); err != nil || batch != nil {
@@ -492,6 +492,13 @@ func TestLandingBatchAdapterStatusDoesNotSelectAndSeatEnvironmentCannotOverrideL
 			return "100", true
 		}
 		return previous(key)
+	}
+	binary := filepath.Join(b.installation, "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"landing run\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"continued\"}'\n"), 0755); err != nil {
+		t.Fatal(err)
 	}
 	b.success(t, "landing", "run", "--repo", b.checkout)
 	if got := b.batch(t); len(got.Members) != 2 || got.Selector.Source != "conf" || got.Selector.Checkout != b.checkout {

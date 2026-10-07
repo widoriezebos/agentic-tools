@@ -350,6 +350,10 @@ func TestKeeperHoldsAfterBarrenRuns(t *testing.T) {
 	}
 	explicit := keeper
 	explicit.Explicit = true
+	if step(explicit); len(agent.starts) != 4 {
+		t.Fatal("Explicit without a recorded person selection lifted the barren hold")
+	}
+	explicit.PersonSelection = func(Record) bool { return true }
 	if step(explicit); len(agent.starts) != 5 {
 		t.Fatalf("a start asked for by name: %d starts; want it started", len(agent.starts))
 	}
@@ -391,6 +395,7 @@ func TestKeeperStopCallbacksReleaseHomeLock(t *testing.T) {
 		t.Fatalf("hold: %+v callbacks=%d", run, held)
 	}
 	keeper.Explicit = true
+	keeper.PersonSelection = func(Record) bool { return true }
 	if run := keeper.Run(); run.Outcome != AgentStarted || cleared != 1 || observed != 4 {
 		t.Fatalf("clear: %+v callbacks=%d observations=%d", run, cleared, observed)
 	}
@@ -408,6 +413,7 @@ func TestKeeperExplicitStartSurvivesStopQuestionReadError(t *testing.T) {
 		t.Fatalf("automatic start ignored the unreadable stop question: %+v", run)
 	}
 	keeper.Explicit = true
+	keeper.PersonSelection = func(Record) bool { return true }
 	if run := keeper.Run(); run.Outcome != AgentStarted || len(agent.starts) != 1 {
 		t.Fatalf("the person's start was held by the unreadable stop question: %+v", run)
 	}

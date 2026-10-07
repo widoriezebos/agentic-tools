@@ -305,7 +305,7 @@ func TestLandingReplayLostProcessPrecedesCompleteReport(t *testing.T) {
 	}
 }
 
-func TestLandingReplayBudgetHoldsShrinkingBatchAndOnlyPersonRunReopens(t *testing.T) {
+func TestLandingReplayBudgetHoldsShrinkingBatchAndGenericRunCannotReopen(t *testing.T) {
 	t.Parallel()
 	b := newReplayVerbBed(t)
 	lineage := lane.AgentLineage
@@ -353,7 +353,7 @@ func TestLandingReplayBudgetHoldsShrinkingBatchAndOnlyPersonRunReopens(t *testin
 	if code, out := b.run(t, b.root, "run"); code != 0 {
 		t.Fatalf("reopen = %d %s", code, out)
 	}
-	if result := b.prove(t); result.Cause.Kind != "own" || result.Cause.Goal != "a" || b.full != 3 {
-		t.Fatalf("reopened: %+v, whole runs=%d", result, b.full)
+	if code, out := b.run(t, b.root, "prove", "--wait"); code != 1 || !strings.Contains(out, "two full checks") || b.full != 2 {
+		t.Fatalf("generic caller reopened proof allowance: %d %s, full runs=%d", code, out, b.full)
 	}
 }

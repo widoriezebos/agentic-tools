@@ -1,16 +1,12 @@
 package plain
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -25,18 +21,22 @@ type Stop struct {
 		Previous []string `json:"previous"`
 		Now      []string `json:"now"`
 	} `json:"measure"`
-	Class    string `json:"class"`
-	Decision string `json:"decision"`
-	Handoff  string `json:"handoff"`
-	Cause    *Cause `json:"cause"`
-	Evidence string `json:"evidence"`
-	At       string `json:"at"`
+	Class    string   `json:"class"`
+	Decision string   `json:"decision"`
+	Handoff  string   `json:"handoff"`
+	Cause    *Cause   `json:"cause"`
+	Evidence string   `json:"evidence"`
+	At       string   `json:"at"`
+	Required []string `json:"required,omitempty"`
 }
 
 func stopsPath(install string) string { return filepath.Join(Dir(install), "stops.jsonl") }
 
 // Command is the one act that resolves this stop.
 func (s Stop) Command() string {
+	if len(s.Required) > 0 {
+		return strings.Join(s.Required, " ")
+	}
 	if strings.HasPrefix(s.Handoff, "hold ") {
 		return "metasystem incident list"
 	}
@@ -78,27 +78,31 @@ func NewestStop(install string) (*Stop, error) {
 	for i := len(lines) - 1; i >= 0; i-- {
 		s := lines[i]
 		if s.Decision == "close" {
-			closed[s.Loop] = true
+			closed[stopKey(s)] = true
 		}
-		if s.Decision == "stop" && !closed[s.Loop] {
+		if s.Decision == "stop" && !closed[stopKey(s)] {
 			return &s, err
 		}
 	}
 	return nil, err
 }
 
-func closeStopsLocked(install, loop, act string, now time.Time) error {
+func stopKey(s Stop) string { return fmt.Sprintf("%s/%s/%d", s.Loop, s.Subject, s.Attempt) }
+
+func closeMatchingStopsLocked(install, act string, now time.Time, matches func(Stop) bool) error {
 	lines, err := readLines[Stop](stopsPath(install))
 	if err != nil {
 		return err
 	}
-	latest := map[string]Stop{}
-	for _, s := range lines {
-		latest[s.Loop] = s
-	}
-	for _, name := range []string{"lane-proof", "lane-gate", "lane-return"} {
-		s, ok := latest[name]
-		if !ok || s.Decision == "close" || loop != "" && loop != name {
+	closed := map[string]bool{}
+	for i := len(lines) - 1; i >= 0; i-- {
+		s := lines[i]
+		key := stopKey(s)
+		if closed[key] {
+			continue
+		}
+		closed[key] = true
+		if s.Decision != "stop" || !matches(s) {
 			continue
 		}
 		s.Decision, s.Handoff, s.At = "close", act, now.UTC().Format(time.RFC3339Nano)
@@ -107,6 +111,16 @@ func closeStopsLocked(install, loop, act string, now time.Time) error {
 		}
 	}
 	return nil
+}
+
+func closeSubjectStopsLocked(install, loop, subject, act string, now time.Time) error {
+	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool { return s.Loop == loop && s.Subject == subject })
+}
+
+func closeGoalStopsLocked(install, goal, act string, now time.Time) error {
+	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool {
+		return !(s.Loop == "lane-return" && s.Subject == "lane") && slices.Contains(strings.Split(s.Subject, ", "), goal)
+	})
 }
 
 // CloseIncidentStop ends only the proof stop whose main incident cleared.
@@ -122,7 +136,9 @@ func CloseIncidentStop(install, incident string, now time.Time) error {
 				continue
 			}
 			if s.Decision == "stop" && s.Cause != nil && s.Cause.Kind == "main" && s.Cause.Name == incident {
-				return closeStopsLocked(install, "lane-proof", "incident cleared "+incident, now)
+				return closeMatchingStopsLocked(install, "incident cleared "+incident, now, func(stop Stop) bool {
+					return stop.Loop == "lane-proof" && stop.Cause != nil && stop.Cause.Kind == "main" && stop.Cause.Name == incident
+				})
 			}
 			break
 		}
@@ -202,89 +218,44 @@ func recordProofStop(install string, result Result) error {
 }
 
 // RecordBarrenStop mirrors the keeper's existing hold without changing its count.
-func RecordBarrenStop(install string, state lane.AgentState, evidence string, now time.Time) error {
+func RecordBarrenStop(install string, state lane.AgentState, evidence string, now time.Time, effects ...ProveSeams) error {
 	return withLock(install, func() error {
 		if state.Barren == 0 {
-			return closeStopsLocked(install, "lane-return", "lane changed", now)
+			return closeSubjectStopsLocked(install, "lane-return", "lane", "superseded by lane progress", now)
 		}
 		s := Stop{Loop: "lane-return", Subject: "lane", Attempt: state.Barren, Budget: 2, Class: "lane unchanged", Decision: "stop", Handoff: "ask lane",
 			Cause: &Cause{Kind: "unclassified"}, Evidence: evidence, At: now.UTC().Format(time.RFC3339Nano)}
+		seams := ProveSeams{}
+		if len(effects) > 0 {
+			seams = effects[0]
+		}
+		checkout := install
+		if seams.Lane != nil {
+			record, err := seams.Lane()
+			if err != nil {
+				return err
+			}
+			checkout = record.Root
+		} else if batch, err := ReadBatch(install); err == nil && batch != nil {
+			checkout = batch.Lane.Root
+		}
+		eligible, err := pending(install, checkout, seams)
+		if err != nil {
+			return err
+		}
+		s.Required = []string{"metasystem", "landing", "prove", "--trunk"}
+		if len(eligible) > 0 {
+			goals := []string{}
+			for _, e := range eligible {
+				goals = append(goals, e.Goal)
+			}
+			s.Required = []string{"metasystem", "landing", "run", "--goals", strings.Join(goals, ",")}
+		}
 		s.Measure.Name, s.Measure.Previous, s.Measure.Now = "lane fingerprint", []string{state.Fingerprint}, []string{state.BarrenFingerprint}
 		last, err := NewestStop(install)
-		if err != nil || last != nil && last.Loop == s.Loop && last.Evidence == s.Evidence {
+		if err != nil || last != nil && last.Loop == s.Loop && last.Evidence == s.Evidence && slices.Equal(last.Required, s.Required) {
 			return err
 		}
 		return appendLine(stopsPath(install), s)
-	})
-}
-
-// SyncStopQuestion withdraws only questions the lane itself asked for a stop.
-// The channel's own question fields carry the command, stop line and evidence.
-func SyncStopQuestion(install string, machine func(string) (string, error), now time.Time) error {
-	return withLock(install, func() error {
-		stop, err := NewestStop(install)
-		if err != nil {
-			return err
-		}
-		var facts []string
-		if stop != nil && strings.HasPrefix(stop.Handoff, "ask ") {
-			data, err := json.Marshal(stop)
-			if err != nil {
-				return err
-			}
-			facts = []string{stop.Command(), "lane stop: " + string(data), "evidence: " + stop.Evidence}
-		}
-		// The reference identifies our question even when its JSON is unreadable.
-		// Other question files cannot hold the lane's synchronization.
-		reference := filepath.Join(Dir(install), "stop-question")
-		id, err := os.ReadFile(reference)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if len(facts) > 0 && len(id) > 0 {
-			q, err := channel.ReadQuestion(install, string(id))
-			if err != nil || q.ID != string(id) || channel.LaneStopCommand(q) == "" || q.OpenedAt.IsZero() || q.State == "" {
-				return fmt.Errorf("the lane's stop question %s cannot be read: %v", id, err)
-			}
-		}
-		questions, _ := channel.WalkQuestions(install)
-		found := false
-		name := ""
-		if len(facts) > 0 || slices.ContainsFunc(questions, func(q channel.Question) bool { return channel.LaneStopCommand(q) != "" && q.State != "closed" }) {
-			name, err = machine(install)
-			if err != nil {
-				return err
-			}
-		}
-		for _, q := range questions {
-			if channel.LaneStopCommand(q) == "" || q.Machine != name {
-				continue
-			}
-			if len(facts) > 0 && slices.Equal(q.Facts, facts) {
-				found = true
-				if _, err := atomicfile.WriteFile(reference, []byte(q.ID), 0o600, ""); err != nil {
-					return err
-				}
-			} else if q.State != "closed" {
-				if _, err := channel.Withdraw(install, q.ID, "a later lane record ended the stop", nil, channel.DestinationConfig{}); err != nil {
-					return err
-				}
-			}
-		}
-		if found || len(facts) == 0 {
-			if len(facts) == 0 {
-				if err := os.Remove(reference); err != nil && !os.IsNotExist(err) {
-					return err
-				}
-			}
-			return nil
-		}
-		q, err := channel.Ask(channel.AskRequest{RepoRoot: install, About: "lane", Kind: "other", Machine: name, Lineage: lane.AgentLineage,
-			Facts: facts, Recommendation: "Run the command above; a later lane record closes this question.", Now: now})
-		if err != nil {
-			return err
-		}
-		_, err = atomicfile.WriteFile(reference, []byte(q.ID), 0o600, "")
-		return err
 	})
 }

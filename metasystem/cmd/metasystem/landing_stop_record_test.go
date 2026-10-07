@@ -32,13 +32,13 @@ func newStopVerbBed(t *testing.T) *replayVerbBed {
 }
 
 func syncStopQuestionHold(agent landingAgent, install string) (string, error) {
-	if err := plain.SyncStopQuestion(install, agent.machine, agent.now()); err != nil {
+	if err := plain.SyncPolicyQuestion(install, agent.machine, agent.now()); err != nil {
 		return "", err
 	}
 	return agent.questionHold(install)
 }
 
-func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing.T) {
+func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *testing.T) {
 	t.Parallel()
 	b := newStopVerbBed(t)
 	b.fail = func(_ *exec.Cmd, only string) (string, error) {
@@ -100,11 +100,14 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	if code, text := b.run(t, b.root, "run"); code != 0 {
 		t.Fatalf("landing run: %d %s", code, text)
 	}
-	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || hold != "" {
-		t.Fatalf("the act did not end the question: %q %v", hold, err)
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
+		t.Fatalf("generic run changed the stopped subject: %q %v", hold, err)
 	}
-	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State != "closed" {
-		t.Fatalf("the question was not withdrawn: %+v %v", q, err)
+	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State == "closed" {
+		t.Fatalf("generic run closed the question without its effect: %+v %v", q, err)
+	}
+	if result, ok, err := plain.LastResult(b.install); err != nil || !ok || result.LoopClosed {
+		t.Fatalf("generic run reopened proof allowance: %+v %v", result, err)
 	}
 }
 
@@ -218,7 +221,7 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 	}
 }
 
-func TestLandingStopBarrenHoldRecordsOneQuestionAndRunClearsIt(t *testing.T) {
+func TestLandingStopBarrenHoldRecordsOneQuestionAndSelectionClearsIt(t *testing.T) {
 	t.Parallel()
 	b, keeper, now, starts, _ := landingRestartBed(t)
 	install := b.landingA
@@ -239,10 +242,11 @@ func TestLandingStopBarrenHoldRecordsOneQuestionAndRunClearsIt(t *testing.T) {
 	}
 	stop, err := plain.NewestStop(install)
 	questions, _ := channel.WalkOpenQuestions(install)
-	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run --goals a" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
 		t.Fatalf("barren stop: %+v %v questions=%+v", stop, err, questions)
 	}
-	if code, stdout, stderr := b.run(t, "landing", "run"); code != 0 || *starts != 3 {
+	b.prove = enrolledPersonProver(t, b.landingA, *now)
+	if code, stdout, stderr := b.run(t, "landing", "run", "--goals", "a"); code != 0 || *starts != 3 {
 		t.Fatalf("run did not lift the hold: %d %s %s starts=%d", code, stdout, stderr, *starts)
 	}
 	if q, err := channel.ReadQuestion(install, questions[0].ID); err != nil || q.State != "closed" {
@@ -278,7 +282,7 @@ func TestLandingUnreadableUnrelatedQuestionAllowsKeeperAndRun(t *testing.T) {
 	}
 }
 
-func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsRun(t *testing.T) {
+func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsSelection(t *testing.T) {
 	t.Parallel()
 	b, keeper, now, starts, _ := landingRestartBed(t)
 	queueRestartWork(t, b)
@@ -310,7 +314,8 @@ func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsRun(t *testing.T) {
 	if run := keeper.Run(); run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, questions[0].ID) {
 		t.Fatalf("own unreadable: %+v", run)
 	}
-	if code, out, stderr := b.run(t, "landing", "run"); code != 0 || *starts != 3 {
+	b.prove = enrolledPersonProver(t, b.landingA, *now)
+	if code, out, stderr := b.run(t, "landing", "run", "--goals", "first,second"); code != 0 || *starts != 3 {
 		t.Fatalf("explicit run: %d %s %s starts=%d", code, out, stderr, *starts)
 	}
 }

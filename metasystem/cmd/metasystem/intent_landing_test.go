@@ -26,6 +26,7 @@ type laneVerbBed struct {
 	alive                         bool
 	pid                           int64
 	person                        error
+	prove                         goalAuthorityProver
 	// ready is whether the lane can run (nil: it can); noMachine is a
 	// checkout without a machine nickname.
 	ready     error
@@ -61,7 +62,7 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
-	return intentOwners{policies: bed.policies, resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
+	return intentOwners{prove: bed.prove, commandNow: func(string) (time.Time, error) { return laneTestNow, nil }, policies: bed.policies, resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 		plainProve: bed.plainProve,
 		home:       func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {

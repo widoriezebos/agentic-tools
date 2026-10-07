@@ -74,7 +74,7 @@ func TestLandingKeeperStatusShowsBarrenHold(t *testing.T) {
 		return landingStatusData{View: view, Queue: waiting}
 	}
 	command, _ := findIntentAction("landing", "status")
-	const want = "held after 2 runs that left the lane unchanged; a person's metasystem landing run starts it"
+	const want = "held after 2 runs that left the lane unchanged; a person's recorded selection or a fresh proof of main is needed"
 	for _, args := range [][]string{{"--json"}, {}} {
 		var stdout, stderr bytes.Buffer
 		code := runIntentIn(command, args, &stdout, &stderr, bed.cwd, owners)
@@ -110,6 +110,15 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	root := resolvedPath(t.TempDir())
 	home := resolvedPath(t.TempDir())
 	bed := &laneVerbBed{cwd: root, home: home, landingA: root}
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(lane.HostDir(home), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +157,9 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	}
 	if keeper.Fingerprint == nil {
 		t.Fatal("the landing keeper has no lane fingerprint, so barren runs cannot hold it")
+	}
+	keeper.BarrenStop = func(record lane.Record, state lane.AgentState) error {
+		return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), now, bed.plainProve)
 	}
 	keeper.Fingerprint = func(string) (string, error) {
 		entries, err := plain.Entries(root)
@@ -223,7 +235,8 @@ func TestLandingKeeperPublicRunLiftsBarrenHold(t *testing.T) {
 	if run := keeper.Run(); run.Outcome != lane.AgentHeld || *starts != 2 {
 		t.Fatalf("unchanged work: %+v, starts=%d; want two starts then a hold", run, *starts)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "run", "--json"); code != 0 || *starts != 3 || !strings.Contains(oneSpaced(stdout), `"outcome": "started"`) {
+	bed.prove = enrolledPersonProver(t, bed.landingA, *now)
+	if code, stdout, stderr := bed.run(t, "landing", "run", "--goals", "first,second", "--json"); code != 0 || *starts != 3 || !strings.Contains(oneSpaced(stdout), `"outcome": "started"`) {
 		t.Fatalf("public run with barren hold: %d %q %q, starts=%d; want a third start", code, stdout, stderr, *starts)
 	}
 }

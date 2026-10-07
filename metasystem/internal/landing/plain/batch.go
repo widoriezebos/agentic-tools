@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -38,7 +39,7 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 		return fmt.Errorf("the batch policy cannot be read; no selection was admitted: %w", readErr)
 	}
 	if value.Value == "person" {
-		return &Refusal{Code: "LANE_BATCH_PERSON", Reason: "the batch policy requires a person's selection; the human-selection consumer is pending", Next: "keep the proposal pending until the human-selection consumer is available"}
+		return &Refusal{Code: "LANE_BATCH_PERSON", Reason: "the batch policy requires a person's selection", Next: "metasystem landing run --goals GOALS"}
 	}
 	return nil
 }
@@ -46,14 +47,144 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 // Batch pins a selection, independently of the queue's authoritative outcomes.
 // Its original base and members survive a rebuild on newer main.
 type Batch struct {
-	ID            string      `json:"id"`
-	Lane          lane.Record `json:"lane"`
-	Base          string      `json:"base"`
-	Members       []GoalSHA   `json:"members"`
-	Selector      PolicyValue `json:"selector"`
-	CreatedAt     string      `json:"created-at"`
-	State         string      `json:"state"`
-	ClosureReason string      `json:"closure-reason,omitempty"`
+	ID            string         `json:"id"`
+	Lane          lane.Record    `json:"lane"`
+	Base          string         `json:"base"`
+	Members       []GoalSHA      `json:"members"`
+	Selector      PolicyValue    `json:"selector"`
+	CreatedAt     string         `json:"created-at"`
+	State         string         `json:"state"`
+	ClosureReason string         `json:"closure-reason,omitempty"`
+	Person        *ActProvenance `json:"person,omitempty"`
+}
+
+// ActProvenance records a person's act on its exact destination and subject.
+// It is evidence of the effect, never a serialized authority proof.
+type ActProvenance struct {
+	Kind               string                    `json:"kind"`
+	Person             string                    `json:"person"`
+	Root               string                    `json:"root"`
+	CheckedAt          time.Time                 `json:"checked-at"`
+	TerminalGeneration uint64                    `json:"terminal-generation"`
+	TerminalRef        humanauthority.ProcessRef `json:"terminal-ref"`
+	Destination        lane.Record               `json:"destination"`
+	Subject            []GoalSHA                 `json:"subject"`
+	BarrenStopAt       string                    `json:"barren-stop-at,omitempty"`
+}
+
+// SelectPersonBatch binds current waiting commits under the queue lock.
+// The validated observation crosses the command boundary only in memory.
+func SelectPersonBatch(install, checkout string, registered lane.Record, goals []string, proof humanauthority.Proof, root, name string, at time.Time, s ProveSeams) (selected *Batch, err error) {
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(root) {
+		return nil, errors.New("the person's terminal did not authorize this selection")
+	}
+	if len(goals) == 0 {
+		return nil, errors.New("name at least one waiting goal with --goals")
+	}
+	if err := s.fetchMain(checkout); err != nil {
+		return nil, err
+	}
+	main, err := checkoutGit(checkout, s).main()
+	if err != nil {
+		return nil, err
+	}
+	err = withLock(install, func() error {
+		entries, err := Entries(install)
+		if err != nil {
+			return err
+		}
+		members := []GoalSHA{}
+		seen := map[string]bool{}
+		for _, goal := range goals {
+			if goal == "" || seen[goal] {
+				return errors.New("--goals must name distinct waiting goals")
+			}
+			seen[goal] = true
+			index := slices.IndexFunc(entries, func(e Entry) bool { return e.Goal == goal && e.State == StateWaiting })
+			if index < 0 {
+				return fmt.Errorf("goal %s has no current waiting hand-in; repeat the selection with current waiting goals", goal)
+			}
+			members = append(members, GoalSHA{Goal: goal, SHA: entries[index].SHA})
+		}
+		batch, readErr := ReadBatch(install)
+		if batch != nil && batch.Lane != registered {
+			return batchRefusal("the selection belongs to another lane registration")
+		}
+		if batch == nil || !slices.Equal(batch.Members, members) || batch.State == BatchClosed {
+			idle, err := batchIdle(install, s)
+			if err != nil {
+				return err
+			}
+			if !idle {
+				return batchRefusal("another operation owns the selection")
+			}
+			if readErr != nil {
+				data, err := os.ReadFile(batchPath(install))
+				if err != nil {
+					return err
+				}
+				if _, err := atomicfile.WriteFile(filepath.Join(Dir(install), "batch-unreadable-"+s.newID()+".json"), data, 0600, install); err != nil {
+					return err
+				}
+			}
+			batch = &Batch{ID: s.newID(), Lane: registered, Base: main, Members: members, CreatedAt: at.UTC().Format(time.RFC3339Nano), State: BatchPrepared}
+		}
+		policy, policyErr := s.batchPolicy()
+		if policyErr != nil {
+			policy = PolicyValue{Value: "unknown", Source: policyErr.Error()}
+		}
+		batch.Selector = policy
+		batch.Person = &ActProvenance{Kind: "selection", Person: name, Root: root, CheckedAt: at.UTC(), TerminalGeneration: proof.TerminalGeneration, TerminalRef: proof.TerminalRef, Destination: registered, Subject: members}
+		stops, err := readLines[Stop](stopsPath(install))
+		if err != nil {
+			return err
+		}
+		seenStops := map[string]bool{}
+		for i := len(stops) - 1; i >= 0; i-- {
+			stop := stops[i]
+			key := stopKey(stop)
+			if seenStops[key] {
+				continue
+			}
+			seenStops[key] = true
+			if stop.Decision == "stop" && stop.Loop == "lane-return" && stop.Subject == "lane" {
+				batch.Person.BarrenStopAt = stop.At
+				break
+			}
+		}
+		if err := s.batchLane(batch); err != nil {
+			return err
+		}
+		if err := writeBatch(install, batch); err != nil {
+			return err
+		}
+		selected = batch
+		return closeMatchingStopsLocked(install, "person selected batch "+batch.ID, at, func(stop Stop) bool {
+			return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
+		})
+	})
+	return selected, err
+}
+
+// RecordedPersonBatch checks an internal continuation against its durable effect.
+func RecordedPersonBatch(install string, registered lane.Record, id string) (*Batch, error) {
+	batch, err := ReadBatch(install)
+	if err != nil {
+		return nil, err
+	}
+	if batch == nil || batch.State == BatchClosed || batch.Lane != registered || id != "" && batch.ID != id || batch.Person == nil || batch.Person.Kind != "selection" || batch.Person.Destination != registered || !slices.Equal(batch.Person.Subject, batch.Members) {
+		return nil, errors.New("no person selection was recorded; run metasystem landing run --goals GOALS")
+	}
+	entries, err := Entries(install)
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range batch.Members {
+		if slices.ContainsFunc(entries, func(e Entry) bool { return e.Goal == member.Goal && e.SHA == member.SHA && e.State == StateSuperseded }) {
+			return nil, fmt.Errorf("goal %s has a newer hand-in; run metasystem landing run --goals GOALS", member.Goal)
+		}
+	}
+	return batch, nil
 }
 
 func batchPath(install string) string { return filepath.Join(Dir(install), "batch.json") }
@@ -73,6 +204,11 @@ func ReadBatch(install string) (*Batch, error) {
 	}
 	if batch.ID == "" || batch.Base == "" || batch.Lane.Root == "" || batch.Lane.Install != install || batch.Lane.CustodyEpoch == 0 || !slices.Contains([]string{BatchPrepared, BatchRunning, BatchClosed}, batch.State) {
 		return nil, errors.New("the batch selection has an unknown identity or state")
+	}
+	if p := batch.Person; p != nil {
+		if p.Kind != "selection" || p.Person == "" || p.Root == "" || p.CheckedAt.IsZero() || p.TerminalGeneration == 0 || p.TerminalRef.PID < 1 || p.Destination != batch.Lane || len(batch.Members) == 0 || !slices.Equal(p.Subject, batch.Members) {
+			return nil, errors.New("the recorded person selection has incomplete provenance or a different subject")
+		}
 	}
 	seen := map[string]bool{}
 	for _, member := range batch.Members {
@@ -199,6 +335,10 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 					return nil
 				}
 			}
+		}
+		if batch != nil && batch.State != BatchClosed && batch.Person != nil {
+			selected = batch
+			return nil
 		}
 		policy, err := s.batchPolicy()
 		if err != nil {
@@ -368,7 +508,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			return batch, err
 		}
 	}
-	if batch.State == BatchPrepared && admit {
+	if batch.State == BatchPrepared && admit && batch.Person == nil {
 		policy, err := s.batchPolicy()
 		if err := PolicyDecision(policy, err); err != nil {
 			return batch, err

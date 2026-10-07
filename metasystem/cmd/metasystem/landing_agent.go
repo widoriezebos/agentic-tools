@@ -106,7 +106,7 @@ You are this computer's landing agent, in the landing lane %s. Follow the landin
 
 The keeper woke you for: %s.
 metasystem landing status --json shows the lane's state and its wake reasons; stop when none is left.
-Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector is not admitted.
+Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector needs its recorded person selection before it is admitted.
 `, root, strings.Join(wake.Reasons, ", "))
 }
 
@@ -192,6 +192,11 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	open, _ := channel.WalkQuestions(module)
 	var lane []channel.Question
 	for _, q := range open {
+		if satisfied, err := plain.PolicyQuestionSatisfied(module, q); err != nil {
+			return "", err
+		} else if satisfied {
+			continue
+		}
 		if q.Goal == "" && q.About == "lane" && (q.State == "open" || q.State != "closed" && channel.LaneStopCommand(q) != "") {
 			lane = append(lane, q)
 		}
@@ -248,7 +253,11 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			_, err := plain.SelectBatch(record.Install, record.Root, record, seams)
 			return err
 		},
-		Observe: func(record lane.Record) error { return plain.SyncStopQuestion(record.Install, machine, agent.now()) },
+		Observe: func(record lane.Record) error { return plain.SyncPolicyQuestion(record.Install, machine, agent.now()) },
+		PersonSelection: func(record lane.Record) bool {
+			_, err := plain.RecordedPersonBatch(record.Install, record, "")
+			return err == nil
+		},
 		Holds: []func(string) (string, error){
 			plain.KeeperProofHold,
 			func(root string) (string, error) {
@@ -268,7 +277,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
 		Fingerprint: plain.KeeperFingerprint,
 		BarrenStop: func(record lane.Record, state lane.AgentState) error {
-			return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now())
+			return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now(), plain.ProveSeams{Lane: func() (lane.Record, error) { return record, nil }})
 		},
 		Waiting: func(install, checkout string) (int, error) {
 			waiting, err := plain.Pending(install, checkout)

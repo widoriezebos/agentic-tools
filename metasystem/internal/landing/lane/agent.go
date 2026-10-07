@@ -96,8 +96,10 @@ type AgentKeeper struct {
 	// Prepare records the work selection before launch, outside the home lock.
 	Prepare func(Record) error
 	// Explicit is a start asked for by name (landing run), not the keeper's
-	// own: barren runs do not hold it, and it clears their count.
+	// own. Only a recorded person selection may clear a barren count.
 	Explicit bool
+	// PersonSelection reads an atomic selection snapshot without taking the queue lock.
+	PersonSelection func(Record) bool
 	// Waiting counts waiting lines in the registered installation for the start log.
 	Waiting func(install, checkout string) (int, error)
 }
@@ -179,17 +181,20 @@ func (k AgentKeeper) Run() AgentRun {
 		}
 	}
 	if k.own(registered) && !gone(root) && k.Observe != nil {
-		if err := k.Observe(registered); err != nil && !k.Explicit {
+		if err := k.Observe(registered); err != nil && !(k.Explicit && k.PersonSelection != nil && k.PersonSelection(registered)) {
 			return agentRun(AgentHeld, root, "the lane's stop question cannot be reconciled: "+err.Error())
+		}
+	}
+	if k.own(registered) && !gone(root) && k.Prepare != nil {
+		if err := k.Prepare(registered); err != nil {
+			if k.Observe != nil {
+				_ = k.Observe(registered)
+			}
+			return agentRun(AgentHeld, root, err.Error())
 		}
 	}
 	if !proceed {
 		return result
-	}
-	if k.Prepare != nil {
-		if err := k.Prepare(registered); err != nil {
-			return agentRun(AgentHeld, root, err.Error())
-		}
 	}
 	if reason, held := k.held(root); held {
 		return agentRun(AgentHeld, root, reason)
@@ -363,15 +368,14 @@ func (k AgentKeeper) countBarren(state *AgentState, root string) {
 }
 
 // barrenHold holds the keeper's own start after barrenLimit launches in a
-// row ended with the lane unchanged, until the lane changes (a new hand-in,
-// a result) or a start is asked for by name; either clears the count.
+// row ended with the lane unchanged, until the lane changes or an explicit run retries a recorded person selection.
 func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 	root := record.Root
 	state, _ := ReadAgentState(k.Home)
 	if k.Fingerprint == nil || state.Barren == 0 {
 		return "", false, nil
 	}
-	clear := k.Explicit
+	clear := k.Explicit && k.PersonSelection != nil && k.PersonSelection(record)
 	if !clear && state.Barren >= barrenLimit {
 		now, err := k.Fingerprint(root)
 		clear = err == nil && now != state.BarrenFingerprint
@@ -393,7 +397,7 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 			return "", true, err
 		}
 	}
-	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person's metasystem landing run starts it, or a new hand-in",
+	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person must select waiting goals with metasystem landing run --goals GOALS, or prove main with metasystem landing prove --trunk when none is eligible",
 		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil
 }
 

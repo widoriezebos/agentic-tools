@@ -216,7 +216,7 @@ func (view View) AgentSummary(waiting bool) string {
 			agent = fmt.Sprintf("idle; its agent starts within one tick (%d s)", int(AgentTick/time.Second))
 		}
 	case OwnerHeld:
-		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person's metasystem landing run starts it", view.Owner.Barren)
+		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person's recorded selection or a fresh proof of main is needed", view.Owner.Barren)
 	default:
 		// Why the lane cannot run and the one fix, in the one line (summary
 		// by default).

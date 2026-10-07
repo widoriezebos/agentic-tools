@@ -95,7 +95,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			if err != nil {
 				return err
 			}
-			if terminal && idle {
+			if terminal && idle && batch.State != BatchClosed {
 				batch.State, batch.ClosureReason = BatchClosed, "fetched main accounts for the selected members"
 				return writeBatch(install, batch)
 			}
@@ -166,7 +166,12 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		if err := closeProofLoop(install); err != nil {
 			return err
 		}
-		return closeStopsLocked(install, "", "push", now)
+		for _, member := range pushed.BatchMembers {
+			if err := closeGoalStopsLocked(install, member.Goal, "push", now); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return outcome, err
 }

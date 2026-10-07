@@ -19,9 +19,10 @@ import (
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
 	lane.View
-	BatchPolicy *PolicyValue `json:"batch-policy,omitempty"`
-	Paused      bool         `json:"paused"`
-	AgentAlive  bool         `json:"agent_alive"`
+	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
+	BatchPolicy    *PolicyValue    `json:"batch-policy,omitempty"`
+	Paused         bool            `json:"paused"`
+	AgentAlive     bool            `json:"agent_alive"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
@@ -167,6 +168,8 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.Batch = selected
 	}
 	unread("the batch selection", err)
+	status.PendingActions, err = PolicyRequests(install)
+	unread("pending policy actions", err)
 	if seams.Policy != nil {
 		policy, err := seams.batchPolicy()
 		unread("the batch policy", err)
@@ -187,6 +190,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	status.Stop, err = NewestStop(install)
 	unread("the stop record", err)
+	if status.Stop != nil && status.Stop.Loop == "lane-return" && status.Stop.Subject == "lane" && status.Owner.State == lane.OwnerHeld {
+		command := status.Stop.Command()
+		status.Owner.RetryHint = &command
+		status.Summary += "; run: " + command
+	}
 	if status.Stop != nil && strings.HasPrefix(status.Stop.Handoff, "hold ") {
 		main, readErr := git.main()
 		if readErr == nil {

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 )
 
 // classifyRed applies the first-match cause table. The caller supplies the
@@ -301,16 +300,6 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 		return &ProofBudget{}
 	}
 	return nil
-}
-
-// CloseProofLoop closes the batch budget while preserving its newest proof.
-func CloseProofLoop(install string) error {
-	return withLock(install, func() error {
-		if err := closeProofLoop(install); err != nil {
-			return err
-		}
-		return closeStopsLocked(install, "", "landing run", time.Now())
-	})
 }
 
 func closeProofLoop(install string) error {
