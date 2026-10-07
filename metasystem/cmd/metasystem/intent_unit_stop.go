@@ -44,9 +44,11 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	data := map[string]any{"goal": record.Goal, "work": record.Unit, "run": record.ID, "stop": stop, "reads": round.Reads}
 	again := inv.workArgv(record, "review")
 	if stop.Handoff == "stopped unreadable-policy" {
+		_, policyErr := inv.unitRunner().ReviewPolicy()
+		repair, reason := inv.reviewPolicyRepair(policyErr)
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: "review.stop cannot be read; run metasystem settings set review.stop auto; the unit stays stopped",
-			next:    inv.publicArgv("settings", "set", "review.stop", "auto", "--by", "NAME"), nextReason: "repairs the review policy", Details: []string{record.PolicyError}}
+			Summary: "review.stop cannot be read; " + shellCommand(repair) + "; the unit stays stopped",
+			next:    repair, nextReason: reason, Details: []string{record.PolicyError}}
 	}
 	if strings.HasPrefix(stop.Handoff, "stopped ") {
 		if round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
@@ -71,7 +73,8 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	}
 	policy, policyErr := inv.unitRunner().ReviewPolicy()
 	if policyErr != nil {
-		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "review.stop cannot be read; run metasystem settings set review.stop auto; nothing was transferred", Details: []string{policyErr.Error()}}
+		repair, reason := inv.reviewPolicyRepair(policyErr)
+		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "review.stop cannot be read; " + shellCommand(repair) + "; nothing was transferred", next: repair, nextReason: reason, Details: []string{policyErr.Error()}}
 	}
 	pages, problem := inv.acceptedDesignPaths(record.Goal)
 	if problem != nil {

@@ -474,11 +474,13 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		runner.ReviewPolicy = func() (string, error) {
 			params, err := inv.policyParams("review.stop")
 			if err != nil {
-				return "", fmt.Errorf("review.stop cannot be read; run metasystem settings set review.stop auto: %w", err)
+				repair, _ := inv.reviewPolicyRepair(err)
+				return "", fmt.Errorf("review.stop cannot be read; %s: %w", shellCommand(repair), err)
 			}
 			policy, err := config.ResolvePolicy(params)
 			if err != nil {
-				return "", fmt.Errorf("review.stop cannot be read; run metasystem settings set review.stop auto: %w", err)
+				repair, _ := inv.reviewPolicyRepair(err)
+				return "", fmt.Errorf("review.stop cannot be read; %s: %w", shellCommand(repair), err)
 			}
 			return policy.Value, err
 		}

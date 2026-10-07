@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,46 +110,127 @@ func TestIntentPersonStopTransferRequiresProvenPerson(t *testing.T) {
 
 func TestIntentCorruptReviewStopNamesSettingRepair(t *testing.T) {
 	t.Parallel()
-	for _, admitted := range []bool{false, true} {
-		t.Run(map[bool]string{false: "admission", true: "collected review"}[admitted], func(t *testing.T) {
-			t.Parallel()
-			fixture := newTransferScenarioFixture(t, true)
-			b, owners := fixture.bed, fixture.owners
-			owners.lookupEnv = func(key string) (string, bool) { return "corrupt", key == config.EnvName("review.stop") }
-			args := []string{"work", "review", b.id, "--work", "stopped"}
-			if !admitted {
-				args = append([]string{"work", "build", b.id, "other", "--brief", b.brief("other.md", "Build another unit.\n"), "--lines", "5"}, workCheck...)
-			}
-			launches := len(b.starter.launched())
-			code, refused := transferPublic(t, b, owners, args...)
-			if code == 0 || !strings.Contains(refused.Summary, "settings set review.stop auto") || len(b.starter.launched()) != launches || fixture.observer.publications != 0 {
-				t.Fatalf("corrupt policy has no actionable repair or changed work: %d %+v", code, refused)
-			}
-		})
+	for _, source := range []string{"env", "conf-local", "conf"} {
+		for _, admitted := range []bool{false, true} {
+			t.Run(source+"/"+map[bool]string{false: "admission", true: "collected review"}[admitted], func(t *testing.T) {
+				t.Parallel()
+				fixture := newTransferScenarioFixture(t, true)
+				b, owners := fixture.bed, fixture.owners
+				owners.lookupEnv = func(key string) (string, bool) {
+					return "corrupt", source == "env" && key == config.EnvName("review.stop")
+				}
+				layout, err := owners.resolver.ResolveLayout(b.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				conf := intentConfPath(layout)
+				want := []string{"unset", config.EnvName("review.stop")}
+				if source != "env" {
+					path := conf
+					if source == "conf-local" {
+						path += ".local"
+						want = []string{"metasystem", "settings", "set", "review.stop", "auto", "--repo", filepath.Dir(conf)}
+					} else {
+						want = []string{"edit", conf}
+					}
+					file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, writeErr := file.WriteString("\nreview.stop=corrupt\n")
+					closeErr := file.Close()
+					if writeErr != nil || closeErr != nil {
+						t.Fatalf("corrupt fixture policy: %v %v", writeErr, closeErr)
+					}
+				}
+				args := []string{"work", "review", b.id, "--work", "stopped"}
+				if !admitted {
+					args = append([]string{"work", "build", b.id, "other", "--brief", b.brief("other.md", "Build another unit.\n"), "--lines", "5"}, workCheck...)
+				}
+				launches := len(b.starter.launched())
+				code, refused := transferPublic(t, b, owners, args...)
+				if code == 0 || !strings.Contains(refused.Summary, shellCommand(want)) || len(b.starter.launched()) != launches || fixture.observer.publications != 0 {
+					t.Fatalf("corrupt policy has no actionable repair or changed work: %d %+v", code, refused)
+				}
+				if admitted && (refused.Next == nil || !slices.Equal(refused.Next.Argv, want)) {
+					t.Fatalf("printed next act differs from the repair: %+v, want %v", refused.Next, want)
+				}
+			})
+		}
 	}
 }
 
 func TestIntentReviewProceedsAfterPolicyRepair(t *testing.T) {
 	t.Parallel()
+	for _, source := range []string{"conf-local", "conf-local-from-subdirectory", "env"} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			testIntentReviewPolicyRepair(t, source)
+		})
+	}
+}
+
+func testIntentReviewPolicyRepair(t *testing.T, source string) {
+	t.Helper()
 	fixture := newTransferScenarioFixture(t, true)
 	b, owners := fixture.bed, fixture.owners
-	policy := "corrupt"
-	owners.lookupEnv = func(key string) (string, bool) { return policy, key == config.EnvName("review.stop") }
+	layout, err := owners.resolver.ResolveLayout(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each parallel fixture has its own environment and configuration files.
+	env := map[string]string{}
+	owners.lookupEnv = func(key string) (string, bool) { value, ok := env[key]; return value, ok }
+	if source == "env" {
+		env[config.EnvName("review.stop")] = "corrupt"
+	} else if err := os.WriteFile(intentConfPath(layout)+".local", []byte("review.stop=corrupt\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	now, err := owners.commandNow(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners.prove = enrolledPersonProver(t, b.root(), now)
 	args := []string{"work", "review", b.id, "--work", "stopped"}
+	if source == "conf-local-from-subdirectory" {
+		// The review's own --repo differs from the owner checkout the repair must name once.
+		sub := filepath.Join(b.root(), "sub")
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		args = append(args, "--repo", sub)
+	}
 	launches := len(b.starter.launched())
 	code, refused := transferPublic(t, b, owners, args...)
-	if code != 1 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "settings set review.stop auto") {
+	if code != 1 || refused.Outcome != intentRefused || refused.Next == nil {
 		t.Fatalf("corrupt policy did not refuse with its repair: %d %+v", code, refused)
 	}
 	before, err := fixture.runner.Status(fixture.run)
 	if err != nil || before.Rounds[1].Stop == nil || before.Rounds[1].Stop.Handoff != "stopped unreadable-policy" {
 		t.Fatalf("unreadable policy was not retained: %+v %v", before, err)
 	}
-	policy = "auto"
+	repair := refused.Next.Argv
+	t.Logf("work review refused: %s; printed repair: %s", refused.Summary, shellCommand(repair))
+	if repair[0] == "unset" {
+		if !slices.Equal(repair, []string{"unset", config.EnvName("review.stop")}) {
+			t.Fatalf("repair unsets the wrong environment variable: %v", repair)
+		}
+		delete(env, repair[1])
+	} else {
+		if repair[0] != "metasystem" {
+			t.Fatalf("repair is not a public command: %v", repair)
+		}
+		code, repaired := transferPublic(t, b, owners, repair[1:]...)
+		if code != 0 || repaired.Outcome != intentConfirmed {
+			t.Fatalf("printed repair failed: %d %+v", code, repaired)
+		}
+		t.Logf("printed repair succeeded: %s", repaired.Summary)
+	}
 	code, reviewed := transferPublic(t, b, owners, args...)
 	if code != 0 || reviewed.Outcome != intentConfirmed || fixture.observer.publications != 1 || len(b.goalFile(b.id).ReviewObligations) != 2 {
 		t.Fatalf("same review stayed blocked after policy repair: %d %+v", code, reviewed)
 	}
+	t.Logf("work review proceeded after repair: %s", reviewed.Summary)
 	after, err := fixture.runner.Status(fixture.run)
 	if err != nil || len(after.Rounds) != len(before.Rounds) || len(b.starter.launched()) != launches || after.Rounds[1].Stop.Attempt != before.Rounds[1].Stop.Attempt || after.Subjects[0].Examination != before.Subjects[0].Examination {
 		t.Fatalf("repair changed the attempt or examination: %+v %v", after, err)
