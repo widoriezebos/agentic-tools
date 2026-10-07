@@ -94,9 +94,16 @@ func resolveGoalBindingWithReads(root, id string, now time.Time, reads goalAdmis
 	if file.Risk != nil {
 		gateWidth = file.Risk.GateWidth()
 	}
+	// Ordinary claims that predate approval records retain budget admission.
+	// A personal reservation needs approval, and an existing approval must
+	// cover the current execution, including its tier norm.
+	eligibility := goal.ClaimEligibility{Ready: true}
+	if file.PersonalReservation() || file.Approved != nil {
+		eligibility = goal.ClaimExecutionEligibility(root, projection.Tree, file, now)
+	}
 	return GoalBinding{
 		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, GateWidth: gateWidth, Machine: file.Claimed.Machine,
-		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file, Eligibility: goal.ClaimApprovalEligibility(projection.Tree, file, now),
+		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file, Eligibility: eligibility,
 	}, nil
 }
 

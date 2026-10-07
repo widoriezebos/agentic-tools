@@ -36,6 +36,7 @@ func TestIntentBuildRequiresCurrentExecutionAuthority(t *testing.T) {
 		{name: "proven approval"},
 		{name: "current relayed approval", relayed: true},
 		{name: "missing capability", cause: "no stop capability"},
+		{name: "fenced claim", cause: "the claim is stopped by stop-build-authority"},
 		{name: "missing approval", cause: "awaits a person's approval"},
 		{name: "missing approval and budget", cause: "not approved with a budget yet"},
 		{name: "expired relayed approval", cause: "review date 2026-09-06 has passed", relayed: true},
@@ -51,6 +52,16 @@ func TestIntentBuildRequiresCurrentExecutionAuthority(t *testing.T) {
 			switch row.name {
 			case "missing capability":
 				file.StopCapability = nil
+			case "fenced claim":
+				file.StopCapability.FenceEpoch++
+				file.Revision++
+				at := file.History[len(file.History)-1].At
+				file.StopFence = &goal.StopFence{StopID: "stop-build-authority", Revision: file.Claimed.Revision,
+					Epoch: file.StopCapability.FenceEpoch, CapabilityGeneration: file.StopCapability.Generation,
+					ClosedAt: at, Reason: goal.StopReasonElapsedLimit}
+				file.History = append(file.History, goal.HistoryLine{At: at,
+					Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", file.Claimed.Machine, file.Claimed.Lineage),
+					Verb: "breach-stop", Actor: file.Claimed.Machine + "+" + file.Claimed.Lineage, Targets: []string{file.Id}, Keep: -1})
 			case "missing approval":
 				file.Approved = nil
 			case "missing approval and budget":

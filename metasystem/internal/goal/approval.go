@@ -379,8 +379,8 @@ func requireApprovalRecord(f *GoalFile, verb string) error {
 	return nil
 }
 
-// requireCurrentApproval checks the standing permission to spend. Tier norms
-// belong to claim and revival admission, not proof of already claimed work.
+// requireCurrentApproval checks approval integrity and expiry against the
+// accepted horizon. Execution admission also requires tier norm coverage.
 func requireCurrentApproval(t *TreeGoals, f *GoalFile, now time.Time, verb string) (Budget, error) {
 	if err := requireApprovalRecord(f, verb); err != nil {
 		return Budget{}, err

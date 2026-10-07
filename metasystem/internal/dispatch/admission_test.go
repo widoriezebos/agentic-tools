@@ -20,7 +20,9 @@ func legacyBudgetApprovalDigest(intent string, budget goal.Budget) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte("intent="+intent+"\n"+"budget="+record+"\n")))
 }
 
-func TestExistingClaimProofAdmissionDoesNotAddTierNormCoverage(t *testing.T) {
+// plans/designs/person-claims.md:62 requires execution eligibility to reuse
+// approval admission, including tier norm coverage.
+func TestExistingClaimProofAdmissionRequiresTierNormCoverage(t *testing.T) {
 	t.Parallel()
 	bed := newBudgetReceiptBed(t, 10, 5000, 10)
 	goalPath := filepath.Join(bed.root, "plans", "goals", "bounded.md")
@@ -40,12 +42,22 @@ func TestExistingClaimProofAdmissionDoesNotAddTierNormCoverage(t *testing.T) {
 	bed.accept(t)
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	binding, err := bed.binding(file.Id, now)
-	if err != nil || !binding.Eligibility.Ready {
-		t.Fatalf("proof binding added a tier norm requirement: %+v %v", binding, err)
+	if err != nil || binding.Eligibility.Ready || !strings.Contains(binding.Eligibility.Wait, "over its tier's") {
+		t.Fatalf("proof binding ignored the tier norm: %+v %v", binding, err)
 	}
 	verdict, err := bed.revisionAdmission(file.Id, file.Claimed.Revision, 1, now)
+	if err == nil || !strings.Contains(err.Error(), "over its tier's") || verdict.Extension != nil {
+		t.Fatalf("uncovered proof budget reached spending admission: %+v %v", verdict, err)
+	}
+	file.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "fixture-terminal", Minutes: file.Budget.ReservedJobMinutesLimit,
+		ReviewRounds: file.Budget.ReviewRoundLimit, GoalRevision: file.Claimed.Revision}
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.accept(t)
+	verdict, err = bed.revisionAdmission(file.Id, file.Claimed.Revision, 1, now)
 	if err != nil || verdict.Refused() {
-		t.Fatalf("proof admission added a tier norm requirement: %+v %v", verdict, err)
+		t.Fatalf("covered proof budget was refused: %+v %v", verdict, err)
 	}
 }
 

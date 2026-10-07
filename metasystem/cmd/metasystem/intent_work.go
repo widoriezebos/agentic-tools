@@ -699,7 +699,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			Details: refusalCodeDetails(goal.RefusalCode(err))})
 	}
 
-	if eligible := goal.ClaimApprovalEligibility(projection.Tree, file, projection.Horizon.Now); !eligible.Ready {
+	if eligible := goal.ClaimExecutionEligibility(inv.layout.InstallationRoot.Path(), projection.Tree, file, projection.Horizon.Now); !eligible.Ready {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "goal " + id + " cannot execute: " + eligible.Wait + "; nothing was built", Decision: eligible.Wait})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)

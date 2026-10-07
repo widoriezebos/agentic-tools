@@ -91,6 +91,12 @@ type ClaimEligibility struct {
 	Wait  string
 }
 
+// ClaimExecutionEligibility checks current approval and tier norm coverage
+// before owned work starts a new execution.
+func ClaimExecutionEligibility(root string, tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
+	return claimExecutionEligibility(newClaimAdmissionContext(root), tree, f, now)
+}
+
 func claimExecutionEligibility(context *claimAdmissionContext, tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
 	if eligibility := ClaimApprovalEligibility(tree, f, now); !eligibility.Ready {
 		return eligibility
@@ -101,8 +107,8 @@ func claimExecutionEligibility(context *claimAdmissionContext, tree *TreeGoals, 
 	return ClaimEligibility{Ready: true}
 }
 
-// ClaimApprovalEligibility admits spending on an existing claim under its
-// current approval. Claim and steward selection also require tier norm coverage.
+// ClaimApprovalEligibility checks claim authority and current approval.
+// Execution and steward selection also require tier norm coverage.
 func ClaimApprovalEligibility(tree *TreeGoals, f *GoalFile, now time.Time) ClaimEligibility {
 	if tree == nil || f == nil || f.State != StateClaimed || f.Claimed == nil {
 		return ClaimEligibility{Wait: "the owned claim is unreadable"}
