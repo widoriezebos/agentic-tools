@@ -40,7 +40,8 @@ func TestIntentBuildRequiresCurrentExecutionAuthority(t *testing.T) {
 		{name: "missing approval", cause: "awaits a person's approval"},
 		{name: "missing approval and budget", cause: "not approved with a budget yet"},
 		{name: "expired relayed approval", cause: "review date 2026-09-06 has passed", relayed: true},
-		{name: "budget above norm", cause: "over its tier's"},
+		// The tier norm is checked where main checks it (claim, steal, resume, set-budget, the frontier, the
+		// steward), not again at work build: plans/designs/person-claims.md, "Decided by m1e for Wido" 2026-10-07.
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -66,9 +67,6 @@ func TestIntentBuildRequiresCurrentExecutionAuthority(t *testing.T) {
 				file.Approved = nil
 			case "missing approval and budget":
 				file.Approved, file.Budget = nil, nil
-			case "budget above norm":
-				file.Budget.ReservedJobMinutesLimit++
-				file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 			}
 			bed.addGoal(file)
 			before := goal.RenderFile(bed.goalFile(bed.id))
