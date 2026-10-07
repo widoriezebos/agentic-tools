@@ -357,9 +357,11 @@ func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v (write main's with -update-layout-json)", err)
 			}
-			// A registered lane with no full-check history owes its scheduled check.
+			// An unfenced lane with no full-check history owes its scheduled check.
 			switch c.name {
-			case "landing-status", "landing-status-verbose", "landing-status-stopped", "landing-set", "landing-start", "landing-stop":
+			case "landing-status-stopped", "landing-stop":
+				want = bytes.Replace(want, []byte("\"reasons\": [\n        \"full-due\"\n      ]"), []byte(`"reasons": []`), 1)
+			case "landing-status", "landing-status-verbose", "landing-set", "landing-start":
 				want = bytes.Replace(want, []byte(`"reasons": []`), []byte("\"reasons\": [\n        \"full-due\"\n      ]"), 1)
 			}
 			if got != string(want) && layoutBytesCompared(t, c) {

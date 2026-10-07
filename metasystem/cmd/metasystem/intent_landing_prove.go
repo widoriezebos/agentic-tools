@@ -100,10 +100,10 @@ func (inv *intentInvocation) admitLane() (laneAdmitted, *intentResult) {
 	return laneAdmitted{owners: owners, home: home, record: record, layout: layout, installation: string(layout.Install)}, nil
 }
 
-// lanePaused is the refusal of a lane verb while a person stopped the lane.
+// lanePaused holds automation outside the recorded selection under a pause.
 func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *intentResult {
 	pause, paused := lane.ReadPause(admitted.home)
-	if !paused {
+	if !paused || (!inv.input.switched("trunk") && plain.PersonBatchContinuation(admitted.installation, admitted.record, admitted.home) != "") {
 		return nil
 	}
 	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
@@ -146,7 +146,7 @@ func landingProveCommand() intentCommand {
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. Refused while the lane is stopped.",
+			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one proof while it stays stopped.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
 		flags: []intentFlag{{name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
@@ -161,11 +161,30 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "--gate and --trunk cannot be used together, so nothing was proven"})
 	}
+	var person *plain.ActProvenance
 	if refused := inv.lanePaused(admitted, "proven"); refused != nil {
-		return inv.render(*refused)
+		// A direct act admits this proof only; it does not alter the selection.
+		if inv.input.text("attempt") != "" {
+			if !inv.input.switched("wait") {
+				return inv.render(*refused)
+			}
+			// The proof owner checks the recorded child's identity under its queue lock,
+			// after the parent's detached start has written the admission.
+		} else {
+			observed, problem := inv.lanePerson("prove the landing checkout", admitted.record.Root)
+			if problem != nil {
+				return inv.render(*refused)
+			}
+			person = &plain.ActProvenance{Kind: "proof", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(),
+				TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
+		}
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
 	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
+	if person != nil {
+		seams.Person = person
+		seams.FenceCheck = nil
+	}
 	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")

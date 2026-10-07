@@ -2,7 +2,7 @@ package plain
 
 // What the keeper reads of the plain lane: why the landing agent would run
 // now, and the one hold, a proof that runs. The keeper itself is
-// internal/landing/lane's and does not change.
+// internal/landing/lane's and checks the recorded continuation scope.
 
 import (
 	"crypto/sha256"
@@ -45,10 +45,10 @@ func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ..
 	if err != nil {
 		return nil, err
 	}
-	return wakeReasons(install, len(pending) > 0, lastLaunch, now)
+	return wakeReasons(install, len(pending) > 0, lastLaunch, now, seams.TimerHeld != nil && seams.TimerHeld())
 }
 
-func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]string, error) {
+func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHeld ...bool) ([]string, error) {
 	reasons := []string{}
 	if queued {
 		reasons = append(reasons, WakeQueued)
@@ -68,6 +68,9 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time) ([]stri
 				reasons = append(reasons, WakeProofFinished)
 			}
 		}
+	}
+	if len(timerHeld) > 0 && timerHeld[0] {
+		return reasons, nil
 	}
 	due, err := fullProofDue(install, now)
 	if err != nil {
@@ -174,7 +177,7 @@ func ProofHold(install string, seams ProveSeams) (string, error) {
 // KeeperWake is the lane keeper's wake source for the host lane at home:
 // WakeReasons over the lane checkout at root, against the keeper's last
 // launch of the landing agent. landing status reads the same.
-func KeeperWake(home string) lane.WakeSources {
+func KeeperWake(home string, effects ...ProveSeams) lane.WakeSources {
 	return lane.WakeSources{Reasons: func(root string) ([]string, error) {
 		layout, err := lane.NewLayout(root)
 		if err != nil {
@@ -185,7 +188,11 @@ func KeeperWake(home string) lane.WakeSources {
 			return nil, err
 		}
 		launched, _ := time.Parse(time.RFC3339, state.StartedAt)
-		return WakeReasons(string(layout.Install), string(layout.Checkout), launched, time.Now())
+		seams := ProveSeams{}
+		if len(effects) > 0 {
+			seams = effects[0]
+		}
+		return WakeReasons(string(layout.Install), string(layout.Checkout), launched, seams.now(), seams)
 	}}
 }
 

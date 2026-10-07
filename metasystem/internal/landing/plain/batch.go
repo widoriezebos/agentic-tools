@@ -69,6 +69,7 @@ type ActProvenance struct {
 	TerminalRef        humanauthority.ProcessRef `json:"terminal-ref"`
 	Destination        lane.Record               `json:"destination"`
 	Subject            []GoalSHA                 `json:"subject"`
+	StandingPause      *lane.Pause               `json:"standing-pause,omitempty"`
 	BarrenStopAt       string                    `json:"barren-stop-at,omitempty"`
 }
 
@@ -135,6 +136,11 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 		}
 		batch.Selector = policy
 		batch.Person = &ActProvenance{Kind: "selection", Person: name, Root: root, CheckedAt: at.UTC(), TerminalGeneration: proof.TerminalGeneration, TerminalRef: proof.TerminalRef, Destination: registered, Subject: members}
+		if s.Pause != nil {
+			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
+				batch.Person.StandingPause = &pause
+			}
+		}
 		stops, err := readLines[Stop](stopsPath(install))
 		if err != nil {
 			return err
@@ -185,6 +191,20 @@ func RecordedPersonBatch(install string, registered lane.Record, id string) (*Ba
 		}
 	}
 	return batch, nil
+}
+
+// PersonBatchContinuation reads atomic snapshots without taking the queue lock.
+// A selection covers only the pause standing when the person selected it.
+func PersonBatchContinuation(install string, registered lane.Record, home string) string {
+	batch, err := RecordedPersonBatch(install, registered, "")
+	if err != nil {
+		return ""
+	}
+	pause, paused := lane.ReadPause(home)
+	if paused && (pause.Unreadable() || batch.Person.StandingPause == nil || *batch.Person.StandingPause != pause) {
+		return ""
+	}
+	return batch.ID
 }
 
 func batchPath(install string) string { return filepath.Join(Dir(install), "batch.json") }
@@ -468,6 +488,11 @@ func CheckBatch(install, checkout, commit, main string, prefix bool, s ProveSeam
 }
 
 func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool, s ProveSeams) (*Batch, error) {
+	if s.FenceCheck != nil {
+		if err := s.FenceCheck(); err != nil {
+			return nil, err
+		}
+	}
 	batch, err := ReadBatch(install)
 	if err != nil {
 		return nil, err

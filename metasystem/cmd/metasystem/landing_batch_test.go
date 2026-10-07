@@ -59,7 +59,7 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		Now:        func() time.Time { return b.now },
 		NewID:      func() string { b.ids++; return fmt.Sprintf("selection-or-proof-%d", b.ids) },
 		Executable: func() (string, error) { return "/fixture/engine", nil },
-		Launch:     func([]string, string, string) (int64, error) { b.launches++; return 424242, nil },
+		Launch:     func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getppid()), nil },
 		Alive:      func(running plain.Running) bool { return running.Pid == int64(os.Getpid()) },
 	}
 	b.owners.landing.keeper = func(home, root string) lane.AgentKeeper {

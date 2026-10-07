@@ -616,7 +616,7 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 			}
 			launches := 0
 			b.seams.Executable = func() (string, error) { return "engine", nil }
-			b.seams.Launch = func([]string, string, string) (int64, error) { launches++; return 0, nil }
+			b.seams.Launch = func([]string, string, string) (int64, error) { launches++; return int64(os.Getpid()), nil }
 			b.seams.NewID = func() string { return "owed" }
 			b.seams.Alive = func(Running) bool { return true }
 			running, already, err := Start(b.install, b.checkout, b.seams)

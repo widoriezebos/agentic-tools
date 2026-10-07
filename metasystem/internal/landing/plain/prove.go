@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
@@ -37,16 +38,17 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
-	BatchID      string    `json:"batch-id,omitempty"`
-	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
-	Trunk        bool      `json:"trunk,omitempty"`
-	Gate         bool      `json:"gate,omitempty"`
-	Attempt      string    `json:"attempt"`
-	Tree         string    `json:"tree"`
-	Commit       string    `json:"commit"`
-	Log          string    `json:"log"`
-	Since        string    `json:"since"`
-	Pid          int64     `json:"pid"`
+	Person       *ActProvenance `json:"person,omitempty"`
+	BatchID      string         `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA      `json:"batch-members,omitempty"`
+	Trunk        bool           `json:"trunk,omitempty"`
+	Gate         bool           `json:"gate,omitempty"`
+	Attempt      string         `json:"attempt"`
+	Tree         string         `json:"tree"`
+	Commit       string         `json:"commit"`
+	Log          string         `json:"log"`
+	Since        string         `json:"since"`
+	Pid          int64          `json:"pid"`
 	// Process is the exact identity of Pid, so a reused pid is not read as
 	// the proof.
 	Process string `json:"process,omitempty"`
@@ -115,6 +117,14 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Person admits one direct proof; Start binds its provenance to the attempt.
+	Person *ActProvenance
+	// FenceCheck rechecks execution admission under the owning queue lock.
+	FenceCheck func() error
+	// Pause observes the standing maintenance fence at selection.
+	Pause func() (lane.Pause, bool)
+	// TimerHeld suppresses periodic trunk checks while a fence stands.
+	TimerHeld func() bool
 	// Policy resolves only the policy requested at its effect boundary.
 	Policy func(string) (PolicyValue, error)
 	// Lane reads the host registration again before a selection or admission.
@@ -206,6 +216,11 @@ func processRef(pid int64) string {
 	return encoded
 }
 
+// OwnProcess reports whether this process is the recorded proof child.
+func (r Running) OwnProcess() bool {
+	return r.Pid == int64(os.Getpid()) && r.Process != "" && r.Process == processRef(int64(os.Getpid()))
+}
+
 // Busy is a prove refused because another tree's proof runs.
 type Busy struct{ Running Running }
 
@@ -240,7 +255,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 		}
 		exists = exists || result.Tree == running.Tree
 	}
-	if attempt != "" && running.Attempt == attempt {
+	if attempt != "" && running.Attempt == attempt && running.OwnProcess() {
 		return running, recorded, alive, nil
 	}
 	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
@@ -328,6 +343,11 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	var started Running
 	already := false
 	err = withLock(install, func() error {
+		if seams.FenceCheck != nil {
+			if err := seams.FenceCheck(); err != nil {
+				return err
+			}
+		}
 		running, recorded, alive, err := checkState(install, checkout, "", seams)
 		if err != nil {
 			return err
@@ -380,7 +400,24 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err != nil {
 			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
 		}
-		started = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
+		process := processRef(pid)
+		if pid <= 0 || process == "" {
+			reason := "the check process has no readable identity (environment cause); no running check was recorded"
+			if pid > 0 {
+				if err := syscall.Kill(int(pid), syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+					reason += "; stopping the child failed: " + err.Error()
+				}
+			}
+			retry := "metasystem landing prove"
+			if seams.Gate {
+				retry += " --gate"
+			}
+			if seams.Trunk {
+				retry += " --trunk"
+			}
+			return fmt.Errorf("start proving tree %s: %s; retry: %s", Short(tree), reason, retry)
+		}
+		started = Running{Person: seams.Person, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: process}
 		if batch != nil {
 			started.BatchID, started.BatchMembers = batch.ID, batch.Members
 		}
@@ -471,13 +508,18 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil {
 		return Result{}, err
 	}
-	running := Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
+	running := Running{Person: seams.Person, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
 	var previous, result Result
 	already := false
 	err = withLock(install, func() error {
 		current, recorded, alive, err := checkState(install, checkout, attempt, seams)
 		if err != nil {
 			return err
+		}
+		if seams.FenceCheck != nil {
+			if err := seams.FenceCheck(); err != nil {
+				return err
+			}
 		}
 		if attempt != "" && recorded && current.Attempt == attempt {
 			running = current

@@ -10,7 +10,7 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
 - `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
   `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
   `last_proof`, `last_gate`, `last_push`, `batch` (id, original base main, ordered goal/commit members,
-  selector and state), `batch-policy` (current value and source), `paused`, and `wake.reasons` (why you were woken).
+  selector and state), `admitted-batch` (the person-selected batch that may continue through the standing fences), `batch-policy` (current value and source), `paused`, and `wake.reasons` (why you were woken).
 - `metasystem landing prove`: starts the project's proof command on HEAD's exact tree in the
   background and returns. **End your turn after it**; the keeper wakes you when it ends
   (`proof-finished`). Never wait for it.
@@ -24,8 +24,8 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 ## The loop
 
-1. Read `landing status --json`. If `paused`, stop. If `running_proof` is set, end your turn.
-   A `prepared` batch whose selector is `person` is a proposal; hold for the pending human-selection consumer.
+1. Read `landing status --json` before each operation. If `paused`, continue only when `admitted-batch` matches your recorded batch identity; otherwise stop. If `running_proof` is set, end your turn.
+   A `prepared` batch whose selector is `person` and has no recorded `person` act is a proposal; hold for the pending human-selection consumer.
    The keeper prepares the batch before launching you. If there is no active batch and no
    eligible member, check out fetched main and run `metasystem landing prove`. If eligible
    members wait without a selection, ask with `--about lane` and end your turn.
@@ -74,7 +74,7 @@ with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
    still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
    `git merge --no-ff SHA` for the remaining recorded selected pairs that still wait and are not held, then `metasystem landing prove`.
    End your turn; push when the proof is green.
-6. **Lane paused** (`paused`, or a verb says the lane is stopped): stop at once.
+6. **Lane paused** (`paused`, or a verb says the lane is stopped): read status again. Continue only your matching `admitted-batch`; a later pause removes that admission, so stop. Never clear the pause or select other work.
 7. **The check stopped or ran no test** (`running_proof.state` is `died`, or `last_proof` is
    red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
    `metasystem landing prove` once more (use `metasystem landing prove --trunk` when

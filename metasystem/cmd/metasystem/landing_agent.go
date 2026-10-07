@@ -21,6 +21,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -106,8 +107,9 @@ You are this computer's landing agent, in the landing lane %s. Follow the landin
 
 The keeper woke you for: %s.
 metasystem landing status --json shows the lane's state and its wake reasons; stop when none is left.
+Your recorded batch identity is %s. Read status before each step; continue through a pause only when status admits this batch.
 Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector needs its recorded person selection before it is admitted.
-`, root, strings.Join(wake.Reasons, ", "))
+`, root, strings.Join(wake.Reasons, ", "), wake.BatchID)
 }
 
 // start stages the brief in the lane installation and starts the landing
@@ -148,7 +150,7 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	return record.ID, nil
 }
 
-// cancel stops a landing launch that started as the lane was paused.
+// cancel stops a landing launch whose admission changed while it started.
 func (a landingAgent) cancel(id string) error {
 	_, err := a.manager().Cancel(id)
 	return err
@@ -221,8 +223,8 @@ func (a landingAgent) questionHold(module string) (string, error) {
 
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
 // of self (simple lane §1, rail 2): it starts the agent when the plain
-// lane's queue holds work (queued, proof-finished), the lane is not paused
-// and none is alive. Its holds are a proof that runs, a standing provider
+// lane's queue holds work (queued, proof-finished), its current fences
+// admit that selection and none is alive. Its holds are a proof that runs, a standing provider
 // outage at the lane installation and an open question the landing agent
 // asked about the lane, and each ended launch is reaped for its outage.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
@@ -230,7 +232,9 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 	if machine == nil {
 		machine = goal.ResolveMachine
 	}
-	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home),
+	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, plain.ProveSeams{Now: agent.now, TimerHeld: func() bool { _, paused := lane.ReadPause(home); return paused || helm.Active(self).Active }}),
+		Helmed:       func(root string) bool { return helm.Active(root).Active },
+		Continuation: func(record lane.Record) string { return plain.PersonBatchContinuation(record.Install, record, home) },
 		Prepare: func(record lane.Record) error {
 			seams := plain.ProveSeams{Now: agent.now}
 			// An empty queue has no selection decision. Resolve its policy only

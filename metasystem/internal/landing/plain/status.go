@@ -21,6 +21,7 @@ type Status struct {
 	lane.View
 	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
 	BatchPolicy    *PolicyValue    `json:"batch-policy,omitempty"`
+	AdmittedBatch  string          `json:"admitted-batch,omitempty"`
 	Paused         bool            `json:"paused"`
 	AgentAlive     bool            `json:"agent_alive"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
@@ -122,7 +123,7 @@ func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 
 func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) Status {
 	pause, paused := lane.ReadPause(home)
-	status := Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
+	status := Status{AdmittedBatch: PersonBatchContinuation(record.Install, record, home), View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
 	if view.Root == nil {
 		// A registration that can't be read is a lane this read could not
 		// read, not a lane that is not there.

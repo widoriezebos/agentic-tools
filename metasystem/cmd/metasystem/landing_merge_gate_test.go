@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -61,6 +62,40 @@ func commandEnv(cmd *exec.Cmd, key string) string {
 	return ""
 }
 
+func TestLandingPausedPersonProofUnreadableLaunchLeavesNoAttempt(t *testing.T) {
+	t.Parallel()
+	b := newMergeGateBed(t)
+	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
+	b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+	b.prepareBatch(t)
+	_, err := lane.SetPause(b.home, "Wido", laneTestNow)
+	helmMust(t, err)
+	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+	b.owners.landing.plainProve.Executable = func() (string, error) { return "/fixture/engine", nil }
+	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) {
+		child := exec.Command("/usr/bin/true")
+		if err := child.Run(); err != nil {
+			return 0, err
+		}
+		return int64(child.Process.Pid), nil
+	}
+	code, text := b.run(t, b.root, "prove")
+	if code != 1 || !strings.Contains(text, "environment") || !strings.Contains(text, "metasystem landing prove") {
+		t.Fatalf("unreadable launch lacks its environment refusal and retry: exit=%d output=%s", code, text)
+	}
+	_, recorded, _, err := plain.ReadRunning(b.install, b.owners.landing.plainProve)
+	if err != nil || recorded {
+		t.Fatalf("unreadable launch left a running proof: recorded=%v err=%v", recorded, err)
+	}
+	results, err := plain.Results(b.install)
+	if err != nil || len(results) != 0 || len(b.runs) != 0 || b.full != 0 {
+		t.Fatalf("launch failure ran a proof or used its allowance: results=%+v runs=%v full=%d err=%v", results, b.runs, b.full, err)
+	}
+	if _, paused := lane.ReadPause(b.home); !paused {
+		t.Fatal("launch failure removed the person's pause")
+	}
+}
+
 func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
 	t.Parallel()
 	for _, lost := range []string{"not run", "killed", "dead detached"} {
@@ -97,7 +132,7 @@ func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
 					if !strings.Contains(strings.Join(argv, " "), "--gate") {
 						t.Fatalf("detached gate lost its mode: %v", argv)
 					}
-					return 999999, nil
+					return int64(os.Getppid()), nil
 				}
 				b.prepareBatch(t)
 				if code, out := b.run(t, b.root, "prove", "--gate"); code != 0 {

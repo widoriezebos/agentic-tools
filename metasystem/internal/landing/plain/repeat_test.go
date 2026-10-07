@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -120,7 +121,7 @@ func TestRepeatNoTestsRan(t *testing.T) {
 		t.Fatalf("no tests ran: %+v", red)
 	}
 	// A detached start must still consume the same allowance in Run.
-	b.seams.Launch = func([]string, string, string) (int64, error) { return 42, nil }
+	b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.seams.Alive = func(Running) bool { return true }
 	running, _, err := Start(b.install, b.checkout, b.seams)
 	if err != nil {
@@ -146,7 +147,7 @@ func TestRepeatDeadCheck(t *testing.T) {
 				t.Fatal(err)
 			}
 			if entry == "start" {
-				b.seams.Launch = func([]string, string, string) (int64, error) { return 42, nil }
+				b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 				if _, _, err := Start(b.install, b.checkout, b.seams); err != nil {
 					t.Fatal(err)
 				}
@@ -175,17 +176,72 @@ func TestRepeatDeadCheck(t *testing.T) {
 	}
 }
 
+func TestRepeatDetachedUnreadableIdentityKeepsAllowance(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"full", "gate", "trunk"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			for _, zero := range []bool{false, true} {
+				t.Run(fmt.Sprintf("zero pid %v", zero), func(t *testing.T) {
+					t.Parallel()
+					b := newRepeatBed(t)
+					b.seams.Gate, b.seams.Trunk = mode == "gate", mode == "trunk"
+					git := b.seams.Git
+					b.seams.Git = func(dir string, args ...string) (string, error) {
+						if strings.Join(args, " ") == "rev-parse --verify origin/main^{commit}" {
+							return "commit", nil
+						}
+						return git(dir, args...)
+					}
+					// An environment failure has left the one repeat available.
+					before := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Attempt: "first"}
+					if err := withLock(b.install, func() error { return appendLine(b.seams.resultsPath(b.install), before) }); err != nil {
+						t.Fatal(err)
+					}
+					pid := int64(0)
+					if !zero {
+						child := exec.Command("/usr/bin/true")
+						if err := child.Run(); err != nil {
+							t.Fatal(err)
+						}
+						pid = int64(child.Process.Pid)
+						if processRef(pid) != "" {
+							t.Fatal("exited child still has a readable identity")
+						}
+					}
+					b.seams.Launch = func([]string, string, string) (int64, error) { return pid, nil }
+					running, already, err := Start(b.install, b.checkout, b.seams)
+					retry := "metasystem landing prove"
+					if mode != "full" {
+						retry += " --" + mode
+					}
+					if err == nil || !strings.Contains(err.Error(), "environment") || !strings.HasSuffix(err.Error(), "retry: "+retry) || already || running.Attempt != "" {
+						t.Errorf("unreadable launch was not refused with its retry: %+v already=%v err=%v", running, already, err)
+					}
+					if _, err := os.Stat(runningPath(b.install)); !errors.Is(err, os.ErrNotExist) {
+						t.Errorf("unreadable launch left a running record: %v", err)
+					}
+					lines, err := readLines[Result](b.seams.resultsPath(b.install))
+					if err != nil || !reflect.DeepEqual(lines, []Result{before}) {
+						t.Fatalf("launch failure changed the repeat allowance: %+v err=%v", lines, err)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestRepeatDetachedOwnAttemptKeepsAllowance(t *testing.T) {
 	t.Parallel()
 	b := newRepeatBed(t)
-	b.seams.Launch = func([]string, string, string) (int64, error) { return 0, nil }
+	b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.seams.Alive = func(Running) bool { return false }
 	running, _, err := Start(b.install, b.checkout, b.seams)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.Process != "" {
-		t.Fatalf("expected an unreadable process: %+v", running)
+	if running.Process == "" || running.Pid != int64(os.Getpid()) {
+		t.Fatalf("expected this process's detached attempt: %+v", running)
 	}
 	command := fmt.Sprintf("printf 'check\\n' >> %q; printf 'LANDING-NOT-RUN\\tdisk full\\n'; exit 2", b.trace)
 	red, err := Run(b.install, b.checkout, command, running.Attempt, io.Discard, b.seams)

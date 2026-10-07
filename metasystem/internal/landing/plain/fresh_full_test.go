@@ -114,7 +114,10 @@ func TestTrunkStartPreservesSubjectAndRefusesConcurrentBatch(t *testing.T) {
 	b.seams.Alive = func(Running) bool { return true }
 	b.seams.Executable = func() (string, error) { return "engine", nil }
 	var argv []string
-	b.seams.Launch = func(args []string, _, _ string) (int64, error) { argv = append([]string{}, args...); return 0, nil }
+	b.seams.Launch = func(args []string, _, _ string) (int64, error) {
+		argv = append([]string{}, args...)
+		return int64(os.Getpid()), nil
+	}
 	running, already, err := Start(b.install, b.checkout, b.seams)
 	if err != nil || already || !running.Trunk || running.Commit != "main" || !strings.Contains(strings.Join(argv, " "), "--trunk") {
 		t.Fatalf("start: %+v %v %v argv=%v", running, already, err, argv)
