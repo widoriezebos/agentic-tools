@@ -1814,7 +1814,7 @@ func runIntentSettingsKeys(inv *intentInvocation) int {
 
 // runIntentSettingsCheck validates the selected installation's settings.
 func runIntentSettingsCheck(inv *intentInvocation) int {
-	if problem := inv.selectRoot(); problem != nil {
+	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
 	root := inv.layout.InstallationRoot
@@ -1871,6 +1871,9 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 func runIntentSettings(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
+	}
+	if len(inv.input.args) == 1 && config.PolicyScope(inv.input.args[0]) != "" {
+		return inv.runPolicyShow(inv.input.args[0])
 	}
 	confPath := intentConfPath(inv.layout)
 	settings, err := inv.work().settings(confPath)
@@ -2284,7 +2287,7 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	if config.CommittedOnly(key) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "setting", ID: key}},
 			Summary:  key + " is committed-only, so settings set cannot change it",
-			Decision: proofDeclarationRemedy(key)})
+			Decision: settingsDeclarationRemedy(key)})
 	}
 	if strings.ContainsAny(key, "= \t\n") || strings.ContainsAny(value, "\n\r") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
@@ -2296,12 +2299,19 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 			next: inv.publicArgv("settings", "keys"), nextReason: "lists the settings"})
 	}
 	if problem := config.SettingValueProblem(key, value); problem != nil {
+		retryValue := "VALUE"
+		if config.PolicyScope(key) != "" {
+			retryValue = "auto"
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "setting", ID: key}},
 			Summary: problem.Error() + "; nothing was done",
-			next:    inv.publicArgv("settings", "set", key, "VALUE"), nextReason: "VALUE is one of the values named"})
+			next:    inv.publicArgv("settings", "set", key, retryValue), nextReason: "a person at an enrolled terminal sets a value from the grammar named"})
 	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
+	}
+	if config.PolicyScope(key) != "" && authoritySettings[key] {
+		return inv.runPolicySet(key, value)
 	}
 	if authoritySettings[key] {
 		if problem := inv.directPersonProof("settings set " + key); problem != nil {
@@ -2421,12 +2431,12 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 	return result
 }
 
-// authoritySettings are the keys that decide who the machinery believes is a
-// person: metasystem.runtimes=fake turns on fixture mode, which reclassifies
-// callers from a fixture table and lets the environment set the clock. Only
+// authoritySettings decide caller classification or person-controlled
+// decisions. metasystem.runtimes=fake enables fixture caller classification
+// and an environment-supplied clock. Only
 // the person's own proof at the enrolled terminal sets them, never the helm
 // and never a power of attorney.
-var authoritySettings = map[string]bool{"metasystem.runtimes": true}
+var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true}
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.

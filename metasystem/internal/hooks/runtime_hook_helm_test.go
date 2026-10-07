@@ -37,7 +37,7 @@ func wantHelmStop(t *testing.T, installation hookInstallation, ops *fakeOps, env
 	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"s-1"}`, env: env})
 	line := strings.TrimSuffix(run.stdout, "\n")
 	if run.status != 0 || strings.Contains(line, "\n") || !validStopOutput(line, true) ||
-		!strings.Contains(line, "helm: HUMAN AT THE HELM: Wido since") || !strings.Contains(line, "coordinating by hand") || !strings.Contains(line, "Stop allowed.") {
+		!strings.Contains(line, "helm: HUMAN AT THE HELM: Wido since") || !strings.Contains(line, "coordinating by hand") || !strings.Contains(line, "Stop allowed.") || !strings.Contains(line, "Return from the person's enrolled terminal: metasystem helm return") {
 		t.Fatalf("stop under the helm: status %d stdout %q stderr %q", run.status, run.stdout, run.stderr)
 	}
 	if len(ops.calls) != 0 {

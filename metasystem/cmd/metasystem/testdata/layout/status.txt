@@ -1,5 +1,6 @@
 ! wido has the helm since Mon 12:39: coordinating the verb and machinery batches
-  → metasystem helm return  gives the seat back to the machinery
+  → metasystem helm return
+    run at the person's enrolled terminal to give the seat back to the machinery
 ! wido's terminal is not enrolled, so a person's acts there are refused
   → metasystem system enroll --name wido  run it at that terminal
 ● wido's grant is live: everything, until tomorrow 10:56 (23h58m left)

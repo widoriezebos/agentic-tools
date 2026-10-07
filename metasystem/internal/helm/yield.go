@@ -9,12 +9,13 @@ import (
 
 // Entry is one helm.log line: a take or a return.
 type Entry struct {
-	At       time.Time `json:"at"`
-	Action   string    `json:"action"`
-	By       string    `json:"by"`
-	Reason   string    `json:"reason,omitempty"`
-	Leader   string    `json:"leader,omitempty"`
-	Replaced string    `json:"replaced,omitempty"`
+	Diagnostic []byte    `json:"diagnostic,omitempty"`
+	At         time.Time `json:"at"`
+	Action     string    `json:"action"`
+	By         string    `json:"by"`
+	Reason     string    `json:"reason,omitempty"`
+	Leader     string    `json:"leader,omitempty"`
+	Replaced   string    `json:"replaced,omitempty"`
 }
 
 // Log appends one line to helm.log.

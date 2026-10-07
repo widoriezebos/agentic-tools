@@ -10,6 +10,7 @@ package goal
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -335,6 +336,7 @@ func (h HandedOver) present() bool {
 
 // ClaimRecord is the ownership record of a claimed goal.
 type ClaimRecord struct {
+	AreaSnapshot
 	Machine    string
 	Lineage    string
 	At         string
@@ -1372,10 +1374,31 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		}
 		f.Obligation.Triggers = triggers
 	case "Claimed":
+		areaFields := map[string]string{}
+		for _, key := range []string{"areas", "areas-source", "areas-warnings"} {
+			rest, decoded, present, err := cutQuotedRecordField(value, key)
+			if present && err == nil {
+				value = rest
+				areaFields[key] = decoded
+				continue
+			}
+			if present {
+				// A broken advisory field cannot make the ownership record unreadable.
+				fields := strings.Fields(value)
+				for index, field := range fields {
+					if strings.HasPrefix(field, key+"=") {
+						fields = append(fields[:index], fields[index+1:]...)
+						break
+					}
+				}
+				value = strings.Join(fields, " ")
+				areaFields[key] = "invalid"
+			}
+		}
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
 		// missing; the value never enters GoalFile.
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "idleSeconds", "appetite"}, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "idleSeconds", "appetite", "areas-known"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
@@ -1440,6 +1463,21 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
 			AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
 			EpisodeObligationRevision: episodeObligationRevision, IdleSeconds: idleSeconds}
+		f.Claimed.Source = areaFields["areas-source"]
+		f.Claimed.Known = rec["areas-known"] == "true"
+		if raw := areaFields["areas"]; raw != "" {
+			if err := json.Unmarshal([]byte(raw), &f.Claimed.Areas); err != nil {
+				f.Claimed.Known = false
+			}
+		}
+		if raw := areaFields["areas-warnings"]; raw != "" {
+			_ = json.Unmarshal([]byte(raw), &f.Claimed.Warnings)
+		}
+		if err := validateAreaSnapshot(f.Claimed.AreaSnapshot); err != nil {
+			f.Claimed.Known = false
+			f.Claimed.Warnings = append(f.Claimed.Warnings, "areas unknown for goal "+f.Id+": "+err.Error())
+		}
+
 	case "HandedOver":
 		if f.Claimed == nil {
 			addProblem("HandedOver appears before Claimed")
@@ -1861,6 +1899,12 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
+		if f.Claimed.Known || len(f.Claimed.Areas) > 0 || len(f.Claimed.Warnings) > 0 {
+			areas, _ := json.Marshal(f.Claimed.Areas)
+			warnings, _ := json.Marshal(f.Claimed.Warnings)
+			fmt.Fprintf(&b, " areas=%s areas-source=%s areas-known=%t areas-warnings=%s", strconv.Quote(string(areas)), strconv.Quote(f.Claimed.Source), f.Claimed.Known, strconv.Quote(string(warnings)))
+		}
+
 		if f.Claimed.Revision > 0 {
 			accountingRevision := f.Claimed.AccountingRevision
 			if accountingRevision == 0 {

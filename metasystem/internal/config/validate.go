@@ -76,6 +76,22 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 
 	// The keys the file itself names, before the defaults fill the rest: a
 	// rule about what a person set must not fire on a compiled default.
+	for _, setting := range compiledSettings {
+		if scope := PolicyScope(setting.Key); scope != "" && scope != "committed" {
+			if value, present := os.LookupEnv(EnvName(setting.Key)); present {
+				if err := SettingValueProblem(setting.Key, value); err != nil {
+					add("environment: %v", err)
+				}
+			}
+		}
+	}
+	for key, value := range values {
+		if PolicyScope(key) != "" {
+			if err := SettingValueProblem(key, value); err != nil {
+				add("%v", err)
+			}
+		}
+	}
 	named := make(map[string]bool, len(values))
 	for key := range values {
 		named[key] = true
@@ -84,7 +100,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		add("%v", SettingKeyProblem("landing.prove.command"))
 	}
 	for _, setting := range compiledSettings {
-		if !setting.CommittedOnly {
+		if !setting.CommittedOnly || setting.Default != "" {
 			continue
 		}
 		if _, present := values[setting.Key]; !present {
@@ -117,10 +133,18 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			add("cannot read metasystem local configuration: %s: %v", localPath, localErr)
 		}
 		localSeen := map[string]bool{}
-		parseSettings(string(localContent), func(_ int, key, _ string, ok bool) {
+		parseSettings(string(localContent), func(_ int, key, value string, ok bool) {
 			if ok && !localSeen[key] {
 				if problem := SettingKeyProblem(key); problem != nil {
 					add("%s: %v", localPath, problem)
+				}
+				if PolicyScope(key) != "" {
+					if err := SettingValueProblem(key, value); err != nil {
+						add("%s: %v", localPath, err)
+					}
+					if key == "settings.apply" {
+						add("settings.apply belongs in the committed repository declaration")
+					}
 				}
 				localSeen[key] = true
 			}

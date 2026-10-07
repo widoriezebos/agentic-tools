@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -131,5 +132,61 @@ func TestHelmTakeAdmitsThePersonsActsAtThatTerminal(t *testing.T) {
 	}
 	if _, err := os.Stat(idle); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the idle stray survived")
+	}
+}
+
+func TestHelmTakeReenrollsWhenEnrollmentIsNotInTheCallingChain(t *testing.T) {
+	t.Parallel()
+	b := newHelmBed(t, 20, true)
+	tree := person()
+	tree[30] = struct {
+		parent   int64
+		argv     string
+		terminal string
+	}{10, "-zsh", "tty-1"}
+	b.owners.helm.reader = tree
+	_, err := humanauthority.Enroll(b.inst, 30, tree, "Wido", helmNow)
+	helmMust(t, err)
+	b.wantTake(nil, 0, "proven", "Wido")
+	proof, err := humanauthority.Prove(b.inst, 20, tree, helmNow)
+	if err != nil || !proof.EnrolledTerminalFor(b.inst) {
+		t.Fatalf("take left another shell enrolled: %+v %v", proof, err)
+	}
+	if enrollment, ok := b.enrollment(); !ok || enrollment.TerminalRef.PID != 20 || enrollment.Generation != 3 {
+		t.Fatalf("enrollment: %+v", enrollment)
+	}
+}
+
+func TestHelmRepeatTakeRefreshesTerminal(t *testing.T) {
+	t.Parallel()
+	for _, enrollment := range []string{"proven", "unreadable"} {
+		t.Run(enrollment, func(t *testing.T) {
+			t.Parallel()
+			b := newHelmBed(t, 20, true)
+			enrollmentPath := filepath.Join(b.inst, "artifacts", "agents", "authority", "human-terminal.json")
+			if enrollment == "unreadable" {
+				helmMust(t, os.WriteFile(enrollmentPath, []byte("{"), 0600))
+			}
+			first := b.wantTake([]string{"--by", "Wido"}, 0, enrollment, "Wido")
+			if enrollment == "unreadable" {
+				helmMust(t, os.Remove(enrollmentPath))
+			}
+			now := helmNow.Add(time.Hour)
+			_, err := humanauthority.Enroll(b.inst, 60, person(), "Wido", now)
+			helmMust(t, err)
+			b.owners.helm.pid = func() int64 { return 60 }
+			b.owners.helm.now = func() time.Time { return now }
+			code, out := b.run("helm", "take", "--reason", "by hand", "--by", "Wido", "--json")
+			after, present := b.signature()
+			want := first
+			want.Leader, want.LeaderRef, want.Enrollment, want.EnrolledAs = "sshd", "50@500", "proven", "Wido"
+			if code != 0 || !present || !reflect.DeepEqual(want, after) || !strings.Contains(out, `"leaderRef": "50@500"`) {
+				t.Fatalf("repeat did not refresh the terminal while retaining identity and policies: exit %d, record %+v:\n%s", code, after, out)
+			}
+			code, out = b.run("helm", "status", "--json")
+			if code != 0 || !strings.Contains(out, "the helm holder's terminal is enrolled as Wido (session leader sshd (50@500))") || strings.Contains(out, "is not enrolled") {
+				t.Fatalf("status did not report the newly enrolled terminal: exit %d:\n%s", code, out)
+			}
+		})
 	}
 }

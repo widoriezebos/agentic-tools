@@ -20,16 +20,37 @@ import (
 
 // Record is the signature helm take writes.
 type Record struct {
-	Schema     int    `json:"schema"`
-	By         string `json:"by"`
-	At         string `json:"at"`
-	Reason     string `json:"reason"`
-	Machine    string `json:"machine,omitempty"`
-	Checkout   string `json:"checkout,omitempty"`
-	Enrollment string `json:"enrollment,omitempty"`
-	EnrolledAs string `json:"enrolledAs,omitempty"`
-	Leader     string `json:"leader,omitempty"`
-	LeaderRef  string `json:"leaderRef,omitempty"`
+	Schema     int               `json:"schema"`
+	By         string            `json:"by"`
+	At         string            `json:"at"`
+	Reason     string            `json:"reason"`
+	Machine    string            `json:"machine,omitempty"`
+	Checkout   string            `json:"checkout,omitempty"`
+	Enrollment string            `json:"enrollment,omitempty"`
+	EnrolledAs string            `json:"enrolledAs,omitempty"`
+	Leader     string            `json:"leader,omitempty"`
+	LeaderRef  string            `json:"leaderRef,omitempty"`
+	Policies   map[string]Policy `json:"policies,omitempty"`
+}
+
+// PolicyValue describes a configured value beneath a helm override.
+type PolicyValue struct {
+	Value    string    `json:"value"`
+	Source   string    `json:"source"`
+	Checkout string    `json:"checkout"`
+	SetBy    string    `json:"set-by"`
+	At       time.Time `json:"at,omitempty"`
+}
+
+// Policy is part of the atomic signature, including the observation at take.
+// Current configuration remains authoritative after a later settings write.
+type Policy struct {
+	Name     string      `json:"name"`
+	Checkout string      `json:"checkout"`
+	Value    string      `json:"value"`
+	SetBy    string      `json:"set-by"`
+	At       time.Time   `json:"at"`
+	Previous PolicyValue `json:"previous"`
 }
 
 // State is what Active reads: the record (By, Reason, Machine, Checkout,
@@ -145,11 +166,18 @@ func Write(root string, record Record) (Seat, error) {
 	if err != nil {
 		return seat, err
 	}
+	if record.Checkout != "" && record.Checkout != seat.Checkout {
+		return seat, fmt.Errorf("the helm target changed; repeat the take at %s", root)
+	}
 	record.Schema = 1
 	encoded, _ := json.MarshalIndent(record, "", "  ")
-	_ = os.MkdirAll(seat.Dir, 0o700)
-	if _, err := atomicfile.WriteFile(seat.Signature, append(encoded, '\n'), 0o600, ""); err != nil {
+	if err := os.MkdirAll(seat.Dir, 0o700); err != nil {
 		return seat, err
+	}
+	if durable, err := atomicfile.WriteFile(seat.Signature, append(encoded, '\n'), 0o600, ""); err != nil {
+		return seat, err
+	} else if !durable {
+		return seat, fmt.Errorf("the helm is held but its durability is unknown; repeat the take")
 	}
 	return seat, nil
 }

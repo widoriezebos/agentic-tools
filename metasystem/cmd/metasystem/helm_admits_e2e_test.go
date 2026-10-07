@@ -221,9 +221,9 @@ func helmCommitAt(t *testing.T, root, file, subject string) {
 }
 
 // TestHelmReturnEndToEnd: two commits admitted at the helm and pushed to a
-// local bare remote; helm return through the real engine with stdin a pipe
-// reads both back on origin/main, asks nothing, prints the two commands and
-// logs the return.
+// local bare remote. The executable refuses return without a terminal; a
+// proved person returns through the public verb, reads both commits back on
+// origin/main and logs the return.
 func TestHelmReturnEndToEnd(t *testing.T) {
 	t.Parallel()
 	root := helmLedgerRepo(t, "return-machine")
@@ -249,6 +249,16 @@ func TestHelmReturnEndToEnd(t *testing.T) {
 	helmMust(t, os.Remove(filepath.Join(root, "bin", "metasystem")))
 
 	code, out := helmEngineIn(t, root, strings.NewReader(""), "helm", "return")
+	if code != 3 || !helm.Active(root).Active {
+		t.Fatalf("nonterminal return: %d %s", code, out)
+	}
+	// The person returns through the public verb with a real terminal walk;
+	// only the operating system's process facts are supplied by this fixture.
+	owners := defaultIntentOwners()
+	owners.helm = helmOwners{reader: person(), pid: func() int64 { return 20 }, stdinTerminal: func() bool { return false }}
+	var returned bytes.Buffer
+	code = runIntentIn(mustIntentCommand(t, "helm return"), nil, &returned, &returned, root, owners)
+	out = returned.String()
 	want := fmt.Sprintf("commits at the helm on main: %s first at the helm (on origin/main), %s second at the helm (on origin/main)", first[:7], second[:7])
 	if code != 0 || !strings.Contains(out, want) || !strings.Contains(out, "every goal stays open; to conclude one: metasystem goal done G --reason ") ||
 		!strings.Contains(out, "to ask independent readers for feedback: metasystem work review --patch ") ||
@@ -280,6 +290,7 @@ func TestHelmReturnConcludesThroughTheRealDoneOwner(t *testing.T) {
 	// The person answers at the terminal: the goal, Enter for the offered
 	// conclusion; the questions are asked on the invocation's own writer.
 	owners.helm = helmOwners{
+		reader: person(), pid: func() int64 { return 20 },
 		stdin:         strings.NewReader("helm-return\n\n"),
 		stdinTerminal: func() bool { return true },
 		recover:       func(processScope) string { return "supervision: recovered" },

@@ -96,6 +96,8 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 }
 
 // The incident writer uses the lane machine and agent lineage, with no human authority.
+// intent_planning.go uses only the machine and claim lineage to check area admission.
+// landing_plain.go uses an empty actor for area admission, so it cannot inherit a claimant's arc exemption or human authority.
 const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
@@ -110,6 +112,8 @@ cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: l
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/intent_landing_flake.go:		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
 cmd/metasystem/intent_landing_incident.go:	return goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()}, err
+cmd/metasystem/intent_planning.go:			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers, goal.Actor{Machine: machine, Lineage: inv.claimLineage()})
+cmd/metasystem/landing_plain.go:			warnings, err := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, goalID, line.AreaSnapshot, readers, goal.Actor{})
 cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
 cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {

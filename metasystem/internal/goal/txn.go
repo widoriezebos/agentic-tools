@@ -886,6 +886,13 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		}
 		if req.Validate != nil {
 			if err := req.Validate(commit); err != nil {
+				var moved areaBindingChanged
+				if errors.As(err, &moved) && attempt < 3 && now().Before(stopAt) {
+					continue
+				}
+				if errors.As(err, &moved) {
+					err = fmt.Errorf("%w; rereading stopped at the deadline or after three attempts; retry once the design is stable", err)
+				}
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "validation refused: "+RecordText(err))
 				CleanupRefs(e, req.Opid)
 				return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error(), Code: RefusalCode(err)}, nil

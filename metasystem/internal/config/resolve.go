@@ -276,6 +276,8 @@ func (c BatchLanding) MaxWaitElapsed(oldestJoinedAt time.Time) bool {
 // template repository's own settings); it wins over the committed file and
 // loses to the environment and to an explicit flag.
 type GetParams struct {
+	Policy *PolicyContext // current checkout and explicit registry/helm readers
+
 	Key        string // the setting name, e.g. role.implementer.runtime
 	Mode       string // optional mode scope for role.<r>.runtime / role.<r>.model.<m> keys
 	Role       string // reserved: overrides are scoped by mode only, so this does not change resolution
@@ -301,6 +303,13 @@ type GetParams struct {
 // mode; 1 marks a missing value or a malformed source (duplicate key,
 // unreadable file).
 func Get(p GetParams) (value string, code int, err error) {
+	if PolicyScope(p.Key) != "" {
+		resolved, problem := ResolvePolicy(p)
+		if problem != nil {
+			return "", 1, problem
+		}
+		return resolved.Value, 0, nil
+	}
 	value, code, err = getLayered(p)
 	if err != nil || code != 0 || p.KeepAuto || value != AutoRuntime || !RuntimeSelectionKey(p.Key) {
 		return value, code, err
@@ -580,6 +589,10 @@ func isFile(path string) bool {
 // hit in the committed file reports "conf": the vocabulary names files, not
 // key spellings.
 func KeyOrigin(p GetParams) (string, error) {
+	if PolicyScope(p.Key) != "" {
+		resolved, err := ResolvePolicy(p)
+		return resolved.Source, err
+	}
 	lookupEnv := p.LookupEnv
 	if lookupEnv == nil {
 		lookupEnv = os.LookupEnv

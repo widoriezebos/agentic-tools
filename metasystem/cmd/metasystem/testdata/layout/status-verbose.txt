@@ -1,5 +1,6 @@
 ! wido has the helm since Mon 12:39: coordinating the verb and machinery batches
-  → metasystem helm return  gives the seat back to the machinery
+  → metasystem helm return
+    run at the person's enrolled terminal to give the seat back to the machinery
     acts the helm let through since the take: 0
     running dispatch jobs: 0 (metasystem work status lists them; the helm stops none)
 ! wido's terminal is not enrolled, so a person's acts there are refused

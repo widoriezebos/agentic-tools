@@ -277,7 +277,8 @@ type VerbRequest struct {
 	SweepBranch func(goalID string) error
 	// ClaimLaneState reads a held goal's newest hand-in against the fetched
 	// main tip. nil preserves the quota on computers without a lane.
-	ClaimLaneState func(goalID, main string) (string, error)
+	ClaimLaneState   func(goalID, main string) (string, error)
+	ClaimAreaReaders ClaimAreaReaders
 	// ForceBy names the person at the helm who concludes a goal despite
 	// its open read items, review obligations, carry word or unfinished
 	// blockers; each is recorded as overridden. Only goal done reads it; the
@@ -595,10 +596,12 @@ func rebindClaimKeepEpisode(f *GoalFile, at string, revision uint64, claimEpoch 
 	if f.Obligation != nil {
 		episodeObligationRevision = f.Obligation.Revision
 	}
+	snapshot := f.Claimed.AreaSnapshot
 	idleSeconds, landing := f.Claimed.IdleSeconds, f.Landing
 	if err := bindClaim(f, machine, lineage, at, revision, claimEpoch); err != nil {
 		return err
 	}
+	f.Claimed.AreaSnapshot = snapshot
 	f.Claimed.EpisodeAt = episodeAt
 	f.Claimed.EpisodeRevision = episodeRevision
 	f.Claimed.EpisodeObligationRevision = episodeObligationRevision
@@ -1598,6 +1601,10 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
+			snapshot, areaErr := admitClaimAreas(t, r, tip, id)
+			if areaErr != nil {
+				return nil, areaErr
+			}
 			changes, refusal := claimQuotaRefusal(t, r, id, tip)
 			if refusal != nil {
 				return nil, refusal
@@ -1609,6 +1616,8 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
 				return nil, err
 			}
+			f.Claimed.AreaSnapshot = snapshot
+			f.History[len(f.History)-1].Reason = strings.Join(snapshot.Warnings, "; ")
 			// The same pair continues the episode it left; any other pair
 			// starts fresh and the kept record is gone with the bind.
 			if kept != nil && kept.Machine == r.Actor.Machine && kept.Lineage == r.Actor.Lineage {
@@ -1618,7 +1627,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			}
 			return ackDisplacements(t, r, append(changes, Change{Path: livePath(id), Content: RenderFile(f)})), nil
 		},
-		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
+		Validate: func(commit string) error { return validateClaimAreas(r, commit, []string{id}) },
 	}
 }
 
@@ -4386,11 +4395,13 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 	if supplied != nil {
 		args = mergeIntentArgs(args, budgetIntentArgs(*supplied))
 	}
+	var boundIDs []string
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
+			boundIDs = nil
 			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
@@ -4442,6 +4453,10 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if err != nil {
 					return nil, err
 				}
+				snapshot, areaErr := admitClaimAreas(t, r, tip, m.Id)
+				if areaErr != nil {
+					return nil, areaErr
+				}
 				if !quotaChecked {
 					var refusal error
 					changes, refusal = claimQuotaRefusal(t, r, id, tip)
@@ -4456,6 +4471,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
 				}
+				m.Claimed.AreaSnapshot = snapshot
+				boundIDs = append(boundIDs, m.Id)
+				m.History[len(m.History)-1].Reason = strings.Join(snapshot.Warnings, "; ")
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
@@ -4463,7 +4481,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
+		Validate: func(commit string) error {
+			return validateClaimAreas(r, commit, boundIDs)
+		},
 	}
 }
 

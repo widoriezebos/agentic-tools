@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by wido: coordinating the verb batches — metasystem helm return ends it",
+  "summary": "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by wido: coordinating the verb batches — a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs metasystem helm return --repo /Users/wido/GitHub/agentic-tools-m1e there",
   "data": {
     "helm": {
       "schema": 0,
@@ -22,7 +22,51 @@ exit 0
       "enrollment": "proven",
       "enrolledAs": "wido",
       "leader": "login",
-      "leaderRef": "10@100"
+      "leaderRef": "10@100",
+      "policies": {
+        "goal.raise": {
+          "name": "goal.raise",
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+          "value": "person",
+          "set-by": "wido",
+          "at": "2026-09-28T19:14:03Z",
+          "previous": {
+            "value": "auto",
+            "source": "built-in",
+            "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+            "set-by": "built-in",
+            "at": "0001-01-01T00:00:00Z"
+          }
+        },
+        "review.stop": {
+          "name": "review.stop",
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+          "value": "person",
+          "set-by": "wido",
+          "at": "2026-09-28T19:14:03Z",
+          "previous": {
+            "value": "auto",
+            "source": "built-in",
+            "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+            "set-by": "built-in",
+            "at": "0001-01-01T00:00:00Z"
+          }
+        },
+        "seat.driver": {
+          "name": "seat.driver",
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+          "value": "person",
+          "set-by": "wido",
+          "at": "2026-09-28T19:14:03Z",
+          "previous": {
+            "value": "auto",
+            "source": "built-in",
+            "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+            "set-by": "built-in",
+            "at": "0001-01-01T00:00:00Z"
+          }
+        }
+      }
     }
   }
 }

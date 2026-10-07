@@ -2,4 +2,5 @@
 
   terminal   the enrolled one, as Wido
 
-→ metasystem helm return  gives the seat back to the machinery
+→ metasystem helm return
+  run at the person's enrolled terminal to give the seat back to the machinery

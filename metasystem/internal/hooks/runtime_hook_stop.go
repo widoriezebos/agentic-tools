@@ -142,9 +142,9 @@ func (l *lifecycle) landingAgentStops() bool {
 func helmNotice(state helm.State) string {
 	who := fmt.Sprintf("%s since %s (%s)", state.By, state.Since.Local().Format("15:04 MST"), state.Reason)
 	if state.Malformed != "" {
-		who = "the signature is unreadable, so the helm is taken; metasystem helm return ends it"
+		who = "the signature is unreadable; the helm remains held"
 	}
-	return "helm: HUMAN AT THE HELM: " + who + ". MetaSystem decides nothing on this seat; follow the person's direction."
+	return "helm: HUMAN AT THE HELM: " + who + ". Return from the person's enrolled terminal: metasystem helm return."
 }
 
 // prepare resolves the installation, session, runtime identity and holder

@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — metasystem helm return ends it",
+  "summary": "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs metasystem helm return --repo /Users/wido/GitHub/agentic-tools-m1e there",
   "data": {
     "board": {
       "readable": true,
@@ -41,10 +41,13 @@ exit 0
     },
     "exitCode": 0,
     "helm": [
-      "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — metasystem helm return ends it",
+      "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs metasystem helm return --repo /Users/wido/GitHub/agentic-tools-m1e there",
       "the helm holder's terminal is not enrolled (session leader login (34285@1790591981); the enrolled terminal is another): a person's acts there are refused until you run there metasystem system enroll --name wido",
       "acts the helm let through since the take: 0",
       "running dispatch jobs: 0 (metasystem work status lists them; the helm stops none)",
+      "goal.raise = person (helm held by wido); underlying auto from built-in, set by built-in",
+      "review.stop = person (helm held by wido); underlying auto from built-in, set by built-in",
+      "seat.driver = person (helm held by wido); underlying auto from built-in, set by built-in",
       "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
     ],
     "lines": [

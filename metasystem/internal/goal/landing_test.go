@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -421,10 +422,11 @@ func TestLandingAndEpisodeRecordsRoundTripAndValidate(t *testing.T) {
 	t.Parallel()
 	file := episodeGolden()
 	file.Claimed.IdleSeconds = 90
+	file.Claimed.AreaSnapshot = AreaSnapshot{Known: true, Areas: []string{"metasystem/future/**"}, Source: "accepted-design@" + strings.Repeat("a", 64)}
 	file.Landing = &LandingRecord{At: "2026-08-20T03:00:00Z", Opid: "01J5X0000000000000000000C5-mac-studio-1a2b3c4d"}
 	rendered := RenderFile(file)
 	parsed, problems := ParseFile(rendered)
-	if len(problems) != 0 || parsed.Claimed == nil || *parsed.Claimed != *file.Claimed || parsed.Landing == nil || *parsed.Landing != *file.Landing || string(RenderFile(parsed)) != string(rendered) {
+	if len(problems) != 0 || parsed.Claimed == nil || !reflect.DeepEqual(parsed.Claimed, file.Claimed) || parsed.Landing == nil || *parsed.Landing != *file.Landing || string(RenderFile(parsed)) != string(rendered) {
 		t.Fatalf("landing claim did not round-trip: claim=%+v landing=%+v problems=%v\n%s", parsed.Claimed, parsed.Landing, problems, rendered)
 	}
 	if !strings.Contains(string(rendered), "- Landing: at=2026-08-20T03:00:00Z opid=01J5X0000000000000000000C5-mac-studio-1a2b3c4d\n") || !strings.Contains(string(rendered), " idleSeconds=90\n") {

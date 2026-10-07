@@ -312,8 +312,9 @@ func TestGoalCLIBudgetStructuredBudget(t *testing.T) {
 	if line := goalCLILine(rebudget, "- Budget: "); line != "- Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=180 activeJobLimit=2 reviewRoundLimit=3" {
 		t.Fatalf("set-budget did not replace the complete tuple: %q", line)
 	}
-	if claim := goalCLILine(rebudget, "- Claimed: "); !strings.Contains(claim, " at=2026-08-20T05:01:00Z revision=4") {
-		t.Fatalf("set-budget did not bind the new revision and elapsed origin: %q", claim)
+	parsed, problems := goal.ParseFile([]byte(rebudget))
+	if len(problems) != 0 || parsed.Claimed == nil || parsed.Claimed.At != "2026-08-20T05:01:00Z" || parsed.Claimed.Revision != 4 {
+		t.Fatalf("set-budget did not bind the new revision and elapsed origin: %q problems=%v", goalCLILine(rebudget, "- Claimed: "), problems)
 	}
 
 	// A separate machine and lineage claims the goal under the box its

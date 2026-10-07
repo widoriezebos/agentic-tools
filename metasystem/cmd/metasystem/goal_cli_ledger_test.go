@@ -324,9 +324,11 @@ func TestGoalCLILedgerLandingSlot(t *testing.T) {
 	gcliLedgerMust(t, bed, "goal", "claim", "next-widget")
 	reclaimed := bed.goalRecord("next-widget")
 	line := goalCLILine(reclaimed, "- Claimed: ")
-	if !strings.HasPrefix(line, "- Claimed: machine=fixture-machine lineage=fixture-lineage at="+stamp(reclaimAt)+" revision=") ||
-		!strings.Contains(line, " accountingRevision="+accounting+" episodeAt=") || !strings.HasSuffix(line, " idleSeconds=7200") {
-		t.Fatalf("the re-claim did not keep the episode with the gap idle: %q", line)
+	parsed, problems := goal.ParseFile([]byte(reclaimed))
+	if len(problems) != 0 || parsed.Claimed == nil || parsed.Claimed.Machine != "fixture-machine" ||
+		parsed.Claimed.Lineage != "fixture-lineage" || parsed.Claimed.At != stamp(reclaimAt) || parsed.Claimed.Revision == 0 ||
+		fmt.Sprint(parsed.Claimed.AccountingRevision) != accounting || parsed.Claimed.EpisodeAt == "" || parsed.Claimed.IdleSeconds != 7200 {
+		t.Fatalf("the re-claim did not keep the episode with the gap idle: %q problems=%v", line, problems)
 	}
 	if goalCLILine(reclaimed, "- Episode:") != "" {
 		t.Fatalf("the re-claim did not consume the kept episode:\n%s", reclaimed)

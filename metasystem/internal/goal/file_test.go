@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -58,6 +59,64 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 	if parsed.Revision != 3 || len(parsed.History) != 3 {
 		t.Fatalf("revision/history lost: rev=%d len=%d", parsed.Revision, len(parsed.History))
+	}
+}
+
+func TestClaimUnknownAreasLegacyLine(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		snapshot AreaSnapshot
+	}{
+		{name: "absent"},
+		{name: "empty", snapshot: AreaSnapshot{Areas: []string{}, Warnings: []string{}}},
+		{name: "source only", snapshot: AreaSnapshot{Source: "accepted-design@" + strings.Repeat("a", 64)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			file := claimedGolden()
+			file.Claimed.AreaSnapshot = test.snapshot
+			rendered := RenderFile(file)
+			const want = "- Claimed: machine=mac-studio lineage=session-a at=2026-08-20T00:35:00Z revision=2 accountingRevision=2\n"
+			var line string
+			for _, candidate := range strings.SplitAfter(string(rendered), "\n") {
+				if strings.HasPrefix(candidate, "- Claimed:") {
+					line = candidate
+					break
+				}
+			}
+			if line != want {
+				t.Fatalf("unknown areas changed the legacy claim line: got %q, want %q", line, want)
+			}
+			parsed, problems := ParseFile(rendered)
+			if len(problems) != 0 || parsed.Claimed == nil || !reflect.DeepEqual(parsed.Claimed.AreaSnapshot, AreaSnapshot{}) {
+				t.Fatalf("a legacy claim must read as unknown areas: claim=%+v problems=%v", parsed.Claimed, problems)
+			}
+		})
+	}
+}
+
+func TestClaimAreasSnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		snapshot AreaSnapshot
+	}{
+		{name: "known", snapshot: AreaSnapshot{Known: true, Areas: []string{"file with, spaces.go", "internal/goal/**"}, Source: "accepted-design@" + strings.Repeat("a", 64)}},
+		{name: "known empty", snapshot: AreaSnapshot{Known: true, Source: "accepted-design@" + strings.Repeat("a", 64)}},
+		{name: "unknown with warning", snapshot: AreaSnapshot{Warnings: []string{"areas unknown for goal backlog-git-sync: no accepted design declares areas"}}},
+		{name: "unknown with areas", snapshot: AreaSnapshot{Areas: []string{"internal/goal/**"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			file := claimedGolden()
+			file.Claimed.AreaSnapshot = test.snapshot
+			rendered := RenderFile(file)
+			parsed, problems := ParseFile(rendered)
+			if len(problems) != 0 || parsed.Claimed == nil || !reflect.DeepEqual(parsed.Claimed.AreaSnapshot, test.snapshot) || string(RenderFile(parsed)) != string(rendered) {
+				t.Fatalf("claim areas did not round-trip: want=%+v claim=%+v problems=%v\n%s", test.snapshot, parsed.Claimed, problems, rendered)
+			}
+		})
 	}
 }
 
@@ -212,9 +271,10 @@ func TestClaimedEpisodeRoundTrip(t *testing.T) {
 			t.Parallel()
 			file := episodeGolden()
 			file.Claimed.EpisodeObligationRevision = obligationRevision
+			file.Claimed.AreaSnapshot = AreaSnapshot{Known: true, Areas: []string{"metasystem/file with, spaces.go"}, Source: "accepted-design@" + strings.Repeat("a", 64), Warnings: []string{"areas unknown for another goal"}}
 			rendered := RenderFile(file)
 			parsed, problems := ParseFile(rendered)
-			if len(problems) != 0 || parsed.Claimed == nil || *parsed.Claimed != *file.Claimed || string(RenderFile(parsed)) != string(rendered) {
+			if len(problems) != 0 || parsed.Claimed == nil || !reflect.DeepEqual(parsed.Claimed, file.Claimed) || string(RenderFile(parsed)) != string(rendered) {
 				t.Fatalf("episode fields did not round-trip: claim=%+v problems=%v\n%s", parsed.Claimed, problems, rendered)
 			}
 			if obligationRevision == 0 && strings.Contains(string(rendered), "episodeObligationRevision=") {

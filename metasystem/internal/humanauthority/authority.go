@@ -1143,5 +1143,5 @@ func PersonActRemedy(retry string) string {
 	if strings.TrimSpace(retry) == "" {
 		retry = "the same command"
 	}
-	return "a person, at a terminal no agent started, enrolls it once with " + EnrollCommand + ", then runs " + retry + " there"
+	return fmt.Sprintf("a person, at a terminal no agent started, enrolls it once with %s, then runs %s there", EnrollCommand, retry)
 }

@@ -17,6 +17,7 @@ package goal
 import (
 	"fmt"
 	"path"
+	"reflect"
 	"strings"
 )
 
@@ -258,7 +259,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	claimClearedByPark := base.Claimed != nil && edited.Claimed == nil &&
 		base.State == StateClaimed && edited.State == StateParked
 	if !claimClearedByPark && ((edited.Claimed == nil) != (base.Claimed == nil) ||
-		(edited.Claimed != nil && *edited.Claimed != *base.Claimed)) {
+		(edited.Claimed != nil && !reflect.DeepEqual(edited.Claimed, base.Claimed))) {
 		return nil, fmt.Errorf("%s: Claimed is a generated field; claim and release are verbs", p)
 	}
 	// The landing slot lives with the claim: a hand park of a claimed goal

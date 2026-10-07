@@ -229,7 +229,7 @@ func TestGoalClaimLaneRootUnreadable(t *testing.T) {
 			}
 			before := bed.publications()
 			code, result := bed.runJSON(owners, args...)
-			if code != 0 || result.Outcome != intentConfirmed || bed.publications() != before+1 || reads != 0 {
+			if code != 0 || result.Outcome != intentConfirmed || bed.publications() != before+1 || reads == 0 {
 				t.Fatalf("first claim: exit=%d result=%+v publications=%d reads=%d", code, result, bed.publications(), reads)
 			}
 			heldID := result.Targets[0].ID
