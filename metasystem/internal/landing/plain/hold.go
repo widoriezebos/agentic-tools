@@ -148,12 +148,13 @@ func TrunkDecision(entry Entry, incidents []goal.TrunkRedEntry, value PolicyValu
 	if exceptionCovers(entry, incidents, destination) {
 		return nil
 	}
-	if readErr != nil {
-		return fmt.Errorf("the trunk-red policy cannot be read: %w", readErr)
-	}
+	// The policy decides only while an incident is open; an unreadable value holds nothing else.
 	open := openIncidents(incidents)
 	if len(open) == 0 {
 		return nil
+	}
+	if readErr != nil {
+		return fmt.Errorf("the trunk-red policy cannot be read: %w", readErr)
 	}
 	if value.Value != "person" {
 		for _, incident := range incidents {
