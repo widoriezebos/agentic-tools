@@ -1,0 +1,14 @@
+# Brief: lane-reads-its-policies U1, correction 1
+
+Working Mode: Implement
+The unit is uncommitted in this worktree. One Opus read found five material defects; fix exactly these.
+
+1. internal/landing/plain/batch.go:395-413 (also :264, :452): after `work land --again` at the same SHA the queue holds the old returned entry and the new waiting one; CheckBatch walks every entry and batchTerminal/memberAccounted find the old one first, so the lane stalls. Check only the newest entry per goal and SHA. Test: return a, re-hand-in a at the same SHA, run, merge a, `prove --wait` passes (mutation: walk all entries, red).
+2. batch.go:370: a single-parent commit not on main passes the check (`len(fields)==2 -> continue`), so a squash of an unselected goal is proven and pushed. Refuse any first-parent commit not on fetched main unless it is a merge of a selected member or of main. Test: cap 2, goals a b c; run; merge a and b; squash c and commit: prove refuses naming c (mutation: the old continue, red).
+3. batch.go:303-313 with :150, :238: a lane with queue history and no batch.json refuses a plain `landing prove` and names `landing run`, which selects nothing, so it loops; and a running agent told to `landing run` returns at the keeper's recheck (internal/landing/lane/agent.go:295) before Prepare. Give a candidate with no members (main unchanged, or only already-landed entries) a path through prove; never point a running agent at `landing run` (the skill's step 1 prepares the batch through the verb the agent can run, or the keeper prepares it before launch). Test: a lane with one landed entry, prove on main succeeds; the skill text matches.
+4. cmd/metasystem/landing_incident_test.go:89-92: the fixture with main unchanged now sets lane.trunk=true, so the plain-prove recording of an unchanged main (prove.go:591-599) is no longer exercised. Keep a plain-prove case whose assembly is main with a closed batch, so disabling :591 turns it red again.
+5. cmd/metasystem/landing_hold_refresh_test.go:111-113 (wantFetch 0->1): restore the original conflict-case fixture; it shows the keeper now starts an agent with 0 waiting lines because selection's fetch moves origin/main and the wake ignores the conflict hold. Make selection or the wake honour conflict holds so the original fixture passes.
+Also restore the replay bed's queue order (c,b,a) case so "queue order differs from merge order" stays covered. The `person` policy's ask command belongs to unit U2a (leave the LANE_BATCH_PERSON text for it).
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 30m ./internal/landing/... && go test -count=1 -timeout 30m -run 'TestLanding|TestPlainLane|TestWorkLand|TestKeeper|TestIncident|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+Never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

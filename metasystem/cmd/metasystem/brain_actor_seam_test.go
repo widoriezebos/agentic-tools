@@ -98,6 +98,8 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 // The incident writer uses the lane machine and agent lineage, with no human authority.
 // intent_planning.go uses only the machine and claim lineage to check area admission.
 // landing_plain.go uses an empty actor for area admission, so it cannot inherit a claimant's arc exemption or human authority.
+// Claim preparation uses brainHumanWordClassificationWithFacts, the ledger command's classification owner,
+// before and after session start; it adds no separate caller-classification site.
 const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)

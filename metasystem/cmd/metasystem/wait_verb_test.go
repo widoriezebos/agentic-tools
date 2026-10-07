@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -753,7 +754,16 @@ func TestPendingWaitGitHelper(t *testing.T) {
 	root := os.Getenv("METASYSTEM_WAIT_GIT_ROOT")
 	hookCwd := os.Getenv("METASYSTEM_WAIT_GIT_HOOK_CWD")
 	childShell := os.Getenv("METASYSTEM_WAIT_GIT_CHILD_SHELL") == "1"
-	reply, supported := pendingWaitGitAnswer(root, hookCwd, os.Getenv("METASYSTEM_WAIT_GIT_ENGINE_ROOT"), cwd, childShell, argv)
+	var input []byte
+	if len(argv) > 0 && argv[len(argv)-1] == "--stdin" {
+		var err error
+		input, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "read pending-wait Git input:", err)
+			os.Exit(97)
+		}
+	}
+	reply, supported := pendingWaitGitAnswer(root, hookCwd, os.Getenv("METASYSTEM_WAIT_GIT_ENGINE_ROOT"), cwd, childShell, argv, string(input))
 	if cwdErr != nil || len(argv) == 0 || root == "" || hookCwd == "" {
 		supported = false
 	}
@@ -781,7 +791,7 @@ func TestPendingWaitGitHelper(t *testing.T) {
 	os.Exit(reply.status)
 }
 
-func pendingWaitGitAnswer(root, hookCwd, engineRoot, cwd string, childShell bool, argv []string) (pendingWaitGitReply, bool) {
+func pendingWaitGitAnswer(root, hookCwd, engineRoot, cwd string, childShell bool, argv []string, input string) (pendingWaitGitReply, bool) {
 	answer := func(stdout, stderr string, status int) (pendingWaitGitReply, bool) {
 		return pendingWaitGitReply{stdout: stdout, stderr: stderr, status: status}, true
 	}
@@ -807,6 +817,25 @@ func pendingWaitGitAnswer(root, hookCwd, engineRoot, cwd string, childShell bool
 				return answer(root+"\n", "", 0)
 			}
 			if childShell {
+				// Explicit internal next makes a bounded fresh read even when
+				// this empty checkout has no remote. Cleanup deletes only the
+				// two temporary refs belonging to that read nonce.
+				fetch := []string{"-c", "core.logAllRefUpdates=false", "fetch", "--no-tags", "--refmap=", "origin"}
+				if len(args) == len(fetch)+1 && slices.Equal(args[:len(fetch)], fetch) && input == "" {
+					nonce, matches := strings.CutPrefix(args[len(fetch)], "+refs/heads/main:refs/metasystem/goals/fetch/")
+					if matches && pendingWaitReadNonce(nonce) {
+						return answer("", "fatal: 'origin' does not appear to be a git repository\n", 128)
+					}
+				}
+				if slices.Equal(args, []string{"-c", "core.logAllRefUpdates=false", "update-ref", "--stdin"}) {
+					lines := strings.Split(input, "\n")
+					if len(lines) == 3 && lines[2] == "" {
+						nonce, matches := strings.CutPrefix(lines[0], "delete refs/metasystem/goals/fetch/")
+						if matches && pendingWaitReadNonce(nonce) && lines[1] == "delete refs/metasystem/goals/txn/"+nonce {
+							return answer("", "", 0)
+						}
+					}
+				}
 				switch {
 				case slices.Equal(args, []string{"rev-parse", "--git-common-dir"}),
 					slices.Equal(args, []string{"rev-parse", "--git-dir"}):
@@ -861,6 +890,12 @@ func pendingWaitGitAnswer(root, hookCwd, engineRoot, cwd string, childShell bool
 	return pendingWaitGitReply{}, false
 }
 
+func pendingWaitReadNonce(nonce string) bool {
+	raw, matches := strings.CutPrefix(nonce, "read-")
+	decoded, err := hex.DecodeString(raw)
+	return matches && err == nil && len(decoded) == 6
+}
+
 func TestPendingWaitGitRejectsUnexpectedEngineReads(t *testing.T) {
 	t.Parallel()
 	root, hookCwd, engineRoot := t.TempDir(), t.TempDir(), t.TempDir()
@@ -876,10 +911,51 @@ func TestPendingWaitGitRejectsUnexpectedEngineReads(t *testing.T) {
 		{engineRoot, "", []string{"rev-parse", "--show-toplevel", "extra"}, false},
 		{hookCwd, "", []string{"rev-parse", "--show-toplevel"}, false},
 	} {
-		reply, supported := pendingWaitGitAnswer(root, hookCwd, engineRoot, tc.cwd, true, tc.args)
+		reply, supported := pendingWaitGitAnswer(root, hookCwd, engineRoot, tc.cwd, true, tc.args, "")
 		if supported != tc.supported || reply.stdout != tc.output || reply.stderr != "" || reply.status != 0 {
 			t.Fatalf("cwd=%q args=%q reply=%+v supported=%t", tc.cwd, tc.args, reply, supported)
 		}
+	}
+}
+
+func TestPendingWaitGitFreshReadKeepsTemporaryRefBoundary(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookCwd := t.TempDir()
+	nonce := "read-0123456789ab"
+	fetch := []string{"-C", root, "-c", "core.logAllRefUpdates=false", "fetch", "--no-tags", "--refmap=", "origin", "+refs/heads/main:refs/metasystem/goals/fetch/" + nonce}
+	cleanup := []string{"-C", root, "-c", "core.logAllRefUpdates=false", "update-ref", "--stdin"}
+	input := "delete refs/metasystem/goals/fetch/" + nonce + "\ndelete refs/metasystem/goals/txn/" + nonce + "\n"
+	for _, tc := range []struct {
+		name, cwd, input string
+		args             []string
+		child, supported bool
+		status           int
+	}{
+		{"missing remote", hookCwd, "", fetch, true, true, 128},
+		{"temporary cleanup", hookCwd, input, cleanup, true, true, 0},
+		{"hook stays offline", hookCwd, "", fetch, false, false, 0},
+		{"wrong directory", root, "", fetch, true, false, 0},
+		{"wrong remote", hookCwd, "", append(slices.Clone(fetch[:7]), "elsewhere", fetch[8]), true, false, 0},
+		{"wrong branch", hookCwd, "", append(slices.Clone(fetch[:8]), strings.Replace(fetch[8], "refs/heads/main", "refs/heads/other", 1)), true, false, 0},
+		{"invalid nonce", hookCwd, "", append(slices.Clone(fetch[:8]), strings.Replace(fetch[8], nonce, "read-not-hex", 1)), true, false, 0},
+		{"unrelated cleanup", hookCwd, "delete refs/metasystem/goals/accepted\n", cleanup, true, false, 0},
+		{"different nonce pair", hookCwd, strings.Replace(input, "txn/"+nonce, "txn/read-abcdef012345", 1), cleanup, true, false, 0},
+		{"extra deletion", hookCwd, input + "delete refs/heads/main\n", cleanup, true, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			reply, supported := pendingWaitGitAnswer(root, hookCwd, "", tc.cwd, tc.child, tc.args, tc.input)
+			if supported != tc.supported || reply.status != tc.status || reply.stdout != "" {
+				t.Fatalf("supported=%t reply=%+v, want supported=%t status=%d", supported, reply, tc.supported, tc.status)
+			}
+			if tc.status == 128 && !strings.Contains(reply.stderr, "origin") {
+				t.Fatalf("missing transport cause: %+v", reply)
+			}
+		})
 	}
 }
 
@@ -1830,6 +1906,9 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		t.Fatalf("the Stop gate wrote or replaced a waiter row: rows=%+v err=%v", rows, rowsErr)
 	}
 
+	// The control hook clears the command clock. Association is proved
+	// against this row's observation, independently of fresh-read latency.
+	t.Setenv(goalNowEnvironment, pendingWaitFixtureNow(t, root, row.WaitID))
 	registeredVerdict := pendingWaitVerdict(t, root, runtimeSession, mainID)
 	if registeredVerdict.ShouldBlock {
 		diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))

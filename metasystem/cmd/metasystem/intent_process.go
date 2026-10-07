@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -421,6 +422,7 @@ func processIntentCommands() []intentCommand {
 // processIntentOwners are the owners the process and question commands call.
 type processIntentOwners struct {
 	process        processOwners
+	adoptionReads  *claimAdoptionReads
 	up             func(up.Options) up.Result
 	health         func(repo, installation string, now time.Time) steward.HealthVerdict
 	healthNow      func(root string) (time.Time, error)
@@ -663,31 +665,71 @@ func runIntentSystemStart(inv *intentInvocation) int {
 
 // runIntentSessionStart prepares the current agent session through up.
 func runIntentSessionStart(inv *intentInvocation) int {
-	scope, scale, problem := inv.selectProcessScope()
+	scope, _, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	result, problem := inv.prepareClaimSession(inv.claimLineage())
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	outcome := intentConfirmed
+	remedy := result.Remedy
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
+		outcome = intentPartial
+		remedy = result.Adoption.Remedy
+	}
+	if result.ExitCode() != 0 {
+		outcome = intentRefused
+	}
+	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
+		Summary: sessionPreparationSummary(result), text: result.Lines(), Decision: remedy,
+		Data: map[string]any{"outcome": result.Outcome, "adoption": result.Adoption, "lines": nonNilLines(result.Lines()), "remedy": remedy}})
+}
+
+// prepareClaimSession leaves enrollment, announcement, adoption and supervision
+// with up and carries the original caller into that lifecycle owner.
+func (inv *intentInvocation) prepareClaimSession(lineage string) (up.Result, *intentResult) {
+	scope, scale, problem := inv.selectProcessScope()
+	if problem != nil {
+		return up.Result{}, problem
+	}
+	callerPid, err := inv.owners.dependencies.authorityFacts.caller.ClassifiablePid(processidentity.KernelProber{})
+	if err != nil {
+		return up.Result{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "the calling process could not be authenticated; the session was not started", Details: []string{err.Error()}, next: inv.publicArgv("session", "start")}
+	}
 	owners := inv.owners.processes
+	if owners.executable == nil {
+		owners.executable = os.Executable
+	}
+	if owners.up == nil {
+		owners.up = up.Run
+	}
 	binary, err := owners.executable()
 	if err == nil {
 		binary, err = canonicalPath(binary)
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
-			retry: "try again", Details: []string{"engine path: " + err.Error()}})
+		return up.Result{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
+			retry: "try again", Details: []string{"engine path: " + err.Error()}}
+	}
+	reads := owners.adoptionReads
+	if reads == nil {
+		reads = &claimAdoptionReads{dependencies: inv.owners.dependencies, clock: inv.owners.commandNow}
 	}
 	result := owners.up(up.Options{
 		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
-		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityForUp,
+		OwnerLineage: lineage, WaitScaleMilli: scale, CallerPid: callerPid,
+		RestampStopCapability: reads.RestampFresh,
 	})
-	outcome := intentConfirmed
-	if result.ExitCode() != 0 {
-		outcome = intentRefused
+	return result, nil
+}
+
+func sessionPreparationSummary(result up.Result) string {
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
+		return "session preparation is partial: adoption pending; " + result.Adoption.Cause
 	}
-	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
-		Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
-		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy}})
+	return "session start: " + result.Outcome
 }
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.

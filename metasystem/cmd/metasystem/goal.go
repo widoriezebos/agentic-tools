@@ -419,8 +419,8 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 	return line
 }
 
-// runGoalNext prints the one orientation line any runtime's main can read
-// by instruction — the universal fallback transport.
+// runGoalNext prints advisory orientation for a checkout, including a clone
+// with no announced holder. Claiming work requires its own authority check.
 func runGoalNext(args []string, stdout, stderr io.Writer) int {
 	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow, stdout, stderr)
 }
@@ -475,7 +475,28 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 				return 1
 			}
 		}
-		return nextSyncedWithInputs(stdout, stderr, *root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, dependencies.presence, labels...)
+		now, clockErr := commandNow(*root)
+		if clockErr != nil {
+			fmt.Fprintln(stderr, clockErr)
+			return 1
+		}
+		proof, proofErr := dependencies.proveTerminal(*root, dependencies.authorityFacts.caller.Pid, nil, now)
+		person := proofErr == nil && proof.Helm == nil && proof.TerminalValidFor(*root)
+		read := func(e goal.Endpoint, _ bool, _ time.Time) (goal.Projection, error) {
+			p, _, err := goal.FreshProjection(dependencies.readContext(), e, func() (time.Time, error) { return commandNow(*root) })
+			if err != nil && person {
+				stale, staleErr := goal.Project(e, false, now)
+				if staleErr == nil {
+					stale.Banners = append([]string{"stale and non-authoritative: " + err.Error() + "; rerun metasystem internal goal next after repair"}, stale.Banners...)
+					return stale, nil
+				}
+			}
+			if err != nil {
+				return goal.Projection{}, fmt.Errorf("fresh ledger unavailable: %w\nrun: metasystem internal goal next after repairing the reported cause", err)
+			}
+			return p, nil
+		}
+		return nextSyncedWithInputs(stdout, stderr, *root, machine, *fetch, dependencies.endpoint, commandNow, read, dependencies.presence, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
 		fmt.Fprintln(stderr, "--label, --machine and --fetch need the upgraded goal list, and this checkout has the old one\nrun: metasystem goal sync --upgrade")

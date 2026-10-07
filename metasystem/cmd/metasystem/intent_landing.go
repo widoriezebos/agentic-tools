@@ -208,8 +208,8 @@ func landingIntentCommands() []intentCommand {
 		{
 			object: "landing", action: "start", audience: "both", summary: "resume the landing lane, so its landing agent runs when there is work",
 			usage: []string{"metasystem landing start"},
-			details: []string{"Ends a pause: the lane checkout's steward then wakes the landing agent at its next tick when there is work; metasystem landing run wakes it now.",
-				"When the lane can't run (the checkout has no machine nickname, or its supervision is not armed) nothing is changed and the one command that fixes it is named.",
+			details: []string{"A person ends pause and drain: the lane checkout's steward then wakes the landing agent at its next tick when there is work; metasystem landing run wakes it now.",
+				"A person reopens admission and clears pause before readiness is checked; a lane that cannot run then names the command that fixes it.",
 				"A lane already running changes nothing."},
 			maxArgs:  0,
 			examples: []string{"metasystem landing start"},
@@ -226,6 +226,15 @@ func landingIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem landing run"},
 			run:      runIntentLandingRun,
+		},
+		{
+			object: "landing", action: "drain", audience: "both", summary: "close automatic admission, finish queued work and hold",
+			usage:    []string{"metasystem landing drain [--reason TEXT]"},
+			details:  []string{"A person's act: keeps admitted work running and closes new agent hand-ins until a person runs landing start."},
+			flags:    []intentFlag{{name: "reason", value: "TEXT", usage: "why admission is closed"}},
+			maxArgs:  0,
+			examples: []string{"metasystem landing drain", "metasystem landing drain --reason 'maintenance after queued work finishes'"},
+			run:      runIntentLandingDrain,
 		},
 		{
 			object: "landing", action: "stop", audience: "both", summary: "pause the landing lane for maintenance until landing start",
@@ -323,6 +332,9 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	summary := view.Summary
 	if view.Root != nil {
 		summary += "; " + landingQueueWords(data.Queue)
+		if data.Admission != "" {
+			summary += "; " + data.Admission
+		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
 		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting), data.RunningProof), data)}
@@ -384,6 +396,16 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 			}
 			if batch.ClosureReason != "" {
 				section.Text(batch.ClosureReason)
+			}
+		}
+		if data.Admission != "" {
+			section := page.Section("Admission", "")
+			section.Text(data.Admission)
+			if data.Drain != nil {
+				section.Text("closed by " + data.Drain.By + " at " + lane.LocalText(data.Drain.At))
+				if data.Drain.Reason != "" {
+					section.Text(data.Drain.Reason)
+				}
 			}
 		}
 		if stop := data.Stop; stop != nil {
@@ -732,7 +754,8 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 			Details: []string{"refused because: " + lane.CodeUnsetting}}
 	}
 	pause, paused := lane.ReadPause(home)
-	if !paused {
+	drain, drainErr := plain.ReadDrain(record.Install)
+	if !paused && drain == nil && drainErr == nil {
 		return nil
 	}
 	proveAt := inv.cwd
@@ -742,37 +765,103 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 	if _, err := owners.person(proveAt); err != nil {
 		refused := inv.personRefusal("", err, inv.input.text("by"))
 		refused.Targets, refused.code = targets, 3
-		refused.Summary = "only a person may resume the landing lane " + pause.By + " stopped, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; it stays stopped"
+		if paused {
+			refused.Summary = "only a person may resume the landing lane " + pause.By + " stopped, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; it stays stopped"
+		} else {
+			refused.Summary = "only a person may reopen admission; the drain stays standing"
+		}
 		return refused
 	}
 	return nil
 }
 
-// startLane ends a person's pause and repairs an unreadable keeper record,
-// so the keeper wakes the agent at once when there is work; unchanged when
-// the lane was not paused. A lane that can't run is
-// refused with its fix before anything is written.
+// startLane clears only a proved person's fences, before independent readiness checks.
 func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, record lane.Record) intentResult {
 	targets := laneTargets(record.Root)
-	if refused := inv.laneNotReady(owners, record.Root); refused != nil {
+	proveAt := inv.cwd
+	if inv.resolveLayout() == nil {
+		proveAt = inv.layout.InstallationRoot.Path()
+	}
+	_, personErr := owners.person(proveAt)
+	resumed, reopened := false, false
+	details := []string{}
+	var removalErr error
+	if personErr == nil {
+		var drainErr, pauseErr error
+		reopened, drainErr = plain.ClearDrain(record.Install)
+		resumed, pauseErr = lane.ClearPause(home)
+		if pauseErr != nil {
+			resumed = false
+		}
+		if reopened {
+			details = append(details, "removed the drain; admission open")
+		}
+		if resumed {
+			details = append(details, "removed the pause")
+		}
+		if drainErr != nil {
+			details = append(details, "remove drain "+plain.DrainPath(record.Install)+": "+drainErr.Error())
+		}
+		if pauseErr != nil {
+			details = append(details, "remove pause: "+pauseErr.Error())
+		}
+		removalErr = errors.Join(drainErr, pauseErr)
+	} else if refused := inv.laneResumable(owners, home, record); refused != nil {
 		return *refused
 	}
-	resumed, err := lane.ClearPause(home)
-	if err == nil {
-		err = lane.RepairAgentRecord(home)
+	readiness := inv.laneNotReady(owners, record.Root)
+	if removalErr != nil {
+		if readiness != nil {
+			details = append(details, readiness.Summary, "readiness repair: "+shellCommand(readiness.next))
+		}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane was only partly reopened; " + strings.Join(details, "; "), Details: details, next: inv.sameCommand(), nextReason: "completes the removal, then checks readiness again"}
 	}
-	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",
-			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane's state could not be written: " + err.Error()}}
+	if refused := readiness; refused != nil {
+		if reopened || resumed {
+			refused.Summary = strings.Join(details, "; ") + "; " + refused.Summary
+			refused.Details = append(details, refused.Details...)
+		}
+		return *refused
+	}
+	if err := lane.RepairAgentRecord(home); err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: strings.Join(details, "; ") + "; the keeper record could not be repaired", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "tries the repair again"}
 	}
 	view := inv.laneView(owners, home)
-	agent := []string{"its landing agent starts when there is work"}
-	if resumed {
-		summary := "resumed the landing lane at " + record.Root
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: summary, Details: agent, view: landingDone(summary, record.Root)}
-	}
 	summary := "the landing lane at " + record.Root + " is already running"
-	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: summary, Details: agent, view: landingDone(summary, record.Root)}
+	outcome := intentUnchanged
+	if resumed || reopened {
+		summary = "resumed the landing lane at " + record.Root
+		outcome = intentConfirmed
+	}
+	if reopened {
+		summary += "; admission open"
+	}
+	return intentResult{Outcome: outcome, Targets: targets, Data: view, Summary: summary, Details: append(details, "its landing agent starts when there is work"), view: landingDone(summary, record.Root)}
+}
+
+func runIntentLandingDrain(inv *intentInvocation) int {
+	owners, _, record, problem := inv.laneContext(true)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	proveAt := inv.cwd
+	if inv.resolveLayout() == nil {
+		proveAt = inv.layout.InstallationRoot.Path()
+	}
+	by, err := owners.person(proveAt)
+	if err != nil {
+		return inv.render(*inv.personRefusal("", err, ""))
+	}
+	drain, changed, err := plain.SetDrain(record.Install, plain.Drain{By: by, At: owners.now().UTC().Format(time.RFC3339), Reason: inv.input.text("reason"), Source: plain.DrainSource{Kind: "person"}})
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "admission could not be closed", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries the drain write"})
+	}
+	outcome := intentConfirmed
+	if !changed {
+		outcome = intentUnchanged
+	}
+	summary := "admission closed by " + drain.By + "; queued work finishes before the lane holds"
+	return inv.render(intentResult{Outcome: outcome, Targets: laneTargets(record.Root), Data: drain, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows drain progress", view: landingDone(summary)})
 }
 
 // landing run starts the landing agent now instead of at the lane
@@ -785,12 +874,13 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 // the landing agent's session it started or found running, and the wake it
 // started for.
 type landingRunData struct {
-	Outcome lane.AgentOutcome `json:"outcome"`
-	Launch  string            `json:"launch,omitempty"`
-	Root    string            `json:"root"`
-	Reasons []string          `json:"reasons,omitempty"`
-	BatchID string            `json:"batch-id,omitempty"`
-	Members []plain.GoalSHA   `json:"members,omitempty"`
+	Outcome  lane.AgentOutcome `json:"outcome"`
+	Launch   string            `json:"launch,omitempty"`
+	Root     string            `json:"root"`
+	Reasons  []string          `json:"reasons,omitempty"`
+	BatchID  string            `json:"batch-id,omitempty"`
+	Members  []plain.GoalSHA   `json:"members,omitempty"`
+	Problems []string          `json:"problems,omitempty"`
 }
 
 // wakeWords says why the landing agent was started as a person reads it;
@@ -921,7 +1011,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	keeper.Continuation = func(current lane.Record) string { return plain.PersonBatchContinuation(current.Install, current, home) }
 	keeper.Explicit = true
 	run := keeper.Run()
-	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons}
+	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}
 	if recorded {
 		data.BatchID, data.Members = selected.ID, selected.Members
@@ -936,9 +1026,13 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	if syncErr != nil {
 		details = append(details, "question sync pending: "+syncErr.Error())
 	}
+	observation := ""
+	if len(run.Problems) > 0 {
+		observation = "; " + strings.Join(run.Problems, "; ")
+	}
 	switch run.Outcome {
 	case lane.AgentStarted:
-		summary := "started the landing agent " + run.Launch + " for " + wakeWords(run.Reasons)
+		summary := "started the landing agent " + run.Launch + " for " + wakeWords(run.Reasons) + observation
 		if recorded {
 			members := []string{}
 			for _, member := range selected.Members {
@@ -954,6 +1048,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		if run.Launch != "" {
 			summary = "the landing agent " + run.Launch + " is already running"
 		}
+		summary += observation
 		why := "nothing to do; it is starting"
 		if run.Launch != "" {
 			why = "nothing to do; it is at work"
@@ -961,7 +1056,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details, nextReason: why,
 			view: func(page *textui.Page) { page.Done(summary); page.Hint(textui.Hint{Reason: why}) }})
 	case lane.AgentIdle:
-		summary := "the landing lane at " + root + " has no queued work, so no landing agent was started"
+		summary := "the landing lane at " + root + " has no queued work, so no landing agent was started" + observation
 		why := "nothing to do; the lane is empty"
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details, nextReason: why,
 			view: func(page *textui.Page) {

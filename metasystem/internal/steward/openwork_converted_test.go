@@ -163,13 +163,8 @@ func approvedStewardGoal(id, intent, next, openedAt string) *goal.GoalFile {
 
 func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
 	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{
-		"waiting": approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
-		"stale-claim": {
-			Id: "stale-claim", State: goal.StateClaimed, Intent: "A record is not liveness", Origin: "main",
-			NextStep: "Continue it.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 2,
-			Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
-			History: bedHistory("stale-claim", "claim"),
-		},
+		"waiting":     approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
+		"stale-claim": seatClaimedGoal("stale-claim", "coordinator"),
 	})
 	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	if err != nil || w != WorkClaimable || !strings.Contains(reason, "waiting") {

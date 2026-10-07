@@ -382,7 +382,7 @@ func (inv *intentInvocation) acquireDesignCritiqueClaim(goalID string) *intentRe
 	if file == nil || file.State == goal.StateClaimed {
 		return nil
 	}
-	if claimed := inv.acquireClaim(goalID); claimed.Outcome != intentConfirmed {
+	if claimed, granted := inv.acquireClaim(goalID); !granted {
 		claimed.Summary = fmt.Sprintf("the design critique claims goal %s first, and the claim was not granted: %s; no critique started", goalID, strings.TrimSpace(claimed.Summary))
 		return &claimed
 	}

@@ -429,6 +429,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 				return &NoRepeat{}
 			}
 		}
+		if err := proofAdmission(install, checkout, commit, seams); err != nil {
+			return err
+		}
 		executable, err := seams.Executable()
 		if err != nil {
 			return err
@@ -676,6 +679,11 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if seams.FenceCheck != nil {
 			if err := seams.FenceCheck(); err != nil {
+				return err
+			}
+		}
+		if attempt == "" {
+			if err := proofAdmission(install, checkout, running.Commit, seams); err != nil {
 				return err
 			}
 		}

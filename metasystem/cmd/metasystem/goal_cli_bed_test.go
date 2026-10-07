@@ -28,22 +28,25 @@ import (
 // queued, perf-pass parked and port-engine done. The goal owners are the real
 // ones; public commands run through the public router with injected streams.
 type goalCLIBed struct {
-	t       *testing.T
-	root    string
-	repo    *testgoal.Repository
-	mu      sync.Mutex
-	now     time.Time
-	machine string
-	lineage string
-	remote  string
-	prove   goalAuthorityProver
-	caller  ownercall.Process
+	t                  *testing.T
+	root               string
+	repo               *testgoal.Repository
+	mu                 sync.Mutex
+	now                time.Time
+	machine            string
+	lineage            string
+	remote             string
+	prove              goalAuthorityProver
+	caller             ownercall.Process
+	allowTerminalProof bool
 }
 
 // goalCLISeedNow is the clock the seed claim was taken at.
 var goalCLISeedNow = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 
 type goalCLISeed struct {
+	// checkout is an externally created worktree; empty uses a temporary root.
+	checkout string
 	// remote is the endpoint's sync remote; "origin" (two-machine mode) by default.
 	remote string
 	// config is appended to metasystem.conf after metasystem.runtimes=fake.
@@ -55,11 +58,17 @@ type goalCLISeed struct {
 	// noEnrollment leaves the checkout without the local terminal enrollment
 	// (by default Wido is enrolled, as the fixture-human acts need a name).
 	noEnrollment bool
+	// next and claim classify terminal authority even for an agent before
+	// reading the ledger. Other fixtures must catch unexpected proof calls.
+	allowTerminalProof bool
 }
 
 func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 	t.Helper()
-	root := t.TempDir()
+	root := seed.checkout
+	if root == "" {
+		root = t.TempDir()
+	}
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
@@ -158,7 +167,7 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 	}
 	bed := &goalCLIBed{
 		t: t, root: root, now: goalCLISeedNow.Add(time.Minute), machine: "fixture-machine", lineage: "fixture-lineage",
-		remote: remote, prove: fixedFixtureGoalAuthority, caller: ownercall.EntryCaller(),
+		remote: remote, prove: fixedFixtureGoalAuthority, caller: ownercall.EntryCaller(), allowTerminalProof: seed.allowTerminalProof,
 		repo: testgoal.New(files, goalCLISeedNow, "0000000000000000000000000000000000000001"),
 	}
 	return bed
@@ -221,9 +230,11 @@ func (b *goalCLIBed) dependencies(stdout, stderr *bytes.Buffer) syncRequestDepen
 		proveHuman: func(root string, pid int64, reader humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
 			return b.prove(root, pid, reader, "", "", now)
 		},
-		proveTerminal: func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
-			b.t.Fatal("goal CLI bed: unexpected terminal proof")
-			return humanauthority.Proof{}, nil
+		proveTerminal: func(root string, pid int64, reader humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+			if !b.allowTerminalProof {
+				b.t.Fatal("unexpected terminal authority proof; next/claim fixtures must opt in")
+			}
+			return b.prove(root, pid, reader, "", "", now)
 		},
 		presence: func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil },
 		stdout:   stdout, stderr: stderr,

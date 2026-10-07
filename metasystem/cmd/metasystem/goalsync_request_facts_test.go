@@ -27,6 +27,12 @@ type syncRequestFacts struct {
 func newSyncRequestFacts(t *testing.T) *syncRequestFacts {
 	t.Helper()
 	root := t.TempDir()
+	// Explicit commands resolve the installation's symlinks before reading
+	// authority and the ledger; the fixture names that same directory.
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for path, data := range map[string][]byte{
 		"metasystem.conf":         []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"),
 		"bin/metasystem":          []byte("#!/bin/sh\nexit 0\n"),
@@ -52,7 +58,7 @@ func newSyncRequestFacts(t *testing.T) *syncRequestFacts {
 
 func (f *syncRequestFacts) checkRoot(root string) {
 	f.t.Helper()
-	if root != f.root {
+	if !sameCanonicalPath(root, f.root) {
 		f.t.Fatalf("request root = %q, want %q", root, f.root)
 	}
 }

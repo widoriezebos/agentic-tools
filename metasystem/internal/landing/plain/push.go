@@ -73,7 +73,13 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		return outcome, fmt.Errorf("read origin's main: %w", err)
 	}
 	outcome.Old = old
-	onMain, err := checkoutGit(checkout, seams).contains(old, head)
+	contains := func(ancestor, commit string) (bool, error) {
+		if seams.Git == nil {
+			return IsAncestor(checkout, ancestor, commit)
+		}
+		return checkoutGit(checkout, seams).contains(commit, ancestor)
+	}
+	onMain, err := contains(head, old)
 	if err != nil {
 		return outcome, err
 	}
@@ -105,7 +111,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	if refusal := provenGreen(install, tree); refusal != nil {
 		return outcome, refusal
 	}
-	forward, err := checkoutGit(checkout, seams).contains(head, old)
+	forward, err := contains(old, head)
 	if err != nil {
 		return outcome, err
 	}

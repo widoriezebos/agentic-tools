@@ -237,6 +237,7 @@ func seatClaimedGoal(id, lineage string) *goal.GoalFile {
 	file := seatReadyGoal(id, "Continue it.")
 	file.State = goal.StateClaimed
 	file.Revision = 3
+	file.StopCapability = &goal.StopCapability{Generation: 3, Revision: 3, Machine: seatBedMachine, ClaimEpoch: 1}
 	file.Claimed = &goal.ClaimRecord{Machine: seatBedMachine, Lineage: lineage, At: "2026-08-23T01:00:00Z", Revision: 3}
 	file.History = append(file.History, goal.HistoryLine{At: "2026-08-23T01:00:00Z",
 		Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC1", seatBedMachine, lineage), Verb: "claim",

@@ -138,6 +138,8 @@ func TestIntentPlanningClaimAndRelease(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
 	bed.lineage = "m1"
+	// Even a continuation proves the holder before its fresh ledger read.
+	announceProofFixtureHolder(t, bed.root())
 	held := bed.goalFile(bedGoal)
 	if held.State != goal.StateClaimed || held.Claimed == nil {
 		t.Fatalf("fixture goal is not claimed: %+v", held)

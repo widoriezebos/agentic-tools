@@ -69,7 +69,8 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHe
 			}
 		}
 	}
-	if len(timerHeld) > 0 && timerHeld[0] {
+	drain, drainErr := ReadDrain(install)
+	if len(timerHeld) > 0 && timerHeld[0] || drain != nil || drainErr != nil {
 		return reasons, nil
 	}
 	due, err := fullProofDue(install, now)
@@ -196,16 +197,6 @@ func KeeperWake(home string, effects ...ProveSeams) lane.WakeSources {
 	}}
 }
 
-// KeeperProofHold is the keeper's hold while a proof runs in the lane
-// checkout at root (ProofHold).
-func KeeperProofHold(root string) (string, error) {
-	layout, err := lane.NewLayout(root)
-	if err != nil {
-		return "", err
-	}
-	return ProofHold(string(layout.Install), ProveSeams{})
-}
-
 // KeeperFingerprint is the lane at root as its landing agent can change it:
 // its queue (hand-ins and returns), its newest result and push, and a proof
 // it started. The keeper compares it around a launch; equal means the launch
@@ -249,4 +240,33 @@ func KeeperFingerprint(root string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// DrainWake rechecks the atomic fence at the keeper's start claim.
+func DrainWake(install, checkout string, wake lane.Wake, effects ...ProveSeams) (lane.Wake, error) {
+	drain, err := ReadDrain(install)
+	if err != nil {
+		return wake, err
+	}
+	if drain == nil {
+		return wake, nil
+	}
+	seams := ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	pending, err := pending(install, checkout, seams)
+	if err != nil {
+		return wake, err
+	}
+	reasons := []string{}
+	if drain.State != DrainHeld && len(pending) > 0 {
+		for _, reason := range wake.Reasons {
+			if reason != WakeFullDue {
+				reasons = append(reasons, reason)
+			}
+		}
+	}
+	wake.Reasons = reasons
+	return wake, nil
 }

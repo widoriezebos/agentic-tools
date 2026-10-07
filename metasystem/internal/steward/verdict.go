@@ -36,6 +36,7 @@ type OpenWork string
 
 const (
 	WorkNone      OpenWork = "none"      // valid Goal-free, or validly empty claims and journal
+	WorkWaiting   OpenWork = "waiting"   // held work awaiting execution authority
 	WorkOwned     OpenWork = "owned"     // open work whose broader worker census still decides liveness
 	WorkClaimable OpenWork = "claimable" // claimable backlog with no live claim or job process
 	WorkInFlight  OpenWork = "in-flight" // backlog joined to one or more live process identities
@@ -111,6 +112,9 @@ func Decide(s Snapshot) Decision {
 	if s.Work == WorkClaimable {
 		return Decision{VerdictIdleBacklogDead, ActNotify,
 			"claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime"}
+	}
+	if s.Work == WorkWaiting {
+		return Decision{VerdictStalledDead, ActNotify, "held work awaits execution authority"}
 	}
 	if s.Work == WorkNone {
 		return Decision{VerdictNoWork, ActNone, "no open work on this machine"}

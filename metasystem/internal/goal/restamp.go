@@ -31,6 +31,9 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 			if f.State != StateClaimed || f.Claimed == nil || f.StopCapability == nil {
 				return nil, fmt.Errorf("goal %s is not claimed with a stop capability", id)
 			}
+			if f.IsFencedClaim() || f.Claimed.HandedOver.present() {
+				return nil, fmt.Errorf("goal %s is fenced or handed over; use its recovery owner", id)
+			}
 			if !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s is claimed by %s (%s), not this session (%s, %s)", id,
 					f.Claimed.Machine, f.Claimed.Lineage, r.Actor.Machine, r.Actor.Lineage)
@@ -45,6 +48,9 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 			current := f.StopCapability.ClaimEpoch
 			if rebindEpoch < current {
 				return nil, fmt.Errorf("goal %s: the claim can't go back from %d to %d", id, current, rebindEpoch)
+			}
+			if err := authenticateClaimHolder(r); err != nil {
+				return nil, err
 			}
 			if rebindEpoch == current {
 				return nil, NothingToDo{Reason: fmt.Sprintf("stop capability already carries lease epoch %d", current)}

@@ -99,6 +99,7 @@ func TestIntentBuildForeignClaimRefused(t *testing.T) {
 		workApprovedBox(file)
 		if file.Claimed != nil {
 			file.Claimed.Machine, file.Claimed.Lineage = "mac-other", "o1"
+			file.StopCapability.Machine = file.Claimed.Machine
 		}
 	})
 	bed.lineage = "m1"

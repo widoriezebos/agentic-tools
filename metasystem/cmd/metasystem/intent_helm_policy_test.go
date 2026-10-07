@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -129,7 +130,13 @@ func TestHelmPolicyHostAcceptance(t *testing.T) {
 		}
 	}
 	if after, paused := lane.ReadPause(b.home); paused || !reflect.DeepEqual(after, pauseBefore) {
-		t.Fatal("take created a drain/pause")
+		t.Fatal("take created a pause")
+	}
+	requireHelmDrain(t, b.lane, helmDrainSource(helm.Active(b.lane).Record))
+	for _, root := range []string{b.seat, b.second, b.coordinator} {
+		if drain, err := plain.ReadDrain(root); err != nil || drain != nil {
+			t.Fatalf("non-lane checkout drained: %s %+v %v", root, drain, err)
+		}
 	}
 	before := helm.Active(b.lane).Record
 	b.now = b.now.Add(time.Hour)
@@ -147,7 +154,7 @@ func TestHelmPolicyHostAcceptance(t *testing.T) {
 			t.Fatalf("current underlying value hidden: %+v", policy)
 		}
 	}
-	if code, _, raw := b.helm(t, b.seat, "status", "--all"); code != 0 || !strings.Contains(raw, "landing.batch") || strings.Contains(raw, "drain") {
+	if code, _, raw := b.helm(t, b.seat, "status", "--all"); code != 0 || !strings.Contains(raw, "landing.batch") || !strings.Contains(raw, "draining") {
 		t.Fatalf("all status: %d %s", code, raw)
 	}
 	_, err := lane.SetPause(b.home, "Wido", b.now)
@@ -168,6 +175,9 @@ func TestHelmPolicyHostAcceptance(t *testing.T) {
 	}
 	if after, paused := lane.ReadPause(b.home); !paused || !reflect.DeepEqual(pauseBefore, after) {
 		t.Fatal("return removed an immediate pause")
+	}
+	if drain, err := plain.ReadDrain(b.lane); err != nil || drain != nil {
+		t.Fatalf("all return left a matching drain: %+v %v", drain, err)
 	}
 	if policy := b.show(t, "landing.batch"); policy.Value != "5" || policy.SetBy != "Wido" {
 		t.Fatalf("return lost a later setting: %+v", policy)

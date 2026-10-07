@@ -60,7 +60,9 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 // landingAgent starts, finds and reaps the landing agent through the launch
 // manager the work verbs use.
 type landingAgent struct {
-	manager func() *launch.Manager
+	// proofEffects are the lane Git and process boundaries; zero uses the host.
+	proofEffects plain.ProveSeams
+	manager      func() *launch.Manager
 	// settings are the launch settings of the installation at a state root.
 	settings func(stateRoot string) (launch.Settings, error)
 	now      func() time.Time
@@ -232,7 +234,9 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 	if machine == nil {
 		machine = goal.ResolveMachine
 	}
-	seams := plain.ProveSeams{Now: agent.now, TimerHeld: func() bool { _, paused := lane.ReadPause(home); return paused || helm.Active(self).Active }}
+	seams := agent.proofEffects
+	seams.Now = agent.now
+	seams.TimerHeld = func() bool { _, paused := lane.ReadPause(home); return paused || helm.Active(self).Active }
 	seams.Lane = func() (lane.Record, error) {
 		record, present, err := lane.Read(home)
 		if err == nil && !present {
@@ -252,6 +256,13 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		return inv.laneBatchSeams(home, record, seams).Policy(key)
 	}
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
+		AdmitWake: func(root string, wake lane.Wake) (lane.Wake, error) {
+			record, err := seams.Lane()
+			if err != nil {
+				return wake, err
+			}
+			return plain.DrainWake(record.Install, record.Root, wake, seams)
+		},
 		Helmed:       func(root string) bool { return helm.Active(root).Active },
 		Continuation: func(record lane.Record) string { return plain.PersonBatchContinuation(record.Install, record, home) },
 		Prepare: func(record lane.Record) error {
@@ -261,14 +272,37 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			return err
 		},
 		Observe: func(record lane.Record) error {
-			return plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
+			effects := agent.proofEffects
+			effects.Now = agent.now
+			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
+			questionErr := plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
+			if questionErr != nil {
+				questionErr = fmt.Errorf("synchronize the lane's stop question in %s: %w; repair that question source and observe the lane again", plain.Dir(record.Install), questionErr)
+			}
+			if drainErr != nil || questionErr != nil {
+				return &lane.ObservationError{Progress: drainErr, StopQuestion: questionErr}
+			}
+			return nil
 		},
 		PersonSelection: func(record lane.Record) bool {
 			_, err := plain.RecordedPersonBatch(record.Install, record, "")
 			return err == nil
 		},
 		Holds: []func(string) (string, error){
-			plain.KeeperProofHold,
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.ProofHold(record.Install, agent.proofEffects)
+			},
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.KeeperDrainHold(record.Install)
+			},
 			func(root string) (string, error) {
 				if mark, standing := outage.StandingAt(batch.ModuleRoot(root), agent.now()); standing {
 					return fmt.Sprintf("the model provider is limited or overloaded (%s since %s); it starts when the provider recovers", mark.LastClass, lane.LocalText(mark.Since)), nil

@@ -19,7 +19,7 @@ Decide
   land-without-sitting   let a goal that waits for your review land without a sitting
 
 Work
-  claim                  claim a goal for this session, or the next ready goal
+  claim                  reserve a named goal as a person, or claim work for this session
   release                release a claim this session holds
   pause                  park a goal with a reason
   resume                 resume a parked goal, or a stopped goal under its standing box

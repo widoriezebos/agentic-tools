@@ -319,8 +319,8 @@ func TestLandingSetReplacesACorruptRecord(t *testing.T) {
 }
 
 // A lane whose checkout's supervision is not armed cannot run its landing
-// agent: landing start says so, names the command a person runs and changes
-// nothing; it never claims a start.
+// agent: a person's landing start clears pause, then names the readiness
+// repair; it never claims that an agent was started.
 func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -340,8 +340,8 @@ func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	if code != 3 || strings.Contains(stdout+stderr, "resumed the") {
 		t.Fatalf("start = %d %q %q; want a person's act named, nothing started", code, stdout, stderr)
 	}
-	if _, paused := lane.ReadPause(bed.home); !paused {
-		t.Fatalf("the refused start changed the lane's pause")
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatalf("keeper readiness vetoed the person's pause removal")
 	}
 	var result struct{ Outcome string }
 	_, stdout, _ = bed.run(t, "landing", "start", "--json")

@@ -39,7 +39,11 @@ func (shown goalShown) view(page *textui.Page) {
 	}
 	facts, headline := []string{}, file.Id+" is "+file.State
 	if file.Claimed != nil && file.State == goal.StateClaimed {
-		headline += " by " + file.Claimed.Machine
+		if file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0 {
+			headline = file.Id + " is reserved, awaiting session start"
+		} else {
+			headline += " by " + file.Claimed.Machine
+		}
 	}
 	if file.Tier != 0 {
 		facts = append(facts, fmt.Sprintf("tier %d", file.Tier))

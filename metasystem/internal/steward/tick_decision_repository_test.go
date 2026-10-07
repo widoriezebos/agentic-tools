@@ -35,12 +35,8 @@ func newDecisionTickRepository(t *testing.T) *decisionTickRepository {
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1",
 		SyncMode: goal.SyncLocal, Revision: 1,
 	}
-	file := &goal.GoalFile{
-		Id: "fix-it", State: goal.StateClaimed, Intent: "Repair the thing", Origin: "main",
-		NextStep: "Repair it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
-		Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
-		History: bedHistory("fix-it", "claim"),
-	}
+	file := seatClaimedGoal("fix-it", "coordinator")
+
 	return &decisionTickRepository{t: t, root: root, head: "1111111111111111111111111111111111111111",
 		files: map[string][]byte{
 			"plans/goals/backlog.md": goal.RenderRoot(rootRecord),

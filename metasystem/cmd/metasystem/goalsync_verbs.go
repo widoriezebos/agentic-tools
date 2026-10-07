@@ -114,6 +114,7 @@ func goalMigrateWith(dependencies syncRequestDependencies, stdout, stderr io.Wri
 		return 1
 	}
 	configureCarriedCounselor(&endpoint)
+	endpoint.ClaimHolder = dependencies.claimHolder.Facts
 	res, err := goal.Migrate(goal.VerbRequest{
 		Endpoint: endpoint, Actor: actor, Ulid: ulid, Now: time.Now(), CallerClass: classification.Class,
 	}, goal.MigrateOptions{

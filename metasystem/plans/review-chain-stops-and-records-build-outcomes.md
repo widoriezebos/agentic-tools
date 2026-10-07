@@ -1,0 +1,23 @@
+# Brief: review-chain-stops-and-records, unit build-outcomes
+
+Working Mode: Implement
+Goal review-chain-stops-and-records (plan goal 2). Spec: the accepted design plans/designs/review-chain-stops-and-records.md, Decision 3 "Stop empty, oversized and failed builds honestly" (read it in full, with its five-questions rows and the build-outcomes rows of the Units table and "Public-verb proof and mutations"). This worktree's branch already holds unit-stop and unit-stop-fixes (99a0b73c3, 33d60f088): build on their stop record, ask and cause vocabulary (internal/loopstop/, internal/landing/plain/cause.go), do not re-create them. The design's sites were read on main; confirm each on this branch before you change it (internal/launch/unit_run.go:413 plans proof right after build, :694 finishes a round, :724 counts a failed proof regardless of attribution; cmd/metasystem/intent_unit_review.go:195 finds an empty result late).
+
+Build, in production paths only:
+1. Freeze the builder's diff the moment it exits. Empty: `stopped (gap)` with its last message, no proof and no read launched. More than twice the declared changed-line estimate (additions plus deletions in the estimate's scope, tests included): hold before proof for a person; record measured and declared lines. A person's `work review ... --reason TEXT --by NAME` prints and records the impact of accepting that size BEFORE it takes effect, then resumes the pending proof (no new build). An agent cannot accept the size. A gap revision binds to the retained plan and gap.
+2. Every failed step carries the shared cause. Only demonstrated `own` spends an attempt. A test exit alone is `unclassified`; compare the same failing command on the round's base once (or reuse exact baseline evidence): red on both is base evidence, not charged. A known flake gets its one repeat. A command that cannot run, a lost process or a moved tree is `environment`: one retry of that step with retained inputs and a fresh output path, never another build; a second environment failure stops with its cause. A deadline stops without automatic retry. Unknown attribution holds and asks; it never spends a correction.
+3. Environment executions are reconciled out of the counted attempts and the goal's reserved charge by launch id; replaying collection never refunds twice. A main red joins the incident owner only when the evidence names main's tree.
+Size: about 140 production lines (370 with tests). If it grows past 250 production lines, stop and report what you would split.
+Public-verb test (from the design): `work build` returning an empty diff produces a gap stop with no proof or read launched; an oversized diff holds and the printed person act prints and records its impact before resuming proof; a denied command retries exactly once, keeps one unit attempt and no goal charge, and a third starts nothing; a red without attribution is unknown. Mutations: move the gap check after proof; charge or rebuild an environment retry.
+
+
+The five questions are answered in Decision 1's table; implement those answers, and say in the return where each lives in code.
+
+# Defect classes the reads keep finding (avoid each; the read checks them)
+1. A refusal remedy that cannot succeed when followed, or that undoes the gate.
+2. An agent given a person's power, or a person treated as an agent. A person's act is never refused except to prevent damage.
+3. An older or records entry hiding current state.
+4. A test seam hiding production behavior: every new function has a production caller and a test through the public verb; no stub returns an error shape production does not.
+
+# Check (impacted tests only; the full gate runs per batch on the goal branch)
+Build, vet, the packages you changed with -count=1 -timeout 30m, the cmd tests you added or changed by name, their mutations, then the broad cmd selection for the area you touched (at least `go test -count=1 -timeout 60m -run 'TestLanding|TestWork|TestIntent|TestGoal|TestReview|TestUnit|TestClaim|TestSession|TestHelm|TestPolicy|TestQuestion|TestKeeper|TestDispatch|TestEvery|TestAudit|TestInstruction' ./cmd/metasystem/`: every test there must pass, not only yours; a red you did not cause still blocks done), then `go run ./cmd/devgate static`. Report done only when all of these exit 0. If you change a message or skill text, also run `go test -count=1 -timeout 30m -run 'TestAudit|TestInstruction' ./cmd/metasystem/`. Every new test calls t.Parallel(); no wall-clock waits (inject clocks); test executables via testexec. Never open any metasystem.conf.local (synthetic settings only). Do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat, and each test with the mutation that turns it red.

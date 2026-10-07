@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -628,6 +629,9 @@ type intentInvocation struct {
 	owners    intentOwners
 	layout    stateroot.Layout
 	stateRoot string
+	// claimPreparation retains preparation facts when an acquired claim lets
+	// work proceed despite another reservation awaiting adoption.
+	claimPreparation *up.Result
 	// reviewWork is set while review G examines one work item's subject.
 	reviewWork *reviewWorkContext
 	// inferredChain is the one examination root inferred from the goal's
@@ -841,6 +845,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	result = result.withClaimPreparation(inv.claimPreparation)
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
 	if result.Targets == nil {
@@ -1193,7 +1198,12 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		}
 		return result
 	case report.failure != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
+		outcome := intentRefused
+		var captureFailure goal.PublicationCaptureFailure
+		if errors.As(report.failure, &captureFailure) {
+			outcome = intentFailed
+		}
+		return intentResult{Outcome: outcome, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
 			Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
 	case landed && code == 0:
 		confirmed.Outcome = intentConfirmed
@@ -1515,7 +1525,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"landing": {
 		{"Read", []string{"status"}},
-		{"Work", []string{"run", "start", "stop", "prove", "push", "return", "resolve"}},
+		{"Work", []string{"run", "start", "drain", "stop", "prove", "push", "return", "resolve"}},
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {

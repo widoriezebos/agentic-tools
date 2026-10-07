@@ -208,6 +208,8 @@ func seatState(seat board.SeatView) textui.State {
 	state := textui.Idle
 	for _, entry := range seat.Goals {
 		switch {
+		case entry.Reserved:
+			continue
 		case entry.Unknown != "":
 			return textui.Unknown
 		case entry.Stage != board.StageClaimedIdle && !entry.Stage.Terminal():

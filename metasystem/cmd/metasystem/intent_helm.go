@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -202,6 +205,7 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	enrollmentLine, enrolledNow := actor.enrollmentLine, actor.enrolledNow
 	var standing helm.State
 	var repeated bool
+	signatureWritten := false
 	entry := helm.Entry{At: now, Action: "take", By: record.By, Reason: reason, Leader: record.Leader}
 	targets := []intentTarget{{Kind: "seat", ID: seat.Checkout}}
 	err = config.WithPolicyLock(seat.Checkout, func() error {
@@ -222,8 +226,6 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			record.Enrollment, record.EnrolledAs = actor.record.Enrollment, actor.record.EnrolledAs
 			if standing.Reason == reason && standing.Enrollment == record.Enrollment && !enrolledNow {
 				repeated = true
-				_, err := helm.Write(path, record)
-				return err
 			}
 		} else {
 			if standing.Active {
@@ -235,9 +237,31 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			record.Policies = inv.helmPolicySnapshot(seat.Checkout, record.By, now)
 		}
 		_, err = helm.Write(path, record)
+		if err != nil {
+			return err
+		}
+		signatureWritten = true
+		_, registered, err := inv.helmLane(seat.Checkout)
+		if err != nil || registered.Install == "" {
+			return err
+		}
+		_, _, err = plain.SetDrain(registered.Install, plain.Drain{By: record.By, At: now.UTC().Format(time.RFC3339), Reason: reason,
+			Source: plain.DrainSource{Kind: "helm", Checkout: record.Checkout, By: record.By, At: record.At}})
 		return err
 	})
 	if err != nil {
+		if signatureWritten {
+			// The signature stands, so the take is logged now: its retry is a
+			// repeat and would not log it (nor the holder it replaced).
+			details := []string{err.Error()}
+			if !repeated {
+				if logErr := helm.Log(path, entry); logErr != nil {
+					details = append(details, "helm.log was not appended: "+logErr.Error())
+				}
+			}
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the helm is held, but the lane drain failed; the take is partial",
+				next: inv.typedArgv(), nextReason: "retry the same take at the person's terminal after repairing the reported drain or registration failure", Details: details, Data: map[string]any{"helm": record}})
+		}
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the helm signature write is incomplete; the take is not confirmed",
 			next: inv.typedArgv(), nextReason: "retry at the person's enrolled terminal after correcting the write failure; any existing helm remains held", Details: []string{err.Error()}})
 	}
@@ -393,6 +417,7 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was done", next: inv.typedArgv(), nextReason: "run this at the person's enrolled terminal inside a checkout"})
 	}
 	var removal helm.Removal
+	var drainLines []string
 	err = config.WithPolicyLock(seat.Checkout, func() error {
 		fresh, err := helm.Locate(path)
 		if err != nil {
@@ -402,6 +427,28 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 			return fmt.Errorf("the helm target changed; repeat the return")
 		}
 		removal, err = helm.Remove(path)
+		if err == nil {
+			_, registered, readErr := inv.helmLane(seat.Checkout)
+			if readErr != nil {
+				drainLines = append(drainLines, "the lane drain could not be checked: "+readErr.Error()+"; a person runs metasystem landing start")
+			} else if registered.Install != "" {
+				record, problem := helm.Decode(removal.Raw)
+				source := plain.DrainSource{}
+				if removal.Present && removal.ReadErr == nil && problem == "" {
+					source = plain.DrainSource{Kind: "helm", Checkout: record.Checkout, By: record.By, At: record.At}
+				}
+				cleared, clearErr := plain.ClearHelmDrain(registered.Install, source)
+				if cleared {
+					drainLines = append(drainLines, "removed the helm's drain; admission open")
+				} else if drain, drainErr := plain.ReadDrain(registered.Install); drain != nil || drainErr != nil || clearErr != nil {
+					line := "the lane drain remains; a person runs metasystem landing start"
+					if clearErr != nil {
+						line += ": " + clearErr.Error()
+					}
+					drainLines = append(drainLines, line)
+				}
+			}
+		}
 		return err
 	})
 	if err != nil && removal.Seat.CommonDir == "" {
@@ -417,7 +464,7 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 			Decision: "remove " + removal.Seat.Signature + " by hand (chmod u+w " + removal.Seat.Dir + " if needed), then run metasystem helm return again",
 			Details:  []string{err.Error()}})
 	case !removal.Present:
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the machinery is at the helm; nothing to return"})
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the machinery is at the helm; nothing to return", text: drainLines, Details: drainLines})
 	}
 	record, problem := helm.Decode(removal.Raw)
 	if removal.ReadErr != nil {
@@ -428,6 +475,7 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 		record = helm.Record{By: "unknown", Reason: problem}
 	}
 	lines := []string{"returned the helm " + record.By + " held: " + record.Reason}
+	lines = append(lines, drainLines...)
 	if err := helm.Log(path, helm.Entry{At: owners.now(), Action: "return", By: record.By, Reason: problem, Diagnostic: func() []byte {
 		if problem != "" {
 			return removal.Raw
@@ -444,7 +492,7 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 		summary, lines = lines[0], lines[1:]
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "seat", ID: removal.Seat.Checkout}},
-		Summary: summary, text: lines, Data: map[string]any{"returned": record}})
+		Summary: summary, text: lines, Details: drainLines, Data: map[string]any{"returned": record}})
 }
 
 // helmReport is the best-effort account shared by status and return: yields
@@ -452,6 +500,14 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 // place.
 func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []string {
 	lines := []string{fmt.Sprintf("acts the helm let through since the take: %s", helmYieldCount(seat, since))}
+	if home, registered, err := inv.helmLane(seat.Checkout); err != nil {
+		lines = append(lines, "lane admission unknown: "+err.Error())
+	} else if registered.Install != "" {
+		root := registered.Root
+		status := plain.ReadStatus(home, registered, lane.View{Root: &root}, inv.landing().plainProve)
+		lines = append(lines, "lane admission: "+status.Admission)
+		lines = append(lines, status.Problems...)
+	}
 	layout, err := inv.owners.resolver.ResolveLayout(seat.Checkout)
 	if err != nil {
 		return append(lines, "running work: unavailable: "+err.Error())
@@ -464,6 +520,36 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 		}
 	}
 	return append(lines, fmt.Sprintf("running dispatch jobs: %d (metasystem work status lists them; the helm stops none)", running))
+}
+
+// helmLane resolves the lane's canonical installation, including linked worktrees.
+// An unreadable coordinator declaration does not hide an independently known lane.
+func (inv *intentInvocation) helmLane(checkout string) (home string, record lane.Record, err error) {
+	registry, registryErr := inv.policyReaders().Registry(checkout)
+	var registryProblem *config.PolicyReadError
+	if registry.Lane == "" && errors.As(registryErr, &registryProblem) && registryProblem.Source == "lane" {
+		return "", lane.Record{}, fmt.Errorf("the lane registration could not be checked: %w", registryErr)
+	}
+	seat, locateErr := helm.Locate(registry.Lane)
+	if registry.Lane == "" {
+		return "", lane.Record{}, nil
+	}
+	if locateErr != nil {
+		return "", lane.Record{}, locateErr
+	}
+	if seat.Checkout != checkout {
+		return "", lane.Record{}, nil
+	}
+	home, err = inv.landing().home()
+	if err != nil {
+		return
+	}
+	var present bool
+	record, present, err = lane.Read(home)
+	if err == nil && (!present || record.Root != registry.Lane) {
+		err = fmt.Errorf("the landing lane registration changed; repeat the helm act")
+	}
+	return
 }
 
 func helmYieldCount(seat helm.Seat, since time.Time) string {
@@ -502,7 +588,10 @@ func (inv *intentInvocation) readHelm(path string) (helmReading, bool) {
 		return helmReading{}, false
 	}
 	if state.Malformed != "" {
-		return helmReading{state: state, lines: []string{"HUMAN AT THE HELM (the signature is unreadable: " + state.Malformed + ") — " + humanauthority.PersonActRemedy(helmReturnCommand(path))}}, true
+		seat, _ := helm.Locate(path)
+		report := inv.helmReport(seat, time.Time{})
+		lines := []string{"HUMAN AT THE HELM (the signature is unreadable: " + state.Malformed + ") — " + humanauthority.PersonActRemedy(helmReturnCommand(path))}
+		return helmReading{state: state, report: report, lines: append(lines, report...)}, true
 	}
 	zone := inv.owners.helm.withDefaults().zone
 	seat, _ := helm.Locate(path)

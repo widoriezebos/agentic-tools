@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -214,12 +215,22 @@ func (inv *intentInvocation) runHelmAll(act string) int {
 		}
 		results = append(results, row)
 		lines = append(lines, path+": "+result.Summary)
+		if act == "return" {
+			lines = append(lines, result.Details...)
+		}
 		if exit != 0 {
 			code = 1
 			lines = append(lines, "at the person's enrolled terminal: "+command(path))
 		}
 		if act == "status" {
 			if data, ok := result.Data.(map[string]any); ok {
+				if helmLines, ok := data["helm"].([]any); ok {
+					for _, value := range helmLines {
+						if line, ok := value.(string); ok && strings.HasPrefix(line, "lane admission") {
+							lines = append(lines, line)
+						}
+					}
+				}
 				if policies, ok := data["policies"]; ok {
 					raw, _ := json.Marshal(policies)
 					var values []config.PolicyResolution

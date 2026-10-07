@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -489,11 +490,13 @@ var (
 )
 
 type syncRequestDependencies struct {
+	ctx            context.Context
 	authorityFacts goalAuthorityReadFacts
 	endpoint       func(string) (goal.Endpoint, error)
 	machine        func(string) (string, error)
 	ensureGuard    func(string) error
 	ownerLineage   func() string
+	claimHolder    claimHolderReaders
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
@@ -509,6 +512,13 @@ type syncRequestDependencies struct {
 	// the process's own. A caller that owns its streams (a parallel test)
 	// sets both, so no other goroutine's output can reach them.
 	stdout, stderr io.Writer
+}
+
+func (d syncRequestDependencies) readContext() context.Context {
+	if d.ctx != nil {
+		return d.ctx
+	}
+	return context.Background()
 }
 
 func (d syncRequestDependencies) helmState(root string) helm.State {
@@ -573,19 +583,47 @@ func syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag string, obse
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
+	if by != "" && (verb == "claim" || verb == "steal") {
+		now, err := commandNow(root)
+		if err != nil {
+			return goal.VerbRequest{}, err
+		}
+		proof := observedProof
+		if proof == nil {
+			p, err := dependencies.proveHuman(root, dependencies.authorityFacts.caller.Pid, nil, now)
+			if err != nil {
+				return goal.VerbRequest{}, err
+			}
+			proof = &p
+		}
+		if !proof.ValidFor(root) || proof.Helm != nil {
+			return goal.VerbRequest{}, fmt.Errorf("only a person may reserve a goal\n%s", humanauthority.PersonActRemedy("metasystem goal claim GOAL"))
+		}
+		holder, err := dependencies.claimHolder.ReadHolder(root)
+		lineageFlag = launch.SeatOwnerLineage
+		epoch := int64(0)
+		classification.Holder, classification.ClaimEpoch = false, nil
+		warning := ""
+		if err != nil {
+			warning = "the checkout holder could not be read; reserving for the stable seat lineage: " + err.Error()
+		} else {
+			live, liveErr := dependencies.claimHolder.Classify(root, holder.Pid)
+			isLive := liveErr == nil && live.Class == lease.ClassMain && live.Holder && live.MainId == holder.MainId && live.ClaimEpoch != nil && *live.ClaimEpoch == holder.ClaimEpoch
+			if holder.OwnerLineage != "" && (isLive || holder.OwnerLineage != holder.MainId) {
+				lineageFlag = holder.OwnerLineage
+			}
+			if isLive {
+				epoch = holder.ClaimEpoch
+			}
+		}
+		req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, proof, classification, false, commandNow, dependencies)
+		req.ClaimEpoch = epoch
+		if warning != "" {
+			req.ClaimWarnings = []string{warning}
+		}
+		return req, err
+	}
 	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, false, commandNow, dependencies)
-}
-
-func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult) (goal.VerbRequest, error) {
-	return syncReqClassifiedAt(root, by, lineageFlag, observedProof, classification, goalCommandNow)
-}
-
-func syncReqClassifiedAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, false, commandNow)
-}
-
-func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, allowTerminal, commandNow, defaultSyncRequestDependencies())
 }
 
 func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
@@ -597,6 +635,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		return goal.VerbRequest{}, err
 	}
 	configureCarriedCounselor(&e)
+	e.ClaimHolder = dependencies.claimHolder.Facts
 	// A publish blocked by a provably dead owner's pushed entry recovers it
 	// (a landing lane's handover included) under the same live policy
 	// `goal sync --recover` carries, at the command's clock, read only when
@@ -701,8 +740,6 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	}
 	if classification.ClaimEpoch != nil && (classification.Holder || by != "" || classification.Class == lease.ClassHuman) {
 		req.ClaimEpoch = *classification.ClaimEpoch
-	} else if classification.Class == lease.ClassHuman {
-		req.ClaimEpoch = 1
 	}
 	return req, nil
 }
@@ -1060,7 +1097,7 @@ func parseSyncFlagValuesWithOutput(name string, args []string, stdout, output io
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "unpark" || name == "reopen" || name == "unblock" || name == "done" {
+	if name == "claim" || name == "steal" || name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "unpark" || name == "reopen" || name == "unblock" || name == "done" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")

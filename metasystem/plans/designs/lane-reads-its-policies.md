@@ -217,6 +217,8 @@ For implementation: one build, at most two corrections, falling material count a
 - Place automatic return limits beneath every return caller. Count history across tips and retain legacy uncertainty conservatively for agents.
 - A direct human act bypasses unreadable advice. Unknown target/ownership is a concrete data-safety constraint; an unknown incident binding can be recorded as such but grants no later agent push.
 
+- 2026-10-07 17:05 CEST: the detached proof child keeps its process-identity binding (U2b's OwnProcess check), overriding this page's round-1 note that claim-once under the lane lock suffices; reads of U2b and U3 showed an agent can replay the exact child argv otherwise. Reversible by Wido.
+
 ## Deferred, with the owner each later step consumes
 
 - Drain creation, start/clear and helm-source matching remain in lane-drain-and-fresh-claims. This goal only adds batch completion to its AdvanceDrain and consumes its fence in execution admission.

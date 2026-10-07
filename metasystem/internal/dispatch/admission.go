@@ -292,6 +292,9 @@ func evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revi
 	if binding.Revision != revision {
 		return verdict, fmt.Errorf("goal %s accepted revision moved from %d to %d", id, revision, binding.Revision)
 	}
+	if binding.Fence == nil && !binding.Eligibility.Ready {
+		return verdict, fmt.Errorf("goal %s cannot execute: %s", id, binding.Eligibility.Wait)
+	}
 	if binding.File.BudgetExtension != nil {
 		verdict.ExtendedAt = binding.File.BudgetExtension.At
 	}

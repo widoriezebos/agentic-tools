@@ -141,9 +141,21 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 	if !present {
 		return Projection{}, ErrLedgerNotFetched
 	}
+	return projectTip(e, tip, now)
+}
+
+func projectTip(e Endpoint, tip string, now time.Time) (Projection, error) {
+	return projectTipClock(e, tip, func() (time.Time, error) { return now, nil })
+}
+
+func projectTipClock(e Endpoint, tip string, clock func() (time.Time, error)) (Projection, error) {
 	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return Projection{}, err
+	}
+	now, err := clock()
+	if err != nil {
+		return Projection{}, fmt.Errorf("ledger observation clock: %w", err)
 	}
 	p := Projection{Root: e.Root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}
 
@@ -295,6 +307,7 @@ type ClaimableBudgetedWork struct {
 	fencedClaims    []*GoalFile
 	landingClaims   []*GoalFile
 	ownedClaims     map[string]*GoalFile
+	Eligibility     map[string]ClaimEligibility
 }
 
 // OwnedClaim returns the exact accepted goal record used to compute this
@@ -431,7 +444,7 @@ func ClaimableWorkFromProjection(projection Projection, machine string, prober i
 		Landing:   append([]string(nil), frontier.Landing...),
 		Refused:   append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree:  projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
-		GoalFacts: map[string]GoalFacts{}, ownedClaims: map[string]*GoalFile{},
+		GoalFacts: map[string]GoalFacts{}, ownedClaims: map[string]*GoalFile{}, Eligibility: map[string]ClaimEligibility{},
 	}
 	for id, file := range projection.Tree.Live {
 		if file == nil {
@@ -452,10 +465,12 @@ func ClaimableWorkFromProjection(projection Projection, machine string, prober i
 	// A landing claim is joined to liveness like a working claim: a process
 	// landing it is live backlog activity.
 	claimLineages := make(map[string]string, len(frontier.Claimed)+len(frontier.Landing))
+	admission := newClaimAdmissionContext(projection.Root, projection.claimAdmissionLoader)
 	for _, id := range append(append([]string(nil), frontier.Claimed...), frontier.Landing...) {
 		if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
 			claimLineages[id] = file.Claimed.Lineage
 			work.ownedClaims[id] = file
+			work.Eligibility[id] = claimExecutionEligibility(admission, projection.Tree, file, projection.Horizon.Now)
 		}
 	}
 	work.Queued = len(frontier.Awaiting)
@@ -490,7 +505,7 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	if len(problems) > 0 {
 		return ClaimableBudgetedWork{}, fmt.Errorf("legacy goal ledger has %d parse problems", len(problems))
 	}
-	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued), GoalFacts: map[string]GoalFacts{}}
+	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued), GoalFacts: map[string]GoalFacts{}, Eligibility: map[string]ClaimEligibility{}}
 	for _, queued := range ledger.Queued {
 		work.Claimable = append(work.Claimable, queued.Id)
 		work.GoalFacts[queued.Id] = GoalFacts{Id: queued.Id, Intent: queued.Intent, NextStep: queued.NextStep}
@@ -498,6 +513,9 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	legacyClaim := ledger.Current != nil
 	if legacyClaim {
 		work.Claimed = append(work.Claimed, ledger.Current.Id)
+		// The monolithic ledger authorizes its current goal directly. It has
+		// no personal reservations or per-goal approval/capability records.
+		work.Eligibility[ledger.Current.Id] = ClaimEligibility{Ready: true}
 		work.GoalFacts[ledger.Current.Id] = GoalFacts{Id: ledger.Current.Id, Intent: ledger.Current.Intent, NextStep: ledger.Current.NextStep, Revision: ledger.Revision()}
 	}
 	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)

@@ -41,6 +41,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-status-none", args: []string{"landing", "status"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "work-land-records", args: []string{"work", "land", "standing-validation", "--records", "metasystem/records/a.md", "--delivered", "Accepted"}, bed: recordsHandInLayoutBed},
 		{name: "landing-set", args: []string{"landing", "set", "../agentic-tools-landing"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-drain", args: []string{"landing", "drain"}, bed: landingDrainLayoutBed},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-run", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutRunning))},
@@ -209,4 +210,13 @@ func machineStartLayoutBed(already bool) func(t *testing.T) layoutBed {
 			}}
 		return bed
 	}
+}
+
+func landingDrainLayoutBed(t *testing.T) layoutBed {
+	b := newDrainVerbBed(t)
+	_, result := b.verb(t, "drain")
+	if result.Outcome != intentConfirmed {
+		t.Fatal(result)
+	}
+	return layoutBed{owners: b.owners, cwd: b.root, now: layoutNow, replace: layoutPaths(b.root, b.root, "/Users/wido/GitHub/agentic-tools-landing", b.home, "/Users/wido/.metasystem-home")}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 // The transition-authority fold (review r1, F12/F13): claim is
-// agent-only, the pair is the ownership key, human-origin goals are
+// terminal proof guards human acts, the pair is the ownership key, human-origin goals are
 // human-reserved, edit checks authority, steal cascades, reopen
 // adopts the arc's standing state, set-arc composes under the
 // membership matrix, prune's closure seeds from keep survivors, and
@@ -130,28 +130,23 @@ func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
 	}
 }
 
-func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
+func TestClaimRequiresAuthorityAndKeepsPair(t *testing.T) {
 	t.Parallel()
 	a, _ := fakeGoalEndpoint(t)
 	if res, err := Open(verbReqFor(a, "01J5X00000000000000000AK00", "mac-a"), "pair-keyed", "Pair semantics.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
-	// Claim under a human name refuses up front, and guides (rule H1): a
-	// person's claim would bind no session to work the goal, so the
-	// refusal names the public commands that steer or move the claim.
 	humanClaim := verbReqFor(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "made by the agent session") ||
-		!strings.Contains(err.Error(), "run: metasystem goal prioritize pair-keyed 1") ||
-		!strings.Contains(err.Error(), "not by a person") {
-		t.Fatalf("humans cannot claim, and are guided: %v", err)
+	if _, err := Claim(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "only a person") {
+		t.Fatalf("a bare human name reserved work: %v", err)
+	}
+	if _, err := ClaimArc(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "only a person") {
+		t.Fatalf("a bare human name reserved an arc: %v", err)
 	}
 	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "open --claim is gone") {
-		t.Fatalf("humans cannot open --claim: %v", err)
-	}
-	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "not by a person") {
-		t.Fatalf("humans cannot claim arcs: %v", err)
+		t.Fatalf("retired open --claim was accepted: %v", err)
 	}
 
 	if res, err := claimApprovedForTest(t, verbReqFor(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -312,6 +307,7 @@ func TestStealCascadesAcrossTheArc(t *testing.T) {
 
 	steal := verbReqFor(b, "01J5X00000000000000000SC00", "mac-b")
 	steal.Actor.Human = "wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	res, err := Steal(steal, "st-one")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", res, err)
@@ -599,6 +595,7 @@ func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
 	// the pinned, parked, budgetless sibling cannot veto or move.
 	steal := verbReqFor(a, "01J5X00000000000000000MC90", "mac-c")
 	steal.Actor.Human = "wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	if res, err := Steal(steal, "mixed-two"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("mover-scoped steal: %+v %v", res, err)
 	}

@@ -66,6 +66,8 @@ func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *design
 		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
+		// Claim admission reads lane membership; this fixture has no lane.
+		laneRoot: func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
 	b.owners.calls = processBackedOwnerCalls(b.owners.executable, b.owners.process)
 	var home string
@@ -362,6 +364,8 @@ func TestDesignCritiqueRejoinKeepsTheBrief(t *testing.T) {
 func TestIntentDesignCritiqueAdmission(t *testing.T) {
 	t.Parallel()
 	b := newDesignReviewBed(t)
+	b.lineage = "m1"
+	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 	file := b.goalFile(bedGoal)
 	workApprovedBox(file)
 	file.State, file.Claimed, file.StopCapability, file.StopFence = goal.StateApproved, nil, nil, nil

@@ -495,9 +495,11 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			// The resume keeps the owner, so built work waiting to land
 			// still waits to land after the fence lifts.
 			landing := f.Landing
+			reservationBy := f.Claimed.By
 			if err := bindClaim(f, machine, lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
 				return nil, err
 			}
+			f.Claimed.By = reservationBy
 			f.Landing = landing
 			return []Change{{Path: livePath(r.GoalID), Content: RenderFile(f)}}, nil
 		},

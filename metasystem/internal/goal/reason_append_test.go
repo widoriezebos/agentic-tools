@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,7 @@ func TestStealAndReleaseRecordTheirReason(t *testing.T) {
 	}
 	humanReq := verbReqFor(bEndpoint, "01J5X0000000000000000000R2", "mac-b")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testHumanAuthority(t, humanReq.Endpoint.Root, humanReq.Now)
 	if _, err := StealWithReason(humanReq, "wanted", "two\nlines"); err == nil {
 		t.Fatal("a reason with a line break was accepted")
 	}
@@ -51,7 +53,7 @@ func TestStealAndReleaseRecordTheirReason(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", res, err)
 	}
-	if last := lastHistory(t, bEndpoint, res.Tip, "wanted"); last.Verb != "steal" || last.Reason != "the holder is gone for the day" {
+	if last := lastHistory(t, bEndpoint, res.Tip, "wanted"); last.Verb != "steal" || !strings.Contains(last.Reason, "the holder is gone for the day") {
 		t.Fatalf("the steal line does not record its reason: %+v", last)
 	}
 
