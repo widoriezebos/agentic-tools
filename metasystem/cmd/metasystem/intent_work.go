@@ -363,6 +363,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsKeys,
 		},
 		{
+			flags:  processSettingFlags,
 			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
 			details: []string{"Writes seat settings into metasystem.conf.local, the seat's own layer over metasystem.conf.",
@@ -2348,6 +2349,12 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
+	if key == "process.change" {
+		if _, _, problem := inv.settingsPerson(inv.layout, "settings set "+key); problem != nil {
+			return inv.render(*problem)
+		}
+		return inv.runProcessSetting(key, value)
+	}
 	if config.PolicyScope(key) != "" && authoritySettings[key] {
 		return inv.runPolicySet(key, value)
 	}
@@ -2355,6 +2362,9 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		if problem := inv.directPersonProof("settings set " + key); problem != nil {
 			return inv.render(*problem)
 		}
+	}
+	if strings.HasPrefix(key, "proof.") || strings.HasPrefix(key, "review.") || strings.HasPrefix(key, "landing.") || strings.HasPrefix(key, "launch.") {
+		return inv.runProcessSetting(key, value)
 	}
 	local := intentConfPath(inv.layout) + ".local"
 	targets := []intentTarget{{Kind: "setting", ID: key}}
@@ -2474,7 +2484,7 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 // and an environment-supplied clock. Only
 // the person's own proof at the enrolled terminal sets them, never the helm
 // and never a power of attorney.
-var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true}
+var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true, "process.change": true}
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.

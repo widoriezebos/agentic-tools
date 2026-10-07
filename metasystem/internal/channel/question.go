@@ -64,9 +64,11 @@ type Question struct {
 	Rejected       []Rejection  `json:"rejected"`
 	FactsDigest    string       `json:"factsDigest"`
 	LedgerCursor   string       `json:"ledgerCursor,omitempty"`
+	ProcessAct     string       `json:"processAct,omitempty"`
 }
 
 type AskRequest struct {
+	ProcessAct                                    string
 	Context                                       context.Context
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
 	Facts                                         []string
@@ -281,7 +283,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor}
+	q := Question{ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -304,7 +306,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		}
 	}
 	// A question without a goal has no goal file to mark.
-	if r.Lineage != "" && r.Goal != "" {
+	if r.Lineage != "" && r.Goal != "" && r.ProcessAct == "" {
 		ep, e := goal.ResolveEndpoint(r.RepoRoot)
 		if e != nil {
 			return q, false, e
@@ -327,7 +329,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 // sameAsk says whether an open question carries exactly the options,
 // recommendation, wanted token and proposed budget a new request asks with.
 func sameAsk(q Question, r AskRequest) bool {
-	if q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
+	if q.ProcessAct != r.ProcessAct || q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
 		return false
 	}
 	if len(q.Options) != len(r.Options) {
@@ -388,6 +390,9 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if q.ProcessAct != "" {
+		return "Run " + q.Wants + "; applying this exact process act closes the question."
+	}
 	if command := LaneStopCommand(q); command != "" {
 		return "Run " + command + "; a later lane record closes this question."
 	}

@@ -119,6 +119,12 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
 	if q.kind == "channel" {
 		c := q.channel
+		if c.ProcessAct != "" {
+			return intentResult{Outcome: intentConfirmed, Summary: c.State + ": " + c.Wants, Data: c, view: func(page *textui.Page) {
+				page.Headline(c.State + " process setting")
+				page.Section("", "").Fixed(c.Wants)
+			}}
+		}
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string

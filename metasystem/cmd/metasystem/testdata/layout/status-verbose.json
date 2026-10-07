@@ -46,6 +46,7 @@ exit 0
       "acts the helm let through since the take: 0",
       "running dispatch jobs: 0 (metasystem work status lists them; the helm stops none)",
       "goal.raise = person (helm held by wido); underlying auto from built-in, set by built-in",
+      "process.change = person (helm held by wido); underlying person from built-in, set by built-in",
       "review.stop = person (helm held by wido); underlying auto from built-in, set by built-in",
       "seat.driver = person (helm held by wido); underlying auto from built-in, set by built-in",
       "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"

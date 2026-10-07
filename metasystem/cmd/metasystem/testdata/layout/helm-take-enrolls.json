@@ -38,6 +38,20 @@ exit 0
             "at": "0001-01-01T00:00:00Z"
           }
         },
+        "process.change": {
+          "name": "process.change",
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+          "value": "person",
+          "set-by": "wido",
+          "at": "2026-09-28T19:14:03Z",
+          "previous": {
+            "value": "person",
+            "source": "built-in",
+            "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+            "set-by": "built-in",
+            "at": "0001-01-01T00:00:00Z"
+          }
+        },
         "review.stop": {
           "name": "review.stop",
           "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
