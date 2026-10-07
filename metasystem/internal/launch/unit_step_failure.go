@@ -116,7 +116,9 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 	round := &record.Rounds[len(record.Rounds)-1]
 	for index := range round.Steps {
 		step := &round.Steps[index]
-		if step.RetryBy == person && step.RetryReason == reason {
+		// A replay answers the same hold: the step is no longer failed, or the
+		// retry was recorded for its current launch. A new hold is retried again.
+		if step.RetryBy == person && step.RetryReason == reason && (step.State != StepFailed || step.RetryLaunch == step.LaunchID) {
 			return result, nil
 		}
 		if step.State != StepFailed {

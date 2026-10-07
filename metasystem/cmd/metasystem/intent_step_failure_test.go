@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ type failureProcesses struct {
 	deny      int
 	passAfter int
 	moved     func()
+	wait      func()
 }
 
 func (p *failureProcesses) StartChild(c launch.Command) (launch.Child, identity.Ref, error) {
@@ -33,15 +35,19 @@ func (p *failureProcesses) StartChild(c launch.Command) (launch.Child, identity.
 	if len(p.commands) <= p.deny {
 		return nil, identity.Ref{}, os.ErrPermission
 	}
-	return failureChild{p.moved, p.passAfter > 0 && len(p.commands) > p.passAfter}, workProcessRef(20), nil
+	return failureChild{moved: p.moved, passed: p.passAfter > 0 && len(p.commands) > p.passAfter, wait: p.wait}, workProcessRef(20), nil
 }
 
 type failureChild struct {
 	moved  func()
 	passed bool
+	wait   func()
 }
 
 func (c failureChild) Wait() (int, error) {
+	if c.wait != nil {
+		c.wait()
+	}
 	if c.moved != nil {
 		c.moved()
 	}
@@ -338,4 +344,111 @@ func TestIntentEnvironmentPersonActRerunsRetainedStep(t *testing.T) {
 		t.Fatalf("replay launched again: %d commands=%d", code, len(p.commands))
 	}
 	t.Logf("printed person act reran proof only; three distinct logs, retained inputs, same round and allowance; question and stop cleared")
+}
+
+func TestIntentEnvironmentPersonActSameReasonRetriesNewHold(t *testing.T) {
+	t.Parallel()
+	b, p := failedCommandBed(t, 0)
+	p.moved = func() { b.head = fmt.Sprintf("moved-head-%d", len(p.commands)) }
+	code, result := failedCommandBuild(t, b)
+	initial := failedCommandRecord(t, b, result)
+	if code != 1 || result.Next == nil || initial.Rounds[0].Cause != "environment" || len(p.commands) != 2 {
+		t.Fatalf("moving tree did not hold after two executions: %d %+v executions=%d", code, initial, len(p.commands))
+	}
+	printed := append([]string(nil), result.Next.Argv...)
+	args := append([]string(nil), printed[1:]...)
+	for i := range args {
+		if args[i] == "TEXT" {
+			args[i] = "network repaired"
+		}
+		if args[i] == "NAME" {
+			args[i] = "Wido"
+		}
+	}
+	code, result, impact := b.work(args...)
+	held := failedCommandRecord(t, b, result)
+	step := held.Rounds[0].Steps[1]
+	if code != 1 || result.Next == nil || !slices.Equal(result.Next.Argv, printed) || held.Rounds[0].Cause != "environment" ||
+		step.State != launch.StepFailed || len(p.commands) != 3 || len(step.LaunchIDs) != 3 ||
+		step.RetryBy != "Wido" || step.RetryReason != "network repaired" || step.RetryLaunch != step.LaunchIDs[1] ||
+		!strings.Contains(impact, "Impact:") || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("first person act did not rerun and hold again: %d %+v executions=%d builds=%v impact=%s", code, held, len(p.commands), b.starter.launched(), impact)
+	}
+
+	// Keep the fourth child running so a replay precedes its next failure.
+	started, release := make(chan struct{}), make(chan struct{})
+	finished := make(chan error, 1)
+	supervisorStarted, released := false, false
+	t.Cleanup(func() {
+		if !released {
+			close(release)
+		}
+		if supervisorStarted {
+			if err := <-finished; err != nil {
+				t.Errorf("finish held supervisor: %v", err)
+			}
+		}
+	})
+	p.wait = func() {
+		if len(p.commands) == 4 {
+			close(started)
+			<-release
+		}
+	}
+	supervisor := b.manager.Supervisor
+	b.manager.Supervisor = supervisorStart(func(id, state string) (identity.Ref, error) {
+		record, err := b.manager.Store.Read(id)
+		if err != nil {
+			return identity.Ref{}, err
+		}
+		if record.Kind != "proof" || len(p.commands) != 3 {
+			return supervisor.StartSupervisor(id, state)
+		}
+		supervisorStarted = true
+		go func() {
+			_, err := supervisor.StartSupervisor(id, state)
+			finished <- err
+		}()
+		select {
+		case <-started:
+			return workProcessRef(10), nil
+		case err := <-finished:
+			supervisorStarted = false
+			return identity.Ref{}, fmt.Errorf("fourth execution ended before waiting: %v", err)
+		}
+	})
+	code, result, impact = b.work(args...)
+	after := failedCommandRecord(t, b, result)
+	step = after.Rounds[0].Steps[1]
+	if code != 3 || after.State != "running" || len(after.Rounds) != 1 || after.Rounds[0].Stop != nil ||
+		step.State != launch.StepRunning || len(p.commands) != 4 || len(step.LaunchIDs) != 4 ||
+		step.LaunchID != step.LaunchIDs[3] || step.RetryLaunch != held.Rounds[0].Steps[1].LaunchID ||
+		step.RetryBy != "Wido" || step.RetryReason != "network repaired" || len(after.Revisions) != 0 ||
+		*after.CorrectionBudget != *initial.CorrectionBudget || !strings.Contains(impact, "Impact:") ||
+		!slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("same reason did not retry the new hold: %d %+v executions=%d builds=%v impact=%s", code, after, len(p.commands), b.starter.launched(), impact)
+	}
+	code, replay, impact := b.work(args...)
+	replayed, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(after.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || replay.Outcome != intentInProgress || !reflect.DeepEqual(after, replayed) ||
+		len(p.commands) != 4 || !slices.Equal(b.starter.launched(), []string{"build"}) || strings.Contains(impact, "Impact:") {
+		t.Fatalf("replay changed the running retry: %d %+v executions=%d builds=%v impact=%s", code, replayed, len(p.commands), b.starter.launched(), impact)
+	}
+	close(release)
+	released = true
+	err = <-finished
+	supervisorStarted = false
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, result, _ = b.work("work", "wait", "run:"+after.ID)
+	ended := failedCommandRecord(t, b, result)
+	if code != 1 || ended.Rounds[0].Cause != "environment" || ended.Rounds[0].Steps[1].State != launch.StepFailed ||
+		len(p.commands) != 4 || !slices.Equal(b.starter.launched(), []string{"build"}) {
+		t.Fatalf("fourth execution lost the moving-tree hold: %d %+v executions=%d builds=%v", code, ended, len(p.commands), b.starter.launched())
+	}
+	t.Log("the same person and reason retried two distinct holds; four executions, one build; replay while the fourth child ran changed nothing")
 }
