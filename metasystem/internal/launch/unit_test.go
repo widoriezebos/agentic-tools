@@ -62,12 +62,18 @@ type completingStarter struct {
 	readWhere          string
 	skipStructured     bool
 	onStart            func(Record) error
+	onBuild            func(Record) error
 }
 
 func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 	starter.ids = append(starter.ids, id)
 	record, _ := starter.m.Store.Read(id)
 	starter.order = append(starter.order, record.Kind)
+	if record.Kind == "build" && starter.onBuild != nil {
+		if err := starter.onBuild(record); err != nil {
+			return identity.Ref{}, err
+		}
+	}
 	if starter.onStart != nil {
 		if err := starter.onStart(record); err != nil {
 			return identity.Ref{}, err
@@ -193,8 +199,18 @@ func baseUnitFixture(t *testing.T) unitFixture {
 
 func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	t.Helper()
+	if diff == "" {
+		diff = "diff --git a/unit.go b/unit.go\n--- a/unit.go\n+++ b/unit.go\n+implemented\n"
+	}
 	fixture := baseUnitFixture(t)
+	var total int64
+	for _, block := range parseDiff([]byte(diff)) {
+		total += block.lines
+	}
+	size := max(int64(2), total)
 	root := filepath.Dir(fixture.worktree)
+	os.WriteFile(filepath.Join(root, "build.md"), []byte(fmt.Sprintf("Declared size: %d changed lines\n", size)), 0600)
+	os.WriteFile(filepath.Join(root, "units.md"), []byte(fmt.Sprintf("| Unit | Size |\n|---|---|\n| U | %d |\n", size)), 0600)
 	index := filepath.Join(root, "source-index")
 	os.WriteFile(index, []byte("index"), 0o600)
 	objects := filepath.Join(root, "objects")
@@ -205,7 +221,17 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	var expanded []string
 	rounds := 0
+	beforePending := false
 	for i, event := range events {
+		if event == "before" {
+			beforePending = true
+		}
+		if event == "round" {
+			if !beforePending {
+				expanded = append(expanded, "before")
+			}
+			beforePending = false
+		}
 		expanded = append(expanded, event)
 		if event == "new" || event == "resolve" {
 			rounds = 0
@@ -232,7 +258,36 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 		case "detached":
 			expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: fixture.worktree, Args: []string{"symbolic-ref", "--short", "HEAD"}}, Result: testgit.Result{Err: errors.New("detached HEAD")}})
 			add(fixture.worktree, "head\n", nil, "rev-parse", "--verify", "HEAD")
+		case "before":
+			beforeCheck := isolatedGitEnvironment(fixture.worktree, objects, false)
+			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			add(fixture.worktree, "", beforeCheck, "add", "-A", "--sparse", "--", ".")
+			add(fixture.worktree, "", beforeCheck, "diff", "--cached", "--binary", "base", "--", ".")
 		case "round":
+			check := isolatedGitEnvironment(fixture.worktree, objects, false)
+			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
+			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+			foldVerify := isolatedGitEnvironment(fixture.worktree, objects, false)
+			foldCheck := func(call testgit.Call) error {
+				if call.Args[0] == "read-tree" {
+					if err := os.WriteFile(strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE="), []byte("index"), 0600); err != nil {
+						return err
+					}
+				}
+				return foldVerify(call)
+			}
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			add(fixture.worktree, "", foldCheck, "read-tree", "base")
+			add(fixture.worktree, "previous-tree\n", foldCheck, "write-tree")
+			add(fixture.worktree, "", foldCheck, "read-tree", "base")
+			if diff != "" {
+				add(fixture.worktree, "", foldCheck, "apply", "--cached", "--binary", "retained-worktree.diff")
+			}
+			add(fixture.worktree, diff, foldCheck, "diff", "--cached", "--binary", "previous-tree", "--", ".", ":(exclude,literal)records", ":(exclude,literal)metasystem/records")
+
 			for range 2 {
 				check := isolatedGitEnvironment(fixture.worktree, objects, true)
 				add(fixture.worktree, fixture.worktree+"\n", nil, "rev-parse", "--show-toplevel")
@@ -247,11 +302,6 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
 			}
-			check := isolatedGitEnvironment(fixture.worktree, objects, false)
-			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
-			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
-			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
-			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
 		case "warm":
 			verify := isolatedGitEnvironment(fixture.worktree, objects, false)
 			check := func(call testgit.Call) error {
@@ -279,7 +329,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	fixture.git = &stubGit{makeStub: func() *testgit.Stub {
 		if defaultEvents && fixture.starter.failKind == "build" {
-			return testgit.New(t, expected[:1]...)
+			return testgit.New(t, expected[:5]...)
 		}
 		return testgit.New(t, expected...)
 	}}
@@ -478,7 +528,7 @@ func TestRunRecordNamesEveryStep(t *testing.T) {
 }
 
 func TestRunStopsAtTheCapAndResumeContinues(t *testing.T) {
-	fixture := newUnitFixture(t, "", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "before", "branch", "round")
 	fixture.starter.holdKind = "build"
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil || !result.Capped || result.Step != "build" {
@@ -505,7 +555,7 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 		t.Run(row.want, func(t *testing.T) {
 			events := []string{"branch", "round"}
 			if row.want == "build-failed" {
-				events = []string{"branch"}
+				events = []string{"branch", "before"}
 			}
 			fixture := newUnitFixture(t, "", events...)
 			fixture.starter.failKind = row.fail
@@ -589,7 +639,7 @@ func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
 }
 
 func TestResumeAfterAKillStartsNoSecondLaunch(t *testing.T) {
-	fixture := newUnitFixture(t, "", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "before", "branch", "round")
 	fixture.runner.AfterWrite = func(record UnitRunRecord) error {
 		for _, step := range record.Rounds[0].Steps {
 			if step.State == StepStarting {
@@ -843,7 +893,7 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 
 func TestFollowUpRefusedUnlessAwaitingJudgement(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch")
+	fixture := newUnitFixture(t, "", "branch", "before", "branch")
 	fixture.starter.holdKind = "build"
 	result, _ := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	follow := filepath.Join(t.TempDir(), "follow")
@@ -1066,10 +1116,21 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	t.Parallel()
 	fixture, repo := newGitUnitFixture(t)
-	before := repositoryDigest(t, repo)
+	before := ""
+	build := fixture.starter.onBuild
+	fixture.starter.onBuild = func(record Record) error {
+		if err := build(record); err != nil {
+			return err
+		}
+		before = repositoryDigest(t, repo)
+		return nil
+	}
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if actual := repositoryDigest(t, repo); actual != before {
+		t.Fatalf("engine changed the repository after the builder: %s != %s", actual, before)
 	}
 	follow := filepath.Join(t.TempDir(), "follow")
 	os.WriteFile(follow, []byte("Declared size: 1 changed lines\n"), 0o600)
@@ -1116,6 +1177,9 @@ func newGitUnitFixture(t *testing.T) (unitFixture, string) {
 	}
 	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	fixture.starter.onBuild = func(record Record) error {
+		return os.WriteFile(filepath.Join(record.WorkingDirectory, "built"), []byte("implemented\n"), 0600)
 	}
 	fixture.runner.Git = &recordingOSGit{}
 	fixture.worktree = repo

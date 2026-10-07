@@ -220,8 +220,11 @@ func (runner *UnitRunner) saveDecision(record *UnitRunRecord, round *UnitRound) 
 	if _, err = atomicfile.WriteFile(filepath.Join(round.Directory, "read-decision.json"), data, 0o600, runner.root()); err != nil {
 		return err
 	}
-	if round.Stop != nil && (round.Stop.Decision == "close" || round.Transferred) {
+	if round.Number > 1 || round.Stop != nil && (round.Stop.Decision == "close" || round.Transferred) {
 		for _, previous := range record.Rounds {
+			if (round.Stop == nil || round.Stop.Decision != "close" && !round.Transferred) && (previous.Outcome != "build-gap" && previous.Outcome != "build-size" || previous.Number >= round.Number) {
+				continue
+			}
 			if previous.Stop == nil {
 				continue
 			}
@@ -271,6 +274,9 @@ func (runner *UnitRunner) allowCorrection(record UnitRunRecord) error {
 		if policy == "person" {
 			return coded("UNIT_STOPPED", "", fmt.Errorf("a person holds review decisions; request a reasoned revision"))
 		}
+	}
+	if round.Outcome == "build-gap" {
+		return nil
 	}
 	if round.Stop == nil && (strings.HasPrefix(round.Outcome, "proof-") || strings.HasPrefix(round.Outcome, "build-")) {
 		return nil

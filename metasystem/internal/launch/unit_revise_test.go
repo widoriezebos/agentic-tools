@@ -29,16 +29,21 @@ func (git *rebaseFixtureGit) Run(dir string, env []string, args ...string) ([]by
 		dir = git.source
 	}
 	if len(args) > 3 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" {
-		git.baseSeen = args[3] == "new-base"
-		args = append([]string(nil), args...)
-		args[3] = "base"
+		if args[3] != "previous-tree" {
+			git.baseSeen = git.baseSeen || args[3] == "new-base"
+			args = append([]string(nil), args...)
+			args[3] = "base"
+		}
+	}
+	if slices.Equal(args, []string{"read-tree", "new-base"}) {
+		args = []string{"read-tree", "base"}
 	}
 	return git.GitRunner.Run(dir, env, args...)
 }
 
 func TestRevisionOnStoppedRebase(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "resolve", "round", "resolve", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "resolve", "before", "resolve", "round", "resolve", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil {
 		t.Fatal(err)
@@ -372,7 +377,7 @@ func checkDivergenceAdmissions(t *testing.T, counts []int, relation, source stri
 // attempt and a request against an older attempt launch nothing.
 func TestRevisionRequestReplay(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "branch", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil || first.Record.State != "awaiting-judgement" {
 		t.Fatalf("first attempt: %+v %v", first, err)
@@ -438,7 +443,7 @@ func TestRevisionRequestReplay(t *testing.T) {
 // empty.
 func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "branch", "before", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil {
 		t.Fatal(err)

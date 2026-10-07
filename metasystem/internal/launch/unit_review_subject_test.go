@@ -209,7 +209,7 @@ func TestReviewSubjectRefusesARoundThatIsNotReady(t *testing.T) {
 				os.RemoveAll(fixture.runner.runDir(record.ID))
 				return nil
 			}},
-		{name: "running", want: "state=running", events: []string{"branch"},
+		{name: "running", want: "state=running", events: []string{"branch", "before"},
 			prepare: func(fixture unitFixture) { fixture.starter.holdKind = "build" }},
 		{name: "proof-red", want: "outcome=proof-red", events: []string{"branch", "round"},
 			prepare: func(fixture unitFixture) { fixture.starter.failKind = "proof" }},
@@ -267,7 +267,7 @@ func TestReviewSubjectRefusesARoundThatIsNotReady(t *testing.T) {
 // Status reads a run's record as it is, without advancing a running round.
 func TestStatusReadsARunWithoutAdvancingIt(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch")
+	fixture := newUnitFixture(t, "", "branch", "before")
 	fixture.starter.holdKind = "build"
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil || !result.Capped {

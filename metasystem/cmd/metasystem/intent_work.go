@@ -1261,6 +1261,10 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "UNIT_STOPPED"):
+			if len(record.Rounds) > 0 && record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" {
+				return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+					Data: unitData(record, runner.Manager), next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+			}
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
 				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "review"), nextReason: "applies the unit's recorded review decision"}
 		case launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
@@ -1293,6 +1297,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, next: again, nextReason: "once that is settled", Details: details}
 	}
+	if err := inv.syncBuildHolds(record); err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the build hold questions could not be reconciled", Details: []string{err.Error()}, next: inv.workArgv(record, "wait")}
+	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
 	if result.Capped {
@@ -1302,6 +1309,13 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	line := unitJudgementLine(record, runner.Manager)
+	if round.Outcome == "build-size" || round.Outcome == "build-gap" {
+		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
+		if round.Outcome == "build-gap" {
+			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+		}
+		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: round.Stop.Handoff + ": " + round.Stop.Class, next: next}
+	}
 	if round.Outcome == "read-compacted" {
 		return intentResult{Outcome: intentFailed, Targets: targets, code: unitExitReadCompacted, Data: data, text: []string{line},
 			Summary:  fmt.Sprintf("run %s round %d: the read was compacted and its verdict does not count", record.ID, round.Number),

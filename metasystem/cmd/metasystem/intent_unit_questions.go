@@ -9,6 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // recordUnitStopOverride publishes the person's impact statement before the
@@ -76,4 +77,41 @@ func unitStopActor(actor []string) string {
 		}
 	}
 	return ""
+}
+
+// Build holds ask for the retained round's remedy. Successful continuation
+// closes only that hold, including when collection resumes after a restart.
+func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
+	root := inv.layout.InstallationRoot.Path()
+	for index, round := range record.Rounds {
+		kind := round.Outcome
+		if round.SizeAcceptedBy != "" {
+			kind = "build-size"
+		}
+		if kind != "build-gap" && kind != "build-size" {
+			continue
+		}
+		subject := record.Goal + "/" + record.Unit + "/" + record.ID
+		act := "work-review-size"
+		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
+		if kind == "build-gap" {
+			act = "work-revise"
+			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+		}
+		supersededSize := kind == "build-size" && round.SizeAcceptedBy == "" && index+1 < len(record.Rounds)
+		if supersededSize {
+			act = "work-revise"
+		}
+		if index+1 < len(record.Rounds) || round.SizeAcceptedBy != "" {
+			if err := channel.RecordUnitStopAct(root, channel.UnitStopAct{ID: record.ID + ":" + kind + ":" + fmt.Sprint(round.Number), Goal: record.Goal, Loop: "unit-build", Subject: subject, Attempt: round.Number, Findings: []string{kind}, Kind: act, UnitClosed: supersededSize, Reason: "the retained build hold was continued", At: inv.unitStopNow()}); err != nil {
+				return err
+			}
+			continue
+		}
+		_, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

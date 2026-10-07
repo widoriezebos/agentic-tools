@@ -325,6 +325,9 @@ func (runner *UnitRunner) readFindings(record UnitRunRecord, round UnitRound) (s
 }
 
 func (runner *UnitRunner) reviseDecided(record UnitRunRecord, round UnitRound, brief []byte, supplied ...[]byte) error {
+	if round.Outcome == "build-gap" {
+		return nil
+	}
 	if round.Stop == nil && (strings.HasPrefix(round.Outcome, "proof-") || strings.HasPrefix(round.Outcome, "build-")) {
 		return nil
 	}
@@ -411,7 +414,7 @@ func (runner *UnitRunner) warmRead(record UnitRunRecord, round UnitRound) (strin
 	return "", nil
 }
 
-func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current UnitRound) ([]byte, error) {
+func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current UnitRound, excluded ...string) ([]byte, error) {
 	directory, done, err := diskstore.ScratchDir("metasystem-unit-fold.")
 	if err != nil {
 		return nil, err
@@ -451,7 +454,11 @@ func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current Unit
 			}
 		}
 	}
-	return git.Run(record.Worktree, env, "diff", "--cached", "--binary", strings.TrimSpace(string(tree)), "--", ".")
+	args := []string{"diff", "--cached", "--binary", strings.TrimSpace(string(tree)), "--", "."}
+	for _, path := range excluded {
+		args = append(args, ":(exclude,literal)"+path)
+	}
+	return git.Run(record.Worktree, env, args...)
 }
 
 // rebasePlan keeps every continuation on the stopped replay's tree and base.

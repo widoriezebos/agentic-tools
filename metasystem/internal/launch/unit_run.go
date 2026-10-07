@@ -68,6 +68,10 @@ type UnitRunRecord struct {
 }
 
 type UnitRound struct {
+	GapMessage       string             `json:"gapMessage,omitempty"`
+	BuildLines       int64              `json:"buildLines,omitempty"`
+	DeclaredLines    int64              `json:"declaredLines,omitempty"`
+	SizeAcceptedBy   string             `json:"sizeAcceptedBy,omitempty"`
 	Reads            []readsubject.Read `json:"reads,omitempty"`
 	Stop             *loopstop.Stop     `json:"stop,omitempty"`
 	UnknownRetries   int                `json:"unknownRetries,omitempty"`
@@ -394,6 +398,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if round.FollowUp != "" {
 		brief = round.FollowUp
 		previous = readOutputs(runner.Manager, record.Rounds[len(record.Rounds)-2])
+		prior := record.Rounds[len(record.Rounds)-2]
+		if prior.Outcome == "build-gap" {
+			previous = append(previous, record.Plan, filepath.Join(prior.Directory, "worktree.diff"))
+			if _, err := os.Stat(prior.GapMessage); err == nil {
+				previous = append(previous, prior.GapMessage)
+			}
+		}
 		for _, revision := range record.Revisions {
 			if revision.Attempt == round.Number && revision.Decisions != "" {
 				previous = append(previous, revision.Decisions)
@@ -415,6 +426,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 	}
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
+	if round.Steps[0].LaunchID == "" {
+		if err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(round.Directory, "build-before", "worktree.diff")); err != nil {
+			return UnitResult{}, err
+		}
+	}
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
 		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
@@ -437,6 +453,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			}
 			return runner.finish(record, round, "build-failed")
 		}
+	}
+	if held, err := runner.freezeBuildOutcome(record, round, plan, buildCount); err != nil || held {
+		return UnitResult{Record: *record, Round: round.Number}, err
 	}
 	planned, err := runner.roundProofPlan(plan, round.Directory, len(round.Steps) > buildCount)
 	if err != nil {

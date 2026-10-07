@@ -357,11 +357,20 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 		suffix = []string{"--work", work.Unit}
 	}
 	read := branch.BranchReadResult{}
+	gapPerson := work.Record != nil && work.Record.MaxRounds > 0 && workAttempt(work) >= work.Record.MaxRounds
+	if lastOutcome(work) == "build-gap" {
+		policy, err := inv.unitRunner().ReviewPolicy()
+		gapPerson = gapPerson || err != nil || policy == "person"
+	}
 	if subject := currentSubject(work); builtWork(work) && subject != nil && subject.Commit != "" {
 		read, _ = inv.work().inspectRead(work.Record.Worktree, work.Record.Goal, subject.Commit)
 	}
 
 	switch {
+	case lastOutcome(work) == "build-gap" && gapPerson:
+		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to admit another gap correction"
+	case lastOutcome(work) == "build-size":
+		return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to accept the retained change size"
 	case work.Running():
 		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the work is running; this waits for it"
 	case read.State == "collected" && !read.Published:
@@ -507,6 +516,9 @@ func currentSubject(work launch.NamedWork) *launch.UnitSubject {
 // unreviewedWork is built work whose newest result has no collected read:
 // the work review G examines when no name is given.
 func unreviewedWork(work launch.NamedWork) bool {
+	if lastOutcome(work) == "build-size" {
+		return true
+	}
 	if !builtWork(work) {
 		return false
 	}
@@ -546,6 +558,9 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		return runIntentReviewDischarge(inv, id)
 	}
 	for _, only := range []string{"test", "review", "implementation-chain", "artifact", "result", "critic", "by", "lineage", "fixture-human-authority"} {
+		if inv.input.has("reason") && (only == "by" || only == "fixture-human-authority") {
+			continue
+		}
 		if inv.input.has("dispositions") && (only == "by" || only == "fixture-human-authority") {
 			continue
 		}
@@ -658,7 +673,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
 	}
-	if !builtWork(*selected) {
+	if !builtWork(*selected) && lastOutcome(*selected) != "build-size" && lastOutcome(*selected) != "build-gap" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s did not pass its checks (%s), so there is nothing to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
 			next:    inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})

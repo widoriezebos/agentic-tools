@@ -163,6 +163,10 @@ func (g workGit) Run(directory string, _ []string, args ...string) ([]byte, erro
 		return []byte(g.bed.head + "\n"), nil
 	case strings.HasPrefix(joined, "for-each-ref"):
 		return []byte("refs/heads/goal/" + g.bed.id + " " + g.bed.head + "\n"), nil
+	case joined == "write-tree":
+		return []byte("previous-tree\n"), nil
+	case strings.HasPrefix(joined, "diff --cached --binary"):
+		return []byte("diff --git a/unit.go b/unit.go\n--- a/unit.go\n+++ b/unit.go\n+implemented\n"), nil
 	case strings.HasSuffix(joined, "--git-path index"):
 		return []byte(filepath.Join(filepath.Dir(g.bed.worktree), "index") + "\n"), nil
 	case strings.HasSuffix(joined, "--git-path objects"):
@@ -200,10 +204,12 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 				brief := bed.brief("engine.md", "Build the unit.\n")
 				args := append([]string{"work", "build", bed.id, "engine", "--brief", brief, "--lines", "5"}, workCheck...)
 				if verb != "build" {
+					bed.starter.fail["proof"] = true
 					code, built, _ := bed.work(args...)
-					if code != 0 {
+					if code != 0 || resultData(t, built)["outcome"] != "proof-red" {
 						t.Fatalf("seed build: %d %+v", code, built)
 					}
+					delete(bed.starter.fail, "proof")
 					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief}
 					if verb == "revise-run" {
 						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief}
