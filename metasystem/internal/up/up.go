@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
@@ -44,6 +45,7 @@ type Options struct {
 	IfDown                bool
 	WaitScaleMilli        int
 	CallerPid             int64
+	AdoptionRemedy        string
 	RestampStopCapability func(root, lineage string, claimEpoch int64) (StopCapabilityRestampResult, error)
 	// FindSessionAncestor infers the session's main from the caller's
 	// runtime-signature ancestry when no --pid/--start-time pair is given;
@@ -69,28 +71,35 @@ type GoalAdoptionOutcome struct {
 	Operation string `json:"operation,omitempty"`
 }
 
-type StopCapabilityRestampResult struct {
+// StopCapabilityRestampResult is the callback's adoption result.
+type StopCapabilityRestampResult = Adoption
+
+// Adoption is the invocation's ledger adoption state, independent of supervision.
+type Adoption struct {
+	Status      string                `json:"status"`
+	Observation *goal.Observation     `json:"observation,omitempty"`
+	Cause       string                `json:"cause,omitempty"`
+	Remedy      string                `json:"remedy,omitempty"`
 	Goals       []GoalAdoptionOutcome `json:"goals,omitempty"`
 	Pending     bool                  `json:"pending"`
-	Observation string                `json:"observation,omitempty"`
-	GoalID      string
-	FromEpoch   int64
-	ToEpoch     int64
-	Restamped   bool
+	GoalID      string                `json:"-"`
+	FromEpoch   int64                 `json:"-"`
+	ToEpoch     int64                 `json:"-"`
+	Restamped   bool                  `json:"-"`
 }
 
 // ComponentOutcome is one typed and actionable component result.
 type ComponentOutcome struct {
-	Adoption  *StopCapabilityRestampResult
 	Component string
 	Outcome   string
 	Detail    string
 	Remedy    string
+	Adoption  *Adoption
 }
 
 // Result carries every component line and the one aggregate outcome.
 type Result struct {
-	Adoption          *StopCapabilityRestampResult
+	Adoption          *Adoption
 	Components        []ComponentOutcome
 	RawLines          []string
 	Outcome           string
@@ -106,15 +115,15 @@ type Result struct {
 // Data is what up's --json envelope carries for a parent to branch on:
 // up's outcome, the component it stopped at, and what it re-armed.
 type Data struct {
-	Adoption *StopCapabilityRestampResult `json:"adoption,omitempty"`
-	Outcome  string                       `json:"outcome"`
-	Failed   string                       `json:"failed,omitempty"`
-	ReArmed  string                       `json:"reArmed,omitempty"`
+	Adoption *Adoption `json:"adoption,omitempty"`
+	Outcome  string    `json:"outcome"`
+	Failed   string    `json:"failed,omitempty"`
+	ReArmed  string    `json:"reArmed,omitempty"`
 }
 
 // Data is the result's typed facts for the envelope.
 func (r Result) Data() Data {
-	return Data{Outcome: r.Outcome, Failed: r.Failed, ReArmed: r.ReArmed, Adoption: r.Adoption}
+	return Data{Adoption: r.Adoption, Outcome: r.Outcome, Failed: r.Failed, ReArmed: r.ReArmed}
 }
 
 // ExitCode is zero for armed, advisor, and successful recovery outcomes.
@@ -158,6 +167,9 @@ func (r Result) Lines() []string {
 		}
 	}
 	lines = append(lines, r.RawLines...)
+	if r.Adoption != nil && r.Adoption.Status == "pending" {
+		lines = append(lines, "session preparation partial: adoption pending; "+r.Adoption.Cause+"; remedy="+quoteField(r.Adoption.Remedy))
+	}
 	aggregate := "up outcome=" + r.Outcome
 	if r.Authority != "" {
 		aggregate += " authority=" + r.Authority
@@ -193,14 +205,21 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal"}
 	}
 	result, err := options.RestampStopCapability(options.Root, lineage, claimEpoch)
+	remedy := options.AdoptionRemedy
+	if remedy == "" {
+		remedy = "metasystem session start"
+	}
+	adoption := &result
+	adoption.Status = "complete"
 	if err != nil {
-		result.Pending = true
+		adoption.Pending = true
+		adoption.Status, adoption.Cause, adoption.Remedy = "pending", err.Error(), remedy
 		return ComponentOutcome{
-			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(), Adoption: &result,
-			Remedy: "metasystem session start",
+			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
+			Remedy: remedy, Adoption: adoption,
 		}
 	}
-	if result.Pending || result.Observation != "" || len(result.Goals) > 0 {
+	if result.Pending || result.Observation != nil || len(result.Goals) > 0 {
 		outcome := "no-claimed-goal"
 		if len(result.Goals) > 0 {
 			outcome = "current"
@@ -212,8 +231,18 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		}
 		if result.Pending {
 			outcome = "deferred"
+			adoption.Status, adoption.Cause, adoption.Remedy = "pending", "claim adoption is pending", remedy
+			for _, g := range result.Goals {
+				if g.Outcome == "pending" {
+					adoption.Cause = g.Cause
+					break
+				}
+			}
 		}
 		component := ComponentOutcome{Component: "stop-capability", Outcome: outcome, Adoption: &result}
+		if len(result.Goals) == 1 && outcome == "current" {
+			component.Detail = fmt.Sprintf("goal=%s epoch=%d", result.Goals[0].GoalID, result.Goals[0].ToEpoch)
+		}
 		if result.Pending && len(result.Goals) == 0 {
 			component.Detail = "claim adoption is pending"
 			component.Remedy = "metasystem session start"
@@ -221,13 +250,13 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		return component
 	}
 	if result.GoalID == "" {
-		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal"}
+		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal", Adoption: adoption}
 	}
 	if result.Restamped {
-		return ComponentOutcome{Component: "stop-capability", Outcome: "restamped",
+		return ComponentOutcome{Component: "stop-capability", Outcome: "restamped", Adoption: adoption,
 			Detail: fmt.Sprintf("from %d to %d", result.FromEpoch, result.ToEpoch)}
 	}
-	return ComponentOutcome{Component: "stop-capability", Outcome: "current",
+	return ComponentOutcome{Component: "stop-capability", Outcome: "current", Adoption: adoption,
 		Detail: fmt.Sprintf("goal=%s epoch=%d", result.GoalID, result.ToEpoch)}
 }
 
@@ -879,12 +908,11 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			lineage = view.MainId
 		}
 		if view.ClaimEpoch == nil {
-			pending := StopCapabilityRestampResult{Pending: true}
 			components = append(components, ComponentOutcome{
 				Component: "stop-capability", Outcome: "deferred",
 				Detail:   "the holder classification has no claim epoch",
 				Remedy:   "metasystem session start",
-				Adoption: &pending,
+				Adoption: &Adoption{Pending: true, Status: "pending", Cause: "the holder classification has no claim epoch", Remedy: "metasystem session start"},
 			})
 		} else {
 			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))

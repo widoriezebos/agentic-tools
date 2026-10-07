@@ -78,7 +78,9 @@ func TestDoneRefusesUnscheduledResidueInTheConclusion(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = Done(request, "any-goal", "landed X; the cache residue rides goal:cache-half")
-	if err != sentinel {
+	// Publication adds capture-phase context while preserving the
+	// environment cause that tells callers which dependency failed.
+	if !errors.Is(err, sentinel) {
 		t.Fatalf("linked residue did not reach the capture boundary: %v", err)
 	}
 	assertCaptured(opid)
@@ -86,7 +88,7 @@ func TestDoneRefusesUnscheduledResidueInTheConclusion(t *testing.T) {
 	request.Ulid = "01J5X00000000000000000R401"
 	secondOpid := request.opid()
 	_, err = Done(request, "any-goal", "landed X cleanly; nothing remains")
-	if err != sentinel {
+	if !errors.Is(err, sentinel) {
 		t.Fatalf("residue-free conclusion did not reach the capture boundary: %v", err)
 	}
 	assertCaptured(opid, secondOpid)

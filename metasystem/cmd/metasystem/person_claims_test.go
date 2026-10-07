@@ -180,7 +180,7 @@ func TestPersonClaimBoardAndOfflineProjection(t *testing.T) {
 
 	hookResult := result
 	var explicitOut, explicitErr bytes.Buffer
-	if code := runUpWithProcessOwners([]string{"--repo", bed.root(), "--metasystem-root", bed.root(), "--json"}, processes, &explicitOut, &explicitErr); code != 0 || calls != 2 || result.Goals[0].Outcome != "current" || !strings.Contains(explicitOut.String(), `"adoption"`) {
+	if code := runUpWithProcessOwners([]string{"--repo", bed.root(), "--metasystem-root", bed.root(), "--json"}, processes, &explicitOut, &explicitErr); code != 0 || calls != 1 || result.Observation == nil || result.Observation.Outcome != "fresh" || result.Goals[0].Outcome != "current" || !strings.Contains(explicitOut.String(), `"adoption"`) {
 		t.Fatalf("explicit up lost the shared idempotent callback: code=%d calls=%d %+v stdout=%s stderr=%s", code, calls, result, explicitOut.String(), explicitErr.String())
 	}
 	result = hookResult

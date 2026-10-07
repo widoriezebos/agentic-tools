@@ -634,6 +634,10 @@ func ReadCommitGoals(root, commit string, environments ...[]string) (map[string]
 }
 
 func readCommitGoalBlobs(root, commit string, paths []string, environment []string) (map[string][]byte, error) {
+	return readCommitGoalBlobsWithRun(root, commit, paths, environment, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+func readCommitGoalBlobsWithRun(root, commit string, paths []string, environment []string, run func(*exec.Cmd) error) (map[string][]byte, error) {
 	files := make(map[string][]byte, len(paths))
 	if len(paths) == 0 {
 		return files, nil
@@ -649,7 +653,7 @@ func readCommitGoalBlobs(root, commit string, paths []string, environment []stri
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := run(cmd); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
 			return nil, &gitError{ExitError: exit, stderr: strings.TrimSpace(stderr.String()), args: args}
 		}

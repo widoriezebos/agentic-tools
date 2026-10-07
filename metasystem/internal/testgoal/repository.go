@@ -1,6 +1,7 @@
 package testgoal
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -210,4 +211,63 @@ func (r *Repository) Release(opid string) error {
 	}
 	delete(r.refs, opid)
 	return nil
+}
+
+// WithContext supplies cancellation-aware reads for decision fixtures.
+func (r *Repository) WithContext(ctx context.Context) goal.Repository {
+	return readRepository{Repository: r, ctx: ctx}
+}
+
+type readRepository struct {
+	*Repository
+	ctx context.Context
+}
+
+func (r readRepository) Capture(opid string) (string, error) {
+	if err := r.ctx.Err(); err != nil {
+		return "", err
+	}
+	return r.Repository.Capture(opid)
+}
+func (r readRepository) Accepted() (string, bool, error) {
+	if err := r.ctx.Err(); err != nil {
+		return "", false, err
+	}
+	return r.Repository.Accepted()
+}
+func (r readRepository) Files(tip string, prefixes ...string) (map[string][]byte, error) {
+	if err := r.ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.Repository.Files(tip, prefixes...)
+}
+func (r readRepository) AcceptedCAS(old, next string) error {
+	if err := r.ctx.Err(); err != nil {
+		return err
+	}
+	return r.Repository.AcceptedCAS(old, next)
+}
+func (r readRepository) IsAncestor(old, next string) (bool, error) {
+	if err := r.ctx.Err(); err != nil {
+		return false, err
+	}
+	return r.Repository.IsAncestor(old, next)
+}
+func (r readRepository) CommitTime(tip string) (time.Time, error) {
+	if err := r.ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
+	return r.Repository.CommitTime(tip)
+}
+func (r readRepository) Release(opid string) error {
+	if err := r.ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	_, present := r.refs[opid]
+	r.mu.Unlock()
+	if !present {
+		return nil
+	}
+	return r.Repository.Release(opid)
 }

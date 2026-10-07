@@ -104,7 +104,15 @@ func (f *readItemCommandFixture) done(stdout, stderr io.Writer) int {
 }
 
 func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
+	t.Parallel()
 	fixture := newReadItemCommandFixture(t)
+	// Explicit next binds every ledger read to its cancellation allowance.
+	resolve := fixture.dependencies.endpoint
+	fixture.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		endpoint, err := resolve(root)
+		endpoint.Repository = freshCommandRepository{Repository: endpoint.Repository, attempts: new(int)}
+		return endpoint, err
+	}
 	root := fixture.repository.root
 	showCode, show, showErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, fixture.endpoint, stdout, stderr)

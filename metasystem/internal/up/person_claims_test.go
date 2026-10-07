@@ -3,6 +3,7 @@ package up
 import (
 	"encoding/json"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestPersonClaimUpKeepsArmedPartialResults(t *testing.T) {
 	for _, readFailed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "partial publication", true: "unreadable observation"}[readFailed], func(t *testing.T) {
 			t.Parallel()
-			adoption := StopCapabilityRestampResult{Pending: true, Observation: "accepted-tip", Goals: []GoalAdoptionOutcome{
+			adoption := StopCapabilityRestampResult{Pending: true, Observation: &goal.Observation{Tip: "accepted-tip", Outcome: "offline"}, Goals: []GoalAdoptionOutcome{
 				{GoalID: "confirmed", Outcome: "restamped", FromEpoch: 0, ToEpoch: 7},
 				{GoalID: "waiting", Outcome: "pending", FromEpoch: 0, ToEpoch: 7, Cause: "confirmation unavailable", Remedy: "metasystem session start", Operation: "journal-operation"},
 			}}

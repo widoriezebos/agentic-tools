@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -1100,24 +1101,67 @@ func runIntentClaim(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	_, proof, actorProblem := inv.actingAs("claim", id, actorEither)
-	if actorProblem != nil {
-		return inv.render(*actorProblem)
+	if id != "" && inv.input.has("label") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--label picks among ready goals, and a goal is named; nothing was done",
+			next: inv.typedArgvLess("label"), nextReason: "claims the named goal"})
 	}
-	person := proof != nil && proof.ValidFor(inv.stateRoot) && proof.Helm == nil
-	if _, err := brainHumanWordClassificationWithFacts("claim", inv.layout.InstallationRoot.Path(), inv.input.text("by"), proof, inv.owners.dependencies.authorityFacts); err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "who started this command could not be confirmed, so no goal was selected", Decision: err.Error(), Details: []string{err.Error()}, next: inv.publicArgv("session", "start")})
-	}
-	projection, _, problem := inv.projection()
+	actor, proof, problem := inv.actingAs("claim", id, actorEither)
 	if problem != nil {
-		if person && id != "" && box == "" && !inv.input.has("label") {
-			return inv.render(inv.claimGoal(id, "", goal.Projection{}))
-		}
 		return inv.render(*problem)
 	}
-	if person && id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to reserve; name one of the available goals", next: inv.typedArgvFor("GOAL"), Data: map[string]any{"candidates": goal.SortedGoalIds(projection.Tree.Live)}})
+	person := proof != nil && proof.Helm == nil && proof.ValidFor(inv.layout.InstallationRoot.Path())
+	if !person {
+		facts := inv.owners.dependencies.authorityFacts
+		if detail := brain.Fence(inv.layout.InstallationRoot.Path(), "claim", facts.ledgerIdentity(inv.stateRoot)); detail != "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: detail, next: inv.typedArgv(), nextReason: "from a node's checkout"})
+		}
+		if classification, err := brainHumanWordClassificationWithFacts("claim", inv.layout.InstallationRoot.Path(), "", nil, inv.owners.dependencies.authorityFacts); err != nil || classification.Class != lease.ClassMain || !classification.Holder {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this session's authority can't be read; nothing was claimed", next: inv.typedArgv(), nextReason: "after repairing authority"})
+		}
 	}
+	endpoint, err := inv.owners.dependencies.endpoint(inv.layout.InstallationRoot.Path())
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.typedArgv()})
+	}
+	projection, observation, err := goal.FreshProjection(inv.owners.dependencies.readContext(), endpoint, func() (time.Time, error) { return inv.owners.commandNow(inv.layout.InstallationRoot.Path()) })
+	if err != nil {
+		if person && id != "" {
+			// Publication recaptures and validates the ledger before any mutation.
+			projection = goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{}}}
+			if now, clockErr := inv.owners.commandNow(inv.layout.InstallationRoot.Path()); clockErr == nil {
+				if stale, staleErr := goal.Project(endpoint, false, now); staleErr == nil {
+					projection = stale
+				}
+			}
+			result := inv.claimGoalAs(id, box, projection, actor, proof)
+			data, ok := result.Data.(map[string]any)
+			if !ok {
+				data = map[string]any{"claim": result.Data}
+			}
+			data["observation"] = observation
+			result.Data = data
+			if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+				result.next, result.nextReason = inv.typedArgv(), "after repairing the reported cause"
+			}
+			return inv.render(result)
+		}
+		result := intentResult{Outcome: intentFailed, code: 1, Summary: "the ledger could not be freshly read; nothing was claimed: " + err.Error(), next: inv.typedArgv(), nextReason: "after repairing the reported cause", Data: map[string]any{"observation": observation}}
+		if person {
+			result.Summary = "the ledger could not be freshly read; name the goal to claim"
+			result.next = inv.typedArgvFor("GOAL")
+			if now, clockErr := inv.owners.commandNow(inv.layout.InstallationRoot.Path()); clockErr == nil {
+				if stale, readErr := goal.Project(endpoint, false, now); readErr == nil {
+					result.Data.(map[string]any)["staleGoals"] = goal.SortedGoalIds(stale.Tree.Live)
+				}
+			}
+			result.Details = []string{err.Error(), "the accepted snapshot is stale and non-authoritative"}
+		}
+		return inv.render(result)
+	}
+	if person && id == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "a person chooses the goal to reserve; name one of the available goals", next: inv.typedArgvFor("GOAL"), Data: map[string]any{"candidates": goal.SortedGoalIds(projection.Tree.Live), "observation": observation}})
+	}
+
 	named := id != ""
 	if id == "" {
 		if inv.input.switched("arc") {
@@ -1129,9 +1173,6 @@ func runIntentClaim(inv *intentInvocation) int {
 			return inv.render(*problem)
 		}
 		id = next
-	} else if inv.input.has("label") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--label picks among ready goals, and a goal is named; nothing was done",
-			next: inv.typedArgvLess("label"), nextReason: "claims the named goal"})
 	}
 	if file, _ := goalRecord(projection, id); file == nil {
 		return unknownGoal(inv, id)
@@ -1149,7 +1190,13 @@ func runIntentClaim(inv *intentInvocation) int {
 		}
 		id, taken = next, holder
 	}
-	result := inv.claimGoal(id, box, projection)
+	result := inv.claimGoalAs(id, box, projection, actor, proof)
+	data, ok := result.Data.(map[string]any)
+	if !ok {
+		data = map[string]any{"claim": result.Data}
+	}
+	data["observation"] = observation
+	result.Data = data
 	if taken != "" && result.Outcome == intentConfirmed {
 		summary := fmt.Sprintf("%s was taken by %s; claimed %s instead", asked, taken, id)
 		result.Summary, result.text = summary, nil
@@ -1274,17 +1321,17 @@ func (inv *intentInvocation) seatFallback(projection goal.Projection, id string)
 	return next, holder, nil
 }
 
-// claimGoal claims id through the claim owner, with the budget box, or the
+// claimGoalAs claims id through the claim owner, with the budget box, or the
 // whole arc with --arc.
-func (inv *intentInvocation) claimGoal(id, box string, projection goal.Projection) intentResult {
-	actor, proof, problem := inv.actingAs("claim", id, actorEither)
-	if problem != nil {
-		return *problem
-	}
+func (inv *intentInvocation) claimGoalAs(id, box string, projection goal.Projection, actor []string, proof *humanauthority.Proof) intentResult {
 	laneState := inv.claimLaneReader()
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
-	if box != "" {
-		budget, problem := inv.completeBox(box, projection.Tree.Live[id])
+	if box != "" && (projection.Tree.Live[id] != nil || box != "norm" && box != "keep") {
+		file := projection.Tree.Live[id]
+		if file == nil {
+			file = &goal.GoalFile{Id: id}
+		}
+		budget, problem := inv.completeBox(box, file)
 		if problem != nil {
 			return *problem
 		}

@@ -150,7 +150,28 @@ func restampStopCapabilityWithReads(root, lineage string, claimEpoch int64, read
 	if err != nil {
 		return result, err
 	}
-	result.Observation = projection.Tip
+	return adoptClaimProjection(root, lineage, claimEpoch, readers, clock, projection, &goal.Observation{Tip: projection.Tip, ObservedAt: projection.Horizon.Now, Outcome: "offline"})
+}
+
+func adoptClaimProjection(root, lineage string, claimEpoch int64, readers syncRequestDependencies,
+	clock func(string) (time.Time, error), projection goal.Projection, observation *goal.Observation) (result up.StopCapabilityRestampResult, err error) {
+	result.Observation = observation
+	result.Status = "complete"
+	defer func() {
+		if err != nil || result.Pending {
+			result.Status, result.Pending, result.Remedy = "pending", true, "metasystem session start"
+			if err != nil {
+				result.Cause = err.Error()
+			} else {
+				for _, outcome := range result.Goals {
+					if outcome.Outcome == "pending" {
+						result.Cause = outcome.Cause
+						break
+					}
+				}
+			}
+		}
+	}()
 	machine, err := readers.machine(root)
 	if err != nil {
 		return result, err
@@ -232,6 +253,67 @@ func restampStopCapabilityWithReads(root, lineage string, claimEpoch int64, read
 	return result, nil
 }
 
+// restampStopCapabilityWith selects the projection for one adoption pass.
+// Explicit commands observe the remote ledger; lifecycle hooks stay offline.
+func restampStopCapabilityWith(dependencies syncRequestDependencies, clock func(string) (time.Time, error), fresh bool) func(string, string, int64) (up.StopCapabilityRestampResult, error) {
+	return func(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
+		endpoint, err := dependencies.endpoint(root)
+		if err != nil {
+			return up.StopCapabilityRestampResult{}, err
+		}
+		if !fresh && !goal.NewWorldAtEndpoint(endpoint) {
+			return up.StopCapabilityRestampResult{}, nil
+		}
+		if !fresh {
+			return restampStopCapabilityWithReads(root, lineage, claimEpoch, dependencies, clock, goal.Project)
+		}
+		projection, observation, err := goal.FreshProjection(dependencies.readContext(), endpoint, func() (time.Time, error) { return clock(root) })
+		if err != nil {
+			return up.StopCapabilityRestampResult{Observation: &observation, Status: "pending", Pending: true}, err
+		}
+		return adoptClaimProjection(root, lineage, claimEpoch, dependencies, clock, projection, &observation)
+	}
+}
+
+func (r *claimAdoptionReads) RestampFresh(root, lineage string, epoch int64) (up.StopCapabilityRestampResult, error) {
+	if r == nil {
+		return restampStopCapabilityWith(defaultSyncRequestDependencies(), goalCommandNow, true)(root, lineage, epoch)
+	}
+	return restampStopCapabilityWith(r.dependencies, r.clock, true)(root, lineage, epoch)
+}
+
+type upCommandInputs struct {
+	dependencies syncRequestDependencies
+	clock        func(string) (time.Time, error)
+	executable   func() (string, error)
+	run          func(up.Options) up.Result
+}
+
+func (inputs upCommandInputs) defaults() upCommandInputs {
+	if inputs.dependencies.endpoint == nil {
+		inputs.dependencies = defaultSyncRequestDependencies()
+	}
+	if inputs.clock == nil {
+		inputs.clock = goalCommandNow
+	}
+	if inputs.executable == nil {
+		inputs.executable = os.Executable
+	}
+	if inputs.run == nil {
+		inputs.run = up.Run
+	}
+	return inputs
+}
+
+func runUpWithInputs(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer, inputs upCommandInputs) int {
+	inputs = inputs.defaults()
+	owners := defaultProcessIntentOwners()
+	owners.process.repositoryTop = repositoryTop
+	owners.up, owners.executable = inputs.run, inputs.executable
+	owners.adoptionReads = &claimAdoptionReads{dependencies: inputs.dependencies, clock: inputs.clock, project: goal.Project}
+	return runUpWithProcessOwners(args, owners, stdout, stderr)
+}
+
 func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
 	owners := defaultProcessIntentOwners()
 	owners.process.repositoryTop = repositoryTop
@@ -309,7 +391,7 @@ func runUpWithProcessOwners(args []string, owners processIntentOwners, stdout, s
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
-		RestampStopCapability: owners.adoptionReads.Restamp,
+		RestampStopCapability: owners.adoptionReads.RestampFresh, AdoptionRemedy: "metasystem internal up",
 	}
 	if *printScheduler {
 		fmt.Fprintln(stdout, up.SchedulerEntry(options))

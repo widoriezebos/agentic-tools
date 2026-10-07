@@ -1431,7 +1431,7 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string, recordWaitin
 			var err error
 			state, err = r.ClaimLaneState(heldID, tip)
 			if err != nil {
-				return nil, err
+				state = ""
 			}
 		}
 		switch state {
@@ -1582,6 +1582,11 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
+			if r.Actor.Human != "" {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "claim", Name: "named claim", Missing: "a person's named claim requires terminal proof"}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
+			}
 			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
@@ -4442,6 +4447,11 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
+			if r.Actor.Human != "" {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "claim", Name: "named claim", Missing: "a person's named claim requires terminal proof"}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
+			}
 			boundIDs = nil
 			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {

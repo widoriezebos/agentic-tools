@@ -490,6 +490,7 @@ var (
 )
 
 type syncRequestDependencies struct {
+	ctx            context.Context
 	authorityFacts goalAuthorityReadFacts
 	endpoint       func(string) (goal.Endpoint, error)
 	machine        func(string) (string, error)
@@ -511,6 +512,13 @@ type syncRequestDependencies struct {
 	// the process's own. A caller that owns its streams (a parallel test)
 	// sets both, so no other goroutine's output can reach them.
 	stdout, stderr io.Writer
+}
+
+func (d syncRequestDependencies) readContext() context.Context {
+	if d.ctx != nil {
+		return d.ctx
+	}
+	return context.Background()
 }
 
 func (d syncRequestDependencies) helmState(root string) helm.State {

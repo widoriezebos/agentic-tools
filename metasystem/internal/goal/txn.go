@@ -26,6 +26,23 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
+// PublicationCaptureFailure identifies an environment failure before mutation.
+// Its cause remains available to callers that classify transport errors.
+type PublicationCaptureFailure struct {
+	Cause error
+	Local bool
+}
+
+func (f PublicationCaptureFailure) Error() string {
+	source := "remote ledger"
+	if f.Local {
+		source = "local ledger"
+	}
+	return fmt.Sprintf("the %s could not be reached during publication: %v", source, f.Cause)
+}
+
+func (f PublicationCaptureFailure) Unwrap() error { return f.Cause }
+
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
 	ClaimHolder            func(string) (ClaimHolderFacts, error)
@@ -213,18 +230,22 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 // that refuses — reading breakage as absence would skip identity and
 // descent exactly when they matter most.
 func acceptedTipForGates(root string) (string, bool, error) {
-	out, err := gitIn(root, "rev-parse", "--verify", "--quiet", AcceptedRef+"^{commit}")
+	return acceptedTipWithRun(root, func(args ...string) (string, error) { return gitIn(root, args...) })
+}
+
+func acceptedTipWithRun(root string, run func(...string) (string, error)) (string, bool, error) {
+	out, err := run("rev-parse", "--verify", "--quiet", AcceptedRef+"^{commit}")
 	if err == nil {
 		return strings.TrimSpace(out), true, nil
 	}
-	if _, refErr := gitIn(root, "show-ref", "--verify", "--quiet", AcceptedRef); refErr != nil {
+	if _, refErr := run("show-ref", "--verify", "--quiet", AcceptedRef); refErr != nil {
 		// Exit 1 is show-ref's word for absent — but git ALSO answers
 		// exit 1 for a broken loose ref file, warning and ignoring
 		// it. The file's presence is the tell: a ref file git cannot
 		// read must refuse, never read as pre-bootstrap.
 		var ge *gitError
 		if errors.As(refErr, &ge) && ge.ExitCode() == 1 {
-			if commonOut, pathErr := gitIn(root, "rev-parse", "--path-format=absolute", "--git-common-dir"); pathErr == nil {
+			if commonOut, pathErr := run("rev-parse", "--path-format=absolute", "--git-common-dir"); pathErr == nil {
 				// The loose-ref path is BUILT from the common dir,
 				// never asked of --git-path: git resolves a ref
 				// symlink to its TARGET there, and the probe must
@@ -683,7 +704,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 			tip, capErr := CaptureTip(e, nonce)
 			CleanupRefs(e, nonce)
 			if capErr != nil {
-				return PublishResult{}, capErr
+				return PublishResult{}, PublicationCaptureFailure{Cause: capErr, Local: e.LocalMode()}
 			}
 			if strings.HasPrefix(existing.Evidence, "already satisfied: ") {
 				hintConfirmedWaiters(e.Root, req, tip, "", 0)
@@ -819,7 +840,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		if err != nil {
 			_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "capture failed: "+err.Error())
 			CleanupRefs(e, req.Opid)
-			return PublishResult{}, err
+			return PublishResult{}, PublicationCaptureFailure{Cause: err, Local: e.LocalMode()}
 		}
 		// The acceptance gates stand between EVERY mutation and the
 		// fetched tip: a foreign or rewound canonical branch is

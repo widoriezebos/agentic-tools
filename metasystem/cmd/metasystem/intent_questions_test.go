@@ -268,6 +268,8 @@ func TestIntentClaimContinuesReservedGoalByItsShow(t *testing.T) {
 	for _, name := range []string{"designs", "decisions", "record", "design", "question"} {
 		bed := newIntentBed(t, false, nil)
 		bed.lineage = "m1"
+		// Continuation requires the same holder authority as a new claim.
+		announceProofFixtureHolder(t, bed.root())
 		held := *bed.goalFile(bedGoal)
 		held.Id = name
 		for index := range held.History {

@@ -153,7 +153,7 @@ func init() {
 		goalRepeatWitness(makeQueued, runOrFail("goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved", "--fixture-human-authority"),
 			"is already not allowed stop-test changes", "goal", "disallow", bedGoal, "stop-test-changes", "--lineage", "m1"))
 	stateful("goal claim", "a goal this session already holds is claimed",
-		goalRepeatWitness(nil, nil, "is already claimed by this session",
+		goalRepeatWitness(nil, func(bed *intentBed) { announceProofFixtureHolder(bed.t, bed.root()) }, "is already claimed by this session",
 			"goal", "claim", bedGoal, "--lineage", "m1"))
 	stateful("goal release", "a goal no session holds is already released",
 		goalRepeatWitness(nil, nil, "is already released",

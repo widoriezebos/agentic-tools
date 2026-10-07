@@ -11,7 +11,7 @@ import (
 )
 
 // The transition-authority fold (review r1, F12/F13): claim is
-// agent-only, the pair is the ownership key, human-origin goals are
+// terminal proof guards human acts, the pair is the ownership key, human-origin goals are
 // human-reserved, edit checks authority, steal cascades, reopen
 // adopts the arc's standing state, set-arc composes under the
 // membership matrix, prune's closure seeds from keep survivors, and
@@ -130,7 +130,7 @@ func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
 	}
 }
 
-func TestClaimRequiresProofAndIsPairKeyed(t *testing.T) {
+func TestClaimRequiresAuthorityAndKeepsPair(t *testing.T) {
 	t.Parallel()
 	a, _ := fakeGoalEndpoint(t)
 	if res, err := Open(verbReqFor(a, "01J5X00000000000000000AK00", "mac-a"), "pair-keyed", "Pair semantics.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {

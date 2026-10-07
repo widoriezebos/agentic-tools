@@ -625,6 +625,11 @@ func (s *startRun) main() {
 		s.armingStatus = ops.Up(request, &output, &output)
 		s.checkpoint()
 		captured := trimNewlines(output.String())
+		for _, line := range strings.Split(captured, "\n") {
+			if strings.Contains(line, "adoption pending") {
+				s.collectNotice(line)
+			}
+		}
 		if strings.Contains(captured, " re-armed=") {
 			s.armingRearmed = true
 		}

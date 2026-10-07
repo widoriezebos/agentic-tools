@@ -9,6 +9,7 @@
 package boundedexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -48,6 +49,8 @@ var ErrTimedOut = errors.New("timed out")
 type Bound struct {
 	Limit time.Duration
 	Key   string
+	// TotalDeadline includes process termination and reaping.
+	TotalDeadline time.Time
 }
 
 // FixedBound wraps an ad-hoc limit — a fence-derived ceiling, a test value —
@@ -88,6 +91,24 @@ func Run(cmd *exec.Cmd, bound Bound, what string) error {
 // RunWithDeadline is the seam for callers whose tests drive the expiry.
 // Production callers use Run.
 func RunWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
+	return runContext(context.Background(), cmd, bound, what, deadline, time.Now)
+}
+
+// RunContext cancels the whole process group and includes reaping in the caller's total deadline.
+func RunContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string) error {
+	return runContext(ctx, cmd, bound, what, time.After, time.Now)
+}
+
+func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time, now func() time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !bound.TotalDeadline.IsZero() && !now().Before(bound.TotalDeadline) {
+		return context.DeadlineExceeded
+	}
+	if !bound.TotalDeadline.IsZero() {
+		bound.Limit = min(bound.Limit, bound.TotalDeadline.Sub(now()))
+	}
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -101,6 +122,7 @@ func RunWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time
 	case err := <-done:
 		return err
 	case <-deadline(bound.Limit):
+	case <-ctx.Done():
 	}
 	// The bound expired: signal the GROUP so the command's children die with
 	// it rather than outliving the bound holding pipes open. A negative pid
@@ -110,9 +132,16 @@ func RunWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time
 	}
 	// Bounded wait for the reap, so a child that somehow survives the kill
 	// cannot hang the caller either.
+	grace := killGraceWindow
+	if !bound.TotalDeadline.IsZero() {
+		grace = min(grace, max(0, bound.TotalDeadline.Sub(now())))
+	}
 	select {
 	case <-done:
-	case <-deadline(killGraceWindow):
+	case <-deadline(grace):
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s: %w", what, ctx.Err())
 	}
 	if bound.Key == "" {
 		return fmt.Errorf("%s %w after %s", what, ErrTimedOut, bound.Limit)

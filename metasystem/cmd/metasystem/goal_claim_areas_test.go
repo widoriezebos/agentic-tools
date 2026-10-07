@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -299,6 +300,12 @@ type claimRetryRepository struct {
 	goal.Repository
 	before func()
 	called bool
+}
+
+// A fresh preflight keeps the competing publication in the transaction's
+// Publish path, where admission must be checked again after a race.
+func (repo *claimRetryRepository) WithContext(ctx context.Context) goal.Repository {
+	return freshCommandRepository{Repository: repo, ctx: ctx, attempts: new(int)}
 }
 
 func (repo *claimRetryRepository) Publish(parent, commit string) (goal.CASOutcome, error) {

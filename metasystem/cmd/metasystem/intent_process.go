@@ -677,21 +677,34 @@ func runIntentSessionStart(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
 			retry: "try again", Details: []string{"engine path: " + err.Error()}})
 	}
+	reads := owners.adoptionReads
+	if reads == nil {
+		reads = &claimAdoptionReads{dependencies: inv.owners.dependencies, clock: inv.owners.commandNow}
+	}
 	result := owners.up(up.Options{
 		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
 		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-		RestampStopCapability: owners.adoptionReads.Restamp,
+		RestampStopCapability: reads.RestampFresh,
 	})
 	outcome := intentConfirmed
-	if result.Adoption != nil && result.Adoption.Pending {
+	remedy := result.Remedy
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
 		outcome = intentPartial
+		remedy = result.Adoption.Remedy
 	}
 	if result.ExitCode() != 0 {
 		outcome = intentRefused
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
-		Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
-		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy, "adoption": result.Adoption}})
+		Summary: sessionPreparationSummary(result), text: result.Lines(), Decision: remedy,
+		Data: map[string]any{"outcome": result.Outcome, "adoption": result.Adoption, "lines": nonNilLines(result.Lines()), "remedy": remedy}})
+}
+
+func sessionPreparationSummary(result up.Result) string {
+	if result.Adoption != nil && result.Adoption.Status == "pending" {
+		return "session preparation is partial: adoption pending; " + result.Adoption.Cause
+	}
+	return "session start: " + result.Outcome
 }
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.
