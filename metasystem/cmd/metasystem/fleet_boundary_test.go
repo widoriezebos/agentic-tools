@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
@@ -304,6 +306,13 @@ func TestFleetBoundaryPublicLoopRevivesWithoutSession(t *testing.T) {
 			}
 		}
 		command.Env = append(command.Env, "FLEET_BOUNDARY_LOOP_CHILD="+gitStub, "PATH="+tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{Verb: "isolated fleet boundary loop", Resolve: func() (int, bool, error) {
+			if command.Process == nil {
+				return 0, false, nil
+			}
+			return command.Process.Pid, true, nil
+		}}})
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("isolated real loop: %v\n%s", err, output)
 		}

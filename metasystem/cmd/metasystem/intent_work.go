@@ -1426,7 +1426,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
-				q, warnings, code, askErr := inv.owners.processes.ask(inv.stateRoot, channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
+				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
 					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
 				held.text, held.code = warnings, max(code, 1)
 				if askErr != nil {
@@ -2772,12 +2772,21 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 // checkDirectPersonProof can observe the actor without recording a refusal
 // when an agent is allowed to perform the act under its ordinary authority.
 func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bool) *intentResult {
+	if problem := inv.resolveLayout(); problem != nil {
+		return problem
+	}
+	if inv.stateRoot == "" {
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			return problem
+		}
+	}
+	authorityRoot := checkoutAuthorityRoot(inv.layout)
 	// refused says, in plain words, that only the person at the enrolled
 	// terminal sets this, why this shell is not that, and the one command
 	// that resolves it (the enrollment, the name filled in, or the same
 	// command in a terminal the person opened).
 	refused := func(reason string, err error) *intentResult {
-		remedy := humanauthority.RemedyFor(inv.stateRoot, err, inv.personName(""), inv.typedArgv())
+		remedy := humanauthority.RemedyFor(authorityRoot, err, inv.personName(""), inv.typedArgv())
 		if err != nil && remedy.Reason != "" {
 			reason = remedy.Reason
 		}
@@ -2792,27 +2801,20 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 		}
 		return result
 	}
-	if inv.stateRoot == "" {
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
-		if err != nil {
-			return refused("this installation's state can't be found", err)
-		}
-		inv.stateRoot = root.Path()
-	}
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
 		return refused("who is at this terminal can't be checked here", nil)
 	}
-	now, err := inv.owners.commandNow(inv.stateRoot)
+	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return refused("the clock can't be read", err)
 	}
-	proof, err := inv.owners.prove(inv.stateRoot, int64(os.Getppid()), nil, "", "", now)
+	proof, err := inv.owners.prove(authorityRoot, int64(os.Getppid()), nil, "", "", now)
 	if err != nil {
 		return refused(humanauthority.PlainReason(err), err)
 	}
-	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(authorityRoot) {
 		if recordRefusal {
-			_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, proof, act, "set only by the person's own proof", now)
+			_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
 		}
 		return refused("this shell acts under the helm or a grant", nil)
 	}

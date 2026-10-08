@@ -130,12 +130,23 @@ func (b *decisionTickRepository) openWorkDependencies() (openWorkDependencies, f
 func (b *decisionTickRepository) tickN(cfg TickConfig, census WorkerCensus, n int) TickResult {
 	b.t.Helper()
 	cfg.ProviderHome = testprovider.Home(b.root)
+	wallClock := cfg.Now.IsZero()
 	var last TickResult
 	for i := 0; i < n; i++ {
 		path := EvidencePath(b.root)
 		prev, err := LoadEvidence(path)
 		if err != nil {
 			b.t.Fatal(err)
+		}
+		if wallClock {
+			cfg.Now = time.Now()
+			if prev.SampledAt != "" {
+				sampled, err := time.Parse(time.RFC3339Nano, prev.SampledAt)
+				if err != nil {
+					b.t.Fatal(err)
+				}
+				cfg.Now = sampled.Add(10 * time.Minute)
+			}
 		}
 		marks := b.currentMarks()
 		dependencies, checkReads := b.openWorkDependencies()

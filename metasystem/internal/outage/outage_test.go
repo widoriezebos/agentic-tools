@@ -52,6 +52,7 @@ func TestMarkLifecycle(t *testing.T) {
 // never permanently pause the steward's clocks; and a NEW failure
 // after the lapse starts a fresh outage rather than resuming the old.
 func TestHorizonLapse(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := fixtureObserve(root, "overloaded", "529", "mission-runner", t0); err != nil {
 		t.Fatal(err)
@@ -69,8 +70,17 @@ func TestHorizonLapse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.ConsecutiveFailures != 2 || m.LastAt != t0.Add(2*Horizon).UTC().Format(time.RFC3339) {
-		t.Fatalf("a failure after the lapse retains its interval and refreshes the observation: %+v", m)
+	if m.ConsecutiveFailures != 1 || m.Since != t0.Add(2*Horizon).UTC().Format(time.RFC3339) || m.LastAt != m.Since {
+		t.Fatalf("a failure after expiry starts a fresh outage: %+v", m)
+	}
+	state, err := ReadProviders(filepath.Join(root, ".metasystem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervals := state.Current["anthropic"].Intervals
+	if len(intervals) != 1 || intervals[0].Since != t0.Format(time.RFC3339) ||
+		intervals[0].Until != t0.Add(Horizon).Format(time.RFC3339) || !intervals[0].Stale || intervals[0].FirstSuccessAt != "" {
+		t.Fatalf("expiry must retain the bounded wait without claiming provider success: %+v", intervals)
 	}
 }
 

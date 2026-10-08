@@ -56,12 +56,17 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	cfg := TickConfig{StaleTicks: 2, Now: now}
-	r := outageTickN(bed, cfg, census, 2)
+	outageTickN(bed, cfg, census, 1)
+	cfg.Now = cfg.Now.Add(10 * time.Minute)
+	r := outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the second quiet tick ages to 1: %+v", r.Evidence)
 	}
-	markOutage(t, root, now)
-	r = outageTickN(bed, cfg, census, 3)
+	markOutage(t, root, cfg.Now)
+	for range 3 {
+		cfg.Now = cfg.Now.Add(10 * time.Minute)
+		r = outageTickN(bed, cfg, census, 1)
+	}
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the clock must pause during a standing outage: %+v", r.Evidence)
 	}
@@ -73,9 +78,10 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 		"the model provider is overloaded; local work continues; the clocks are paused") {
 		t.Fatalf("the narration must say the clocks are paused: %v\n%s", err, narration)
 	}
-	if err := testprovider.Clear(root); err != nil {
+	if _, err := outage.Observe(testprovider.Home(root), "claude", "fixture-model", "", "", "fixture-success", cfg.Now); err != nil {
 		t.Fatal(err)
 	}
+	cfg.Now = cfg.Now.Add(10 * time.Minute)
 	r = outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 2 || r.ProviderOutage {
 		t.Fatalf("a cleared outage resumes the aging where it stopped: %+v", r)

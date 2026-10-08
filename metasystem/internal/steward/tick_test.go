@@ -228,6 +228,7 @@ func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
 }
 
 func TestQuietTicksAgeIntoLiveIdleNotification(t *testing.T) {
+	t.Parallel()
 	bed := newDecisionTickRepository(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	r := bed.tickN(TickConfig{StaleTicks: 3}, census, 3)
@@ -292,6 +293,7 @@ func TestGoalFreeRepositoryTicksQuietly(t *testing.T) {
 }
 
 func TestNotifyVerdictsReachTheQueue(t *testing.T) {
+	t.Parallel()
 	bed := newDecisionTickRepository(t)
 	live := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	bed.tickN(TickConfig{StaleTicks: 1}, live, 2) // ages past the threshold

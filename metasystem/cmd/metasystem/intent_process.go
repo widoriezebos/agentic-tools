@@ -1579,7 +1579,7 @@ func runIntentAsk(inv *intentInvocation) int {
 			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
 			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
-	q, warnings, code, err := inv.owners.processes.ask(inv.stateRoot, in)
+	q, warnings, code, err := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), in)
 	if err != nil && q.ID == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: askTargets, Summary: err.Error() + "; nothing was asked", text: warnings,
 			retry: "once the cause above is fixed"})

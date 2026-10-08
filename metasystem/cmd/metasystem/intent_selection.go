@@ -246,7 +246,7 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
 	if projection, now, problem := inv.projection(); problem == nil {
 		if file, _ := goalRecord(projection, result.Targets[0].ID); file != nil && file.Budget != nil {
-			view := inv.budgetView(inv.stateRoot, file, now)
+			view := inv.budgetView(file, now)
 			result.Data.(map[string]any)["budget"] = view
 			result.text = append(result.text, view.lines()...)
 		}

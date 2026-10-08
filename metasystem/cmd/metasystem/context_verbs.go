@@ -114,9 +114,9 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
 	})
 	window, windowErr := contextWindow(installation)
-	boundaries, boundaryErr := steward.ReadUnitBoundaries(stateRoot)
-	boundaryRoot := stateRoot
-	if resolved, pathErr := filepath.EvalSymlinks(stateRoot); pathErr == nil {
+	boundaries, boundaryErr := steward.ReadUnitBoundaries(installation.Path())
+	boundaryRoot := installation.Path()
+	if resolved, pathErr := filepath.EvalSymlinks(boundaryRoot); pathErr == nil {
 		boundaryRoot = resolved
 	}
 	localBoundaries := boundaries[:0]
@@ -382,7 +382,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
-	if err := steward.BindUnitHandoff(stateRoot, caller.Session); err != nil {
+	if err := steward.BindUnitHandoff(installation.Path(), caller.Session); err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if *asJSON {
