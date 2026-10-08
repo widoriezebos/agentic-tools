@@ -81,7 +81,7 @@ func (s *declaredCheckStarter) StartSupervisor(id, state string) (identity.Ref, 
 		if s.beforeCheck != nil {
 			defer s.beforeCheck(record)()
 		}
-		code, result := declaredCheckAt(s.t, s.bed, directory, args...)
+		code, result := declaredCheckAt(s.t, s.bed, directory, record.Kind, args...)
 		s.results, s.calls = append(s.results, result), append(s.calls, code)
 		if record.Kind == "proof" {
 			s.bed.starter.fail["proof"] = code != 0
@@ -185,7 +185,7 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 				}
 			}
 			// Repeated public execution also ignores the moved tip and candidate settings.
-			code, result, _ := b.work("test", "run", "--unit-run", resultData(t, built)["run"].(string))
+			code, result := declaredCheckAt(t, b, b.root(), "", "test", "run", "--unit-run", resultData(t, built)["run"].(string))
 			if code != checkCode || resultData(t, result)["execution"] == first {
 				t.Fatalf("public replay: %d %+v", code, result)
 			}
@@ -333,14 +333,28 @@ func TestIntentDeclaredCheckNextRoundUsesNewDeclarations(t *testing.T) {
 }
 
 // declaredCheckAt enters the public verb with the plain adapter's actual directory.
-func declaredCheckAt(t *testing.T, b *workBed, directory string, args ...string) (int, intentResult) {
+func declaredCheckAt(t *testing.T, b *workBed, directory, kind string, args ...string) (int, intentResult) {
 	t.Helper()
 	command, rest, ok := resolveIntentArgv(args)
 	if !ok {
 		t.Fatalf("no public command %q", args)
 	}
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, directory, b.workOwners())
+	owners := b.workOwners()
+	owners.lookupEnv = func(key string) (string, bool) { return kind, key == launch.KindEnv }
+	git := owners.work.git
+	owners.work.git = func(root string, args ...string) ([]byte, error) {
+		if slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
+			for _, tree := range []string{b.root(), b.worktree} {
+				if _, err := fakeTop(tree)(root); err == nil {
+					return []byte(tree), nil
+				}
+			}
+			return []byte(directory), nil
+		}
+		return git(root, args...)
+	}
+	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, directory, owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("result: %s stderr=%s: %v", stdout.String(), stderr.String(), err)
@@ -435,19 +449,150 @@ func TestIntentDeclaredCheckBuilderRetainsWithUnwritableRound(t *testing.T) {
 		t.Fatalf("builder could not run its check: %d %+v calls=%v", code, built, starter.calls)
 	}
 	planPath := resultData(t, built)["plan"].(string)
-	for _, result := range starter.results {
+	for index, result := range starter.results {
 		execution := resultData(t, result)["execution"].(string)
-		if !withinDirectory(execution, filepath.Join(b.worktree, "artifacts")) {
-			t.Fatalf("check wrote outside writable artifacts: %s", execution)
+		builder := index == 0
+		if builder != withinDirectory(execution, filepath.Join(b.worktree, "artifacts")) || (!builder && filepath.Dir(execution) != filepath.Dir(planPath)) {
+			t.Fatalf("execution written under the wrong owner: %s", execution)
 		}
 		original, err := os.ReadFile(filepath.Join(execution, "result.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		collected, err := os.ReadFile(filepath.Join(filepath.Dir(planPath), filepath.Base(execution), "result.json"))
+		name := filepath.Base(execution)
+		if builder {
+			name = "builder-" + name
+		}
+		collected, err := os.ReadFile(filepath.Join(filepath.Dir(planPath), name, "result.json"))
 		var retained struct{ Exits []launch.CheckExit }
 		if err != nil || !bytes.Equal(original, collected) || json.Unmarshal(collected, &retained) != nil || len(retained.Exits) != 2 || retained.Exits[0].Output != "cheap" || retained.Exits[1].Output != "audits" {
-			t.Fatalf("runner did not collect both exits: %s %v", collected, err)
+			t.Fatalf("runner did not retain both exits under their owner: %s %v", collected, err)
+		}
+	}
+}
+
+func TestIntentDeclaredCheckBuilderUsesModuleDirectory(t *testing.T) {
+	t.Parallel()
+	b := declaredCheckBed(t, "proof.cheap=cat module-only\nproof.audits=pwd\nproof.deadline=15\n")
+	for _, tree := range []string{b.root(), b.worktree} {
+		if err := os.MkdirAll(filepath.Join(tree, "module"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tree, "module", "module-only"), []byte("module check\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	starter := &declaredCheckStarter{bed: b, t: t}
+	b.manager.Supervisor = starter
+	code, built := declaredCheckAt(t, b, filepath.Join(b.root(), "module"), "", "work", "build", b.id, "module", "--brief", filepath.Join(b.root(), b.brief("module.md", "Build.\n")), "--lines", "100")
+	if code != 0 || !slices.Equal(starter.calls, []int{0, 0}) {
+		t.Fatalf("builder from the tree root and proof from the module: %d %+v calls=%v", code, built, starter.calls)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
+	if err != nil || plan.Check.Directory != filepath.Join(b.worktree, "module") {
+		t.Fatalf("frozen module: %+v %v", plan.Check, err)
+	}
+	run := resultData(t, built)["run"].(string)
+	for _, directory := range []string{b.worktree, filepath.Join(b.worktree, "module"), filepath.Join(b.root(), "module")} {
+		code, result := declaredCheckAt(t, b, directory, "", "test", "run", "--unit-run", run)
+		if code != 0 {
+			t.Fatalf("check from %s: %d %+v", directory, code, result)
+		}
+		starter.results = append(starter.results, result)
+	}
+	for index, result := range starter.results {
+		var retained struct {
+			Directory string `json:"runDirectory"`
+			Exits     []launch.CheckExit
+		}
+		raw, err := os.ReadFile(filepath.Join(resultData(t, result)["execution"].(string), "result.json"))
+		if err != nil || json.Unmarshal(raw, &retained) != nil {
+			t.Fatalf("execution %d: %s %v", index, raw, err)
+		}
+		tree := b.worktree
+		if index == len(starter.results)-1 {
+			tree = b.root()
+		}
+		want, err := filepath.EvalSymlinks(filepath.Join(tree, "module"))
+		actual, actualErr := filepath.EvalSymlinks(retained.Directory)
+		if err != nil || actualErr != nil || actual != want || len(retained.Exits) != 2 || retained.Exits[0].Output != "module check\n" || retained.Exits[1].Output != want+"\n" {
+			t.Fatalf("execution %d did not use the calling tree's module: %+v want=%s err=%v", index, retained, want, err)
+		}
+	}
+}
+
+func TestIntentDeclaredCheckLaterBuilderCannotReplaceRetainedEvidence(t *testing.T) {
+	t.Parallel()
+	b := declaredCheckBed(t, "proof.cheap=exit 7\nproof.audits=true\nproof.deadline=15\n")
+	starter := &declaredCheckStarter{bed: b, t: t}
+	var builderOriginal []byte
+	starter.beforeCheck = func(execution launch.Record) func() {
+		if execution.Kind == "proof" && execution.Round == 1 {
+			file := filepath.Join(resultData(t, starter.results[0])["execution"].(string), "result.json")
+			var err error
+			builderOriginal, err = os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte("changed after builder collection\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return func() {}
+	}
+	b.manager.Supervisor = starter
+	code, built, _ := b.work("work", "build", b.id, "custody", "--brief", b.brief("custody.md", "Build.\n"), "--lines", "100")
+	if code != 1 || resultData(t, built)["outcome"] != "proof-red" || len(starter.results) != 2 {
+		t.Fatalf("first round: %d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	round := filepath.Dir(resultData(t, built)["plan"].(string))
+	proof := filepath.Base(resultData(t, starter.results[1])["execution"].(string))
+	proofFile := filepath.Join(round, proof, "result.json")
+	original, err := os.ReadFile(proofFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := filepath.Base(resultData(t, starter.results[0])["execution"].(string))
+	builderFile := filepath.Join(round, "builder-"+builder, "result.json")
+	collected, err := os.ReadFile(builderFile)
+	if err != nil || !bytes.Equal(builderOriginal, collected) {
+		t.Fatalf("same-round collection replaced builder evidence: %s %v", collected, err)
+	}
+	code, resumed, _ := b.work("work", "build", "run:"+run)
+	if code != 1 || resultData(t, resumed)["outcome"] != "proof-red" || len(starter.results) != 2 {
+		t.Fatalf("same-round resume: %d %+v", code, resumed)
+	}
+	collected, err = os.ReadFile(builderFile)
+	if err != nil || !bytes.Equal(builderOriginal, collected) {
+		t.Fatalf("resumed same-round collection replaced builder evidence: %s %v", collected, err)
+	}
+	starter.beforeBuild = func() {
+		for _, name := range []string{proof, builder, "check-later-forgery"} {
+			file := filepath.Join(b.worktree, "artifacts", "unit-checks", run, "round-1", name, "result.json")
+			if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte("replaced by the next builder\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	code, revised, _ := stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", b.brief("custody-next.md", "Repair.\n"), "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 0 || resultData(t, revised)["outcome"] != "green" {
+		t.Fatalf("second round: %d %+v", code, revised)
+	}
+	retained, err := os.ReadFile(proofFile)
+	if err != nil || !bytes.Equal(original, retained) {
+		t.Fatalf("later builder replaced runner evidence: %s %v", retained, err)
+	}
+	retained, err = os.ReadFile(builderFile)
+	if err != nil || len(builderOriginal) == 0 || !bytes.Equal(builderOriginal, retained) {
+		t.Fatalf("later collection replaced builder evidence: %s %v", retained, err)
+	}
+	for _, name := range []string{proof, "check-later-forgery"} {
+		if _, err := os.Stat(filepath.Join(round, "builder-"+name, "result.json")); !os.IsNotExist(err) {
+			t.Fatalf("later builder's old-round record was collected: %s %v", name, err)
 		}
 	}
 }

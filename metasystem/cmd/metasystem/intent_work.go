@@ -492,13 +492,20 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return inv.unitLaunchAuthority(record, spec, settings)
 	}
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
-		for _, round := range unit.Rounds {
+		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
+			round := unit.Rounds[len(unit.Rounds)-1]
 			results, err := filepath.Glob(filepath.Join(unit.Worktree, "artifacts", "unit-checks", unit.ID, filepath.Base(round.Directory), "check-*", "result.json"))
 			if err != nil {
 				return err
 			}
 			for _, result := range results {
-				if _, err := atomicfile.CopyFile(result, filepath.Join(round.Directory, filepath.Base(filepath.Dir(result)), "result.json"), round.Directory); err != nil {
+				target := filepath.Join(round.Directory, "builder-"+filepath.Base(filepath.Dir(result)), "result.json")
+				if _, err := os.Stat(target); err == nil {
+					continue
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+				if _, err := atomicfile.CopyFile(result, target, round.Directory); err != nil {
 					return err
 				}
 			}

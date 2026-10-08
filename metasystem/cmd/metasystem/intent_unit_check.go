@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory string) (launch.UnitPlan, error) {
@@ -78,8 +79,24 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 	var execution string
 	var exits []launch.CheckExit
 	if err == nil {
-		round := filepath.Base(record.Rounds[len(record.Rounds)-1].Directory)
-		execution, exits, err = plan.Check.Run(inv.cwd, filepath.Join(record.Worktree, "artifacts", "unit-checks", record.ID, round))
+		var top []byte
+		top, err = inv.work().git(inv.cwd, "rev-parse", "--show-toplevel")
+		if err == nil {
+			relative, relErr := filepath.Rel(realpath.ResolveExisting(plan.Worktree), realpath.ResolveExisting(plan.Check.Directory))
+			err = relErr
+			if err == nil {
+				round := record.Rounds[len(record.Rounds)-1].Directory
+				records := filepath.Join(record.Worktree, "artifacts", "unit-checks", record.ID, filepath.Base(round))
+				lookup := inv.owners.lookupEnv
+				if lookup == nil {
+					lookup = os.LookupEnv
+				}
+				if kind, _ := lookup(launch.KindEnv); kind == "proof" {
+					records = round
+				}
+				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records)
+			}
+		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: "the frozen cheap check and audits passed", Data: map[string]any{"execution": execution, "exits": exits}}
 	if err != nil {
