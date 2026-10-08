@@ -228,6 +228,13 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
+	if projection, now, problem := inv.projection(); problem == nil {
+		if file, _ := goalRecord(projection, result.Targets[0].ID); file != nil && file.Budget != nil {
+			view := inv.budgetView(inv.stateRoot, file, now)
+			result.Data.(map[string]any)["budget"] = view
+			result.text = append(result.text, view.lines()...)
+		}
+	}
 	if unitCount == 0 {
 		return inv.render(result)
 	}

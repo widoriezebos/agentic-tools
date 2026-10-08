@@ -115,6 +115,22 @@ func (c TickConfig) withDefaults() TickConfig {
 	return c
 }
 
+// The sampled elapsed age excludes partial provider waits. Evidence without
+// a time sample uses its retained tick count.
+func (c TickConfig) progressTicks(repoRoot string, ev Evidence) int {
+	if ev.SampledAt == "" {
+		return ev.TicksSinceAdvance
+	}
+	seconds := 0
+	if c.Runner != nil {
+		seconds = c.Runner.TickSeconds
+	}
+	if seconds <= 0 {
+		seconds = TickSeconds(repoRoot)
+	}
+	return int(ev.Age / (time.Duration(seconds) * time.Second))
+}
+
 func (c TickConfig) now() time.Time {
 	if c.Now.IsZero() {
 		return time.Now().UTC()
@@ -515,13 +531,7 @@ const degradedNoticeTicks = 2
 
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
 	ev := Observe(prev, marks)
-	// A standing provider outage pauses the aging, never the reset:
-	// progress during an outage still counts, but the absence of
-	// progress stops accusing local machinery while the provider is
-	// the one down. The mark lapses on its own horizon, so a paused
-	// clock can never outlive the outage's evidence. ONE sample
-	// governs the whole tick — aging, decision, and narration must
-	// tell the same story even when the mark moves mid-tick.
+	// Age and decisions share one provider observation; progress still resets age.
 	// The seat launches are reaped before the outage is sampled: a seat the
 	// provider stopped feeds the mark this same tick holds by.
 	var seat *seatTickState
@@ -543,9 +553,25 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		}
 		outageMark, providerOutage = providerOutageFrom(providers, err, runtime, cfg.now(), log)
 		ev = Observe(prev, marks)
-		if providerOutage && marks == prev.Marks {
-			ev = prev
+		if marks == prev.Marks {
+			sampled, sampleErr := time.Parse(time.RFC3339Nano, prev.SampledAt)
+			if prev.SampledAt != "" && sampleErr == nil && !cfg.now().Before(sampled) {
+				spans, waitErr := providers.Waiting(runtime, sampled, cfg.now())
+				if err == nil && waitErr != nil {
+					outageMark, providerOutage = providerOutageFrom(providers, waitErr, runtime, cfg.now(), log)
+				}
+				if err == nil && waitErr == nil {
+					elapsed, paused := cfg.now().Sub(sampled), outage.Paused(spans)
+					ev.Age = prev.Age + elapsed - paused
+					if paused > 0 && paused == elapsed || providerOutage && elapsed == 0 {
+						ev.TicksSinceAdvance = prev.TicksSinceAdvance
+					}
+				}
+			} else if prev.SampledAt == "" && err == nil && providerOutage {
+				ev = prev
+			}
 		}
+		ev.SampledAt = cfg.now().Format(time.RFC3339Nano)
 		return outageMark, providerOutage
 	}
 
@@ -803,7 +829,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	d := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
-		TicksSinceProgress: ev.TicksSinceAdvance,
+		TicksSinceProgress: cfg.progressTicks(repoRoot, *ev),
 		StaleTicks:         cfg.StaleTicks,
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,

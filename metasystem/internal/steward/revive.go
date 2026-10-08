@@ -318,7 +318,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
-		TicksSinceProgress: ev.TicksSinceAdvance,
+		TicksSinceProgress: cfg.progressTicks(repoRoot, ev),
 		StaleTicks:         cfg.StaleTicks,
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,

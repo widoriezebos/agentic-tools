@@ -2,16 +2,16 @@ package steward
 
 // Progress evidence as durable high-water marks: the checkout HEAD
 // object id and the digest of this machine's claim-History opid set.
-// No wall clock participates — staleness is ticks since either mark
-// advanced, so identical marks age monotonically and nothing the
-// steward writes (receipts, logs, continuation records) can refresh
-// them. The dry-revival count resets only on a mark advance.
+// Only either progress mark resets age and the dry-revival count. Sample
+// times measure elapsed age after excluding evidenced provider waits; writes
+// to the steward stores never count as progress.
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
@@ -27,6 +27,9 @@ type Evidence struct {
 	Marks             Marks `json:"marks"`
 	TicksSinceAdvance int   `json:"ticksSinceAdvance"`
 	DryRevivals       int   `json:"dryRevivals"`
+
+	SampledAt string        `json:"sampledAt,omitempty"`
+	Age       time.Duration `json:"age,omitempty"`
 	// Degraded counts the ticks in a row whose verdict was degraded.
 	Degraded int `json:"degraded,omitempty"`
 }

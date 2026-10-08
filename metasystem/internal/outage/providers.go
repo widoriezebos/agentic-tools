@@ -130,7 +130,15 @@ func Observe(home, runtime, model, class, detail, source string, at time.Time) (
 	stamp := at.UTC().Format(time.RFC3339Nano)
 	if class == "" {
 		if c.Mark.ConsecutiveFailures > 0 {
-			c.Intervals = append(c.Intervals, Interval{c.Mark.Since, stamp})
+			spans, err := s.Waiting(runtime, time.Time{}, at)
+			if err != nil {
+				return Mark{}, err
+			}
+			end := stamp
+			if len(spans) > 0 {
+				end = spans[len(spans)-1].End.UTC().Format(time.RFC3339Nano)
+			}
+			c.Intervals = append(c.Intervals, Interval{c.Mark.Since, end})
 		}
 		c.Mark, c.ClearedAt = Mark{}, stamp
 	} else {
