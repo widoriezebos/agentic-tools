@@ -475,6 +475,17 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
 		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == "" && fix.Job == ""
 	}
+	runner.ContinuePolicy = func() (bool, error) {
+		if inv.checkDirectPersonProof("continue work", false) == nil {
+			return true, nil
+		}
+		params, err := inv.policyParams("seat.driver")
+		if err != nil {
+			return false, err
+		}
+		policy, err := config.ResolvePolicy(params)
+		return policy.Value == "auto", err
+	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
@@ -1515,6 +1526,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				}
 			}
 			return held
+		case errors.Is(err, launch.ErrUnitObserving):
+			if inv.command.name == "work revise" || inv.command.name == "work review" {
+				again = inv.sameCommand()
+			}
+			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Data: unitData(record, runner.Manager),
+				Summary: "finished work was collected; the next step awaits your command", next: again, nextReason: "run this at your enrolled terminal to start the next step"}
 		case errors.Is(err, errProofDeclaration):
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
 				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
@@ -2111,8 +2128,29 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 		}
 	}
 
-	result, err := runner.Continue(launch.UnitRequest{Resume: run})
-	return inv.unitOutcome(runner, result, err, targets, again)
+	if timeout <= 0 {
+		var err error
+		timeout, err = runner.Manager.WaitCap()
+		if err != nil {
+			return inv.unitOutcome(runner, launch.UnitResult{}, err, targets, again)
+		}
+	}
+	deadline := runner.Manager.Now().Add(timeout)
+	for {
+		result, err := runner.Continue(launch.UnitRequest{Resume: run, NonBlocking: true})
+		if errors.Is(err, launch.ErrUnitObserving) {
+			return inv.unitOutcome(runner, result, err, targets, inv.publicArgv("work", "build", "run:"+run))
+		}
+		if err != nil || !result.Capped {
+			return inv.unitOutcome(runner, result, err, targets, again)
+		}
+		if !runner.Manager.Now().Before(deadline) {
+			waiting := inv.unitOutcome(runner, result, nil, targets, again)
+			waiting.Summary = "the caller's wait timed out; the work continues"
+			return waiting
+		}
+		runner.Manager.Sleep(min(runner.Manager.Poll, deadline.Sub(runner.Manager.Now())))
+	}
 }
 
 // test

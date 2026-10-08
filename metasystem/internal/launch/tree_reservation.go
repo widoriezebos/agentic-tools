@@ -482,7 +482,27 @@ func (runner *UnitRunner) CommandWait(act func() error) error {
 	return waitErr
 }
 
+func (runner *UnitRunner) continuationAllowed() error {
+	if runner.observeOnly {
+		return ErrUnitObserving
+	}
+	if runner.ContinuePolicy != nil {
+		allowed, err := runner.ContinuePolicy()
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrUnitObserving
+		}
+	}
+	return nil
+}
+
 func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (record Record, terminal bool, err error) {
+	if runner.nonBlocking {
+		record, err = runner.Manager.Status(id)
+		return record, record.State.Terminal(), err
+	}
 	err = runner.CommandWait(func() error {
 		var waitErr error
 		record, terminal, waitErr = runner.Manager.Wait(id, timeout)

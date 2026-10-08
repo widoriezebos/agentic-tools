@@ -17,6 +17,7 @@ import (
 // it starts, started and saved; the step states and their recording are the
 // same for both.
 type stepDriver struct {
+	mayStart func(int) error
 	wait     func(string, time.Duration) (Record, bool, error)
 	manager  *Manager
 	round    *UnitRound
@@ -48,6 +49,11 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	if driver.unit && (step.State == StepPassed || step.State == StepFailed) {
 		return Record{}, nil
 	}
+	if step.State == StepPending && driver.mayStart != nil {
+		if err := driver.mayStart(index); err != nil {
+			return Record{}, err
+		}
+	}
 	if driver.unit {
 		var err error
 		spec, err = driver.retainStep(index, spec)
@@ -74,6 +80,11 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	}
 	launchRecord, err := driver.manager.Store.Read(step.LaunchID)
 	if errors.Is(err, fs.ErrNotExist) {
+		if driver.mayStart != nil {
+			if err := driver.mayStart(index); err != nil {
+				return Record{}, err
+			}
+		}
 		spec.ID = step.LaunchID
 		if driver.unit {
 			if spec.Kind == "proof" || spec.Kind == "read" {

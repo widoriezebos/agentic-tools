@@ -351,7 +351,7 @@ func runStewardRunWith(args []string, stdout, stderr io.Writer,
 func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
 	probeRuntime func(string, string) error,
-	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error)) int {
+	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error), supplied ...intentOwners) int {
 	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
@@ -413,7 +413,7 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run
 	tickConfig.StuckUnits = (steward.StuckUnits{}).Run
-	wireStewardSeat(&tickConfig)
+	wireStewardSeat(&tickConfig, supplied...)
 	tickConfig.ProbeProvider = func(top string) (bool, error) {
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}

@@ -34,7 +34,7 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 	}
 	capped, err := runner.compareProof(record, round, index, base, deadline)
 	if err != nil {
-		if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+		if errors.Is(err, ErrUnitObserving) || IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
 			return false, err
 		}
 		step.Cause, step.Reason = "unclassified", "the failed command cannot be attributed: "+err.Error()
@@ -55,6 +55,9 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			return false, err
 		}
 		if known {
+			if err := runner.continuationAllowed(); err != nil {
+				return false, err
+			}
 			step.FlakeRepeat, step.State, step.Cause, step.Reason = true, StepPending, "", ""
 			if err := runner.save(*record); err != nil {
 				return false, err
@@ -112,6 +115,9 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 		return false, readErr
 	}
 	if os.IsNotExist(readErr) {
+		if err := runner.continuationAllowed(); err != nil {
+			return false, err
+		}
 		cleanup = true
 		// A separate index and refs export the base without registering a
 		// worktree or allowing the comparison to change the source repository.

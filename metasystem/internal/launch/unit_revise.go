@@ -175,6 +175,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if record.State != "awaiting-judgement" {
 			return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
 		}
+		if err := runner.continuationAllowed(); err != nil {
+			return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
+		}
 		if request.Person == "" {
 			if request.Rebase == nil || record.Rounds[after-1].Stop != nil && record.Rounds[after-1].Stop.Loop == "unit-build" {
 				if err := runner.allowCorrection(record); err != nil {
@@ -275,6 +278,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	if retained.After != current {
 		return UnitRevisionResult{}, coded("UNIT_REVISION_CORRUPT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d current=%d", retained.After, current)),
 			fmt.Errorf("the kept correction follows attempt %d, but the newest attempt is %d", retained.After, current))
+	}
+	if err := runner.continuationAllowed(); err != nil {
+		return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Revision: *retained, Current: current}, err
 	}
 	if err := runner.admitRound(plan, retained.Brief, previous); err != nil {
 		return UnitRevisionResult{}, err

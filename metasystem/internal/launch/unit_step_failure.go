@@ -73,6 +73,11 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline {
 		return false, nil
 	}
+	if driver.mayStart != nil {
+		if err := driver.mayStart(index); err != nil {
+			return false, err
+		}
+	}
 	step.Moved = nil
 	step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 	if err := driver.save(); err != nil {

@@ -87,6 +87,9 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 // brief is the caller's new input for the next round, not part of the
 // reserved plan, and the run's round limit still applies.
 func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
+	boundCall := *runner
+	boundCall.nonBlocking, boundCall.observeOnly = request.NonBlocking, request.ObserveOnly
+	runner = &boundCall
 	if runner.Manager == nil {
 		return UnitResult{}, errors.New("unit launch manager is unavailable")
 	}
@@ -528,8 +531,8 @@ func (work NamedWork) Running() bool {
 }
 
 // NamedWork lists the named units this store holds for one goal in one
-// worktree, ordered by name. It reads the named entries and the runs they
-// reserved and writes nothing. An entry that cannot be read, or whose run
+// worktree, ordered by name; an empty goal includes every goal. It reads
+// the named entries and the runs they reserved and writes nothing. An entry that cannot be read, or whose run
 // names another goal, unit or worktree, is refused rather than skipped, so a
 // caller never selects among a partial list. Entries of other worktrees and
 // goals are not this goal's work and are left out.
@@ -556,10 +559,10 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 		if err != nil {
 			return nil, err
 		}
-		if !found || entry.Worktree != real || entry.Goal != goal {
+		if !found || entry.Worktree != real || goal != "" && entry.Goal != goal {
 			continue
 		}
-		if _, expected, err := namedUnitIdentity(UnitPlan{Worktree: real, Goal: goal, Unit: entry.Unit}); err != nil || expected != key {
+		if _, expected, err := namedUnitIdentity(UnitPlan{Worktree: real, Goal: entry.Goal, Unit: entry.Unit}); err != nil || expected != key {
 			return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json"), errors.New("a saved unit record is damaged: its goal, unit and worktree do not match"))
 		}
 		one := NamedWork{Unit: entry.Unit, Run: entry.Run}
@@ -569,7 +572,7 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 			case errors.Is(readErr, fs.ErrNotExist):
 			case readErr != nil:
 				return nil, readErr
-			case record.Goal != goal || record.Unit != entry.Unit:
+			case record.Goal != entry.Goal || record.Unit != entry.Unit:
 				return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json")+" run="+entry.Run,
 					fmt.Errorf("a saved unit record points at run %s, which belongs to unit %s of goal %s", entry.Run, record.Unit, record.Goal))
 			default:

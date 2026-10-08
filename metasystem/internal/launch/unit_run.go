@@ -130,7 +130,10 @@ type UnitStep struct {
 	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
 }
 
-type UnitRequest struct{ Plan, Resume, FollowUp string }
+type UnitRequest struct {
+	Plan, Resume, FollowUp   string
+	NonBlocking, ObserveOnly bool
+}
 type UnitResult struct {
 	Record       UnitRunRecord
 	Round        int
@@ -154,10 +157,16 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 	return stdout.Bytes(), nil
 }
 
+// ErrUnitObserving means continuation collected work but may not start a step.
+var ErrUnitObserving = errors.New("the next step awaits the person's command")
+
 type UnitRunner struct {
 	AdmitDetached func(UnitPlan) bool
 	Actor         string
-	FreezeCheck   func(UnitPlan, string) (UnitPlan, error)
+	// ContinuePolicy reads current authority before each continuation effect.
+	ContinuePolicy           func() (bool, error)
+	nonBlocking, observeOnly bool
+	FreezeCheck              func(UnitPlan, string) (UnitPlan, error)
 	// CriticCustody observes or cancels every committed examination of this run.
 	CriticCustody func(UnitRunRecord, bool) (bool, error)
 	recoverRun    string
@@ -256,10 +265,33 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	if record.State == "cancelled" {
 		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
 	}
-	for _, round := range record.Rounds {
-		if err := runner.collectLaunches(record, round); err != nil {
+	for i := range record.Rounds {
+		round := &record.Rounds[i]
+		driver := runner.driver(&record, round)
+		for index, step := range round.Steps {
+			if step.LaunchID == "" || step.State != StepRunning && step.State != StepStarting {
+				continue
+			}
+			child, err := runner.Manager.Status(step.LaunchID)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return UnitResult{Record: record}, err
+			}
+			if child.State.Terminal() {
+				driver.endStep(index, child)
+				if err := runner.save(record); err != nil {
+					return UnitResult{Record: record}, err
+				}
+			}
+		}
+		if err := runner.collectLaunches(record, *round); err != nil {
 			return UnitResult{Record: record}, err
 		}
+	}
+	if runner.observeOnly {
+		return UnitResult{Record: record, Round: len(record.Rounds)}, ErrUnitObserving
 	}
 	if runner.named != nil {
 		runner.named.plan = plan
@@ -289,6 +321,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	}
 	if request.FollowUp != "" {
 		if err := runner.allowCorrection(record); err != nil {
+			return UnitResult{Record: record}, err
+		}
+		if err := runner.continuationAllowed(); err != nil {
 			return UnitResult{Record: record}, err
 		}
 		if record.MaxRounds > 0 && len(record.Rounds) >= record.MaxRounds {
@@ -667,7 +702,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	outcome, stop, capped, err := sequence.advance(readStart, deadline)
 	if err != nil || capped {
 		if stop < 0 {
-			return UnitResult{}, err
+			return UnitResult{Record: *record, Round: round.Number}, err
 		}
 		return runner.result(*record, round, &round.Steps[stop], capped), err
 	}
@@ -725,7 +760,15 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
-	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
+	return stepDriver{mayStart: func(index int) error {
+		step := round.Steps[index]
+		// The first build is admitted by the command that creates the run.
+		// Every later start, including a retry, reads continuation authority.
+		if round.Number == 1 && index == 0 && (len(step.LaunchIDs) == 0 || len(step.LaunchIDs) == 1 && step.State == StepStarting) {
+			return nil
+		}
+		return runner.continuationAllowed()
+	}, manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
 		spec.Actor = runner.Actor
 		spec.wait = runner.CommandWait
 		return runner.Manager.Start(spec)

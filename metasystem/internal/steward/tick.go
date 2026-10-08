@@ -82,6 +82,9 @@ type TickConfig struct {
 	RearmAtBoundary func() (bool, error)
 	// CompletedBoundary retains completed work before later boundary consumers.
 	CompletedBoundary func(string, time.Time) error
+	// DriveWork collects ended unit steps and advances at most one ready run.
+	// It also collects under person control, before the helm holds other acts.
+	DriveWork func(root string) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// ProbeRuntime runs the admission owner's capability probe without a job.

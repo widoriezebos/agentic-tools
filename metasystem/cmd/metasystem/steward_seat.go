@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -175,6 +176,75 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 	owners := defaultIntentOwners()
 	if len(supplied) > 0 {
 		owners = supplied[0]
+	}
+	config.DriveWork = func(root string) error {
+		// The resident observes every run and starts work only under current agent authority.
+		automatic := owners
+		automatic.prove = nil
+		inv := &intentInvocation{cwd: root, owners: automatic}
+		if problem := inv.selectRoot(); problem != nil {
+			return errors.New(problem.Summary)
+		}
+		runner := inv.unitRunner()
+		trees, err := inv.registeredWorktrees()
+		if err != nil {
+			return err
+		}
+		var work []launch.NamedWork
+		for tree := range trees {
+			units, err := runner.NamedWork(tree, "")
+			if err != nil {
+				return err
+			}
+			work = append(work, units...)
+		}
+		var failures error
+		var ready []launch.NamedWork
+		for _, one := range work {
+			if one.Record == nil || !one.Running() || one.Record.State == "cancelled" {
+				continue
+			}
+			result, err := runner.Continue(launch.UnitRequest{Resume: one.Run, NonBlocking: true, ObserveOnly: true})
+			if err != nil && !errors.Is(err, launch.ErrUnitObserving) {
+				failures = errors.Join(failures, fmt.Errorf("run %s: %w", one.Run, err))
+				continue
+			}
+			one.Record = &result.Record
+			if len(result.Record.Rounds) == 0 {
+				continue
+			}
+			canAdvance := true
+			for _, step := range result.Record.Rounds[len(result.Record.Rounds)-1].Steps {
+				if step.State == launch.StepPassed || step.State == launch.StepSkipped {
+					continue
+				}
+				canAdvance = step.State != launch.StepRunning
+				break
+			}
+			if canAdvance {
+				ready = append(ready, one)
+			}
+		}
+		if len(ready) == 0 {
+			return failures
+		}
+		allowed, err := runner.ContinuePolicy()
+		if err != nil || !allowed {
+			return errors.Join(failures, err)
+		}
+		sort.Slice(ready, func(i, j int) bool {
+			left, _ := time.Parse(time.RFC3339Nano, ready[i].Record.Rounds[0].Steps[0].StartedAt)
+			right, _ := time.Parse(time.RFC3339Nano, ready[j].Record.Rounds[0].Steps[0].StartedAt)
+			if left.Equal(right) {
+				return ready[i].Run < ready[j].Run
+			}
+			return left.Before(right)
+		})
+		_, err = runner.Continue(launch.UnitRequest{Resume: ready[0].Run, NonBlocking: true})
+		if err != nil && !errors.Is(err, launch.ErrUnitObserving) {
+			failures = errors.Join(failures, fmt.Errorf("run %s: %w", ready[0].Run, err))
+		}
+		return failures
 	}
 	config.Units = func(root, id string) ([]steward.UnitStage, error) {
 		inv := &intentInvocation{cwd: root, owners: owners}

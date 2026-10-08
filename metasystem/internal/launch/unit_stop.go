@@ -347,6 +347,9 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if err := runner.continuationAllowed(); err != nil {
+		return UnitResult{Record: record, Round: round.Number}, err
+	}
 	round.UnknownRetries++
 	round.Reads = nil
 	for index := range round.Steps {

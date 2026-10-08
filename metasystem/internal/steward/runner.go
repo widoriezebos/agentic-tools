@@ -359,6 +359,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				bridgeLine = line
 			}
 		}
+		if cfg.DriveWork != nil {
+			if driveErr := cfg.DriveWork(top); driveErr != nil {
+				fmt.Fprintf(os.Stderr, "work continuation: %v\n", driveErr)
+			}
+		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
