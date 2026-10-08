@@ -67,7 +67,10 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		t.Helper()
 		records, _ := store.List()
 		for _, record := range records {
-			if _, err := store.Update(record.ID, func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
+			if _, err := store.Update(record.ID, func(r *launch.Record) error {
+				r.State, r.FinishedAt = launch.Completed, now.Format(time.RFC3339Nano)
+				return nil
+			}); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -489,11 +489,37 @@ func TestLandingExecutionReadinessKeepsSelectionAndRealRemedy(t *testing.T) {
 	}
 	selected := b.batch(t)
 	b.owners.landing.ready = func(string) error { return nil }
+	startProofs := 0
 	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		t.Fatal("readiness recovery re-proved selection")
-		return humanauthority.Proof{}, nil
+		startProofs++
+		return humanauthority.Proof{}, errors.New("the retry is an agent act")
 	}
-	if code, text := b.run(t, b.lane, "landing", "run"); code != 0 || b.starts != 1 || b.batch(t).ID != selected.ID {
-		t.Fatalf("readiness retry: %d %s starts=%d", code, text, b.starts)
+	if code, text := b.run(t, b.lane, "landing", "run"); code != 0 || b.starts != 1 || b.batch(t).ID != selected.ID || startProofs != 1 {
+		t.Fatalf("readiness retry: %d %s starts=%d startProofs=%d", code, text, b.starts, startProofs)
+	}
+}
+
+func TestLandingExecutionPersonProofBelongsToOneInvocation(t *testing.T) {
+	t.Parallel()
+	b := newSelectionBed(t)
+	prove := enrolledPersonProver(t, b.lane, b.now)
+	proofs, holds := 0, 0
+	b.owners.prove = func(root string, pid int64, reader humanauthority.Reader, runtime, sessions string, at time.Time) (humanauthority.Proof, error) {
+		proofs++
+		if proofs > 1 {
+			return humanauthority.Proof{}, errors.New("the later invocation is an agent act")
+		}
+		return prove(root, pid, reader, runtime, sessions, at)
+	}
+	b.keeper.ProviderHold = func(string) (string, error) {
+		holds++
+		return "the model provider is limited", nil
+	}
+	if code, text := b.run(t, b.lane, "landing", "run", "--goals", "a"); code != 0 || b.starts != 1 || proofs != 1 || holds != 0 {
+		t.Fatalf("person selection and start: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
+	}
+	selected := b.batch(t)
+	if code, text := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "provider is limited") || b.starts != 1 || proofs != 2 || holds != 1 || b.batch(t).ID != selected.ID {
+		t.Fatalf("agent continuation inherited person authority: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
 	}
 }

@@ -130,6 +130,7 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if err := os.WriteFile(page, data, 0600); err != nil {
 		t.Fatal(err)
 	}
+	processCommittedPage(t, b, page, data)
 	run, before, _ := stopBuild(t, b, "auto")
 	if before.Rounds[0].Stop == nil || before.Rounds[0].Stop.Decision != "continue" {
 		t.Fatalf("source did not admit its first correction: %+v", before)
