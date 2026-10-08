@@ -74,7 +74,8 @@ type GoalFile struct {
 	// existing budget. Its revision changes only by replacing the whole record.
 	Obligation        *GovernedObligation
 	ReviewObligations []ReviewObligation
-	UnitDrops         []UnitDrop `json:"UnitDrops,omitempty"`
+	UnitDrops         []UnitDrop       `json:"UnitDrops,omitempty"`
+	ScopeExclusions   []ScopeExclusion `json:"ScopeExclusions,omitempty"`
 	AcceptedRisks     []AcceptedRiskRecord
 	ReadItems         []ReadItem
 	// StopCapability is the narrow authority minted with one claimed
@@ -729,6 +730,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("UnitDrop: %v", err)
 		}
 	}
+	for _, exclusion := range f.ScopeExclusions {
+		if err := f.validateScope(exclusion); err != nil {
+			addProblem("ScopeExclusion: %v", err)
+		}
+	}
 	for _, obligation := range f.ReviewObligations {
 		if err := validateTransfer(obligation); err != nil {
 			addProblem("ReviewObligation: %v", err)
@@ -1107,13 +1113,20 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" && key != "ScopeExclusion" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "ScopeExclusion":
+		var exclusion ScopeExclusion
+		if err := json.Unmarshal([]byte(value), &exclusion); err != nil {
+			addProblem("ScopeExclusion: %v", err)
+			return
+		}
+		f.ScopeExclusions = append(f.ScopeExclusions, exclusion)
 	case "UnitDrop":
 		var drop UnitDrop
 		if err := json.Unmarshal([]byte(value), &drop); err != nil {
@@ -1933,6 +1946,10 @@ func RenderFile(f *GoalFile) []byte {
 	for _, drop := range f.UnitDrops {
 		data, _ := json.Marshal(drop)
 		fmt.Fprintf(&b, "- UnitDrop: %s\n", data)
+	}
+	for _, exclusion := range f.ScopeExclusions {
+		data, _ := json.Marshal(exclusion)
+		fmt.Fprintf(&b, "- ScopeExclusion: %s\n", data)
 	}
 	for _, obligation := range f.ReviewObligations {
 		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))

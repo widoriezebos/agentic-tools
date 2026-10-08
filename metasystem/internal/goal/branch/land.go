@@ -610,7 +610,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 		return LandResult{}, err
 	}
 	for _, commit := range status.Commits {
-		if commit.Kind == Drop {
+		if commit.Kind == Drop && !status.Scope.ExcludesScope(commit.Unit, "result:"+commit.ID) {
 			return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has a pending drop; reconcile its outcome before landing\nrun: metasystem work status %s", req.GoalID, req.GoalID)
 		}
 	}

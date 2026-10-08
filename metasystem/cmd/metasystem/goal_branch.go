@@ -299,7 +299,11 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 			return branch.BranchReadResult{}, 1, err
 		}
 	}
-	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
+	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	if err != nil {
+		return branch.BranchReadResult{}, 1, err
+	}
+	result, err := branch.RunBranchRead(branch.BranchReadRequest{Scope: projection.Tree.Live[*goalID], Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,

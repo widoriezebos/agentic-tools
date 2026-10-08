@@ -422,9 +422,10 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	if err != nil {
 		return intentBranchState{}, err
 	}
+	branch.ApplyScope(&status, projection.Tree.Live[goalID])
 	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status, ReadsWaived: goal.ReadsWaived(projection.Tree.Live[goalID])}
 	for _, unit := range status.Units[:status.Prefix] {
-		if unit.ReadState == "read transferred" {
+		if unit.ReadState == "read transferred" || unit.ReadState == "dropped" {
 			state.Sources = append(state.Sources, "transferred")
 			continue
 		}
@@ -2277,11 +2278,17 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		if err != nil {
 			return progress, err
 		}
-		declared, progress.NoEnd = units, false
+		body, err := os.ReadFile(page)
+		if err != nil {
+			return progress, err
+		}
+		declared, progress.NoEnd = slices.DeleteFunc(units, func(unit launch.UnitSize) bool {
+			return state.Status.Scope.ExcludesScope(unit.Name, launch.UnitResultDigest(string(body)))
+		}), false
 		break
 	}
 	for _, obligation := range state.Status.ReviewObligations {
-		if obligation.TargetUnit != "" && !slices.ContainsFunc(declared, func(row launch.UnitSize) bool { return row.Name == obligation.TargetUnit }) {
+		if obligation.TargetUnit != "" && !state.Status.Scope.ExcludesScope(obligation.TargetUnit, obligation.Chain+"/"+obligation.Finding) && !slices.ContainsFunc(declared, func(row launch.UnitSize) bool { return row.Name == obligation.TargetUnit }) {
 			declared = append(declared, launch.UnitSize{Name: obligation.TargetUnit})
 		}
 	}
@@ -2294,7 +2301,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		}
 	}
 	clean := func(index int) bool {
-		return state.ReadsWaived || index < state.Status.Prefix || (state.Status.Units[index].ReadState == "read clean" || state.Status.Units[index].ReadState == "read transferred")
+		return state.ReadsWaived || index < state.Status.Prefix || (state.Status.Units[index].ReadState == "read clean" || state.Status.Units[index].ReadState == "read transferred" || state.Status.Units[index].ReadState == "dropped")
 	}
 	covered := make([]bool, len(state.Status.Units))
 	for _, row := range declared {

@@ -32,6 +32,7 @@ const ReadDispatchPendingCode = "GOAL_READ_DISPATCH_PENDING"
 const ReadDispatchFailed = "goal branch read could not dispatch its critic"
 
 type BranchReadRequest struct {
+	Scope                                                    *goal.GoalFile
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	BuildBriefSHA256                                         string
@@ -578,6 +579,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	info, err := branchUnitWithRepository(repository, request.Repo, request.EndpointTip, request.BranchTip, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return result, err
+	}
+	status := Status{Units: []UnitStatus{{Unit: info.Unit, Commit: request.UnitCommit, ReadState: "built"}}}
+	ApplyScope(&status, request.Scope)
+	if status.Units[0].ReadState == "dropped" {
+		return BranchReadResult{State: "dropped"}, nil
 	}
 	subject, err := repository.Subject(request.Repo, request.UnitCommit)
 	if err != nil {

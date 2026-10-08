@@ -13,6 +13,7 @@ type UnitStatus struct {
 	Whole                           bool
 	Unit, Commit, Digest, ReadState string
 	Units                           []string
+	PriorReadState, ScopeOperation  string
 }
 
 type Status struct {
@@ -21,6 +22,7 @@ type Status struct {
 	Units             []UnitStatus
 	Prefix            int
 	ReviewObligations []goal.ReviewObligation
+	Scope             *goal.GoalFile
 }
 
 type statusDependencies struct {
@@ -54,6 +56,25 @@ func statusDependenciesWithRaw(read func(string, ...string) ([]byte, error)) sta
 
 func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
 	return inspectStatus(repo, endpointTip, tip, goalID, defaultStatusDependencies())
+}
+
+// ApplyScope projects the current ledger's exclusion onto fresh branch status, preserving its prior read.
+func ApplyScope(status *Status, file *goal.GoalFile) {
+	status.Scope = file
+	if file == nil {
+		return
+	}
+	for i, unit := range status.Units {
+		for _, drop := range file.UnitDrops {
+			if file.ExcludesScope(unit.Unit, "result:"+drop.Commit) && drop.Unit == unit.Unit && slices.Contains(drop.Covered, unit.Commit) {
+				status.Units[i].PriorReadState, status.Units[i].ReadState, status.Units[i].ScopeOperation = unit.ReadState, "dropped", drop.Operation
+			}
+		}
+	}
+	status.Prefix = 0
+	for status.Prefix < len(status.Units) && slices.Contains([]string{"read clean", "read transferred", "dropped"}, status.Units[status.Prefix].ReadState) {
+		status.Prefix++
+	}
 }
 
 func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencies) (Status, error) {
