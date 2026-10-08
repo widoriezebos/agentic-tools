@@ -673,7 +673,7 @@ func standingProviderOutage(repoRoot string, now time.Time, log func(string)) (o
 }
 
 // UnitStage is one unit as the public status reader describes it.
-type UnitStage struct{ Unit, Stage, Line, At string }
+type UnitStage struct{ Unit, Stage, Line, At, Run string }
 
 type seatFactLine struct {
 	text, omitted string

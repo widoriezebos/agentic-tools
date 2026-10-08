@@ -24,10 +24,12 @@ import (
 )
 
 type contextStatusOutput struct {
-	Diagnostic bool                `json:"diagnostic"`
-	Role       steward.RoleVerdict `json:"role"`
-	Reading    contextReadingView  `json:"reading"`
-	Window     contextWindowView   `json:"window"`
+	Diagnostic    bool                   `json:"diagnostic"`
+	Role          steward.RoleVerdict    `json:"role"`
+	Reading       contextReadingView     `json:"reading"`
+	Window        contextWindowView      `json:"window"`
+	Boundaries    []steward.UnitBoundary `json:"unitBoundaries,omitempty"`
+	BoundaryError string                 `json:"unitBoundaryError,omitempty"`
 }
 
 type contextWindowView struct {
@@ -112,8 +114,24 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
 	})
 	window, windowErr := contextWindow(installation)
+	boundaries, boundaryErr := steward.ReadUnitBoundaries(stateRoot)
+	boundaryRoot := stateRoot
+	if resolved, pathErr := filepath.EvalSymlinks(stateRoot); pathErr == nil {
+		boundaryRoot = resolved
+	}
+	localBoundaries := boundaries[:0]
+	for _, boundary := range boundaries {
+		if boundary.Seat == boundaryRoot {
+			localBoundaries = append(localBoundaries, boundary)
+		}
+	}
+	boundaries = localBoundaries
+	boundaryProblem := ""
+	if boundaryErr != nil {
+		boundaryProblem = boundaryErr.Error()
+	}
 	if *asJSON {
-		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
+		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window, Boundaries: boundaries, BoundaryError: boundaryProblem})
 	} else {
 		page := passthroughPage(stdout, stateRoot, *verbose)
 		page.Headline(fmt.Sprintf("The context budget is %s: %s", role.Status, role.Reason))
@@ -123,6 +141,12 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		}
 		if windowErr == nil {
 			section.Text(windowLine(window))
+		}
+		if boundaryProblem != "" {
+			section.Text("Unit boundary history: " + boundaryProblem)
+		}
+		for _, boundary := range boundaries {
+			section.Text(fmt.Sprintf("Completed unit %s for goal %s in session %s: %s", boundary.Unit, boundary.Goal, boundary.Session, boundary.Outcome))
 		}
 		printPage(stdout, page)
 	}

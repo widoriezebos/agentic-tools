@@ -75,6 +75,8 @@ type TickConfig struct {
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
 	RearmAtBoundary func() (bool, error)
+	// CompletedBoundary retains completed work before later boundary consumers.
+	CompletedBoundary func(string, time.Time) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// ProbeRuntime runs the admission owner's capability probe without a job.
