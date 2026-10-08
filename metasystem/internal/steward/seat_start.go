@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -464,6 +465,15 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if closed {
 		return Decision{verdict, ActNone, reason}, nil, true
 	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	}
+	if _, reason, err := abnormalRestartState(repoRoot, ev, now); err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	} else if reason != "" {
+		return Decision{verdict, ActNotify, reason}, nil, true
+	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
 	return d, selection, true
 }
@@ -504,6 +514,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	}
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	dependencies.Now = cfg.now
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
@@ -516,16 +527,20 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 }
 
 // seatBrief is what the seat main reads on stdin.
-func seatBrief(selection SeatSelection, facts ...string) string {
+func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) string {
 	why := "it is approved and ready"
 	if selection.Held {
 		why = "this seat already holds it; the main before you ended"
 	}
+	boundary, handoff := "", ""
+	if automaticHandoff {
+		boundary = "; stop advancing at that boundary"
+		handoff = "Nobody sits at this terminal: your process ends when your turn ends.\nEvery background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. At the completed unit boundary, write your lessons note in your runtime's configured context.handoff.note-directory, then run `metasystem session handoff --root <installation> --note <that note> --no-delegates`. Read `metasystem session handoff --status --root <installation> --json` until this session's completed boundary carries that handoff nonce; then repeat the same handoff command to confirm durable binding. The steward persists that binding before ending your session. End your turn once the binding is durable. If capture or binding fails, remain alive, report the exact error, repair its cause and retry the same handoff. Otherwise end only when blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n"
+	}
 	return fmt.Sprintf("# Seat session\n\n"+
-		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork it and land it; stop when nothing is claimable.\n\n"+
-		"The steward started you for goal %s: %s.\n\n"+
-		"Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n",
-		selection.Goal, selection.Goal, why) + strings.Join(facts, "")
+		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+
+		"The steward started you for goal %s: %s.\n\n",
+		selection.Goal, boundary, selection.Goal, why) + handoff + strings.Join(facts, "")
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
@@ -568,6 +583,21 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return SeatRecord{}, err
+	}
+	class := ""
+	if len(records) > 0 || ev.AbnormalCount > 0 {
+		var reason string
+		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now())
+		if err != nil {
+			return SeatRecord{}, err
+		}
+		if reason != "" {
+			return SeatRecord{}, errors.New(reason)
+		}
+	}
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
 		return SeatRecord{}, err
@@ -589,11 +619,16 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	for _, id := range goals {
 		tips[id] = read[id]
 	}
+	policy, policyErr := config.ResolvePolicy(config.GetParams{Key: "seat.driver", ConfPath: filepath.Join(repoRoot, "metasystem.conf")})
+	automaticHandoff := policyErr != nil || policy.Value != "person"
 	facts := seatFacts(repoRoot, selection, machine, tips, dependencies)
+	if policyErr != nil {
+		facts += "Seat driver unavailable: " + policyErr.Error() + "\n"
+	}
 	if tipsError != nil {
 		facts += "Goal tips unavailable; metasystem work status " + selection.Goal + "\n"
 	}
-	if err := writeExclusiveBrief(briefPath, seatBrief(selection, facts)); err != nil {
+	if err := writeExclusiveBrief(briefPath, seatBrief(selection, automaticHandoff, facts)); err != nil {
 		return SeatRecord{}, err
 	}
 	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
@@ -609,6 +644,13 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	// The steward's own root holds both its run state and the installation's
 	// settings, so it names that root as the seat's installation too.
+	ev.CurrentSeat, ev.CurrentContinuation = id, ""
+	if class != "" {
+		ev = reserveAbnormalRestart(ev, dependencies.Now(), class, "")
+	}
+	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+		return record, err
+	}
 	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
@@ -616,6 +658,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return record, fmt.Errorf("seat launch %s did not start (%v), and its record could not close: %w", id, err, writeErr)
 		}
 		return record, fmt.Errorf("seat launch %s did not start: %w", id, err)
+	}
+	if class != "" {
+		ev.Abnormal[ev.AbnormalCount-1].Pending = false
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return record, err
+		}
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,
@@ -694,7 +742,7 @@ func providerOutageFrom(providers outage.Providers, err error, runtime string, n
 }
 
 // UnitStage is one unit as the public status reader describes it.
-type UnitStage struct{ Unit, Stage, Line, At string }
+type UnitStage struct{ Unit, Stage, Line, At, Run string }
 
 type seatFactLine struct {
 	text, omitted string
@@ -907,7 +955,7 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 				messageLines = append(messageLines, seatFactLine{text, "messages with " + counterpart, at})
 			}
 		}
-		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection))-facts.Len()-128, inbox))
+		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection, true))-facts.Len()-128, inbox))
 	}
 	return facts.String()
 }

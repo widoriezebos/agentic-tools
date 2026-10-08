@@ -157,7 +157,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 				}
 			}
 		}
-		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at})
+		run := ""
+		if one.Record != nil {
+			run = one.Record.ID
+		}
+		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at, Run: run})
 	}
 	for _, item := range manual {
 		stage := item.stage(inv.work().inspectRead)

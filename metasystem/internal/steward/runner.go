@@ -370,6 +370,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 			continue
 		}
+		if cfg.CompletedBoundary != nil {
+			if boundaryErr := cfg.CompletedBoundary(top, cfg.now()); boundaryErr != nil {
+				fmt.Fprintf(os.Stderr, "unit boundary: %v\n", boundaryErr)
+			}
+		}
 		if cfg.RearmAtBoundary != nil {
 			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
 				if logErr := NoteRearmFailure(top, refreshErr, deps.Now()); logErr != nil {

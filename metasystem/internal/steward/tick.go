@@ -78,6 +78,8 @@ type TickConfig struct {
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
 	RearmAtBoundary func() (bool, error)
+	// CompletedBoundary retains completed work before later boundary consumers.
+	CompletedBoundary func(string, time.Time) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// ProbeRuntime runs the admission owner's capability probe without a job.
@@ -581,6 +583,13 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	}
 	if outageMark.LastClass == "unknown" && (d.Action == ActNotify || d.Action == ActHold) {
 		d.Reason += "\n" + outageMark.LastDetail
+	}
+	if d.Action == ActRevive && selection == nil {
+		if _, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now()); readErr != nil {
+			d = Decision{VerdictDegraded, ActNotify, readErr.Error()}
+		} else if reason != "" {
+			d.Action, d.Reason = ActNotify, reason
+		}
 	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every

@@ -110,8 +110,6 @@ func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers
 	switch {
 	case others > 0:
 		return Decision{VerdictStalledDead, ActHold, fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because another continuation is open and unreaped", intent.Nonce, binding.Predecessor.Pid)}, workReason, nil
-	case ev.DryRevivals >= cfg.MaxRevivals:
-		return Decision{VerdictStalledDead, ActNotify, fmt.Sprintf("handoff %s ended because %d revivals produced no progress", intent.Nonce, ev.DryRevivals)}, workReason, nil
 	case providerOutage:
 		return Decision{VerdictStalledDead, ActHold, fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because %s", intent.Nonce, binding.Predecessor.Pid, providerWaitReason(revivalRuntime(intent), now, cfg.ProviderHome))}, workReason, nil
 	default:
@@ -124,28 +122,36 @@ func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers
 // uncertainty about ownership, not proof that the process ended. A nil
 // prober reads the kernel.
 func handoffPredecessorLiveness(binding HandoffBinding, prober identity.Prober) identity.Liveness {
+	_, state := inspectHandoffPredecessor(binding, prober)
+	return state
+}
+
+// inspectHandoffPredecessor pins the kernel's exact identity after checking
+// the recorded identity and tag. Signals use this observation so even a
+// legacy seconds-only capture cannot signal a pid reused after this read.
+func inspectHandoffPredecessor(binding HandoffBinding, prober identity.Prober) (identity.Ref, identity.Liveness) {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
 	exact, state, _ := prober.Probe(binding.Predecessor.Pid)
 	switch state {
 	case identity.Dead:
-		return identity.Dead
+		return identity.Ref{}, identity.Dead
 	case identity.Unknown:
-		return identity.Unknown
+		return identity.Ref{}, identity.Unknown
 	}
 	comparison := identity.Compare(exact, binding.Predecessor)
 	if comparison.Mode == identity.CompareInvalid {
-		return identity.Unknown
+		return identity.Ref{}, identity.Unknown
 	}
 	if !comparison.Matches {
-		return identity.Dead
+		return identity.Ref{}, identity.Dead
 	}
 	if binding.PredecessorTag == "" {
-		return identity.Alive
+		return exact.Ref(), identity.Alive
 	}
 	if !exact.ArgvKnown || !identity.HasExactToken(exact.Argv, binding.PredecessorTag) {
-		return identity.Unknown
+		return identity.Ref{}, identity.Unknown
 	}
-	return identity.Alive
+	return exact.Ref(), identity.Alive
 }

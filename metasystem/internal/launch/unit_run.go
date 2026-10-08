@@ -121,6 +121,7 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
+	Actor   string
 	Manager *Manager
 	Git     GitRunner
 	Root    string
@@ -250,7 +251,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 
 func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous []string) error {
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
-	spec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
+	spec := StartSpec{Kind: "build", Actor: runner.Actor, Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
 		Brief: buildBrief, Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}
 	settings, err := runner.Manager.resolvedSettings()
 	if err != nil {
@@ -389,7 +390,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
-		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
+		buildSpec := StartSpec{Kind: "build", Actor: runner.Actor, Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
 			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units,
 			Round: round.Number, MaxRounds: record.MaxRounds}
 		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
