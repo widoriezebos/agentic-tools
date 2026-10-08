@@ -509,3 +509,12 @@ func (runner *UnitRunner) MutationFinished(record UnitRunRecord) (bool, error) {
 	})
 	return finished, err
 }
+
+// MutationSection takes the tree transition lock for an already reserved
+// branch operation. Remote publication uses CommandWait to release it.
+func (runner *UnitRunner) MutationSection(worktree string, act func(*UnitRunner) error) error {
+	_, err := treeCall(runner, worktree, func(bound *UnitRunner) (struct{}, error) {
+		return struct{}{}, bound.GateTree(worktree, bound.mutation, func(_ string, _ *treeReservation) error { return act(bound) })
+	})
+	return err
+}

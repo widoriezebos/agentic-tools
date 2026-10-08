@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -826,12 +827,149 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 // commit and review run share it. A refused unit read uses the supplied
 // critic arguments; if that start also fails, the same review continues it.
 func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string, fallback ...[]string) (out intentResult) {
+	if full, err := inv.work().git(root, "rev-parse", "--verify", unit+"^{commit}"); err == nil {
+		unit = strings.TrimSpace(string(full))
+	}
+	if work := inv.workOfCommit(goalID, unit); work != nil {
+		runner := inv.unitRunner()
+		err := runner.ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+			caller := *inv
+			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain}
+			out = caller.commitReviewChecked(targets, root, goalID, unit, args, func(read branch.BranchReadResult) error {
+				head, dirty, err := runner.WorktreeResult(root)
+				if err != nil {
+					return err
+				}
+				if dirty != "" || head != review.Subject.Tip && head != read.AttestationCommit {
+					return fmt.Errorf("the read's worktree changed; restore its result or revise this work before publishing")
+				}
+				return nil
+			}, review.Wait, fallback...)
+			return nil
+		})
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		return out
+	}
 	return inv.commitReviewChecked(targets, root, goalID, unit, args, nil, nil, fallback...)
 }
 
 func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
-	result, code, err := owners.branchRead(args)
+	branchRead := owners.branchRead
+	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
+	alreadyPublished := inspectErr == nil && installed.Published
+	changed, discardHead := false, false
+	changedResult := func() intentResult {
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": "environment"},
+			Summary: "the worktree changed after the read; review a new version of this work before publishing",
+			next:    inv.publicArgv("work", "review", "--commit", "SHA", "--goal", goalID), nextReason: "reviews a new version of this work; SHA is its new commit"}
+	}
+	if alreadyPublished {
+		check, wait = nil, nil
+		branchRead = func([]string) (branch.BranchReadResult, int, error) {
+			installed.State = "already-collected"
+			return installed, 0, nil
+		}
+	} else if check == nil {
+		runner := inv.unitRunner()
+		release, err := runner.ReserveMutation(root, goalID, "read-publication")
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		defer release()
+		identity := sha256.Sum256([]byte(goalID + "\x00" + unit))
+		path := filepath.Join(root, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+		defer func() {
+			if !discardHead {
+				return
+			}
+			if err := runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				err := os.Remove(path)
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}); err != nil {
+				out = inv.treeFailure(err)
+			}
+		}()
+		head, dirty, err := runner.WorktreeResult(root)
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		if dirty != "" {
+			discardHead = true
+			return changedResult()
+		}
+		err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+			retained, err := os.ReadFile(path)
+			if err == nil {
+				head = string(retained)
+				return nil
+			}
+			if !os.IsNotExist(err) {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				return err
+			}
+			return os.WriteFile(path, []byte(head), 0600)
+		})
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		check = func(read branch.BranchReadResult) error {
+			current, dirty, err := runner.WorktreeResult(root)
+			if err != nil {
+				return err
+			}
+			if dirty != "" || current != head && current != read.AttestationCommit {
+				changed, discardHead = true, true
+				return fmt.Errorf("the worktree changed after the read; review a new version of this work before publishing")
+			}
+			return nil
+		}
+		branchRead = func(args []string) (result branch.BranchReadResult, code int, err error) {
+			err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				installed, _ := inv.work().inspectRead(root, goalID, unit)
+				if err := check(installed); err != nil {
+					return err
+				}
+				var readErr error
+				result, code, readErr = owners.branchRead(args)
+				return readErr
+			})
+			return
+		}
+		wait = func(publish func() error) error {
+			return runner.MutationSection(root, func(bound *launch.UnitRunner) error {
+				// Collection installed this invocation's attestation; all other bytes
+				// must still be the committed result before the push releases the lock.
+				read, err := inv.work().inspectRead(root, goalID, unit)
+				if err != nil {
+					return err
+				}
+				if err := check(read); err != nil {
+					return err
+				}
+				return bound.CommandWait(publish)
+			})
+		}
+	} else {
+		branchRead = func(args []string) (branch.BranchReadResult, int, error) {
+			installed, _ := inv.work().inspectRead(root, goalID, unit)
+			if err := check(installed); err != nil {
+				return branch.BranchReadResult{}, 1, err
+			}
+			return owners.branchRead(args)
+		}
+	}
+	result, code, err := branchRead(args)
+	if changed {
+		return changedResult()
+	}
 	if err != nil && slices.Contains(args, "--unit-read") && len(fallback) > 0 {
 		reason := strings.SplitN(err.Error(), "\nrun:", 2)[0]
 		installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
@@ -840,7 +978,7 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			result.State = "already-collected"
 		} else {
 			args = fallback[0]
-			result, code, err = owners.branchRead(args)
+			result, code, err = branchRead(args)
 		}
 		defer func() {
 			data, _ := out.Data.(map[string]any)
@@ -928,9 +1066,12 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 		if refuted := inv.refutedClose(targets, store, goalID, result.RootJob); refuted != nil {
 			return *refuted
 		}
-		result, code, err = owners.branchRead(append(args, "--collect"))
+		result, code, err = branchRead(append(args, "--collect"))
 	}
 	if err != nil {
+		if changed {
+			return changedResult()
+		}
 		var refusal *branch.OpError
 		var neverLaunched *branch.ReadNeverLaunchedError
 		switch {
@@ -962,6 +1103,9 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	}
 	if check != nil {
 		if err := check(result); err != nil {
+			if changed {
+				return changedResult()
+			}
 			data["cause"] = "environment"
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 				Summary: err.Error(), next: inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes once the committed result is restored or corrected"}
@@ -969,6 +1113,10 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	}
 	var published branch.PublishReadResult
 	publish := func() error {
+		if alreadyPublished {
+			published = branch.PublishReadResult{Attestation: result.AttestationCommit, OpID: branch.PublishOperationID(result.GateRunID), State: "current"}
+			return nil
+		}
 		var err error
 		published, err = owners.publishRead(root, goalID, unit)
 		return err
@@ -980,10 +1128,14 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	}
 	data["publication"] = published
 	if err != nil {
+		if changed {
+			return changedResult()
+		}
 		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
 			Summary: fmt.Sprintf("the review is complete, but its result has not yet been published: %v", err),
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
 	}
+	discardHead = true
 	if result.TransferCoverage != nil {
 		coverage := *result.TransferCoverage
 		completed := inv.goalAct(goalID, "complete transferred findings", inv.syncOwner("complete-transfers", []string{"--root", inv.stateRoot, "--id", goalID}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
