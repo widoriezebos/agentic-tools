@@ -40,8 +40,11 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return bed.home, nil })}
 	nonces := 0
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { nonces++; return strings.Repeat(string(rune('0'+nonces)), 16), nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return now }
+		agent.nonce = func() (string, error) { nonces++; return strings.Repeat(string(rune('0'+nonces)), 16), nil }
+	})
 	keeper := newLandingAgentKeeper(module, bed.home, agent)
 	wake := func(home string) lane.WakeSources {
 		return lane.WakeSources{Reasons: func(string) ([]string, error) {

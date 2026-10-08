@@ -25,9 +25,13 @@ func TestFleetProviderMarkPublicPersonStart(t *testing.T) {
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude"}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return laneTestNow }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return b.home, nil })}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return laneTestNow },
-		settings: func(string) (launch.Settings, error) { return settings, nil }, nonce: func() (string, error) { return fmt.Sprintf("11223344556677%02d", len(landingLaunches(t, store))), nil },
-		machine: func(string) (string, error) { return "landing", nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return laneTestNow }
+		agent.settings = func(string) (launch.Settings, error) { return settings, nil }
+		agent.nonce = func() (string, error) { return fmt.Sprintf("11223344556677%02d", len(landingLaunches(t, store))), nil }
+		agent.machine = func(string) (string, error) { return "landing", nil }
+	})
 	b.owners.landing.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, agent) }
 	if _, err := outage.Observe(b.home, "claude", "landing-model", outage.ProviderLimit, "HTTP 429 Too Many Requests", "limited-call", laneTestNow); err != nil {
 		t.Fatal(err)

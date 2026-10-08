@@ -39,8 +39,12 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return b.now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return b.home, nil })}
 	dead := true
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return b.now }, nonce: func() (string, error) { return "scoped", nil },
-		machine: func(string) (string, error) { return "fixture", nil }, settings: func(string) (launch.Settings, error) {
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return b.now }
+		agent.nonce = func() (string, error) { return "scoped", nil }
+		agent.machine = func(string) (string, error) { return "fixture", nil }
+		agent.settings = func(string) (launch.Settings, error) {
 			if dead {
 				return launch.Settings{}, errors.New("provider launcher unavailable")
 			}
@@ -48,7 +52,8 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 			settings.LandingRuntime = "claude"
 			settings.LandingModel = "fixture-model"
 			return settings, nil
-		}}
+		}
+	})
 	keeper := newLandingAgentKeeper(b.checkout, b.home, agent)
 	b.owners.landing.keeper = func(string, string) lane.AgentKeeper { return keeper }
 	b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }

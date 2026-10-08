@@ -73,7 +73,12 @@ func newSelectionBed(t *testing.T) *selectionBed {
 		},
 	}
 	// The observer reads fresh trunk inputs through the same fixture boundary (lane-reads-its-policies.md:145).
-	b.keeper = newLandingAgentKeeper(b.lane, b.home, landingAgent{settings: func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }, proofEffects: seams, now: func() time.Time { return b.now }, machine: func(string) (string, error) { return "fixture", b.machineErr }})
+	b.keeper = newLandingAgentKeeper(b.lane, b.home, newTestLandingAgent(func(agent *landingAgent) {
+		agent.settings = func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }
+		agent.proofEffects = seams
+		agent.now = func() time.Time { return b.now }
+		agent.machine = func(string) (string, error) { return "fixture", b.machineErr }
+	}))
 	b.keeper.Running = func() (string, bool, error) { return "", false, nil }
 	b.keeper.Fingerprint = nil
 	b.keeper.Holds[0] = func(string) (string, error) { return plain.ProofHold(b.lane, seams) }

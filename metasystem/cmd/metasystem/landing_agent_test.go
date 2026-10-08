@@ -14,6 +14,14 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
+// newTestLandingAgent keeps production defaults and replaces only the
+// dependencies whose behavior a fixture controls.
+func newTestLandingAgent(configure func(*landingAgent)) landingAgent {
+	agent := newLandingAgent()
+	configure(&agent)
+	return agent
+}
+
 // recordingSupervisor stands in for the detached launch supervisor: it
 // records the child as started, so Start returns with a running record.
 type recordingSupervisor struct{ store launch.Store }
@@ -60,8 +68,11 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { return "0011223344556677", nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return now }
+		agent.nonce = func() (string, error) { return "0011223344556677", nil }
+	})
 	keeper := newLandingAgentKeeper(module, home, agent)
 	keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 

@@ -353,7 +353,9 @@ func TestMachineListSummarizesThisComputerFirst(t *testing.T) {
 	if code != 0 || lines[0] != "3 machines on this computer · 2 running, 1 stopped · 2 jobs running · 1 elsewhere" {
 		t.Fatalf("machine list = %d %q %q", code, stdout, stderr)
 	}
-	if len(lines) < 7 || !strings.HasPrefix(lines[4], "  ● m1e ") || !strings.HasPrefix(lines[5], "  ○ m1x ") || !strings.HasPrefix(lines[6], "  ● m2a ") {
+	capacity, fleet := slices.Index(lines, "Host capacity"), slices.Index(lines, "Fleet")
+	if capacity <= 0 || fleet <= capacity || len(lines) <= fleet+4 ||
+		!strings.HasPrefix(lines[fleet+2], "  ● m1e ") || !strings.HasPrefix(lines[fleet+3], "  ○ m1x ") || !strings.HasPrefix(lines[fleet+4], "  ● m2a ") {
 		t.Fatalf("the fleet's rows do not follow the headline: %q", stdout)
 	}
 	if strings.Contains(stdout, "steward runner") || strings.Contains(stdout, "Not ours") {

@@ -78,8 +78,12 @@ func TestFleetProviderMarkPublicLifecycle(t *testing.T) {
 	settings := launch.DefaultSettings()
 	settings.LandingRuntime, settings.LandingModel = "claude", "landing-model"
 	manager := &launch.Manager{Store: store, Now: func() time.Time { return now }, Prober: machineProber{dead: b.dead}, Processes: machineProcesses{dead: b.dead}}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return now },
-		settings: func(string) (launch.Settings, error) { return settings, nil }, machine: func(string) (string, error) { return "m1e", nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return now }
+		agent.settings = func(string) (launch.Settings, error) { return settings, nil }
+		agent.machine = func(string) (string, error) { return "m1e", nil }
+	})
 	keeper := newLandingAgentKeeper(b.landing, b.home, agent)
 	if err := keeper.Reap[0](record.ID); err != nil {
 		t.Fatal(err)
