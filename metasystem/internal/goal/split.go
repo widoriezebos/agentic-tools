@@ -203,7 +203,11 @@ func Split(r VerbRequest, parentID string, members []MemberDraft, ratification S
 	if err != nil {
 		return PublishResult{}, err
 	}
-	return Publish(r.Endpoint, req)
+	res, err := Publish(r.Endpoint, req)
+	if err == nil && res.Unchanged {
+		err = splitAfterConfirmed(r.Endpoint, res.Tip, parentID, r.opid(), r.Now)
+	}
+	return res, err
 }
 
 func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratification SplitRatification, proof *humanauthority.Proof) (PublishRequest, error) {
@@ -313,7 +317,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 		AfterConfirmed: func(tip string) error {
-			return raiseSplitOldArcDebt(r.Endpoint, tip, parentID, r.opid(), r.Now)
+			return splitAfterConfirmed(r.Endpoint, tip, parentID, r.opid(), r.Now)
 		},
 	}, nil
 }
@@ -416,6 +420,20 @@ func goalPointers(ids []string) string {
 		pointers[i] = "goal:" + id
 	}
 	return strings.Join(pointers, ", ")
+}
+
+func splitAfterConfirmed(e Endpoint, tip, parentID, opid string, now time.Time) error {
+	tree, err := loadTreeFor(e, tip)
+	if err != nil {
+		return fmt.Errorf("classify split's old-arc retro debt: %w", err)
+	}
+	if parent := tree.Live[parentID]; parent != nil && parent.State == StateSplit && parent.Split != nil {
+		if e.SplitConfirmed != nil {
+			e.SplitConfirmed(e, tip, parentID, now)
+		}
+		return nil
+	}
+	return raiseSplitOldArcDebt(e, tip, parentID, opid, now)
 }
 
 func raiseSplitOldArcDebt(e Endpoint, tip, parentID, opid string, now time.Time) error {

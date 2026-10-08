@@ -672,7 +672,7 @@ func recoverConfirmedEffect(e Endpoint, tip string, entry Entry) error {
 		if len(entry.Intent.Targets) != 1 {
 			return fmt.Errorf("confirmed split %s has no unique parent target", entry.Opid)
 		}
-		return raiseSplitOldArcDebt(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
+		return splitAfterConfirmed(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
 	case "carried":
 		return carriedAfterConfirmed(e, entry.Intent.Args["approvedRef"], timeNowUTC())(tip)
 	default:

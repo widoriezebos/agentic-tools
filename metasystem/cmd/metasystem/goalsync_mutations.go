@@ -635,6 +635,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		return goal.VerbRequest{}, err
 	}
 	configureCarriedCounselor(&e)
+	configureSplitApproval(&e, dependencies)
 	e.ClaimHolder = dependencies.claimHolder.Facts
 	// A publish blocked by a provably dead owner's pushed entry recovers it
 	// (a landing lane's handover included) under the same live policy

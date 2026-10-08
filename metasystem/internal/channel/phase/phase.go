@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -175,6 +176,10 @@ func Load(root string, withHuman bool) (Loaded, error) {
 
 // Run performs the bounded channel duty after every other tick duty.
 func Run(ctx context.Context, root string) (int, error) {
+	return run(ctx, root, time.Now(), goal.ResolveMachine, goal.ResolveEndpoint)
+}
+
+func run(ctx context.Context, root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error)) (int, error) {
 	loaded, err := Load(root, true)
 	if loaded.Provider == nil && err == nil {
 		return 0, nil
@@ -182,7 +187,7 @@ func Run(ctx context.Context, root string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	machine, err := goal.ResolveMachine(root)
+	machine, err := resolveMachine(root)
 	if err != nil {
 		return 1, err
 	}
@@ -190,17 +195,35 @@ func Run(ctx context.Context, root string) (int, error) {
 	if lineage == "" {
 		lineage = "steward"
 	}
-	res, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter, HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret, Machine: machine, Lineage: lineage, Provider: loaded.Provider, DestinationConfig: loaded.Destination, Now: time.Now(), MaxDispositions: 5})
+	res, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter, HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret, Machine: machine, Lineage: lineage, Provider: loaded.Provider, DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5})
 	if err != nil {
 		return res.Undelivered + 1, err
 	}
-	// The channel carries no periodic status report (Decision 7 of the
-	// blocked-agent-asks-the-human design): the UI shows needs, backlog and
-	// delivered. The tick only retries a landing line whose post failed.
+	// Delivery retries share the channel duty; approval requests reread the
+	// accepted goals so approval or reversal cannot leave an obsolete request.
+	if slices.ContainsFunc(channel.LoadLandedState(root).Pending, func(n channel.LandedNotice) bool { return n.SplitParent != "" }) {
+		e, err := resolveEndpoint(root)
+		if err == nil {
+			err = channel.RetrySplitApproval(ctx, e, loaded.Provider, loaded.Destination, now)
+		}
+		if err != nil {
+			return res.Undelivered + 1, err
+		}
+	}
 	if e := channel.RetryLanded(ctx, root, loaded.Provider, loaded.Destination); e != nil {
 		return res.Undelivered + 1, e
 	}
 	return res.Undelivered, nil
+}
+
+// NotifySplitApproval is the channel adapter for a confirmed split, and for
+// a committed follow-up opened from a person's source goal.
+func NotifySplitApproval(ctx context.Context, e goal.Endpoint, tip, parent, transaction string, children []string, now time.Time) error {
+	loaded, err := Load(e.Root, false)
+	if err != nil {
+		return errors.Join(err, channel.PostSplitApproval(ctx, e, tip, parent, transaction, children, nil, loaded.Destination, now))
+	}
+	return channel.PostSplitApproval(ctx, e, tip, parent, transaction, children, loaded.Provider, loaded.Destination, now)
 }
 
 // NotifyLanded posts a landing on main as its plain sentences of what was

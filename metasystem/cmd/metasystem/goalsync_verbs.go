@@ -209,6 +209,7 @@ func recoverGoalJournal(installation stateroot.Installation, root string, comman
 		return nil, err
 	}
 	configureCarriedCounselor(&endpoint)
+	configureSplitApproval(&endpoint, dependencies)
 	now, err := commandNow(root)
 	if err != nil {
 		return nil, err
