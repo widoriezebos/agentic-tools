@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -860,11 +862,12 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	branchRead := owners.branchRead
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
 	alreadyPublished := inspectErr == nil && installed.Published
-	changed, discardHead := false, false
+	changed, discardRecord := false, false
+	newVersion := "SHA"
 	changedResult := func() intentResult {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": "environment"},
 			Summary: "the worktree changed after the read; review a new version of this work before publishing",
-			next:    inv.publicArgv("work", "review", "--commit", "SHA", "--goal", goalID), nextReason: "reviews a new version of this work; SHA is its new commit"}
+			next:    inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID), nextReason: "starts a new read of the changed version; commit any uncommitted changes first and use their new commit"}
 	}
 	if alreadyPublished {
 		check, wait = nil, nil
@@ -881,11 +884,67 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 		defer release()
 		identity := sha256.Sum256([]byte(goalID + "\x00" + unit))
 		path := filepath.Join(root, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+		// Publication always compares against the reviewed commit. This record
+		// keeps retirement across invocations without changing the critic's evidence.
+		var record struct {
+			ReviewedCommit string `json:"reviewedCommit"`
+			Retired        bool   `json:"retired,omitempty"`
+			ChangedTip     string `json:"changedTip,omitempty"`
+			RootJob        string `json:"rootJob,omitempty"`
+		}
+		err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+			retained, err := os.ReadFile(path)
+			if err == nil {
+				// A plain saved tip is an active record from an older engine;
+				// it never replaces the reviewed commit as the baseline.
+				if len(retained) == 40 {
+					if _, err := hex.DecodeString(string(retained)); err != nil {
+						return err
+					}
+					record.ReviewedCommit = unit
+					return nil
+				}
+				if err := json.Unmarshal(retained, &record); err != nil {
+					return err
+				}
+				if record.ReviewedCommit != unit {
+					return fmt.Errorf("the publication record does not match the reviewed commit")
+				}
+				return nil
+			}
+			if !os.IsNotExist(err) {
+				return err
+			}
+			record.ReviewedCommit = unit
+			data, err := json.Marshal(record)
+			if err != nil {
+				return err
+			}
+			durable, err := atomicfile.WriteText(path, string(data), root)
+			if err == nil && !durable {
+				err = fmt.Errorf("the publication record's durability is unknown")
+			}
+			return err
+		})
+		if err != nil {
+			return inv.treeFailure(err)
+		}
 		defer func() {
-			if !discardHead {
+			if !changed && !discardRecord {
 				return
 			}
 			if err := runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				if changed {
+					data, err := json.Marshal(record)
+					if err != nil {
+						return err
+					}
+					durable, err := atomicfile.WriteText(path, string(data), root)
+					if err == nil && !durable {
+						err = fmt.Errorf("the retired read's durability is unknown")
+					}
+					return err
+				}
 				err := os.Remove(path)
 				if os.IsNotExist(err) {
 					return nil
@@ -895,38 +954,62 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 				out = inv.treeFailure(err)
 			}
 		}()
-		head, dirty, err := runner.WorktreeResult(root)
-		if err != nil {
-			return inv.treeFailure(err)
-		}
-		if dirty != "" {
-			discardHead = true
-			return changedResult()
-		}
-		err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
-			retained, err := os.ReadFile(path)
-			if err == nil {
-				head = string(retained)
-				return nil
-			}
-			if !os.IsNotExist(err) {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-				return err
-			}
-			return os.WriteFile(path, []byte(head), 0600)
-		})
-		if err != nil {
-			return inv.treeFailure(err)
-		}
 		check = func(read branch.BranchReadResult) error {
 			current, dirty, err := runner.WorktreeResult(root)
 			if err != nil {
 				return err
 			}
-			if dirty != "" || current != head && current != read.AttestationCommit {
-				changed, discardHead = true, true
+			// Uncommitted changes hold publication without retiring the read:
+			// once they are committed or removed, the same read is judged again.
+			if dirty != "" && !record.Retired {
+				return fmt.Errorf("the worktree has uncommitted changes; commit or remove them, then repeat this command")
+			}
+			refuse := record.Retired
+			if dirty == "" && current != unit {
+				git := inv.work().git
+				base, err := git(root, "merge-base", unit, current)
+				if err != nil {
+					return err
+				}
+				if strings.TrimSpace(string(base)) != unit {
+					refuse = true
+				} else {
+					paths, err := git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-renames", "--name-only", unit+"^", unit)
+					if err != nil {
+						return err
+					}
+					reviewedPaths := splitNUL(paths)
+					if !refuse {
+						differs, err := git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-renames", "--name-only", unit, current)
+						if err != nil {
+							return err
+						}
+						for _, path := range splitNUL(differs) {
+							if slices.Contains(reviewedPaths, path) {
+								refuse = true
+								break
+							}
+						}
+					}
+					if refuse {
+						// A later read record or unrelated unit is not the new
+						// version of the files whose read was retired.
+						args := append([]string{"log", "-1", "--format=%H", unit + ".." + current, "--"}, reviewedPaths...)
+						latest, err := git(root, args...)
+						if err != nil {
+							return err
+						}
+						if commit := strings.TrimSpace(string(latest)); commit != "" {
+							newVersion = commit
+						}
+					}
+				}
+			}
+			if refuse {
+				changed = true
+				if !record.Retired {
+					record.Retired, record.ChangedTip, record.RootJob = true, current, read.RootJob
+				}
 				return fmt.Errorf("the worktree changed after the read; review a new version of this work before publishing")
 			}
 			return nil
@@ -945,8 +1028,8 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 		}
 		wait = func(publish func() error) error {
 			return runner.MutationSection(root, func(bound *launch.UnitRunner) error {
-				// Collection installed this invocation's attestation; all other bytes
-				// must still be the committed result before the push releases the lock.
+				// Collection installed this invocation's attestation; the reviewed
+				// paths must still match before the push releases the lock.
 				read, err := inv.work().inspectRead(root, goalID, unit)
 				if err != nil {
 					return err
@@ -1135,7 +1218,7 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			Summary: fmt.Sprintf("the review is complete, but its result has not yet been published: %v", err),
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
 	}
-	discardHead = true
+	discardRecord = true
 	if result.TransferCoverage != nil {
 		coverage := *result.TransferCoverage
 		completed := inv.goalAct(goalID, "complete transferred findings", inv.syncOwner("complete-transfers", []string{"--root", inv.stateRoot, "--id", goalID}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {

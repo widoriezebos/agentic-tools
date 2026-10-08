@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -164,20 +165,11 @@ func TestCommitReadPublicationLifecycleGitAdapter(t *testing.T) {
 	tip := connectionGit(t, c.worktree, "rev-parse", "HEAD")
 	c.writeCritic(c.worktree, "crit1", commit, "completed", true)
 	code, result = c.runJSON(owners, review...)
-	if code == 0 || c.publications != 0 || c.commitReads != 0 || result.Next == nil ||
-		!strings.Contains(result.Next.Reason, "new version") || strings.Contains(result.Summary, "restore") ||
-		!strings.Contains(strings.Join(result.Next.Argv, " "), "work review --commit SHA --goal "+c.id) {
-		t.Fatalf("moved tip needs a new work version: exit=%d %+v", code, result)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("refused publication kept its stale tip: %v", err)
-	}
-	if connectionGit(t, c.worktree, "rev-parse", "HEAD") != tip {
-		t.Fatal("refusal changed the next unit's commit")
-	}
-	code, result = c.runJSON(owners, review...)
 	if code != 0 || result.Outcome != intentConfirmed || c.publications != 1 || c.commitReads != 1 {
-		t.Fatalf("publish from fresh invocation: exit=%d %+v", code, result)
+		t.Fatalf("publish over the next unit in run B: exit=%d %+v", code, result)
+	}
+	if connectionGit(t, c.worktree, "rev-parse", "HEAD^") != tip {
+		t.Fatal("publication replaced the next unit's commit")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("successful publication kept its saved tip: %v", err)
@@ -193,6 +185,201 @@ func TestCommitReadPublicationLifecycleGitAdapter(t *testing.T) {
 	code, result = c.runJSON(owners, review...)
 	if code != 0 || result.Outcome != intentUnchanged || len(c.reads) != reads || c.publications != 1 || c.commitReads != 1 {
 		t.Fatalf("published repeat must precede tree checks: exit=%d %+v", code, result)
+	}
+}
+
+func TestCommitReadPublicationRetirementGitAdapter(t *testing.T) {
+	t.Parallel()
+	c, owners := readPublicationAdapterBed(t)
+	owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+	writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")
+	connectionGit(t, c.worktree, "add", "hand.txt")
+	code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "hand")
+	if code != 0 {
+		t.Fatalf("first unit commit: exit=%d %+v", code, result)
+	}
+	commit := resultData(t, result)["commit"].(string)
+	review := []string{"work", "review", "--commit", commit, "--goal", c.id}
+	code, result = c.runJSON(owners, review...)
+	if result.Outcome != intentInProgress || len(c.delegates) != 1 {
+		t.Fatalf("start original read: exit=%d %+v", code, result)
+	}
+	c.writeCritic(c.worktree, "crit1", commit, "completed", true)
+	original, err := os.ReadFile(filepath.Join(c.worktree, "artifacts", "agents", "jobs", "crit1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "overwritten bytes\n")
+	connectionGit(t, c.worktree, "add", "hand.txt")
+	code, result = c.runJSON(owners, "work", "commit", c.id, "--work", "hand2")
+	if code != 0 {
+		t.Fatalf("overwrite commit: exit=%d %+v", code, result)
+	}
+	tip := resultData(t, result)["commit"].(string)
+	identity := sha256.Sum256([]byte(c.id + "\x00" + commit))
+	path := filepath.Join(c.worktree, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+	var next []string
+	for repeat := 0; repeat < 3; repeat++ {
+		code, result = c.runJSON(owners, review...)
+		if code == 0 || result.Outcome != intentRefused || c.publications != 0 || c.commitReads != 0 || len(c.delegates) != 1 || result.Next == nil {
+			t.Fatalf("overwrite accepted on repeat %d: exit=%d %+v reads=%d publications=%d", repeat, code, result, c.commitReads, c.publications)
+		}
+		next = result.Next.Argv
+		if connectionGit(t, c.worktree, "rev-parse", "HEAD") != tip {
+			t.Fatal("refusal changed the person's commit")
+		}
+	}
+	if !strings.Contains(strings.Join(next, " "), "work review --commit "+tip+" --goal "+c.id) {
+		t.Fatalf("refusal does not name the new read: %+v", result)
+	}
+	data, err := os.ReadFile(path)
+	var record struct {
+		ReviewedCommit string `json:"reviewedCommit"`
+		Retired        bool   `json:"retired"`
+		ChangedTip     string `json:"changedTip"`
+		RootJob        string `json:"rootJob"`
+	}
+	if err != nil || json.Unmarshal(data, &record) != nil || !record.Retired || record.ReviewedCommit != commit || record.ChangedTip != tip || record.RootJob != "crit1" {
+		t.Fatalf("retired read was lost or rebound: %s (%v)", data, err)
+	}
+	retained, err := os.ReadFile(filepath.Join(c.worktree, "artifacts", "agents", "jobs", "crit1.json"))
+	if err != nil || string(retained) != string(original) {
+		t.Fatal("retirement changed the original critic evidence")
+	}
+	// Following the printed command examines the overwrite, not the old version.
+	code, result = c.runJSON(owners, next[1:]...)
+	if result.Outcome != intentInProgress || len(c.delegates) != 2 || c.delegates[1] != tip {
+		t.Fatalf("new-version remedy did not start its own read: exit=%d %+v", code, result)
+	}
+	c.writeCritic(c.worktree, "crit2", tip, "completed", true)
+	code, result = c.runJSON(owners, next[1:]...)
+	if code != 0 || result.Outcome != intentConfirmed || c.commitReads != 1 || c.publications != 1 {
+		t.Fatalf("new read did not publish: exit=%d %+v", code, result)
+	}
+	code, result = c.runJSON(owners, review...)
+	if code == 0 || c.commitReads != 1 || c.publications != 1 || result.Next == nil ||
+		!strings.Contains(strings.Join(result.Next.Argv, " "), "work review --commit "+tip+" --goal "+c.id) {
+		t.Fatalf("new read revived the retired read or hid its current version: exit=%d %+v", code, result)
+	}
+}
+
+func TestCommitReadPublicationRetiredFlagGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"reviewed-tip", "dirty-tree"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			c, owners := readPublicationAdapterBed(t)
+			owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+			writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")
+			connectionGit(t, c.worktree, "add", "hand.txt")
+			code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "hand")
+			if code != 0 {
+				t.Fatalf("first unit commit: exit=%d %+v", code, result)
+			}
+			commit := resultData(t, result)["commit"].(string)
+			review := []string{"work", "review", "--commit", commit, "--goal", c.id}
+			code, result = c.runJSON(owners, review...)
+			if result.Outcome != intentInProgress || len(c.delegates) != 1 {
+				t.Fatalf("start original read: exit=%d %+v", code, result)
+			}
+			c.writeCritic(c.worktree, "crit1", commit, "completed", true)
+			writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "overwritten bytes\n")
+			connectionGit(t, c.worktree, "add", "hand.txt")
+			code, result = c.runJSON(owners, "work", "commit", c.id, "--work", "hand2")
+			if code != 0 {
+				t.Fatalf("overwrite commit: exit=%d %+v", code, result)
+			}
+			tip := resultData(t, result)["commit"].(string)
+			code, result = c.runJSON(owners, review...)
+			if code == 0 || result.Outcome != intentRefused || c.publications != 0 || c.commitReads != 0 || len(c.delegates) != 1 {
+				t.Fatalf("overwrite did not retire the read: exit=%d %+v reads=%d publications=%d", code, result, c.commitReads, c.publications)
+			}
+			identity := sha256.Sum256([]byte(c.id + "\x00" + commit))
+			path := filepath.Join(c.worktree, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+			retired, err := os.ReadFile(path)
+			var record struct {
+				Retired bool `json:"retired"`
+			}
+			if err != nil || json.Unmarshal(retired, &record) != nil || !record.Retired {
+				t.Fatalf("overwrite did not save retirement: %s (%v)", retired, err)
+			}
+			if mode == "reviewed-tip" {
+				// Move only the isolated fixture's branch and tracked bytes back.
+				connectionGit(t, c.worktree, "update-ref", "HEAD", commit, tip)
+				connectionGit(t, c.worktree, "restore", "--source", commit, "--staged", "--worktree", "hand.txt")
+				tip = commit
+				if dirty := connectionGit(t, c.worktree, "status", "--porcelain"); dirty != "" {
+					t.Fatalf("restored reviewed commit has uncommitted changes: %s", dirty)
+				}
+			} else {
+				writeUnitCarryFile(t, filepath.Join(c.worktree, "scratch.txt"), "untracked scratch\n")
+			}
+			code, result = c.runJSON(owners, review...)
+			if code == 0 || result.Outcome != intentRefused || c.publications != 0 || c.commitReads != 0 || len(c.delegates) != 1 {
+				t.Fatalf("retired read revived with %s: exit=%d %+v reads=%d publications=%d", mode, code, result, c.commitReads, c.publications)
+			}
+			if connectionGit(t, c.worktree, "rev-parse", "HEAD") != tip {
+				t.Fatal("refusal changed the fixture's commit")
+			}
+			retained, err := os.ReadFile(path)
+			if err != nil || string(retained) != string(retired) {
+				t.Fatalf("refusal lost or changed the retired read: %s (%v)", retained, err)
+			}
+		})
+	}
+}
+
+func TestCommitReadPublicationDirtyTreeRecoveryGitAdapter(t *testing.T) {
+	t.Parallel()
+	c, owners := readPublicationAdapterBed(t)
+	owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+	writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")
+	connectionGit(t, c.worktree, "add", "hand.txt")
+	code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "hand")
+	if code != 0 {
+		t.Fatalf("first unit commit: exit=%d %+v", code, result)
+	}
+	commit := resultData(t, result)["commit"].(string)
+	review := []string{"work", "review", "--commit", commit, "--goal", c.id}
+	code, result = c.runJSON(owners, review...)
+	if result.Outcome != intentInProgress || len(c.delegates) != 1 {
+		t.Fatalf("start original read: exit=%d %+v", code, result)
+	}
+	c.writeCritic(c.worktree, "crit1", commit, "completed", true)
+	scratch := filepath.Join(c.worktree, "scratch.txt")
+	writeUnitCarryFile(t, scratch, "untracked scratch\n")
+	code, result = c.runJSON(owners, review...)
+	if code == 0 || result.Outcome != intentRefused || c.publications != 0 || c.commitReads != 0 || len(c.delegates) != 1 {
+		t.Fatalf("dirty tree did not hold publication: exit=%d %+v reads=%d publications=%d", code, result, c.commitReads, c.publications)
+	}
+	identity := sha256.Sum256([]byte(c.id + "\x00" + commit))
+	path := filepath.Join(c.worktree, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+	data, err := os.ReadFile(path)
+	var record struct {
+		ReviewedCommit string `json:"reviewedCommit"`
+		Retired        bool   `json:"retired"`
+	}
+	if err != nil || json.Unmarshal(data, &record) != nil || record.Retired || record.ReviewedCommit != commit {
+		t.Fatalf("dirty tree retired or lost the read: %s (%v)", data, err)
+	}
+	if !strings.Contains(strings.Join(result.Details, "\n"), "commit or remove them, then repeat this command") {
+		t.Fatalf("dirty tree refusal has no cleanup remedy: %+v", result)
+	}
+	if connectionGit(t, c.worktree, "rev-parse", "HEAD") != commit {
+		t.Fatal("dirty tree refusal changed the reviewed commit")
+	}
+	if err := os.Remove(scratch); err != nil {
+		t.Fatal(err)
+	}
+	code, result = c.runJSON(owners, review...)
+	if code != 0 || result.Outcome != intentConfirmed || c.publications != 1 || c.commitReads != 1 || len(c.delegates) != 1 {
+		t.Fatalf("cleanup did not publish the same read: exit=%d %+v reads=%d publications=%d", code, result, c.commitReads, c.publications)
+	}
+	if connectionGit(t, c.worktree, "rev-parse", "HEAD^") != commit {
+		t.Fatal("cleanup publication replaced the reviewed commit")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("successful publication kept its pending record: %v", err)
 	}
 }
 
@@ -299,7 +486,7 @@ func TestManualReadPublicationReservationGitAdapter(t *testing.T) {
 				review = []string{"work", "review", c.id, "--changes", "--brief", brief, "--work", "hand"}
 			}
 			code, result = c.runJSON(owners, review...)
-			if mode == "changed" || mode == "manual-changed" || mode == "tip-moved" || mode == "reserved" {
+			if mode == "changed" || mode == "manual-changed" || mode == "reserved" {
 				if code == 0 || c.publications != 0 || c.commitReads != 0 {
 					t.Fatalf("unsafe read published: code=%d result=%+v reads=%d publications=%d", code, result, c.commitReads, c.publications)
 				}
