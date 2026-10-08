@@ -253,6 +253,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		(edited.Ratified != nil && *edited.Ratified != *base.Ratified) {
 		return nil, fmt.Errorf("%s: Ratified is a generated field; split publishes it", p)
 	}
+	if !reflect.DeepEqual(edited.Split, base.Split) || edited.SplitFrom != base.SplitFrom {
+		return nil, fmt.Errorf("%s: Split and SplitFrom are generated parent and child links; goal split publishes them", p)
+	}
 	// A hand park of a CLAIMED goal lawfully clears the Claimed line
 	// — that is the park's own effect, synthesized either way at
 	// replay. Every other Claimed alteration stays refused.

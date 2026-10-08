@@ -320,6 +320,39 @@ func ValidateTree(t *TreeGoals) []Problem {
 		return ""
 	}
 
+	lookup := func(id string) *GoalFile {
+		if f := t.Live[id]; f != nil {
+			return f
+		}
+		f, _ := t.Archived(id)
+		return f
+	}
+	forAll(t, func(where string, f *GoalFile) {
+		if f.State == StateSplit && (f.Split == nil || f.Claimed != nil) {
+			addf("%s: split source requires lineage and cannot carry a live claim", where)
+		}
+		if f.Split != nil {
+			for _, id := range f.Split.Children {
+				if child := lookup(id); child == nil || child.SplitFrom != f.Id {
+					addf("%s: Split child %s does not link back to its parent", where, id)
+				}
+			}
+		}
+		if f.SplitFrom != "" {
+			if parent := lookup(f.SplitFrom); parent == nil || parent.Split == nil || !contains(parent.Split.Children, f.Id) {
+				addf("%s: SplitFrom parent %s does not link back to its child", where, f.SplitFrom)
+			}
+		}
+		seen := map[string]bool{f.Id: true}
+		for parent := lookup(f.SplitFrom); parent != nil; parent = lookup(parent.SplitFrom) {
+			if seen[parent.Id] {
+				addf("%s: split lineage cycle", where)
+				break
+			}
+			seen[parent.Id] = true
+		}
+	})
+
 	// Referential integrity: every edge and arc names a real goal.
 	forAll(t, func(where string, f *GoalFile) {
 		for _, dep := range f.Blocked {

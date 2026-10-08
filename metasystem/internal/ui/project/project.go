@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
@@ -71,10 +72,12 @@ type Pane struct {
 // Goal is one goal of the ledger: the project's one subdivision, named by its
 // ledger id, with where it stands and why it is open.
 type Goal struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	State  string `json:"state"`
-	Intent string `json:"intent"`
+	ID        string            `json:"id"`
+	Title     string            `json:"title"`
+	State     string            `json:"state"`
+	Intent    string            `json:"intent"`
+	Split     *goal.SplitRecord `json:"split,omitempty"`
+	SplitFrom string            `json:"splitFrom,omitempty"`
 	// Sliced is when slicing started on this goal and which seat started it,
 	// where the record carries the boundary at all. It is absent rather than
 	// zeroed, because "slicing has not started" and "slicing started at the
@@ -202,10 +205,12 @@ func goalsOf(read *resolver.Project) []Goal {
 	goals := make([]Goal, 0, len(tree))
 	for _, one := range tree {
 		carried := Goal{
-			ID:     one.Goal.ID,
-			Title:  one.Goal.Title,
-			State:  one.Goal.State,
-			Intent: one.Goal.Intent,
+			ID:        one.Goal.ID,
+			Title:     one.Goal.Title,
+			State:     one.Goal.State,
+			Split:     one.Goal.Split,
+			SplitFrom: one.Goal.SplitFrom,
+			Intent:    one.Goal.Intent,
 		}
 		if sliced := one.Goal.Sliced; sliced != nil {
 			carried.Sliced = &Sliced{At: sliced.At, Machine: sliced.Machine, Lineage: sliced.Lineage}

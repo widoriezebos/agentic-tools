@@ -833,6 +833,10 @@ func runIntentResume(inv *intentInvocation) int {
 			Summary:  fmt.Sprintf("%s is %s; only a parked or stopped goal resumes; nothing was done", id, where),
 			Decision: "reopening an archived goal is its own act with a fresh next step",
 			next:     inv.publicArgv("goal", "reopen", id, "--next", "TEXT"), nextReason: "reopens the goal under its own authority with the next step it names"})
+	case file.State == goal.StateSplit:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+			Summary: id + " is split; its work resumes through a person's reversal",
+			next:    inv.publicArgv("goal", "split", id, "--reverse", "--reason", "TEXT"), nextReason: "restores the parent before child work starts"})
 	case file.State == goal.StateParked:
 		if inv.input.has("approved-ref") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),

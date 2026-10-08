@@ -164,6 +164,9 @@ func projectTipClock(e Endpoint, tip string, clock func() (time.Time, error)) (P
 	if err != nil {
 		return Projection{}, err
 	}
+	if problems := ValidateTree(tree); len(problems) > 0 {
+		return Projection{}, &TreeReadError{Tip: tip, Problems: problems}
+	}
 	now, err := clock()
 	if err != nil {
 		return Projection{}, fmt.Errorf("ledger observation clock: %w", err)

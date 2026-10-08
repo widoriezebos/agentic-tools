@@ -1767,6 +1767,10 @@ func runIntentReopen(inv *intentInvocation) int {
 	switch {
 	case file == nil:
 		return unknownGoal(inv, id)
+	case file.State == goal.StateSplit:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+			Summary: id + " is split; its work resumes through a person's reversal",
+			next:    inv.publicArgv("goal", "split", id, "--reverse", "--reason", "TEXT"), nextReason: "restores the parent before child work starts"})
 	case where == "live" && file.NextStep == next:
 		// Open with this next step is what a reopen asks for: a repeat,
 		// success with no record (R-129-ui, U-idem).

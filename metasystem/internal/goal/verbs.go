@@ -2807,9 +2807,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 					return nil, err
 				}
 			}
-			if f.State == StateParked {
-				missing := fmt.Sprintf("goal %s is parked; concluding it is a human act", id)
-				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a parked goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+			if f.State == StateParked || f.State == StateSplit {
+				missing := fmt.Sprintf("goal %s is %s; concluding it is a human act", id, f.State)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a paused or split goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
 					return nil, err
 				}
 			}
@@ -3143,6 +3143,9 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
+			if f.State == StateSplit {
+				return nil, splitRestoreRequired(f)
+			}
 			if f.State != StateParked {
 				// An unpark's effect is that the goal is not parked, and it is
 				// not: from a browser session, resuming a running goal is the
@@ -3472,6 +3475,9 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			if f, live := t.Live[id]; live {
+				if f.State == StateSplit {
+					return nil, splitRestoreRequired(f)
+				}
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
@@ -3616,6 +3622,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			if f, live := t.Live[id]; live {
+				if f.State == StateSplit {
+					return nil, splitRestoreRequired(f)
+				}
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}

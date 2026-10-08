@@ -163,6 +163,35 @@ func TestIntentDesignAdmissionNoClaim(t *testing.T) {
 	}
 }
 
+func TestIntentDesignRefusesSplitParentWithReviewBudget(t *testing.T) {
+	t.Parallel()
+	const childID = "design-child"
+	bed := newWorkBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		file.State, file.Claimed, file.StopCapability, file.StopFence = goal.StateSplit, nil, nil, nil
+		file.Split = &goal.SplitRecord{Children: []string{childID}, Transaction: file.History[0].Opid, PriorState: goal.StateApproved}
+	})
+	child := queuedIntentGoal(childID, 1)
+	child.SplitFrom, child.Blocked = bed.id, []string{bed.id}
+	bed.addGoal(child)
+	parent := bed.goalFile(bed.id)
+	if parent.State != goal.StateSplit || parent.Budget == nil || parent.Budget.ReviewRoundLimit <= 0 {
+		t.Fatalf("fixture needs a split parent with review rounds: %+v", parent)
+	}
+	bed.starter.author = fakeAuthor(t, "A split parent must not get a design.\n")
+	code, result := designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("split-design.md", "Design the parent.\n"))
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "split into its children") {
+		t.Errorf("split parent was not refused: code=%d %+v", code, result)
+	}
+	want := []string{"metasystem", "goal", "split", bed.id, "--reverse", "--reason", "TEXT"}
+	if result.Next == nil || !slices.Equal(result.Next.Argv, want) {
+		t.Errorf("split refusal must name the reverse remedy %q: %+v", want, result.Next)
+	}
+	if launched := bed.starter.launched(); len(launched) != 0 {
+		t.Errorf("split parent started a design author: %v", launched)
+	}
+}
+
 // TestIntentDesignLifecycle: a running author shows in status G with the
 // wait continuation and is stopped by stop design G through the launch
 // owner; a failed author offers exactly one new attempt; several draft

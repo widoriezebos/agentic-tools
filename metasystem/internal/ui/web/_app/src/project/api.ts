@@ -36,6 +36,8 @@ export type Goal = {
   id: string;
   title: string;
   state: string;
+  split?: { children: string[]; transaction: string; priorState: string; priorParked?: { By: string; At: string; Because: string; Displaced: string; Blocker: string } };
+  splitFrom?: string;
   intent: string;
   /**
    * When slicing started on this goal and which seat started it, where the

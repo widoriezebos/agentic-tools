@@ -89,6 +89,12 @@ func (shown goalShown) view(page *textui.Page) {
 	}
 	page.Section("Intent", "").Text(prose(file.Intent))
 	page.Section("Next step", "").Text(prose(file.NextStep))
+	if file.Split != nil {
+		page.Section("Split into goals", "").Text(strings.Join(file.Split.Children, ", "))
+	}
+	if file.SplitFrom != "" {
+		page.Section("Split from", "").Text(file.SplitFrom)
+	}
 	if file.Parked != nil && file.Parked.Because != "" {
 		page.Section("Waits", "").Text(prose(file.Parked.Because))
 	}
