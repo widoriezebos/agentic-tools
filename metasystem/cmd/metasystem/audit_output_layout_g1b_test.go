@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -97,7 +98,11 @@ func machineLayoutBed(t *testing.T) layoutBed {
 		report.Machines[0].Record.TickAt = machineBedNow.Add(-2 * time.Minute).Format(time.RFC3339)
 		report.Machines[2].Standing, report.Machines[2].Reason = seat.Unreachable, "no presence for 3 h, past 30 min"
 	}
-	return layoutBed{owners: b.owners(), cwd: b.this, now: machineBedNow, replace: layoutPaths(b.this, b.this, "/Users/wido/GitHub/agentic-tools-m1e",
+	owners := b.owners()
+	owners.machines.capacitySources.Load = func(at time.Time) hostload.Sample {
+		return hostload.Sample{At: at.UTC().Format(time.RFC3339Nano), Cores: 18, Load1m: 2, Load5m: 3, Load15m: 4, Available: true}
+	}
+	return layoutBed{owners: owners, cwd: b.this, now: machineBedNow, replace: layoutPaths(b.this, b.this, "/Users/wido/GitHub/agentic-tools-m1e",
 		b.other, "/Users/wido/GitHub/agentic-tools-m1x", b.landing, "/Users/wido/GitHub/agentic-tools-landing", b.home, "/Users/wido/.metasystem-home",
 		b.launchDir, "/Users/wido/.metasystem-launches",
 		"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing", "~/agentic-tools-m1x", "~/GitHub/agentic-tools-m1x")}

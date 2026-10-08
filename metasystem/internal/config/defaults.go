@@ -95,8 +95,8 @@ var coreSettings = []Setting{
 		Meaning: "true only in the template repository's committed metasystem.conf (read there alone); adoption never ships it"},
 	{Key: EvidenceRootKey, Computed: "config.ResolveEvidenceRoot", ProofInput: false,
 		Meaning: "where durable evidence is mirrored; defaults to ~/metasystem-evidence/<checkout name>, outside the repository"},
-	{Key: "proof.admission.top-level-max", Computed: "proofrun.ResolveAdmissionCap", ProofInput: false,
-		Meaning: "host-wide cap on concurrent top-level proof attempts (ruling R-111-m1e); unset is max(1, cores/6), 0 disables it"},
+	{Key: "proof.admission.top-level-max", Default: "1", ProofInput: false,
+		Meaning: "host-wide cap on concurrent top-level proof attempts; unset is one, 0 disables it"},
 
 	// The interface (ui.go). None is a proof input: the interface never
 	// changes what a proof proves, and ui.listen is a machine's own port.
