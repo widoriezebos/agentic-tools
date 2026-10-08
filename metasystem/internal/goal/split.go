@@ -414,14 +414,6 @@ func containsString(values []string, wanted string) bool {
 	return false
 }
 
-func goalPointers(ids []string) string {
-	pointers := make([]string, len(ids))
-	for i, id := range ids {
-		pointers[i] = "goal:" + id
-	}
-	return strings.Join(pointers, ", ")
-}
-
 func splitAfterConfirmed(e Endpoint, tip, parentID, opid string, now time.Time) error {
 	tree, err := loadTreeFor(e, tip)
 	if err != nil {
