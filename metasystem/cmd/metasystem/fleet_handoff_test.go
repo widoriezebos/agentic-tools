@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +70,7 @@ case "$*" in
   "ls-tree -r --name-only $tip -- plans/goals/ records/goals/") printf 'plans/goals/backlog.md\nplans/goals/brief-goal.md\n' ;;
   "ls-tree -r --name-only $tip -- plans/goals/backlog.md") printf 'plans/goals/backlog.md\n' ;;
   "ls-tree --name-only $tip -- plans/goals/backlog.md") printf 'plans/goals/backlog.md\n' ;;
+  'rev-parse --verify --quiet refs/heads/goal/brief-goal') cat "$root/tip" ;;
   'cat-file --batch')
     while IFS= read -r object; do
       case "$object" in
@@ -108,6 +110,9 @@ esac
 			}
 		}
 	})
+	t.Run("abnormal-seat-restarts", testFleetAbnormalSeatRestarts)
+	t.Run("completed-seat-progress", testFleetCompletedSeatProgress)
+	t.Run("unreserved-start-failure", testFleetUnreservedStartFailure)
 	for _, scenario := range []string{"headless", "capture-before-binding", "person-driver", "person-session", "unknown-identity", "reused-pid", "capture-failure", "binding-failure"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
@@ -354,8 +359,21 @@ esac
 			if err := child.Wait(); err != nil {
 				t.Fatalf("predecessor exit: %v", err)
 			}
+			before, err := steward.LoadEvidence(steward.EvidencePath(bed.root()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A planned handoff remains admissible even with a spent dry cap.
+			before.DryRevivals = 3
+			if err := steward.SaveEvidence(bed.root(), steward.EvidencePath(bed.root()), before); err != nil {
+				t.Fatal(err)
+			}
 			if out := admit(); !out.Launched || launches != 1 {
 				t.Fatalf("dead predecessor did not admit successor: %+v launches=%d", out, launches)
+			}
+			after, err := steward.LoadEvidence(steward.EvidencePath(bed.root()))
+			if err != nil || after.DryRevivals != before.DryRevivals || after.AbnormalCount != before.AbnormalCount {
+				t.Fatalf("planned handoff spent an abnormal attempt: %+v %v", after, err)
 			}
 			if out := admit(); out.Launched || launches != 1 {
 				t.Fatalf("successor was repeated: %+v launches=%d", out, launches)
@@ -382,6 +400,21 @@ func (*fleetBriefLauncher) SeatLaunch(string) (steward.SeatLaunchState, error) {
 func (*fleetBriefLauncher) SeatAllowed(string) (bool, string, error) { return true, "", nil }
 
 func fleetSeatBrief(t *testing.T, driver string, now time.Time) string {
+	t.Helper()
+	root := fleetSeatFixture(t, driver, now)
+	launcher := &fleetBriefLauncher{}
+	record, err := steward.StartSeat(root, steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: t.TempDir()}, fleetHandoffCensus{}, steward.SeatSelection{Goal: "brief-goal"})
+	if err != nil || record.LaunchID == "" || launcher.spec.Brief == "" {
+		t.Fatalf("public seat start: %+v %v", record, err)
+	}
+	brief, err := os.ReadFile(launcher.spec.Brief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(brief)
+}
+
+func fleetSeatFixture(t *testing.T, driver string, now time.Time) string {
 	t.Helper()
 	root := t.TempDir()
 	file := &goal.GoalFile{Id: "brief-goal", State: goal.StateApproved, Tier: 1, Intent: "Continue the unit.", Origin: goal.OriginMain,
@@ -412,16 +445,7 @@ func fleetSeatBrief(t *testing.T, driver string, now time.Time) string {
 			t.Fatal(err)
 		}
 	}
-	launcher := &fleetBriefLauncher{}
-	record, err := steward.StartSeat(root, steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: t.TempDir()}, fleetHandoffCensus{}, steward.SeatSelection{Goal: file.Id})
-	if err != nil || record.LaunchID == "" || launcher.spec.Brief == "" {
-		t.Fatalf("public seat start: %+v %v", record, err)
-	}
-	brief, err := os.ReadFile(launcher.spec.Brief)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(brief)
+	return root
 }
 
 func (fleetHandoffCensus) Workers(string) (steward.Workers, error) {
@@ -506,4 +530,199 @@ func startFleetHandoffChild(t *testing.T, root string) (*exec.Cmd, *os.File, *os
 	}
 	readyRead.Close()
 	return child, releaseWrite, observedRead
+}
+
+// The launcher substitutes only process outcomes; the tick reads retained
+// branch tips, reaps seats and rechecks admission through StartSeat.
+type fleetRestartLauncher struct {
+	started func(steward.SeatLaunchSpec) error
+	state   steward.SeatLaunchState
+}
+
+func (l *fleetRestartLauncher) StartSeat(spec steward.SeatLaunchSpec) error { return l.started(spec) }
+func (l *fleetRestartLauncher) SeatLaunch(string) (steward.SeatLaunchState, error) {
+	return l.state, nil
+}
+func (*fleetRestartLauncher) SeatAllowed(string) (bool, string, error) { return true, "", nil }
+
+func testFleetAbnormalSeatRestarts(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"hour-cap", "same-class", "no-progress", "unknown-start"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+			root := fleetSeatFixture(t, "auto", now)
+			launched, restarts := 0, 0
+			launcher := &fleetRestartLauncher{}
+			launcher.started = func(steward.SeatLaunchSpec) error {
+				ev, err := steward.LoadEvidence(steward.EvidencePath(root))
+				if err != nil {
+					return err
+				}
+				if launched > 0 && (ev.AbnormalCount != restarts+1 || !ev.Abnormal[ev.AbnormalCount-1].Pending) {
+					t.Fatalf("seat launched before counting: %+v", ev)
+				}
+				launched++
+				if launched > 1 {
+					restarts++
+				}
+				if scenario == "unknown-start" && launched == 2 {
+					return errors.New("process creation outcome unavailable")
+				}
+				launcher.state = steward.SeatLaunchState{Found: true, Terminal: true, State: "failed", FinishedAt: now.Format(time.RFC3339)}
+				return nil
+			}
+			cfg := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: t.TempDir()}
+			first, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, steward.SeatSelection{Goal: "brief-goal"})
+			if err != nil || first.LaunchID == "" {
+				t.Fatalf("initial seat: %+v %v", first, err)
+			}
+			observe := func(tip string) steward.TickResult {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(root, "tip"), []byte(tip), 0600); err != nil {
+					t.Fatal(err)
+				}
+				result, err := steward.RunTick(root, cfg, fleetHandoffCensus{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			// Initial start consumes no abnormal allowance, even if it ends dry.
+			tick := observe(strings.Repeat("b", 40))
+			if tick.Seat == nil {
+				t.Fatalf("first abnormal retry held: %+v", tick.Decision)
+			}
+			_, err = steward.StartSeat(root, cfg, fleetHandoffCensus{}, *tick.Seat)
+			if scenario == "unknown-start" {
+				if err == nil {
+					t.Fatal("unknown start was reported successful")
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "hour-cap" {
+				launcher.state.State = "cancelled"
+			}
+			tip := strings.Repeat("c", 40)
+			if scenario == "no-progress" {
+				tip = strings.Repeat("b", 40)
+			}
+			tick = observe(tip)
+			if scenario == "hour-cap" {
+				if tick.Seat == nil {
+					t.Fatalf("second abnormal retry held: %+v", tick.Decision)
+				}
+				if _, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, *tick.Seat); err != nil {
+					t.Fatal(err)
+				}
+				launcher.state.State = "failed"
+				tick = observe(strings.Repeat("d", 40))
+			}
+			if tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "machine revive "+root+" (unavailable until fleet-provider-and-session-recovery R2 lands)") {
+				t.Fatalf("public seat tick did not stop: %+v", tick)
+			}
+			if restarts > 2 {
+				t.Fatalf("seat exceeded two restarts: %d", restarts)
+			}
+			var output, problem bytes.Buffer
+			if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "machine revive") {
+				t.Fatalf("seat stop missing from status: %d %s %s", code, &output, &problem)
+			}
+		})
+	}
+}
+
+func testFleetCompletedSeatProgress(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+	root := fleetSeatFixture(t, "auto", now)
+	launched := 0
+	launcher := &fleetRestartLauncher{
+		state: steward.SeatLaunchState{Found: true, Terminal: true, State: "completed", FinishedAt: now.Format(time.RFC3339)},
+	}
+	launcher.started = func(steward.SeatLaunchSpec) error {
+		ev, err := steward.LoadEvidence(steward.EvidencePath(root))
+		if err != nil {
+			return err
+		}
+		if ev.AbnormalCount != 0 || ev.Abnormal != [2]steward.AbnormalRestart{} {
+			t.Fatalf("completed seat with progress reserved an abnormal restart: %+v", ev)
+		}
+		launched++
+		return nil
+	}
+	cfg := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: t.TempDir()}
+	selection := steward.SeatSelection{Goal: "brief-goal"}
+	for i := 0; i < 4; i++ {
+		if record, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection); err != nil || record.LaunchID == "" {
+			t.Fatalf("normal seat start %d: %+v %v", i, record, err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "tip"), []byte(strings.Repeat(string(rune('b'+i)), 40)), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg.Now = cfg.Now.Add(time.Minute)
+		tick, err := steward.RunTick(root, cfg, fleetHandoffCensus{})
+		if err != nil || tick.Seat == nil {
+			t.Fatalf("completed seat with progress stopped the next start: %+v %v", tick.Decision, err)
+		}
+		selection = *tick.Seat
+	}
+	if launched != 4 {
+		t.Fatalf("normal completions stopped automatic starts: %d", launched)
+	}
+}
+
+func testFleetUnreservedStartFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+	root := fleetSeatFixture(t, "auto", now)
+	launched := 0
+	launcher := &fleetRestartLauncher{}
+	launcher.started = func(steward.SeatLaunchSpec) error {
+		ev, err := steward.LoadEvidence(steward.EvidencePath(root))
+		if err != nil {
+			return err
+		}
+		if launched == 0 && ev.AbnormalCount != 0 {
+			t.Fatalf("initial start was reserved: %+v", ev)
+		}
+		launched++
+		// A supervisor can start and die before Manager.Start returns its error.
+		child := exec.CommandContext(t.Context(), "/bin/sh", "-c", testexec.ReadyPrologue+"exit 1")
+		if err := testexec.StartReady(child); err != nil {
+			t.Fatal(err)
+		}
+		if err := child.Wait(); err == nil || child.ProcessState.ExitCode() != 1 {
+			t.Fatalf("supervisor did not fail after starting: %v", err)
+		}
+		launcher.state = steward.SeatLaunchState{Found: true, Terminal: true, State: "failed", FinishedAt: now.Format(time.RFC3339)}
+		return errors.New("child-start: executable unavailable")
+	}
+	cfg := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: t.TempDir()}
+	selection := steward.SeatSelection{Goal: "brief-goal"}
+	record, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection)
+	if err == nil || record.Outcome != steward.SeatStartFailed || record.LaunchState != "" {
+		t.Fatalf("unreserved failed start: %+v %v", record, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tip"), []byte(strings.Repeat("b", 40)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, elapsed := range []time.Duration{time.Minute, 2 * time.Hour} {
+		cfg.Now = now.Add(elapsed)
+		tick, err := steward.RunTick(root, cfg, fleetHandoffCensus{})
+		if err != nil || tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "unknown launch outcome") {
+			t.Fatalf("unknown unreserved start admitted a restart: %+v %v", tick.Decision, err)
+		}
+		if _, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection); err == nil || !strings.Contains(err.Error(), "unknown launch outcome") {
+			t.Fatalf("locked start bypassed the unknown outcome hold: %v", err)
+		}
+	}
+	if launched != 1 {
+		t.Fatalf("unknown start launched %d automatic restarts; expected none", launched-1)
+	}
+	var output, problem bytes.Buffer
+	if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "unknown launch outcome") || !strings.Contains(output.String(), "machine revive "+root+" (unavailable until fleet-provider-and-session-recovery R2 lands)") {
+		t.Fatalf("unknown outcome hold missing from public status: %d %s %s", code, &output, &problem)
+	}
 }

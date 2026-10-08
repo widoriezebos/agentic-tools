@@ -8,6 +8,7 @@ package steward
 // on record.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
@@ -146,6 +146,10 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
+	abnormal := it.Reason != seatHandoffReason && it.Reason != "seatIdle"
+	if abnormal && ev.AbnormalCount > 0 && ev.AbnormalCount <= len(ev.Abnormal) && ev.Abnormal[ev.AbnormalCount-1].Pending {
+		return stopAbnormalRevival(repoRoot, *it, abnormalRemedy(repoRoot, "the previous automatic restart has an unknown launch outcome"))
+	}
 	// The one-active-continuation guard must not count OUR OWN intent.
 	d, _, err := decideForRevivalWithDependencies(repoRoot, cfg, census, ev, *it, dependencies)
 	if err != nil {
@@ -166,7 +170,8 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	// consume-and-launch calls themselves; an outage beginning inside
 	// it costs at most one dry revival, which the hint's contract
 	// accepts.
-	if _, standing := outage.StandingAt(repoRoot, time.Now()); standing {
+	// TODO: consume the dependent provider identity when shared provider marks are merged.
+	if _, standing := standingProviderOutage(repoRoot, cfg.now(), nil); standing {
 		reason := "the model provider is overloaded; holding revival until the provider recovers"
 		if it.Reason == seatHandoffReason {
 			reason = fmt.Sprintf("handoff %s waits: the model provider became overloaded before launch (session pid %d ended)", it.Nonce, it.Handoff.Predecessor.Pid)
@@ -206,6 +211,26 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 			return ReviveOutcome{}, fmt.Errorf("handoff %s launch refused because its hold notice could not be cleared: %w", it.Nonce, err)
 		}
 	}
+	if abnormal {
+		class, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now())
+		if readErr != nil {
+			return ReviveOutcome{}, readErr
+		}
+		if reason != "" {
+			return stopAbnormalRevival(repoRoot, *it, reason)
+		}
+		abnormal = class != ""
+		if abnormal {
+			ev = reserveAbnormalRestart(ev, cfg.now(), class, it.Nonce)
+		}
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return ReviveOutcome{}, err
+		}
+	}
+	ev.CurrentSeat, ev.CurrentContinuation = "", it.Nonce
+	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+		return ReviveOutcome{}, err
+	}
 	consumed, err := ConsumeIntent(repoRoot, it.Nonce)
 	if err != nil {
 		return ReviveOutcome{}, err
@@ -213,7 +238,9 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	// The attempt counts against the dry cap the moment it is
 	// irreversible — before dispatch, so no crash window between
 	// launch and bookkeeping can spend attempts the cap never saw.
-	ev = RecordRevival(ev)
+	if abnormal {
+		ev = RecordRevival(ev)
+	}
 	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err
 	}
@@ -222,6 +249,12 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	}
 	if err := StampLaunch(repoRoot, consumed.Nonce); err != nil {
 		return ReviveOutcome{}, err
+	}
+	if abnormal {
+		ev.Abnormal[ev.AbnormalCount-1].Pending = false
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return ReviveOutcome{}, err
+		}
 	}
 	return ReviveOutcome{Launched: true, Reason: "continuation dispatched for " + consumed.Goal}, nil
 }
@@ -309,7 +342,10 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 			others++
 		}
 	}
-	now := revivalNow()
+	now := cfg.now()
+	if cfg.Now.IsZero() {
+		now = revivalNow()
+	}
 	_, providerOutage := standingProviderOutage(repoRoot, now, nil)
 	decision := Decide(Snapshot{
 		Work:               work,
@@ -375,4 +411,152 @@ func ResumableIntent(repoRoot string) (string, bool, error) {
 		return it.Nonce, true, nil
 	}
 	return "", false, nil
+}
+
+// AbnormalRestart retains a reservation before process creation. Pending
+// means dispatch was not durably confirmed, so time alone cannot admit another.
+type AbnormalRestart struct {
+	At      time.Time `json:"at"`
+	Class   string    `json:"class"`
+	Marks   Marks     `json:"marks"`
+	Nonce   string    `json:"nonce,omitempty"`
+	Pending bool      `json:"pending"`
+}
+
+func abnormalRemedy(root, reason string) string {
+	return reason + fmt.Sprintf("; person's remedy: machine revive %s (unavailable until fleet-provider-and-session-recovery R2 lands)", root)
+}
+
+// abnormalRestartState reads the latest death and retained progress, never
+// a notification or a re-arm generation. Arbitration protects its callers.
+func abnormalRestartState(root string, ev Evidence, now time.Time) (string, string, error) {
+	class, progressed := "process-lost", false
+	if ev.AbnormalCount < 0 || ev.AbnormalCount > len(ev.Abnormal) {
+		return class, abnormalRemedy(root, "the abnormal restart history is unreadable"), nil
+	}
+	var last *AbnormalRestart
+	if ev.AbnormalCount > 0 {
+		last = &ev.Abnormal[ev.AbnormalCount-1]
+		progressed = ev.Marks != last.Marks
+		if last.Pending {
+			return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
+		}
+	}
+	records, err := readSeatRecords(root)
+	if err != nil {
+		return "", "", err
+	}
+	if ev.CurrentSeat != "" && len(records) == 0 {
+		return "", "", fmt.Errorf("current seat launch %s has no retained record", ev.CurrentSeat)
+	}
+	nonce := ev.CurrentContinuation
+	if nonce == "" && ev.CurrentSeat == "" && last != nil {
+		nonce = last.Nonce
+	}
+	if len(records) > 0 && nonce == "" {
+		current := records[len(records)-1]
+		if ev.CurrentSeat != "" {
+			found := false
+			for _, record := range records {
+				if record.LaunchID == ev.CurrentSeat {
+					current, found = record, true
+					break
+				}
+			}
+			if !found {
+				return "", "", fmt.Errorf("current seat launch %s is missing from the retained records", ev.CurrentSeat)
+			}
+		}
+		if current.Outcome == SeatStartFailed {
+			return class, abnormalRemedy(root, "the previous seat start has an unknown launch outcome"), nil
+		}
+		class = current.LaunchState
+		if class == "missing" {
+			return class, abnormalRemedy(root, "the seat launch outcome is unknown"), nil
+		}
+		progressed = current.Outcome == SeatProgress
+		if class == "completed" {
+			class = SeatNoProgress
+			if progressed {
+				class = ""
+			}
+		}
+		if current.Outcome == SeatProviderLimit {
+			class = ""
+		}
+	} else if nonce != "" {
+		intent, err := ConsumedIntent(root, nonce)
+		if err != nil {
+			return "", "", err
+		}
+		if !intent.LaunchStamped {
+			return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
+		}
+		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", intent.JobId+".json"))
+		if err != nil {
+			return "", "", err
+		}
+		var record struct {
+			Status  string `json:"status"`
+			EndedAt string `json:"endedAt"`
+		}
+		if err := json.Unmarshal(data, &record); err != nil {
+			return "", "", err
+		}
+		if record.Status == "" || record.EndedAt == "" {
+			return class, abnormalRemedy(root, "the previous automatic restart outcome is unknown"), nil
+		}
+		class = record.Status
+	}
+	if class == "" {
+		return "", "", nil
+	}
+	if last != nil && !progressed {
+		return class, abnormalRemedy(root, "the automatic revival produced no retained work progress"), nil
+	}
+	count := 0
+	for i, attempt := range ev.Abnormal {
+		if i >= ev.AbnormalCount {
+			break
+		}
+		if attempt.At.IsZero() || attempt.Class == "" {
+			return class, abnormalRemedy(root, "the abnormal restart history is unreadable"), nil
+		}
+		if attempt.At.After(now.Add(-time.Hour)) {
+			count++
+			if attempt.Class == class {
+				return class, abnormalRemedy(root, "the same death class occurred twice: "+class), nil
+			}
+		}
+	}
+	if count >= 2 {
+		return class, abnormalRemedy(root, "two automatic abnormal restarts were attempted in the rolling hour"), nil
+	}
+	return class, "", nil
+}
+
+func reserveAbnormalRestart(ev Evidence, now time.Time, class, nonce string) Evidence {
+	retained, count := [2]AbnormalRestart{}, 0
+	for i, attempt := range ev.Abnormal {
+		if i >= ev.AbnormalCount {
+			break
+		}
+		if attempt.At.After(now.Add(-time.Hour)) {
+			retained[count] = attempt
+			count++
+		}
+	}
+	retained[count] = AbnormalRestart{At: now.UTC(), Class: class, Marks: ev.Marks, Nonce: nonce, Pending: true}
+	ev.Abnormal, ev.AbnormalCount = retained, count+1
+	return ev
+}
+
+func stopAbnormalRevival(root string, intent Intent, reason string) (ReviveOutcome, error) {
+	if err := CancelIntent(root, intent.Nonce, reason); err != nil {
+		return ReviveOutcome{}, err
+	}
+	if err := QueueNotification(root, PendingNotification{Nonce: "verdict-" + string(VerdictStalledDead), Message: "steward: " + reason}); err != nil {
+		return ReviveOutcome{}, err
+	}
+	return ReviveOutcome{Held: true, Escalate: true, Reason: reason}, nil
 }

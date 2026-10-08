@@ -460,6 +460,15 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if closed {
 		return Decision{verdict, ActNone, reason}, nil, true
 	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	}
+	if _, reason, err := abnormalRestartState(repoRoot, ev, now); err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	} else if reason != "" {
+		return Decision{verdict, ActNotify, reason}, nil, true
+	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
 	return d, selection, true
 }
@@ -500,6 +509,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	}
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	dependencies.Now = cfg.now
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
@@ -568,6 +578,21 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return SeatRecord{}, err
+	}
+	class := ""
+	if len(records) > 0 || ev.AbnormalCount > 0 {
+		var reason string
+		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now())
+		if err != nil {
+			return SeatRecord{}, err
+		}
+		if reason != "" {
+			return SeatRecord{}, errors.New(reason)
+		}
+	}
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
 		return SeatRecord{}, err
@@ -614,6 +639,13 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	// The steward's own root holds both its run state and the installation's
 	// settings, so it names that root as the seat's installation too.
+	ev.CurrentSeat, ev.CurrentContinuation = id, ""
+	if class != "" {
+		ev = reserveAbnormalRestart(ev, dependencies.Now(), class, "")
+	}
+	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+		return record, err
+	}
 	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
@@ -621,6 +653,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return record, fmt.Errorf("seat launch %s did not start (%v), and its record could not close: %w", id, err, writeErr)
 		}
 		return record, fmt.Errorf("seat launch %s did not start: %w", id, err)
+	}
+	if class != "" {
+		ev.Abnormal[ev.AbnormalCount-1].Pending = false
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return record, err
+		}
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,

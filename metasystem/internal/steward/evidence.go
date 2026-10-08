@@ -24,9 +24,13 @@ type Marks struct {
 
 // Evidence is the persisted state between ticks.
 type Evidence struct {
-	Marks             Marks `json:"marks"`
-	TicksSinceAdvance int   `json:"ticksSinceAdvance"`
-	DryRevivals       int   `json:"dryRevivals"`
+	Marks               Marks              `json:"marks"`
+	TicksSinceAdvance   int                `json:"ticksSinceAdvance"`
+	DryRevivals         int                `json:"dryRevivals"`
+	Abnormal            [2]AbnormalRestart `json:"abnormal,omitempty"`
+	CurrentSeat         string             `json:"currentSeat,omitempty"`
+	CurrentContinuation string             `json:"currentContinuation,omitempty"`
+	AbnormalCount       int                `json:"abnormalCount,omitempty"`
 	// Degraded counts the ticks in a row whose verdict was degraded.
 	Degraded int `json:"degraded,omitempty"`
 }
@@ -36,7 +40,8 @@ type Evidence struct {
 // identical marks age by one tick.
 func Observe(prev Evidence, cur Marks) Evidence {
 	if cur != prev.Marks {
-		return Evidence{Marks: cur}
+		prev.Marks, prev.TicksSinceAdvance, prev.DryRevivals, prev.Degraded = cur, 0, 0, 0
+		return prev
 	}
 	prev.TicksSinceAdvance++
 	return prev

@@ -110,8 +110,6 @@ func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers
 	switch {
 	case others > 0:
 		return Decision{VerdictStalledDead, ActHold, fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because another continuation is open and unreaped", intent.Nonce, binding.Predecessor.Pid)}, workReason, nil
-	case ev.DryRevivals >= cfg.MaxRevivals:
-		return Decision{VerdictStalledDead, ActNotify, fmt.Sprintf("handoff %s ended because %d revivals produced no progress", intent.Nonce, ev.DryRevivals)}, workReason, nil
 	case providerOutage:
 		return Decision{VerdictStalledDead, ActHold, fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because the model provider is overloaded", intent.Nonce, binding.Predecessor.Pid)}, workReason, nil
 	default:

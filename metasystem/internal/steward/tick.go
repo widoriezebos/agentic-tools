@@ -541,6 +541,13 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if err != nil {
 		return TickResult{}, err
 	}
+	if d.Action == ActRevive && selection == nil {
+		if _, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now()); readErr != nil {
+			d = Decision{VerdictDegraded, ActNotify, readErr.Error()}
+		} else if reason != "" {
+			d.Action, d.Reason = ActNotify, reason
+		}
+	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every
 	// tick, and its notice waits until it holds degradedNoticeTicks in a row.

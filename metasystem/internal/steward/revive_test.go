@@ -430,6 +430,7 @@ func TestSeatIdleIntentStillHonorsOneActiveContinuationGuard(t *testing.T) {
 }
 
 func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
+	t.Parallel()
 	t.Run("alive predecessor", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000001")
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
@@ -586,12 +587,13 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		}
 	})
 
-	t.Run("dry revival cap", func(t *testing.T) {
+	t.Run("planned handoff ignores dry revival cap", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "3000000000000007")
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 2}, deadCensus(), Evidence{DryRevivals: 2}, intent)
-		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "2 revivals produced no progress") {
-			t.Fatalf("the existing dry cap must terminate a dead-predecessor handoff: %+v %v", decision, err)
+		if err != nil || decision.Action != ActRevive || !strings.Contains(decision.Reason, "may replace observed-dead predecessor") {
+			t.Fatalf("a planned handoff must not spend or be stopped by the abnormal cap: %+v %v", decision, err)
 		}
 	})
 
@@ -624,7 +626,8 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		}
 	})
 
-	t.Run("dry cap precedes outage after death", func(t *testing.T) {
+	t.Run("provider hold survives spent dry cap", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "300000000000000e")
 		root := revival.root
 		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
@@ -632,8 +635,8 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		}
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 1}, deadCensus(), Evidence{DryRevivals: 1}, intent)
-		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "revivals produced no progress") {
-			t.Fatalf("the existing dry cap must terminate even during an outage: %+v %v", decision, err)
+		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "provider is overloaded") {
+			t.Fatalf("an outage must hold a planned handoff without spending the abnormal cap: %+v %v", decision, err)
 		}
 	})
 
@@ -686,6 +689,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 }
 
 func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
+	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "4000000000000001")
 	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 
@@ -756,8 +760,8 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
 		t.Fatalf("a launched handoff must leave no stale hold notice: %+v %v", pending, err)
 	}
-	if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 1 {
-		t.Fatalf("only the irreversible launch spends one dry revival: %+v %v", evidence, err)
+	if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 0 || evidence.AbnormalCount != 0 {
+		t.Fatalf("a planned handoff must not spend an abnormal attempt: %+v %v", evidence, err)
 	}
 }
 
