@@ -123,9 +123,9 @@ func TestReportListsDesignAndReadUsageAgainstTheBaseline(t *testing.T) {
 	wanted := []string{
 		baseline,
 		"job id=design-usage kind=design requests=4 tool-calls=7 tokens=243237 cache-read=40000 output=237 peak-context=90000 material=- verdict=- compactions=1 tokens-vs-baseline=0.10",
-		"job id=read-usage kind=read requests=2 tool-calls=3 tokens=370 cache-read=200 output=40 peak-context=250 material=3 verdict=VERDICT: fix first (3 material findings) compactions=0",
+		"job id=read-usage kind=read requests=2 tool-calls=3 tokens=370 cache-read=200 output=40 peak-context=250 material=- verdict=VERDICT: fix first (3 material findings) compactions=0",
 		"job id=read-other kind=read requests=0 tool-calls=0 tokens=0 cache-read=0 output=0 peak-context=0 material=- verdict=VERDICT: investigate compactions=0",
-		"job id=read-land kind=read requests=0 tool-calls=0 tokens=0 cache-read=0 output=0 peak-context=0 material=0 verdict=VERDICT: land compactions=0",
+		"job id=read-land kind=read requests=0 tool-calls=0 tokens=0 cache-read=0 output=0 peak-context=0 material=- verdict=VERDICT: land compactions=0",
 		"job id=accepted-critique-1 kind=critique requests=0 tool-calls=0 tokens=0 cache-read=0 output=0 peak-context=0 material=1 verdict=VERDICT: revise compactions=0",
 		"job id=open-critique-1 kind=critique requests=0 tool-calls=0 tokens=0 cache-read=0 output=0 peak-context=0 material=0 verdict=VERDICT: land compactions=0",
 		"round goal=accepted n=1 design=- critique=accepted-critique-1 design-tokens=- design-peak-context=- material=1 verdict=VERDICT: revise",

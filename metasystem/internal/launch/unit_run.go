@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,7 +21,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,22 +40,26 @@ const (
 )
 
 type UnitRunRecord struct {
-	ID            string      `json:"id"`
-	Unit          string      `json:"unit"`
-	Goal          string      `json:"goal"`
-	Worktree      string      `json:"worktree"`
-	Base          string      `json:"base"`
-	Plan          string      `json:"plan"`
-	PlanDirectory string      `json:"planDirectory"`
-	State         string      `json:"state"`
-	Rounds        []UnitRound `json:"rounds"`
+	ReviewCloseReason string `json:"reviewCloseReason,omitempty"`
+
+	CorrectionBudget *int        `json:"correctionBudget,omitempty"`
+	PolicyError      string      `json:"policyError,omitempty"`
+	ID               string      `json:"id"`
+	Unit             string      `json:"unit"`
+	Goal             string      `json:"goal"`
+	Worktree         string      `json:"worktree"`
+	Base             string      `json:"base"`
+	Plan             string      `json:"plan"`
+	PlanDirectory    string      `json:"planDirectory"`
+	State            string      `json:"state"`
+	Rounds           []UnitRound `json:"rounds"`
 	// BuildModel and BuildEffort are the unit's own choice over the
 	// configured build lane; MaxRounds is its approved ceiling on rounds.
 	// All three are fixed when the run starts and kept for every round.
 	BuildModel  string `json:"buildModel,omitempty"`
 	BuildEffort string `json:"buildEffort,omitempty"`
 	MaxRounds   int    `json:"maxRounds,omitempty"`
-	// CountedCap limits rounds without an environment cause; zero imposes no cap.
+	// CountedCap limits demonstrated own defects; zero imposes no cap.
 	CountedCap int `json:"countedCap,omitempty"`
 	// Subjects binds completed rounds to their committed goal-branch
 	// subjects; ReviewSubject is its only writer.
@@ -60,15 +68,25 @@ type UnitRunRecord struct {
 	// Revisions are the retained correction requests; Revise is their only
 	// writer.
 	Revisions []UnitRevision `json:"revisions,omitempty"`
+	Mutation  *identity.Ref  `json:"mutation,omitempty"`
 }
 
 type UnitRound struct {
-	BuildBriefSHA256 string `json:"buildBriefSha256,omitempty"`
-	Number           int    `json:"number"`
-	Directory        string `json:"directory"`
-	FollowUp         string `json:"followUp"`
-	Outcome          string `json:"outcome"`
-	Cause            string `json:"cause,omitempty"`
+	Result           *RoundResult       `json:"result,omitempty"`
+	GapMessage       string             `json:"gapMessage,omitempty"`
+	BuildLines       int64              `json:"buildLines,omitempty"`
+	DeclaredLines    int64              `json:"declaredLines,omitempty"`
+	SizeAcceptedBy   string             `json:"sizeAcceptedBy,omitempty"`
+	Reads            []readsubject.Read `json:"reads,omitempty"`
+	Stop             *loopstop.Stop     `json:"stop,omitempty"`
+	UnknownRetries   int                `json:"unknownRetries,omitempty"`
+	Transferred      bool               `json:"transferred,omitempty"`
+	BuildBriefSHA256 string             `json:"buildBriefSha256,omitempty"`
+	Number           int                `json:"number"`
+	Directory        string             `json:"directory"`
+	FollowUp         string             `json:"followUp"`
+	Outcome          string             `json:"outcome"`
+	Cause            string             `json:"cause,omitempty"`
 	// Material is -1 when the examination has no readable return.
 	Material   int        `json:"material"`
 	Repeats    int        `json:"repeats,omitempty"`
@@ -94,6 +112,17 @@ type UnitStep struct {
 	Rerun         bool          `json:"rerun,omitempty"`
 	Verdict       string        `json:"verdict,omitempty"`
 	VerdictCounts *bool         `json:"verdictCounts,omitempty"`
+
+	Moved       []string            `json:"moved,omitempty"`
+	RetryBy     string              `json:"retryBy,omitempty"`
+	RetryReason string              `json:"retryReason,omitempty"`
+	RetryLaunch string              `json:"retryLaunch,omitempty"`
+	Deadline    bool                `json:"deadline,omitempty"`
+	LaunchIDs   []string            `json:"launchIds,omitempty"`
+	Retained    *StartSpec          `json:"retained,omitempty"`
+	Before      *repositorySnapshot `json:"before,omitempty"`
+	Comparison  *unitComparison     `json:"comparison,omitempty"`
+	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -121,25 +150,38 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
-	Manager *Manager
-	Git     GitRunner
-	Root    string
+	FreezeCheck func(UnitPlan, string) (UnitPlan, error)
+	// CriticCustody observes or cancels every committed examination of this run.
+	CriticCustody func(UnitRunRecord, bool) (bool, error)
+	recoverRun    string
+	Manager       *Manager
+	Git           GitRunner
+	Root          string
 	// ExaminationRoot is the caller's installation; each examination carries its own return path.
 	ExaminationRoot string
 	AfterWrite      func(UnitRunRecord) error
-	// BeforeModelLaunch, when set, is asked before each new build or read
+	// BeforeModelLaunch, when set, is asked before each new build, proof or read
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// CollectLaunch settles the physical execution through its reservation owner.
+	CollectLaunch func(UnitRunRecord, Record, string) error
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
-	PlanProof func(UnitPlan) ([]ProofCommand, error)
+	PlanProof         func(UnitPlan) ([]ProofCommand, error)
+	InheritedFindings func(string, string) ([]readsubject.Finding, error)
+	ReviewPolicy      func() (string, error)
+	ExaminationRead   func(string, string) (readsubject.Read, error)
+	KnownFlake        func(Record) (bool, error)
+	RecordMain        func(Record, string, string) error
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
 	// run records it.
 	options   UnitOptions
 	resolving bool
+	tree      *treeCommand
+	mutation  string
 }
 
 func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
@@ -166,6 +208,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err = runner.admitRound(plan, plan.Build.Brief, nil); err != nil {
 			return UnitResult{}, err
 		}
+		if runner.tree == nil {
+			return treeCall(runner, plan.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.Advance(request) })
+		}
 		record, err = runner.newRun(plan)
 		if err != nil {
 			return UnitResult{}, err
@@ -175,9 +220,17 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err != nil {
 			return UnitResult{}, err
 		}
+		if runner.tree == nil {
+			return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.Advance(request) })
+		}
 		plan, err = readUnitPlan(record.Plan, record.PlanDirectory)
 		if err != nil {
 			return UnitResult{}, err
+		}
+	}
+	if record.State != "cancelled" {
+		if err := runner.reserveTree(record); err != nil {
+			return UnitResult{Record: record}, err
 		}
 	}
 	lock, err := runner.lock(record.ID)
@@ -189,6 +242,14 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		record, err = runner.read(record.ID)
 		if err != nil {
 			return UnitResult{}, err
+		}
+	}
+	if record.State == "cancelled" {
+		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
+	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return UnitResult{Record: record}, err
 		}
 	}
 	if runner.named != nil {
@@ -218,6 +279,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 	}
 	if request.FollowUp != "" {
+		if err := runner.allowCorrection(record); err != nil {
+			return UnitResult{Record: record}, err
+		}
 		if record.MaxRounds > 0 && len(record.Rounds) >= record.MaxRounds {
 			return UnitResult{}, roundLimit(record, len(record.Rounds))
 		}
@@ -327,6 +391,19 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
 		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds, CountedCap: int(settings.UnitCountedRounds)}
+	policy := "auto"
+	if runner.ReviewPolicy != nil {
+		value, readErr := runner.ReviewPolicy()
+		if readErr != nil {
+			return UnitRunRecord{}, readErr
+		}
+		policy = value
+	}
+	budget, err := correctionBudget(policy, record)
+	if err != nil {
+		return UnitRunRecord{}, err
+	}
+	record.CorrectionBudget = &budget
 	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel)}
 	if plan.HasRead() {
 		round.ReadModel = choose(plan.Read.Model, settings.ReadModel)
@@ -362,15 +439,33 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 
 func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, deadline time.Time) (UnitResult, error) {
 	round := &record.Rounds[len(record.Rounds)-1]
+	if runner.FreezeCheck != nil {
+		var err error
+		plan.Build.Brief = choose(round.FollowUp, plan.Build.Brief)
+		plan, err = runner.roundProofPlan(plan, round.Directory, true)
+		if err != nil {
+			return UnitResult{Record: *record}, err
+		}
+	}
 	brief, previous := plan.Build.Brief, []string(nil)
 	if round.FollowUp != "" {
 		brief = round.FollowUp
 		previous = readOutputs(runner.Manager, record.Rounds[len(record.Rounds)-2])
+		prior := record.Rounds[len(record.Rounds)-2]
+		if prior.Outcome == "build-gap" {
+			previous = append(previous, record.Plan, filepath.Join(prior.Directory, "worktree.diff"))
+			if _, err := os.Stat(prior.GapMessage); err == nil {
+				previous = append(previous, prior.GapMessage)
+			}
+		}
 		for _, revision := range record.Revisions {
 			if revision.Attempt == round.Number && revision.Decisions != "" {
 				previous = append(previous, revision.Decisions)
 			}
 		}
+	}
+	if plan.Check != nil {
+		brief = plan.Build.Brief
 	}
 	buildCount, err := runner.ensureBuildSteps(record, round, plan, brief)
 	if err != nil {
@@ -387,6 +482,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 	}
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
+	if round.Steps[0].LaunchID == "" {
+		if err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(round.Directory, "build-before", "worktree.diff")); err != nil {
+			return UnitResult{}, err
+		}
+	}
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
 		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
@@ -410,6 +510,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return runner.finish(record, round, "build-failed")
 		}
 	}
+	if held, err := runner.freezeBuildOutcome(record, round, plan, buildCount); err != nil || held {
+		return UnitResult{Record: *record, Round: round.Number}, err
+	}
 	planned, err := runner.roundProofPlan(plan, round.Directory, len(round.Steps) > buildCount)
 	if err != nil {
 		round.Steps = append(round.Steps, UnitStep{Name: "proof:plan", State: StepFailed, Reason: err.Error()})
@@ -422,6 +525,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return runner.finish(record, round, "proof-red")
 	}
 	plan = planned
+	if round.Result != nil {
+		commands, err := json.Marshal(proofCommands(plan))
+		if err != nil {
+			return UnitResult{}, err
+		}
+		round.Result.ProofIdentity = digestHex(commands)
+	}
 	if len(round.Steps) == buildCount {
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
@@ -434,7 +544,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return UnitResult{}, err
 	}
 	commands := proofCommands(plan)
-	before, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	beforeProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	if IsCode(err, "UNIT_TREE_CHANGED") {
+		return runner.treeMoved(record, round)
+	}
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -452,13 +565,34 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
+		if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
+			return runner.result(*record, round, &round.Steps[index], capped), err
+		}
 		red = red || round.Steps[index].State != StepPassed
+		if red {
+			if err := runner.skipAfter(record, round, index+1, "proof-red"); err != nil {
+				return UnitResult{}, err
+			}
+			break
+		}
 	}
-	after, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	afterProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	if IsCode(err, "UNIT_TREE_CHANGED") {
+		return runner.treeMoved(record, round)
+	}
 	if err != nil {
 		return UnitResult{}, err
 	}
-	moved := before.changed(after)
+	var moved []string
+	if beforeProof != afterProof {
+		moved = append(moved, "worktree")
+	}
+	for _, step := range round.Steps[buildCount:] {
+		moved = append(moved, step.Moved...)
+	}
+	if len(moved) > 0 {
+		round.Cause = "environment"
+	}
 	diffPath := filepath.Join(round.Directory, "worktree.diff")
 	if _, err := os.Stat(diffPath); os.IsNotExist(err) {
 		if err := runner.writeDiff(plan.Worktree, plan.Base, diffPath); err != nil {
@@ -524,6 +658,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		return runner.result(*record, round, &round.Steps[stop], capped), err
 	}
+	afterRead, err := runner.snapshotRepository(plan.Worktree)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if afterRead != afterProof {
+		return runner.treeMoved(record, round)
+	}
 	return runner.finish(record, round, outcome)
 }
 
@@ -534,14 +675,22 @@ func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofP
 	} else if !os.IsNotExist(err) {
 		return plan, err
 	}
-	if runner.PlanProof == nil || proofPlanned {
-		return plan, nil
+	if runner.FreezeCheck != nil {
+		var err error
+		plan, err = runner.FreezeCheck(plan, directory)
+		if err != nil {
+			return plan, err
+		}
 	}
-	commands, err := runner.PlanProof(plan)
-	if err != nil || commands == nil {
-		return plan, err
+	if plan.Check == nil && runner.PlanProof != nil && !proofPlanned {
+		commands, err := runner.PlanProof(plan)
+		if err != nil {
+			return plan, err
+		}
+		if commands != nil {
+			plan.Proof = commands
+		}
 	}
-	plan.Proof = commands
 	if err := plan.resolveAndValidate(directory); err != nil {
 		return plan, err
 	}
@@ -556,18 +705,29 @@ func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofP
 // readSequence is the round's reads under the shared read partition policy.
 func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string) readSequence {
 	return readSequence{driver: runner.driver(record, round), model: round.ReadModel, diff: diffPath, serial: len(plan.Read.Outputs) > 0,
-		spec: StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
+		spec: StartSpec{StopInputs: true, Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
 			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, Round: round.Number, MaxRounds: record.MaxRounds}}
 }
 
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
-	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: runner.Manager.Start,
-		save: func() error { return runner.save(*record) },
+	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
+		spec.wait = runner.CommandWait
+		return runner.Manager.Start(spec)
+	},
+		save: func() error {
+			if err := runner.collectLaunches(*record, *round); err != nil {
+				return err
+			}
+			return runner.save(*record)
+		}, unit: true, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
 		before: func(spec StartSpec) error {
-			if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
+			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+						return err
+					}
 					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
 				}
 			}
@@ -668,8 +828,11 @@ func appendReadPacket(data []byte, record Record) []byte {
 	// A read that declares its report file names it: the reader cannot
 	// otherwise know where the report it must leave belongs.
 	var outputs []string
-	if record.Kind == "read" && json.Unmarshal(record.AdapterData["declaredOutputs"], &outputs) == nil && len(outputs) == 1 {
+	if record.Kind == "read" && json.Unmarshal(record.AdapterData["declaredOutputs"], &outputs) == nil && len(outputs) >= 1 {
 		data = append(data, []byte("\nWrite your complete report, ending with its VERDICT line, to exactly this file: "+outputs[0]+"\nThe read is not complete until that file exists.\n")...)
+	}
+	if record.Kind == "read" && len(outputs) == 2 {
+		data = append(data, []byte("\nAlso write structured findings to "+outputs[1]+". The JSON object requires findings (an array, including empty) and verdictMaterialCount. Each finding requires severity, boolean material, class (regression, weakened-test, incomplete-item, false-premise, faked-seam, missing-reader, scope, other), claim, evidence, where (repository-relative path without line suffix), change, and optional resolves (prior read-qualified finding id) or relation. Class other requires relation naming its rule. The prose VERDICT must agree with the structured material count.\n")...)
 	}
 	return data
 }
@@ -693,24 +856,19 @@ func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, fro
 
 func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcome string) (UnitResult, error) {
 	round.Outcome, record.State = outcome, "awaiting-judgement"
-	round.Cause = roundCause(round.Steps)
-	material, err := runner.roundMaterial(*record, *round)
-	if err != nil {
-		return UnitResult{}, err
+	if round.Cause == "" {
+		round.Cause = roundCause(round.Steps)
 	}
-	round.Material = material
-	// Keep relations before a later read replaces the findings file.
-	round.Repeats = 0
-	for _, step := range round.Steps {
-		if !strings.HasPrefix(step.Name, "read") || !unitStepVerdictCounts(step) || step.LaunchID == "" {
-			continue
+	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
+		round.Material = -1
+	} else {
+		if err := runner.collectRoundRead(record, round); err != nil {
+			return UnitResult{}, err
 		}
-		if read, err := runner.Manager.Store.Read(step.LaunchID); err == nil {
-			for _, output := range read.Outputs {
-				if data, err := os.ReadFile(output.Path); err == nil {
-					round.Repeats += measuredReadRepeats(string(data))
-				}
-			}
+	}
+	if round.Cause != "" && round.Stop == nil {
+		if err := runner.holdFailedStep(record, round); err != nil {
+			return UnitResult{}, err
 		}
 	}
 	if err := runner.save(*record); err != nil {
@@ -720,18 +878,17 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 	return UnitResult{Record: *record, Round: round.Number}, nil
 }
 
-// A red proof or a counting read judges the code, even if a launch was lost.
+// Attribution supplies own only when evidence demonstrates a defect.
 func roundCause(steps []UnitStep) string {
-	cause := ""
 	for _, step := range steps {
-		if strings.HasPrefix(step.Name, "proof:") && step.State == StepFailed || strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
-			return ""
-		}
-		if cause == "" {
-			cause = step.Cause
+		if step.State == StepFailed {
+			if (loopstop.Cause{Kind: step.Cause}).Valid() {
+				return step.Cause
+			}
+			return "unclassified"
 		}
 	}
-	return cause
+	return ""
 }
 
 // publishJudgement puts the finished round on the board as judgement: the
@@ -744,6 +901,12 @@ func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
 	}
 	card := board.Card{Seat: runner.Manager.Seat, Goal: record.Goal, Stage: board.StageJudgement,
 		Round: judgementRound(record, number), Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
+	if len(record.Rounds) > 0 {
+		stop := record.Rounds[len(record.Rounds)-1].Stop
+		if stop != nil {
+			card.Stop = &board.ReviewStop{Decision: stop.Decision, Handoff: stop.Handoff, Class: stop.Class, Attempt: stop.Attempt, Budget: stop.Budget}
+		}
+	}
 	if runner.Manager.Now != nil {
 		card.Writer.At = runner.Manager.Now()
 	}
@@ -767,7 +930,7 @@ func judgementRound(record UnitRunRecord, number int) *board.Round {
 
 func countedRounds(record UnitRunRecord) (counted, machinery int) {
 	for _, round := range record.Rounds {
-		if round.Cause == "" {
+		if round.Cause == "own" {
 			counted++
 		} else {
 			machinery++
@@ -782,45 +945,12 @@ func (runner *UnitRunner) roundMaterial(record UnitRunRecord, round UnitRound) (
 }
 
 func (runner *UnitRunner) roundFindings(record UnitRunRecord, round UnitRound) (int, int, error) {
-	for _, subject := range record.Subjects {
-		if subject.Round != round.Number || subject.Examination == "" {
-			continue
-		}
-		path := subject.ExaminationReturnPath
-		if path == "" {
-			return -1, 0, nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return -1, 0, err
-		}
-		var result struct {
-			Findings []struct {
-				Material bool
-				Relation string
-			} `json:"findings"`
-		}
-		if err := json.Unmarshal(data, &result); err != nil {
-			return -1, 0, fmt.Errorf("read examination return %s: %w", path, err)
-		}
-		material, repeats := 0, 0
-		for _, finding := range result.Findings {
-			if finding.Material {
-				material++
-			}
-			if repeatedRelation(finding.Relation) {
-				repeats++
-			}
-		}
-		return material, repeats, nil
+	if len(round.Reads) == 0 || round.Stop != nil && (round.Stop.Handoff == "stopped unreadable-read" || round.Stop.Handoff == "stopped unavailable-stop-inputs") {
+		return -1, 0, nil
 	}
 	material := 0
-	for _, step := range round.Steps {
-		if strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
-			if count := measuredMaterialCount(Record{Kind: "read", Measurement: Measurement{Verdict: "VERDICT: " + strings.TrimPrefix(step.Verdict, "VERDICT: ")}}); count != nil {
-				material += *count
-			}
-		}
+	for _, read := range round.Reads {
+		material += read.Material
 	}
 	return material, round.Repeats, nil
 }
@@ -897,10 +1027,11 @@ func (runner *UnitRunner) worktreeDiff(worktree, base string, excluded ...string
 }
 
 type repositorySnapshot struct {
-	Head  string `json:"head"`
-	Refs  string `json:"refs"`
-	Index string `json:"index"`
-	Tree  string `json:"tree"`
+	TreeID string `json:"treeId,omitempty"`
+	Head   string `json:"head"`
+	Refs   string `json:"refs"`
+	Index  string `json:"index"`
+	Tree   string `json:"tree"`
 }
 
 func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
@@ -923,18 +1054,20 @@ func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
 
 func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree string) (repositorySnapshot, error) {
 	path := filepath.Join(directory, name)
-	if data, err := os.ReadFile(path); err == nil {
-		var snapshot repositorySnapshot
-		if err := json.Unmarshal(data, &snapshot); err != nil {
-			return repositorySnapshot{}, err
-		}
-		return snapshot, nil
-	} else if !os.IsNotExist(err) {
-		return repositorySnapshot{}, err
-	}
 	snapshot, err := runner.snapshotRepository(worktree)
 	if err != nil {
 		return repositorySnapshot{}, err
+	}
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		var prior repositorySnapshot
+		if err := json.Unmarshal(data, &prior); err != nil {
+			return repositorySnapshot{}, err
+		}
+		if prior != snapshot {
+			return repositorySnapshot{}, coded("UNIT_TREE_CHANGED", "", errors.New("the worktree changed while this command was waiting"))
+		}
+	} else if !os.IsNotExist(readErr) {
+		return repositorySnapshot{}, readErr
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
@@ -947,6 +1080,10 @@ func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree stri
 }
 
 func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapshot, error) {
+	return runner.snapshotWorktree(worktree, true)
+}
+
+func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (repositorySnapshot, error) {
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
@@ -964,9 +1101,12 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	// notes and the stash. Remote-tracking refs and the engine's own
 	// refs/metasystem/ namespace move while a proof runs (the presence
 	// publisher and the goal ledger's fetch), and a proof writes neither.
-	refs, err := git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
-	if err != nil {
-		return repositorySnapshot{}, err
+	var refs []byte
+	if sharedRefs {
+		refs, err = git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
+		if err != nil {
+			return repositorySnapshot{}, err
+		}
 	}
 	indexPath, err := git.Run(root, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
@@ -1021,7 +1161,11 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
+	treeID, err := git.Run(root, environment, "write-tree")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	return repositorySnapshot{TreeID: strings.TrimSpace(string(treeID)), Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
 }
 
 func proofMayStart(round UnitRound, buildCount int) error {
@@ -1070,11 +1214,10 @@ func (runner *UnitRunner) root() string {
 }
 func (runner *UnitRunner) runDir(id string) string { return filepath.Join(runner.root(), id) }
 func (runner *UnitRunner) save(record UnitRunRecord) error {
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
+	if err := runner.reserveTree(record); err != nil {
 		return err
 	}
-	if _, err = atomicfile.WriteText(filepath.Join(runner.runDir(record.ID), "run.json"), string(data)+"\n", runner.root()); err != nil {
+	if err := writeUnitJSON(filepath.Join(runner.runDir(record.ID), "run.json"), record, runner.root()); err != nil {
 		return err
 	}
 	if runner.AfterWrite != nil {
@@ -1111,6 +1254,9 @@ func (runner *UnitRunner) lock(id string) (*os.File, error) {
 			return nil, coded("UNIT_LOCK_FAILED", "run="+id, fmt.Errorf("run %s cannot be locked for this command: %w", id, err))
 		}
 		return nil, coded("UNIT_RUN_BUSY", "run="+id, errors.New("another command is advancing this work; run the same command again to follow it"))
+	}
+	if runner.tree != nil {
+		runner.tree.files = append(runner.tree.files, held.File())
 	}
 	return held.File(), nil
 }

@@ -29,7 +29,7 @@ type wholeOwnerLanding struct {
 	receipts                                            []string
 }
 
-func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
+func newWholeOwnerLanding(t *testing.T, declaredChecks ...bool) *wholeOwnerLanding {
 	t.Helper()
 	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
 	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
@@ -57,6 +57,15 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "memory", "receipts.log"),
 		[]byte("1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"), 0o644)
 	goalSyncMutationGit(t, f.mainRoot, "add", "plans/goals/standing-validation.md", "plans/designs/landing-work.md", "memory/receipts.log")
+	if len(declaredChecks) > 0 && declaredChecks[0] {
+		config := filepath.Join(f.mainRoot, "metasystem.conf")
+		data, err := os.ReadFile(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestingFixtureFile(t, config, append(data, []byte("\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n")...), 0o644)
+		goalSyncMutationGit(t, f.mainRoot, "add", "metasystem.conf")
+	}
 	goalSyncMutationGit(t, f.mainRoot, "commit", "-qm", "mark fixture land ready")
 	goalSyncMutationGit(t, root, "merge", "--ff-only", "--quiet", "main")
 	f.base = goalSyncMutationGit(t, root, "rev-parse", "HEAD")
@@ -420,7 +429,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 // publishing a goal history line moves remote main independently of the branch.
 func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	t.Parallel()
-	f := newWholeOwnerLanding(t)
+	f := newWholeOwnerLanding(t, true)
 	goalSyncMutationGit(t, f.mainRoot, "switch", "--detach", f.base)
 	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "main-extra.md"), []byte("main advanced\n"), 0o644)
 	goalSyncMutationGit(t, f.mainRoot, "add", "main-extra.md")

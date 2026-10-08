@@ -111,6 +111,13 @@ func TestPersonClaimBuildSessionStartBuild(t *testing.T) {
 				t.Fatalf("session remedy: %d %+v", code, started)
 			}
 			for _, id := range ids {
+				bed.worktree = filepath.Join(t.TempDir(), "work")
+				if err := os.MkdirAll(bed.worktree, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(filepath.Dir(bed.worktree), "index"), []byte("index"), 0600); err != nil {
+					t.Fatal(err)
+				}
 				file := bed.goalFile(id)
 				if file.StopCapability.ClaimEpoch != 1 || !reflect.DeepEqual(file.Claimed, reserved[id].Claimed) || !reflect.DeepEqual(file.Budget, reserved[id].Budget) || !reflect.DeepEqual(file.Approved, reserved[id].Approved) {
 					t.Fatalf("session adoption changed ownership/accounting: %+v", file)

@@ -268,26 +268,47 @@ func assertTerminalReadItemRefusal(t *testing.T, endpoint, peer Endpoint, goalID
 	}
 }
 
+func TestSplitKeepsOpenReadItemsOnLiveParent(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := readItemBed(t, "split-parent")
+	if result, err := AddReadItems(readItemRequest(endpoint, 100), "split-parent", "critic", []string{"Keep the parent live."}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("add: %+v %v", result, err)
+	}
+	members := testMembers("split-parent")
+	result, err := splitAsPerson(t, readItemRequest(endpoint, 101), "split-parent", members)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("split: %+v %v", result, err)
+	}
+	tree, err := loadTreeFor(endpoint, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := tree.Live["split-parent"]
+	if parent == nil || parent.State != StateSplit || tree.Done["split-parent"] != nil || len(parent.ReadItems) != 1 || parent.ReadItems[0].ID != "critic-1" || parent.ReadItems[0].State != ReadItemOpen {
+		t.Fatalf("split lost or closed the parent's open item: %+v", parent)
+	}
+	for _, member := range members {
+		child := tree.Live[member.ID]
+		if child == nil || len(child.ReadItems) != 0 {
+			t.Fatalf("split duplicated the parent's read item onto %s: %+v", member.ID, child)
+		}
+	}
+	reason := "addressed on the split parent"
+	closed, err := CloseReadItem(readItemRequest(endpoint, 102), "split-parent", "critic-1", ReadItemClosure{Accepted: &reason})
+	if err != nil || closed.Outcome != OutcomeConfirmed {
+		t.Fatalf("close: %+v %v", closed, err)
+	}
+	tree, err = loadTreeFor(endpoint, closed.Tip)
+	if err != nil || tree.Live["split-parent"].ReadItems[0].State != ReadItemAccepted || tree.Live["split-parent"].ReadItems[0].ClosingReference != reason {
+		t.Fatalf("split parent's item was not explicitly closed: %+v %v", tree, err)
+	}
+	if repeated, err := splitAsPerson(t, readItemRequest(endpoint, 103), "split-parent", members); err != nil || repeated.Outcome != OutcomeAbandoned || !repeated.Unchanged || repeated.Tip != closed.Tip {
+		t.Fatalf("split after close was not unchanged: %+v %v", repeated, err)
+	}
+}
+
 func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	t.Parallel()
-	t.Run("split", func(t *testing.T) {
-		t.Parallel()
-		endpoint, peer := readItemBed(t, "split-parent")
-		if result, err := AddReadItems(readItemRequest(endpoint, 100), "split-parent", "critic", []string{"Keep the parent live."}); err != nil || result.Outcome != OutcomeConfirmed {
-			t.Fatalf("add: %+v %v", result, err)
-		}
-		members := testMembers("split-parent")
-		before := snapshotTerminalLedger(t, endpoint, peer)
-		result, err := Split(readItemRequest(endpoint, 101), "split-parent", members, mainRatification("split-parent", members), nil)
-		assertTerminalReadItemRefusal(t, endpoint, peer, "split-parent", "critic-1", before, result, err)
-		reason := "addressed before decomposition"
-		if closed, closeErr := CloseReadItem(readItemRequest(endpoint, 102), "split-parent", "critic-1", ReadItemClosure{Accepted: &reason}); closeErr != nil || closed.Outcome != OutcomeConfirmed {
-			t.Fatalf("close: %+v %v", closed, closeErr)
-		}
-		if split, splitErr := Split(readItemRequest(endpoint, 103), "split-parent", members, mainRatification("split-parent", members), nil); splitErr != nil || split.Outcome != OutcomeConfirmed {
-			t.Fatalf("split after close: %+v %v", split, splitErr)
-		}
-	})
 
 	t.Run("abandon --also member", func(t *testing.T) {
 		t.Parallel()

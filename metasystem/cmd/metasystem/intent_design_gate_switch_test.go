@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -123,7 +124,12 @@ func TestDesignGateNeverStallsWhenItBreaksUnderRefuse(t *testing.T) {
 				}
 			case "jobs folder":
 				bed.designGate.chains = nil
-				parent := filepath.Join(bed.stateRoot(), "artifacts", "agents")
+				chainRoot := t.TempDir()
+				bed.designGate.chains = func(_, id, page string) ([]designgate.Chain, error) {
+					_, err := dispatchcore.ReadDesignCritiqueChains(chainRoot, id, page)
+					return nil, err
+				}
+				parent := filepath.Join(chainRoot, "artifacts", "agents")
 				if err := os.MkdirAll(parent, 0o700); err != nil {
 					t.Fatal(err)
 				}

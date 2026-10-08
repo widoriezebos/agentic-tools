@@ -12,6 +12,7 @@ import (
 )
 
 type UnitPlan struct {
+	Check    *UnitCheck     `json:"check,omitempty"`
 	Whole    bool           `json:"whole,omitempty"`
 	Unit     string         `json:"unit"`
 	Goal     string         `json:"goal"`
@@ -48,6 +49,7 @@ type ProofCommand struct {
 }
 
 type rawUnitPlan struct {
+	Check    *UnitCheck    `json:"check,omitempty"`
 	Whole    bool          `json:"whole"`
 	Unit     *string       `json:"unit"`
 	Goal     *string       `json:"goal"`
@@ -133,7 +135,7 @@ func readUnitPlan(path, relativeRoot string) (UnitPlan, error) {
 			return UnitPlan{}, planInvalid(item.name, nil)
 		}
 	}
-	plan := UnitPlan{Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
+	plan := UnitPlan{Check: raw.Check, Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
 		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
 		Path:  abs}
 	if read != nil {

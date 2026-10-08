@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -33,6 +34,12 @@ type journeyBed struct {
 	finishWith   func(install, id, commit string, findings []any)
 	finishRound  func(install, root, id, commit string, round int, findings []any)
 	baseline     string
+}
+
+func journeyCleanFinding() readsubject.Finding {
+	finding := stopFinding("regression", "connect.txt")
+	finding.ID, finding.Material = "F1", false
+	return finding
 }
 
 func newJourneyBed(t *testing.T) *journeyBed {
@@ -134,7 +141,7 @@ func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 	var finishWith func(install, id, commit string, findings []any)
 	finish := func(install, id, commit string) {
 		t.Helper()
-		finishWith(install, id, commit, []any{map[string]any{"id": "F1", "material": false}})
+		finishWith(install, id, commit, []any{journeyCleanFinding()})
 	}
 	var finishRound func(install, root, id, commit string, round int, findings []any)
 	finishWith = func(install, id, commit string, findings []any) {
@@ -152,8 +159,31 @@ func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 		agents := filepath.Join(install, "artifacts", "agents")
 		rounds := filepath.Join(agents, root, "rounds", strconv.Itoa(round))
 		c.writeJSON(filepath.Join(rounds, "subject.json"), subject)
+		material := 0
+		data, err := json.Marshal(findings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var counted []struct {
+			Material bool `json:"material"`
+		}
+		if err := json.Unmarshal(data, &counted); err != nil {
+			t.Fatal(err)
+		}
+		for _, finding := range counted {
+			if finding.Material {
+				material++
+			}
+		}
 		c.writeJSON(filepath.Join(rounds, "return.json"),
-			map[string]any{"jobId": id, "round": round, "findings": findings, "verdict": fmt.Sprintf("%d finding(s)", len(findings)), "reviewedTree": subject.Tree})
+			map[string]any{"jobId": id, "round": round, "findings": findings, "verdictMaterialCount": material, "verdict": fmt.Sprintf("%d finding(s)", len(findings)), "reviewedTree": subject.Tree})
+		verdict := "VERDICT: LAND\n"
+		if material > 0 {
+			verdict = fmt.Sprintf("VERDICT: REVISE material=%d\n", material)
+		}
+		if err := os.WriteFile(filepath.Join(rounds, "return.md"), []byte(verdict), 0600); err != nil {
+			t.Fatal(err)
+		}
 		c.writeJSON(filepath.Join(agents, "capabilities", "close.json"), map[string]any{"ok": true})
 		os.MkdirAll(filepath.Join(agents, "record-locks"), 0o700)
 		record := job(install, id)
@@ -163,7 +193,8 @@ func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 		}
 		for key, value := range map[string]any{"status": "completed", "destructiveReach": "DESIGN-BEARING", "dispatchMode": "fresh",
 			"sessionId": root + "-session", "parentJob": parent, "capabilitySnapshot": "artifacts/agents/capabilities/close.json",
-			"endedAt": "2026-09-25T12:00:00Z", "reviewRoundLimit": 3} {
+			"endedAt": "2026-09-25T12:00:00Z", "reviewRoundLimit": 3,
+			"engineBuild": "fixture-engine", "effectiveModel": "fixture-critic", "reviews": "commit:" + commit} {
 			record[key] = value
 		}
 		c.writeJSON(filepath.Join(agents, "jobs", id+".json"), record)
@@ -205,7 +236,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		if result.Next != nil {
 			route = shellCommand(result.Next.Argv)
 		}
-		if result.Outcome != "in-progress" || !strings.Contains(route, "work review run:"+run) || !strings.Contains(route, "--dispositions FILE") ||
+		if result.Outcome != "in-progress" || !strings.Contains(route, "work review run:"+run) || !strings.Contains(route, "--dispositions "+resultData(t, result)["template"].(string)) ||
 			strings.Contains(route, "metasystem close") {
 			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
 		}
@@ -255,10 +286,19 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 			t.Fatalf("the default review named a caller model: %v", args)
 		}
 	}
+	originTip := "refs/metasystem/goals/origin/" + c.id
+	published := connectionGit(t, c.root(), "rev-parse", originTip)
+	connectionGit(t, c.root(), "update-ref", originTip, commitA)
+	if code, result := do("work", "review", c.id, "--work", "unit-a"); code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["state"] != "already-collected" {
+		t.Fatalf("review republishes the same collected read: code=%d %+v", code, result)
+	}
+	if got := connectionGit(t, c.root(), "rev-parse", originTip); got != published {
+		t.Fatalf("republished tip=%s want=%s", got, published)
+	}
 	runB := build("unit-b", map[string]string{"b.txt": "the B bytes\n"})
 	// Coexistence: A's read is collected and published while B is built and
 	// unread. A publication the push owner has not recorded makes A's read
-	// collected but unpublished, and the same review G publishes it again.
+	// collected but unpublished; publication waits for B's owning round.
 	stages := func() map[string]string {
 		t.Helper()
 		code, result := do("status", c.id)
@@ -276,8 +316,6 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if found := stages(); !strings.HasPrefix(found["unit-a"], "reviewed; its read is collected and published") || found["unit-b"] != "built, ready for review" {
 		t.Fatalf("collected-published beside built-unread: %v", found)
 	}
-	originTip := "refs/metasystem/goals/origin/" + c.id
-	published := connectionGit(t, c.root(), "rev-parse", originTip)
 	connectionGit(t, c.root(), "update-ref", originTip, commitA)
 	if found := stages(); !strings.HasPrefix(found["unit-a"], "reviewed; its read is collected but not yet published") || found["unit-b"] != "built, ready for review" {
 		t.Fatalf("collected-unpublished beside built-unread: %v", found)
@@ -285,14 +323,14 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if code, result := do("status", c.id, "--work", "unit-a"); code != 0 || result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "review", c.id, "--work", "unit-a"}) {
 		t.Fatalf("an unpublished read continues with its review: code=%d %+v", code, result)
 	}
-	if code, result := do("work", "review", c.id, "--work", "unit-a"); code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) ||
-		resultData(t, result)["state"] != "already-collected" {
-		t.Fatalf("review G republishes the collected read: code=%d %+v", code, result)
+	publications := c.publications
+	if code, result := do("work", "review", c.id, "--work", "unit-a"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "worktree belongs to run "+runB) || c.publications != publications {
+		t.Fatalf("publication waits for the built unit: code=%d %+v", code, result)
 	}
-	if found := stages(); !strings.HasPrefix(found["unit-a"], "reviewed; its read is collected and published") ||
-		connectionGit(t, c.root(), "rev-parse", originTip) != published {
-		t.Fatalf("after republication: %v", found)
+	if got := connectionGit(t, c.root(), "rev-parse", originTip); got != commitA {
+		t.Fatalf("waiting publication moved its origin tip: %s", got)
 	}
+	connectionGit(t, c.root(), "update-ref", originTip, published)
 	reads := len(c.reads)
 	criticB, commitB := reviewed(runB, "--model", "requested-critic")
 	if model := flagValue(c.reads[reads], "--model"); model != "requested-critic" || flagValue(c.reads[reads], "--unit") != commitB {
@@ -313,11 +351,12 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		t.Fatalf("all three units must be read on the published branch: %+v", status)
 	}
 
+	// A clean read ends automatic corrections, so a person requests this amend.
 	// A same-unit correction: fold A, review it again. B's unit survives
 	// with its exact bytes and its exact change; A's old read does not carry
 	// over.
 	c.edits = map[string]string{"a.txt": "amended A\nl2\nl3\nthe C line\nl5\n"}
-	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n"), "--reason", "Amend the already reviewed unit", "--by", "Wido"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("fold unit A: code=%d %+v", code, result)
 	}
 	criticA2, commitA2 := reviewed(runA)

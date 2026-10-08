@@ -194,7 +194,7 @@ func TestAdvancePreparedBindsTheRequestAndItsOptions(t *testing.T) {
 		t.Fatalf("follow-up=%+v err=%v", second, err)
 	}
 	_, err = fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)})
-	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_ROUND_LIMIT") || !strings.Contains(ErrorDetail(err), "limit=2") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_STOPPED") || !strings.Contains(err.Error(), "split U") {
 		t.Fatalf("err=%v", err)
 	}
 	requireRecordedRounds(t, fixture, first.Record.ID, 2)

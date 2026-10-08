@@ -17,14 +17,17 @@ import (
 // it starts, started and saved; the step states and their recording are the
 // same for both.
 type stepDriver struct {
+	wait     func(string, time.Duration) (Record, bool, error)
 	manager  *Manager
 	round    *UnitRound
 	launchID func(index int) string
 	// before is asked before a step's launch is created; its refusal
 	// starts nothing.
-	before func(StartSpec) error
-	start  func(StartSpec) (Record, error)
-	save   func() error
+	before   func(StartSpec) error
+	start    func(StartSpec) (Record, error)
+	unit     bool
+	snapshot func(string) (repositorySnapshot, error)
+	save     func() error
 }
 
 func (driver stepDriver) advanceStep(index int, spec StartSpec, deadline time.Time) (bool, error) {
@@ -36,8 +39,28 @@ func (driver stepDriver) advanceStep(index int, spec StartSpec, deadline time.Ti
 
 func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	step := &driver.round.Steps[index]
+	if driver.unit && (step.State == StepPassed || step.State == StepFailed) {
+		return Record{}, nil
+	}
+	if driver.unit {
+		var err error
+		spec, err = driver.retainStep(index, spec)
+		if err != nil {
+			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
+			return Record{}, driver.save()
+		}
+	}
 	if step.State == StepPending {
 		step.LaunchID = driver.launchID(index)
+		if driver.unit {
+			if len(step.LaunchIDs) > 0 {
+				step.LaunchID += "-retry"
+				if len(step.LaunchIDs) > 1 {
+					step.LaunchID += fmt.Sprintf("-%d", len(step.LaunchIDs))
+				}
+			}
+			step.LaunchIDs = append(step.LaunchIDs, step.LaunchID)
+		}
 		step.State, step.StartedAt = StepStarting, driver.manager.Now().UTC().Format(time.RFC3339Nano)
 		if err := driver.save(); err != nil {
 			return Record{}, err
@@ -45,15 +68,49 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	}
 	launchRecord, err := driver.manager.Store.Read(step.LaunchID)
 	if errors.Is(err, fs.ErrNotExist) {
+		spec.ID = step.LaunchID
+		if driver.unit {
+			if spec.Kind == "proof" || spec.Kind == "read" {
+				before, snapErr := driver.snapshot(spec.WorkingDirectory)
+				if snapErr != nil {
+					step.State, step.Cause, step.Reason = StepFailed, "unclassified", snapErr.Error()
+					return Record{}, driver.save()
+				}
+				step.Before = &before
+			}
+			state, stateErr := driver.manager.Store.StateDir(step.LaunchID)
+			if stateErr != nil {
+				return Record{}, stateErr
+			}
+			spec.Outputs = append([]string(nil), spec.Outputs...)
+			if len(step.LaunchIDs) > 1 {
+				for i, output := range spec.Outputs {
+					spec.Outputs[i] = filepath.Join(state, "declared", filepath.Base(output))
+				}
+			}
+			if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
+				return Record{}, err
+			}
+			if err := driver.save(); err != nil {
+				return Record{}, err
+			}
+		}
 		if driver.before != nil {
 			if err := driver.before(spec); err != nil {
 				return Record{}, err
 			}
 		}
-		spec.ID = step.LaunchID
 		launchRecord, err = driver.start(spec)
 	}
+	if IsCode(err, "UNIT_WAIT_RETRY") {
+		return launchRecord, err
+	}
 	if err != nil && launchRecord.ID == "" {
+		if driver.unit {
+			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
+			step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
+			return Record{}, driver.save()
+		}
 		return Record{}, err
 	}
 	if launchRecord.State.Terminal() {
@@ -67,13 +124,20 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {
 	step := &driver.round.Steps[index]
 	if step.State == StepPassed || step.State == StepFailed {
+		if driver.unit {
+			return driver.retryFailedStep(index, deadline)
+		}
 		return false, nil
 	}
 	remaining := deadline.Sub(driver.manager.Now())
 	if remaining < 0 {
 		remaining = 0
 	}
-	launchRecord, terminal, err := driver.manager.Wait(step.LaunchID, remaining)
+	wait := driver.wait
+	if wait == nil {
+		wait = driver.manager.Wait
+	}
+	launchRecord, terminal, err := wait(step.LaunchID, remaining)
 	if err != nil {
 		return false, err
 	}
@@ -85,13 +149,23 @@ func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {
 		return true, nil
 	}
 	driver.endStep(index, launchRecord)
-	return false, driver.save()
+	if err := driver.save(); err != nil {
+		return false, err
+	}
+	if driver.unit {
+		return driver.retryFailedStep(index, deadline)
+	}
+	return false, nil
 }
 
 func (driver stepDriver) endStep(index int, launchRecord Record) {
 	step := &driver.round.Steps[index]
 	step.State, step.Reason, step.FinishedAt = StepFailed, launchRecord.Reason, driver.manager.Now().UTC().Format(time.RFC3339Nano)
 	step.Cause = launchRecord.Cause
+	step.Deadline = launchRecord.Cause == "deadline"
+	if driver.unit && launchRecord.State != Completed {
+		step.Cause = failedStepCause(launchRecord)
+	}
 	if launchRecord.State == Completed {
 		step.State = StepPassed
 	}

@@ -1516,7 +1516,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"work": {
 		{"Read", []string{"status", "wait"}},
-		{"Work", []string{"brief", "build", "workspace", "review", "revise", "rebase", "land", "finish", "stop"}},
+		{"Work", []string{"brief", "build", "workspace", "commit", "review", "revise", "rebase", "land", "finish", "stop"}},
 	},
 	"test": {
 		{"Read", []string{"plan", "list", "status", "wait"}},

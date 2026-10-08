@@ -180,6 +180,9 @@ func Run(ctx context.Context, root string) (int, error) {
 }
 
 func run(ctx context.Context, root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error)) (int, error) {
+	if err := channel.ReconcileUnitStopQuestions(root); err != nil {
+		return 1, err
+	}
 	loaded, err := Load(root, true)
 	if loaded.Provider == nil && err == nil {
 		return 0, nil

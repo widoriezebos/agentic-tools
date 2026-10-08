@@ -1660,6 +1660,7 @@ func runIntentDecide(inv *intentInvocation) int {
 	// recorded, where they stand when that is another checkout of this
 	// repository. The reason records both places.
 	store := inv.stateRoot
+	questionRoot := inv.layout.InstallationRoot.Path()
 	if problem := inv.standWhereTheCallerIs(id); problem != nil {
 		return inv.render(*problem)
 	}
@@ -1675,6 +1676,10 @@ func runIntentDecide(inv *intentInvocation) int {
 		args = append(args, "--store", store)
 	}
 	args = append(args, actor...)
+	impact := "Impact: accepting this finding's risk permits review to proceed.\nThe finding remains recorded; acceptance does not declare it fixed."
+	if err := inv.recordUnitStopOverride(id, "goal-accept-risk", reason, impact, unitStopActor(actor)); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: "the risk's impact could not be recorded; nothing was done", next: inv.sameCommand(), nextReason: "records the impact before accepting the risk", Details: []string{err.Error()}})
+	}
 	result := inv.goalAct(id, "decide", func(dependencies syncRequestDependencies) int {
 		return runGoalAcceptRiskWithFacts(args, inv.owners.prove, inv.owners.commandNow, dependencies, nil)
 	})
@@ -1685,6 +1690,12 @@ func runIntentDecide(inv *intentInvocation) int {
 	}
 	if result.Outcome == intentPartial {
 		result.Summary = "the goal records the accepted risk, but a later record did not land: " + result.Summary
+	}
+	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if err := recordUnitStopActForReview(questionRoot, id, chain, inv.input.text("finding"), reason, inv.unitStopNow()); err != nil {
+			result.Outcome, result.code = intentPartial, 1
+			result.Details = append(result.Details, err.Error())
+		}
 	}
 	return inv.render(result)
 }
@@ -2152,26 +2163,39 @@ func runIntentResolve(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	transfer, problem := inv.transferDischargeEvidence(id, chain, inv.input.text("finding"))
+	if problem != nil {
+		return inv.render(*problem)
+	}
 	if proof == nil {
 		if chain == goal.HumanCarriedChain {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a finding a person carried is resolved by that person, not by a session; nothing was done",
 				next: inv.typedArgvLess("lineage"), nextReason: "in a terminal you opened yourself"})
 		}
 		return inv.render(inv.goalAct(id, "resolve", func(dependencies syncRequestDependencies) int {
-			return inv.dischargeAsOwningSession(id, chain, actor, dependencies)
+			return inv.dischargeAsOwningSession(id, chain, actor, dependencies, transfer)
 		}))
 	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id, "--finding", inv.input.text("finding"), "--chain", chain}, actor...)
 	args = append(args, inv.forward("test", "implementation-chain", "artifact", "result", "critic")...)
 	return inv.render(inv.goalAct(id, "resolve", func(dependencies syncRequestDependencies) int {
-		return runGoalDischargeReviewObligationWithDependencies(args, inv.requestBuilder(proof, false), dischargeReviewObligation, dependencies)
+		discharge := func(req goal.VerbRequest, id, finding, chain, by, citation string, evidence ...goal.DischargeEvidence) (goal.PublishResult, error) {
+			if transfer != nil {
+				if len(evidence) == 0 {
+					evidence = append(evidence, goal.DischargeEvidence{})
+				}
+				evidence[0].Transfer = transfer
+			}
+			return dischargeReviewObligation(req, id, finding, chain, by, citation, evidence...)
+		}
+		return runGoalDischargeReviewObligationWithDependencies(args, inv.requestBuilder(proof, false), discharge, dependencies)
 	}))
 }
 
 // dischargeAsOwningSession is the owning session's discharge: the request
 // carries only the session's lineage, so the owner accepts it only from the
 // pair holding the goal, and the discharge is attributed to that pair.
-func (inv *intentInvocation) dischargeAsOwningSession(id, chain string, actor []string, dependencies syncRequestDependencies) int {
+func (inv *intentInvocation) dischargeAsOwningSession(id, chain string, actor []string, dependencies syncRequestDependencies, transfer *goal.TransferCoverage) int {
 	lineage := ""
 	for index := 0; index+1 < len(actor); index++ {
 		if actor[index] == "--lineage" {
@@ -2187,10 +2211,60 @@ func (inv *intentInvocation) dischargeAsOwningSession(id, chain string, actor []
 		lineage = req.Actor.Lineage
 	}
 	evidence := goal.DischargeEvidence{Root: inv.stateRoot, ImplementationChain: inv.input.text("implementation-chain"),
-		Artifact: inv.input.text("artifact"), ResultRunID: inv.input.text("result"), CriticRoot: inv.input.text("critic")}
+		Artifact: inv.input.text("artifact"), ResultRunID: inv.input.text("result"), CriticRoot: inv.input.text("critic"), Transfer: transfer}
 	attribution := req.Actor.Machine + "+" + lineage
 	res, err := dischargeReviewObligation(req, id, inv.input.text("finding"), chain, attribution, inv.input.text("test"), evidence)
 	return dependencies.publish(res, err)
+}
+
+// transferDischargeEvidence verifies the destination's published read before
+// supplying inherited coverage to the goal's existing discharge owner.
+func (inv *intentInvocation) transferDischargeEvidence(id, chain, finding string) (*goal.TransferCoverage, *intentResult) {
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return nil, problem
+	}
+	file, _ := goalRecord(projection, id)
+	if file == nil {
+		return nil, nil
+	}
+	var target string
+	for _, obligation := range file.ReviewObligations {
+		if obligation.Finding == finding && obligation.Chain == chain {
+			target = obligation.TargetUnit
+			break
+		}
+	}
+	if target == "" {
+		return nil, nil
+	}
+	refuse := func(err error) (*goal.TransferCoverage, *intentResult) {
+		return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: "the destination's published read does not cover this transferred finding", Details: []string{err.Error()}, next: inv.publicArgv("work", "review", id, "--work", target), nextReason: "publishes a read covering the inherited finding and source change"}
+	}
+	installation := inv.goalBranchInstallation(id)
+	stateReader := inv.delivery().branchState
+	if stateReader == nil {
+		stateReader = productionIntentBranchState
+	}
+	state, err := stateReader(installation, id)
+	if err != nil {
+		return refuse(err)
+	}
+	verify := inv.delivery().transferCoverage
+	if verify == nil {
+		verify = branch.VerifyTransferCoverage
+	}
+	for _, unit := range state.Status.Units {
+		if unit.Unit != target && !slices.Contains(unit.Units, target) {
+			continue
+		}
+		coverage, err := verify(installation, state.BranchTip, state.EndpointTip, id, target, unit.Commit)
+		if err != nil {
+			return refuse(err)
+		}
+		return &coverage, nil
+	}
+	return refuse(fmt.Errorf("destination %s has no published build", target))
 }
 
 func runIntentNotes(inv *intentInvocation) int {

@@ -345,12 +345,13 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 		t.Fatalf("claim after approval: %+v %v", claimed, err)
 	}
 	members := testMembers("earned-raise")
-	split, err := Split(act("01J5X00000000000000000EY07", 7, false), "earned-raise", members,
-		mainRatification("earned-raise", members), nil)
+	split, err := splitAsPerson(t, act("01J5X00000000000000000EY07", 7, false), "earned-raise", members)
 	if err != nil || split.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", split, err)
 	}
-	assertMarker(split.Tip, true)
+	if parent := assertMarker(split.Tip, false); parent.State != StateSplit {
+		t.Fatalf("split parent did not remain live: %+v", parent)
+	}
 	tree, err := loadTreeFor(endpoint, split.Tip)
 	if err != nil {
 		t.Fatal(err)

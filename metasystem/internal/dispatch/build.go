@@ -235,6 +235,7 @@ type reviewRoundLimitResolution struct {
 	goalBound   bool
 	roleLimit   uint8
 	sourceLimit uint8
+	transfers   []goal.ReviewObligation
 }
 
 // reviewRoundLimitForRole gives every critic role, design critics included,
@@ -283,7 +284,9 @@ func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, rol
 	if uint64(limit) > maximum {
 		limit = int64(maximum)
 	}
-	return reviewRoundLimitForRole(role, true, uint8(limit)), nil
+	resolution := reviewRoundLimitForRole(role, true, uint8(limit))
+	resolution.transfers = append([]goal.ReviewObligation(nil), record.ReviewObligations...)
+	return resolution, nil
 }
 
 func (r reviewRoundLimitResolution) rebindLimit() uint8 {
@@ -536,6 +539,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	}
 	record := map[string]any{
 		"jobId":                    p.Job,
+		"engineBuild":              executingEngineIdentity(),
 		"operationId":              p.Job,
 		"role":                     p.Role,
 		"mission":                  nullableString(p.Mission),
@@ -613,6 +617,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 			return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", limitErr)
 		}
 		record["findingRegister"] = []any{}
+		if p.Role == "code-critic" && len(resolution.transfers) > 0 {
+			record["inheritedFindings"] = resolution.transfers
+		}
 		record["findingRegisterRound"] = 0
 		record["reviewRoundLimit"] = resolution.roleLimit
 		record["criticRoundsConsumed"] = 0
@@ -895,6 +902,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"aliasedFrom":              nullableString(p.AliasedFrom),
 		"rosterAliasedFrom":        nil,
 		"jobId":                    p.Job,
+		"engineBuild":              executingEngineIdentity(),
 		"operationId":              p.OperationID,
 		"round":                    p.Round,
 		"parentJob":                p.ParentJob,
@@ -950,6 +958,13 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	if productRootsEmpty(record["productRoots"]) {
 		record["productRoots"] = []any{realpath.Resolve(asString(parent["workspaceRoot"]))}
+	}
+	if asString(parent["role"]) == "code-critic" {
+		state := loadCritiqueState(p.Root)
+		root := state.records[state.chainRoot(asString(parent["jobId"]))]
+		if asString(root["unknownExaminationRetryFrom"]) == asString(parent["jobId"]) {
+			record["examinationRetryOf"] = asString(parent["jobId"])
+		}
 	}
 	return writeRecord(p.Output, record)
 }

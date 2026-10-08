@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
@@ -20,6 +21,7 @@ const (
 )
 
 type RebaseRequest struct {
+	SubjectCheck                      func(string, AttestationSubject) (GateObservation, error)
 	Repo, Remote, EndpointTip, GoalID string
 	CheckClaim                        func() error
 	Gate                              func(string) (string, error)
@@ -35,12 +37,16 @@ type RebaseResolution struct {
 }
 
 type RebaseResult struct {
+	ReviewReasons map[string]string `json:"reviewReasons,omitempty"`
+
 	State       string   `json:"state"`
+	Behind      int      `json:"behind"`
 	OldTip      string   `json:"oldTip"`
 	NewTip      string   `json:"newTip"`
 	MainTip     string   `json:"mainTip"`
 	Carried     []string `json:"carried"`
 	NeedsReview []string `json:"needsReview"`
+	Unknown     []string `json:"unknown,omitempty"`
 	Regenerated []string `json:"regenerated,omitempty"`
 	Resolved    []string `json:"resolved,omitempty"`
 }
@@ -202,7 +208,8 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 	if carried.NewTip != "" {
 		result.NewTip = carried.NewTip
 	}
-	result.Carried, result.NeedsReview = carried.Carried, carried.NeedsReview
+	result.Carried, result.NeedsReview, result.Unknown = carried.Carried, carried.NeedsReview, carried.Unknown
+	result.ReviewReasons = carried.ReviewReasons
 	if err != nil {
 		return result, err
 	}
@@ -229,6 +236,14 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 			result.State = "carried"
 		}
 	}
+	count, err := d.git(req.Repo, "rev-list", "--count", result.NewTip+".."+req.EndpointTip)
+	if err != nil {
+		return result, err
+	}
+	result.Behind, err = strconv.Atoi(strings.TrimSpace(string(count)))
+	if err != nil {
+		return result, err
+	}
 	if len(result.Resolved) > 0 {
 		if err := os.Remove(filepath.Join(req.Repo, "artifacts", "agents", "goals", req.GoalID, "conflict.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return result, err
@@ -240,9 +255,12 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 type CarryRequest RebaseRequest
 
 type CarryResult struct {
+	ReviewReasons map[string]string `json:"reviewReasons,omitempty"`
+
 	NewTip      string   `json:"newTip"`
 	Carried     []string `json:"carried"`
 	NeedsReview []string `json:"needsReview"`
+	Unknown     []string `json:"unknown,omitempty"`
 }
 
 // CarryReviews records reviews for unchanged units from a kept branch tip without publishing them.
@@ -281,6 +299,10 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, erro
 	}
 	var kept []string
 	loaded := false
+	unknown := func(unit Commit) {
+		result.NeedsReview = append(result.NeedsReview, unit.Units...)
+		result.Unknown = append(result.Unknown, unit.Units...)
+	}
 	for _, unit := range commits {
 		if unit.Kind != Unit || reviewed[unit.ID] {
 			continue
@@ -294,17 +316,20 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, erro
 		}
 		prior, err := rebasePredecessor(req, unit, kept, r)
 		if err != nil {
-			return result, err
+			unknown(unit)
+			continue
 		}
 		equal := false
 		if prior != "" {
 			before, err := d.change(req.Repo, prior)
 			if err != nil {
-				return result, err
+				unknown(unit)
+				continue
 			}
 			after, err := d.change(req.Repo, unit.ID)
 			if err != nil {
-				return result, err
+				unknown(unit)
+				continue
 			}
 			equal = before == after
 		}
@@ -314,10 +339,22 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, erro
 		}
 		tests, err := d.tests(req.Repo, req.GoalID, prior)
 		if err != nil {
-			return result, err
+			unknown(unit)
+			continue
 		}
-		gate, err := d.gate(ReadGateRequest{Repo: req.Repo, GoalID: req.GoalID, UnitCommit: unit.ID, Gate: req.Gate})
+		gate, err := d.gate(ReadGateRequest{Repo: req.Repo, GoalID: req.GoalID, UnitCommit: unit.ID, Gate: req.Gate, SubjectCheck: req.SubjectCheck})
 		if err != nil {
+			var missing *DeclarationUnavailableError
+			if errors.As(err, &missing) {
+				result.NeedsReview = append(result.NeedsReview, unit.Units...)
+				if result.ReviewReasons == nil {
+					result.ReviewReasons = map[string]string{}
+				}
+				for _, name := range unit.Units {
+					result.ReviewReasons[name] = missing.Error()
+				}
+				continue
+			}
 			return result, err
 		}
 		op, err := d.newID("goal-rebase-read")
@@ -326,10 +363,14 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, erro
 		}
 		next, _, err := d.commitRead(CommitReadRequest{Repo: req.Repo, Remote: req.Remote, EndpointTip: req.EndpointTip,
 			GoalID: req.GoalID, Units: unit.Units, OpID: op, CheckClaim: req.CheckClaim, Transport: req.Transport,
-			Carry: prior, TestsChanged: tests, GateRunID: gate.RunID, GateTree: gate.Tree})
+			Carry: prior, TestsChanged: tests, GateRunID: gate.RunID, GateTree: gate.Tree, GateObservation: &gate})
 		var refusal *OpError
 		if errors.As(err, &refusal) && refusal.Code == ReadStaleCode {
 			result.NeedsReview = append(result.NeedsReview, unit.Units...)
+			continue
+		}
+		if errors.As(err, &refusal) && refusal.Code == ReadInvalidCode {
+			unknown(unit)
 			continue
 		}
 		if err != nil {
@@ -400,26 +441,6 @@ func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string
 	tip, err := r.facts.Head(dir)
 	if err != nil {
 		return "", nil, err
-	}
-	suffix, err := r.facts.Suffix(req.Repo, req.EndpointTip, tip)
-	if err != nil {
-		return "", nil, err
-	}
-	for _, id := range suffix {
-		kind, err := r.facts.Kind(req.Repo, id, req.GoalID)
-		if err != nil {
-			return "", nil, err
-		}
-		if kind.Kind != Unit {
-			continue
-		}
-		entries, err := r.facts.Entries(req.Repo, id)
-		if err != nil {
-			return "", nil, err
-		}
-		if len(entries) == 0 {
-			return "", nil, operationRefusal(RangeCode, "build %s's change is already on main; nothing was changed\nrun: metasystem work status %s", kind.Unit, req.GoalID)
-		}
 	}
 	_, err = r.facts.Range(req.Repo, req.EndpointTip, tip, req.GoalID)
 	return tip, regenerated, err

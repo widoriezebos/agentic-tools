@@ -1959,7 +1959,11 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	var inputs []frozenCorpusWorkerInput
 	for _, layout := range frozenCorpusSourceLayouts() {
 		phase := phases.begin("layout " + layout.name)
-		input := prepareFrozenPublicVersionOneCorpus(t, materializeFrozenCorpusLayout(t, source, layout), layout, now)
+		sourceLayout := materializeFrozenCorpusLayout(t, source, layout)
+		input := prepareFrozenPublicVersionOneCorpus(t, sourceLayout, layout, now)
+		if err := os.RemoveAll(sourceLayout); err != nil {
+			t.Fatal(err)
+		}
 		phase.end()
 		if len(inputs) > 0 && input.candidateCommit != inputs[0].candidateCommit {
 			t.Fatalf("normalized source layout %s candidate commit=%s, shared worker commit=%s", layout.name, input.candidateCommit, inputs[0].candidateCommit)

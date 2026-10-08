@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
@@ -311,7 +312,12 @@ func TestDesignGateMalformedJobStillBuilds(t *testing.T) {
 	bed := newDesignGateBed(t, 2)
 	bed.designGate.chains = nil
 	designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)\n")
-	path := filepath.Join(bed.stateRoot(), "artifacts", "agents", "jobs", "design-critic-broken.json")
+	chainRoot := t.TempDir()
+	path := filepath.Join(chainRoot, "artifacts", "agents", "jobs", "design-critic-broken.json")
+	bed.designGate.chains = func(_, id, page string) ([]designgate.Chain, error) {
+		_, err := dispatchcore.ReadDesignCritiqueChains(chainRoot, id, page)
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}

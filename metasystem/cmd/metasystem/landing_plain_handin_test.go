@@ -66,6 +66,9 @@ func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string
 			record.Rounds[0].Steps = nil
 		}
 		writeQuestionFixture(t, filepath.Join(w.unitRoot, run, "run.json"), record)
+		if _, err := (&launch.UnitRunner{Manager: w.manager, Root: w.unitRoot, Git: workGit{w}}).CancelRun(run); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if state.ReadsWaived {
 		file := w.goalFile(w.id)
