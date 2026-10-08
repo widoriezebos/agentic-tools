@@ -37,6 +37,67 @@ func treeBuild(t *testing.T, b *workBed, name string, read bool) (int, intentRes
 	return code, result
 }
 
+func TestIntentTreeGhostChildCanBeStoppedAndReleasesTree(t *testing.T) {
+	t.Parallel()
+	b := newWorkBed(t)
+	var run, child string
+	interrupted := new(int)
+	b.workOwnersHook = func(owners *intentWorkOwners) {
+		units := owners.units
+		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+			runner := units(layout)
+			runner.AfterWrite = func(record launch.UnitRunRecord) error {
+				if len(record.Rounds) > 0 && record.Rounds[0].Steps[0].State == launch.StepStarting {
+					run, child = record.ID, record.Rounds[0].Steps[0].LaunchID
+					panic(interrupted)
+				}
+				return nil
+			}
+			return runner
+		}
+	}
+	func() {
+		defer func() {
+			if caught := recover(); caught != interrupted {
+				t.Fatalf("command did not die at the saved launch id: %v", caught)
+			}
+		}()
+		treeBuild(t, b, "u", false)
+	}()
+	b.workOwnersHook = nil
+	if _, err := b.manager.Store.Read(child); !os.IsNotExist(err) || len(b.starter.launched()) != 0 {
+		t.Fatalf("interruption created a launch: %v %v", err, b.starter.launched())
+	}
+	code, waiting := treeBuild(t, b, "v", false)
+	act := "metasystem work stop run:" + run
+	if code != 3 || !strings.Contains(waiting.Summary, act) {
+		t.Errorf("never-started owner has no executable recovery: %d %+v", code, waiting)
+	}
+	owners := b.workOwners()
+	now, err := b.commandNow(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners.prove = enrolledPersonProver(t, b.root(), now)
+	code, stopped := b.runJSON(owners, strings.Fields(act)[1:]...)
+	if code != 0 {
+		t.Fatalf("person could not stop the never-started child: %d %+v", code, stopped)
+	}
+	current, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	paths, globErr := filepath.Glob(filepath.Join(b.unitRoot, ".trees", "*.json"))
+	if err != nil || globErr != nil || current.State != "cancelled" || len(paths) != 0 {
+		t.Fatalf("stop did not release the tree: %+v %v %v %v", current, paths, err, globErr)
+	}
+	code, next := treeBuild(t, b, "v", false)
+	if code != 0 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("next writer could not proceed: %d %+v %v", code, next, b.starter.launched())
+	}
+	code, resumed, _ := b.work("work", "wait", "run:"+run)
+	if code != 1 || !strings.Contains(resultWords(resumed), "UNIT_CANCELLED") || len(b.starter.launched()) != 2 {
+		t.Fatalf("cancelled owner resumed: %d %+v", code, resumed)
+	}
+}
+
 func TestIntentTreeReservationWaitsAcrossCommandsAndExactCancellation(t *testing.T) {
 	t.Parallel()
 	for _, terminalRecord := range []bool{false, true} {

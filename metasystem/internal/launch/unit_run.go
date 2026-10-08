@@ -211,11 +211,10 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 			return UnitResult{}, err
 		}
 	}
-	if record.State == "cancelled" {
-		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
-	}
-	if err := runner.reserveTree(record); err != nil {
-		return UnitResult{Record: record}, err
+	if record.State != "cancelled" {
+		if err := runner.reserveTree(record); err != nil {
+			return UnitResult{Record: record}, err
+		}
 	}
 	lock, err := runner.lock(record.ID)
 	if err != nil {
@@ -1160,11 +1159,7 @@ func (runner *UnitRunner) save(record UnitRunRecord) error {
 	if err := runner.reserveTree(record); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
-	}
-	if _, err = atomicfile.WriteText(filepath.Join(runner.runDir(record.ID), "run.json"), string(data)+"\n", runner.root()); err != nil {
+	if err := writeUnitJSON(filepath.Join(runner.runDir(record.ID), "run.json"), record, runner.root()); err != nil {
 		return err
 	}
 	if runner.AfterWrite != nil {

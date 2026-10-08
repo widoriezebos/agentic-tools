@@ -60,42 +60,39 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 	}
 	defer held.Release()
 	var owner treeReservation
-	data, err := os.ReadFile(path)
-	if err == nil {
-		err = json.Unmarshal(data, &owner)
-	}
+	err = readJSONFile(path, &owner)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if len(data) > 0 && (owner.Worktree != real || !idPattern.MatchString(owner.Run)) {
+	if err == nil && (owner.Worktree != real || !idPattern.MatchString(owner.Run)) {
 		return fmt.Errorf("the worktree ownership record is damaged: %s", path)
 	}
 	owner.Worktree = real
 	return act(path, &owner)
 }
 
-func (runner *UnitRunner) treeTransition(worktree, run string, act func(string, *treeReservation) error) error {
+// GateTree checks custody before a writer enters the worktree. The optional
+// transition runs while ownership is locked.
+func (runner *UnitRunner) GateTree(worktree, run string, act func(string, *treeReservation) error) error {
 	return runner.treeLocked(worktree, func(path string, owner *treeReservation) error {
 		if owner.Run != "" && owner.Run != run {
-			if !runner.treeQuiescent(*owner) {
-				return &TreeWaitingError{Run: owner.Run, CanCancel: runner.treeChildrenEnded(owner.Children)}
+			if released, ended := runner.treeQuiescent(*owner); !released {
+				return &TreeWaitingError{Run: owner.Run, CanCancel: ended}
 			}
 			if err := os.Remove(path); err != nil {
 				return err
 			}
 			*owner = treeReservation{Worktree: owner.Worktree}
 		}
-		return act(path, owner)
+		if act != nil {
+			return act(path, owner)
+		}
+		return nil
 	})
 }
 
-// GateTree checks custody before a writer enters the worktree.
-func (runner *UnitRunner) GateTree(worktree, run string) error {
-	return runner.treeTransition(worktree, run, func(_ string, _ *treeReservation) error { return nil })
-}
-
-func writeTreeReservation(path string, owner treeReservation, root string) error {
-	data, err := json.Marshal(owner)
+func writeUnitJSON(path string, record any, root string) error {
+	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -104,33 +101,43 @@ func writeTreeReservation(path string, owner treeReservation, root string) error
 }
 
 func (runner *UnitRunner) reserveTree(record UnitRunRecord) error {
-	return runner.treeTransition(record.Worktree, record.ID, func(path string, owner *treeReservation) error {
+	return runner.GateTree(record.Worktree, record.ID, func(path string, owner *treeReservation) error {
 		owner.Run, owner.Round, owner.Phase = record.ID, len(record.Rounds), record.State
-		for _, round := range record.Rounds {
-			for _, step := range round.Steps {
-				for _, id := range append(append([]string{}, step.LaunchIDs...), step.LaunchID) {
-					if id != "" && !slices.Contains(owner.Children, id) {
-						owner.Children = append(owner.Children, id)
-					}
-				}
-			}
-		}
+		owner.Children = unitChildren(record, owner.Children)
 		for _, subject := range record.Subjects {
 			if subject.Round == owner.Round {
 				copy := subject
 				owner.Subject = &copy
 			}
 		}
-		return writeTreeReservation(path, *owner, runner.root())
+		return writeUnitJSON(path, *owner, runner.root())
 	})
 }
 
+func unitChildren(record UnitRunRecord, children []string) []string {
+	for _, round := range record.Rounds {
+		for _, step := range round.Steps {
+			for _, id := range append(append([]string{}, step.LaunchIDs...), step.LaunchID) {
+				if id != "" && !slices.Contains(children, id) {
+					children = append(children, id)
+				}
+			}
+		}
+	}
+	return children
+}
+
+// A missing launch record under the run lock means the child never started;
+// every launch is created under that same lock.
 func (runner *UnitRunner) treeChildrenEnded(children []string) bool {
 	for _, id := range children {
 		if runner.Manager == nil {
 			return false
 		}
 		child, err := runner.Manager.Store.Read(id)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil || !child.State.Terminal() || !runner.Manager.provenDead(child) {
 			return false
 		}
@@ -138,15 +145,15 @@ func (runner *UnitRunner) treeChildrenEnded(children []string) bool {
 	return true
 }
 
-func (runner *UnitRunner) treeQuiescent(owner treeReservation) bool {
+func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended bool) {
 	held, err := runner.lock(owner.Run)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer releaseUnitLock(held)
 	record, err := runner.read(owner.Run)
 	if err != nil {
-		return false
+		return false, false
 	}
 	closed := record.State == "cancelled"
 	if len(record.Rounds) > 0 {
@@ -156,7 +163,8 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) bool {
 			closed = closed || subject.Round == round.Number && subject.Published != "" && round.Stop != nil && round.Stop.Decision == "close"
 		}
 	}
-	return closed && runner.treeChildrenEnded(owner.Children)
+	ended = runner.treeChildrenEnded(owner.Children)
+	return closed && ended, ended
 }
 
 // CancelRun records the person's stop before signalling, so no new step can
@@ -180,25 +188,22 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		if owner.Run != "" && owner.Run != id && record.State != "cancelled" {
 			return errors.New("another run owns the worktree; this run cannot release it")
 		}
-		for _, round := range record.Rounds {
-			for _, step := range round.Steps {
-				for _, child := range append(append([]string{}, step.LaunchIDs...), step.LaunchID) {
-					if child != "" && !slices.Contains(children, child) {
-						children = append(children, child)
-					}
-				}
-			}
-		}
 		if owner.Run == id {
-			children = append(children, owner.Children...)
+			children = append([]string(nil), owner.Children...)
 		}
+		children = unitChildren(record, children)
 		record.State = "cancelled"
-		data, err := json.MarshalIndent(record, "", "  ")
-		if err != nil {
+		if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
 			return err
 		}
-		_, err = atomicfile.WriteText(filepath.Join(runner.runDir(id), "run.json"), string(data)+"\n", runner.root())
-		return err
+		children = slices.DeleteFunc(children, func(child string) bool {
+			if runner.Manager == nil {
+				return false
+			}
+			_, err := runner.Manager.Store.Read(child)
+			return errors.Is(err, os.ErrNotExist)
+		})
+		return nil
 	})
 	if err != nil {
 		return record, err
@@ -237,12 +242,4 @@ func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound) (Un
 		}
 	}
 	return runner.finish(record, round, "proof-wrote")
-}
-
-func (runner *UnitRunner) gateNamedTree(worktree, key string) error {
-	entry, _, err := runner.readNamed(key)
-	if err != nil {
-		return err
-	}
-	return runner.GateTree(worktree, entry.Run)
 }

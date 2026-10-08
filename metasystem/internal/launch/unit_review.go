@@ -102,7 +102,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return coded("UNIT_RUN_UNKNOWN", "run="+id, fmt.Errorf("there is no work run %s: %v", id, err))
 	}
 	if runner.Manager != nil {
-		if err := runner.GateTree(current.Worktree, id); err != nil {
+		if err := runner.GateTree(current.Worktree, id, nil); err != nil {
 			return err
 		}
 	}
