@@ -90,6 +90,11 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 	for _, finding := range findings {
 		text.WriteString(fmt.Sprintf("| %s | DECIDE | | |\n", finding.ID))
 	}
+	if strings.HasPrefix(binding.Work, "design:") {
+		text.WriteString("\nFor a moved or renamed heading, append one Section mapping: JSON line.\n")
+		text.WriteString("Its from and to bind the old and new full-page SHA-256; headings lists exact From/To anchors.\n")
+		text.WriteString(fmt.Sprintf("Section mapping example (replace the new page checksum and headings):\n`Section mapping: {\"from\":\"%s\",\"to\":\"new-page-checksum\",\"headings\":[{\"from\":\"## Old heading\",\"to\":\"## New heading\"}]}`\n", binding.Subject))
+	}
 	return text.String()
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -75,6 +76,179 @@ func designEvidenceBed(t *testing.T, inventory string) (*designLoopBed, string, 
 	b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=0\n")
 	b.writeJSON(filepath.Join(dir, "return.json"), returned)
 	return b, dir, returned
+}
+
+func TestDesignReviewRetainsSectionIdentity(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"rename-and-move", "move", "replace-anchor", "unmapped", "duplicate-source", "duplicate-target", "absent-source", "absent-target", "stale-page", "multiple-mappings", "malformed", "frozen-decisions-corrupt", "collect-remapped"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			b, dir, returned := designEvidenceBed(t, evidenceInventory)
+			f := evidenceFinding("F1", "## Collection:1", "")
+			f["severity"] = "critical"
+			returned["findings"], returned["rigor"], returned["verdictMaterialCount"] = []any{f}, []any{evidenceRigor("F1")}, 1
+			b.writeJSON(filepath.Join(dir, "return.json"), returned)
+			b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=1\n")
+			initial := b.review()
+			if initial.Outcome != intentConfirmed {
+				t.Fatalf("initial collection: %+v", initial)
+			}
+			var old readsubject.Read
+			oldBytes := mustRead(t, filepath.Join(dir, "read.json"))
+			if err := json.Unmarshal(oldBytes, &old); err != nil {
+				t.Fatal(err)
+			}
+			answer := b.decide(initial, map[string]string{"F1": "accepted | specified collection | ## Collection:1"})
+			newHeading := "## Renamed collection"
+			if scenario == "move" {
+				newHeading = "## Collection:1"
+			}
+			if scenario == "replace-anchor" {
+				newHeading = "## Publication"
+			}
+			page := strings.Replace(old.Subject.DesignPage, "## Collection:1\nFirst version.\n\n", "", 1) + "\n" + newHeading + "\nCollection handles unknown input.\n"
+			if scenario == "replace-anchor" {
+				page = strings.Replace(page, "## Publication\nPublish the result.\n", "", 1)
+			}
+			b.writeFile(b.design, page)
+			headings := []map[string]string{{"from": "## Collection:1", "to": newHeading}}
+			mapping := map[string]any{"from": old.Subject.ContentDigest, "to": fmt.Sprintf("%x", sha256.Sum256([]byte(page))), "headings": headings}
+			switch scenario {
+			case "duplicate-source":
+				mapping["headings"] = append(headings, map[string]string{"from": "## Collection:1", "to": "## Publication"})
+			case "duplicate-target":
+				mapping["headings"] = append(headings, map[string]string{"from": "## Publication", "to": newHeading})
+			case "absent-source":
+				headings[0]["from"] = "## Absent"
+			case "absent-target":
+				headings[0]["to"] = "## Absent"
+			case "stale-page":
+				mapping["to"] = strings.Repeat("a", 64)
+			}
+			encoded, _ := json.Marshal(mapping)
+			line := "Section mapping: " + string(encoded) + "\n"
+			if scenario == "multiple-mappings" {
+				line += line
+			}
+			if scenario == "malformed" {
+				line = "Section mapping: {\n"
+			}
+			baseDecisions := string(mustRead(t, answer))
+			decisions := baseDecisions
+			if scenario != "unmapped" {
+				decisions += "\n" + line
+			}
+			b.writeFile(answer, decisions)
+			// Only dispatch is replaced: freeze the actual follow-up subject with
+			// the same production computation used at first admission.
+			dispatch := b.handler
+			b.handler = func(p intentProcess) intentProcessResult {
+				result := dispatch(p)
+				if flagValue(p.argv, "--follow-up") == "rev1" {
+					workspace, err := filepath.EvalSymlinks(b.root())
+					if err != nil {
+						t.Fatal(err)
+					}
+					subject, present, err := dispatchcore.ComputeReadSubjectWithFacts(dispatchcore.ReadSubjectRequest{RepoRoot: b.install, Role: "design-critic", Workspace: workspace, RootJob: "rev1"}, admissionFacts{})
+					if err != nil || !present {
+						t.Fatalf("follow-up subject: %v", err)
+					}
+					next := filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "2")
+					b.writeJSON(filepath.Join(next, "subject.json"), subject)
+					record := b.job("rev1-r2")
+					record["engineBuild"], record["effectiveModel"] = "fixture-engine", "fixture-critic"
+					b.writeJob(record)
+				}
+				return result
+			}
+			if scenario == "rename-and-move" {
+				b.writeFile(filepath.Join(b.root(), "draft.md"), "# Referenced draft\n")
+				b.owners.draftPaths = func([]byte, string) ([]string, error) { return []string{"draft.md"}, nil }
+			}
+			result := b.review("--dispositions", answer)
+			valid := scenario == "rename-and-move" || scenario == "move" || scenario == "replace-anchor" || scenario == "frozen-decisions-corrupt" || scenario == "collect-remapped"
+			if !valid {
+				if result.Outcome != intentFailed || !strings.Contains(result.Summary, "unknown") || len(b.followUps) != 0 || b.closes != 0 {
+					t.Fatalf("ambiguous mapping admitted: %+v", result)
+				}
+				mapping["from"], mapping["to"], mapping["headings"] = old.Subject.ContentDigest, fmt.Sprintf("%x", sha256.Sum256([]byte(page))), []map[string]string{{"from": "## Collection:1", "to": newHeading}}
+				encoded, _ := json.Marshal(mapping)
+				b.writeFile(answer, baseDecisions+"\nSection mapping: "+string(encoded)+"\n")
+				result = b.review("--dispositions", answer)
+			}
+			if result.Outcome != intentInProgress || len(b.followUps) != 1 {
+				t.Fatalf("mapped continuation: %+v", result)
+			}
+			next := filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "2")
+			var subject readsubject.ReadSubject
+			if err := json.Unmarshal(mustRead(t, filepath.Join(next, "subject.json")), &subject); err != nil {
+				t.Fatal(err)
+			}
+			b.finish("rev1-r2", 2, "completed")
+			returned["jobId"], returned["round"], returned["wholePageDigest"] = "rev1-r2", 2, subject.ContentDigest
+			returned["findings"], returned["rigor"], returned["verdictMaterialCount"] = []any{evidenceFinding("F2", newHeading, "")}, []any{evidenceRigor("F2")}, 1
+			b.writeJSON(filepath.Join(next, "return.json"), returned)
+			b.writeFile(filepath.Join(next, "return.md"), "VERDICT: REVISE material=1\n")
+			brief := flagValue(b.followUps[0], "--brief")
+			frozen := mustRead(t, brief)
+			if scenario == "frozen-decisions-corrupt" {
+				b.writeFile(brief, string(frozen)+"\nChanged frozen answer.\n")
+			}
+			result = b.review()
+			if scenario == "frozen-decisions-corrupt" {
+				if result.Outcome != intentFailed || !strings.Contains(result.Summary, "unknown") {
+					t.Fatalf("collector guessed ambiguous identity: %+v", result)
+				}
+				if _, err := os.Stat(filepath.Join(next, "read.json")); !os.IsNotExist(err) {
+					t.Fatalf("unknown mapping published a read: %v", err)
+				}
+				b.writeFile(brief, string(frozen))
+				if repaired := b.review(); repaired.Outcome != intentConfirmed {
+					t.Fatalf("restoring the frozen brief cannot recover collection: %+v", repaired)
+				}
+				return
+			}
+			if result.Outcome != intentConfirmed {
+				t.Fatalf("mapped read: %+v", result)
+			}
+			if scenario == "collect-remapped" {
+				retained := mustRead(t, filepath.Join(next, "read.json"))
+				originalDecisions := mustRead(t, answer)
+				changedAnswer := filepath.Join(b.root(), "changed-decisions.md")
+				b.writeFile(changedAnswer, baseDecisions+"\nA different answer to the earlier examination.\n")
+				changed := b.review("--dispositions", changedAnswer)
+				if changed.Outcome != intentRefused || !strings.Contains(changed.Summary, "already has examination 2") {
+					t.Fatalf("earlier decisions were retained after a follow-up: %+v", changed)
+				}
+				if !bytes.Equal(originalDecisions, mustRead(t, answer)) {
+					t.Fatal("refused earlier decisions overwrote the round's decisions")
+				}
+				if collected := b.review(); collected.Outcome != intentConfirmed {
+					t.Fatalf("refused decisions damaged the next collection: %+v", collected)
+				}
+				// The editor may still change the template directly; collection
+				// must use the decisions frozen with the follow-up request.
+				b.writeFile(answer, string(mustRead(t, changedAnswer)))
+				if collected := b.review(); collected.Outcome != intentConfirmed {
+					t.Fatalf("collection read the writable decisions: %+v", collected)
+				}
+				if !bytes.Equal(retained, mustRead(t, filepath.Join(next, "read.json"))) {
+					t.Fatal("a changed template rewrote immutable evidence")
+				}
+			}
+			var current readsubject.Read
+			if err := json.Unmarshal(mustRead(t, filepath.Join(next, "read.json")), &current); err != nil {
+				t.Fatal(err)
+			}
+			same := current.Design.Sections[newHeading] == old.Design.Sections["## Collection:1"]
+			if !same || (scenario != "replace-anchor" && current.Design.Sections["## Publication"] != old.Design.Sections["## Publication"]) {
+				t.Fatalf("section identity lost or guessed: old=%v new=%v", old.Design.Sections, current.Design.Sections)
+			}
+			if !bytes.Equal(oldBytes, mustRead(t, filepath.Join(dir, "read.json"))) {
+				t.Fatal("mapping rewrote the first examination")
+			}
+		})
+	}
 }
 
 func evidenceCoverage(row, where string) readsubject.DesignCoverage {
@@ -253,6 +427,7 @@ func TestDesignReviewFailedAdvanceWritesNoDecisions(t *testing.T) {
 	returned["rigor"], returned["verdictMaterialCount"] = []any{evidenceRigor("F1"), evidenceRigor("F2")}, 2
 	b.writeJSON(filepath.Join(dir, "return.json"), returned)
 	b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=2\n")
+	b.writeFile(b.design, string(mustRead(t, b.design))+"\nEdited after the examination.\n")
 	record := b.job("rev1")
 	record["findingRegisterRound"] = -1
 	b.writeJob(record)
@@ -267,13 +442,13 @@ func TestDesignReviewFailedAdvanceWritesNoDecisions(t *testing.T) {
 	if _, err := os.Stat(template); !os.IsNotExist(err) {
 		t.Fatalf("failed collection wrote a permanent decisions template: %v", err)
 	}
-	if _, present := result.Data.(map[string]any)["template"]; present {
+	if data, _ := result.Data.(map[string]any); data["template"] != nil {
 		t.Fatal("failed collection offers a decisions template")
 	}
 	record["findingRegisterRound"] = 0
 	b.writeJob(record)
 	result = b.review()
-	if result.Outcome != intentConfirmed || result.Data.(map[string]any)["template"] != template {
+	if result.Outcome != intentInProgress || result.Data.(map[string]any)["template"] != template {
 		t.Fatalf("repaired collection did not offer its template: %+v", result)
 	}
 	content := string(mustRead(t, template))
@@ -281,6 +456,38 @@ func TestDesignReviewFailedAdvanceWritesNoDecisions(t *testing.T) {
 		if !strings.Contains(content, "| "+id+" |") {
 			t.Fatalf("recovered template omits %s: %s", id, content)
 		}
+	}
+}
+
+func TestDesignReviewEditedPageUsesDerivedFindings(t *testing.T) {
+	t.Parallel()
+	b, dir, returned := designEvidenceBed(t, evidenceInventory)
+	returned["findings"], returned["rigor"], returned["verdictMaterialCount"] = []any{evidenceFinding("F1", "## Collection:1", "")}, []any{evidenceRigor("F1")}, 1
+	coverage := returned["coverage"].([]readsubject.DesignCoverage)
+	coverage[0].Answers[4] = readsubject.DesignAnswer{Question: 5, Unanswered: true}
+	b.writeJSON(filepath.Join(dir, "return.json"), returned)
+	b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=1\n")
+	raw := mustRead(t, filepath.Join(dir, "return.json"))
+	b.writeFile(b.design, string(mustRead(t, b.design))+"\nThe reader retains unknown input.\n")
+	result := b.review()
+	if result.Outcome != intentInProgress {
+		t.Fatalf("edited page collection: %+v", result)
+	}
+	derivedID := "rev1:inventory:reader:5"
+	template := result.Data.(map[string]any)["template"].(string)
+	for _, id := range []string{"F1", derivedID} {
+		if !strings.Contains(string(mustRead(t, template)), "| "+id+" | DECIDE |") {
+			t.Fatalf("edited page template omits %s", id)
+		}
+	}
+	retained := mustRead(t, filepath.Join(dir, "read.json"))
+	decided := b.decide(result, map[string]string{"F1": "accepted | specified collection | ## Collection:1", derivedID: "accepted | retains unknown input | ## Collection:1"})
+	closed := b.review("--dispositions", decided)
+	if closed.Outcome != intentConfirmed || b.closes != 1 || b.job("rev1")["chainClosed"] != true || len(b.followUps) != 0 {
+		t.Fatalf("edited page dispositions cannot close: %+v", closed)
+	}
+	if !bytes.Equal(raw, mustRead(t, filepath.Join(dir, "return.json"))) || !bytes.Equal(retained, mustRead(t, filepath.Join(dir, "read.json"))) {
+		t.Fatal("closing rewrote examination evidence")
 	}
 }
 

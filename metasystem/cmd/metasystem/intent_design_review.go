@@ -127,9 +127,12 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
 		if err == nil && required {
 			_, err = dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), chain.NewestJob)
+			if err == nil {
+				_, err = dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestJob)
+			}
 		}
 		if err != nil {
-			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design evidence is unknown; nothing was closed or requested", Details: []string{err.Error()}, next: inv.typedArgvLess("dispositions", "after"), nextReason: "recollect the retained evidence once the named return, prose or frozen page is readable and complete"}
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design evidence is unknown; nothing was closed or requested", Details: []string{err.Error()}, next: inv.typedArgvLess("dispositions", "after"), nextReason: "recollect the retained evidence once the named return, prose, frozen page, or follow-up request and brief are readable, complete and match their retained checksums"}
 		}
 	}
 	entry := inv.readDesignReviewEntry(plan.recordID)
@@ -219,6 +222,11 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was requested",
 			next: inv.typedArgvLess("dispositions", "after"), nextReason: "shows the current findings and writes their decisions file"}
 	}
+	if bound.Round < chain.NewestRound {
+		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("review %d already has examination %d; its decisions are frozen with that follow-up and cannot be replaced; nothing was retained or requested", bound.Round, chain.NewestRound),
+			next:    inv.typedArgvLess("dispositions", "after"), nextReason: "shows the newest examination and its own decisions file"}
+	}
 	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round)
 	if digest, _, readErr := reviewReturnDigest(returnPath); readErr != nil || digest != bound.Return || entry.Subjects[strconv.FormatInt(bound.Round, 10)] != bound.Subject {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
@@ -229,6 +237,15 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, text: violations,
 			Summary: "the decisions file leaves findings undecided (listed above); nothing was requested",
 			next:    inv.sameCommand(), nextReason: "once every finding has a decision"}
+	}
+	if required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round); err == nil && required {
+		page, problem := os.ReadFile(plan.design)
+		if problem == nil {
+			_, problem = dispatchcore.DesignRevisionSections(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round, string(page), content)
+		}
+		if problem != nil {
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the section evidence is unknown; nothing was closed or requested", Details: []string{problem.Error()}, next: inv.sameCommand(), nextReason: "once the mapping names unique headings in both page versions"}
+		}
 	}
 	// The decisions are the round's own from here on: the close composes the
 	// design's Dispositions section from every answered round's file.

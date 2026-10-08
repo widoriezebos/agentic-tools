@@ -56,6 +56,10 @@ func CollectDesignRead(id, root, recordID string, goals []string, subject ReadSu
 	}
 	d := &DesignRead{RecordID: recordID, Goals: append([]string{}, goals...), Root: root, RawMaterial: r.Material,
 		Sections: map[string]string{}, Inventory: []string{}, Coverage: raw.Coverage, Synthetic: []string{}}
+	d.Sections, err = DesignSections(root, recordID, subject.DesignPage, nil, nil)
+	if err != nil {
+		return r, err
+	}
 	r.Design = d
 	table, header, malformed, fenced := false, false, false, false
 	for _, line := range strings.Split(subject.DesignPage, "\n") {
@@ -68,10 +72,6 @@ func CollectDesignRead(id, root, recordID string, goals []string, subject ReadSu
 			continue
 		}
 		if strings.HasPrefix(line, "#") && strings.HasPrefix(strings.TrimLeft(line, "#"), " ") && strings.Index(line, " ") <= 6 {
-			if _, duplicate := d.Sections[line]; duplicate {
-				return r, fmt.Errorf("ambiguous design heading %q", line)
-			}
-			d.Sections[line] = fmt.Sprintf("%x", sha256.Sum256([]byte(root+"\n"+recordID+"\n"+line)))
 			table = line == DesignInventoryHeading
 		}
 		if !table || !strings.HasPrefix(trimmed, "|") {

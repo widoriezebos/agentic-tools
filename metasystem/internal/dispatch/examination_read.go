@@ -100,7 +100,34 @@ func CollectExamination(repoRoot, jobID string) (readsubject.Read, error) {
 		if !present || len(problems) != 0 || page.Kind != project.KindDesign {
 			return readsubject.Read{}, fmt.Errorf("frozen design record is unavailable or malformed")
 		}
-		return readsubject.CollectDesignRead(jobID, root, page.ID, page.Goals, subject, engine, model, output, data, verdict)
+		read, err := readsubject.CollectDesignRead(jobID, root, page.ID, page.Goals, subject, engine, model, output, data, verdict)
+		if err == nil && round > 1 {
+			parent := state.records[asString(record["parentJob"])]
+			previousRound, ok := numInt(parent["round"])
+			if !ok || previousRound < 1 || previousRound >= round {
+				return read, fmt.Errorf("section history has no preceding examination")
+			}
+			decisions, problem := frozenDesignDecisions(state.agents, root, page.ID, jobID, asString(record["operationId"]), previousRound)
+			if problem != nil {
+				return read, problem
+			}
+			sections, problem := DesignRevisionSections(repoRoot, root, previousRound, subject.DesignPage, decisions)
+			if problem != nil {
+				return read, problem
+			}
+			if sections != nil {
+				read.Design.Sections = sections
+			}
+		}
+		if err == nil {
+			canonical, _ := read.Canonical()
+			if retained, problem := os.ReadFile(filepath.Join(dir, "read.json")); problem == nil && string(retained) != string(canonical) {
+				return read, fmt.Errorf("design examination's immutable section evidence changed")
+			} else if problem != nil && !os.IsNotExist(problem) {
+				return read, problem
+			}
+		}
+		return read, err
 	}
 	return readsubject.Collect(jobID, subject, engine, model, output, data, verdict)
 }
