@@ -1,6 +1,8 @@
 package branch_test
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,5 +197,101 @@ func TestIntentReviewRetryProvesRecordedProcessDead(t *testing.T) {
 	table.live = false
 	if result, err := branch.RunBranchRead(retried); err != nil || result.State != "dispatched" || result.Retry != "critic-r2" || followUps != 1 {
 		t.Fatalf("a round whose recorded process and group are dead: %+v %v %d", result, err, followUps)
+	}
+}
+
+func TestBranchReadCompletedUnknownInputsRetryOnceAndRejoinPending(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"missing-class", "prose-disagreement", "pending-replay"} {
+		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
+			r := newReadFactRepository(t, false)
+			r.expectStart()
+			r.expectGateAndBrief()
+			checks := 3
+			if failure == "pending-replay" {
+				checks++
+			}
+			for range checks {
+				r.expectStart()
+			}
+			input := filepath.Join(t.TempDir(), "brief.md")
+			if err := os.WriteFile(input, []byte("Examine retained stop inputs.\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			writeUnknown := func(job string, round int) {
+				t.Helper()
+				record := map[string]any{"jobId": job, "role": "code-critic", "round": round, "status": "completed", "reviews": "commit:" + r.unit, "goalId": "goal-a", "engineBuild": "executing-build", "requestedModel": "resolved-model", "findingRegister": []any{}}
+				if round > 1 {
+					record["parentJob"] = "critic"
+				}
+				writeJSONFixture(t, r.root, "artifacts/agents/jobs/"+job+".json", record)
+				f := map[string]any{"id": "F1", "severity": "high", "material": true, "claim": "The reader misses retained evidence.", "evidence": "Observed the missing path.", "where": "metasystem/test.go", "change": "Read retained evidence."}
+				if failure == "prose-disagreement" {
+					f["class"] = "missing-reader"
+				}
+				dir := "artifacts/agents/critic/rounds/" + fmt.Sprint(round)
+				writeJSONFixture(t, r.root, dir+"/subject.json", r.readSubject())
+				writeJSONFixture(t, r.root, dir+"/return.json", map[string]any{"jobId": job, "round": round, "reviewedTree": r.readSubject().Tree, "verdictMaterialCount": 1, "findings": []any{f}})
+				prose := "VERDICT: REVISE material=1\n"
+				if failure == "prose-disagreement" {
+					prose = "VERDICT: LAND\n"
+				}
+				if err := os.WriteFile(filepath.Join(r.root, dir, "return.md"), []byte(prose), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			attempts, executions := 0, 0
+			request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit, GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: input, CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil }, NewID: func(string) (string, error) { return "retry-gate", nil }, Delegate: func(string, string, string, string, string) (string, error) {
+				writeUnknown("critic", 1)
+				_, err := dispatch.CollectExamination(r.root, "critic")
+				want := "incomplete stop evidence"
+				if failure == "prose-disagreement" {
+					want = "prose verdict disagrees"
+				}
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("fixture does not expose %s: %v", failure, err)
+				}
+				return "critic", nil
+			}, FollowUp: func(root, brief string) (string, error) {
+				attempts++
+				data, err := os.ReadFile(filepath.Join(r.root, "artifacts/agents/jobs/critic.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(data), `"unknownExaminationRetryFrom":"critic"`) && !strings.Contains(string(data), `"unknownExaminationRetryFrom": "critic"`) {
+					t.Fatal("fresh examination started before recording retry")
+				}
+				if failure == "pending-replay" && attempts == 1 {
+					return "", errors.New("follow-up ended before reserving a child")
+				}
+				executions++
+				writeUnknown("critic-r2", 2)
+				return "critic-r2", nil
+			}}
+			if _, err := branch.RunBranchRead(request); err != nil {
+				t.Fatal(err)
+			}
+			retry := func(round int64) (branch.BranchReadResult, error) {
+				next := request
+				next.BriefPath = ""
+				next.Retry = round
+				return branch.RunBranchRead(next)
+			}
+			if failure == "pending-replay" {
+				if _, err := retry(1); err == nil {
+					t.Fatal("prelaunch failure was hidden")
+				}
+			}
+			if got, err := retry(1); err != nil || got.State != "dispatched" || got.Retry != "critic-r2" || executions != 1 {
+				t.Fatalf("one fresh examination: %+v,%v executions=%d", got, err, executions)
+			}
+			if got, err := retry(1); err != nil || got.State != "retry-joined" || executions != 1 {
+				t.Fatalf("retry replay: %+v,%v executions=%d", got, err, executions)
+			}
+			if _, err := retry(2); err == nil || !strings.Contains(err.Error(), "already been reserved") || executions != 1 {
+				t.Fatalf("third examination admitted: %v executions=%d", err, executions)
+			}
+		})
 	}
 }

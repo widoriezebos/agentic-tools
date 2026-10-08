@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"runtime/debug"
 )
 
 const DefaultWaitTimeout = 240 * time.Second
@@ -55,9 +56,11 @@ type StartSpec struct {
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
 	Model, Effort, UnitsPage, DiffFile, Package, File  string
 	Wide                                               bool
+	StopInputs                                         bool
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
+	wait                                               func(func() error) error
 	// Round and MaxRounds are the unit round this launch serves and the
 	// run's approved ceiling; the board card carries them (D14, R24).
 	Round, MaxRounds int
@@ -198,6 +201,26 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	record.AdapterData = data
 	setString(record.AdapterData, "brief", inputs[0].Path)
+	if spec.Kind == "read" && spec.StopInputs {
+		setString(record.AdapterData, "unitStopInputs", "true")
+		stateDir, stateErr := m.Store.StateDir(id)
+		if stateErr != nil {
+			return Record{}, stateErr
+		}
+		switch len(spec.Outputs) {
+		case 0:
+			spec.Outputs = []string{filepath.Join(stateDir, "report.md"), filepath.Join(stateDir, "return.json")}
+		case 1:
+			// Keep the caller's report in its writable directory. Structured evidence
+			// shares that directory and its declared-output lifecycle.
+			spec.Outputs = append(append([]string(nil), spec.Outputs...), spec.Outputs[0]+".json")
+		}
+		engine := "dev"
+		if info, ok := debug.ReadBuildInfo(); ok {
+			engine = info.String()
+		}
+		setString(record.AdapterData, "engine", engine)
+	}
 	setStrings(record.AdapterData, "declaredOutputs", spec.Outputs)
 	setString(record.AdapterData, "model", model)
 	setString(record.AdapterData, "effort", effort)
@@ -258,6 +281,19 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 	}
+	if spec.wait == nil {
+		return m.startSupervisor(id, stateDir)
+	}
+	var started Record
+	err = spec.wait(func() error {
+		var startErr error
+		started, startErr = m.startSupervisor(id, stateDir)
+		return startErr
+	})
+	return started, err
+}
+
+func (m *Manager) startSupervisor(id, stateDir string) (Record, error) {
 	supervisor, err := m.Supervisor.StartSupervisor(id, stateDir)
 	if err != nil {
 		failed, writeErr := m.fail(id, "supervisor-start: "+err.Error(), nil)
@@ -515,6 +551,16 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			record.State, record.Reason = Failed, "read-measure: "+measureErr.Error()
 		}
 		if record.Kind == "read" {
+			if record.State == Completed && measurement.Compactions == 0 && readString(record.AdapterData, "unitStopInputs") == "true" {
+				read, readErr := collectLaunchRead(*record, stateDir)
+				if readErr != nil {
+					record.ReadError = readErr.Error()
+				} else {
+					record.Read = &read
+					record.ReadError = ""
+					record.Measurement.MaterialCount = read.Material
+				}
+			}
 			counts := record.State == Completed && measurement.Compactions == 0
 			record.VerdictCounts = &counts
 		}
@@ -795,6 +841,8 @@ func adapterOutcome(adapter Adapter, exitCode int, measureErr error) (State, str
 }
 
 // stopCause names an environmental failure without changing the launch's outcome.
+// No deadline is classified until a real step deadline exists; a supervisor
+// readiness timeout is an environment failure that permits the step retry.
 func (m *Manager) stopCause(record Record) string {
 	if record.State != Failed {
 		return ""

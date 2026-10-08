@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	goalfile "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
@@ -157,10 +158,13 @@ func gitLandingRepository() landingRepository {
 	}
 }
 
-func (r landingRepository) status(repo, endpoint, tip, goal string) (Status, error) {
+func (r landingRepository) status(repo, endpoint, tip, goal, goalPage string) (Status, error) {
 	return inspectStatus(repo, endpoint, tip, goal, statusDependencies{
 		validatedRange: r.reads.Range,
-		kind:           r.reads.Kind,
+		transferObligations: func(string, string, string) []goalfile.ReviewObligation {
+			return transferObligationsFromPage([]byte(goalPage))
+		},
+		kind: r.reads.Kind,
 		attestation: func(repo, snapshot, endpoint, goal, unit, commit string) (Attestation, error) {
 			return validateAttestation(r.reads, repo, snapshot, endpoint, goal, unit, commit, map[string]bool{})
 		},

@@ -74,6 +74,9 @@ func providerWaits(home, goalID string, start, now time.Time, dependencies []clo
 	if !slices.ContainsFunc(dependencies, func(d clockDependency) bool { return d.runtime != "local" && d.runtime != "plain-exec" }) {
 		return nil, nil
 	}
+	if slices.ContainsFunc(dependencies, func(d clockDependency) bool { return d.at.IsZero() }) {
+		return nil, fmt.Errorf("local work dependency time is unreadable")
+	}
 	providers, err := outage.ReadProviders(home)
 	if err != nil {
 		return nil, err

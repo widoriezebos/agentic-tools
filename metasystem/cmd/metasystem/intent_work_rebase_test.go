@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -193,5 +194,138 @@ func TestIntentWorkRebaseJudgementCode(t *testing.T) {
 	code, result := b.runJSON(owners, "work", "rebase", b.id)
 	if code == 0 || result.Data.(map[string]any)["code"] != branch.RebaseJudgementCode || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem question wait question-id" {
 		t.Fatalf("refusal %+v code %d", result, code)
+	}
+}
+
+// The command uses the real range and carry owners: the claim is which Git
+// evidence stays retained while a proven landed read leaves the active range.
+func TestWorkRebaseOmitsProvenLandedReadGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"equivalent", "replayed equivalent", "same filename", "corrupt manifest"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			b, owners, _ := rebaseIntentBed(t)
+			repo := b.worktree
+			connectionGit(t, repo, "init", "-q", "-b", "main")
+			connectionGit(t, repo, "config", "user.name", "fixture")
+			connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
+			connectionGit(t, repo, "commit", "-qm", "base", "--allow-empty")
+			base := connectionGit(t, repo, "rev-parse", "HEAD")
+			remote := filepath.Join(t.TempDir(), "origin.git")
+			connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
+			connectionGit(t, repo, "remote", "add", "origin", remote)
+			writeUnitCarryFile(t, filepath.Join(repo, "u1.go"), "original\n")
+			connectionGit(t, repo, "add", "u1.go")
+			original, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "u1", Kind: branch.Unit, OpID: "original", CheckClaim: func() error { return nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest, err := branch.UnitDigest(repo, original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			readPath := "metasystem/records/misc/read.md"
+			writeUnitCarryFile(t, filepath.Join(repo, readPath), "Read "+original+" change "+digest)
+			read, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "u1", OpID: "read", ReaderRecord: readPath, CheckClaim: func() error { return nil }, GateRunID: "gate", GateTree: connectionGit(t, repo, "rev-parse", original+"^{tree}")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			connectionGit(t, repo, "checkout", "-qb", "integrated", base)
+			connectionGit(t, repo, "cherry-pick", "--no-commit", original)
+			if state == "same filename" {
+				writeUnitCarryFile(t, filepath.Join(repo, "u1.go"), "different change\n")
+				connectionGit(t, repo, "add", "u1.go")
+			} else if state == "corrupt manifest" {
+				digest = strings.Repeat("0", 64)
+			}
+			if state == "same filename" {
+				connectionGit(t, repo, "commit", "-qm", "provisional")
+				var err error
+				digest, err = branch.UnitDigest(repo, "HEAD")
+				if err != nil {
+					t.Fatal(err)
+				}
+				connectionGit(t, repo, "commit", "--amend", "-qm", "landed\n\nGoal-Unit: "+b.id+"/u1\nGoal-Digest: "+digest)
+			} else {
+				connectionGit(t, repo, "commit", "-qm", "landed\n\nGoal-Unit: "+b.id+"/u1\nGoal-Digest: "+digest)
+			}
+			main := connectionGit(t, repo, "rev-parse", "HEAD")
+			connectionGit(t, repo, "push", "-q", "origin", "HEAD:main")
+			if state == "replayed equivalent" {
+				connectionGit(t, repo, "checkout", "-qB", "goal/"+b.id, read)
+			} else {
+				connectionGit(t, repo, "checkout", "-qB", "goal/"+b.id, main)
+				connectionGit(t, repo, "cherry-pick", read)
+			}
+			writeUnitCarryFile(t, filepath.Join(repo, "u2.go"), "remaining\n")
+			connectionGit(t, repo, "add", "u2.go")
+			connectionGit(t, repo, "commit", "-qm", "remaining\n\nGoal-Unit: "+b.id+"/u2")
+			connectionGit(t, repo, "push", "-q", "origin", "HEAD:goal/"+b.id)
+			owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return main, nil }
+			owners.connection.rebase = branch.Rebase
+			owners.connection.rebaseGate = func(string) (string, error) { t.Fatal("a landed read started a new check"); return "", nil }
+			code, result := b.runJSON(owners, "work", "rebase", b.id)
+			if state != "equivalent" && state != "replayed equivalent" {
+				if code == 0 {
+					t.Fatalf("unproved equivalence admitted: %+v", result)
+				}
+				return
+			}
+			if code != 0 || state == "equivalent" && result.Outcome != intentUnchanged || state == "replayed equivalent" && result.Outcome != intentConfirmed {
+				t.Fatalf("rebase: %+v code=%d", result, code)
+			}
+			tip := connectionGit(t, repo, "rev-parse", "HEAD")
+			commits, err := branch.ValidateRange(repo, main, tip, b.id)
+			if err != nil || len(commits) != 1 || commits[0].Unit != "u2" {
+				t.Fatalf("active range: %+v %v", commits, err)
+			}
+			if data := connectionGit(t, repo, "show", tip+":metasystem/records/reads/"+b.id+"/"+original+".json"); !strings.Contains(data, original) {
+				t.Fatal("landed read evidence was deleted")
+			}
+		})
+	}
+}
+
+// Remote-main freshness and the reported count require the real Git adapter.
+func TestWorkRebaseReportsRemoteMainBehindGitAdapter(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := rebaseIntentBed(t)
+	repo := b.worktree
+	connectionGit(t, repo, "init", "-q", "-b", "main")
+	connectionGit(t, repo, "config", "user.name", "fixture")
+	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
+	connectionGit(t, repo, "commit", "-qm", "base", "--allow-empty")
+	base := connectionGit(t, repo, "rev-parse", "HEAD")
+	remote := filepath.Join(t.TempDir(), "origin.git")
+	connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
+	connectionGit(t, repo, "remote", "add", "origin", remote)
+	connectionGit(t, repo, "push", "-q", "origin", "HEAD:main")
+	connectionGit(t, repo, "checkout", "-qb", "goal/"+b.id)
+	writeUnitCarryFile(t, filepath.Join(repo, "u1.go"), "work\n")
+	connectionGit(t, repo, "add", "u1.go")
+	connectionGit(t, repo, "commit", "-qm", "unit\n\nGoal-Unit: "+b.id+"/u1")
+	old := connectionGit(t, repo, "rev-parse", "HEAD")
+	connectionGit(t, repo, "push", "-q", "origin", "HEAD:goal/"+b.id)
+	peer := filepath.Join(t.TempDir(), "peer")
+	connectionGit(t, filepath.Dir(peer), "clone", "-q", "--branch", "main", remote, peer)
+	connectionGit(t, peer, "config", "user.name", "fixture")
+	connectionGit(t, peer, "config", "user.email", "fixture@example.invalid")
+	for i := 1; i <= 3; i++ {
+		writeUnitCarryFile(t, filepath.Join(peer, "plans/goals/history.md"), fmt.Sprintf("history %d\n", i))
+		connectionGit(t, peer, "add", "plans/goals/history.md")
+		connectionGit(t, peer, "commit", "-qm", "goal history")
+	}
+	main := connectionGit(t, peer, "rev-parse", "HEAD")
+	connectionGit(t, peer, "push", "-q", "origin", "HEAD:main")
+	if tip := connectionGit(t, repo, "rev-parse", "refs/remotes/origin/main"); tip != base {
+		t.Fatal("fixture's remote tracking ref is not stale")
+	}
+	owners.connection.endpointTip = branch.EndpointTip
+	owners.connection.rebase = branch.Rebase
+	code, result := b.runJSON(owners, "work", "rebase", b.id)
+	data, err := json.Marshal(result.Data)
+	var got branch.RebaseResult
+	if err != nil || json.Unmarshal(data, &got) != nil || code != 0 || got.State != "held" || got.MainTip != main || got.Behind != 3 || got.NewTip != old || !strings.Contains(result.Summary, "3 commits behind current remote main") || strings.Contains(result.Summary, "already on main") {
+		t.Fatalf("fresh main and count: result=%+v rebase=%+v code=%d err=%v", result, got, code, err)
 	}
 }

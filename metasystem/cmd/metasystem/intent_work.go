@@ -20,17 +20,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
@@ -67,12 +71,14 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	engineStamp string
-	designGate  designGateOwners
-	adapter     func(string) (adapter.Adapter, error)
-	units       func(layout stateroot.Layout) *launch.UnitRunner
-	git         func(dir string, args ...string) ([]byte, error)
-	wait        func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
+	criticDeath  dispatchcore.CustodyDeathDependencies
+	cancelCritic func(string, string) (map[string]any, int, error)
+	engineStamp  string
+	designGate   designGateOwners
+	adapter      func(string) (adapter.Adapter, error)
+	units        func(layout stateroot.Layout) *launch.UnitRunner
+	git          func(dir string, args ...string) ([]byte, error)
+	wait         func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -108,6 +114,11 @@ func unitLaunchSettings(layout stateroot.Layout, serving func(string) (string, s
 
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
+	if owners.cancelCritic == nil {
+		owners.cancelCritic = func(root, job string) (map[string]any, int, error) {
+			return cancelDispatchJobWith(runDelegateWith, root, job)
+		}
+	}
 	if owners.adapter == nil {
 		owners.adapter = adapter.Detect
 	}
@@ -225,7 +236,7 @@ func intentWorkCommands() []intentCommand {
 		{
 			object: "work", action: "build", laidOut: true, primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
 			usage: []string{
-				"metasystem work build G [--work NAME] --brief FILE --check COMMAND...",
+				"metasystem work build G [--work NAME] --brief FILE",
 				"metasystem work build run:RUN",
 			},
 			details: []string{
@@ -234,7 +245,7 @@ func intentWorkCommands() []intentCommand {
 				"A work name is the caller's name for one part of the goal; without --work the first build is main, and a goal with one",
 				"work item continues it. The same goal, work and request reach the same attempt again; a different request is refused",
 				"and is sent as a correction with work revise.",
-				"--check ends the options: every later word is the proof command's argument vector, run without a shell.",
+				"Committed proof.cheap, proof.audits and proof.deadline are frozen before the builder starts; its brief calls test run --unit-run RUN.",
 				"The size is the work's row in the brief's or the accepted design's units table; without a row give --lines N.",
 				"The first read may use the tool calls the brief names (Maximum reader tool calls: N), --read-tool-calls N, or else",
 				"the configured intent.review.tool-calls allowance (48 unless metasystem.conf says otherwise).",
@@ -252,13 +263,15 @@ func intentWorkCommands() []intentCommand {
 				{name: "model", value: "MODEL", advanced: true, usage: "the build model for this unit instead of launch.build.model"},
 				{name: "effort", value: "EFFORT", advanced: true, usage: "the build effort for this unit instead of launch.build.effort"},
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
-				{name: "check", value: "COMMAND...", rest: true, usage: "the proof command, run in the goal worktree's copy of this folder; it ends the options"},
+				{name: "reason", value: "TEXT", usage: "why the person chooses an explicit repair check"},
+				{name: "by", value: "NAME", usage: "the proven person choosing the repair check"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "a person's explicit repair command; ends the options"},
 			},
 			maxArgs: 2,
 			accepts: []string{refGoal, refRun},
 			examples: []string{
-				"metasystem work build verbs-match-intent --brief work-brief.md --check go test -count=1 -run 'TestIntent' ./cmd/metasystem/",
-				"metasystem work build verbs-match-intent --work discovery --brief discovery.md --check go test ./cmd/metasystem/",
+				"metasystem work build verbs-match-intent --brief work-brief.md",
+				"metasystem work build verbs-match-intent --work discovery --brief discovery.md",
 				"metasystem work build run:20260925T101500Z-abc123",
 			},
 			run: runIntentBuild,
@@ -315,6 +328,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
+				{name: "unit-run", value: "RUN", usage: "execute the run's frozen cheap check and audits"},
 				{name: "authority", value: "H", advanced: true, usage: "the claimed goal authorizing the proof reservation"},
 				{name: "mode", value: "MODE", usage: "auto (default), standard or deep"},
 				testVerboseFlag,
@@ -451,9 +465,145 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
 		runner.Actor = "person"
 	}
+	runner.FreezeCheck = inv.resolveUnitCheck
+	if inv.input.has("check") {
+		runner.ReviewPolicy = func() (string, error) { return "person", nil }
+	}
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
-	runner.BeforeModelLaunch = inv.unitLaunchAuthority
+	runner.ExaminationRead = dispatchcore.CollectExamination
+	runner.CriticCustody = inv.criticCustody
+	runner.InheritedFindings = func(id, unit string) ([]readsubject.Finding, error) {
+		if id == "" {
+			return nil, nil
+		}
+		if inv.stateRoot == "" {
+			if problem := inv.selectRoot(); problem != nil {
+				return nil, fmt.Errorf("the inherited goal evidence cannot be located: %s", problem.Summary)
+			}
+		}
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return nil, fmt.Errorf("the inherited goal evidence cannot be read: %s", problem.Summary)
+		}
+		file, _ := goalRecord(projection, id)
+		if file == nil {
+			return nil, fmt.Errorf("goal %s is unavailable", id)
+		}
+		var findings []readsubject.Finding
+		for _, obligation := range file.ReviewObligations {
+			if obligation.TargetUnit == unit {
+				findings = append(findings, obligation.OriginalEvidence)
+			}
+		}
+		return findings, nil
+	}
+	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
+		settings := runner.Manager.Settings
+		if len(settings.Values) == 0 {
+			settings = launch.DefaultSettings()
+		}
+		return inv.unitLaunchAuthority(record, spec, settings)
+	}
+	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
+		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
+			round := unit.Rounds[len(unit.Rounds)-1]
+			results, err := filepath.Glob(filepath.Join(unit.Worktree, "artifacts", "unit-checks", unit.ID, filepath.Base(round.Directory), "check-*", "result.json"))
+			if err != nil {
+				return err
+			}
+			for _, result := range results {
+				target := filepath.Join(round.Directory, "builder-"+filepath.Base(filepath.Dir(result)), "result.json")
+				if _, err := os.Stat(target); err == nil {
+					continue
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+				if _, err := atomicfile.CopyFile(result, target, round.Directory); err != nil {
+					return err
+				}
+			}
+		}
+		if inv.stateRoot == "" {
+			if problem := inv.selectRoot(); problem != nil {
+				return fmt.Errorf("the execution installation cannot be read: %s", problem.Summary)
+			}
+		}
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return fmt.Errorf("the execution's goal revision cannot be read: %s", problem.Summary)
+		}
+		file, _ := goalRecord(projection, unit.Goal)
+		if file == nil {
+			return fmt.Errorf("the execution's goal %s cannot be read", unit.Goal)
+		}
+		revision := file.Revision
+		if file.Claimed != nil {
+			revision = file.Claimed.Revision
+		}
+		return dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
+	}
 	runner.PlanProof = inv.unitProof
+	judge := landingFlakeJudge(inv.layout.InstallationRoot.Path(), func(root string, args ...string) (string, error) {
+		data, err := inv.work().git(root, args...)
+		return string(data), err
+	}, inv.layout.InstallationRel)
+	runner.KnownFlake = func(record launch.Record) (bool, error) {
+		state, err := runner.Manager.Store.StateDir(record.ID)
+		if err != nil {
+			return false, err
+		}
+		data, err := os.ReadFile(filepath.Join(state, "exec.log"))
+		if err != nil {
+			return false, err
+		}
+		failed := plain.FailedChecks(data)
+		if len(failed) == 0 {
+			return false, nil
+		}
+		root, err := inv.work().git(record.WorkingDirectory, "rev-parse", "--show-toplevel")
+		if err != nil {
+			return false, err
+		}
+		// A judge error (a unit new on main, a unit id that is not a path) means
+		// "not a known flake", as at landing (plain/replay.go): the base comparison decides.
+		judgements, err := judge(strings.TrimSpace(string(root)), "HEAD", failed)
+		if err != nil {
+			return false, nil
+		}
+		known := true
+		for _, unit := range failed {
+			known = known && judgements[unit.Unit].Known && !judgements[unit.Unit].Affected
+		}
+		return known, nil
+	}
+	runner.RecordMain = func(record launch.Record, commit, tree string) error {
+		state, err := runner.Manager.Store.StateDir(record.ID)
+		if err != nil {
+			return err
+		}
+		log := filepath.Join(state, "exec.log")
+		data, err := os.ReadFile(log)
+		if err != nil {
+			return err
+		}
+		return inv.landing().landingIncidentRecorder(inv.layout.InstallationRoot.Path())([]plain.Result{{Result: plain.Red, Commit: commit, Tree: tree, Attempt: record.ID, Log: log, Failed: plain.FailedChecks(data)}})
+	}
+	if runner.ReviewPolicy == nil {
+		runner.ReviewPolicy = func() (string, error) {
+			params, err := inv.policyParams("review.stop")
+			if err != nil {
+				repair, _ := inv.reviewPolicyRepair(err)
+				return "", fmt.Errorf("review.stop cannot be read; %s: %w", shellCommand(repair), err)
+			}
+			policy, err := config.ResolvePolicy(params)
+			if err != nil {
+				repair, _ := inv.reviewPolicyRepair(err)
+				return "", fmt.Errorf("review.stop cannot be read; %s: %w", shellCommand(repair), err)
+			}
+			return policy.Value, err
+		}
+	}
 	return runner
 }
 
@@ -477,17 +627,42 @@ func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofComm
 	return append(proof, plan.Proof...), nil
 }
 
-// unitLaunchAuthority is asked before every build or read launch of a unit
+// unitLaunchAuthority is asked before every build, proof or read launch of a unit
 // run this command advances, new or continued: the goal must be claimed by
 // this session and the checkout lease held, resolved through the selected
 // installation's own configuration.
-func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ launch.StartSpec) error {
+func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, spec launch.StartSpec, settings launch.Settings) error {
 	conn := inv.connection()
 	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return err
 	}
-	return branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint))
+	if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
+		return err
+	}
+	projection, now, problem := inv.projection()
+	if problem != nil {
+		return fmt.Errorf("the launch's goal revision cannot be read: %s", problem.Summary)
+	}
+	file, _ := goalRecord(projection, record.Goal)
+	if file == nil {
+		return fmt.Errorf("the launch's goal %s cannot be read", record.Goal)
+	}
+	role, runtime, model := "implementer", settings.BuildRuntime, settings.BuildModel
+	if spec.Kind == "proof" {
+		role, runtime, model = "tester", "plain", ""
+	}
+	if spec.Kind == "read" {
+		role, runtime, model = "code-critic", settings.ReadRuntime, settings.ReadModel
+	}
+	if spec.Model != "" {
+		model = spec.Model
+	}
+	cap, _, _, err := dispatchcore.ResolveCap(filepath.Join(inv.layout.InstallationRoot.Path(), "metasystem.conf"), role, runtime, model, "", "")
+	if err != nil {
+		return err
+	}
+	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
 }
 
 // build
@@ -604,7 +779,7 @@ var (
 )
 
 func runIntentBuildUnit(inv *intentInvocation) int {
-	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") || !inv.input.has("check") {
+	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") {
 		retry := inv.sameCommand()
 		if len(inv.input.args) == 0 {
 			retry = inv.typedArgvFor("GOAL")
@@ -612,12 +787,9 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		if !inv.input.has("brief") {
 			retry = append(retry, "--brief", "FILE")
 		}
-		if !inv.input.has("check") {
-			retry = append(retry, "--check", "COMMAND")
-		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work build needs one goal, a brief and the checks to run; nothing was done",
-			next:    retry, nextReason: "FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)"})
+			Summary: "work build needs one goal and a brief; nothing was done",
+			next:    retry, nextReason: "FILE is the brief; committed settings select the checks"})
 	}
 	if len(inv.input.args) == 2 && inv.input.has("work") && inv.input.args[1] != inv.input.text("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
@@ -831,6 +1003,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		}
 	}
 	check := inv.input.values["check"]
+	if len(check) == 0 {
+		check = []string{"/usr/bin/true"}
+	}
 	worktree, problem := inv.prepareGoalWorktree(id)
 	if problem != nil {
 		return unitRequest{}, problem
@@ -1179,8 +1354,7 @@ func (b unitBinding) buildBrief(brief []byte) string {
 	} else {
 		fmt.Fprintf(&text, "- Size: the %s row of the units table in %s (%d changed lines)\n", b.unit, b.unitsPage, b.lines)
 	}
-	argv, _ := json.Marshal(b.check)
-	fmt.Fprintf(&text, "- Proof after the build, run without a shell as this argument vector: %s\n", argv)
+	text.WriteString("- Check: run the frozen command at the start of this round's brief before returning.\n")
 	fmt.Fprintf(&text, "- Rounds: at most %d, the goal's approved review-round limit\n", b.rounds)
 	fmt.Fprintf(&text, "- Caller's brief: %s\n\nLeave the change in the worktree, uncommitted. The run ends awaiting judgement; it is not approved or landed by the build.\n\n---\n\n", b.brief)
 	text.Write(brief)
@@ -1241,6 +1415,11 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
 	record := result.Record
 	if err != nil {
+		var treeWait *launch.TreeWaitingError
+		var damagedTree *launch.TreeOwnershipError
+		if errors.As(err, &treeWait) || errors.As(err, &damagedTree) {
+			return inv.treeFailure(err)
+		}
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
@@ -1260,6 +1439,21 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				}
 			}
 			return held
+		case errors.Is(err, errProofDeclaration):
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
+				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
+		case launch.IsCode(err, "BUDGET_REFUSED") || launch.IsCode(err, "BUDGET_UNKNOWN"):
+			goalID := targetID(targets, "goal", record.Goal)
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				Data: unitData(record, runner.Manager), next: inv.publicArgv("goal", "budget", goalID, "BOX"), nextReason: "a person sets the goal's budget; unreadable spending records also need repair"}
+		case launch.IsCode(err, "UNIT_STOPPED"):
+			if len(record.Rounds) > 0 && (record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" || record.Rounds[len(record.Rounds)-1].Stop != nil && record.Rounds[len(record.Rounds)-1].Stop.Loop == "unit-build") {
+				next, _ := inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+				return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+					Data: unitData(record, runner.Manager), next: next}
+			}
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
+				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "review"), nextReason: "applies the unit's recorded review decision"}
 		case launch.IsCode(err, "UNIT_ROUND_DIVERGENT"):
 			var divergence *launch.CodedError
 			if errors.As(err, &divergence) {
@@ -1290,6 +1484,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, next: again, nextReason: "once that is settled", Details: details}
 	}
+	if err := inv.syncBuildHolds(record); err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the build hold questions could not be reconciled", Details: []string{err.Error()}, next: inv.workArgv(record, "wait")}
+	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
 	if result.Capped {
@@ -1299,6 +1496,13 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	line := unitJudgementLine(record, runner.Manager)
+	if round.Outcome == "build-size" || round.Outcome == "build-gap" || round.Stop != nil && round.Stop.Loop == "unit-build" {
+		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
+		if round.Outcome != "build-size" {
+			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
+		}
+		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: round.Stop.Handoff + ": " + round.Stop.Class, next: next}
+	}
 	if round.Outcome == "read-compacted" {
 		return intentResult{Outcome: intentFailed, Targets: targets, code: unitExitReadCompacted, Data: data, text: []string{line},
 			Summary:  fmt.Sprintf("run %s round %d: the read was compacted and its verdict does not count", record.ID, round.Number),
@@ -1394,6 +1598,7 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 		return data
 	}
 	round := record.Rounds[len(record.Rounds)-1]
+	data["stop"], data["reads"], data["unknownRetries"] = round.Stop, round.Reads, round.UnknownRetries
 	data["round"], data["outcome"], data["steps"], data["directory"] = round.Number, round.Outcome, round.Steps, round.Directory
 	path := filepath.Join(round.Directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {
@@ -1441,6 +1646,48 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()
+	if inv.input.has("reason") || inv.input.has("by") {
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		actor, _, problem := inv.actingAs("revise", run, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		person := ""
+		for i, v := range actor {
+			if v == "--by" && i+1 < len(actor) {
+				person = actor[i+1]
+			}
+		}
+		reason := inv.input.text("reason")
+		if reason == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a person's revision needs its reason", next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "give the reason for this revision"})
+		}
+		impact := "Impact: this admits one correction despite the recorded review.\nThe unit needs another read; its automatic allowance remains.\nCancel the admitted run to undo the request."
+		current, err := runner.Status(run)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
+		}
+		if err := inv.recordUnitStopOverride(current.Goal, "work-revise", reason, impact, person); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
+		}
+		bytes, err := os.ReadFile(brief)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "uses the corrected brief path"})
+		}
+		result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: bytes, Person: person, Reason: reason, Impact: impact})
+		if result.Revision.Attempt > 0 && len(result.Revision.Findings) > 0 && len(current.Rounds) > 0 {
+			stop := current.Rounds[len(current.Rounds)-1].Stop
+			if stop != nil {
+				actErr := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: result.Record.ID + ":" + fmt.Sprint(result.Revision.Attempt), Goal: current.Goal, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Findings: result.Revision.Findings, Kind: "work-revise", Reason: reason, At: inv.unitStopNow()})
+				if actErr != nil {
+					return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision was admitted, but its questions need reconciliation", Details: []string{actErr.Error()}, next: inv.sameCommand(), nextReason: "reconciles the same recorded admission"})
+				}
+			}
+		}
+		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
+	}
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
 	again := inv.publicArgv("work", "wait", unitRunPrefix+run)
 	if launch.IsCode(err, "LAUNCH_BUILD_CAPACITY") || launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
@@ -1761,6 +2008,33 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 		settings.WaitCapSeconds = int64(timeout / time.Second)
 		runner.Manager.Settings = settings
 	}
+	if record, err := runner.Status(run); err == nil && record.Mutation != nil {
+		if timeout <= 0 {
+			timeout = time.Duration(runner.Manager.Settings.WaitCapSeconds) * time.Second
+			if timeout <= 0 {
+				timeout = launch.DefaultWaitTimeout
+			}
+		}
+		limit := runner.Manager.Now().Add(timeout)
+		for {
+			current, err := runner.Status(run)
+			if err != nil {
+				return inv.treeFailure(err)
+			}
+			finished, err := runner.MutationFinished(current)
+			if err != nil {
+				return inv.treeFailure(err)
+			}
+			if finished {
+				return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the branch operation ended; repeat the command that was waiting"}
+			}
+			if timeout > 0 && !runner.Manager.Now().Before(limit) {
+				return inv.treeFailure(&launch.TreeWaitingError{Run: run})
+			}
+			runner.Manager.Sleep(runner.Manager.Poll)
+		}
+	}
+
 	result, err := runner.Continue(launch.UnitRequest{Resume: run})
 	return inv.unitOutcome(runner, result, err, targets, again)
 }
@@ -1775,6 +2049,9 @@ var testVerboseFlag = intentFlag{name: "verbose", usage: "also print the details
 // and reports the structured result it prints; its progress goes to standard
 // error unchanged.
 func runIntentTest(inv *intentInvocation) int {
+	if inv.input.has("unit-run") {
+		return runIntentUnitCheck(inv)
+	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}

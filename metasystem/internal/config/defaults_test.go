@@ -118,13 +118,13 @@ func TestValidateAcceptsAnOverridesOnlyConfiguration(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
-	putFile(t, conf, "# overrides only\nproof.full=true\nproof.cheap=true\n")
+	putFile(t, conf, "# overrides only\nproof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n")
 	contract, err := os.ReadFile(filepath.Join("..", "..", "testing.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	putFile(t, filepath.Join(repo, "testing.json"), string(contract))
-	for _, dir := range []string{".claude/agents", ".claude/skills", ".codex", ".agents/skills", ".devin"} {
+	for _, dir := range []string{".claude/agents", ".claude/skills", ".codex", ".agents/skills", ".devin/agents"} {
 		if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(dir)), 0o755); err != nil {
 			t.Fatal(err)
 		}

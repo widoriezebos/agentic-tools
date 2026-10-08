@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 func TestFleetBuildPublicAdmission(t *testing.T) {
@@ -202,7 +203,7 @@ func TestFleetBuildPublicAdmission(t *testing.T) {
 			brief := bed.brief("build.md", "Build this unit.\n")
 			run := func(name string) (int, intentResult) {
 				t.Helper()
-				command, args, _ := resolveIntentArgv([]string{"work", "build", bed.id, "--work", name, "--brief", brief, "--lines", "5", "--json", "--check", "fixture-check"})
+				command, args, _ := resolveIntentArgv([]string{"work", "build", bed.id, "--work", name, "--brief", brief, "--lines", "5", "--json"})
 				var out, stderr bytes.Buffer
 				code := runIntentIn(command, args, &out, &stderr, bed.root(), owners)
 				var result intentResult
@@ -250,12 +251,14 @@ func TestFleetBuildPublicAdmission(t *testing.T) {
 					if config.MustDefault("host.load-max") != "8" || config.MustDefault("host.builds") != "auto" {
 						t.Fatal("missing compiled declaration")
 					}
+					releaseFleetBuild(t, bed, result)
 					load = 9
 					if code, held := run("fresh"); code != 1 || held.Outcome != intentRefused {
 						t.Fatalf("fresh load ignored: %d %+v", code, held)
 					}
 				}
 				if row.person {
+					releaseFleetBuild(t, bed, result)
 					owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 						return humanauthority.Proof{}, errors.New("automatic resume")
 					}
@@ -390,7 +393,7 @@ func TestFleetBuildPolicyFallback(t *testing.T) {
 				})
 			}
 			brief := bed.brief("fallback.md", "Build this unit.\n")
-			code, result := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "fallback", "--brief", brief, "--lines", "5", "--check", "fixture-check")
+			code, result := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "fallback", "--brief", brief, "--lines", "5")
 			if row.allow {
 				if code != 0 || len(bed.starter.launched()) == 0 {
 					t.Fatalf("fallback did not launch: %d %+v", code, result)
@@ -418,10 +421,15 @@ func TestFleetRevisePublicAdmission(t *testing.T) {
 					owners.lookupEnv = func(string) (string, bool) { return "", false }
 					personProof := enrolledPersonProver(t, bed.root(), bed.manager.Now())
 					owners.prove = personProof
-					brief := bed.brief("first.md", "Build this unit.\n")
-					code, built := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "correction", "--brief", brief, "--lines", "5", "--check", "fixture-check")
+					bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "unit.go")}}}
+					brief := bed.brief("first.md", "Read each round: yes\nBuild this unit.\n")
+					code, built := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "correction", "--brief", brief, "--lines", "5")
 					if code != 0 {
 						t.Fatalf("seed build: %d %+v", code, built)
+					}
+					seed, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(resultData(t, built)["run"].(string))
+					if err != nil || len(seed.Rounds) != 1 || seed.Rounds[0].Stop == nil || seed.Rounds[0].Stop.Decision != "continue" || len(seed.Rounds[0].Reads) != 1 || len(seed.Rounds[0].Reads[0].Findings) != 1 {
+						t.Fatalf("seed read did not admit a correction: %+v %v", seed, err)
 					}
 					conf := filepath.Join(bed.root(), "metasystem.conf")
 					data, err := os.ReadFile(conf)
@@ -456,7 +464,7 @@ func TestFleetRevisePublicAdmission(t *testing.T) {
 							cursor:   func(string) (string, bool, error) { return "", false, nil },
 						})
 					}
-					correction := bed.brief("correction.md", "Correct this unit.\n")
+					correction := bed.brief("correction.md", "Read each round: yes\nCorrect this unit.\n\n## Decisions on round 1\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n| "+seed.Rounds[0].Reads[0].Findings[0].ID+" | fixed | unit.go:1 |\n")
 					argv := []string{"work", "revise", bed.id, "--work", "correction", "--brief", correction}
 					if target == "run" {
 						argv = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", correction}
@@ -509,15 +517,16 @@ func TestFleetBuildGrantProbeDoesNotRefuse(t *testing.T) {
 		return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Grant: "fixture-grant"}, at)
 	}
 	brief := bed.brief("grant.md", "Build this unit.\n")
-	code, result := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "grant", "--brief", brief, "--lines", "5", "--check", "fixture-check")
+	code, result := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "grant", "--brief", brief, "--lines", "5")
 	if code != 0 || len(bed.starter.launched()) == 0 {
 		t.Fatalf("grant build: %d %+v", code, result)
 	}
+	releaseFleetBuild(t, bed, result)
 	before := len(bed.starter.launched())
 	bed.manager.CapacitySources.Load = func(time.Time) hostload.Sample {
 		return hostload.Sample{Available: true, Load1m: 9}
 	}
-	code, held := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "grant-held", "--brief", brief, "--lines", "5", "--check", "fixture-check")
+	code, held := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "grant-held", "--brief", brief, "--lines", "5")
 	if code != 1 || held.Outcome != intentRefused || len(bed.starter.launched()) != before {
 		t.Fatalf("grant inherited the person's bypass: %d %+v", code, held)
 	}
@@ -527,6 +536,15 @@ func TestFleetBuildGrantProbeDoesNotRefuse(t *testing.T) {
 	}
 	if strings.Contains(string(data), "refused") {
 		t.Fatalf("admitted build logged a refusal: %s", data)
+	}
+}
+
+func releaseFleetBuild(t *testing.T, bed *workBed, result intentResult) {
+	t.Helper()
+	runner := &launch.UnitRunner{Manager: bed.manager, Git: workGit{bed}, Root: bed.unitRoot}
+	record, err := runner.CancelRun(resultData(t, result)["run"].(string))
+	if err != nil || record.State != "cancelled" {
+		t.Fatalf("completed fixture did not release its tree: %+v %v", record, err)
 	}
 }
 

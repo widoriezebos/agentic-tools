@@ -44,7 +44,7 @@ func TestReviewOfABuiltUnitTakesACorrectedBrief(t *testing.T) {
 		t.Fatalf("build: code=%d %+v", code, built)
 	}
 	run := resultData(t, built)["run"].(string)
-	runner := &launch.UnitRunner{Root: bed.unitRoot}
+	runner := &launch.UnitRunner{Root: bed.unitRoot, Git: workGit{bed}}
 	unit := strings.Repeat("b", 40)
 	if err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		body, err := os.ReadFile(review.BuildBrief)
@@ -55,6 +55,7 @@ func TestReviewOfABuiltUnitTakesACorrectedBrief(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	bed.head = unit
 	recordPath := filepath.Join(bed.unitRoot, run, "run.json")
 	before := mustRead(t, recordPath)
 	launches := bed.starter.launched()

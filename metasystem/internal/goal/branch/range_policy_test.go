@@ -280,7 +280,7 @@ func TestValidateRangeAdmitsReadOfLandedUnit(t *testing.T) {
 		admitted bool
 	}{
 		{"unit in main", append(readOf("Goal-Unit: goal-a/u\n"), rangeOutput("", ancestry...)), true},
-		{"unit outside main", append(readOf("Goal-Unit: goal-a/u\n"), rangeFailure(errors.New("exit status 1"), ancestry...)), false},
+		{"unit outside main", append(readOf("Goal-Unit: goal-a/u\n"), rangeFailure(errors.New("exit status 1"), ancestry...), rangeOutput("", "log", "--first-parent", "--format=%H", "--fixed-strings", "--grep=Goal-Unit: goal-a/u", "base")), false},
 		{"other units in main", readOf("Goal-Unit: goal-a/v\n"), false},
 		{"plan in main", readOf("Goal-Plan: goal-a\n"), false},
 	}
@@ -290,7 +290,7 @@ func TestValidateRangeAdmitsReadOfLandedUnit(t *testing.T) {
 			t.Parallel()
 			commits, err := validateWithTranscript(t, "base", "tip", test.calls...)
 			if test.admitted {
-				if err != nil || len(commits) != 1 || commits[0].ID != "tip" || commits[0].Kind != Read || commits[0].Unit != "u" {
+				if err != nil || len(commits) != 0 {
 					t.Fatalf("commits=%+v err=%v", commits, err)
 				}
 				return

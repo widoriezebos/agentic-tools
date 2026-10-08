@@ -605,7 +605,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if strings.TrimSpace(req.Seat) == "" || strings.ContainsAny(req.Seat, "\r\n") {
 		return LandResult{}, fmt.Errorf("land-prep needs the landing seat")
 	}
-	status, err := r.status(req.Repo, req.EndpointTip, req.BranchTip, req.GoalID)
+	status, err := r.status(req.Repo, req.EndpointTip, req.BranchTip, req.GoalID, req.GoalPage)
 	if err != nil {
 		return LandResult{}, err
 	}

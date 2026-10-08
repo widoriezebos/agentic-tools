@@ -40,7 +40,7 @@ func newFleetBoundaryBed(t *testing.T, driver string) *fleetBoundaryBed {
 	}
 	now := exact.StartedAt.Add(time.Hour)
 	bed.manager.Now = func() time.Time { return now }
-	if err := os.WriteFile(filepath.Join(bed.root(), "metasystem.conf"), []byte("metasystem.runtimes=fake\nlaunch.build.model.fake=fixture\nlaunch.read.model.fake=fixture\nlaunch.critique.model.fake=fixture\nlaunch.design.model.fake=fixture\nlaunch.seat.window.tokens=200000\nseat.driver="+driver+"\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(bed.root(), "metasystem.conf"), []byte("metasystem.runtimes=fake\nlaunch.build.model.fake=fixture\nlaunch.read.model.fake=fixture\nlaunch.critique.model.fake=fixture\nlaunch.design.model.fake=fixture\nlaunch.seat.window.tokens=200000\nseat.driver="+driver+"\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	session := "fleet-" + driver
@@ -49,7 +49,8 @@ func newFleetBoundaryBed(t *testing.T, driver string) *fleetBoundaryBed {
 		t.Fatal(err)
 	}
 	brief := bed.brief("boundary.md", "Build the unit.\n")
-	checks := []string{"--read-tool-calls", "12", "--check", "go", "test", "-timeout", "30m", "-count=1", "-run", "TestA|TestB", "./..."}
+	bed.declaredCheap = "go test -timeout 30m -count=1 -run 'TestA|TestB' ./..."
+	checks := []string{"--read-tool-calls", "12"}
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "finished", "--brief", brief, "--lines", "5"}, checks...)...)
 	if code != 0 {
 		t.Fatalf("public build: %d %+v", code, result)

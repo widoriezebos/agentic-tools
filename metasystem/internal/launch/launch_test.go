@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 
 	"golang.org/x/sys/unix"
 )
@@ -138,6 +140,10 @@ func manager(t *testing.T) (*Manager, *fakeProcesses, *fakeProber, *time.Time) {
 		}
 	}
 	m := &Manager{Store: Store{Root: t.TempDir()}, Adapters: map[string]Adapter{"codex-exec": fakeAdapter{}}, Processes: processes, Prober: probe, Now: func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) }, Grace: time.Second, Poll: time.Second}
+	m.CapacityHome = testprovider.Register(t, t.TempDir())
+	m.CapacitySources.Load = func(at time.Time) hostload.Sample {
+		return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: true, Load1m: 0}
+	}
 	m.Templates = os.DirFS(templates)
 	return m, processes, probe, &now
 }

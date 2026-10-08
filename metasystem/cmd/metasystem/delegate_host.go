@@ -12,6 +12,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -20,7 +21,25 @@ import (
 // live in this command layer (the durable job waiter and watcher, and the
 // consumption-earned budget extension), called in-process with the
 // lifecycle's supplied caller (design 6.2).
-type engineHost struct{}
+type engineHost struct{ launches *launch.Manager }
+
+func (h engineHost) UnitLaunchStatus(id string) (string, error) {
+	store := launch.Store{}
+	if h.launches != nil {
+		store = h.launches.Store
+	}
+	record, err := store.Read(id)
+	return string(record.State), err
+}
+
+func (h engineHost) CancelUnitLaunch(id string) error {
+	manager := h.launches
+	if manager == nil {
+		manager = newLaunchManager()
+	}
+	_, err := manager.Cancel(id)
+	return err
+}
 
 // WaitJob is `internal wait --root R --job J` for the supplied caller; the
 // WAIT line is captured with the verb's diagnostics.

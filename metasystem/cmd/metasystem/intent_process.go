@@ -329,10 +329,10 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "work", action: "stop", audience: "both", summary: "stop one running job or diagnostic read, or every running job of a goal",
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
-			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops.",
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops. A person can use run:ID to cancel a unit run and release its worktree after its children stop.",
 				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
 			maxArgs:  1,
-			accepts:  []string{refGoal, refJ1, refJ2, refRead},
+			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
 			run:      runIntentWorkStop,
 		},
@@ -481,8 +481,14 @@ func defaultProcessIntentOwners() processIntentOwners {
 // cancelDispatchJob cancels one dispatch job through its delegate owner and
 // returns that owner's typed JSON outcome.
 func cancelDispatchJob(checkout, job string) (map[string]any, int, error) {
+	return cancelDispatchJobWith(func(request delegateRequest, stdout, stderr io.Writer) int {
+		return runDelegateIn(request.args, checkout, stdout, stderr)
+	}, checkout, job)
+}
+
+func cancelDispatchJobWith(delegate delegateCaller, installation, job string) (map[string]any, int, error) {
 	var stdout, stderr bytes.Buffer
-	code := runDelegateIn([]string{"--cancel", job}, checkout, &stdout, &stderr)
+	code := delegate(delegateRequest{rootOverride: installation, args: []string{"--cancel", job}}, &stdout, &stderr)
 	var outcome map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &outcome); err != nil {
 		return nil, code, fmt.Errorf("the delegate owner returned no typed outcome: %v; %s", err, strings.TrimSpace(stderr.String()))
@@ -1310,6 +1316,9 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	if ref.kind == refRun {
+		return inv.stopUnitRun(ref.id)
+	}
 	if ref.kind == refRead {
 		return runIntentReviewRef(inv, "stop", ref.id)
 	}
@@ -1361,7 +1370,11 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	if file.StopFence != nil {
 		// The recorded stop's bookkeeping, as the steward's pass does it.
 		stopID := file.StopFence.StopID
-		if batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now); err == nil {
+		host := engineHost{}
+		if inv.owners.processes.launches != nil {
+			host.launches = inv.owners.processes.launches()
+		}
+		if batch, err := dispatchcore.ReconcileStopBatchWithLaunchStatus(inv.layout.InstallationRoot.Path(), stopID, now, host.UnitLaunchStatus); err == nil {
 			data["stop"], data["stopState"] = stopID, string(batch.State)
 			if batch.State == goal.StopBatchComplete {
 				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"

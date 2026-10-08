@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // TestIntentBuildClaimsLawfully: build asks the real claim owner for an
@@ -75,8 +76,11 @@ func TestIntentBuildRetainedRequestSelection(t *testing.T) {
 	bed := newWorkBed(t)
 	briefA := bed.brief("a.md", "Build part a.\n\nMaximum reader tool calls: 5\n")
 	briefB := bed.brief("b.md", "Build part b.\n\nMaximum reader tool calls: 5\n")
-	check := append([]string{"--check"}, workArgv...)
+	check := []string{}
 	_, first, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "a", "--brief", briefA, "--lines", "5"}, check...)...)
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, first)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	_, second, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "b", "--brief", briefB, "--lines", "5"}, check...)...)
 	if first.Outcome != intentConfirmed || second.Outcome != intentConfirmed {
 		t.Fatalf("builds: %+v %+v", first, second)

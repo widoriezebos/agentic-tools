@@ -62,6 +62,7 @@ type BudgetBreach struct {
 // latest exact consumed discharge proof. While the goal is marked as waiting
 // to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
+	unitAttempts            map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
 	GoalRevision            uint64
@@ -388,6 +389,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	var dependencies []clockDependency
 	operations := make(map[string]string)
+	unitAttempts := make(map[string]bool)
+	projection.unitAttempts = unitAttempts
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -415,19 +418,27 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if recordGoal != file.Id {
 			continue
 		}
-		dependencyAt := asString(record["startedAt"])
-		if dependencyAt == "" {
-			dependencyAt = asString(record["createdAt"])
-		}
-		if at, err := time.Parse(time.RFC3339Nano, dependencyAt); err == nil {
-			until, _ := time.Parse(time.RFC3339Nano, asString(record["endedAt"]))
-			if !TerminalStatus(asString(record["status"])) {
-				until = now
+		// A unit reservation charges its physical launch; that launch record
+		// owns the runtime and provider dependency, not this accounting row.
+		if asString(record["unitRun"]) == "" {
+			dependencyAt := asString(record["startedAt"])
+			if dependencyAt == "" {
+				dependencyAt = asString(record["createdAt"])
 			}
-			dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until,
-				providerFailed: jobProviderFailure(repoRoot, strings.TrimSuffix(entry.Name(), ".json"), record)})
-		} else {
-			return unknownBudget(file.Id, revision, logicalPath, "job dependency time is unreadable")
+			if at, err := time.Parse(time.RFC3339Nano, dependencyAt); err == nil {
+				until, _ := time.Parse(time.RFC3339Nano, asString(record["endedAt"]))
+				if !TerminalStatus(asString(record["status"])) {
+					until = now
+				}
+				dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until,
+					providerFailed: jobProviderFailure(repoRoot, strings.TrimSuffix(entry.Name(), ".json"), record)})
+			} else if asString(record["runtime"]) == "local" || asString(record["runtime"]) == "plain-exec" {
+				// Local accounting does not need a provider clock. An unknown
+				// start must still prevent subtracting another job's outage.
+				dependencies = append(dependencies, clockDependency{runtime: asString(record["runtime"])})
+			} else {
+				return unknownBudget(file.Id, revision, logicalPath, "job dependency time is unreadable")
+			}
 		}
 		lens := JobRecordOf(record)
 		jobID := lens.JobID()
@@ -443,6 +454,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("operationId %q duplicates %s", operationID, first))
 		}
 		operations[operationID] = logicalPath
+		if record["unitUnaccounted"] == true && asString(record["unitRun"]) != "" && operationID == "unit-launch:"+jobID && TerminalStatus(lens.Status()) {
+			continue
+		}
 		recordRevision, ok := lens.GoalRevision()
 		if !ok || recordRevision == 0 {
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation is revisionless")
@@ -494,10 +508,44 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				consumes = false
 			}
 		}
+		unknownRetry := false
+		if prior := asString(record["examinationRetryOf"]); prior != "" {
+			state := loadCritiqueState(repoRoot)
+			owner := state.records[state.chainRoot(prior)]
+			if asString(record["role"]) != "code-critic" || asString(record["parentJob"]) != prior || asString(owner["unknownExaminationRetryFrom"]) != prior {
+				return unknownBudget(file.Id, revision, logicalPath, "the fresh examination does not match its recorded retry")
+			}
+			consumes = false
+			unknownRetry = true
+		}
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
-		if consumes {
+		unitAttempt := ""
+		if run, present := record["unitRun"]; present {
+			runID, typed := run.(string)
+			round, roundOK := numInt(record["unitRound"])
+			if !typed || runID == "" || !roundOK || round < 1 || operationID != "unit-launch:"+jobID {
+				return unknownBudget(file.Id, revision, logicalPath, "the unit reservation has an unreadable execution identity")
+			}
+			if TerminalStatus(status) {
+				if _, typed := record["unitExecuted"].(bool); !typed {
+					return unknownBudget(file.Id, revision, logicalPath, "the terminal unit reservation has unreadable execution evidence")
+				}
+				if record["unitExecuted"] == false {
+					continue
+				}
+			}
+			if excluded, present := record["unitEnvironment"]; present {
+				if excluded != true || !TerminalStatus(status) {
+					return unknownBudget(file.Id, revision, logicalPath, "the unit environment exclusion has no terminal execution")
+				}
+				continue
+			}
+			unitAttempt = fmt.Sprintf("%s/%d", runID, round)
+		}
+		if consumes && (unitAttempt == "" || !unitAttempts[unitAttempt]) {
+			unitAttempts[unitAttempt] = true
 			switch countedCriticRole {
 			case "design-critic":
 				if projection.DesignCritiques == math.MaxUint64 {
@@ -516,9 +564,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			projection.Attempts++
 		}
 		charge := capMinutes
+		if unknownRetry {
+			charge = 0
+		}
 		terminal := TerminalStatus(status)
 		if terminal && consumes {
-			if !recordHasProcessIdentity(record) {
+			if !recordHasProcessIdentity(record) && !(unitAttempt != "" && record["unitExecuted"] == true) {
 				charge = 0
 			} else {
 				var start time.Time

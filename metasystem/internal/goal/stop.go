@@ -152,13 +152,13 @@ func validateStopBatch(batch StopBatch) error {
 		}
 	}
 	for _, observed := range batch.Observed {
-		if !safeStopID(observed.JobID) || !safeStopID(observed.OperationID) || observed.Machine == "" ||
+		if !safeStopID(observed.JobID) || (!safeStopID(observed.OperationID) && observed.OperationID != "unit-launch:"+observed.JobID) || observed.Machine == "" ||
 			observed.ClaimEpoch < 1 || observed.Status == "" || observed.Disposition == "" || !validStamp(observed.LastObservedAt) {
 			return errors.New("the stop record has an incomplete job entry")
 		}
 	}
 	for _, outcome := range batch.CancelOutcomes {
-		if !safeStopID(outcome.JobID) || !safeStopID(outcome.OperationID) || outcome.Outcome == "" || !validStamp(outcome.ObservedAt) {
+		if !safeStopID(outcome.JobID) || (!safeStopID(outcome.OperationID) && outcome.OperationID != "unit-launch:"+outcome.JobID) || outcome.Outcome == "" || !validStamp(outcome.ObservedAt) {
 			return fmt.Errorf("stop batch has an incomplete cancellation outcome")
 		}
 	}

@@ -139,7 +139,17 @@ type Writer struct {
 }
 
 // Card is one claimed goal's progress on one seat.
+// ReviewStop projects the unit owner's decision; it grants no permission.
+type ReviewStop struct {
+	Decision string `json:"decision"`
+	Handoff  string `json:"handoff"`
+	Class    string `json:"class"`
+	Attempt  int    `json:"attempt"`
+	Budget   int    `json:"budget"`
+}
+
 type Card struct {
+	Stop           *ReviewStop `json:"stop,omitempty"`
 	SchemaVersion  int         `json:"schemaVersion"`
 	Seat           Seat        `json:"seat"`
 	Goal           string      `json:"goal"`

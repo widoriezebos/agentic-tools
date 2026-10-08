@@ -38,6 +38,9 @@ type checkReport struct {
 	load   float64
 }
 
+// FailedChecks reads test identities only from a complete command report.
+func FailedChecks(data []byte) []FailedUnit { return readReport(data).failed }
+
 func readReport(tail []byte) checkReport {
 	lines := strings.Split(strings.TrimSuffix(string(tail), "\n"), "\n")
 	last := strings.Split(strings.TrimSuffix(lines[len(lines)-1], "\r"), "\t")

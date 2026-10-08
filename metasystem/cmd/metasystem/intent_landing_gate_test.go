@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -191,5 +192,35 @@ func TestThePushGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
 	if moved == nil || !strings.Contains(moved.Error(), goal.GateWaitsForHuman) || !strings.Contains(moved.Error(), "given at 333333333333 and the branch is now at 222222222222") ||
 		!strings.Contains(moved.Error(), "metasystem goal land-without-sitting "+bedGoal+" --reason TEXT") {
 		t.Fatalf("a word at another tip did not refuse naming both commits and the human verb: %v", moved)
+	}
+}
+
+func TestGoalEndpointsUseInstallationRoot(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBedWith(t, func(file *goal.GoalFile) { retier(file, 1) })
+	owners := b.intentBed.owners()
+	owners.commandNow = func(string) (time.Time, error) { return syncRequestTestNow, nil }
+	endpoint := owners.dependencies.endpoint
+	calls := 0
+	owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		calls++
+		if root != b.install {
+			t.Fatalf("goal endpoint selected state directory %q instead of installation %q", root, b.install)
+		}
+		return endpoint(root)
+	}
+	inv := &intentInvocation{owners: owners, stateRoot: t.TempDir(), layout: stateroot.Layout{InstallationRoot: stateroottest.Installation(t, b.install)}}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		t.Fatalf("installation projection: %+v", problem)
+	}
+	if file, _ := goalRecord(projection, bedGoal); file == nil {
+		t.Fatalf("installation projection: %+v %v", problem, projection)
+	}
+	if _, err := productionIntentLandingGate(inv, bedGoal, gateBedTip); err != nil {
+		t.Fatalf("installation landing gate: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("projection and landing gate selected %d endpoints, want 2", calls)
 	}
 }

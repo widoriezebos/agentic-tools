@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +18,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
 
@@ -34,6 +37,7 @@ type BranchReadRequest struct {
 	BuildBriefSHA256                                         string
 	Collect                                                  bool
 	UnitRead                                                 []byte
+	InheritedFindings                                        []goal.ReviewObligation
 	// Join has BriefPath start a read only: a read of this build already
 	// started (by the other review form, under its own brief) is joined.
 	Join bool
@@ -59,6 +63,7 @@ type BranchReadRequest struct {
 }
 
 type BranchReadResult struct {
+	TransferCoverage                             *goal.TransferCoverage `json:"transferCoverage,omitempty"`
 	State, RootJob, GateRunID, AttestationCommit string
 	DispatchRefusal                              string
 	// Published is set by InspectBranchRead: the collected attestation is
@@ -78,6 +83,7 @@ func (e *ReadNeverLaunchedError) Error() string { return e.Err.Error() }
 func (e *ReadNeverLaunchedError) Unwrap() error { return e.Err }
 
 type ReadGateRequest struct {
+	SubjectCheck             func(directory string, subject AttestationSubject) (GateObservation, error)
 	Repo, GoalID, UnitCommit string
 	Gate                     func(string) (string, error)
 	NewID                    func(string) (string, error)
@@ -85,21 +91,24 @@ type ReadGateRequest struct {
 }
 
 type branchReadRecord struct {
-	SchemaVersion     int    `json:"schemaVersion"`
-	Goal              string `json:"goal"`
-	UnitCommit        string `json:"unitCommit"`
-	Tree              string `json:"tree"`
-	GateRunID         string `json:"gateRunId,omitempty"`
-	RootJob           string `json:"rootJob,omitempty"`
-	Brief             string `json:"brief,omitempty"`
-	BriefInputSHA256  string `json:"briefInputSha256,omitempty"`
-	BriefInputPath    string `json:"briefInputPath,omitempty"`
-	Runtime           string `json:"runtime,omitempty"`
-	Model             string `json:"model,omitempty"`
-	DispatchPending   bool   `json:"dispatchPending,omitempty"`
-	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
-	DispatchRefusal   string `json:"dispatchRefusal,omitempty"`
-	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
+	GateFailure string `json:"gateFailure,omitempty"`
+
+	TransferCoverage  *goal.TransferCoverage `json:"transferCoverage,omitempty"`
+	SchemaVersion     int                    `json:"schemaVersion"`
+	Goal              string                 `json:"goal"`
+	UnitCommit        string                 `json:"unitCommit"`
+	Tree              string                 `json:"tree"`
+	GateRunID         string                 `json:"gateRunId,omitempty"`
+	RootJob           string                 `json:"rootJob,omitempty"`
+	Brief             string                 `json:"brief,omitempty"`
+	BriefInputSHA256  string                 `json:"briefInputSha256,omitempty"`
+	BriefInputPath    string                 `json:"briefInputPath,omitempty"`
+	Runtime           string                 `json:"runtime,omitempty"`
+	Model             string                 `json:"model,omitempty"`
+	DispatchPending   bool                   `json:"dispatchPending,omitempty"`
+	DispatchRetryable bool                   `json:"dispatchRetryable,omitempty"`
+	DispatchRefusal   string                 `json:"dispatchRefusal,omitempty"`
+	FrozenBriefSHA256 string                 `json:"frozenBriefSha256,omitempty"`
 	// BriefFromBuild marks supplied bytes that match the build's digest.
 	BriefFromBuild bool `json:"briefFromBuild,omitempty"`
 	// Retries maps a failed examination round to the round its retry
@@ -201,6 +210,31 @@ func lockBranchRead(goalID, path string) (*os.File, error) {
 }
 
 func resolveReadGate(request ReadGateRequest, common, recordPath string, record branchReadRecord, subject AttestationSubject) (branchReadRecord, GateObservation, error) {
+	if request.SubjectCheck != nil {
+		dir, closeDetached, err := branchReadRepositoryFor(request.Repository).Detached(request.Repo, request.UnitCommit)
+		if err != nil {
+			return record, GateObservation{}, err
+		}
+		gate, runErr := request.SubjectCheck(dir, subject)
+		if closeErr := closeDetached(); closeErr != nil {
+			return record, GateObservation{}, fmt.Errorf("subject check: %v; cleanup: %w", runErr, closeErr)
+		}
+		if runErr != nil {
+			var missing *DeclarationUnavailableError
+			if errors.As(runErr, &missing) {
+				record.GateRunID, record.GateFailure = "", missing.Error()
+				if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+					return record, GateObservation{}, err
+				}
+			}
+			return record, GateObservation{}, runErr
+		}
+		if !validGateObservation(gate, subject.Tree) {
+			return record, GateObservation{}, fmt.Errorf("the subject check has no passing execution")
+		}
+		record.GateRunID, record.GateFailure = gate.RunID, ""
+		return record, gate, saveBranchReadRecord(common, recordPath, record)
+	}
 	if record.GateRunID == "" {
 		if request.Gate == nil {
 			return record, GateObservation{}, fmt.Errorf("goal branch read has no gate command")
@@ -577,6 +611,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err != nil {
 		return result, err
 	}
+	inherited := branchReadTransfers(repository, request, info.Units)
+	if len(inherited) > 0 && request.UnitRead != nil {
+		return result, operationRefusal(ReadInvalidCode, "destination %s needs a committed read of its inherited change\nrun: metasystem work review %s --work %s", inherited[0].TargetUnit, request.GoalID, inherited[0].TargetUnit)
+	}
 	common, recordPath, briefPath, err := branchReadPathsWithRepository(repository, request.Repo, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return result, err
@@ -627,6 +665,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
+	result.TransferCoverage = record.TransferCoverage
 	if request.UnitRead != nil && record.RootJob != "" {
 		return result, operationRefusal(ReadInvalidCode, "this build's review already started with a critic; its unit read cannot replace that critic\nrun: metasystem work review %s", request.GoalID)
 	}
@@ -634,6 +673,17 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return retryBranchRead(request, common, recordPath, record, result)
 	}
 	if record.AttestationCommit != "" {
+		if len(inherited) > 0 && result.TransferCoverage == nil {
+			coverage, readErr := VerifyTransferCoverage(request.Repo, record.AttestationCommit, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
+			if readErr != nil {
+				return result, readErr
+			}
+			result.TransferCoverage = &coverage
+			record.TransferCoverage = &coverage
+			if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+				return result, err
+			}
+		}
 		result.State = "already-collected"
 		return result, nil
 	}
@@ -674,6 +724,9 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	if record.RootJob != "" {
 		store := CriticStore(request.Repo, record.RootJob)
+		if err := dispatch.CritiqueInheritFindings(store, record.RootJob, inherited); err != nil {
+			return result, err
+		}
 		status, stateErr := branchReadJobState(store, record.RootJob)
 		if stateErr != nil {
 			return result, stateErr
@@ -694,6 +747,14 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			return result, installedErr
 		} else if found {
 			record.AttestationCommit = installed
+			if len(inherited) > 0 {
+				coverage, readErr := VerifyTransferCoverage(request.Repo, installed, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
+				if readErr != nil {
+					return result, readErr
+				}
+				result.TransferCoverage = &coverage
+				record.TransferCoverage = &coverage
+			}
 			if err := saveBranchReadRecord(common, recordPath, record); err != nil {
 				return result, err
 			}
@@ -711,14 +772,34 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		collect := CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
 			EndpointTip: request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
 			CheckClaim: request.CheckClaim, RootJob: record.RootJob, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests}
+		if len(inherited) > 0 {
+			frozen, readErr := os.ReadFile(record.Brief)
+			if readErr != nil {
+				return result, readErr
+			}
+			for _, obligation := range inherited {
+				if !strings.Contains(string(frozen), "git diff "+obligation.SourceCommit+"^ "+request.UnitCommit+" --") || !strings.Contains(string(frozen), obligation.OriginalFinding) {
+					return result, operationRefusal(ReadInvalidCode, "destination %s's read did not examine its inherited source requirement\nrun: metasystem work revise %s --work %s --brief %q --reason TEXT", obligation.TargetUnit, request.GoalID, obligation.TargetUnit, record.Brief)
+				}
+			}
+			collect.CoversFindings, collect.CoversCommits, err = criticInheritedCoverage(store, record.RootJob, request.GoalID, subject, inherited, record.Brief)
+			if err != nil {
+				return result, err
+			}
+		}
 		if store != request.Repo {
 			collect.CriticStore = store
 		}
-		attestationCommit, _, commitErr := commit(collect)
+		attestationCommit, attestationValue, commitErr := commit(collect)
 		if commitErr != nil {
 			return result, commitErr
 		}
 		record.AttestationCommit = attestationCommit
+		if len(attestationValue.CoversFindings) > 0 {
+			coverage := coverageOf(attestationValue)
+			record.TransferCoverage = &coverage
+			result.TransferCoverage = &coverage
+		}
 		if err := saveBranchReadRecord(common, recordPath, record); err != nil {
 			return result, err
 		}
@@ -762,6 +843,14 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied, packet, request.BuildBriefSHA256)
 		if err != nil {
 			return result, err
+		}
+		for _, obligation := range inherited {
+			if !hex40(obligation.SourceCommit) {
+				return result, operationRefusal(ReadInvalidCode, "inherited finding %s has no retained source commit\nrun: metasystem work status %s", obligation.OriginalFinding, request.GoalID)
+			}
+			evidence, _ := json.Marshal(obligation.OriginalEvidence)
+			brief += "\nOriginal inherited finding evidence: `" + string(evidence) + "`\n"
+			brief += "\nInherited finding `" + obligation.OriginalFinding + "` from read `" + obligation.OriginalRead + "` remains required. Examine its complete retained source change and this correction with:\n\n```sh\ngit diff " + obligation.SourceCommit + "^ " + request.UnitCommit + " --\n```\nReturn a non-material finding naming this inherited id in `resolves` only when the complete source requirement and correction are proved. A clean unrelated read does not cover it.\n"
 		}
 		if brief, err = freezeBranchReadDrafts(request, brief); err != nil {
 			return result, err
@@ -808,6 +897,11 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			return result, &ReadNeverLaunchedError{Err: failure}
 		}
 		return result, failure
+	}
+	if len(inherited) > 0 {
+		if err := dispatch.CritiqueInheritFindings(CriticStore(request.Repo, job), job, inherited); err != nil {
+			return result, err
+		}
 	}
 	record.RootJob, record.DispatchPending, record.DispatchRetryable = job, false, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
@@ -910,8 +1004,19 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 	if deps.MatchesTag == nil {
 		deps.MatchesTag = dispatchproc.PositionedJobTagAt(request.Repo)
 	}
-	if err := dispatch.ExaminationRetryAdmissibleWith(request.Repo, newest, deps); err != nil {
-		return result, operationRefusal(ReadInvalidCode, "%v", err)
+	newestID, _ := newest["jobId"].(string)
+	reservedUnknown := false
+	if admitted == "pending" {
+		for _, one := range records {
+			if one["jobId"] == record.RootJob && one["unknownExaminationRetryFrom"] == newestID && newest["status"] == "completed" {
+				reservedUnknown = true
+			}
+		}
+	}
+	if !reservedUnknown {
+		if err := dispatch.ExaminationRetryAdmissibleWith(request.Repo, newest, deps); err != nil {
+			return result, operationRefusal(ReadInvalidCode, "%v", err)
+		}
 	}
 	if request.FollowUp == nil || record.Brief == "" {
 		return result, fmt.Errorf("goal branch read has no follow-up command or frozen brief for a retry")
@@ -922,6 +1027,11 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 	record.Retries[key] = "pending"
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
 		return result, err
+	}
+	if newest["status"] == "completed" && !reservedUnknown {
+		if err := dispatch.ReserveUnknownExaminationRetry(request.Repo, newestID); err != nil {
+			return result, operationRefusal(ReadInvalidCode, "%v", err)
+		}
 	}
 	job, err := request.FollowUp(record.RootJob, record.Brief)
 	if err != nil || job == "" {
@@ -947,7 +1057,7 @@ func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error
 	if err != nil {
 		return BranchReadResult{}, err
 	}
-	result := BranchReadResult{RootJob: record.RootJob, GateRunID: record.GateRunID, AttestationCommit: record.AttestationCommit}
+	result := BranchReadResult{RootJob: record.RootJob, GateRunID: record.GateRunID, AttestationCommit: record.AttestationCommit, TransferCoverage: record.TransferCoverage}
 	switch {
 	case record.AttestationCommit != "":
 		result.State = "collected"
@@ -978,4 +1088,57 @@ func attestationPublished(repo, goalID, attestation string) (bool, error) {
 		return true, nil
 	}
 	return ancestor(repo, attestation, tip)
+}
+
+func branchReadTransfers(repository BranchReadRepository, request BranchReadRequest, units []string) []goal.ReviewObligation {
+	if request.InheritedFindings != nil {
+		return append([]goal.ReviewObligation(nil), request.InheritedFindings...)
+	}
+	reader, ok := repository.(interface {
+		TransferObligations(string, string, string) []goal.ReviewObligation
+	})
+	if !ok {
+		return nil
+	}
+	var inherited []goal.ReviewObligation
+	for _, obligation := range reader.TransferObligations(request.Repo, request.EndpointTip, request.GoalID) {
+		if slices.Contains(units, obligation.TargetUnit) {
+			inherited = append(inherited, obligation)
+		}
+	}
+	return inherited
+}
+
+func criticInheritedCoverage(store, root, goalID string, subject AttestationSubject, inherited []goal.ReviewObligation, brief string) ([]string, []string, error) {
+	closure, files, err := dispatch.CommitCriticClosureFiles(filepath.Join(store, "artifacts", "agents"), root, readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: subject.Commit, Parent: subject.Parent, Tree: subject.Tree, DiffDigest: subject.PatchDigest})
+	if err != nil {
+		return nil, nil, err
+	}
+	data := files[filepath.ToSlash(filepath.Join(root, "rounds", fmt.Sprint(closure.Round), "return.json"))]
+	var returned struct {
+		Findings []struct {
+			Resolves string `json:"resolves"`
+		} `json:"findings"`
+		CoversFindings []string `json:"coversFindings"`
+	}
+	if err := json.Unmarshal(data, &returned); err != nil {
+		return nil, nil, err
+	}
+	covered := append([]string(nil), returned.CoversFindings...)
+	for _, finding := range returned.Findings {
+		if finding.Resolves != "" {
+			covered = append(covered, finding.Resolves)
+		}
+	}
+	var findings, commits []string
+	for _, obligation := range inherited {
+		if !slices.Contains(covered, obligation.OriginalFinding) {
+			return nil, nil, operationRefusal(ReadInvalidCode, "destination %s's clean read does not explicitly cover inherited finding %s\nrun: metasystem work revise %s --work %s --brief %q --reason TEXT", obligation.TargetUnit, obligation.OriginalFinding, goalID, obligation.TargetUnit, brief)
+		}
+		findings = append(findings, obligation.OriginalFinding)
+		if !slices.Contains(commits, obligation.SourceCommit) {
+			commits = append(commits, obligation.SourceCommit)
+		}
+	}
+	return findings, commits, nil
 }

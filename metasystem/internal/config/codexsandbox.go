@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The host's Codex sandbox mode: one setting per host, in its local
@@ -50,6 +51,12 @@ func SettingValueProblem(key, value string) error {
 		limit, err := strconv.ParseFloat(value, 64)
 		if err != nil || math.IsNaN(limit) || math.IsInf(limit, 0) || limit <= 0 {
 			return fmt.Errorf("host.load-max must be a positive finite number")
+		}
+	}
+	if key == "proof.deadline" {
+		minutes, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || minutes <= 0 || minutes > int64((1<<63-1)/time.Minute) {
+			return fmt.Errorf("%s, the check deadline, must be positive minutes within the timer range", key)
 		}
 	}
 	if PolicyScope(key) != "" {
