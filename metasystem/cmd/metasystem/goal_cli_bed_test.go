@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -29,6 +30,8 @@ import (
 // ones; public commands run through the public router with injected streams.
 type goalCLIBed struct {
 	t                  *testing.T
+	worktrees          []string
+	unitRoot           string
 	root               string
 	repo               *testgoal.Repository
 	mu                 sync.Mutex
@@ -161,7 +164,7 @@ func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 		writeFixtureEnrollment(t, root, "Wido")
 	}
 	bed := &goalCLIBed{
-		t: t, root: root, now: goalCLISeedNow.Add(time.Minute), machine: "fixture-machine", lineage: "fixture-lineage",
+		t: t, root: root, unitRoot: filepath.Join(root, "fixture-shared-unit-store"), now: goalCLISeedNow.Add(time.Minute), machine: "fixture-machine", lineage: "fixture-lineage",
 		remote: remote, prove: fixedFixtureGoalAuthority, caller: ownercall.EntryCaller(), allowTerminalProof: seed.allowTerminalProof,
 		repo: testgoal.New(files, goalCLISeedNow, "0000000000000000000000000000000000000001"),
 	}
@@ -238,6 +241,23 @@ func (b *goalCLIBed) dependencies(stdout, stderr *bytes.Buffer) syncRequestDepen
 
 func (b *goalCLIBed) owners(stdout, stderr *bytes.Buffer) intentOwners {
 	return intentOwners{
+		work: intentWorkOwners{
+			units: func(stateroot.Layout) *launch.UnitRunner { return &launch.UnitRunner{Root: b.unitRoot} },
+			git: func(_ string, args ...string) ([]byte, error) {
+				if strings.Join(args, " ") != "worktree list --porcelain" {
+					b.t.Fatalf("unexpected review cleanup git: %v", args)
+				}
+				paths := b.worktrees
+				if len(paths) == 0 {
+					paths = []string{b.root}
+				}
+				var lines string
+				for _, path := range paths {
+					lines += "worktree " + path + "\n\n"
+				}
+				return []byte(lines), nil
+			},
+		},
 		resolver:     stateroot.NewResolver(fakeTop(b.root), noExecutable),
 		prove:        b.prove,
 		commandNow:   b.commandNow,

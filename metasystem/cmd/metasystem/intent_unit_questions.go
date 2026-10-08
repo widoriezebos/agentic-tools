@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -15,20 +19,21 @@ import (
 // recordUnitStopOverride publishes the person's impact statement before the
 // command admits its effect. Failed commands retain that admission evidence
 // but cannot close any finding's question.
-func (inv *intentInvocation) recordUnitStopOverride(id, kind, reason, impact, who string) error {
+func (inv *intentInvocation) recordUnitStopOverride(id, kind, reason, impact, who string, worktrees ...string) error {
 	at := inv.unitStopNow()
 	operation, err := goal.NewOperationULID()
 	if err != nil {
 		return err
 	}
 	record := struct {
-		Goal   string    `json:"goal"`
-		Kind   string    `json:"kind"`
-		Reason string    `json:"reason"`
-		Impact string    `json:"impact"`
-		Who    string    `json:"who"`
-		At     time.Time `json:"at"`
-	}{id, kind, reason, impact, who, at.UTC()}
+		Goal      string    `json:"goal"`
+		Kind      string    `json:"kind"`
+		Reason    string    `json:"reason"`
+		Impact    string    `json:"impact"`
+		Who       string    `json:"who"`
+		At        time.Time `json:"at"`
+		Worktrees []string  `json:"worktrees,omitempty"`
+	}{id, kind, reason, impact, who, at.UTC(), worktrees}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err
@@ -39,6 +44,64 @@ func (inv *intentInvocation) recordUnitStopOverride(id, kind, reason, impact, wh
 	}
 	_, err = fmt.Fprintln(inv.stderr, impact+" Reason: "+reason)
 	return err
+}
+
+// A conclusion retains its repository's worktree paths before branch cleanup
+// can remove them. Repeats include those paths to finish the shared unit store.
+func (inv *intentInvocation) goalReviewWorktrees(id string) ([]string, bool, error) {
+	recorded := false
+	paths := []string{inv.layout.GitRoot}
+	registered, err := inv.registeredWorktrees()
+	for path := range registered {
+		if !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	records, scanErr := filepath.Glob(filepath.Join(inv.layout.InstallationRoot.Path(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+	if scanErr != nil {
+		return paths, recorded, scanErr
+	}
+	for _, path := range records {
+		data, readErr := os.ReadFile(path)
+		var record struct {
+			Goal, Kind string
+			Worktrees  []string
+		}
+		if readErr == nil {
+			readErr = json.Unmarshal(data, &record)
+		}
+		if readErr != nil {
+			err = errors.Join(err, readErr)
+			continue
+		}
+		if record.Goal == id && record.Kind == "goal-done" {
+			recorded = true
+			for _, tree := range record.Worktrees {
+				if !slices.Contains(paths, tree) {
+					paths = append(paths, tree)
+				}
+			}
+		}
+	}
+	return paths, recorded, err
+}
+
+// Cleanup stays discoverable while its records are open or cannot be read.
+func (inv *intentInvocation) goalReviewCleanupPending(id string) bool {
+	worktrees, _, treeErr := inv.goalReviewWorktrees(id)
+	root := inv.layout.InstallationRoot.Path()
+	chains, chainErr := dispatchcore.GoalReviewCleanupPending(root, id)
+	units, unitErr := inv.work().units(inv.layout).GoalReviewCleanupPending(id, worktrees)
+	questions, unreadable := channel.WalkOpenQuestions(root)
+	if treeErr != nil || chainErr != nil || unitErr != nil || len(unreadable) > 0 || chains || units {
+		return true
+	}
+	for _, question := range questions {
+		if question.Goal == id && question.UnitStop != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (inv *intentInvocation) unitStopNow() time.Time {

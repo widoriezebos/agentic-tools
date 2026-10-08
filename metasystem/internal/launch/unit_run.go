@@ -40,6 +40,8 @@ const (
 )
 
 type UnitRunRecord struct {
+	ReviewCloseReason string `json:"reviewCloseReason,omitempty"`
+
 	CorrectionBudget *int        `json:"correctionBudget,omitempty"`
 	PolicyError      string      `json:"policyError,omitempty"`
 	ID               string      `json:"id"`
