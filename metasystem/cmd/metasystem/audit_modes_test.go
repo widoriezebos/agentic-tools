@@ -27,6 +27,7 @@ const (
 )
 
 var auditModes = map[string]auditMode{
+	"cmd/metasystem/intent_process_report.go#runIntentChannelStatus": {group: "G4", layout: auditReport},
 	// Step 0's reference conversions: status and grant list.
 	"cmd/metasystem/intent_table.go#runIntentTopStatus":        {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentCheckoutStatus": {layout: auditEnforce},

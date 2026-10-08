@@ -16,7 +16,10 @@ import (
 )
 
 func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeasure.Input {
-	runner := inv.unitRunner()
+	return unitMeasureInput(work, inv.unitRunner(), inv.stateRoot)
+}
+
+func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root string) processmeasure.Input {
 	in := processmeasure.Input{Now: runner.Manager.Now()}
 	if work.Record != nil {
 		in.Run, in.Unit = work.Record.ID, work.Unit
@@ -43,6 +46,7 @@ func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeas
 				}
 				if record, err := runner.Manager.Store.Read(step.LaunchID); err == nil {
 					one.Start, one.End, one.Terminal = record.StartedAt, record.FinishedAt, record.State.Terminal()
+					_ = json.Unmarshal(record.AdapterData["sandboxAct"], &one.Act)
 					if usage := record.Measurement; usage.UsageRead {
 						one.Usage = &processmeasure.Tokens{Input: usage.InputTokens, CacheRead: usage.CacheReadTokens, CacheCreation: usage.CacheCreationTokens, Output: usage.OutputTokens}
 					}
@@ -74,7 +78,7 @@ func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeas
 	if at, err := time.Parse(time.RFC3339Nano, in.PublishedAt); err == nil {
 		runEnd = at
 	}
-	questions, unreadable := channel.WalkQuestions(inv.stateRoot)
+	questions, unreadable := channel.WalkQuestions(root)
 	in.Unknown = unreadable
 	if work.Record != nil && runStart.IsZero() {
 		in.Questions = append(in.Questions, processmeasure.Interval{End: time.Time{}.Add(time.Nanosecond)})
@@ -137,7 +141,7 @@ func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, re
 	state, err := processchange.ReadState(inv.stateRoot, id)
 	acts, missing := state.Acts, state.Unknown
 	if err != nil {
-		return fmt.Errorf("process history unavailable: %w", err)
+		missing = append(missing, "process history unavailable: "+err.Error())
 	}
 	result.text = append(result.text, append(unknown, missing...)...)
 	data := result.Data.(map[string]any)

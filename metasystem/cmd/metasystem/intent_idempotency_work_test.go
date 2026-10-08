@@ -23,6 +23,7 @@ func init() {
 	for _, name := range []string{"work status", "work wait", "design show", "design list", "test wait", "test plan", "test list", "test status"} {
 		registerIdempotency(name, idemRead, "reads or waits on recorded state and changes nothing", nil)
 	}
+	registerIdempotency("channel status", idemCreation, "a read changes nothing; a delivery retries its pending text and records a successful boundary only after sending", nil)
 	registerIdempotency("test groups", idemRead, "writes no record; a second call runs the same groups again", nil)
 	registerIdempotency("work review", idemCreation,
 		"each examination is a new review round of its subject; the same request rejoins the round it started (a repeat reads its progress and findings), and a closed chain's repeated close is unchanged", nil)

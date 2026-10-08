@@ -27,7 +27,7 @@ var publicPairs = []string{
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"agent ask", "agent reply", "agent inbox",
 	"incident list", "incident claim", "incident close",
-	"status",
+	"status", "channel status",
 	"helm take", "helm return", "helm status",
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
@@ -49,7 +49,7 @@ var publicPairs = []string{
 // revisionSevenObjects are the objects section 3.4 leaves, in help order,
 // with helm (human-control design, section 3.1) and deploy
 // (landing-deploys-the-engine, Decision 4) in the Run group.
-var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "agent", "incident",
+var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "channel", "agent", "incident",
 	"helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.

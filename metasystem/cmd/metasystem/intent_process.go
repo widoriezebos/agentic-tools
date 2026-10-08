@@ -1267,7 +1267,20 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s could not be read", ref.qualified()),
 				retry: "try again", Details: []string{"unit run: " + err.Error()}})
 		}
-		lines := []string{}
+		_ = inv.selectRoot()
+		var now time.Time
+		if runner.Manager.Now != nil {
+			now = runner.Manager.Now()
+		} else {
+			now, err = inv.owners.commandNow(inv.stateRoot)
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the status clock could not be read",
+					next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "reads the run again", Details: []string{err.Error()}})
+			}
+			runner.Manager = &launch.Manager{Store: runner.Manager.Store, Now: func() time.Time { return now }}
+		}
+		report := readProcessReport(inv.stateRoot, record.Goal, record.Unit, runner, now, nil)
+		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
 			if round.Cause != "" {
@@ -1276,7 +1289,7 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})
 	}
 	job := ref.job
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}

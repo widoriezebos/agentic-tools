@@ -10,6 +10,7 @@ type Tokens struct{ Input, CacheRead, CacheCreation, Output int64 }
 type Interval struct{ Start, End time.Time }
 type Step struct {
 	ID, Kind, Pending, Start, End, Collected string
+	Act                                      string
 	Argv                                     []string
 	FullArgv                                 []string
 	Terminal                                 bool

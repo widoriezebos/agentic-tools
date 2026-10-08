@@ -612,7 +612,7 @@ func (runner *UnitRunner) GoalRuns(goal string) (work []NamedWork, unknown []str
 		}
 		if err != nil || record.ID != entry.Name() {
 			unknown = append(unknown, "run "+entry.Name()+" unavailable")
-		} else if record.Goal == goal {
+		} else if goal == "" || record.Goal == goal {
 			work = append(work, NamedWork{Unit: record.Unit, Run: record.ID, Record: &record})
 		}
 	}

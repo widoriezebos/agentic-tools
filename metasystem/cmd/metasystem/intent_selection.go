@@ -250,11 +250,11 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
-	if unitCount == 0 {
-		return inv.render(result)
-	}
+	report := readProcessReport(inv.stateRoot, result.Data.(map[string]any)["goal"].(string), inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
+	result.Data.(map[string]any)["processReport"] = report
 	result.view = func(page *textui.Page) {
 		page.Headline(result.Summary)
+		page.Legacy(report.Lines...)
 		section := page.Section("", "")
 		for _, line := range result.text[:unitCount] {
 			section.Fixed(strings.TrimSpace(line))

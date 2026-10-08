@@ -200,7 +200,7 @@ func ReadActs(root, goal string) (acts []ProcessAct, unknown []string, err error
 		var act ProcessAct
 		if err != nil || json.Unmarshal(body, &act) != nil {
 			unknown = append(unknown, "process act "+entry.Name()+" unavailable")
-		} else if act.Goal == goal {
+		} else if goal == "" || act.Goal == goal {
 			acts = append(acts, act)
 		}
 	}

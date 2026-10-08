@@ -123,7 +123,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus(), {object: "channel", action: "status", laidOut: true, audience: "both", summary: "this seat's status and observed process cost", maxArgs: 0, flags: []intentFlag{{name: "post", usage: "deliver to the configured channel"}}, usage: []string{"metasystem channel status [--post]"}, examples: []string{"metasystem channel status"}, run: runIntentChannelStatus}},
 	} {
 		commands = append(commands, part...)
 	}
@@ -1343,7 +1343,7 @@ type intentGroup struct {
 
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
-	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
+	{"deliver", "Deliver", []string{"work", "test", "question", "channel", "agent", "incident"}},
 	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
@@ -1357,6 +1357,7 @@ var intentObjectSummaries = map[string]string{
 	"work":       "a goal's work: brief, build, review, revise, land, finish, wait and stop",
 	"test":       "risk-selected tests and their proof",
 	"question":   "questions for a person, and their answers",
+	"channel":    "this seat's status report and its delivery",
 	"agent":      "messages between the agents on this host: ask, reply and read, never a person",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
