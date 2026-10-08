@@ -1,19 +1,5 @@
-// Package outage is the shared record of a model-provider outage: one
-// small mark every layer can write when a provider call comes back
-// overloaded (529/overloaded/5xx) or limited (usage limit, rate_limit_error,
-// 429) and every layer can read to stop
-// blaming local machinery for the provider's weather. The mark is a
-// HEALTH HINT, not a ledger: writers race last-write-wins, a torn or
-// unreadable mark reads as no outage, and consumers must stay correct
-// without it. A standing mark pauses the steward's patience clocks and
-// keeps provider failures off the mission runner's host-failure
-// breaker; it never authorizes, blocks, or excuses anything else.
-//
-// The mark must be FED to keep standing: each new overload failure
-// refreshes it, and a mark older than Horizon lapses. Without the
-// horizon a mark written once and never cleared — every provider
-// consumer gone quiet, so no success ever clears it — would blind the
-// steward to a genuine stall forever.
+// Package outage owns ordered provider conditions in the registered installation.
+// Legacy checkout hints have no provider identity and never become shared evidence.
 package outage
 
 import (
@@ -27,8 +13,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // Horizon is how long a standing outage survives without a new failure
@@ -58,53 +42,11 @@ type Mark struct {
 	LastAt              string `json:"lastAt"`
 	// ResetAt is when the last failure's limit line says the limit resets;
 	// a provider-limit mark stands until then, for at most MaxLimitHold.
-	ResetAt string `json:"resetAt,omitempty"`
+	ResetAt                  string `json:"resetAt,omitempty"`
+	Provider, Runtime, Model string
 }
 
-// Path is the mark's one location under the repository root.
-func Path(repoRoot string) string {
-	return filepath.Join(repoRoot, "artifacts", "agents", "outage.json")
-}
-
-// Read returns the raw mark. A missing, torn, or unreadable file is no
-// outage — the hint fails toward normal operation, never toward a
-// paused clock nobody asked for.
-func Read(repoRoot string) (Mark, bool) {
-	data, err := os.ReadFile(Path(repoRoot))
-	if err != nil {
-		return Mark{}, false
-	}
-	var m Mark
-	if json.Unmarshal(data, &m) != nil || m.ConsecutiveFailures < 1 {
-		return Mark{}, false
-	}
-	return m, true
-}
-
-// ResetDefect rejects a reset that could hold work beyond the limit window.
-func (m Mark) ResetDefect(now time.Time) string {
-	if reset, err := time.Parse(time.RFC3339, m.ResetAt); err == nil && reset.Sub(now) > MaxLimitHold {
-		return fmt.Sprintf("mark resetAt %s is more than 5h ahead of now; ignored", m.ResetAt)
-	}
-	return ""
-}
-
-// StandingAt is Read with the horizon applied: a mark whose last
-// feeding is older than Horizon has lapsed, unless a provider limit names
-// a reset bounded by MaxLimitHold. A LastAt that does not
-// parse lapses too — an unreadable age must not stand forever — and
-// so does one more than Horizon in the FUTURE: a clock correction or
-// a corrupt stamp must not pause the clocks beyond the same bound the
-// horizon promises. A limit whose named reset has come lapses then,
-// even inside the horizon. A reset more than five hours ahead is ignored.
-func StandingAt(repoRoot string, now time.Time) (Mark, bool) {
-	m, ok := Read(repoRoot)
-	if !ok {
-		return Mark{}, false
-	}
-	if m.ResetDefect(now) != "" {
-		return m, false
-	}
+func (m Mark) standingAt(now time.Time) (Mark, bool) {
 	last, err := time.Parse(time.RFC3339, m.LastAt)
 	if err != nil {
 		return Mark{}, false
@@ -118,24 +60,16 @@ func StandingAt(repoRoot string, now time.Time) (Mark, bool) {
 			horizon = MaxLimitHold
 		}
 	}
-	if age := now.Sub(last); age > horizon || age < -Horizon {
+	if age := now.Sub(last); age > horizon || horizon == MaxLimitHold && age == horizon || age < -Horizon {
 		return Mark{}, false
 	}
 	return m, true
 }
 
-// markLock serializes Record and Clear across processes, so a torn
-// read-modify-write can never resurrect a cleared outage or regress a
-// newer feeding under an older one. What the lock cannot fix is the
-// observation race itself: a failure OBSERVED before a success but
-// recorded after it re-marks the outage — the next success clears it
-// again, and the horizon bounds the damage either way.
+// markLock serializes provider observations and epoch carry-forward.
 type markLock struct{ f *os.File }
 
-// The acquire is BOUNDED: a hint must never wedge its caller. Mission
-// runners call Clear while holding their mission lease — a process
-// stuck holding this lock may cost the hint an update, never the
-// runner its turn.
+// Lock acquisition is bounded so a stalled writer cannot wedge a caller.
 func acquireMarkLock(repoRoot string) (*markLock, error) {
 	path := filepath.Join(repoRoot, "artifacts", "agents", "outage.flock")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -162,59 +96,6 @@ func acquireMarkLock(repoRoot string) (*markLock, error) {
 func (l *markLock) release() {
 	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
 	_ = l.f.Close()
-}
-
-// Record folds one provider-overload failure into the mark and returns
-// the updated mark. A lapsed or absent mark starts a new outage. The
-// stamp never regresses: a slower writer with an older clock cannot
-// age a mark a faster one just fed (RFC3339 UTC compares lexically).
-func Record(repoRoot, class, detail, source string, now time.Time) (Mark, error) {
-	lock, err := acquireMarkLock(repoRoot)
-	if err != nil {
-		return Mark{}, err
-	}
-	defer lock.release()
-	m, standing := StandingAt(repoRoot, now)
-	if !standing {
-		m = Mark{Since: now.UTC().Format(time.RFC3339)}
-	}
-	m.ConsecutiveFailures++
-	m.LastClass = class
-	m.LastDetail = clip(detail)
-	m.Source = source
-	m.ResetAt = ""
-	if reset, ok := limitReset(class, detail, now); ok {
-		if reset.Sub(now) > MaxLimitHold {
-			reset = now.Add(MaxLimitHold)
-		}
-		m.ResetAt = reset.UTC().Format(time.RFC3339)
-	}
-	if stamp := now.UTC().Format(time.RFC3339); !standing || m.LastAt < stamp {
-		m.LastAt = stamp
-	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return Mark{}, err
-	}
-	if err := atomicfile.WriteVolatile(Path(repoRoot), string(data)+"\n"); err != nil {
-		return Mark{}, err
-	}
-	return m, nil
-}
-
-// Clear removes the mark: any provider success ends the outage. An
-// already-absent mark is success.
-func Clear(repoRoot string) error {
-	lock, err := acquireMarkLock(repoRoot)
-	if err != nil {
-		return err
-	}
-	defer lock.release()
-	err = os.Remove(Path(repoRoot))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 // The line rules for provider-overload evidence (Wido's ruling:

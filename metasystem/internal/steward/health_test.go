@@ -16,9 +16,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type healthProbe map[int64]struct {
@@ -117,7 +117,7 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 			case "fenced":
 				bed.fence = "process creation is fenced"
 			case "provider outage":
-				if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
+				if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
 					t.Fatal(err)
 				}
 			case "revivals capped":

@@ -1314,8 +1314,8 @@ func checkSessionMainWithLedger(repoRoot, runRoot string, now time.Time, prober 
 		}
 		kind, _, _ := classifySharedBacklog(work)
 		dependencies.Project = func(string, time.Time) (goal.Projection, error) { return ledger.projection, nil }
-		_, providerOutage := standingProviderOutage(repoRoot, now, nil)
-		decision, selection, _ := seatDecision(repoRoot, (TickConfig{Now: now}).withDefaults(), kind, work,
+		_, providerOutage := standingProviderOutage(repoRoot, now, nil, dependencies.ProviderHome)
+		decision, selection, _ := seatDecision(repoRoot, (TickConfig{Now: now, ProviderHome: dependencies.ProviderHome}).withDefaults(), kind, work,
 			Workers{CensusComplete: true}, providerOutage, dependencies, seatTickState{Records: records})
 		if decision.Verdict == VerdictDegraded || decision.Verdict == VerdictUnknown {
 			return decision, nil, errors.New(decision.Reason)

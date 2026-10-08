@@ -33,6 +33,8 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
+	// ProviderHome selects the host registration; empty uses the registry home.
+	ProviderHome string
 	// WorkStateRoot selects the host unit and launch stores; empty uses the
 	// registry's production default.
 	WorkStateRoot string
@@ -530,7 +532,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if dependencies.Seat != nil {
 		log = dependencies.Seat.Log
 	}
-	outageMark, providerOutage := standingProviderOutage(repoRoot, cfg.now(), log)
+	outageMark, providerOutage := standingProviderOutage(repoRoot, cfg.now(), log, cfg.ProviderHome)
 	if providerOutage && marks == prev.Marks {
 		ev = prev
 	}
@@ -538,6 +540,9 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, seat)
 	if err != nil {
 		return TickResult{}, err
+	}
+	if outageMark.LastClass == "unknown" && (d.Action == ActNotify || d.Action == ActHold) {
+		d.Reason = outageMark.LastDetail
 	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every

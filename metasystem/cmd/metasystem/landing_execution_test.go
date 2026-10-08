@@ -81,18 +81,18 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 	third := b.seat(t, "c")
 	b.git(t, b.checkout, "fetch", "--quiet", "origin")
 	dead = false
-	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		t.Fatal("retry re-proved the person")
-		return humanauthority.Proof{}, nil
+	b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, 30, person(), at)
 	}
 	// A standing provider outage still holds the recorded selection.
-	_, err = outage.Record(b.installation, outage.ProviderLimit, "fixture", launch.LandingOwnerLineage, b.now)
+	_, err = outage.Observe(b.home, "claude", "landing-model", outage.ProviderLimit, "fixture", launch.LandingOwnerLineage, b.now)
 	helmMust(t, err)
 	b.success(t, "landing", "run")
 	if len(landingLaunches(t, store)) != 0 {
 		t.Fatal("Explicit bypassed the provider hold")
 	}
-	helmMust(t, outage.Clear(b.installation))
+	_, err = outage.Observe(b.home, "claude", "landing-model", "", "", "fixture-success", b.now.Add(time.Nanosecond))
+	helmMust(t, err)
 	b.success(t, "landing", "run")
 	launches := landingLaunches(t, store)
 	if len(launches) != 1 {

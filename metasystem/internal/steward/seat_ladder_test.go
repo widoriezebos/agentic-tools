@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 const seatBedMachine = "bed-m1"
@@ -79,7 +80,8 @@ type seatBed struct {
 func newSeatBed(t *testing.T, goals ...*goal.GoalFile) *seatBed {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeStewardRecord(t, ledgerAttentionStatePath(root), map[string]any{
@@ -119,16 +121,17 @@ func (b *seatBed) projection(now time.Time) goal.Projection {
 
 func (b *seatBed) seatDependencies() *seatDependencies {
 	return &seatDependencies{
-		Launcher: b.launcher,
-		Units:    func(string, string) ([]UnitStage, error) { return nil, nil },
-		Lane:     func(string, string) (plain.Entry, bool, error) { return plain.Entry{}, false, nil },
-		Main:     func(string) (string, error) { return "main", nil },
-		Contains: func(string, string, string) (bool, error) { return false, nil },
-		Jobs:     func(string) ([]map[string]any, error) { return nil, nil },
-		Refusals: func() ([]launch.Refusal, error) { return nil, nil },
-		Launches: func() ([]launch.Record, error) { return nil, nil },
-		Threads:  func() ([]board.Thread, error) { return nil, nil },
-		Project:  func(string, time.Time) (goal.Projection, error) { return b.projection(b.now), nil },
+		ProviderHome: testprovider.Home(b.root),
+		Launcher:     b.launcher,
+		Units:        func(string, string) ([]UnitStage, error) { return nil, nil },
+		Lane:         func(string, string) (plain.Entry, bool, error) { return plain.Entry{}, false, nil },
+		Main:         func(string) (string, error) { return "main", nil },
+		Contains:     func(string, string, string) (bool, error) { return false, nil },
+		Jobs:         func(string) ([]map[string]any, error) { return nil, nil },
+		Refusals:     func() ([]launch.Refusal, error) { return nil, nil },
+		Launches:     func() ([]launch.Record, error) { return nil, nil },
+		Threads:      func() ([]board.Thread, error) { return nil, nil },
+		Project:      func(string, time.Time) (goal.Projection, error) { return b.projection(b.now), nil },
 		Tips: func(_ string, goals []string) (map[string]string, error) {
 			tips := map[string]string{}
 			for _, id := range goals {
@@ -166,7 +169,7 @@ func (b *seatBed) tickWith(census WorkerCensus) TickResult {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	result, err := decideTickWithDependencies(b.root, TickConfig{Now: b.now}, census, prev, Marks{HeadOid: "h", OpidDigest: "d"}, b.dependencies())
+	result, err := decideTickWithDependencies(b.root, TickConfig{Now: b.now, ProviderHome: testprovider.Home(b.root)}, census, prev, Marks{HeadOid: "h", OpidDigest: "d"}, b.dependencies())
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -199,7 +202,7 @@ func (b *seatBed) startUnder(selection SeatSelection, census WorkerCensus) (Seat
 	b.t.Helper()
 	dependencies := *b.seatDependencies()
 	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
-		return seatRecheck(b.root, TickConfig{Now: b.now}, census, b.dependencies(), records)
+		return seatRecheck(b.root, TickConfig{Now: b.now, ProviderHome: testprovider.Home(b.root)}, census, b.dependencies(), records)
 	}
 	return startSeatWithDependencies(b.root, selection, dependencies)
 }
@@ -215,7 +218,7 @@ func (b *seatBed) end(id, state, result string) {
 	if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
-	b.launcher.states[id] = SeatLaunchState{Found: true, Terminal: true, State: state, ResultPath: path, FinishedAt: b.now.Format(time.RFC3339Nano)}
+	b.launcher.states[id] = SeatLaunchState{Home: testprovider.Home(b.root), Runtime: "claude", Model: "fixture-model", Found: true, Terminal: true, State: state, ResultPath: path, FinishedAt: b.now.Format(time.RFC3339Nano)}
 }
 
 func (b *seatBed) records() []SeatRecord {
@@ -344,7 +347,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 	t.Run("an unreaped seat launch holds before everything", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 		bed.start(&SeatSelection{Goal: "alpha", Ready: []string{"alpha"}})
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		result := bed.tick(Workers{Live: 1, LiveSeatMains: 1, CensusComplete: true})
@@ -355,7 +358,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 	t.Run("an outage notifies before the cap", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 		capSeats(t, bed, "alpha", 3)
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		result := bed.tick(deadWorkers)
@@ -528,8 +531,8 @@ func TestProviderLimitAfterClaimRecoversWithoutAPerson(t *testing.T) {
 			bed.put(seatClaimedGoal("held", SeatLineage))
 			bed.end(record.LaunchID, "failed", weather.result)
 			result = bed.tick(deadWorkers)
-			mark, standing := outage.StandingAt(bed.root, bed.now)
-			if !standing || mark.Source != SeatLineage || mark.LastClass != weather.class {
+			mark, standing := testprovider.StandingAt(bed.root, bed.now)
+			if !standing || mark.Source != record.LaunchID || mark.LastClass != weather.class {
 				t.Fatalf("a provider-limit ending feeds the outage mark with class %s: %+v %v", weather.class, mark, standing)
 			}
 			if result.Decision.Action != ActNotify || result.Seat != nil {
@@ -847,7 +850,7 @@ func TestASeatStartRereadsItsGroundsUnderTheLock(t *testing.T) {
 	t.Run("an outage began", func(t *testing.T) {
 		t.Parallel()
 		bed, selection := selected(t)
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		refused(t, bed, selection, fakeCensus{workers: deadWorkers})

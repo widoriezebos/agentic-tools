@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type handoffProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
@@ -38,6 +38,10 @@ func handoffProbe(binding HandoffBinding, state identity.Liveness, includeTag bo
 func stagedRevivalHandoff(t *testing.T, nonce string) (string, Intent) {
 	t.Helper()
 	root := stagedRepo(t)
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	fixture := writeStagedHandoffFixture(t, root, nonce)
 	intent, err := StageHandoffIntent(root, nonce, "fix-it", "steward-"+nonce, "fake", "fixture", fixture.binding)
 	if err != nil {
@@ -598,7 +602,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("provider outage", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000008")
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
@@ -611,7 +615,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("alive predecessor dominates later guards", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "300000000000000d")
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if err := MintIntent(root, testIntent("other-while-predecessor-lives")); err != nil {
@@ -627,7 +631,7 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	t.Run("dry cap precedes outage after death", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "300000000000000e")
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
@@ -690,7 +694,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			t.Fatal("a live predecessor launched its successor")
 			return nil
 		})
@@ -719,7 +723,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	results := make(chan result, 2)
 	var launches atomic.Int32
 	go func() {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			close(launchEntered)
 			<-releaseLaunch
@@ -729,7 +733,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	}()
 	<-launchEntered
 	go func() {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			return nil
 		})
@@ -765,7 +769,7 @@ func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000002")
 	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	launches := 0
-	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -968,11 +972,11 @@ func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
 	var observations atomic.Int32
 	prober := handoffProbe(*intent.Handoff, identity.Dead, false, func() {
 		if observations.Add(1) == 1 {
-			_, recordErr = outage.Record(root, "overloaded", "API Error: 529", "test", time.Now())
+			_, recordErr = testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now())
 		}
 	})
 	launches := 0
-	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -999,7 +1003,7 @@ func TestProviderOutageArrivingBeforeLaunchCancelsTheRevival(t *testing.T) {
 	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-outage")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+	if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	launched := 0

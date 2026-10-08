@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // decisionTickRepository keeps accepted goal bytes separate from the real
@@ -25,7 +26,8 @@ type decisionTickRepository struct {
 func newDecisionTickRepository(t *testing.T) *decisionTickRepository {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeStewardRecord(t, ledgerAttentionStatePath(root), map[string]any{
@@ -127,6 +129,7 @@ func (b *decisionTickRepository) openWorkDependencies() (openWorkDependencies, f
 
 func (b *decisionTickRepository) tickN(cfg TickConfig, census WorkerCensus, n int) TickResult {
 	b.t.Helper()
+	cfg.ProviderHome = testprovider.Home(b.root)
 	var last TickResult
 	for i := 0; i < n; i++ {
 		path := EvidencePath(b.root)

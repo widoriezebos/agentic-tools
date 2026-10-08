@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -152,7 +153,11 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	now, starts, proofAlive := laneTestNow, 0, false
 	// Lane policy observation reads the same main and incident facts as selection
 	// (plans/designs/lane-reads-its-policies.md, Decisions 3 and 5).
-	keeper := newLandingAgentKeeper(root, home, landingAgent{proofEffects: bed.plainProve, now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
+	keeper := newLandingAgentKeeper(root, home, landingAgent{settings: func(string) (launch.Settings, error) {
+		s := launch.DefaultSettings()
+		s.LandingRuntime = "claude"
+		return s, nil
+	}, proofEffects: bed.plainProve, now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
 	keeper.Prepare = func(record lane.Record) error {
 		_, err := plain.SelectBatch(record.Install, record.Root, record, bed.plainProve)
 		return err
@@ -273,7 +278,7 @@ func TestLandingKeeperStartsWhenProviderHoldExpires(t *testing.T) {
 	t.Parallel()
 	bed, keeper, now, starts, _ := landingRestartBed(t)
 	queueRestartWork(t, bed)
-	if _, err := outage.Record(bed.landingA, "overloaded", "fixture", "fixture", *now); err != nil {
+	if _, err := outage.Observe(bed.home, "claude", "fixture-model", "overloaded", "fixture", "fixture", *now); err != nil {
 		t.Fatal(err)
 	}
 	first := keeper.Run()

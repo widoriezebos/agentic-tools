@@ -17,7 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
@@ -166,7 +165,7 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	// consume-and-launch calls themselves; an outage beginning inside
 	// it costs at most one dry revival, which the hint's contract
 	// accepts.
-	if _, standing := outage.StandingAt(repoRoot, time.Now()); standing {
+	if _, standing := standingProviderOutage(repoRoot, cfg.now(), nil, cfg.ProviderHome); standing {
 		reason := "the model provider is overloaded; holding revival until the provider recovers"
 		if it.Reason == seatHandoffReason {
 			reason = fmt.Sprintf("handoff %s waits: the model provider became overloaded before launch (session pid %d ended)", it.Nonce, it.Handoff.Predecessor.Pid)
@@ -310,7 +309,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 		}
 	}
 	now := revivalNow()
-	_, providerOutage := standingProviderOutage(repoRoot, now, nil)
+	_, providerOutage := standingProviderOutage(repoRoot, now, nil, cfg.ProviderHome)
 	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
@@ -357,7 +356,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 	case ev.DryRevivals >= cfg.MaxRevivals:
 		return Decision{VerdictStalledIdle, ActNotify, fmt.Sprintf("seatIdle handoff is blocked because %d revivals produced no progress", ev.DryRevivals)}, workReason, nil
 	case providerOutage:
-		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked while the model provider is overloaded"}, workReason, nil
+		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked: " + providerWaitReason(repoRoot, now, cfg.ProviderHome)}, workReason, nil
 	default:
 		return Decision{VerdictStalledIdle, ActRevive, "the live seat handed its claimed goal to a steward continuation through seatIdle"}, workReason, nil
 	}

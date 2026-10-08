@@ -1171,5 +1171,8 @@ func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
 		lines = append(lines, fmt.Sprintf("build %s: %s; goal %s; checkout %s", build.ID, build.State, build.Goal, env.Path(build.WorkingDirectory)))
 	}
 	lines = append(lines, "providers: "+s.Providers.Detail)
+	for _, mark := range s.Providers.Marks {
+		lines = append(lines, fmt.Sprintf("provider %s: %s; runtime %s; model %s; reset %s", mark.Provider, mark.LastClass, mark.Runtime, mark.Model, lane.LocalText(mark.ResetAt)))
+	}
 	return append(lines, s.Errors...)
 }

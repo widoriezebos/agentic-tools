@@ -49,11 +49,12 @@ type SeatLaunchSpec struct {
 
 // SeatLaunchState is one seat launch as its launch record says.
 type SeatLaunchState struct {
-	Found      bool
-	Terminal   bool
-	State      string
-	ResultPath string
-	FinishedAt string
+	Found                bool
+	Terminal             bool
+	State                string
+	ResultPath           string
+	FinishedAt           string
+	Home, Runtime, Model string
 }
 
 // SeatLauncher starts and reads seat launches; the command layer supplies the
@@ -297,10 +298,13 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 					}
 					break
 				}
-				if _, err := outage.Record(repoRoot, class, evidence, SeatLineage, seen); err != nil {
+				if _, err := outage.Observe(launch.Home, launch.Runtime, launch.Model, class, evidence, record.LaunchID, seen); err != nil {
 					record.Evidence += "; the outage mark was not fed: " + err.Error()
 				}
 				break
+			}
+			if seen, err := time.Parse(time.RFC3339Nano, launch.FinishedAt); err == nil && launch.State == "completed" {
+				_, _ = outage.Observe(launch.Home, launch.Runtime, launch.Model, "", "", record.LaunchID, seen)
 			}
 			if projection == nil {
 				read, err := dependencies.Project(repoRoot, now)
@@ -450,7 +454,7 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 		}
 	}
 	if providerOutage {
-		return Decision{verdict, ActNotify, "the model provider is overloaded or limited; holding the seat start until the provider recovers"}, nil, true
+		return Decision{verdict, ActNotify, providerWaitReason(repoRoot, cfg.now(), cfg.ProviderHome)}, nil, true
 	}
 	closed, reason, err := dependencies.Fence(repoRoot)
 	if err != nil {
@@ -624,24 +628,25 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 
 // seatDependencies are the seat ladder's readers and its launcher.
 type seatDependencies struct {
-	Launcher SeatLauncher
-	Units    func(root, goalID string) ([]UnitStage, error)
-	Main     func(root string) (string, error)
-	Contains func(root, sha, main string) (bool, error)
-	Lane     func(root, goalID string) (plain.Entry, bool, error)
-	Jobs     func(root string) ([]map[string]any, error)
-	Refusals func() ([]launch.Refusal, error)
-	Launches func() ([]launch.Record, error)
-	Threads  func() ([]board.Thread, error)
-	Project  func(root string, now time.Time) (goal.Projection, error)
-	Tips     func(root string, goals []string) (map[string]string, error)
-	Machine  func(root string) (string, error)
-	Gate     func(root string) (goal.GateSettings, error)
-	Fence    func(root string) (closed bool, reason string, err error)
-	Classify func(path string) (class, evidence string, ok bool)
-	Now      func() time.Time
-	Sleep    func(time.Duration)
-	Log      func(string)
+	ProviderHome string
+	Launcher     SeatLauncher
+	Units        func(root, goalID string) ([]UnitStage, error)
+	Main         func(root string) (string, error)
+	Contains     func(root, sha, main string) (bool, error)
+	Lane         func(root, goalID string) (plain.Entry, bool, error)
+	Jobs         func(root string) ([]map[string]any, error)
+	Refusals     func() ([]launch.Refusal, error)
+	Launches     func() ([]launch.Record, error)
+	Threads      func() ([]board.Thread, error)
+	Project      func(root string, now time.Time) (goal.Projection, error)
+	Tips         func(root string, goals []string) (map[string]string, error)
+	Machine      func(root string) (string, error)
+	Gate         func(root string) (goal.GateSettings, error)
+	Fence        func(root string) (closed bool, reason string, err error)
+	Classify     func(path string) (class, evidence string, ok bool)
+	Now          func() time.Time
+	Sleep        func(time.Duration)
+	Log          func(string)
 	// OpenQuestions reads the open channel questions; a goal one names is
 	// left to the person, like a goal waiting on a human word. Nil reads none.
 	OpenQuestions func(root string) []goal.OpenQuestion
@@ -655,19 +660,29 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
-	_, providerOutage := standingProviderOutage(repoRoot, cfg.now(), nil)
+	_, providerOutage := standingProviderOutage(repoRoot, cfg.now(), nil, cfg.ProviderHome)
 	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, Evidence{}, providerOutage, openWork, &seatTickState{Records: records})
 	return d, selection, err
 }
 
-func standingProviderOutage(repoRoot string, now time.Time, log func(string)) (outage.Mark, bool) {
-	mark, standing := outage.StandingAt(repoRoot, now)
-	if defect := mark.ResetDefect(now); defect != "" {
+func standingProviderOutage(repoRoot string, now time.Time, log func(string), homes ...string) (outage.Mark, bool) {
+	settings, err := launch.ResolveSettings(filepath.Join(repoRoot, "metasystem.conf"), os.LookupEnv)
+	home := ""
+	if len(homes) > 0 {
+		home = homes[0]
+	}
+	providers, readErr := outage.ReadProviders(home)
+	mark, standing := providers.Standing(settings.SeatRuntime, now)
+	if err == nil {
+		err = readErr
+	}
+	if err != nil {
 		if log != nil {
-			log(defect)
+			log("provider state is unknown: " + err.Error())
 		} else {
-			fmt.Fprintln(os.Stderr, defect)
+			fmt.Fprintln(os.Stderr, "provider state is unknown:", err)
 		}
+		return outage.Mark{LastClass: "unknown", LastDetail: "provider state is unknown: " + err.Error()}, true
 	}
 	return mark, standing
 }
@@ -945,4 +960,13 @@ func seatJSONLines(path string) ([]map[string]any, error) {
 		}
 		records = append(records, record)
 	}
+}
+
+// providerWaitReason distinguishes provider failures from unavailable host evidence.
+func providerWaitReason(repoRoot string, now time.Time, homes ...string) string {
+	mark, _ := standingProviderOutage(repoRoot, now, nil, homes...)
+	if mark.LastClass == "unknown" {
+		return mark.LastDetail
+	}
+	return "the model provider is overloaded or limited; holding the start until the provider recovers"
 }

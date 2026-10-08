@@ -2,12 +2,15 @@
 package hostcapacity
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 // Snapshot is a read-time observation, never permission to start work.
@@ -34,8 +37,9 @@ type Build struct {
 
 // ProviderCoverage names the shared provider evidence that is not yet available.
 type ProviderCoverage struct {
-	Available bool   `json:"available"`
-	Detail    string `json:"detail"`
+	Available bool          `json:"available"`
+	Detail    string        `json:"detail"`
+	Marks     []outage.Mark `json:"marks,omitempty"`
 }
 
 // Sources allows each caller to supply its readers; nil uses the real sources.
@@ -85,9 +89,27 @@ func Read(home string, manager *launch.Manager, now time.Time, sources Sources) 
 		s.Goals = append(s.Goals, goal)
 	}
 	sort.Strings(s.Goals)
+	providers, providerErr := outage.ReadProviders(home)
+	if providerErr != nil {
+		s.Providers.Detail = "provider state is unknown: " + providerErr.Error()
+		s.Errors = append(s.Errors, s.Providers.Detail)
+	} else if providers.Owner != owner {
+		s.Providers.Detail = "provider ownership changed; run metasystem machine list again"
+	} else if len(providers.Current) > 0 {
+		s.Providers.Available, s.Providers.Detail = true, "current shared provider observations"
+		for _, condition := range providers.Current {
+			if condition.Mark.ConsecutiveFailures > 0 {
+				s.Providers.Marks = append(s.Providers.Marks, condition.Mark)
+			}
+		}
+		sort.Slice(s.Providers.Marks, func(i, j int) bool { return s.Providers.Marks[i].Provider < s.Providers.Marks[j].Provider })
+	} else if _, err := os.Stat(filepath.Join(owner.Install, "artifacts", "agents", "outage.json")); err == nil {
+		s.Providers.Detail = "legacy provider hint has unknown provider identity"
+	}
 	after, stillRegistered, err := sources.Registration(home)
 	if err != nil || registered != stillRegistered || owner != after {
 		s.OwnerKnown = false
+		s.Providers = ProviderCoverage{Detail: "provider ownership changed or is unknown"}
 		if err != nil {
 			s.Errors = append(s.Errors, "registration re-read: "+err.Error())
 		} else {

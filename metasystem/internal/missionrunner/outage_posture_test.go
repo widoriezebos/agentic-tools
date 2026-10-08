@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func recordOverloadBackoffs(t *testing.T) *[]time.Duration {
@@ -38,6 +38,9 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
 	backoffs := recordOverloadBackoffs(t)
 	engine := buildGitFreeHostCycle(t, "FAKEHOST:exit-overloaded")
+	engine.ProviderHome = testprovider.Register(t, engine.installation())
+	observed := engine.now()
+	engine.Now = func() time.Time { observed = observed.Add(time.Millisecond); return observed }
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -71,8 +74,8 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 		t.Fatalf("the fixture must witness repeated overloads staying unparked: %d turn(s)\n%v",
 			overloadedTurns, turnLog)
 	}
-	mark, ok := outage.Read(engine.installation())
-	if !ok || mark.LastClass != "overloaded" || mark.Source != "mission-runner" {
+	mark, ok := testprovider.Read(engine.installation(), "fake")
+	if !ok || mark.LastClass != "overloaded" || !strings.HasPrefix(mark.Source, "alpha-t") {
 		t.Fatalf("the outage mark must record the provider's weather: %+v ok=%v", mark, ok)
 	}
 	if mark.ConsecutiveFailures < 2 {
@@ -98,6 +101,9 @@ func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
 	backoffs := recordOverloadBackoffs(t)
 	engine := buildGitFreeHostCycle(t, "FAKEHOST:overloaded-result")
+	engine.ProviderHome = testprovider.Register(t, engine.installation())
+	observed := engine.now()
+	engine.Now = func() time.Time { observed = observed.Add(time.Millisecond); return observed }
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -115,7 +121,7 @@ func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	if errField, _ := first["error"].(string); errField != "provider-overloaded" {
 		t.Fatalf("the clean-exit overload names itself: error=%q detail=%v", errField, first["detail"])
 	}
-	if mark, ok := outage.Read(engine.installation()); !ok || mark.LastClass != "overloaded" {
+	if mark, ok := testprovider.Read(engine.installation(), "fake"); !ok || mark.LastClass != "overloaded" {
 		t.Fatalf("the document must feed the mark: %+v ok=%v", mark, ok)
 	}
 	if len(*backoffs) == 0 || (*backoffs)[0] != 150*time.Millisecond {

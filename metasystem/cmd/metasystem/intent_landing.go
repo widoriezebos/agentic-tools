@@ -1016,6 +1016,8 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	keeper.Helmed = func(root string) bool { return owners.helm(root).Active }
 	keeper.Continuation = func(current lane.Record) string { return plain.PersonBatchContinuation(current.Install, current, home) }
 	keeper.Explicit = true
+	_, personProblem := inv.lanePerson("start the landing agent", root)
+	keeper.PersonAct = personProblem == nil
 	run := keeper.Run()
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}

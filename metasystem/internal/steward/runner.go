@@ -159,6 +159,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 }
 
 type runnerLoopDependencies struct {
+	ProviderHome   string
 	Self           identity.Prober
 	ExamineLedger  func(string, time.Time) error
 	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
@@ -209,6 +210,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		return fmt.Errorf("the steward tick interval must be positive")
 	}
 	top := canonicalPath(repoRoot)
+	if cfg.ProviderHome != "" {
+		deps.ProviderHome = cfg.ProviderHome
+	}
 	if deps.Resumable == nil {
 		deps.Resumable = ResumableIntent
 	}
@@ -494,7 +498,7 @@ func (k *laneKeeping) run() {
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
-	mark, standing := outage.StandingAt(top, start)
+	mark, standing := standingProviderOutage(top, start, nil, deps.ProviderHome)
 	watching := probe != nil && standing && mark.LastClass == outage.ProviderLimit
 	probeLine := ""
 	for deps.Now().Before(deadline) {
@@ -507,7 +511,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 			}
 			if !helm.Active(top).Active {
 				if watching {
-					mark, standing = outage.StandingAt(top, deps.Now())
+					mark, standing = standingProviderOutage(top, deps.Now(), nil, deps.ProviderHome)
 					if !standing || mark.LastClass != outage.ProviderLimit {
 						return false
 					}
@@ -518,7 +522,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 		if watching && !deps.Now().Before(probeAt) && !helm.Active(top).Active {
 			answered, err := probe(top)
 			if answered {
-				if err := outage.Clear(top); err != nil {
+				if _, err := outage.Observe(deps.ProviderHome, mark.Runtime, mark.Model, "", "", "steward-probe", deps.Now()); err != nil {
 					fmt.Fprintf(os.Stderr, "the provider answered, but its outage mark could not be cleared\n%v\n", err)
 				} else {
 					fmt.Fprintln(os.Stderr, "the provider answered; its outage mark is cleared")
