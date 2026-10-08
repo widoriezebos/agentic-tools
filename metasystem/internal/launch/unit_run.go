@@ -211,6 +211,12 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 			return UnitResult{}, err
 		}
 	}
+	if record.State == "cancelled" {
+		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
+	}
+	if err := runner.reserveTree(record); err != nil {
+		return UnitResult{Record: record}, err
+	}
 	lock, err := runner.lock(record.ID)
 	if err != nil {
 		return UnitResult{}, err
@@ -221,6 +227,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err != nil {
 			return UnitResult{}, err
 		}
+	}
+	if record.State == "cancelled" {
+		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
 	}
 	for _, round := range record.Rounds {
 		if err := runner.collectLaunches(record, round); err != nil {
@@ -501,7 +510,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return UnitResult{}, err
 	}
 	commands := proofCommands(plan)
-	_, err = runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	beforeProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	if IsCode(err, "UNIT_TREE_CHANGED") {
+		return runner.treeMoved(record, round)
+	}
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -530,11 +542,17 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			break
 		}
 	}
-	_, err = runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	afterProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	if IsCode(err, "UNIT_TREE_CHANGED") {
+		return runner.treeMoved(record, round)
+	}
 	if err != nil {
 		return UnitResult{}, err
 	}
 	var moved []string
+	if beforeProof != afterProof {
+		moved = append(moved, "worktree")
+	}
 	for _, step := range round.Steps[buildCount:] {
 		moved = append(moved, step.Moved...)
 	}
@@ -605,6 +623,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		return runner.result(*record, round, &round.Steps[stop], capped), err
+	}
+	afterRead, err := runner.snapshotRepository(plan.Worktree)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if afterRead != afterProof {
+		return runner.treeMoved(record, round)
 	}
 	return runner.finish(record, round, outcome)
 }
@@ -983,18 +1008,20 @@ func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
 
 func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree string) (repositorySnapshot, error) {
 	path := filepath.Join(directory, name)
-	if data, err := os.ReadFile(path); err == nil {
-		var snapshot repositorySnapshot
-		if err := json.Unmarshal(data, &snapshot); err != nil {
-			return repositorySnapshot{}, err
-		}
-		return snapshot, nil
-	} else if !os.IsNotExist(err) {
-		return repositorySnapshot{}, err
-	}
 	snapshot, err := runner.snapshotRepository(worktree)
 	if err != nil {
 		return repositorySnapshot{}, err
+	}
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		var prior repositorySnapshot
+		if err := json.Unmarshal(data, &prior); err != nil {
+			return repositorySnapshot{}, err
+		}
+		if prior != snapshot {
+			return repositorySnapshot{}, coded("UNIT_TREE_CHANGED", "", errors.New("the worktree changed while this command was waiting"))
+		}
+	} else if !os.IsNotExist(readErr) {
+		return repositorySnapshot{}, readErr
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
@@ -1130,6 +1157,9 @@ func (runner *UnitRunner) root() string {
 }
 func (runner *UnitRunner) runDir(id string) string { return filepath.Join(runner.root(), id) }
 func (runner *UnitRunner) save(record UnitRunRecord) error {
+	if err := runner.reserveTree(record); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err

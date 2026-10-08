@@ -97,8 +97,14 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	if runner.Manager == nil && runner.Root == "" {
 		return fmt.Errorf("unit run store is unavailable")
 	}
-	if _, err := runner.read(id); err != nil {
+	current, err := runner.read(id)
+	if err != nil {
 		return coded("UNIT_RUN_UNKNOWN", "run="+id, fmt.Errorf("there is no work run %s: %v", id, err))
+	}
+	if runner.Manager != nil {
+		if err := runner.GateTree(current.Worktree, id); err != nil {
+			return err
+		}
 	}
 	lock, err := runner.lock(id)
 	if err != nil {

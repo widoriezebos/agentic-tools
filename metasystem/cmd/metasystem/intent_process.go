@@ -320,10 +320,10 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "work", action: "stop", audience: "both", summary: "stop one running job or diagnostic read, or every running job of a goal",
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
-			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops.",
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops. A person can use run:ID to cancel a unit run and release its worktree after its children stop.",
 				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
 			maxArgs:  1,
-			accepts:  []string{refGoal, refJ1, refJ2, refRead},
+			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
 			run:      runIntentWorkStop,
 		},
@@ -1271,6 +1271,9 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if ref.kind == refRun {
+		return inv.stopUnitRun(ref.id)
 	}
 	if ref.kind == refRead {
 		return runIntentReviewRef(inv, "stop", ref.id)

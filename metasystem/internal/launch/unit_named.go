@@ -59,6 +59,9 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if err := runner.gateNamedTree(worktree, key); err != nil {
+		return UnitResult{}, err
+	}
 	lock, err := runner.namedLock(key, named)
 	if err != nil {
 		return UnitResult{}, err
@@ -142,6 +145,9 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	}
 	real, key, err := namedUnitIdentity(UnitPlan{Worktree: worktree, Goal: goal, Unit: unit})
 	if err != nil {
+		return UnitResult{}, err
+	}
+	if err := runner.gateNamedTree(real, key); err != nil {
 		return UnitResult{}, err
 	}
 	lock, err := runner.namedLock(key, UnitPlan{Unit: unit, Goal: goal})

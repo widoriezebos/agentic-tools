@@ -1365,6 +1365,10 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
 	record := result.Record
 	if err != nil {
+		var treeWait *launch.TreeWaitingError
+		if errors.As(err, &treeWait) {
+			return inv.treeFailure(err)
+		}
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "BUDGET_REFUSED") || launch.IsCode(err, "BUDGET_UNKNOWN"):

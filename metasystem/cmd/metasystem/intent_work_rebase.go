@@ -89,6 +89,11 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 			next:    inv.publicArgv("work", "build", id), nextReason: "prepares the goal's worktree"}
 	}
 	root := inv.goalBranchInstallation(id)
+	if err := inv.unitRunner().GateTree(root, ""); err != nil {
+		result := inv.treeFailure(err)
+		return branch.RebaseResult{}, nil, &result
+	}
+
 	conn := inv.connection()
 	endpoint, err := conn.endpoint(root)
 	if err != nil {
