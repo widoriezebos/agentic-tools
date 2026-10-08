@@ -690,7 +690,14 @@ func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
 }
 
 func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
-	fixture := newUnitFixture(t, "", "branch")
+	t.Parallel()
+	fixture := baseUnitFixture(t)
+	fixture.runner.Git = &stubGit{makeStub: func() *testgit.Stub {
+		return testgit.New(t, testgit.Expectation{
+			Call:   testgit.Call{Dir: fixture.worktree, Args: []string{"symbolic-ref", "--short", "HEAD"}},
+			Result: testgit.Result{Stdout: []byte("goal/goal\n")},
+		})
+	}}
 	fixture.manager.Settings.BuildLinesCap = 1
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	entries, _ := os.ReadDir(fixture.runner.Root)
