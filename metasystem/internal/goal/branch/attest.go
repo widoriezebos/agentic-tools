@@ -541,7 +541,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		return Attestation{}, err
 	}
 	if err := validateCanonicalRead(att.CanonicalRead, att.ReadDigest, att.Subject.Tree, att.Subject.PatchDigest); err != nil {
-		return Attestation{}, err
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the canonical read of %s is unknown: %v\nrun: metasystem work review %s", commit, err, goalID)
 	}
 	if att.SchemaVersion != 1 || att.Goal != goalID || att.Unit != unit || att.Verdict != "LAND" || att.Subject.Commit != commit {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record at %s is not a landing verdict for %s/%s\nrun: metasystem work review %s", commit, goalID, unit, goalID)
@@ -575,6 +575,10 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		prior, err := validateAttestation(r, repo, snapshot, endpointTip, goalID, unit, att.Carry.FromCommit, seen)
 		if err != nil {
 			return Attestation{}, err
+		}
+		_, digest, err := carryCanonicalRead(prior.CanonicalRead, read)
+		if err != nil || digest != att.ReadDigest {
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the carried read of %s changed its predecessor evidence\nrun: metasystem work review %s", commit, goalID)
 		}
 		priorChange, err := changeDigestWithReads(r, repo, att.Carry.FromCommit)
 		if err != nil {
@@ -947,8 +951,10 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 			return "", Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", req.Carry, req.GoalID)
 		}
 		att.Source = prior.Source
-		att.CanonicalRead = append(json.RawMessage(nil), prior.CanonicalRead...)
-		att.ReadDigest = prior.ReadDigest
+		att.CanonicalRead, att.ReadDigest, err = carryCanonicalRead(prior.CanonicalRead, read)
+		if err != nil {
+			return "", Attestation{}, err
+		}
 		att.CoversFindings = append([]string(nil), prior.CoversFindings...)
 		att.CoversCommits = append([]string(nil), prior.CoversCommits...)
 		if prior.Source.ClosureSHA256 != "" {
@@ -1130,6 +1136,25 @@ func validateCoverage(r attestationReads, repo string, att Attestation) error {
 		}
 	}
 	return nil
+}
+
+// carryCanonicalRead binds the same examination to an equivalent commit. The
+// original bundle remains immutable; its provenance and evidence are retained.
+func carryCanonicalRead(data json.RawMessage, subject readsubject.ReadSubject) (json.RawMessage, string, error) {
+	if len(data) == 0 {
+		return nil, "", nil
+	}
+	var read readsubject.Read
+	if err := json.Unmarshal(data, &read); err != nil {
+		return nil, "", err
+	}
+	read.CarriedFrom, read.ID, read.Subject = read.ID, "carry:"+subject.Commit, subject
+	for i := range read.Findings {
+		_, number, _ := strings.Cut(read.Findings[i].ID, read.CarriedFrom+":")
+		read.Findings[i].ID = read.ID + ":" + number
+	}
+	canonical, digest := read.Canonical()
+	return canonical, digest, nil
 }
 
 func validateCanonicalRead(data json.RawMessage, digest, tree string, patchDigest ...string) error {

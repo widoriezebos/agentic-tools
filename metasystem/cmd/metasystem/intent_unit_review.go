@@ -431,6 +431,10 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				return carryErr
 			})
 			data["carried"] = carried.Carried
+			data["needsReview"], data["unknown"] = carried.NeedsReview, carried.Unknown
+			for _, name := range carried.NeedsReview {
+				carriedLines = append(carriedLines, "review needed: "+name+"; run: metasystem work review "+goalID+" --work "+name)
+			}
 			for _, name := range carried.Carried {
 				carriedLines = append(carriedLines, "review carried: "+name)
 			}

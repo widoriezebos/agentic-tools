@@ -268,6 +268,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 	unitCommits := map[string]KindInfo{}
 	unitLists := map[string]bool{}
 	seenUnits := map[string]string{}
+	emptyUnits := map[string]string{}
 	for _, line := range strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool { return r == '\n' || r == '\r' }) {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -286,8 +287,17 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 			return nil, err
 		}
 		reads, closures, prose := 0, 0, 0
-		if kind.Kind == Unit && len(entries) == 0 {
-			return nil, rangeRefusal(goalID, id, "the build changes no file")
+		if kind.Kind == Unit {
+			for _, unit := range kind.Units {
+				if earlier := seenUnits[unit]; earlier != "" {
+					return nil, rangeRefusal(goalID, id, fmt.Sprintf("build %s was already made by commit %s", unit, earlier))
+				}
+				seenUnits[unit] = id
+			}
+			if len(entries) == 0 {
+				emptyUnits[kind.Unit] = id
+				continue
+			}
 		}
 		for _, entry := range entries {
 			class := PathClass(entry.Path)
@@ -316,12 +326,6 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 			return nil, rangeRefusal(goalID, id, fmt.Sprintf("a review commit holds one review record, and this one holds %d", reads))
 		}
 		if kind.Kind == Unit {
-			for _, unit := range kind.Units {
-				if earlier := seenUnits[unit]; earlier != "" {
-					return nil, rangeRefusal(goalID, id, fmt.Sprintf("build %s was already made by commit %s", unit, earlier))
-				}
-				seenUnits[unit] = id
-			}
 			unitCommits[id] = kind
 			unitLists[kind.Unit] = true
 		}
@@ -336,8 +340,14 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 			earlier := reviewed && unitLists[kind.Unit]
 			// A read may carry the review of a build main already holds.
 			if reviewed && !inRange && !earlier {
-				_, err = gitRead(repo, "merge-base", "--is-ancestor", kind.CommitID, base)
-				earlier = err == nil
+				landed, err := readUnitLanded(repo, endpointTip, goalID, kind, gitRead)
+				if err != nil {
+					return nil, err
+				}
+				if landed {
+					delete(emptyUnits, kind.Unit)
+					continue
+				}
 			}
 			if !earlier {
 				return nil, rangeRefusal(goalID, id, "the review names no earlier build of the same work")
@@ -352,5 +362,34 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 		}
 		commits = append(commits, item)
 	}
+	for _, id := range emptyUnits {
+		return nil, rangeRefusal(goalID, id, "the build changes no file and has no retained read proving its change landed")
+	}
 	return commits, nil
+}
+
+// readUnitLanded proves that a read's original change is on main. Unit names
+// narrow the search; only ancestry or a verified content digest proves it.
+func readUnitLanded(repo, endpoint, goalID string, kind KindInfo, gitRead func(string, ...string) ([]byte, error)) (bool, error) {
+	if _, err := gitRead(repo, "merge-base", "--is-ancestor", kind.CommitID, endpoint); err == nil {
+		return true, nil
+	}
+	out, err := gitRead(repo, "log", "--first-parent", "--format=%H", "--fixed-strings", "--grep=Goal-Unit: "+goalID+"/"+kind.Unit, endpoint)
+	if err != nil {
+		return false, err
+	}
+	if len(strings.Fields(string(out))) == 0 {
+		return false, nil
+	}
+	digest, err := unitDigestWithGit(repo, kind.CommitID, gitRead)
+	if err != nil {
+		return false, err
+	}
+	for _, commit := range strings.Fields(string(out)) {
+		verified, err := verifyLandedWithGit(repo, commit, gitRead)
+		if err == nil && verified.Goal == goalID && verified.Units == kind.Unit && verified.Actual == digest {
+			return true, nil
+		}
+	}
+	return false, nil
 }

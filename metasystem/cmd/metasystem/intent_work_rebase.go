@@ -54,6 +54,9 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 			summary = "goal " + id + " is on main; carried reviews and published its branch"
 		}
 	}
+	if result.Behind > 0 {
+		summary = fmt.Sprintf("goal %s is %d commits behind current remote main; its branch was %s", id, result.Behind, result.State)
+	}
 	lines := append(inv.rebaseReviewLines(id, result), warning...)
 	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})
 }
