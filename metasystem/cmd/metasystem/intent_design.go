@@ -344,7 +344,7 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 			if retained.Prior != "" {
 				expected, _ = os.ReadFile(retained.Prior)
 			}
-			_, publishErr := project.PublishDesign(project.DesignPublication{Destination: destination, Root: inv.layout.GitRoot,
+			_, publishErr := project.PublishDesign(project.DesignPublication{Destination: destination, Root: inv.layout.GitRoot, StateRoot: inv.stateRoot,
 				Expected: expected, ExpectedPresent: retained.ExpectedPresent, Draft: draft, RecordID: designRecordID(destination, retained, inv), Goal: id})
 			switch {
 			case errors.Is(publishErr, project.ErrDesignChanged):

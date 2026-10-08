@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // ErrDesignChanged is returned when a design document no longer holds the
@@ -24,21 +26,40 @@ type DesignPublication struct {
 	// Destination is the document's absolute path; Root is the directory
 	// the atomic write may stage in.
 	Destination, Root string
+	// StateRoot owns publication locks. When absent, Root owns them.
+	StateRoot string
 	// Expected is the document's bytes when the proposal was requested;
 	// ExpectedPresent false means the document did not exist.
 	Expected        []byte
 	ExpectedPresent bool
 	Draft           []byte
 	RecordID, Goal  string
+	// Commitment verifies this exact accepted projection against shared evidence.
+	Commitment func() error
 }
 
-// PublishDesign writes a proposal to its design document only when the
-// proposal is a draft design record with the expected id and goal, and the
+// PublishDesign installs a draft or a verified accepted projection with the
+// expected design id and goal, only when the
 // document still holds exactly the bytes the proposal was made against (or
 // is still absent). A document that already holds the identical proposal is
 // the same publication, reported as such. Nothing is merged: a changed
 // document or an invalid proposal leaves the document as it is.
 func PublishDesign(publication DesignPublication) (alreadyPublished bool, err error) {
+	stateRoot := publication.StateRoot
+	if stateRoot == "" {
+		stateRoot = publication.Root
+	}
+	key := sha256.Sum256([]byte(filepath.Clean(publication.Destination)))
+	guard, err := diskstore.BoundExclusive(filepath.Join(stateRoot, "artifacts", "design-publication", fmt.Sprintf("%x.lock", key)))
+	if err != nil {
+		return false, err
+	}
+	defer guard.Release()
+	if publication.Commitment != nil {
+		if err := publication.Commitment(); err != nil {
+			return false, err
+		}
+	}
 	record, problems, ok := ParseRecord(filepath.Base(publication.Destination), string(publication.Draft))
 	switch {
 	case !ok || len(problems) > 0:
@@ -49,7 +70,7 @@ func PublishDesign(publication DesignPublication) (alreadyPublished bool, err er
 		return false, fmt.Errorf("%w: the proposal's id is %s, not %s", ErrDesignInvalid, record.ID, publication.RecordID)
 	case !slices.Contains(record.Goals, publication.Goal):
 		return false, fmt.Errorf("%w: the proposal does not name goal %s", ErrDesignInvalid, publication.Goal)
-	case record.Status != "draft":
+	case record.Status != "draft" && (record.Status != "accepted" || publication.Commitment == nil):
 		return false, fmt.Errorf("%w: the proposal's status is %s, not draft", ErrDesignInvalid, record.Status)
 	}
 	current, readErr := os.ReadFile(publication.Destination)

@@ -20,10 +20,10 @@ const evidenceInventory = "\n" + readsubject.DesignInventoryHeading + "\n\n" +
 	"| reader | review | frozen page | evidence | restore return | unknown |\n" +
 	"| publisher | close | current page | person | same operation | pending |\n"
 
-func designEvidenceBed(t *testing.T, inventory string) (*designLoopBed, string, map[string]any) {
+func designEvidenceBed(t *testing.T, inventory string, extra ...string) (*designLoopBed, string, map[string]any) {
 	t.Helper()
 	b := newDesignLoopBed(t)
-	b.writeFile(b.design, "# Reader\n\n- Kind: design\n- Id: 01DESIGNREADER\n- Status: draft\n- Goals: standing-validation\n\n## Collection:1\nFirst version.\n\n## Publication\nPublish the result.\n"+inventory)
+	b.writeFile(b.design, "# Reader\n\n- Kind: design\n- Id: 01DESIGNREADER\n- Status: draft\n- Goals: standing-validation\n\n## Collection:1\nFirst version.\n\n## Publication\nPublish the result.\n"+inventory+strings.Join(extra, ""))
 	dispatch := b.handler
 	var subject readsubject.ReadSubject
 	b.handler = func(p intentProcess) intentProcessResult {

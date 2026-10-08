@@ -43,6 +43,7 @@ type designReviewEntry struct {
 	Design   string                `json:"design"`
 	Subjects map[string]string     `json:"subjects"` // examined round -> subject digest
 	Requests []designReviewRequest `json:"requests"`
+	Exit     *goal.DesignExit      `json:"exit,omitempty"`
 }
 
 func (inv *intentInvocation) designReviewEntryPath(recordID string) string {
@@ -104,6 +105,15 @@ func (plan designReviewPlan) writeMissingInputs() error {
 // is dispatched as before.
 func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentResult {
 	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	var open []dispatchcore.DesignCritiqueChain
+	for _, chain := range chains {
+		if !chain.Closed {
+			open = append(open, chain)
+		}
+	}
+	if len(open) > 0 {
+		chains = open
+	}
 	switch {
 	case len(chains) == 0:
 		if inv.input.has("dispositions") || inv.input.has("retry") || inv.input.has("after") {
@@ -123,6 +133,9 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			nextReason: "decides and closes a critique that no longer applies; the others are listed above"}
 	}
 	chain := chains[0]
+	if resumed := inv.finishDesignAcceptance(plan, chain, false); resumed != nil {
+		return resumed
+	}
 	if recordText(chain.Newest, "status") == "completed" && !chain.Closed {
 		required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
 		if err == nil && required {
@@ -460,6 +473,9 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"accepted": accepted},
 			Summary: fmt.Sprintf("design %s is unchanged, but you accepted finding(s) %s; nothing was closed", plan.recordID, strings.Join(accepted, ", ")),
 			next:    inv.sameCommand(), nextReason: "after changing the design to address them; the critique then reviews the new version"}
+	}
+	if published := inv.finishDesignAcceptance(plan, chain, true); published != nil {
+		return published
 	}
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
 		return withCauseRef(err, intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
