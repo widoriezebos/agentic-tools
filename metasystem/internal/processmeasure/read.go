@@ -25,6 +25,7 @@ type Input struct {
 	Steps           []Step
 	Revisions       []int
 	FullArgv        []string
+	CheckMinutes    *float64
 	EstimateMinutes *float64
 	Questions       []Interval
 	Unknown         []string

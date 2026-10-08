@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 import "github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 
 func (inv *intentInvocation) runProcessSetting(key, value string) int {
@@ -23,6 +25,14 @@ func (inv *intentInvocation) runProcessSetting(key, value string) int {
 		act.Actor, act.Citation = "direct-person", "person-directed"
 	}
 	remedy := []string{"metasystem", "settings", "set", key, value, "--repo", checkout}
+	if !person {
+		inv.stateRoot = root
+		problem := inv.refreshProcessDrift(act.Goal)
+		state, readErr := processchange.ReadState(root, "")
+		if problem != nil || readErr != nil || len(state.Unknown) > 0 || len(state.Stops) > 0 {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "automatic process changes are held; a person can apply this explicit setting", Details: []string{fmt.Sprint(problem, readErr, state.Unknown)}, Data: state, next: remedy, nextReason: "run this at your enrolled terminal after examining the drift"})
+		}
+	}
 	applied, err := processchange.ApplySetting(processchange.Setting{Root: root, Conf: params.ConfPath, Act: inv.input.text("act"), ProcessAct: act, PersonName: by, Person: person, Now: now,
 		Remedy: func(id string) string { return shellCommand(append(remedy, "--act", id)) }})
 	if err != nil {

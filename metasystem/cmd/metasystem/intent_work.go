@@ -512,8 +512,14 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if file.Claimed != nil {
 			revision = file.Claimed.Revision
 		}
-		return dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
-			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
+		if err := dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil); err != nil {
+			return err
+		}
+		if err := inv.observeProcessDrift(unit); err != nil {
+			fmt.Fprintf(inv.stderr, "warning: process drift unavailable: %s\n", err)
+		}
+		return nil
 	}
 	runner.PlanProof = inv.unitProof
 	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {

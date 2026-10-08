@@ -29,7 +29,7 @@ func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeas
 		if err == nil && json.Unmarshal(body, &plan) == nil {
 			in.FullArgv = plan.FullArgv
 			if plan.Estimate != nil {
-				in.EstimateMinutes = &plan.Estimate.ElapsedMinutes
+				in.EstimateMinutes, in.CheckMinutes = &plan.Estimate.ElapsedMinutes, plan.Estimate.CheckMinutes
 			}
 		}
 		for _, revision := range work.Record.Revisions {
@@ -131,13 +131,21 @@ func measureLine(m processmeasure.Measures) string {
 func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, result *intentResult) error {
 	runs, unknown, err := inv.unitRunner().GoalRuns(id)
 	if err != nil {
-		return err
+		unknown = append(unknown, "process measurement unavailable: "+err.Error())
+		runs = current
 	}
-	acts, missing, err := processchange.ReadActs(inv.stateRoot, id)
+	state, err := processchange.ReadState(inv.stateRoot, id)
+	acts, missing := state.Acts, state.Unknown
 	if err != nil {
 		return fmt.Errorf("process history unavailable: %w", err)
 	}
+	result.text = append(result.text, append(unknown, missing...)...)
 	data := result.Data.(map[string]any)
+	data["processUnknown"] = unknown
+	data["processStops"] = state.Stops
+	for _, stop := range state.Stops {
+		result.text = append(result.text, "  Automatic process changes are held: "+stop.Stop.Class+"; observed "+fmt.Sprint(stop.Stop.Measure.Now)+" against allowance "+fmt.Sprint(stop.Stop.Measure.Previous)+"; "+stop.Stop.Handoff)
+	}
 	for _, act := range acts {
 		actor := "own-caused agent"
 		if act.Actor == "direct-person" && act.Proof.Helm == nil {
@@ -150,7 +158,6 @@ func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, re
 		file, _ := goalRecord(projection, id)
 		all.GoalOpen = file == nil || file.State != goal.StateDone
 	}
-	result.text = append(result.text, all.Unknown...)
 	byUnit := map[string][]processmeasure.Input{}
 	for _, run := range runs {
 		in := inv.unitMeasureInput(run)
@@ -167,6 +174,15 @@ func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, re
 			index = len(views) - 1
 		}
 		views[index]["measures"] = m
+		for _, run := range runs {
+			if run.Unit == name && slices.ContainsFunc(current, func(work launch.NamedWork) bool { return work.Run == run.Run }) {
+				drift := inv.processDrift(run)
+				views[index]["processBands"] = drift.Bands
+				views[index]["processUnknown"] = drift.Unknown
+				result.text = append(result.text, drift.Unknown...)
+				result.text = append(result.text, "  process bands: "+fmt.Sprint(drift.Bands))
+			}
+		}
 		result.text = append(result.text, "  "+name+": "+measureLine(m))
 	}
 	m := processmeasure.Read(all)
