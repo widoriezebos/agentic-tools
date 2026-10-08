@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,9 +12,63 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 )
+
+func TestProcessDriftUnavailableGoalEndpoint(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []bool{true, false} {
+		t.Run(map[bool]string{true: "missing reader", false: "reader failure"}[missing], func(t *testing.T) {
+			t.Parallel()
+			bed := newPolicyBed(t)
+			if !missing {
+				bed.owners.dependencies.endpoint = func(string) (goal.Endpoint, error) {
+					return goal.Endpoint{}, errors.New("endpoint unavailable")
+				}
+			}
+			inv := &intentInvocation{owners: bed.owners, stateRoot: bed.seat}
+			err := inv.observeProcessDrift(launch.UnitRunRecord{Goal: "example"})
+			if err == nil || !strings.Contains(err.Error(), "process episode unavailable") {
+				t.Fatalf("missing goal endpoint did not report unavailable: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(bed.seat, "process")); !os.IsNotExist(err) {
+				t.Fatalf("unavailable observation wrote process history: %v", err)
+			}
+		})
+	}
+}
+
+func TestProcessSettingUnavailableGoalEndpoint(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	processEstimatePage(t, bed, "1", "100")
+	if code, result, output := processEvidenceBuild(bed); code != 0 {
+		t.Fatalf("build: %d %+v %s", code, result, output)
+	}
+	if err := os.MkdirAll(filepath.Join(bed.root(), ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(bed.root(), "settings.conf.local")
+	before := []byte("launch.codex.sandbox=danger-full-access\n")
+	if err := os.WriteFile(local, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	owners := bed.workOwners()
+	owners.dependencies.endpoint = nil
+	owners.prove = fixedFixtureGoalAuthority
+	owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil }
+	owners.policies.ConfPath = func(checkout string) (string, error) { return filepath.Join(checkout, "settings.conf"), nil }
+	code, result := bed.runJSON(owners, "settings", "set", "launch.codex.sandbox", "workspace-write", "--repo", bed.root(), "--goal", bed.id)
+	if code != 1 || !strings.Contains(result.Summary, "automatic process changes are held") || !strings.Contains(strings.Join(result.Details, " "), "process episode unavailable") {
+		t.Fatalf("unavailable observation did not hold the setting: %d %+v", code, result)
+	}
+	after, err := os.ReadFile(local)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("unavailable observation changed the setting: %v %q", err, after)
+	}
+}
 
 func driftStatus(t *testing.T, bed *workBed) ([]processchange.DriftStop, map[string]string) {
 	t.Helper()
