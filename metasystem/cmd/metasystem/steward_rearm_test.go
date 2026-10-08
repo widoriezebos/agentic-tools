@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -134,9 +136,16 @@ func runIsolatedRearm(t *testing.T, overlap func(*testutil.HeldProcess)) {
 		}
 	}
 	command.Env = append(command.Env, "HOUSEKEEPING_REARM_REPORT="+report)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
+	pid := 0
+	// The child runs a steward pass; its process group is reaped like every fixture engine child.
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{Verb: "isolated steward rearm", Resolve: func() (int, bool, error) {
+		return pid, pid != 0, nil
+	}}})
 	held := testutil.StartHeldProcess(t, command)
+	pid = command.Process.Pid
 	if overlap != nil {
 		overlap(held)
 	}
