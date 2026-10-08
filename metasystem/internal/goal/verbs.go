@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2549,7 +2550,7 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 				f.ReviewObligations[match].CoverageRead = evidence.Transfer.ReadID
 				f.ReviewObligations[match].CoverageCommit = evidence.Transfer.Commit
 				citation = "covered: " + evidence.Transfer.ReadID + " commit=" + evidence.Transfer.Commit
-			} else if obligation.Fixture != "" {
+			} else if obligation.Fixture != "" || obligation.DesignItem != nil {
 				var evidence DischargeEvidence
 				if len(supplied) == 1 {
 					evidence = supplied[0]
@@ -2638,6 +2639,48 @@ func proveFixtureObligation(evidence DischargeEvidence, obligation ReviewObligat
 	closure, present, err := readsubject.ReadClosure(critic)
 	if err != nil || !present || closure.Mechanism != "clean" || closure.CriticRoot != jobID {
 		return refuse("requires critic root %s to carry its clean closure: %v", evidence.CriticRoot, err)
+	}
+	if closure.Subject.Kind == readsubject.SubjectLive && closure.Subject.ImplementerRoot != evidence.ImplementationChain {
+		return refuse("the clean read must name this implementation chain")
+	}
+	builderData, builderErr := os.ReadFile(filepath.Join(evidence.Root, "artifacts", "agents", "jobs", evidence.ImplementationChain+".json"))
+	var builder struct {
+		Model string `json:"effectiveModel"`
+	}
+	criticModel, _ := critic["effectiveModel"].(string)
+	if builderErr != nil || json.Unmarshal(builderData, &builder) != nil || builder.Model == "" || criticModel == "" || builder.Model == criticModel {
+		return refuse("requires an independent code read with recorded builder and critic models")
+	}
+	tree := closure.Subject.ReviewedProjectTree
+	if closure.Subject.Kind == readsubject.SubjectCommit {
+		tree = closure.Subject.Tree
+	}
+	if tree == "" || tree != result.CandidateTree || closure.Subject.Kind == readsubject.SubjectDesign {
+		return refuse("the code read and test result must name the same implementation tree")
+	}
+	agents := filepath.Join(evidence.Root, "artifacts", "agents")
+	subject, present, err := readsubject.ReadRoundSubject(agents, jobID, closure.Round)
+	if err != nil || !present || !subject.Equal(closure.Subject) {
+		return refuse("the clean read has no matching retained implementation subject")
+	}
+	data, err = os.ReadFile(filepath.Join(agents, jobID, "rounds", strconv.FormatInt(closure.Round, 10), "return.json"))
+	var returned struct {
+		JobID        string   `json:"jobId"`
+		Round        int64    `json:"round"`
+		ReviewedTree string   `json:"reviewedTree"`
+		Covers       []string `json:"coversFindings"`
+	}
+	if err != nil || json.Unmarshal(data, &returned) != nil || returned.JobID == "" || returned.Round != closure.Round || returned.ReviewedTree != tree || !slices.Contains(returned.Covers, obligation.Finding) {
+		return refuse("the retained code return must explicitly cover this finding on the tested tree")
+	}
+	if obligation.DesignItem != nil {
+		for _, name := range obligation.DesignItem.Tests {
+			if !slices.ContainsFunc(match.Observed, func(test proofrun.NativeTestIdentity) bool {
+				return test.Classname+"/"+test.Name == name && test.Status == "passed"
+			}) {
+				return refuse("required public test %s did not pass on this implementation", name)
+			}
+		}
 	}
 	return nil
 }
@@ -2809,13 +2852,18 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 				}
 				overridden = append(overridden, "read items "+strings.Join(acceptOpenReadItems(f, r), ", "))
 			}
+			if problem := f.DesignDestinationProblem(t); problem != "" && r.ForceBy == "" {
+				return nil, fmt.Errorf("%s", problem)
+			}
 			var obligations []string
 			for index, obligation := range f.ReviewObligations {
 				if obligation.State == "open" && !f.ExcludesScope(obligation.TargetUnit, obligation.Chain+"/"+obligation.Finding) {
 					if r.ForceBy == "" {
 						return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
 					}
-					f.ReviewObligations[index].State = "discharged"
+					if obligation.DesignItem == nil && obligation.Fixture == "" {
+						f.ReviewObligations[index].State = "discharged"
+					}
 					obligations = append(obligations, obligation.Finding+"/"+obligation.Chain)
 				}
 			}

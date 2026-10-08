@@ -934,6 +934,11 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	gateFacts := inv.designGateFacts(string(inv.layout.InstallationRoot), id)
+	for i, d := range gateFacts.Designs {
+		if d.Acceptance != "" && !slices.Contains(d.AcceptedUnits, unit) {
+			gateFacts.Designs[i].AcceptanceError = "this unit is outside the accepted design remainder"
+		}
+	}
 	gateResult := designgate.Check(gateFacts)
 	person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
 	if gateResult.Mode == "refuse" && gateResult.WouldRefuse {
@@ -1102,6 +1107,8 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		Model         string            `json:"model,omitempty"`
 		Effort        string            `json:"effort,omitempty"`
 		Whole         bool              `json:"whole,omitempty"`
+
+		DesignItems []goal.ReviewObligation `json:"designItems,omitempty"`
 	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}, Whole: inv.input.switched("last")}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built",
@@ -1114,6 +1121,18 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 				next: inv.sameCommand(), nextReason: "once the design is readable"}
 		}
 		identity.Designs = append(identity.Designs, entry)
+	}
+	projection, _, itemProblem := inv.projection()
+	if itemProblem != nil {
+		return unitRequest{}, itemProblem
+	}
+	file, _ := goalRecord(projection, id)
+	if file != nil {
+		for _, o := range file.ReviewObligations {
+			if o.DesignItem != nil && o.DesignItem.Unit == unit || o.DesignItem == nil && o.Fixture != "" {
+				identity.DesignItems = append(identity.DesignItems, o)
+			}
+		}
 	}
 	encoded, err := json.MarshalIndent(identity, "", "  ")
 	if err != nil {
@@ -1151,7 +1170,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			unitsPage = strings.TrimPrefix(sizeSource, "design:")
 		}
 		binding := unitBinding{goal: id, unit: unit, worktree: worktree, base: base, brief: briefPath, designs: designs, check: check,
-			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
+			items: identity.DesignItems, estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
 			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
@@ -1380,6 +1399,7 @@ func unitReadModel(runner *launch.UnitRunner) (string, *intentResult) {
 }
 
 type unitBinding struct {
+	items                                                  []goal.ReviewObligation
 	goal, unit, worktree, base, brief, unitsPage, findings string
 	designs, check                                         []string
 	estimate                                               bool
@@ -1407,6 +1427,10 @@ func (b unitBinding) buildBrief(brief []byte) string {
 		fmt.Fprintf(&text, "- Size: %d changed lines, the caller's estimate\n", b.lines)
 	} else {
 		fmt.Fprintf(&text, "- Size: the %s row of the units table in %s (%d changed lines)\n", b.unit, b.unitsPage, b.lines)
+	}
+	if len(b.items) > 0 {
+		items, _ := json.Marshal(b.items)
+		fmt.Fprintf(&text, "- Mandatory design items (the independent read must explicitly cover each finding and its requirement): %s\n", items)
 	}
 	text.WriteString("- Check: run the frozen command at the start of this round's brief before returning.\n")
 	fmt.Fprintf(&text, "- Rounds: at most %d, the goal's approved review-round limit\n", b.rounds)

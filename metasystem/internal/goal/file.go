@@ -81,6 +81,7 @@ type GoalFile struct {
 	ReviewObligations []ReviewObligation
 	UnitDrops         []UnitDrop       `json:"UnitDrops,omitempty"`
 	ScopeExclusions   []ScopeExclusion `json:"ScopeExclusions,omitempty"`
+	DesignExits       []DesignExit     `json:"DesignExits,omitempty"`
 	AcceptedRisks     []AcceptedRiskRecord
 	ReadItems         []ReadItem
 	// StopCapability is the narrow authority minted with one claimed
@@ -184,6 +185,7 @@ func (r RiskRecord) scoreArgs() string {
 }
 
 type ReviewObligation struct {
+	DesignItem                                                           *DesignItem `json:"DesignItem,omitempty"`
 	OriginalEvidence                                                     readsubject.Finding
 	Finding, Chain, Artifact, Test, Fixture, State                       string
 	SourceUnit, TargetUnit, OriginalRead, OriginalFinding, StopReference string
@@ -1167,7 +1169,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" && key != "ScopeExclusion" {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" && key != "ScopeExclusion" && key != "DesignExit" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
@@ -1226,6 +1228,13 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.BudgetExceptions = uint16(n)
+	case "DesignExit":
+		var exit DesignExit
+		if err := json.Unmarshal([]byte(value), &exit); err != nil {
+			addProblem("DesignExit: %v", err)
+			return
+		}
+		f.DesignExits = append(f.DesignExits, exit)
 	case "ReviewObligation":
 		without, artifact, present, err := cutQuotedRecordField(value, "artifact")
 		if err != nil || !present {
@@ -1240,6 +1249,15 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		without, fixture, _, err := cutQuotedRecordField(without, "fixture")
 		if err != nil {
 			addProblem("ReviewObligation: fixture= %v", err)
+			return
+		}
+		without, itemJSON, _, err := cutQuotedRecordField(without, "designItem")
+		var item *DesignItem
+		if err == nil && itemJSON != "" {
+			err = json.Unmarshal([]byte(itemJSON), &item)
+		}
+		if err != nil {
+			addProblem("ReviewObligation: designItem= %v", err)
 			return
 		}
 		without, evidenceJSON, _, err := cutQuotedRecordField(without, "originalEvidence")
@@ -1259,7 +1277,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			addProblem("ReviewObligation: %v", err)
 			return
 		}
-		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{OriginalEvidence: originalEvidence, Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, Fixture: fixture, State: rec["state"], SourceUnit: rec["sourceUnit"], TargetUnit: rec["targetUnit"], OriginalRead: rec["originalRead"], OriginalFinding: rec["originalFinding"], StopReference: rec["stopReference"], SourceCommit: rec["sourceCommit"], CoverageRead: rec["coverageRead"], CoverageCommit: rec["coverageCommit"], TransferredOnce: rec["transferredOnce"] == "true"})
+		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{DesignItem: item, OriginalEvidence: originalEvidence, Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, Fixture: fixture, State: rec["state"], SourceUnit: rec["sourceUnit"], TargetUnit: rec["targetUnit"], OriginalRead: rec["originalRead"], OriginalFinding: rec["originalFinding"], StopReference: rec["stopReference"], SourceCommit: rec["sourceCommit"], CoverageRead: rec["coverageRead"], CoverageCommit: rec["coverageCommit"], TransferredOnce: rec["transferredOnce"] == "true"})
 	case "AcceptedRisk":
 		rec, err := parseKVRecord(value, []string{"finding", "chain", "by", "opid"}, nil, "")
 		if err != nil {
@@ -2024,8 +2042,16 @@ func RenderFile(f *GoalFile) []byte {
 		data, _ := json.Marshal(exclusion)
 		fmt.Fprintf(&b, "- ScopeExclusion: %s\n", data)
 	}
+	for _, exit := range f.DesignExits {
+		data, _ := json.Marshal(exit)
+		fmt.Fprintf(&b, "- DesignExit: %s\n", data)
+	}
 	for _, obligation := range f.ReviewObligations {
 		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))
+		if obligation.DesignItem != nil {
+			data, _ := json.Marshal(obligation.DesignItem)
+			fmt.Fprintf(&b, " designItem=%s", strconv.Quote(string(data)))
+		}
 		if obligation.Fixture != "" {
 			fmt.Fprintf(&b, " fixture=%s", strconv.Quote(obligation.Fixture))
 		}

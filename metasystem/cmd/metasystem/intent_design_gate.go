@@ -156,6 +156,46 @@ func (inv *intentInvocation) designGateFacts(root, id string, size ...bool) desi
 						d.SizeExempt, err = inv.designSizeExempt(conf, path, ref.ID)
 					}
 				}
+				if ref.Status == "accepted" {
+					_, marked, found := strings.Cut(d.Critique, "(convergence ")
+					hasExit := false
+					if file != nil {
+						for _, exit := range file.DesignExits {
+							if exit.DesignID == d.ID {
+								hasExit = true
+								break
+							}
+						}
+					}
+					if found || hasExit {
+						operation := strings.TrimSuffix(marked, ")")
+						body, bodyErr := project.DesignBodyDigest(path, data)
+						if bodyErr == nil {
+							bodyErr = file.CheckDesignAcceptance(operation, d.ID, body)
+						}
+						if !found {
+							bodyErr = fmt.Errorf("design %s has no convergence marker; resume its publication", d.ID)
+						}
+						if bodyErr != nil {
+							d.AcceptanceError = bodyErr.Error()
+						}
+						if file != nil {
+							for _, exit := range file.DesignExits {
+								if exit.Operation == operation {
+									d.AcceptedUnits = exit.Units
+								}
+							}
+							items := map[string]*goal.DesignItem{}
+							for _, obligation := range file.ReviewObligations {
+								if obligation.DesignItem != nil && obligation.DesignItem.Exit == operation {
+									items[obligation.Finding] = obligation.DesignItem
+								}
+							}
+							commitment, _ := json.Marshal([]any{file.DesignExits, items})
+							d.Acceptance = string(commitment)
+						}
+					}
+				}
 				if err == nil && ref.Status == "accepted" {
 					d.Chains, err = inv.designGate().chains(root, id, path)
 				}
@@ -312,6 +352,9 @@ func (inv *intentInvocation) designBodyDigest(d designgate.Design) (string, erro
 	}
 	if fmt.Sprintf("%x", sha256.Sum256(data)) != d.SHA256 {
 		return "", fmt.Errorf("the design %s changed while its facts were read", d.Path)
+	}
+	if d.Acceptance != "" {
+		return project.DesignBodyDigest(d.Path, data)
 	}
 	record, _, declared := project.ParseRecord(d.Path, string(data))
 	if !declared || len(record.Head) == 0 {

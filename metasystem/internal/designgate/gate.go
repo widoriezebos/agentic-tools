@@ -22,8 +22,11 @@ type Design struct {
 	Status   string  `json:"-"`
 	Chains   []Chain `json:"-"`
 
-	Units      []launch.UnitSize `json:"units,omitempty"`
-	SizeExempt bool              `json:"sizeExempt,omitempty"`
+	AcceptanceError string            `json:"-"`
+	Acceptance      string            `json:"acceptance,omitempty"`
+	AcceptedUnits   []string          `json:"-"`
+	Units           []launch.UnitSize `json:"units,omitempty"`
+	SizeExempt      bool              `json:"sizeExempt,omitempty"`
 }
 
 type Facts struct {
@@ -60,6 +63,13 @@ func Check(f Facts) Result {
 	if f.Allowed {
 		r.Verdict = "allowed"
 		return r
+	}
+	for _, d := range f.Designs {
+		if d.AcceptanceError != "" {
+			r.Verdict, r.WouldRefuse = "acceptance-pending", true
+			r.Warning = [2]string{"warning: " + d.AcceptanceError, "metasystem design review " + d.Path}
+			return r
+		}
 	}
 	if f.Error != nil {
 		r.Verdict = "unchecked"

@@ -2435,6 +2435,12 @@ func (inv *intentInvocation) goalNextStep(goalID string) ([]string, string) {
 // handLandingSubject selects the whole branch once its declared work and
 // reads are finished. A records hand-in keeps the branch's read requirement.
 func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records, whole bool, designs ...string) (string, int, *intentResult) {
+	if !records {
+		pending := &goal.GoalFile{Id: goalID, ReviewObligations: state.Status.ReviewObligations}
+		if problem, next := pending.DesignCompletionProblem(); problem != "" {
+			return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: problem, next: next}
+		}
+	}
 	units := state.Status.Units
 	unread := func(index int) *intentResult {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,

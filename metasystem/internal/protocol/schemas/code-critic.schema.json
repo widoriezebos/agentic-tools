@@ -35,6 +35,7 @@
     "gaps": {"type": "array", "items": {"type": "string"}},
     "mode": {"type": "string"},
     "reviewedTree": {"type": "string"},
+    "coversFindings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "findings": {
       "type": "array",
       "items": {

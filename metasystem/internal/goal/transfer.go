@@ -21,6 +21,11 @@ func TransferBrief(goal string, obligation ReviewObligation, estimate int64, req
 }
 
 func validateTransfer(o ReviewObligation) error {
+	if item := o.DesignItem; item != nil {
+		if item.Exit == "" || item.DesignID == "" || len(item.BodySHA256) != 64 || item.Unit == "" || item.Decision == "" || len(item.Tests) == 0 || o.Fixture == "" || o.TargetUnit != "" {
+			return fmt.Errorf("a design item needs its acceptance, unit, Decision and public tests")
+		}
+	}
 	if o.TargetUnit == "" {
 		if o.SourceUnit != "" || o.OriginalRead != "" || o.OriginalFinding != "" || o.StopReference != "" || o.TransferredOnce || o.SourceCommit != "" || o.CoverageRead != "" || o.CoverageCommit != "" || o.OriginalEvidence != (readsubject.Finding{}) {
 			return fmt.Errorf("transfer metadata needs its destination unit")

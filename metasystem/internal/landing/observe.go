@@ -124,7 +124,7 @@ func ObserveDesign(f DesignFacts, person bool) DesignObservation {
 			if current == nil {
 				r.Verdict, r.WouldRefuse = "design-missing", true
 				r.Warning = [2]string{fmt.Sprintf("warning: goal %s was built against %s, which is no longer an accepted design of %s", f.Goal, recorded.Path, f.Goal), "metasystem design list --goal " + f.Goal}
-			} else if f.Digests[current.ID] != recorded.BodySHA256 {
+			} else if f.Digests[current.ID] != recorded.BodySHA256 || current.Acceptance != recorded.Acceptance {
 				r.Verdict, r.WouldRefuse = "design-changed", true
 				r.Warning = [2]string{fmt.Sprintf("warning: goal %s was built against %s, which changed after the build started", f.Goal, current.Name), "metasystem design review " + current.Path}
 			}

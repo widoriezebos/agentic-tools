@@ -3,9 +3,11 @@ package goal
 import (
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,12 +16,13 @@ func TestReviewObligationFixtureRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := claimedGolden()
 	f.ReviewObligations = []ReviewObligation{
-		{Finding: "F-1", Chain: "critic", Artifact: "a.go", Test: "prove: a", Fixture: `group:section/a`, State: "open"},
+		{Finding: "F-1", Chain: "critic", Artifact: "a.go", Test: "prove: a", Fixture: `group:section/a`, State: "open", DesignItem: &DesignItem{Exit: "exit-one", DesignID: "design", BodySHA256: strings.Repeat("a", 64), Unit: "gate", Decision: "6", Tests: []string{"reader/TestPublicGate"}}},
 		{Finding: "F-2", Chain: "critic", Artifact: "b.go", Test: "legacy", State: "open"},
 	}
+	f.DesignExits = []DesignExit{{Operation: "exit-one", DesignID: "design", BodySHA256: strings.Repeat("a", 64), Units: []string{"gate"}, Items: []string{"F-1"}}}
 	rendered := RenderFile(f)
 	parsed, problems := ParseFile(rendered)
-	if len(problems) != 0 || string(RenderFile(parsed)) != string(rendered) || !strings.Contains(string(rendered), `test="legacy" state=open`) {
+	if len(problems) != 0 || string(RenderFile(parsed)) != string(rendered) || !reflect.DeepEqual(parsed.ReviewObligations, f.ReviewObligations) || !reflect.DeepEqual(parsed.DesignExits, f.DesignExits) || !strings.Contains(string(rendered), `test="legacy" state=open`) {
 		t.Fatalf("fixture round trip changed bytes: problems=%v\n%s", problems, RenderFile(parsed))
 	}
 	_, problems = ParseFile([]byte(strings.Replace(string(rendered), " state=open", " unknown=x state=open", 1)))
@@ -119,6 +122,10 @@ func fixtureEvidence(t *testing.T, root string) DischargeEvidence {
 		writeProofJSON(t, path, attempt)
 	}
 	writeProofJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "critic-root.json"), validCriticRecord())
+	writeProofJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "implementation-chain.json"), map[string]any{"jobId": "implementation-chain", "effectiveModel": "builder-model"})
+	subject := readsubject.ReadSubject{Kind: readsubject.SubjectLive, ImplementerRoot: "implementation-chain", ReviewedProjectTree: strings.Repeat("b", 40), DiffDigest: "diff"}
+	writeProofJSON(t, filepath.Join(root, "artifacts", "agents", "critic-root", "rounds", "1", "subject.json"), subject)
+	writeProofJSON(t, filepath.Join(root, "artifacts", "agents", "critic-root", "rounds", "1", "return.json"), map[string]any{"jobId": "critic-root", "round": 1, "reviewedTree": subject.ReviewedProjectTree, "coversFindings": []string{"F-1"}})
 	return DischargeEvidence{Root: root, ImplementationChain: "implementation-chain", Artifact: "a.go", ResultRunID: "run-passed", CriticRoot: "critic-root"}
 }
 func mustFixtureProof(t *testing.T, err error) {
@@ -127,7 +134,7 @@ func mustFixtureProof(t *testing.T, err error) {
 	}
 }
 func validCriticRecord() map[string]any {
-	return map[string]any{"jobId": "critic-root", "role": "code-critic", "reviews": []any{"implementation-chain"}, "chainClosed": true, "findingRegister": []any{}, "closure": map[string]any{"criticRoot": "critic-root", "round": float64(1), "subject": map[string]any{"kind": "live"}, "mechanism": "clean"}}
+	return map[string]any{"jobId": "critic-root", "role": "code-critic", "reviews": []any{"implementation-chain"}, "effectiveModel": "critic-model", "chainClosed": true, "findingRegister": []any{}, "closure": map[string]any{"criticRoot": "critic-root", "round": float64(1), "subject": map[string]any{"kind": "live", "implementerRoot": "implementation-chain", "reviewedProjectTree": strings.Repeat("b", 40), "diffDigest": "diff"}, "mechanism": "clean"}}
 }
 func writeProofJSON(t *testing.T, path string, value any) {
 	mustFixtureProof(t, os.MkdirAll(filepath.Dir(path), 0o755))
