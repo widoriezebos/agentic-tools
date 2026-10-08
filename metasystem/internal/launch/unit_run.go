@@ -150,6 +150,7 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
+	FreezeCheck func(UnitPlan, string) (UnitPlan, error)
 	// CriticCustody observes or cancels every committed examination of this run.
 	CriticCustody func(UnitRunRecord, bool) (bool, error)
 	recoverRun    string
@@ -438,6 +439,14 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 
 func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, deadline time.Time) (UnitResult, error) {
 	round := &record.Rounds[len(record.Rounds)-1]
+	if runner.FreezeCheck != nil {
+		var err error
+		plan.Build.Brief = choose(round.FollowUp, plan.Build.Brief)
+		plan, err = runner.roundProofPlan(plan, round.Directory, true)
+		if err != nil {
+			return UnitResult{Record: *record}, err
+		}
+	}
 	brief, previous := plan.Build.Brief, []string(nil)
 	if round.FollowUp != "" {
 		brief = round.FollowUp
@@ -454,6 +463,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				previous = append(previous, revision.Decisions)
 			}
 		}
+	}
+	if plan.Check != nil {
+		brief = plan.Build.Brief
 	}
 	buildCount, err := runner.ensureBuildSteps(record, round, plan, brief)
 	if err != nil {
@@ -553,8 +565,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
-		if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
-			return runner.result(*record, round, &round.Steps[index], capped), err
+		if plan.Check == nil {
+			if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
+				return runner.result(*record, round, &round.Steps[index], capped), err
+			}
 		}
 		red = red || round.Steps[index].State != StepPassed
 		if red {
@@ -663,7 +677,14 @@ func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofP
 	} else if !os.IsNotExist(err) {
 		return plan, err
 	}
-	if runner.PlanProof != nil && !proofPlanned {
+	if runner.FreezeCheck != nil {
+		var err error
+		plan, err = runner.FreezeCheck(plan, directory)
+		if err != nil {
+			return plan, err
+		}
+	}
+	if plan.Check == nil && runner.PlanProof != nil && !proofPlanned {
 		commands, err := runner.PlanProof(plan)
 		if err != nil {
 			return plan, err
