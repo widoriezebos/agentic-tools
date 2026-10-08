@@ -121,13 +121,16 @@ func TestPlanFollowUpRebaseReportsUnmergedPaths(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseCitedTrunkPath(t *testing.T) {
+	t.Parallel()
 	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	freshPath := "metasystem/plans/fresh.md"
 	writeFollowUpRebaseFile(t, filepath.Join(repo, freshPath), "fresh trunk plan\n")
 	facts.presence[posturePathKey{worktree, base, freshPath}] = postureFact[bool]{value: false}
 	facts.presence[posturePathKey{worktree, trunk, freshPath}] = postureFact[bool]{value: true}
+	facts.presence[posturePathKey{worktree, base, freshPath + ":1"}] = postureFact[bool]{value: false}
+	facts.presence[posturePathKey{worktree, trunk, freshPath + ":1"}] = postureFact[bool]{value: false}
 	brief := filepath.Join(t.TempDir(), "follow-up.md")
-	writeFollowUpRebaseFile(t, brief, "Authority: "+freshPath+"\n")
+	writeFollowUpRebaseFile(t, brief, "Authority: "+freshPath+":1\n")
 
 	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, brief, facts)
 	if err != nil {

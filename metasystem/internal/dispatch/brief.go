@@ -3,6 +3,7 @@ package dispatch
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,18 +15,13 @@ import (
 )
 
 var (
-	briefPathTokenRun = regexp.MustCompile(`[A-Za-z0-9_.*\-/<>{}$]+`)
+	briefPathTokenRun = regexp.MustCompile(`[A-Za-z0-9_.*\-/<>{}$:#]+`)
 	briefPathToken    = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.*-]+)+$`)
-	briefPathLine     = regexp.MustCompile(`:[0-9]+(-[0-9]+)?$`)
+	briefPathLine     = regexp.MustCompile(`(?::|#L)([0-9]+)(?:-(?:L)?([0-9]+))?$`)
 	briefHeading      = regexp.MustCompile(`^\s*(#{1,6})\s+(.+?)\s*$`)
 	briefOutputLine   = regexp.MustCompile(`(?i)^\s*(?:[-*]\s*)?may[- ](?:write|touch)\s*:`)
 	briefCreatePrefix = regexp.MustCompile("(?i)(?:new[ \\t]+file|create)[ \\t]*:?[ \\t]*[`\\\"']?[ \\t]*$")
 )
-
-var briefAuthorityDirectories = map[string]bool{
-	"docs": true, "plans": true, "records": true, "internal": true,
-	"cmd": true, "scripts": true, "memory": true, "artifacts": true,
-}
 
 // BriefAuthorityRefusal names every cited path that the delegate could not
 // read from the tree it will receive. Missing paths remain structured so an
@@ -150,15 +146,15 @@ func admitBriefBytes(data []byte, resolveInstallPrefix briefInstallPrefix, requi
 }
 
 func ReadBriefAdmissionAtRoot(briefPath, installRoot, baseTree, diskRoot string, requireMode bool) (BriefAdmission, error) {
-	return readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot, requireMode, gitBriefTreeFacts{})
+	return readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot, requireMode, &gitBriefTreeFacts{})
 }
 
 // ReadReviewBriefAdmission admits a critic's brief against the trees the
 // critic reads: the reviewed commit when reviews names one
 // ("commit:<sha>", the unit under review, which may hold files main does
 // not), and the dispatcher's HEAD, whose checkout is the critic's
-// workspace. A cited path either tree holds is admitted; a reviewed commit
-// the repository does not hold refuses. With a reviewed commit, citations
+// workspace. Citations are proved on the reviewed commit, or on HEAD when
+// none is named. An unavailable reviewed commit refuses. With one, citations
 // in the frozen build section are exempt. An optional Git reader keeps
 // admission on the caller's repository port.
 func ReadReviewBriefAdmission(briefPath, installRoot, baseTree, diskRoot, reviews string, git ...func(string, ...string) (string, error)) (BriefAdmission, error) {
@@ -172,7 +168,7 @@ func ReadReviewBriefAdmissionWithServingCheckout(briefPath, installRoot, baseTre
 	if !named {
 		reviewed = ""
 	}
-	facts := gitBriefTreeFacts{serving: serving}
+	facts := &gitBriefTreeFacts{serving: serving}
 	if len(git) > 0 {
 		facts.run = git[0]
 	}
@@ -190,13 +186,23 @@ type briefTreeFacts interface {
 }
 
 type gitBriefTreeFacts struct {
-	run     func(string, ...string) (string, error)
-	serving string
+	run      func(string, ...string) (string, error)
+	serving  string
+	listings map[string]briefTreeListing
+}
+
+type briefTreeListing struct {
+	paths map[string]bool
+	err   error
 }
 
 func (f gitBriefTreeFacts) output(root string, args ...string) (string, error) {
 	if f.run != nil {
 		return f.run(root, args...)
+	}
+	if len(args) > 1 && args[0] == "ls-tree" && args[1] == "-rtz" {
+		output, err := gitRawOutput(root, args...)
+		return string(output), err
 	}
 	return gitOutput(root, args...)
 }
@@ -204,20 +210,48 @@ func (f gitBriefTreeFacts) output(root string, args ...string) (string, error) {
 func (f gitBriefTreeFacts) InstallPrefix(root string) (string, error) {
 	if f.run != nil {
 		prefix, err := f.output(root, "rev-parse", "--show-prefix")
-		return strings.TrimSuffix(prefix, "/"), err
+		return strings.TrimSuffix(strings.TrimSpace(prefix), "/"), err
 	}
 	return projectInstallPrefix(root)
 }
 func (f gitBriefTreeFacts) BaseCommit(root string) (string, error) {
-	return f.output(root, "rev-parse", "--verify", "HEAD^{commit}")
+	commit, err := f.output(root, "rev-parse", "--verify", "HEAD^{commit}")
+	return strings.TrimSpace(commit), err
 }
 func (f gitBriefTreeFacts) Directories(root, treeish string) (map[string]bool, error) {
 	output, err := f.output(root, "ls-tree", "-d", "--name-only", treeish)
 	return briefTreeDirectories(output), err
 }
-func (f gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
+func (f *gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
 	_, err := f.output(root, "cat-file", "-e", commit+":"+name)
-	return err == nil, nil
+	if err == nil {
+		return true, nil
+	}
+	if gittree.ExitCode(err) < 0 {
+		return false, err
+	}
+	// An immutable tree is listed once for all missing candidates in this admission.
+	if f.listings == nil {
+		f.listings = make(map[string]briefTreeListing)
+	}
+	key := root + "\x00" + commit
+	tree, listed := f.listings[key]
+	if !listed {
+		listing, treeErr := f.output(root, "ls-tree", "-rtz", "--name-only", "--full-tree", commit)
+		tree.err = treeErr
+		tree.paths = map[string]bool{}
+		for _, entry := range strings.Split(listing, "\x00") {
+			tree.paths[entry] = true
+		}
+		f.listings[key] = tree
+	}
+	if tree.err == nil {
+		if tree.paths[name] {
+			return false, fmt.Errorf("git cat-file %s:%s: %w", commit, name, err)
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("git cat-file %s:%s: %w; tree read: %v", commit, name, err, tree.err)
 }
 
 func (f gitBriefTreeFacts) ServingCheckout() string { return f.serving }
@@ -242,7 +276,7 @@ func readBriefAdmissionWithFacts(briefPath, installRoot, baseTree, diskRoot, rev
 		return installPrefix, nil
 	}
 	authority := func(admitted []byte, bounds BriefBounds) error {
-		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot, facts, resolveInstallPrefix, reviewed)
+		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot, facts, resolveInstallPrefix, reviewed, filepath.Dir(briefPath), installRoot)
 	}
 	if baseTree == "" {
 		authority = nil
@@ -377,7 +411,7 @@ func ValidateBriefAuthority(briefPath, baseTree, diskRoot string) error {
 	return err
 }
 
-func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string, facts briefTreeFacts, installPrefix briefInstallPrefix, reviewed string) error {
+func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string, facts briefTreeFacts, installPrefix briefInstallPrefix, reviewed string, roots ...string) error {
 	baseCommit, err := facts.BaseCommit(baseTree)
 	if err != nil {
 		return fmt.Errorf("brief authority admission cannot resolve delegate base tree: %w", err)
@@ -395,10 +429,14 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 			return fmt.Errorf("brief authority admission cannot resolve the reviewed commit %s: %w", reviewed, err)
 		}
 		commits = []string{commit, baseCommit}
+		baseCommit = commit
 	}
 	prefix := ""
 	if installPrefix != nil {
-		prefix, _ = installPrefix()
+		prefix, err = installPrefix()
+		if err != nil {
+			return err
+		}
 	}
 	authorityPrefix := briefAuthorityPrefix([]string{prefix})
 	topDirectories, nestedDirectories := map[string]bool{}, map[string]bool{}
@@ -445,7 +483,7 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 		if reader, ok := facts.(briefIgnoreFacts); ok {
 			ignored = reader.Ignored(baseTree, candidate) || prefix != "" && reader.Ignored(baseTree, prefix+"/"+candidate)
 		}
-		if artifactAuthorityPath(candidate, authorityPrefix) || ignored {
+		if briefPathLine.FindStringIndex(candidate) == nil && (artifactAuthorityPath(candidate, authorityPrefix) || ignored && filepath.Ext(candidate) != ".go") && filepath.Base(candidate) != "metasystem.conf.local" {
 			present := false
 			for _, root := range runtimeRoots {
 				var statErr error
@@ -463,15 +501,16 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 			}
 			continue
 		}
-		present, pathErr := treeHolds(facts, baseTree, commits, candidate, prefix)
+		citationRoots := append([]string{baseTree, diskRoot, filepath.Join(diskRoot, prefix)}, roots...)
+		resolved, present, pathErr := ResolveBriefCitation(candidate, baseTree, baseCommit, prefix, citationRoots, facts)
 		if pathErr != nil {
 			return pathErr
 		}
-		if present || frozenInputHolds(frozen[candidate], diskRoot) {
+		if present || briefPathLine.FindStringIndex(candidate) == nil && strings.HasSuffix(resolved, ".md") && frozenInputHolds(append(frozen[candidate], frozen[resolved]...), diskRoot) {
 			continue
 		}
 		missing = append(missing, candidate)
-		details[candidate] = "tree path; looked in commits " + strings.Join(commits, " and ") + " (reviewed commit and HEAD when named)"
+		details[candidate] = "normalized path " + resolved + "; base " + baseCommit + "; path absent"
 	}
 	if len(missing) == 0 {
 		return nil
@@ -530,11 +569,14 @@ func extractBriefAuthorityPaths(brief string, bounds BriefBounds, topDirectories
 		lowerLine := strings.ToLower(line)
 		boundaryExample := strings.Contains(lowerLine, "diffboundary") && strings.Contains(lowerLine, "example")
 		workspaceOutputLine := workspaceHeadingLevel > 0 && briefOutputLine.MatchString(line)
-		if strings.HasPrefix(line, "Boundary:") || inertBriefBoundsLine(line) {
+		if strings.HasPrefix(line, briefFrozenPrefix) || strings.HasPrefix(line, "Boundary:") || inertBriefBoundsLine(line) {
 			continue
 		}
 		citations := briefBoundaryCitations(line, concreteMembers)
 		record := func(candidate string, start int) {
+			if filepath.Base(candidate) == "metasystem.conf.local" {
+				return
+			}
 			use := uses[candidate]
 			if workspaceOutputLine || briefCreatePrefix.MatchString(line[:start]) {
 				use.output = true
@@ -544,7 +586,7 @@ func extractBriefAuthorityPaths(brief string, bounds BriefBounds, topDirectories
 			uses[candidate] = use
 		}
 		for _, citation := range citations {
-			if (briefAuthorityPathEligible(citation.path, topDirectories, nestedDirectories, prefix) || concreteMembers[citation.path]) &&
+			if (briefCitationPath(citation.path) || concreteMembers[citation.path]) &&
 				!(boundaryExample && strings.HasPrefix(citation.path, prefix+"/")) {
 				record(citation.path, citation.start)
 			}
@@ -554,10 +596,10 @@ func extractBriefAuthorityPaths(brief string, bounds BriefBounds, topDirectories
 				continue
 			}
 			token := strings.TrimRight(line[location[0]:location[1]], ".")
-			if strings.ContainsAny(token, "*<>${") || !briefPathToken.MatchString(token) {
+			if strings.ContainsAny(token, "*<>${") || !briefCitationPath(token) {
 				continue
 			}
-			if !briefAuthorityPathEligible(token, topDirectories, nestedDirectories, prefix) || (boundaryExample && strings.HasPrefix(token, prefix+"/")) {
+			if !briefAuthorityPathEligible(token, topDirectories, nestedDirectories) || (boundaryExample && strings.HasPrefix(token, prefix+"/")) {
 				continue
 			}
 			record(token, location[0])
@@ -595,7 +637,25 @@ func briefBoundaryCitations(line string, members map[string]bool) []briefAuthori
 			if json.Unmarshal([]byte(value), &decoded) == nil {
 				value = decoded
 			}
-			if members[value] {
+			if members[value] || briefCitationPath(value) {
+				citations = append(citations, briefAuthorityCitation{start, end + 1, value})
+			}
+			start = end + 1
+		case '[':
+			open := strings.Index(line[start:], "](")
+			if open < 0 {
+				start++
+				continue
+			}
+			begin := start + open + 2
+			close := strings.IndexByte(line[begin:], ')')
+			if close < 0 {
+				start++
+				continue
+			}
+			end := begin + close
+			value := strings.Trim(line[begin:end], "<>")
+			if briefCitationPath(value) {
 				citations = append(citations, briefAuthorityCitation{start, end + 1, value})
 			}
 			start = end + 1
@@ -604,7 +664,7 @@ func briefBoundaryCitations(line string, members map[string]bool) []briefAuthori
 			if !terminated {
 				return citations
 			}
-			if valid && members[value] {
+			if valid && (members[value] || briefCitationPath(value)) {
 				citations = append(citations, briefAuthorityCitation{start, end + 1, value})
 			}
 			start = end + 1
@@ -644,40 +704,19 @@ func briefCitationConsumes(citations []briefAuthorityCitation, location []int) b
 	return false
 }
 
-func briefAuthorityPathEligible(candidate string, topDirectories, nestedDirectories map[string]bool, prefix string) bool {
-	parts := strings.Split(candidate, "/")
-	eligible := briefAuthorityDirectories[parts[0]] && (topDirectories[parts[0]] || parts[0] == "artifacts")
-	if relative, found := strings.CutPrefix(candidate, prefix+"/"); found {
-		first, _, _ := strings.Cut(relative, "/")
-		eligible = topDirectories[strings.Split(prefix, "/")[0]] && briefAuthorityDirectories[first] &&
-			(nestedDirectories[first] || first == "artifacts")
+func briefAuthorityPathEligible(candidate string, topDirectories, nestedDirectories map[string]bool) bool {
+	if !briefCitationPath(candidate) {
+		return false
 	}
-	return eligible
+	if briefPathLine.MatchString(candidate) {
+		return true
+	}
+	first, _, path := strings.Cut(candidate, "/")
+	return path && (topDirectories[first] || nestedDirectories[first])
 }
 
 func inertBriefBoundsLine(line string) bool {
 	return len(line) != len(strings.TrimLeft(line, " \t")) && (strings.HasPrefix(strings.TrimLeft(line, " \t"), "Boundary:") || strings.HasPrefix(strings.TrimLeft(line, " \t"), "Ceiling:"))
-}
-
-// treeHolds reports whether one of the commits holds candidate, at the
-// cited path or under the installation folder prefix.
-func treeHolds(facts briefTreeFacts, baseTree string, commits []string, candidate, prefix string) (bool, error) {
-	names := []string{candidate}
-	if prefix != "" && !strings.HasPrefix(candidate, prefix+"/") {
-		names = append(names, prefix+"/"+candidate)
-	}
-	for _, commit := range commits {
-		for _, name := range names {
-			present, err := facts.HasPath(baseTree, commit, name)
-			if err != nil {
-				return false, fmt.Errorf("brief authority admission cannot inspect committed path %s: %w", name, err)
-			}
-			if present {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }
 
 // briefCommitFacts resolves a commit the delegate reviews. Facts that cannot

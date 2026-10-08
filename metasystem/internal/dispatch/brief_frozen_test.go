@@ -62,4 +62,16 @@ func TestBriefAuthorityAdmitsAFrozenDraft(t *testing.T) {
 	outside, outsideDigest := writeFrozenCopy(t, t.TempDir(), "page.md", "the seat's draft\n")
 	wantMissing("copy outside the checkout", FrozenInputLine(draft, outsideDigest, outside), []string{draft})
 	wantMissing("malformed line", "Frozen input: "+draft+" "+digest, []string{draft})
+	aliasBrief := writeBriefAuthorityFile(t, repo.root, "alias-brief.md", "Working Mode: design-critique\nRead `./"+draft+"`.\n"+frozen+"\n")
+	if err := briefAuthorityError(aliasBrief, repo.root, repo.facts); err != nil {
+		t.Fatalf("a frozen document alias was refused: %v", err)
+	}
+	// A retained draft supplies document bytes, never an existing code premise.
+	code := "internal/proposed.go"
+	codeCopy, codeDigest := writeFrozenCopy(t, repo.root, "artifacts/frozen/code.go", "one\ntwo\n")
+	codeBrief := writeBriefAuthorityFile(t, repo.root, "code-brief.md", "Working Mode: implement\nRead `"+code+"`.\n"+FrozenInputLine(code, codeDigest, codeCopy)+"\n")
+	if err := briefAuthorityError(codeBrief, repo.root, repo.facts); err == nil {
+		t.Fatal("a frozen code draft was accepted as an existing base path")
+	}
+
 }

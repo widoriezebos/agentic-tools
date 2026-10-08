@@ -60,11 +60,11 @@ func frozenInputHolds(inputs []frozenInput, diskRoot string) bool {
 		return false
 	}
 	for _, input := range inputs {
-		if !filepath.IsAbs(input.copy) {
+		if !filepath.IsAbs(input.copy) || filepath.Base(input.copy) == "metasystem.conf.local" {
 			continue
 		}
 		resolved, err := filepath.EvalSymlinks(input.copy)
-		if err != nil {
+		if err != nil || filepath.Base(resolved) == "metasystem.conf.local" {
 			continue
 		}
 		rel, err := filepath.Rel(root, resolved)
@@ -161,7 +161,7 @@ func BriefDraftPaths(text []byte, root string) ([]string, error) {
 // installation folder prefix: a path cited from the installation that the
 // tree holds under the prefix is no draft.
 func briefDraftPaths(text []byte, root, prefix string) ([]string, error) {
-	facts := gitBriefTreeFacts{}
+	facts := &gitBriefTreeFacts{}
 	bounds, err := parseBriefBounds(scanBriefHeaders(text), func() (string, error) { return prefix, nil })
 	if err != nil {
 		return nil, err
@@ -185,7 +185,14 @@ func briefDraftPaths(text []byte, root, prefix string) ([]string, error) {
 		if artifactAuthorityPath(candidate) {
 			continue
 		}
-		if present, _ := treeHolds(facts, root, []string{commit}, candidate, prefix); !present {
+		resolved, present, err := ResolveBriefCitation(candidate, root, commit, prefix, []string{root, root, filepath.Join(root, prefix)}, facts)
+		if err != nil {
+			return nil, err
+		}
+		if !present && briefPathLine.FindStringIndex(candidate) != nil {
+			return nil, &BriefAuthorityRefusal{MissingPaths: []string{candidate}, Details: map[string]string{candidate: "normalized path " + resolved + "; base " + commit + "; path absent"}}
+		}
+		if !present && strings.HasSuffix(candidate, ".md") {
 			drafts = append(drafts, candidate)
 		}
 	}

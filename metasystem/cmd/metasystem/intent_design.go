@@ -233,6 +233,9 @@ func runIntentDesign(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	if problem := inv.checkBriefCitations(&brief, briefPath); problem != nil {
+		return inv.render(*problem)
+	}
 	targets := inv.targets(id)
 	projection, _, problem := inv.projection()
 	if problem != nil {

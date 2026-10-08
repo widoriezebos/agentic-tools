@@ -143,7 +143,7 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			command.Stderr = &stderr
 			output, err := command.Output()
 			if err != nil {
-				return output, fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
+				return output, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 			}
 			return output, nil
 		}
@@ -2538,6 +2538,9 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 			return "", nil, &intentResult{Outcome: intentFailed, code: 1, Summary: fileProblem("accepted design", design, err) + "; no brief was written",
 				next: inv.sameCommand(), nextReason: "once the design is readable"}
 		}
+		if problem := inv.checkBriefCitations(&data, design); problem != nil {
+			return "", nil, problem
+		}
 		c, r, a := designSections(design, data)
 		constraints, returns, acceptance = append(constraints, c...), append(returns, r...), append(acceptance, a...)
 		if rows, err := launch.DeclaredUnits(design); err == nil && len(rows) > 0 && len(units) == 0 {
@@ -2905,6 +2908,27 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 			_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
 		}
 		return refused("this shell acts under the helm or a grant", nil)
+	}
+	return nil
+}
+
+func (inv *intentInvocation) checkBriefCitations(data *[]byte, document string) *intentResult {
+	err := dispatchcore.ValidateBriefCitations(*data, document, inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, inv.cwd, func(root string, args ...string) (string, error) {
+		output, err := inv.work().git(root, args...)
+		return string(output), err
+	})
+	if err != nil && inv.directPersonProof("unchecked brief citations") != nil {
+		remedy := "once the base tree is readable"
+		var citation *dispatchcore.BriefAuthorityRefusal
+		if errors.As(err, &citation) {
+			remedy = "after correcting the named citation in " + document
+		}
+		return &intentResult{Outcome: intentRefused, code: 1, Summary: err.Error(), next: inv.sameCommand(), nextReason: remedy, Details: []string{err.Error()}}
+	}
+	if err != nil {
+		warning := "Unchecked citation evidence: " + strings.ReplaceAll(err.Error(), "\n", "; ")
+		fmt.Fprintln(inv.stderr, warning)
+		*data = append([]byte("## Citation constraints\n\n"+warning+"\n\n"), *data...)
 	}
 	return nil
 }

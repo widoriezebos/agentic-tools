@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -35,10 +36,11 @@ func gitRawOutputWithDeadline(dir string, deadline func(time.Duration) <-chan ti
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	var stdout bytes.Buffer
 	command.Stdout = &stdout
-	command.Stderr = io.Discard
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.RunWithDeadline(command, limit, "git "+strings.Join(args, " "), deadline); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }

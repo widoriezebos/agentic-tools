@@ -200,6 +200,7 @@ func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string, pos
 		}
 	}
 	for _, candidate := range extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories) {
+		candidate = briefPathLine.ReplaceAllString(candidate, "")
 		if artifactAuthorityPath(candidate) {
 			continue
 		}
