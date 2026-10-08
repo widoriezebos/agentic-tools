@@ -29,7 +29,7 @@ Work
 
 Shape
   edit                   change a goal's intent, next step, risk or labels in place
-  split                  split a goal into independently claimable related goals
+  split                  hold a goal and open its unapproved children
   group                  put a goal into a group of related goals
   ungroup                take a goal out of its group of related goals
   block                  record that a goal waits for another

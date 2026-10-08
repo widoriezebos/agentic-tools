@@ -284,7 +284,13 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	return projectBudgetWithoutRun(repoRoot, file, now, excludeRunID, true)
 }
 
-func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string, authorityLens bool) BudgetProjection {
+// ProjectSplitWork reads spending and unfinished reservations without requiring a build claim.
+func ProjectSplitWork(repoRoot string, file *goal.GoalFile, now time.Time) BudgetProjection {
+	return projectBudgetWithoutRun(repoRoot, file, now, "", false, true)
+}
+
+func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string, authorityLens bool, splitWork ...bool) BudgetProjection {
+	working := len(splitWork) > 0 && splitWork[0]
 	if file == nil {
 		return unknownBudget("", 0, "plans/goals", "the goal record is missing")
 	}
@@ -461,7 +467,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			wait.observe(startedAt, asString(record["endedAt"]), status == "running")
 		}
 		consumes := consumptionMember(recordGoal, recordRevision, file.Id, consumptionKey)
-		authorizes := authorityLens && recordRevision >= accountingRevision
+		authorizes := (authorityLens || working) && (working || recordRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}
@@ -590,7 +596,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			}
 		}
 		consumes := consumptionMember(attempt.AccountedGoal(), attempt.AccountedRevision(), file.Id, consumptionKey)
-		authorizes := authorityLens && attempt.GoalID == file.Id && attempt.AccountingRevision >= accountingRevision
+		authorizes := attempt.GoalID == file.Id && (working || authorityLens && attempt.AccountingRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}
@@ -719,7 +725,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", governed.GoalRevision, revision))
 		}
 		consumes := consumptionMember(record.GoalId, governed.GoalRevision, file.Id, consumptionKey)
-		authorizes := authorityLens && governed.GoalRevision >= accountingRevision
+		authorizes := (authorityLens || working) && (working || governed.GoalRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}

@@ -3170,7 +3170,7 @@ func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, e
 			dependencies.fail(1, goal.Coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("goal split couldn't read the clock: %w", nowErr)))
 			return 1
 		}
-		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, now)
+		observed, proofErr := dependencies.proveHuman(f.root, dependencies.authorityFacts.caller.Pid, nil, now)
 		if proofErr != nil {
 			dependencies.fail(1, goal.Coded("SPLIT_RATIFY_REFUSED", personActErrorFor(f.root, proofErr, f.by)))
 			return 1
@@ -3194,31 +3194,37 @@ func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, e
 		}
 	}
 
-	var held *goalrevision.Held
-	if parent.State == goal.StateClaimed && parent.Claimed != nil && parent.Claimed.Machine == req.Actor.Machine && parent.Claimed.Lineage == req.Actor.Lineage {
-		held, err = goalrevision.Acquire(f.root, f.id, parent.Claimed.Revision, "goal-split")
-		if err != nil {
-			dependencies.complain("goal split could not acquire the goal-revision lock:", err)
+	if parent.State != goal.StateSplit {
+		revision := parent.Revision
+		if parent.Claimed != nil {
+			revision = parent.Claimed.Revision
+		}
+		held, lockErr := goalrevision.Acquire(f.root, f.id, revision, "goal-split")
+		if lockErr != nil {
+			dependencies.complain("goal split could not acquire the goal-revision lock:", lockErr)
 			return 1
 		}
 		defer held.Release()
-		spend := dispatchcore.ProjectBudget(f.root, parent, req.Now)
-		if spend.Status != dispatchcore.BudgetKnown {
-			detail := "unknown spending evidence"
-			if spend.Unknown != nil {
-				detail = spend.Unknown.Record + ": " + spend.Unknown.Reason
+		req.SplitCheck = func(current *goal.GoalFile) error {
+			if current.Revision != parent.Revision {
+				return fmt.Errorf("goal %s changed while splitting; run the split again with its current plan", f.id)
 			}
-			dependencies.complainf("goal %s revision %d cannot prove zero work: %s\n", f.id, parent.Claimed.Revision, detail)
-			return 1
-		}
-		if spend.Attempts != 0 || spend.ActiveJobs != 0 || spend.ReservedJobMinutes != 0 {
-			dependencies.complainf("goal %s already has work (%d attempts, %d jobs, %d minutes), so it can't be split; finish it first\n", f.id, spend.Attempts, spend.ActiveJobs, spend.ReservedJobMinutes)
-			return 1
+			if current.Budget == nil {
+				return nil
+			}
+			spend := dispatchcore.ProjectSplitWork(f.root, current, req.Now)
+			if spend.Status != dispatchcore.BudgetKnown {
+				return fmt.Errorf("goal %s cannot read its work evidence: %v; inspect metasystem goal show %s --budget", f.id, spend.Unknown, f.id)
+			}
+			if spend.ActiveJobs != 0 || spend.OpenCapMinutes != 0 {
+				return fmt.Errorf("goal %s has active or reserved work; finish it before running the split again", f.id)
+			}
+			return nil
 		}
 	}
 	if proof != nil {
 		if err := humanauthority.RecordProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal split", *proof); err != nil {
-			dependencies.complain("the split was recorded, but the record of who approved it wasn't saved:", err)
+			dependencies.complain("the split could not record who approved it:", err)
 			return 1
 		}
 	}

@@ -751,7 +751,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	}
 	if f.Obligation != nil {
 		riskRaise := f.Claimed != nil && f.Claimed.Revision > 0 && f.Claimed.Revision <= uint64(len(f.History)) && misclassificationRaises(f.History[f.Claimed.Revision-1].Reason)
-		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget, riskRaise); err != nil {
+		claim := f.Claimed
+		if f.State == StateSplit && f.Split != nil && f.Split.PriorState == StateClaimed && f.Episode != nil {
+			claim = &ClaimRecord{Revision: f.Obligation.BudgetRevision}
+		}
+		if err := validateGovernedObligation(f.Obligation, f.Revision, claim, f.Budget, riskRaise); err != nil {
 			addProblem("%v", err)
 		}
 	}

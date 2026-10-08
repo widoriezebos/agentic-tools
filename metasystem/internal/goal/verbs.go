@@ -239,8 +239,10 @@ type VerbRequest struct {
 	// Authority is the fresh in-process human proof carried by --by. A human
 	// name without this proof never authorizes a human-reserved transition.
 	Authority *humanauthority.Proof
-	Ulid      string // caller-minted; the opid derives from it
-	Now       time.Time
+	// SplitCheck reads current work evidence under the caller's revision lock.
+	SplitCheck func(*GoalFile) error
+	Ulid       string // caller-minted; the opid derives from it
+	Now        time.Time
 	// ReconcileScope, when not empty, is the exact set of goals a reconcile
 	// session may publish: the session refuses, before it records any
 	// pending publication, when the edits it captured touch another goal.
