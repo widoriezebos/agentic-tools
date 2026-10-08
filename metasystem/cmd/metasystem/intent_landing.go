@@ -468,6 +468,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+			if len(proof.FlakeRepeats) > 0 {
+				section.KV("original", textui.Plain(proof.Attempt+"; evidence: "+proof.Log))
+				for _, repeat := range proof.FlakeRepeats {
+					section.KV("repeat", textui.Plain(repeat.Attempt+"; evidence: "+repeat.Log))
+				}
+			}
 		}
 		if gate := data.LastGate; gate != nil {
 			words := gate.Result + landingRedReason(gate.Reason) + " for " + provedWords(gate.Commit, gate.Tree)

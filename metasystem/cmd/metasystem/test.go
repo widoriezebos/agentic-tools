@@ -1170,6 +1170,10 @@ func runTestVerify(args []string, stdout, stderr io.Writer) int {
 // runTestVerifyAs is test verify answering as name: the internal entrypoint
 // or the public test status.
 func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
+	return runTestVerifyAsWithStatus(name, args, stdout, stderr, testStatusInputs{})
+}
+
+func runTestVerifyAsWithStatus(name string, args []string, stdout, stderr io.Writer, inputs testStatusInputs) int {
 	request, jsonOutput, status := parseTestingSelection(name, args, false, stdout, stderr)
 	if status != 0 {
 		return status
@@ -1182,8 +1186,8 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	_, public := publicCommand(name)
-	if public && !jsonOutput {
-		return testStatusTo(stdout, stderr, request)
+	if public {
+		return testStatusTo(stdout, stderr, request, jsonOutput, inputs)
 	}
 	if !public && jsonOutput {
 		return testVerifyEnvelope(stdout, stderr, request)
@@ -1236,36 +1240,6 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 			strings.Join(result.Delivery.MissingGroups, ","), request.Root, request.GoalID, result.CandidateTree)
 		return 1
 	}
-	return 0
-}
-
-// testStatusTo is test status for a person: whether the tree is proven for
-// delivery, or which groups no passing run covers and the run that covers
-// them; it launches nothing.
-func testStatusTo(stdout, stderr io.Writer, request testrun.SelectionRequest) int {
-	result, err := verifyRetainedTesting(request)
-	if err != nil {
-		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		printTestingRefusal(stderr, err, request)
-		return 1
-	}
-	if !result.Delivery.Sufficient {
-		printMovedProofInputs(stderr, request, result)
-		retry := []string{"metasystem", "test", "run", "--root", request.Root}
-		if request.GoalID != "" {
-			retry = append(retry, "--goal", request.GoalID)
-		}
-		page := passthroughPage(stderr, request.Root, request.Verbose)
-		page.Refusal(fmt.Sprintf("no passing test run covers %s on tree %s: %s", textui.Count(len(result.Delivery.MissingGroups), "group", "groups"),
-			textui.SHA(result.CandidateTree), strings.Join(result.Delivery.MissingGroups, ", ")),
-			textui.Hint{Argv: append(retry, "--tree", result.CandidateTree, "--mode", "auto"), Reason: "runs them"})
-		printPage(stderr, page)
-		return 1
-	}
-	page := passthroughPage(stdout, request.Root, request.Verbose)
-	page.Mark(textui.Done, fmt.Sprintf("Tree %s is proven for delivery", textui.SHA(result.CandidateTree)))
-	page.Facts(textui.KV{Key: "groups", Value: []textui.Span{textui.Plain(strings.Join(result.SelectedGroups, ", "))}})
-	printPage(stdout, page)
 	return 0
 }
 

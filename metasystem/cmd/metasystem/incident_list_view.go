@@ -53,19 +53,23 @@ func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*text
 					state, words = textui.Running, "goal "+entry.FixGoal+" fixes it"
 				}
 				if at := since(entry); at != "" && entry.Closed == nil {
-					words += " · failing " + at
+					if entry.EntryClass() == goal.TrunkRedClassFlake {
+						words += " · intermittent " + at
+					} else {
+						words += " · failing " + at
+					}
 				}
 				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words+incidentEvidence(entry)))
 			}
 		}
 		if len(tracked) > 0 {
-			table := page.Section("Tracked", "they never hold a landing").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true})
+			table := page.Section("Tracked", "they never hold a landing").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
 			for _, entry := range tracked {
 				state, words := textui.Idle, trackedDefectLabel(entry.EntryClass())
 				if entry.Closed != nil {
 					state, words = textui.Done, fmt.Sprintf("%s · closed", words)
 				}
-				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words))
+				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words+incidentEvidence(entry)))
 			}
 		}
 	}
@@ -80,8 +84,17 @@ func incidentEvidence(entry goal.TrunkRedEntry) string {
 	if len(tests) > 0 {
 		words = "; test " + strings.Join(tests, ", ")
 	}
-	if len(entry.Sightings) > 0 && entry.Sightings[0].LogPath != "" {
+	if entry.EntryClass() == goal.TrunkRedClassFlake || entry.EntryClass() == goal.TrunkRedClassKnownFlake || entry.EntryClass() == goal.TrunkRedClassPendingFlake {
+		for _, sighting := range entry.Sightings {
+			if sighting.LogPath != "" {
+				words += "; " + flakeSightingEvidence(sighting)
+			}
+		}
+	} else if len(entry.Sightings) > 0 && entry.Sightings[0].LogPath != "" {
 		words += "; evidence: " + entry.Sightings[0].LogPath
+	}
+	if until, err := time.Parse(time.RFC3339, entry.AllowanceUntil); err == nil {
+		words += "; allowance until " + until.Local().Format("2006-01-02 15:04 MST")
 	}
 	return words
 }
