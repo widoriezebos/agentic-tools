@@ -92,7 +92,10 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceShow":    {layout: auditEnforce},
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceExport":  {layout: auditEnforce},
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceDispose": {layout: auditEnforce},
+
 	// G4 delivery.
+	"cmd/metasystem/intent_process_setting.go": {group: "G4"},
+
 	"cmd/metasystem/intent_work.go":           {group: "G4"},
 	"cmd/metasystem/intent_delivery.go":       {group: "G4"},
 	"cmd/metasystem/intent_work_commit.go":    {group: "G4"},

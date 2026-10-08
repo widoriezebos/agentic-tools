@@ -386,6 +386,11 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsSet,
 		},
 		{
+			object: "settings", action: "unset", laidOut: true, audience: "both", summary: "restore an inherited setting by undoing a process act",
+			usage: []string{"metasystem settings unset KEY --undo ID"}, flags: processSettingFlags, maxArgs: 1,
+			examples: []string{"metasystem settings unset launch.codex.sandbox --undo ID"}, run: runIntentSettingsUnset,
+		},
+		{
 			object: "settings", action: "check", laidOut: true, audience: "both", summary: "validate every setting and the testing contract, changing nothing",
 			usage: []string{"metasystem settings check"},
 			details: []string{"Validates metasystem.conf, then the testing contract it names and the contract's declared tools; no test runs.",
@@ -485,6 +490,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return inv.unitLaunchAuthority(record, spec, settings)
 	}
+	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
 		if inv.stateRoot == "" {
 			if inv.layout.InstallationRoot == "" {
@@ -2599,7 +2605,7 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: problem.Error(),
 			next: inv.publicArgv("settings", "keys"), nextReason: "lists the settings"})
 	}
-	if problem := config.SettingValueProblem(key, value); problem != nil {
+	if problem := config.SettingValueProblem(key, value); problem != nil && inv.command.action != "unset" {
 		retryValue := "VALUE"
 		if config.PolicyScope(key) != "" {
 			retryValue = "auto"
@@ -2615,6 +2621,9 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		if _, _, problem := inv.settingsPerson(inv.layout, "settings set "+key); problem != nil {
 			return inv.render(*problem)
 		}
+		return inv.runProcessSetting(key, value)
+	}
+	if inv.input.text("undo") != "" {
 		return inv.runProcessSetting(key, value)
 	}
 	if config.PolicyScope(key) != "" && authoritySettings[key] {

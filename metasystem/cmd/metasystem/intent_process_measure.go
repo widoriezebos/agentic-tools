@@ -143,8 +143,12 @@ func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, re
 	data := result.Data.(map[string]any)
 	data["processUnknown"] = unknown
 	data["processStops"] = state.Stops
+	data["processResolved"] = state.Resolved
+	for _, stop := range state.Resolved {
+		result.text = append(result.text, "  Process change "+stop.Resolution+"; recorded cost is unchanged")
+	}
 	for _, stop := range state.Stops {
-		result.text = append(result.text, "  Automatic process changes are held: "+stop.Stop.Class+"; observed "+fmt.Sprint(stop.Stop.Measure.Now)+" against allowance "+fmt.Sprint(stop.Stop.Measure.Previous)+"; "+stop.Stop.Handoff)
+		result.text = append(result.text, "  Automatic process changes are held: "+stop.Stop.Class+"; observed "+fmt.Sprint(stop.Stop.Measure.Now)+" against allowance "+fmt.Sprint(stop.Stop.Measure.Previous)+"; "+stop.Stop.Handoff, stop.Impact)
 	}
 	for _, act := range acts {
 		actor := "own-caused agent"

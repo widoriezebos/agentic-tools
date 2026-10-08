@@ -21,6 +21,9 @@ import (
 )
 
 type ProcessAct struct {
+	SettingsSHA256                                                   string
+	Undo                                                             string
+	Unset                                                            bool
 	ID, Goal, Lineage, Actor, Checkout, Key, Layer, Class            string
 	Proof, AppliedProof                                              humanauthority.Proof
 	Before                                                           *string
@@ -59,12 +62,26 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			return (before == nil && value == nil) || (before != nil && value != nil && *before == *value)
 		}
 		act = s.ProcessAct
-		if s.Act == "" && before != nil && *before == act.After {
+		if act.Undo != "" {
+			if s.Act != "" || filepath.Base(act.Undo) != act.Undo || strings.ContainsAny(act.Undo, `/\\`) {
+				return fmt.Errorf("undo needs one original process act id")
+			}
+			body, err := os.ReadFile(filepath.Join(s.Root, "process", "acts", act.Undo+".json"))
+			var original ProcessAct
+			if err != nil || json.Unmarshal(body, &original) != nil {
+				return fmt.Errorf("original process act unavailable: %v", err)
+			}
+			if original.ID != act.Undo || (original.Status != "applied" && (original.Status != "superseded" || original.AppliedAt.IsZero())) || original.Checkout != act.Checkout || original.Key != act.Key || original.Layer != act.Layer || act.Unset != (original.Before == nil) || (!act.Unset && act.After != *original.Before) {
+				return fmt.Errorf("undo does not restore the original setting layer")
+			}
+			act.Goal = original.Goal
+		}
+		if act.Undo == "" && s.Act == "" && before != nil && *before == act.After {
 			act.Status = "unchanged"
 			return nil
 		}
 		act.Before, act.ProposedAt, act.Status = before, s.Now.UTC(), "proposed"
-		identity, _ := json.Marshal([]any{act.Checkout, act.Key, before, act.After, act.Goal, act.Lineage, act.Rule, act.Measure, act.Reason})
+		identity, _ := json.Marshal([]any{act.Checkout, act.Key, before, act.After, act.Goal, act.Lineage, act.Rule, act.Measure, act.Reason, act.Undo, act.Unset})
 		act.ID = fmt.Sprintf("%x", sha256.Sum256(identity))
 		if s.Act != "" {
 			act.ID = s.Act
@@ -122,13 +139,13 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			}
 			return save(s.Root, path, act)
 		}
-		if !matches(&act.After) {
+		if (!act.Unset && !matches(&act.After)) || (act.Unset && before != nil) {
 			if _, err := os.Stat(s.Conf + ".local"); os.IsNotExist(err) {
 				if err := os.WriteFile(s.Conf+".local", nil, 0600); err != nil {
 					return err
 				}
 			}
-			if err := validate.SetConfKeys(s.Conf+".local", []validate.ConfSetting{{Key: act.Key, Value: act.After}}); err != nil {
+			if err := validate.SetConfKeys(s.Conf+".local", []validate.ConfSetting{{Key: act.Key, Value: act.After, Unset: act.Unset}}); err != nil {
 				return err
 			}
 			if err := config.RecordPolicy(act.Checkout, s.Conf, act.Key, act.After, s.PersonName, s.Now); err != nil {
@@ -136,10 +153,16 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			}
 		}
 		act.Status, act.AppliedProof = "applied", s.ProcessAct.Proof
+		if local, err := os.ReadFile(s.Conf + ".local"); err == nil {
+			act.SettingsSHA256 = fmt.Sprintf("%x", sha256.Sum256(local))
+		}
 		if act.AppliedAt.IsZero() {
 			act.AppliedAt = s.Now.UTC()
 		}
-		return save(s.Root, path, act)
+		if err := save(s.Root, path, act); err != nil {
+			return err
+		}
+		return resolveUndo(s.Root, act)
 	})
 	return
 }

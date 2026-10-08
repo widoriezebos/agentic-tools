@@ -40,7 +40,7 @@ var publicPairs = []string{
 	"evidence show", "evidence export", "evidence dispose",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",
-	"settings show", "settings keys", "settings set", "settings check", "settings coordinator",
+	"settings show", "settings keys", "settings set", "settings unset", "settings check", "settings coordinator",
 	"roster list", "roster show", "roster set",
 	"receipt add", "receipt status", "receipt retro",
 	"experiment record", "experiment challenge", "experiment status", "experiment check",

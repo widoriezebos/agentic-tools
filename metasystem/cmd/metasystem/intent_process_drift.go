@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
@@ -56,7 +59,39 @@ func (inv *intentInvocation) processDrift(unit launch.NamedWork) processmeasure.
 		return drift
 	}
 	m := processmeasure.Read(all)
-	return processmeasure.Decide(unit.Record.Goal+"/"+unit.Unit+"/"+unit.Run, m, in.CheckMinutes)
+	drift := processmeasure.Decide(unit.Record.Goal+"/"+unit.Unit+"/"+unit.Run, m, in.CheckMinutes)
+	state, _ := processchange.ReadState(inv.stateRoot, unit.Record.Goal)
+	var consumed processchange.ProcessAct
+	var executions []string
+	for _, run := range all.Runs {
+		for _, step := range run.Steps {
+			if step.ID == "" {
+				continue
+			}
+			executions = append(executions, step.ID)
+			record, err := inv.unitRunner().Manager.Store.Read(step.ID)
+			var id string
+			if err != nil || json.Unmarshal(record.AdapterData["sandboxAct"], &id) != nil {
+				continue
+			}
+			for _, act := range state.Acts {
+				if act.ID == id && act.Status == "applied" && act.AppliedAt.After(consumed.AppliedAt) && !slices.ContainsFunc(state.Acts, func(later processchange.ProcessAct) bool {
+					return later.Status == "applied" && later.Key == act.Key && later.Checkout == act.Checkout && (later.AppliedAt.After(act.AppliedAt) || later.Undo == act.ID)
+				}) {
+					consumed = act
+				}
+			}
+		}
+	}
+	slices.Sort(executions)
+	evidence, _ := json.Marshal(slices.Compact(executions))
+	for index := range drift.Stops {
+		drift.Stops[index].Evidence = string(evidence)
+		if consumed.ID != "" && drift.Stops[index].Measure.Name == "unit elapsed minutes" {
+			drift.Stops[index].Cause = &loopstop.Cause{Kind: "process-change", Name: consumed.ID, Evidence: "consumed sandbox act; attribution provisional from initial admission"}
+		}
+	}
+	return drift
 }
 
 func (inv *intentInvocation) observeProcessDrift(unit launch.UnitRunRecord) error {
@@ -90,4 +125,24 @@ func (inv *intentInvocation) refreshProcessDrift(goal string) error {
 		}
 	}
 	return nil
+}
+
+// consumedSandboxAct binds the resolved local sandbox to this execution's act.
+func (inv *intentInvocation) consumedSandboxAct(record launch.Record, settings launch.Settings) string {
+	state, problem := processchange.ReadState(inv.stateRoot, record.Goal)
+	var latest processchange.ProcessAct
+	if inv.stateRoot == "" || problem != nil || len(state.Unknown) > 0 {
+		return ""
+	}
+	for _, act := range state.Acts {
+		if act.Key == launch.CodexSandboxKey && act.Status == "applied" && act.AppliedAt.After(latest.AppliedAt) {
+			latest = act
+		}
+	}
+	for _, value := range settings.Values {
+		if value.Key == launch.CodexSandboxKey && value.Source == "conf-local" && value.Value == latest.After && latest.SettingsSHA256 != "" && latest.SettingsSHA256 == settings.LocalSHA256 && latest.Undo == "" && !latest.Unset {
+			return latest.ID
+		}
+	}
+	return ""
 }
