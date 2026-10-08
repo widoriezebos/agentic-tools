@@ -18,19 +18,11 @@ func (s Providers) Waiting(runtime string, start, end time.Time) ([]Span, error)
 	c := s.Current[Provider(runtime)]
 	intervals := append([]Interval(nil), c.Intervals...)
 	if c.Mark.ConsecutiveFailures > 0 {
-		last, err := time.Parse(time.RFC3339Nano, c.Mark.LastAt)
+		bound, err := c.Mark.waitBound()
 		if err != nil {
 			return nil, fmt.Errorf("provider %s observation is unreadable", Provider(runtime))
 		}
-		bound := last.Add(Horizon)
-		if c.Mark.ResetAt != "" {
-			reset, err := time.Parse(time.RFC3339Nano, c.Mark.ResetAt)
-			if err != nil {
-				return nil, fmt.Errorf("provider %s reset is unreadable", Provider(runtime))
-			}
-			bound = reset.Add(2 * time.Minute)
-		}
-		intervals = append(intervals, Interval{c.Mark.Since, bound.Format(time.RFC3339Nano)})
+		intervals = append(intervals, Interval{Since: c.Mark.Since, Until: bound.UTC().Format(time.RFC3339Nano)})
 	}
 	var spans []Span
 	for _, interval := range intervals {

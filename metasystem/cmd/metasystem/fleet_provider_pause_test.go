@@ -11,6 +11,8 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -215,6 +217,8 @@ func TestFleetPartialOutageSamplesUsePausedAge(t *testing.T) {
 
 func TestFleetProviderPausePublicStatus(t *testing.T) {
 	t.Parallel()
+	t.Run("stale expiry and delivery", fleetProviderExpiryPublic)
+	t.Run("person clear", fleetProviderClearPublic)
 	for _, test := range []struct {
 		name, runtime                                                                                                                                string
 		landing, recovery, switchProvider, corrupt, missing, horizon, lateRecovery, concurrentProvider, runningProvider, billable, noLaunch, noOwner bool
@@ -324,6 +328,14 @@ func TestFleetProviderPausePublicStatus(t *testing.T) {
 				}
 				if _, err := outage.Observe(home, "claude", "fixture-model", "", "", "provider-success", successAt); err != nil {
 					t.Fatal(err)
+				}
+				state, err := outage.ReadProviders(home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				c := state.Current["anthropic"]
+				if len(c.Intervals) != 1 || c.Intervals[0].FirstSuccessAt != successAt.Format(time.RFC3339Nano) || c.Intervals[0].Stale != test.lateRecovery {
+					t.Fatalf("genuine recovery did not retain the first answer and closing cause: %+v", c)
 				}
 			}
 			if test.concurrentProvider {
@@ -453,4 +465,287 @@ func TestFleetProviderPausePublicStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func fleetProviderExpiryPublic(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"reset", "late tick", "restart", "no reset", "distant reset", "delivery failure", "corrupt state"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			home := testprovider.Register(t, root)
+			start := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+			bound := start.Add(10 * time.Minute)
+			detail := fmt.Sprintf("Claude AI usage limit reached|%d", start.Add(8*time.Minute).Unix())
+			if scenario == "no reset" {
+				detail, bound = "HTTP 429 Too Many Requests", start.Add(outage.Horizon)
+			}
+			if scenario == "distant reset" {
+				bound = start.Add(time.Hour + outage.ProbeInterval)
+				detail = fmt.Sprintf("Claude AI usage limit reached|%d", start.Add(time.Hour).Unix())
+			}
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\nrole.steward-continuation.runtime=claude\nrole.steward-continuation.model.claude=fixture-model\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			observe := func(at time.Time, class string) {
+				t.Helper()
+				if _, err := outage.Observe(home, "claude", "fixture-model", class, detail, "fixture", at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			read := func() outage.Condition {
+				t.Helper()
+				s, err := outage.ReadProviders(home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return s.Current["anthropic"]
+			}
+			stateRoot := t.TempDir()
+			var lastTick steward.TickResult
+			tick := func(self string, at time.Time) error {
+				var err error
+				lastTick, err = steward.RunTick(self, steward.TickConfig{Now: at, ProviderHome: home, WorkStateRoot: stateRoot}, fleetPauseCensus{})
+				if err == nil {
+					retained, readErr := steward.LoadEvidence(steward.EvidencePath(self))
+					if readErr != nil || retained != lastTick.Evidence || retained.SampledAt != at.Format(time.RFC3339Nano) || lastTick.Health.Schema == 0 || lastTick.Decision.Verdict == "" {
+						t.Fatalf("tick must finish its decision, evidence and health: %+v, retained %+v, %v", lastTick, retained, readErr)
+					}
+				}
+				return err
+			}
+			observe(start, outage.ProviderLimit)
+			if err := tick(root, bound.Add(-time.Nanosecond)); err != nil {
+				t.Fatal(err)
+			}
+			if c := read(); c.Mark.ConsecutiveFailures != 1 || len(c.Intervals) != 0 {
+				t.Fatalf("expired early: %+v", c)
+			}
+			at := bound
+			if scenario == "late tick" {
+				at = bound.Add(time.Hour)
+			}
+			if scenario == "restart" {
+				// A different seat can observe a genuine answer before the owner restarts.
+				observe(bound.Add(time.Minute), "")
+				if _, _, err := lane.Register(home, lane.Layout{Checkout: lane.CheckoutRoot(root), Install: lane.InstallRoot(root)}, "fixture-restarted", at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			other := t.TempDir()
+			if err := os.WriteFile(filepath.Join(other, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := tick(other, at); err != nil {
+				t.Fatal(err)
+			}
+			if scenario != "restart" && read().Mark.ConsecutiveFailures != 1 {
+				t.Fatal("another seat expired the owner's mark")
+			}
+			logPath := filepath.Join(filepath.Dir(steward.NotificationJournalPath(root)), "notifications.log")
+			runnerLog := filepath.Join(filepath.Dir(logPath), "runner.log")
+			if scenario == "corrupt state" {
+				s, err := outage.ReadProviders(home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				c := s.Current["anthropic"]
+				c.Mark.LastAt = "unreadable"
+				s.Current["anthropic"] = c
+				fleetWriteJSON(t, testprovider.Path(root), s)
+				before, err := os.ReadFile(testprovider.Path(root))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := tick(root, at); err != nil {
+					t.Fatalf("unreadable provider state must not abort the tick: %v", err)
+				}
+				if !lastTick.ProviderOutage || lastTick.Outage.LastClass != "unknown" || !strings.Contains(lastTick.Outage.LastDetail, "unreadable") {
+					t.Fatalf("corrupt provider state must stay unknown: %+v", lastTick)
+				}
+				after, err := os.ReadFile(testprovider.Path(root))
+				if err != nil || string(after) != string(before) {
+					t.Fatalf("tick must preserve unreadable provider evidence: %s, %v", after, err)
+				}
+				data, err := os.ReadFile(runnerLog)
+				if err != nil || !strings.Contains(string(data), "provider expiry or stale alert failed:") || !strings.Contains(string(data), "unreadable") {
+					t.Fatalf("expiry failure must be recorded: %s, %v", data, err)
+				}
+				return
+			}
+			if scenario == "delivery failure" {
+				if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(logPath, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := tick(root, at); err != nil {
+					t.Fatalf("failed notification must not abort the tick: %v", err)
+				}
+				if c := read(); c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || c.Intervals[0].AlertDelivered {
+					t.Fatalf("failed delivery lost retained expiry: %+v", c)
+				}
+				data, err := os.ReadFile(runnerLog)
+				if err != nil || !strings.Contains(string(data), "provider expiry or stale alert failed:") {
+					t.Fatalf("delivery failure must be recorded: %s, %v", data, err)
+				}
+				if err := os.Remove(logPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tick(root, at); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "restart" {
+				if _, _, err := lane.Register(home, lane.Layout{Checkout: lane.CheckoutRoot(root), Install: lane.InstallRoot(root)}, "fixture-restarted-again", at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tick(root, at.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			c := read()
+			if c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || !c.Intervals[0].Stale || !c.Intervals[0].AlertDelivered || c.Intervals[0].Until != bound.Format(time.RFC3339Nano) {
+				t.Fatalf("stale mark must close at its bound and alert once: %+v", c)
+			}
+			if scenario != "restart" && c.Intervals[0].FirstSuccessAt != "" {
+				t.Fatalf("stale expiry invented success: %+v", c)
+			}
+			first := at.Add(2 * time.Minute)
+			if scenario == "restart" {
+				first = bound.Add(time.Minute)
+			}
+			observe(first, "")
+			observe(first.Add(3*time.Minute), "")
+			observe(start, outage.ProviderLimit)
+			if c := read(); c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || c.Intervals[0].FirstSuccessAt != first.Format(time.RFC3339Nano) {
+				t.Fatalf("first genuine success overwritten or failure replay resurrected mark: %+v", c)
+			}
+			data, err := os.ReadFile(logPath)
+			if err != nil || strings.Count(string(data), "the stale outage mark expired") != 1 {
+				t.Fatalf("stale alert delivery: %s %v", data, err)
+			}
+			// A later outage has its own notification, even for the same provider.
+			observe(first.Add(4*time.Minute), outage.ProviderLimit)
+			if err := tick(root, first.Add(4*time.Minute+outage.Horizon)); err != nil {
+				t.Fatal(err)
+			}
+			data, err = os.ReadFile(logPath)
+			if err != nil || strings.Count(string(data), "the stale outage mark expired") != 2 {
+				t.Fatalf("later mark lost its alert: %s %v", data, err)
+			}
+		})
+	}
+}
+
+func fleetProviderClearPublic(t *testing.T) {
+	t.Parallel()
+	for _, expired := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expired=%t", expired), func(t *testing.T) {
+			t.Parallel()
+			fleetProviderClearAt(t, expired)
+		})
+	}
+}
+
+func fleetProviderClearAt(t *testing.T, expired bool) {
+	t.Helper()
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) { f.Obligation = nil })
+	home := testprovider.Register(t, bed.root())
+	start := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+	now := start.Add(10 * time.Minute)
+	if expired {
+		now = start.Add(5 * time.Hour)
+	}
+	for _, runtime := range []string{"codex", "claude"} {
+		at := start
+		if runtime == "codex" {
+			at = now.Add(-time.Minute)
+		}
+		if _, err := outage.Observe(home, runtime, "fixture-model", outage.ProviderLimit, "HTTP 429 Too Many Requests", "fixture", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owners := bed.workOwners()
+	owners.commandNow = func(string) (time.Time, error) { return now, nil }
+	owners.landing.home = func() (string, error) { return home, nil }
+	owners.landing.now = func() time.Time { return now }
+	if err := os.WriteFile(filepath.Join(bed.root(), "metasystem.conf"), []byte("metasystem.runtimes=codex\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tree, invoker := person(), int64(80)
+	if _, err := humanauthority.Enroll(bed.root(), 20, tree, "Wido", start); err != nil {
+		t.Fatal(err)
+	}
+	owners.prove = func(root string, _ int64, _ humanauthority.Reader, word, reviewBy string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.ProveOrTemporaryGoalAuthority(root, invoker, tree, word, reviewBy, at)
+	}
+	run := func(provider string) (int, intentResult) {
+		return bed.runJSON(owners, "machine", "clear-provider", provider)
+	}
+	snapshot, err := os.ReadFile(testprovider.Path(bed.root()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, result := run("anthropic"); code == 0 || !strings.Contains(strings.Join(result.Next.Argv, " "), "machine clear-provider anthropic") {
+		t.Fatalf("agent clear did not name person's act: %d %+v", code, result)
+	}
+	data, err := os.ReadFile(testprovider.Path(bed.root()))
+	if err != nil || string(data) != string(snapshot) {
+		t.Fatal("refused agent clear changed provider state")
+	}
+	invoker = 20
+	for i := 0; i < 2; i++ {
+		if code, result := run("anthropic"); code != 0 || !strings.Contains(result.Summary, "does not claim provider success") {
+			t.Fatalf("person clear: %d %+v", code, result)
+		}
+	}
+	s, err := outage.ReadProviders(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Current["anthropic"]
+	until := now
+	if expired {
+		until = start.Add(outage.Horizon)
+	}
+	if c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || c.Intervals[0].Until != until.Format(time.RFC3339Nano) || c.Intervals[0].FirstSuccessAt != "" || c.Intervals[0].Stale != expired || s.Current["openai"].Mark.ConsecutiveFailures != 1 {
+		t.Fatalf("clear must close its provider at the earlier of the bound and the person's time: %+v", s)
+	}
+	if expired {
+		for i := 0; i < 2; i++ {
+			if _, err := steward.RunTick(bed.root(), steward.TickConfig{Now: now, ProviderHome: home, WorkStateRoot: t.TempDir()}, fleetPauseCensus{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(filepath.Dir(steward.NotificationJournalPath(bed.root())), "notifications.log"))
+		if err != nil || strings.Count(string(data), "the stale outage mark expired") != 1 {
+			t.Fatalf("clear after expiry must retain exactly one stale alert: %s, %v", data, err)
+		}
+	}
+	for _, at := range []time.Time{now.Add(time.Minute), now.Add(4 * time.Minute)} {
+		if _, err := outage.Observe(home, "claude", "fixture-model", "", "", "genuine-success", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err = outage.ReadProviders(home)
+	if err != nil || s.Current["anthropic"].Intervals[0].FirstSuccessAt != now.Add(time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("person clear lost first actual answer: %+v %v", s, err)
+	}
+}
+
+var _ = addLayoutCases(layoutCase{name: "machine-clear-provider", args: []string{"machine", "clear-provider", "anthropic"}, bed: fleetProviderClearLayout})
+
+func fleetProviderClearLayout(t *testing.T) layoutBed {
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) { f.Obligation = nil })
+	home := testprovider.Register(t, bed.root())
+	owners := bed.workOwners()
+	_, reader := enrollGoalSyncTerminal(t, bed.root(), "ttys:provider-clear-layout")
+	owners.prove = func(root string, _ int64, _ humanauthority.Reader, word, reviewBy string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.ProveOrTemporaryGoalAuthority(root, reader.exact.Pid, reader, word, reviewBy, at)
+	}
+	owners.landing.home = func() (string, error) { return home, nil }
+	owners.landing.now = func() time.Time { return layoutNow }
+	return layoutBed{owners: owners, cwd: bed.root()}
 }

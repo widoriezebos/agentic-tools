@@ -461,7 +461,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 const laneRecheck = lane.AgentTick
 
 // limitProbe is the cadence for checking whether a provider limit ended.
-const limitProbe = 2 * time.Minute
+const limitProbe = outage.ProbeInterval
 
 // laneKeeping is the runner's side of the landing lane's keeper: its step,
 // the line last printed, and whether the lane waits on a proof, a running

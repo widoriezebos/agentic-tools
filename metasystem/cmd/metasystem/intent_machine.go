@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -34,6 +35,29 @@ import (
 // codeMachineOnAnotherComputer refuses a stop of a machine this computer
 // does not run: only that computer's own system stop reaches its processes.
 const codeMachineOnAnotherComputer = "MACHINE_ON_ANOTHER_COMPUTER"
+
+func runIntentMachineClearProvider(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "name the provider to clear",
+			next: inv.publicArgv("machine", "clear-provider", "PROVIDER")})
+	}
+	if problem := inv.resolveLayout(); problem != nil {
+		return inv.render(*problem)
+	}
+	if problem := inv.directPersonProof("machine clear-provider"); problem != nil {
+		return inv.render(*problem)
+	}
+	owners := inv.landing()
+	home, err := owners.home()
+	if err == nil {
+		err = outage.Clear(home, inv.input.args[0], owners.now())
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the provider hold could not be cleared: " + err.Error(),
+			next: inv.typedArgv(), nextReason: "retry after repairing the reported state"})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "provider " + outage.Provider(inv.input.args[0]) + ": the advisory hold is clear; this does not claim provider success"})
+}
 
 // machineOwners are the machine verbs' seams; the zero value is production.
 type machineOwners struct {

@@ -13,7 +13,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
-type Interval struct{ Since, Until string }
+type Interval struct {
+	Since, Until   string
+	FirstSuccessAt string `json:"firstSuccessAt,omitempty"`
+	Stale          bool   `json:"stale,omitempty"`
+	AlertDelivered bool   `json:"alertDelivered,omitempty"`
+}
 type Condition struct {
 	Mark      Mark
 	ClearedAt string
@@ -121,24 +126,29 @@ func Observe(home, runtime, model, class, detail, source string, at time.Time) (
 		return Mark{}, fmt.Errorf("provider ownership changed before the observation")
 	}
 	key := Provider(runtime)
+	if err := s.expire(at); err != nil {
+		return Mark{}, err
+	}
 	c := s.Current[key]
 	last, _ := time.Parse(time.RFC3339Nano, c.Mark.LastAt)
 	cleared, _ := time.Parse(time.RFC3339Nano, c.ClearedAt)
-	if at.Before(last) || (class != "" && !at.After(last)) || !at.After(cleared) {
-		return c.Mark, nil
+	if at.Before(last) || (class != "" && (!at.After(last) || !at.After(cleared))) || at.Before(cleared) {
+		return c.Mark, s.write()
 	}
 	stamp := at.UTC().Format(time.RFC3339Nano)
 	if class == "" {
 		if c.Mark.ConsecutiveFailures > 0 {
-			spans, err := s.Waiting(runtime, time.Time{}, at)
+			c.close(at, false)
+		}
+		for i := range c.Intervals {
+			interval := &c.Intervals[i]
+			until, err := time.Parse(time.RFC3339Nano, interval.Until)
 			if err != nil {
-				return Mark{}, err
+				return Mark{}, fmt.Errorf("provider %s wait history is unreadable", key)
 			}
-			end := stamp
-			if len(spans) > 0 {
-				end = spans[len(spans)-1].End.UTC().Format(time.RFC3339Nano)
+			if interval.FirstSuccessAt == "" && !at.Before(until) {
+				interval.FirstSuccessAt = stamp
 			}
-			c.Intervals = append(c.Intervals, Interval{c.Mark.Since, end})
 		}
 		c.Mark, c.ClearedAt = Mark{}, stamp
 	} else {
@@ -154,11 +164,7 @@ func Observe(home, runtime, model, class, detail, source string, at time.Time) (
 		}
 	}
 	s.Current[key] = c
-	data, err := json.Marshal(s)
-	if err == nil {
-		err = atomicfile.WriteVolatile(filepath.Join(owner.Install, "artifacts", "agents", fmt.Sprintf("providers-%d.json", owner.CustodyEpoch)), string(data)+"\n")
-	}
-	return c.Mark, err
+	return c.Mark, s.write()
 }
 
 func (s Providers) Standing(runtime string, now time.Time) (Mark, bool) {

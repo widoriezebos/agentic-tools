@@ -277,6 +277,14 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentMachineList,
 		},
 		{
+			object: "machine", action: "clear-provider", audience: "human", summary: "clear one provider's advisory outage hold",
+			usage:    []string{"metasystem machine clear-provider PROVIDER"},
+			details:  []string{"A person's act at their enrolled terminal. This closes only that provider's wait; it does not claim the provider answered. An absent mark is success."},
+			maxArgs:  1,
+			examples: []string{"metasystem machine clear-provider anthropic"},
+			run:      runIntentMachineClearProvider,
+		},
+		{
 			object: "machine", action: "stop", audience: "human", summary: "stop MetaSystem on one machine of this computer, or on every one",
 			usage: []string{"metasystem machine stop NAME", "metasystem machine stop --all"},
 			details: []string{

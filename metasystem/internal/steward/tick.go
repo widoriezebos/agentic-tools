@@ -266,6 +266,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
+
 	tickCompleted := false
 	defer func() {
 		reportErr := runTickReports(repoRoot, cfg, func() error {
@@ -289,6 +290,15 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			returnErr = fmt.Errorf("record failed tick completion: %w", completeErr)
 		}
 	}()
+
+	if err := outage.ExpireAndNotify(cfg.ProviderHome, repoRoot, cfg.now(), func(provider string, interval outage.Interval) error {
+		return deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Ref: "provider-stale-" + provider + "-" + interval.Since,
+			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver)
+	}); err != nil {
+		if logErr := logOrphanSeatRun(repoRoot, "provider expiry or stale alert failed: "+strings.ReplaceAll(err.Error(), "\n", "; "), cfg.now()); logErr != nil {
+			fmt.Fprintf(os.Stderr, "provider expiry or stale alert failed: %v; recording the failure: %v\n", err, logErr)
+		}
+	}
 
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
