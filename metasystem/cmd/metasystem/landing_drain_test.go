@@ -720,16 +720,18 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 	go func() { code, _ := b.verb(t, "resolve"); resolveDone <- code }()
 	<-entered
 	observing := make(chan struct{})
+	var observed sync.Once
 	original := b.keeper.Observe
+	// The keeper observes on every tick; the first observation is the one this test waits for.
 	b.keeper.Observe = func(record lane.Record) error {
 		home, err := lock.File(lane.LockPath(b.home), 0600, lock.TryExclusive)
 		if err != nil {
 			t.Error("keeper retained the home lock before waiting for regeneration")
-			close(observing)
+			observed.Do(func() { close(observing) })
 			return err
 		}
 		_ = home.Release()
-		close(observing)
+		observed.Do(func() { close(observing) })
 		return original(record)
 	}
 	keeperDone := make(chan lane.AgentRun, 1)
@@ -753,12 +755,43 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 		t.Fatal("waiting drain did not finish", code)
 	}
 	run := <-keeperDone
-	if run.Outcome != lane.AgentStarted {
-		t.Fatalf("keeper did not resume admitted work: %+v", run)
+	// plans/designs/lane-reads-its-policies.md:139 requires agents to hold on unreadable policy.
+	// This fixture has no Git repository from which the keeper can resolve that policy.
+	if run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, "the batch policy cannot be read; no selection was admitted") || b.launches != 0 {
+		t.Fatalf("keeper did not preserve the unreadable policy hold: %+v launches=%d", run, b.launches)
 	}
-	drain, _ := plain.ReadDrain(b.install)
-	if drain.State != plain.DrainDraining {
-		t.Fatal("regeneration hid waiting membership")
+	batch, err := plain.ReadBatch(b.install)
+	if err != nil || batch != nil {
+		t.Fatalf("unreadable policy admitted a batch: %+v %v", batch, err)
+	}
+	drain, err := plain.ReadDrain(b.install)
+	entry, found, entryErr := plain.Latest(b.install, "goal")
+	if err != nil || drain == nil || drain.State != plain.DrainDraining || entryErr != nil || !found || entry.State != plain.StateWaiting || entry.SHA != "goal-sha" {
+		t.Fatalf("regeneration hid waiting membership: drain=%+v err=%v entry=%+v found=%v err=%v", drain, err, entry, found, entryErr)
+	}
+	// A readable automatic policy permits the real selection owner to resume the admitted work.
+	effects := b.owners.landing.plainProve
+	effects.Policy = func(string) (plain.PolicyValue, error) {
+		return plain.PolicyValue{Value: "auto", Source: "fixture"}, nil
+	}
+	b.keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, effects)
+		return err
+	}
+	run = b.keeper.Run()
+	if run.Outcome != lane.AgentStarted || b.launches != 1 {
+		t.Fatalf("keeper did not resume admitted work after policy recovery: %+v launches=%d", run, b.launches)
+	}
+	batch, err = plain.ReadBatch(b.install)
+	if err != nil || batch == nil || len(batch.Members) != 1 || batch.Members[0] != (plain.GoalSHA{Goal: "goal", SHA: "goal-sha"}) {
+		t.Fatalf("recovery did not select the admitted commit: %+v %v", batch, err)
+	}
+	b.landed["goal-sha"] = true
+	run = b.keeper.Run()
+	drain, err = plain.ReadDrain(b.install)
+	batch, batchErr := plain.ReadBatch(b.install)
+	if run.Outcome != lane.AgentHeld || b.launches != 1 || err != nil || drain == nil || drain.State != plain.DrainHeld || batchErr != nil || batch == nil || batch.State != plain.BatchClosed {
+		t.Fatalf("finished admitted work did not complete the drain: run=%+v launches=%d drain=%+v err=%v batch=%+v err=%v", run, b.launches, drain, err, batch, batchErr)
 	}
 }
 
