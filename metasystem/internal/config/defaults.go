@@ -274,6 +274,8 @@ var coreSettings = []Setting{
 		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
 	{Key: DesignGateModeKey, Default: "warn", ProofInput: true,
 		Meaning: "warn about missing accepted design evidence, or refuse an agent's build"},
+	{Key: "design.unit-lines-max", Default: "250", CommittedOnly: true, ProofInput: true, Meaning: "maximum production lines per design unit"},
+	{Key: "design.goal-units-max", Default: "5", CommittedOnly: true, ProofInput: true, Meaning: "maximum units across a goal's current designs"},
 	// The host board (batch-lane design D14-r2, R25), read by the steward's
 	// bridge role only.
 	{Key: BoardKeepHoursKey, Default: "24",

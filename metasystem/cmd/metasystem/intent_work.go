@@ -864,10 +864,13 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 				Summary: reason + "; nothing was built", Data: map[string]any{"designGate": gateResult},
-				next:    inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"),
+				next: inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"), nextReason: gateResult.Warning[1],
 				Details: []string{detail}})
 		}
 		gateResult.Warning[0] = "warning: " + reason + "; it goes on at your word"
+		if gateResult.Size != nil {
+			gateResult.Warning[1] = "impact: building beyond the declared size can make review and dependent work harder; undo by revising the retained draft and rebuilding after human acceptance. " + gateResult.Warning[1]
+		}
 	}
 	if gateResult.Warning[0] != "" {
 		fmt.Fprintln(inv.stderr, gateResult.Warning[0]+"\n"+gateResult.Warning[1])
@@ -902,6 +905,15 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	request.prepare = func(directory string) (string, error) {
 		path, err := prepare(directory)
 		if err == nil {
+			gateFacts = inv.designGateFacts(string(inv.layout.InstallationRoot), id)
+			fresh := designgate.Check(gateFacts)
+			if !person && fresh.Mode == "refuse" && fresh.WouldRefuse {
+				return "", fmt.Errorf("%s; %s; retry the same work build after repair", fresh.Warning[0], fresh.Warning[1])
+			}
+			if person && fresh.Size != nil && fresh.WouldRefuse {
+				fresh.Warning[1] = "impact: size limits are exceeded; review and dependent work may become harder; undo by revising the retained draft and rebuilding after human acceptance. " + fresh.Warning[1]
+			}
+			gateResult = fresh
 			inv.recordDesignGate(filepath.Dir(filepath.Dir(directory)), request.worktree, unit, gateFacts, gateResult, person)
 		}
 		return path, err

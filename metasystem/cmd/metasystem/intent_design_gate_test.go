@@ -23,11 +23,27 @@ import (
 
 func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	t.Helper()
-	return newWorkBedWith(t, func(f *goal.GoalFile) {
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) {
 		f.Tier = tier
 		f.Risk = &goal.RiskRecord{Severity: tier, Novelty: tier, Exposure: 1, Accumulation: 1, Basis: "Exercise the design gate."}
 		workApprovedBox(f)
 	})
+	// These existing gate fixtures represent pages accepted before size declarations.
+	bed.workOwnersHook = func(o *intentWorkOwners) {
+		fallback := o.git
+		o.git = func(root string, args ...string) ([]byte, error) {
+			if args[0] == "log" {
+				return []byte("historical-declaration\n"), nil
+			}
+			if args[0] == "show" {
+				_, path, _ := strings.Cut(args[1], ":")
+				return os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+			}
+			return fallback(root, args...)
+		}
+	}
+	return bed
+
 }
 
 func designGatePage(t *testing.T, bed *workBed, critique string) (string, []byte) {
