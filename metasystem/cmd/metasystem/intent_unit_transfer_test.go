@@ -6,16 +6,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -118,15 +121,12 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	b := newStopWorkBed(t)
 	b.lineage = b.goalFile(b.id).Claimed.Lineage
 	b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{stopFinding("regression", "source.go"), stopFinding("weakened-test", "source_test.go"), stopFinding("incomplete-item", "requirement.go")}, {stopFinding("regression", "newfile.go"), stopFinding("missing-reader", "reader.go")}}}
-	page, data := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)")
 	declared := "stopped"
 	if !required {
 		declared = "required-other"
 	}
-	data = append(data, []byte("\n| Unit | Purpose | Estimated changed lines |\n| --- | --- | --- |\n| "+declared+" | Complete the required behavior | 5 |\n")...)
-	if err := os.WriteFile(page, data, 0600); err != nil {
-		t.Fatal(err)
-	}
+	page, _ := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)",
+		"\n| Unit | Purpose | Estimated changed lines |\n| --- | --- | --- |\n| "+declared+" | Complete the required behavior | 5 |\n")
 	run, before, _ := stopBuild(t, b, "auto")
 	if before.Rounds[0].Stop == nil || before.Rounds[0].Stop.Decision != "continue" {
 		t.Fatalf("source did not admit its first correction: %+v", before)
@@ -172,7 +172,16 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	transferWriteJSON(t, filepath.Join(agents, "jobs", critic+".json"), map[string]any{"jobId": critic, "operationId": critic, "goalRevision": b.goalFile(b.id).Claimed.Revision, "capMin": 1, "pid": 20, "startedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "endedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0})
+	readerRecord := map[string]any{"jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
+		"operationId": "fixture-critic:" + critic, "goalRevision": b.goalFile(b.id).Claimed.Revision, "capMin": 1,
+		"startedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "endedAt": b.manager.Now().UTC().Format(time.RFC3339Nano),
+		"instanceTag": "fixture-critic-" + critic, "pid": int64(20), "pgid": int64(20), "pidStartedAt": int64(400)}
+	if runtime.GOOS == "darwin" {
+		readerRecord["pidStartedAtExactMicro"] = int64(400_000_001)
+	} else {
+		readerRecord["pidStartTicks"], readerRecord["bootId"] = int64(400), "fixture-boot"
+	}
+	transferWriteJSON(t, filepath.Join(agents, "jobs", critic+".json"), readerRecord)
 	if outcome, err := dispatchcore.CritiqueRegisterAdvanceWithFacts(b.worktree, critic, critic, transferCritiqueFacts{paths: []string{"metasystem/newfile.go", "metasystem/reader.go"}, tree: tree}); err != nil || outcome != "advanced" {
 		t.Fatalf("canonical register: %s %v", outcome, err)
 	}
@@ -184,6 +193,15 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	entries, _ := admitted["findingRegister"].([]any)
 	if len(entries) != 2 {
 		t.Fatalf("source examination did not enter register: %+v", admitted)
+	}
+	hook := b.workOwnersHook
+	b.workOwnersHook = func(o *intentWorkOwners) {
+		hook(o)
+		o.criticDeath = dispatchcore.CustodyDeathDependencies{
+			Reader: &criticCustodyReader{dead: true}, Processes: identity.FixedProcessTable{},
+			MatchesTag: func([]string, string) bool { return true },
+			TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} },
+		}
 	}
 	owners := b.workOwners()
 	units := owners.work.units
@@ -275,8 +293,8 @@ func TestIntentRequiredStoppedUnitPublishesTransferOnce(t *testing.T) {
 	if err != nil || destination.Unit != o.TargetUnit || destination.Rounds[0].Stop == nil || destination.Rounds[0].Stop.Decision != "close" {
 		t.Fatalf("destination inherited resolution: %+v %v", destination, err)
 	}
-	plan, err := launch.ReadUnitPlan(destination.Plan)
-	if err != nil || len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, []string{"go", "test", "-count=1", "-timeout", "30m", "-run", "TestA|TestB", "./..."}) {
+	plan, err := launch.ReadUnitPlan(filepath.Join(destination.Rounds[0].Directory, "plan.json"))
+	if err != nil || slices.Contains(result.Next.Argv, "--check") || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || len(plan.Proof) != 1 || plan.Proof[0].Name != "unit-check" {
 		t.Fatalf("generated destination lost proof: %+v %v", plan, err)
 	}
 	for _, step := range destination.Rounds[0].Steps {
@@ -338,6 +356,7 @@ func TestIntentRequiredStoppedUnitPublishesTransferOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	b.head = repository.unit
 	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) { return collected, nil }
 	owners.delivery.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
 		request := readRequest
@@ -487,7 +506,7 @@ func TestIntentExtraStoppedUnitRetainsCodeAndAsksWorkingAct(t *testing.T) {
 	path := filepath.Join(before.Rounds[1].Directory, "stop-dispositions.md")
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return "", fmt.Errorf("branch endpoint unavailable") }
 	code, dropped := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
-	if code != 1 || dropped.Outcome != intentInProgress || !strings.Contains(dropped.Summary, "branch endpoint unavailable") {
+	if code != 1 || dropped.Outcome != intentInProgress || dropped.Summary != "the drop remains pending" || !slices.Equal(dropped.Details, []string{"branch endpoint unavailable"}) {
 		t.Fatalf("extra drop silently changed retained work: %d %+v", code, dropped)
 	}
 	after, err := fixture.runner.Status(fixture.run)

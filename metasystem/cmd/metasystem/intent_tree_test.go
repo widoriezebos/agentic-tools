@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -76,6 +77,8 @@ func TestIntentTreeGhostChildCanBeStoppedAndReleasesTree(t *testing.T) {
 		t.Errorf("never-started owner has no executable recovery: %d %+v", code, waiting)
 	}
 	owners := b.workOwners()
+	owners.processes = defaultProcessIntentOwners()
+	owners.processes.process.repositoryTop = fakeTop(b.root())
 	now, err := b.commandNow(b.root())
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +118,21 @@ func TestIntentTreeReservationWaitsAcrossCommandsAndExactCancellation(t *testing
 				file.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "R-fixture", Minutes: 600, ReviewRounds: 2, GoalRevision: file.Revision}
 				file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 			})
+			// Manual capture reads an actual source HEAD before it asks for tree custody.
+			connectionGit(t, b.root(), "init", "-q", "-b", "main")
+			object := func(kind, contents string) string {
+				t.Helper()
+				command := exec.Command("git", "-C", b.root(), "hash-object", "-t", kind, "-w", "--stdin")
+				command.Stdin = strings.NewReader(contents)
+				out, err := command.CombinedOutput()
+				if err != nil {
+					t.Fatalf("source %s object: %s %v", kind, out, err)
+				}
+				return strings.TrimSpace(string(out))
+			}
+			tree := object("tree", "")
+			head := object("commit", "tree "+tree+"\nauthor Fixture <fixture@example.invalid> 0 +0000\ncommitter Fixture <fixture@example.invalid> 0 +0000\n\nfixture source\n")
+			connectionGit(t, b.root(), "update-ref", "HEAD", head)
 			b.starter.hold = "build"
 			prober := &treeProber{}
 			b.manager.Prober = prober
@@ -331,6 +349,8 @@ func TestIntentTreeStoppedChildKeepsOwnerForPersonRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	owners := b.workOwners()
+	owners.processes = defaultProcessIntentOwners()
+	owners.processes.process.repositoryTop = fakeTop(b.root())
 	owners.processes.launches = func() *launch.Manager { return b.manager }
 	now, err := b.commandNow(b.root())
 	if err != nil {
@@ -1009,6 +1029,8 @@ func TestIntentTreeStartupCannotOverwriteReleasedCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		owners := b.workOwners()
+		owners.processes = defaultProcessIntentOwners()
+		owners.processes.process.repositoryTop = fakeTop(b.root())
 		now, err := b.commandNow(b.root())
 		if err != nil {
 			t.Fatal(err)

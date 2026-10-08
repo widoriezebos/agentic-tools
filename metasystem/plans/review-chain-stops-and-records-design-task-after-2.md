@@ -1,0 +1,11 @@
+# Task: revise plans/designs/review-chain-stops-and-records.md after critique round 2 (split under the stop rule)
+
+Working Mode: Design
+Round 2 found 4 material (round 1: 9). Two repeat round-1 classes in the same sections: Decision 7 (design convergence: a partial split leaves the buildable source unaccepted) and Decision 2 (a person's drop of a required row without an impact statement). Under the plan's design stop rule those sections leave this goal. Never open any metasystem.conf.local. Edit only this page, the one brief below, and plans/designs/machinery-mechanisms.md if a split needs it.
+
+A. Remove Decision 2's person-drop part and unit-drop, and Decision 7 and unit design-convergence, with everything that depends on them, to a follow-up goal review-drops-and-design-convergence; name it under "Not in this goal". The remaining units must build without them (if one cannot, say which and move it too).
+B. Write plans/review-drops-and-design-convergence-design-brief.md: the removed text, round-2 findings 1 (the split exit with buildable remainder also writes Status: accepted, the `- Critique: closed ...` head line and the acceptance items; the stop records accept and split; internal/designgate/gate.go:62-70; R-146-m1k) and 4 (R-143-m1e impact statements for a person's drop of a required row and for authorizing changed scope or ruling without unreadable critic state), round-2 finding 3's design half (a design-round stop on unknown input: one fresh examination under the retry rule, then `stopped <cause>` holding the chain, added to mechanism 2 and Decide), the round-1 notes, and the five design questions.
+C. Fold round-2 finding 2 (Decision 6, rebase carry): a missing or unreadable declaration at the subject commit sends that unit to NeedsReview (internal/goal/branch/rebase.go:312) instead of failing the rebase, and never refuses a person; add a declared-check subcase with the declaration absent at the subject commit.
+D. Fold round-2 finding 3's unit half (Decision 1): name the unit-round unknown handoff the same way (one fresh examination, then `stopped <cause>` holding the unit) and assert it.
+E. Notes: attest.go:544 is the go-gate-fast check.
+Re-estimate. Return the units table and one line per item.

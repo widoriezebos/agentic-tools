@@ -157,7 +157,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		stage := workStage(one, inv.work().inspectRead)
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
-			view["state"] = one.Record.State
+			view["state"], view["run"] = one.Record.State, one.Run
 			if len(one.Record.Rounds) > 0 {
 				r := one.Record.Rounds[len(one.Record.Rounds)-1]
 				view["subjects"] = one.Record.Subjects
@@ -225,6 +225,16 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views, "designs": designs}}
+	if inv.input.has("work") && len(work) == 1 {
+		m := inv.unitMeasures(work[0])
+		views[0]["measures"] = m
+		result.text = append(result.text, "  "+measureLine(m))
+	}
+	if !inv.input.has("work") {
+		if err := inv.goalCosts(id, work, &result); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "goal cost unavailable: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnoses the saved work"})
+		}
+	}
 	// The goal's own card line (D14-r2, R23).
 	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {
 		result.text = append(result.text, "  "+line)
@@ -248,11 +258,11 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
-	if unitCount == 0 {
-		return inv.render(result)
-	}
+	report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), result.Data.(map[string]any)["goal"].(string), inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
+	result.Data.(map[string]any)["processReport"] = report
 	result.view = func(page *textui.Page) {
 		page.Headline(result.Summary)
+		page.Legacy(report.Lines...)
 		section := page.Section("", "")
 		for _, line := range result.text[:unitCount] {
 			section.Fixed(strings.TrimSpace(line))

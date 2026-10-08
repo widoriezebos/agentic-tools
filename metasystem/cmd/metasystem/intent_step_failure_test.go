@@ -119,9 +119,7 @@ func failedCommandBed(t *testing.T, deny int) (*workBed, *failureProcesses) {
 func failedCommandBuild(t *testing.T, b *workBed) (int, intentResult) {
 	t.Helper()
 	brief := b.brief("build.md", "Build the declared requirement.\n")
-	// This argv is parsed by PlainExec; the injected process boundary supplies
-	// permission and exit outcomes without executing Git or a real test suite.
-	code, result, _ := b.work("work", "build", b.id, "outcome", "--brief", brief, "--lines", "1", "--check", "go", "test", "-timeout", "30m", "-run", "^TestDeclared$", "./...")
+	code, result, _ := b.work("work", "build", b.id, "outcome", "--brief", brief, "--lines", "1")
 	return code, result
 }
 func failedCommandRecord(t *testing.T, b *workBed, result intentResult) launch.UnitRunRecord {
@@ -216,7 +214,7 @@ func TestIntentSupervisorReadyTimeoutRetriesOnce(t *testing.T) {
 	b.manager.Supervisor = failureSupervisor{bed: b, unready: true}
 	code, result := failedCommandBuild(t, b)
 	r := failedCommandRecord(t, b, result)
-	if code != 1 || len(p.commands) != 0 || len(r.Rounds[0].Steps[1].LaunchIDs) != 2 || r.Rounds[0].Cause != "environment" || !strings.Contains(r.Rounds[0].Stop.Class, "supervisor-ready-timeout") {
+	if code != 1 || len(p.commands) != 0 || len(r.Rounds) != 1 || len(r.Rounds[0].Steps) < 2 || len(r.Rounds[0].Steps[1].LaunchIDs) != 2 || r.Rounds[0].Cause != "environment" || !strings.Contains(r.Rounds[0].Stop.Class, "supervisor-ready-timeout") {
 		t.Fatalf("readiness timeout lost environment retry: %d %+v executions=%d", code, r, len(p.commands))
 	}
 }
@@ -227,19 +225,34 @@ func TestIntentMovedTreeRetryUsesCurrentSnapshot(t *testing.T) {
 		t.Run(fmt.Sprintf("passing-retry=%t", pass), func(t *testing.T) {
 			t.Parallel()
 			b, p := failedCommandBed(t, 0)
+			originalHead := b.head
 			if pass {
 				p.passAfter = 1
 			}
 			p.moved = func() { b.head = "moved-head" }
 			code, result := failedCommandBuild(t, b)
 			r := failedCommandRecord(t, b, result)
-			want, outcome := "unclassified", "proof-red"
+			// A step retries against the current snapshot, while its round must
+			// still hold any movement away from the builder's frozen result.
+			step := r.Rounds[0].Steps[1]
+			wantState := launch.StepFailed
 			if pass {
-				want, outcome = "", "green"
+				wantState = launch.StepPassed
 			}
-			if code != map[bool]int{true: 0, false: 1}[pass] || len(p.commands) != 2 || len(b.starter.launched()) != 1 || r.Rounds[0].Cause != want || r.Rounds[0].Outcome != outcome {
-				t.Fatalf("retry judged against first tree: %d %+v executions=%d", code, r, len(p.commands))
+			if code != 1 || len(p.commands) != 2 || len(b.starter.launched()) != 1 || r.Rounds[0].Cause != "environment" || r.Rounds[0].Outcome != "proof-wrote" || r.Rounds[0].Stop == nil || step.State != wantState || len(step.Moved) != 0 || step.Before != nil {
+				t.Fatalf("retry or frozen round lost its tree boundary: %d %+v executions=%d", code, r, len(p.commands))
 			}
+			if r.Rounds[0].Result == nil || r.Rounds[0].Result.Parent != originalHead {
+				t.Fatalf("retry rewrote the builder's parent: %+v", r.Rounds[0].Result)
+			}
+			data, err := os.ReadFile(filepath.Join(r.Rounds[0].Directory, "proof-before.json"))
+			var retained struct {
+				Head string `json:"head"`
+			}
+			if err != nil || json.Unmarshal(data, &retained) != nil || strings.TrimSpace(retained.Head) != originalHead {
+				t.Fatalf("retry rewrote round baseline: %s %v", data, err)
+			}
+
 		})
 	}
 }
@@ -273,9 +286,10 @@ func TestIntentFailedStepStopsBeforeLaterCommands(t *testing.T) {
 	bound.Steps = []adapter.GateStep{{Name: "first", Args: []string{"first-command"}}}
 	bound.Scripted.Root = b.worktree
 	b.testingAdapter = bound
-	code, result := failedCommandBuild(t, b)
+	brief := b.brief("build.md", "Read each round: yes\nBuild the declared requirement.\n")
+	code, result, _ := b.work("work", "build", b.id, "outcome", "--brief", brief, "--lines", "1")
 	r := failedCommandRecord(t, b, result)
-	if code != 1 || len(p.commands) != 2 || r.Rounds[0].Steps[1].Name != "proof:first" || r.Rounds[0].Steps[2].State != launch.StepSkipped {
+	if code != 1 || len(p.commands) != 2 || len(*bound.Calls) != 0 || len(r.Rounds[0].Steps) != 3 || r.Rounds[0].Steps[1].Name != "proof:unit-check" || r.Rounds[0].Steps[2].State != launch.StepSkipped {
 		t.Fatalf("held step launched a later command: %d %+v executions=%d", code, r, len(p.commands))
 	}
 }
@@ -322,6 +336,12 @@ func TestIntentEnvironmentPersonActRerunsRetainedStep(t *testing.T) {
 	var tree struct{ Head string }
 	if err != nil || json.Unmarshal(snapshot, &tree) != nil || strings.TrimSpace(tree.Head) != b.head {
 		t.Fatalf("retry retained an older result: %s %v", snapshot, err)
+	}
+	for _, name := range []string{"proof-before", "proof-after"} {
+		prior, err := os.ReadFile(filepath.Join(after.Rounds[0].Directory, name+"-"+r.Rounds[0].Steps[1].LaunchID+".json"))
+		if err != nil || !bytes.Contains(prior, []byte("base-commit")) {
+			t.Fatalf("retry lost its earlier %s observation: %s %v", name, prior, err)
+		}
 	}
 	first, last := p.commands[0], p.commands[2]
 	if first.Program != last.Program || !slices.Equal(first.Args, last.Args) || first.Directory != last.Directory || !slices.Equal(first.Environment, last.Environment) || first.LogPath == last.LogPath || p.commands[1].LogPath == last.LogPath {

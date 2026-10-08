@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -210,8 +211,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	endpointTip := ""
 	tip := func() (string, error) {
 		if endpointTip == "" {
-			var tipErr error
-			tipErr = review.Wait(func() error {
+			tipErr := review.Wait(func() error {
 				var err error
 				endpointTip, err = conn.endpointTip(original.Path(), endpoint)
 				return err
@@ -446,7 +446,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			err = conn.commitToken(install, func() error {
 				var carryErr error
 				carried, carryErr = conn.carry(branch.CarryRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
-					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport})
+					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, SubjectCheck: conn.subjectCheck, Transport: conn.transport})
 				return carryErr
 			})
 			data["carried"] = carried.Carried
@@ -467,7 +467,8 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				return pushErr
 			})
 			if err == nil {
-				subject.Published = pushed.Tip
+				// Carried review commits are part of the published branch tip.
+				subject.Published, subject.Tip = pushed.Tip, pushed.Tip
 				err = retain(*subject)
 			}
 		}
@@ -484,6 +485,10 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if install != original.Path() {
 		args = append(args, "--selected-installation", original.Path())
+	}
+	if inv.reviewWork == nil {
+		retry, _ := strconv.ParseInt(inv.input.text("retry"), 10, 64)
+		inv.reviewWork = &reviewWorkContext{goal: goalID, work: unit, run: record.ID, retry: retry}
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
@@ -558,8 +563,23 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if err != nil {
 			return err
 		}
+		if current == "" && head != subject.Tip && read.AttestationCommit == "" && read.RootJob != "" {
+			// A collected attestation can outlive a failed read-record save.
+			// Only the same build, reviewer and check may cross this boundary.
+			kind, kindErr := branch.KindOf(worktree, head, goalID)
+			if kindErr == nil && kind.Kind == branch.Read && kind.CommitID == subject.Commit {
+				base, baseErr := tip()
+				if baseErr != nil {
+					return baseErr
+				}
+				att, attErr := branch.ValidateAttestationAt(worktree, head, base, goalID, unit, subject.Commit)
+				if attErr == nil && att.Source.Kind == "critic-root" && att.Source.RootJob == read.RootJob && att.Gate.RunID == read.GateRunID {
+					return nil
+				}
+			}
+		}
 		if current != "" || head != subject.Tip && head != read.AttestationCommit {
-			return fmt.Errorf("the worktree changed after the read; restore its committed result or revise this work before publishing")
+			return fmt.Errorf("the worktree changed after the read; restore its result or revise before publishing")
 		}
 		return nil
 	}, review.Wait, criticArgs)
@@ -582,6 +602,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if err := inv.retainPublication(subject, result, retain); err != nil {
+			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data, Summary: "the read is published, but its publication time could not be retained: " + err.Error(), next: retry, nextReason: "rechecks the published read; a missing publication time stays unavailable"}
+		}
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
@@ -875,7 +898,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 
 func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
-	branchRead := owners.branchRead
+	var branchRead func([]string) (branch.BranchReadResult, int, error)
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
 	alreadyPublished := inspectErr == nil && installed.Published
 	changed, discardRecord := false, false
@@ -974,6 +997,13 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			current, dirty, err := runner.WorktreeResult(root)
 			if err != nil {
 				return err
+			}
+			paths, err := launch.UnitResultPaths(dirty)
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(paths, func(path string) bool { return branch.PathClass(path) != branch.ClassExcluded }) {
+				dirty = ""
 			}
 			// Uncommitted changes hold publication without retiring the read:
 			// once they are committed or removed, the same read is judged again.
@@ -1087,6 +1117,16 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			}
 			data["readNotPromoted"] = reason
 		}()
+	}
+	if err == nil && result.RootJob != "" && inv.reviewWork != nil && slices.Contains([]string{"closed", "collected", "already-collected"}, result.State) {
+		store := branch.CriticStore(root, result.RootJob)
+		newest, readErr := inv.newestRoundAt(store, result.RootJob)
+		if readErr == nil {
+			readErr = retainWorkExamination(inv.reviewWork, result.RootJob, newest, inv.returnPathAt(store, result.RootJob, recordRound(newest)))
+		}
+		if readErr != nil {
+			return intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{readErr.Error()}, next: inv.sameCommand()}
+		}
 	}
 	if err == nil && result.State == "closed" {
 		// The critic's records are where it was dispatched: this
@@ -1348,4 +1388,15 @@ func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob st
 		return "", false
 	}
 	return join, true
+}
+
+// retainPublication timestamps only a push made by this review call.
+func (inv *intentInvocation) retainPublication(subject *launch.UnitSubject, result intentResult, retain func(launch.UnitSubject) error) error {
+	data, _ := result.Data.(map[string]any)
+	published, ok := data["publication"].(branch.PublishReadResult)
+	if subject == nil || subject.PublishedAt != "" || !ok || published.State != "pushed" {
+		return nil
+	}
+	subject.PublishedAt = inv.unitRunner().Manager.Now().UTC().Format(time.RFC3339Nano)
+	return retain(*subject)
 }

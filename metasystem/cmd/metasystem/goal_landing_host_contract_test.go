@@ -789,6 +789,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 				continue
 			}
 			requiredNames := []string{name}
+			if old.ID == "launch-standard" && name == "TestProofThatMovesTheRepositoryEndsTheRound" {
+				// A proof that moves its repository retries once before holding its frozen result.
+				requiredNames = []string{"TestProofThatMovesTheRepositoryRetriesTheStep"}
+			}
 			if old.ID == "authority-standard" && name == "TestTemporaryGoalProofUsesTheRealWallClock" {
 				// Temporary goal authority keeps both guarantees from the retired
 				// wall-clock test: wrapper validation and deterministic time policy.

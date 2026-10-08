@@ -63,6 +63,7 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},
@@ -80,6 +81,8 @@ var coreSettings = []Setting{
 		Meaning: "the repository's full proof command, declared in metasystem.conf"},
 	{Key: "proof.cheap", CommittedOnly: true, ProofInput: true,
 		Meaning: "the repository's merge gate command, declared in metasystem.conf"},
+	{Key: "proof.audits", CommittedOnly: true, ProofInput: true, Meaning: "the unit audit command; true explicitly declares no audits"},
+	{Key: "proof.deadline", CommittedOnly: true, ProofInput: true, Meaning: "positive minutes allowed for each declared unit check command"},
 	// Installation shape.
 	{Key: "metasystem.engine-delivery", Default: "source", ProofInput: true,
 		Meaning: "how the engine ships (D17/D33): source, rebuilt by the target and by CI; declared, never inferred"},

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -510,6 +511,10 @@ func sessionHandoffRoute(args []string) (command, []string) {
 // runTestStatus reads whether retained proof covers an exact tree, or with
 // --result the measured cost of one recorded result; neither runs a test.
 func runTestStatus(args []string, stdout, stderr io.Writer) int {
+	return runTestStatusWithInputs(args, stdout, stderr, testStatusInputs{})
+}
+
+func runTestStatusWithInputs(args []string, stdout, stderr io.Writer, inputs testStatusInputs) int {
 	route := testStatusRoute(args)
 	if _, result, _ := takeIntentFlag(args, "result", true); result {
 		// A recorded result is read on its own; the installation found for
@@ -517,7 +522,7 @@ func runTestStatus(args []string, stdout, stderr io.Writer) int {
 		_, _, args = takeIntentFlag(args, "root", true)
 		return route(args, stdout, stderr)
 	}
-	return runTestVerifyAs("test status", args, stdout, stderr)
+	return runTestVerifyAsWithStatus("test status", args, stdout, stderr, inputs)
 }
 
 // testStatusRoute is the owner a test status's words reach: the result
@@ -584,6 +589,9 @@ func runIntentTopStatus(inv *intentInvocation) int {
 		}
 		return runIntentStatusGoal(inv, inv.input.args[0])
 	}
+	if inv.command.object == "goal" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "goal status needs a goal; nothing was read", next: inv.publicArgv("goal", "list"), nextReason: "lists the goal ids"})
+	}
 	if inv.input.has("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work needs the goal whose work it names; nothing was done",
 			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
@@ -600,10 +608,36 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 	if ledgerRoot == "" {
 		ledgerRoot = inv.layout.GitRoot
 	}
+	var view board.View
 	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
-		return inv.owners.delivery.boardView(ledgerRoot, now)
+		view = inv.owners.delivery.boardView(ledgerRoot, now)
+	} else {
+		view = batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
+	hasGoals := false
+	for _, seat := range view.Seats {
+		if len(seat.Goals) > 0 {
+			hasGoals = true
+			break
+		}
+	}
+	if !hasGoals || inv.owners.dependencies.endpoint == nil {
+		return view
+	}
+	endpoint, err := inv.owners.dependencies.endpoint(ledgerRoot)
+	if err != nil {
+		return view
+	}
+	if projection, err := goal.Project(endpoint, false, now); err == nil {
+		for i := range view.Seats {
+			for j := range view.Seats[i].Goals {
+				entry := &view.Seats[i].Goals[j]
+				file := projection.Tree.Live[entry.Goal]
+				entry.Reserved = file != nil && file.Claimed != nil && file.Claimed.Machine == view.Seats[i].Machine && file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0
+			}
+		}
+	}
+	return view
 }
 
 func (inv *intentInvocation) boardNow() time.Time {

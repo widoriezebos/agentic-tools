@@ -72,7 +72,11 @@ func workLayoutBed(t *testing.T) layoutBed {
 // the case sets, so the golden's run and its coloured rerun read the same.
 func settingsSetLayoutBed(t *testing.T) layoutBed {
 	bed := workLayoutBed(t)
-	if err := os.WriteFile(filepath.Join(bed.cwd, "metasystem.conf.local"), []byte("launch.read.model=fixture-model\n"), 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Join(bed.cwd, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	bed.owners.policies.ConfPath = func(checkout string) (string, error) { return filepath.Join(checkout, "settings.conf"), nil }
+	if err := os.WriteFile(filepath.Join(bed.cwd, "settings.conf.local"), []byte("launch.read.model=fixture-model\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return bed

@@ -1959,7 +1959,11 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	var inputs []frozenCorpusWorkerInput
 	for _, layout := range frozenCorpusSourceLayouts() {
 		phase := phases.begin("layout " + layout.name)
-		input := prepareFrozenPublicVersionOneCorpus(t, materializeFrozenCorpusLayout(t, source, layout), layout, now)
+		sourceLayout := materializeFrozenCorpusLayout(t, source, layout)
+		input := prepareFrozenPublicVersionOneCorpus(t, sourceLayout, layout, now)
+		if err := os.RemoveAll(sourceLayout); err != nil {
+			t.Fatal(err)
+		}
 		phase.end()
 		if len(inputs) > 0 && input.candidateCommit != inputs[0].candidateCommit {
 			t.Fatalf("normalized source layout %s candidate commit=%s, shared worker commit=%s", layout.name, input.candidateCommit, inputs[0].candidateCommit)
@@ -2330,7 +2334,9 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 	// Six frozen cases through a real worker take about two and a half
 	// minutes under the race detector on a loaded box; a one-minute cap made
 	// this a wall-clock test that failed only inside the race gate.
-	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+	// Tier one has no review rounds (docs/orchestration.md, Part One's
+	// review-round member); the corpus exercises testing, not review.
+	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	intent := "Run the frozen policy corpus through the first testing transition."
 	rootRecord := frozenCorpusRootRecord()
 	goalFile := &goal.GoalFile{Id: "policy-corpus", State: goal.StateClaimed, Tier: 1, Risk: risk, Intent: intent, Origin: goal.OriginMain,

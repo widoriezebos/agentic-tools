@@ -143,7 +143,7 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 				wantRemedy = []string{"metasystem", "goal", "done", bedGoal, "--reason", "TEXT"}
 			case "returned then records":
 				queueClaimGoal(t, lane.install, bedGoal)
-				if _, changed, err := plain.Return(lane.install, bedGoal, "the widget check failed", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil || !changed {
+				if _, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the widget check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
 					t.Fatalf("return: changed=%v err=%v", changed, err)
 				}
 				if _, added, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
@@ -155,7 +155,7 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 				if _, added, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
 					t.Fatalf("records hand-in: added=%v err=%v", added, err)
 				}
-				if entry, changed, err := plain.Return(lane.install, bedGoal, "the records check failed", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil || !changed || !entry.Records {
+				if entry, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the records check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records {
 					t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
 				}
 				wantRemedy = []string{"metasystem", "work", "land", bedGoal}

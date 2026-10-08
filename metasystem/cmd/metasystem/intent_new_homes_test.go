@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -132,13 +133,17 @@ func TestTestBaselineRoutesRecordAndCheck(t *testing.T) {
 func newHomesSettingsInstallation(t *testing.T) (string, intentOwners) {
 	t.Helper()
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return root, intentOwners{resolver: stateroot.NewResolver(fakeTop(root), noExecutable)}
+	now := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+	return root, intentOwners{resolver: stateroot.NewResolver(fakeTop(root), noExecutable), prove: enrolledPersonProver(t, root, now), commandNow: func(string) (time.Time, error) { return now, nil }}
 }
 
 func runSettingsSet(t *testing.T, root string, owners intentOwners, args ...string) (int, intentResult) {
@@ -243,7 +248,7 @@ func TestSettingsReadKeysWriteAndValidate(t *testing.T) {
 		_, contract, path, err := testrun.LoadContract(root)
 		return path, len(contract.Groups), err
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\nproof.full=true\nproof.cheap=true\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\nproof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	contract, err := contractmerge.Render(testingMergeFixture())

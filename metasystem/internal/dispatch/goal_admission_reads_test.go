@@ -70,6 +70,29 @@ func (bed *goalAdmissionBed) accept(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// Budget and risk fixtures change raw accepted inputs. Keep the
+		// synthetic person's approval bound to those inputs so their tests
+		// reach the spending gate they exercise.
+		if file, _ := goal.ParseFile(data); file != nil && file.Approved != nil && file.Budget != nil {
+			budget := *file.Budget
+			oldDigest := file.Approved.Digest
+			if x := file.BudgetExtension; x != nil && file.Approved.At <= x.At && budget.AttemptLimit == x.AttemptLimitTo && budget.ReservedJobMinutesLimit == x.ReservedJobMinutesTo {
+				budget.AttemptLimit, budget.ReservedJobMinutesLimit = x.AttemptLimitFrom, x.ReservedJobMinutesFrom
+			}
+			if file.Tier == 0 {
+				file.Approved.Digest = legacyBudgetApprovalDigest(file.Intent, budget)
+			} else {
+				file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, budget, file.Risk)
+			}
+			const integrityMarker = "Integrity: sha256="
+			if end := strings.LastIndex(string(data), integrityMarker); end >= 0 && goal.IntegrityDigest(data[:end]) == strings.TrimSpace(string(data[end+len(integrityMarker):])) {
+				body := []byte(strings.Replace(string(data[:end]), " digest="+oldDigest, " digest="+file.Approved.Digest, 1))
+				data = append(body, []byte(integrityMarker+goal.IntegrityDigest(body)+"\n")...)
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				return err
+			}
+		}
 		relative, err := filepath.Rel(bed.root, path)
 		if err != nil {
 			return err
@@ -115,6 +138,9 @@ func newGoalAdmissionBed(t *testing.T, claimRevision uint64) *goalAdmissionBed {
 	}
 	if claimRevision > 0 {
 		file.Budget = &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+		file.History[0].Verb, file.History[0].Actor = "approve", "human:Fixture"
+		file.Approved = &goal.ApprovalRecord{By: "human:Fixture", At: file.History[0].At, Revision: 1, EpisodeRevision: 1, Opid: file.History[0].Opid, Authority: goal.ApprovalAuthorityProven, Digest: legacyBudgetApprovalDigest(file.Intent, *file.Budget)}
+		file.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "fixture-terminal", Minutes: 1000000, ReviewRounds: 5, GoalRevision: 1}
 		file.StopCapability = &goal.StopCapability{
 			Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 7,
 		}

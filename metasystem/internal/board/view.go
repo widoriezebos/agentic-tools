@@ -104,6 +104,7 @@ type SeatView struct {
 // GoalView is one goal on a seat: its card's identifiers, numbers and times,
 // or the reason it is Unknown.
 type GoalView struct {
+	Reserved       bool        `json:"reserved,omitempty"`
 	Stop           *ReviewStop `json:"stop,omitempty"`
 	Stuck          *StuckUnit  `json:"stuck,omitempty"`
 	Goal           string      `json:"goal"`
@@ -228,6 +229,8 @@ func seatText(seat SeatView, now time.Time, location *time.Location) string {
 	idle, finished := 0, 0
 	for _, entry := range seat.Goals {
 		switch {
+		case entry.Reserved:
+			shown = append(shown, goalText(entry, now, location))
 		case entry.Unknown != "":
 			shown = append(shown, goalText(entry, now, location))
 		case entry.Stage == StageClaimedIdle && entry.Landed == 0:
@@ -263,6 +266,9 @@ func (entry GoalView) Text(now time.Time, location *time.Location) string {
 // goalText is one goal as a person reads it: goal-x, review round 2 of 3
 // since 10:12; goal-z unknown: writer dead (pid 77) since 09:40.
 func goalText(entry GoalView, now time.Time, location *time.Location) string {
+	if entry.Reserved {
+		return entry.Goal + ", reserved, awaiting session start"
+	}
 	if entry.Unknown != "" {
 		text := entry.Goal + " unknown: " + entry.Unknown
 		if !entry.LastProgressAt.IsZero() {

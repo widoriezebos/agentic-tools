@@ -60,7 +60,7 @@ func PolicyScope(key string) string {
 	switch key {
 	case "landing.batch", "landing.proof", "landing.on-red", "landing.trunk-red":
 		return "lane"
-	case "seat.driver", "review.stop", "goal.raise":
+	case "seat.driver", "review.stop", "goal.raise", "process.change":
 		return "seat"
 	case "question.route":
 		return "coordinator"
@@ -203,8 +203,8 @@ func ResolvePolicy(p GetParams) (PolicyResolution, error) {
 	}
 	if !found {
 		value := "auto"
-		if p.Key == "settings.apply" {
-			value = "boundary"
+		if fallback, ok := CompiledDefault(p.Key); ok {
+			value = fallback
 		}
 		underlying = PolicyValue{Value: value, Source: "built-in", Checkout: result.Checkout, SetBy: "built-in"}
 	}

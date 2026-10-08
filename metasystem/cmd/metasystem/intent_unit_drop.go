@@ -308,7 +308,7 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		return goal.RecordUnitDrop(req, work.goal, outcome)
 	}, "id"))
 	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
-		if _, blocked, err := goal.PushedBlocking(inv.stateRoot); err == nil && blocked {
+		if _, blocked, err := goal.PushedBlocking(inv.layout.InstallationRoot.Path()); err == nil && blocked {
 			result.next = inv.publicArgv("goal", "sync", "--recover")
 		} else {
 			result.next = inv.sameCommand()

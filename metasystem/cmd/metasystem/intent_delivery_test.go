@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -33,6 +34,7 @@ import (
 // through the public delivery commands. Each owner process is a per-test
 // fake that performs its owner's recorded transition.
 type deliveryBed struct {
+	laneInputs func(*intentOwners)
 	*intentBed
 	install string
 	calls   [][]string
@@ -107,12 +109,37 @@ func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile), withoutGit ...
 	return bed
 }
 
+// publicationSubject provides this behavior fixture's checkout observations.
+func (b *deliveryBed) publicationSubject(unit string) {
+	b.t.Helper()
+	bed := newWorkBed(b.t)
+	bed.intentBed, bed.head, bed.worktree = b.intentBed, unit, b.root()
+	b.writeFile(filepath.Join(filepath.Dir(b.root()), "index"), "index")
+	git := workGit{bed}
+	root := b.t.TempDir()
+	b.work = intentWorkOwners{
+		git: func(dir string, args ...string) ([]byte, error) {
+			if slices.Equal(args, []string{"rev-parse", "--verify", unit + "^{commit}"}) {
+				return []byte(unit + "\n"), nil
+			}
+			return git.Run(dir, nil, args...)
+		},
+		units: func(stateroot.Layout) *launch.UnitRunner {
+			return &launch.UnitRunner{Root: root, Manager: bed.manager, Git: git}
+		},
+		inspectRead: func(string, string, string) (branch.BranchReadResult, error) { return branch.BranchReadResult{}, nil },
+	}
+}
+
 func (b *deliveryBed) do(args ...string) (int, intentResult) {
 	b.t.Helper()
 	owners := b.intentBed.owners()
 	owners.delivery = b.owners
 	owners.connection = b.connection
 	owners.work = b.work
+	if b.laneInputs != nil {
+		b.laneInputs(&owners)
+	}
 	return b.runJSON(owners, args...)
 }
 
@@ -185,6 +212,7 @@ func (admissionFacts) LiveWorkspaceTree(string, string) (string, error) {
 func TestIntentReviewEvidenceKinds(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
+	b.publicationSubject("abc1234")
 	roots, err := project.ResolveRoots(b.install)
 	if err != nil {
 		t.Fatal(err)
@@ -683,6 +711,7 @@ func TestIntentLandRecovery(t *testing.T) {
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
+	b.publicationSubject("abc1234")
 	// The bed has no repository, so the critic root names no commit subject
 	// the close's fold would have to read; the branch read is the bed's.
 	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "findingRegister": []any{}})

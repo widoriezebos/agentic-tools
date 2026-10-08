@@ -23,13 +23,14 @@ func TestIntentUnitLaunchAccountingStartRefusal(t *testing.T) {
 	bed.manager.Supervisor = nil
 	brief := bed.brief("brief.md", "Build the unit.\n")
 	args := append([]string{"work", "build", bed.id, "no-supervisor", "--brief", brief, "--lines", "20"}, workCheck...)
+	var run string
 	for attempt := 0; attempt < 2; attempt++ {
 		code, result, _ := bed.work(args...)
 		if code != 1 {
 			t.Fatalf("start refusal: exit=%d result=%+v", code, result)
 		}
 		data := resultData(t, result)
-		run, _ := data["run"].(string)
+		run, _ = data["run"].(string)
 		unit, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
 		if err != nil {
 			t.Fatal(err)
@@ -45,6 +46,9 @@ func TestIntentUnitLaunchAccountingStartRefusal(t *testing.T) {
 		if projection.Status != dispatchcore.BudgetKnown || projection.Attempts != 0 || projection.ReservedJobMinutes != 0 || projection.ActiveJobs != 0 {
 			t.Fatalf("unexecuted reservation remains charged: %+v", projection)
 		}
+	}
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(run); err != nil {
+		t.Fatal(err)
 	}
 	bed.manager.Supervisor = bed.starter
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "after-refusal", "--brief", brief, "--lines", "20"}, workCheck...)...)

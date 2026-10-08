@@ -359,7 +359,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if helm.Active(top).Active {
-			if stopped := wait(nil); stopped {
+			keeping.run()
+			if stopped := wait(keeping); stopped {
 				return nil
 			}
 			continue
@@ -374,7 +375,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 		}
 		// The landing lane's keeper wakes the lane's landing agent when the
-		// lane has work; at the helm, above, it does not run.
+		// lane has work; at the helm it observes and continues only recorded scope.
 		keeping.run()
 		// A revive decision that selected a seat starts the seat main in this
 		// same pass (g1-s77), instead of a delegate revival.
@@ -488,7 +489,8 @@ func (k *laneKeeping) run() {
 // runnerWait sleeps one interval in 200 ms steps, watching the stop marker
 // and the stop signal; it reports whether either arrived. While the landing
 // lane waits, idle included, it steps the lane's keeper every laneRecheck
-// outside the helm. A watched provider limit ending starts the next cycle.
+// at the helm too; the keeper admits only recorded scope there. A watched
+// provider limit ending starts the next cycle.
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
@@ -500,10 +502,10 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 			return true
 		}
 		if !deps.Now().Before(recheck) {
+			if keeping != nil && keeping.waiting {
+				keeping.run()
+			}
 			if !helm.Active(top).Active {
-				if keeping != nil && keeping.waiting {
-					keeping.run()
-				}
 				if watching {
 					mark, standing = outage.StandingAt(top, deps.Now())
 					if !standing || mark.LastClass != outage.ProviderLimit {

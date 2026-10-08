@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // TestIntentBuildClaimsLawfully: build asks the real claim owner for an
 // approved goal nobody holds, and returns that owner's refusal unchanged when
-// its session proof is missing; it never takes a goal another machine holds.
+// session preparation fails; it never takes a goal another machine holds.
 func TestIntentBuildClaimsLawfully(t *testing.T) {
 	t.Parallel()
 	unclaim := func(file *goal.GoalFile) {
@@ -27,11 +28,11 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	brief := filepath.Join(free.root(), "brief.md")
 	os.WriteFile(brief, []byte("Build it.\n"), 0o644)
 	_, result := buildJSON(t, free, "work", "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
-	// The claim owner itself decides: in this bed no lease holder exists,
-	// so it refuses with its own rule and the goal is left approved.
+	// The claim owner prepares the missing session. This fixture has no
+	// enrolled engine, so preparation refuses and leaves the goal approved.
 	file := free.goalFile(bedGoal)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "build claims goal "+bedGoal+" first") ||
-		!strings.Contains(result.Summary, "only the session that holds this checkout can claim") || file.State != goal.StateApproved || file.Claimed != nil {
+		!strings.Contains(result.Summary, "session preparation ended ENROLLMENT_DRIFT") || !strings.Contains(result.Decision, "metasystem system start") || file.State != goal.StateApproved || file.Claimed != nil {
 		t.Fatalf("build did not ask the claim owner, or changed the goal on its refusal: %+v, result %+v", file.Claimed, result)
 	}
 
@@ -75,8 +76,11 @@ func TestIntentBuildRetainedRequestSelection(t *testing.T) {
 	bed := newWorkBed(t)
 	briefA := bed.brief("a.md", "Build part a.\n\nMaximum reader tool calls: 5\n")
 	briefB := bed.brief("b.md", "Build part b.\n\nMaximum reader tool calls: 5\n")
-	check := append([]string{"--check"}, workArgv...)
+	check := []string{}
 	_, first, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "a", "--brief", briefA, "--lines", "5"}, check...)...)
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, first)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	_, second, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "b", "--brief", briefB, "--lines", "5"}, check...)...)
 	if first.Outcome != intentConfirmed || second.Outcome != intentConfirmed {
 		t.Fatalf("builds: %+v %+v", first, second)

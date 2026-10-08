@@ -83,6 +83,7 @@ func (e *ReadNeverLaunchedError) Error() string { return e.Err.Error() }
 func (e *ReadNeverLaunchedError) Unwrap() error { return e.Err }
 
 type ReadGateRequest struct {
+	SubjectCheck             func(directory string, subject AttestationSubject) (GateObservation, error)
 	Repo, GoalID, UnitCommit string
 	Gate                     func(string) (string, error)
 	NewID                    func(string) (string, error)
@@ -90,6 +91,8 @@ type ReadGateRequest struct {
 }
 
 type branchReadRecord struct {
+	GateFailure string `json:"gateFailure,omitempty"`
+
 	TransferCoverage  *goal.TransferCoverage `json:"transferCoverage,omitempty"`
 	SchemaVersion     int                    `json:"schemaVersion"`
 	Goal              string                 `json:"goal"`
@@ -207,6 +210,31 @@ func lockBranchRead(goalID, path string) (*os.File, error) {
 }
 
 func resolveReadGate(request ReadGateRequest, common, recordPath string, record branchReadRecord, subject AttestationSubject) (branchReadRecord, GateObservation, error) {
+	if request.SubjectCheck != nil {
+		dir, closeDetached, err := branchReadRepositoryFor(request.Repository).Detached(request.Repo, request.UnitCommit)
+		if err != nil {
+			return record, GateObservation{}, err
+		}
+		gate, runErr := request.SubjectCheck(dir, subject)
+		if closeErr := closeDetached(); closeErr != nil {
+			return record, GateObservation{}, fmt.Errorf("subject check: %v; cleanup: %w", runErr, closeErr)
+		}
+		if runErr != nil {
+			var missing *DeclarationUnavailableError
+			if errors.As(runErr, &missing) {
+				record.GateRunID, record.GateFailure = "", missing.Error()
+				if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+					return record, GateObservation{}, err
+				}
+			}
+			return record, GateObservation{}, runErr
+		}
+		if !validGateObservation(gate, subject.Tree) {
+			return record, GateObservation{}, fmt.Errorf("the subject check has no passing execution")
+		}
+		record.GateRunID, record.GateFailure = gate.RunID, ""
+		return record, gate, saveBranchReadRecord(common, recordPath, record)
+	}
 	if record.GateRunID == "" {
 		if request.Gate == nil {
 			return record, GateObservation{}, fmt.Errorf("goal branch read has no gate command")
@@ -887,8 +915,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		return result, failure
 	}
-	if err := dispatch.CritiqueInheritFindings(CriticStore(request.Repo, job), job, inherited); err != nil {
-		return result, err
+	if len(inherited) > 0 {
+		if err := dispatch.CritiqueInheritFindings(CriticStore(request.Repo, job), job, inherited); err != nil {
+			return result, err
+		}
 	}
 	record.RootJob, record.DispatchPending, record.DispatchRetryable = job, false, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {

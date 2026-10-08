@@ -63,7 +63,7 @@ func (git *attributionGit) Run(dir string, env []string, args ...string) ([]byte
 				expected[i].Check = isolatedGitEnvironment(root, strings.TrimSpace(string(expected[4].Result.Stdout)), true)
 			}
 		}
-		git.baseline = &stubGit{snapshot: expected, reporter: git.fixture.git.reporter, makeStub: func() *testgit.Stub { return testgit.New(git.fixture.git.reporter) }}
+		git.baseline = &stubGit{worktree: root, snapshot: expected, reporter: git.fixture.git.reporter, makeStub: func() *testgit.Stub { return testgit.New(git.fixture.git.reporter) }}
 		return nil, nil
 	}
 	if slices.Equal(args, []string{"update-ref", "--no-deref", "HEAD", "base-commit"}) {

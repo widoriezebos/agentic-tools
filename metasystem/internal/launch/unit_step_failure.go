@@ -143,8 +143,10 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 		}
 		// Publication consumes the result of the resumed execution; keep the
 		// earlier result beside its physical launch for diagnosis.
-		if err := os.Rename(filepath.Join(round.Directory, "proof-after.json"), filepath.Join(round.Directory, "proof-after-"+step.LaunchID+".json")); err != nil && !os.IsNotExist(err) {
-			return result, err
+		for _, name := range []string{"proof-before", "proof-after"} {
+			if err := os.Rename(filepath.Join(round.Directory, name+".json"), filepath.Join(round.Directory, name+"-"+step.LaunchID+".json")); err != nil && !os.IsNotExist(err) {
+				return result, err
+			}
 		}
 		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""

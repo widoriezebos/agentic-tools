@@ -32,6 +32,7 @@ type intentConnectionOwners struct {
 	rebase         func(branch.RebaseRequest) (branch.RebaseResult, error)
 	carry          func(branch.CarryRequest) (branch.CarryResult, error)
 	rebaseGate     func(string) (string, error)
+	subjectCheck   func(string, branch.AttestationSubject) (branch.GateObservation, error)
 	endpoint       func(root string) (goal.Endpoint, error)
 	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)
 	claimCheck     func(root, goalID string, endpoint goal.Endpoint) func() error
@@ -75,6 +76,9 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	}
 	if owners.rebaseGate == nil {
 		owners.rebaseGate = readGate
+	}
+	if owners.subjectCheck == nil {
+		owners.subjectCheck = inv.carrySubjectCheck
 	}
 	if owners.endpoint == nil {
 		owners.endpoint = branch.MainEndpoint

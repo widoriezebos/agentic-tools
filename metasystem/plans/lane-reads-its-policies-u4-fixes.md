@@ -1,0 +1,8 @@
+# Brief: lane-reads-its-policies U4-fixes (test for a fix already made)
+
+Working Mode: Implement
+U4 is committed (58fc18ae7) and stopped with one material finding: on the regeneration own-return path under landing.on-red=auto (internal/landing/plain/resolve.go ~:310-318), when checkReturnLocked refuses the return (return_bound.go:103: the third automatic return, "not strictly shrunk", or "repeats") the waiting line was not marked held, so Pending (queue.go:458) selected it again and every resolve re-ran regeneration. m1e already made the fix (uncommitted): that path now returns errors.Join(cause, returnErr, resolveWaitingLocked(install, entry, nil, true, &out)) like the source-conflict path. Do not change production code unless the test shows the fix is wrong.
+
+Write the regression test only: in internal/landing/plain (or next to TestLandingRegenerationPersonStopsBeforeReplay in cmd/metasystem/landing_red_permission_test.go), put two automatic returns of the goal in the queue, hand in goal-sha, make regeneration fail on the merge and pass on the baseline; after the first resolve the entry is waiting with Held=true; a second resolve runs no generator (count the Run seam). Mutation: remove the resolveWaitingLocked call on that path -> red.
+
+Check (impacted only; the full suite runs once at integration): go build ./... && go vet ./internal/landing/... ./cmd/metasystem/ && go test -count=1 -timeout 20m ./internal/landing/plain/ && go test -count=1 -timeout 20m -run 'TestLandingRegeneration|TestLandingSourceConflict|TestLandingReturn' ./cmd/metasystem/. Every new test calls t.Parallel(). Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Leave uncommitted. Return the exits and the test with its mutation result.

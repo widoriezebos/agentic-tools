@@ -1,16 +1,19 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -21,11 +24,12 @@ func TestRefusedCloseFoldsItsRound(t *testing.T) {
 	expectOutcome(t, "build", code, built, intentConfirmed)
 	run := resultData(t, built)["run"].(string)
 	commit := strings.Repeat("d", 40)
-	if err := (&launch.UnitRunner{Root: w.unitRoot}).ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
-		return retain(launch.UnitSubject{Round: 1, Commit: commit, Tip: commit, Published: commit, DiffDigest: review.DiffDigest})
+	if err := (&launch.UnitRunner{Root: w.unitRoot, Git: workGit{w}}).ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		return retain(launch.UnitSubject{Round: 1, Commit: commit, Tip: commit, Published: commit, StagedTree: strings.Repeat("b", 40), DiffDigest: review.DiffDigest})
 	}); err != nil {
 		t.Fatal(err)
 	}
+	w.head = commit
 	b := &deliveryBed{intentBed: w.intentBed, install: w.worktree}
 	conf, err := os.ReadFile(filepath.Join(w.root(), "metasystem.conf"))
 	if err != nil {
@@ -33,10 +37,15 @@ func TestRefusedCloseFoldsItsRound(t *testing.T) {
 	}
 	b.writeFile(filepath.Join(b.install, "metasystem.conf"), string(conf))
 	b.writeFile(filepath.Join(b.install, "plans", "goals", "backlog.md"), "# Backlog\n")
-	b.writeJob(map[string]any{"jobId": "critic", "goalId": w.id, "role": "code-critic", "status": "completed", "round": 1, "reviewRoundLimit": 20, "findingRegister": []any{}})
-	b.writeJSON(filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1", "return.json"), map[string]any{
-		"jobId": "critic", "round": 1, "verdict": "1 finding",
-		"findings": []any{map[string]any{"id": "F1", "material": true, "claim": "a case is missing", "evidence": "records_test.go:12"}},
+	b.writeJob(map[string]any{"jobId": "critic", "goalId": w.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-reader", "role": "code-critic", "status": "completed", "round": 1, "reviewRoundLimit": 20, "findingRegister": []any{}})
+	finding := stopFinding("regression", "records.go")
+	finding.ID, finding.Claim = "F1", "a case is missing"
+	roundDir := filepath.Join(b.install, "artifacts", "agents", "critic", "rounds", "1")
+	b.writeJSON(filepath.Join(roundDir, "subject.json"), readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: commit, Parent: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), DiffDigest: strings.Repeat("e", 64)})
+	b.writeFile(filepath.Join(roundDir, "return.md"), "VERDICT: FIX material=1\n")
+	b.writeJSON(filepath.Join(roundDir, "return.json"), map[string]any{
+		"jobId": "critic", "round": 1, "verdict": "1 finding", "verdictMaterialCount": 1, "reviewedTree": strings.Repeat("b", 40),
+		"findings": []any{finding},
 		"rigor":    []any{map[string]any{"findingId": "F1", "artifact": "metasystem/records.go", "rigorClass": "unproven"}},
 	})
 	closed := 0
@@ -220,6 +229,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	if _, result = c.do(append([]string{"work", "build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, workCheck...)...); result.Outcome != intentConfirmed {
 		t.Fatalf("later build: %+v", result)
 	}
+	laterRun := resultData(t, result)["run"].(string)
 	if _, result = c.do("work", "review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 3 {
 		t.Fatalf("review without --work picks the one unreviewed item: %+v delegates=%v", result, c.delegates)
 	}
@@ -227,9 +237,16 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	if _, result = c.do("work", "revise", c.id, "--work", "connect", "--brief", fix, "--dispositions", decided); result.Outcome != intentRefused || !strings.Contains(result.Summary, "supersedes") {
 		t.Fatalf("superseded decisions: %+v", result)
 	}
-	// Repeating the completed review changes nothing.
+	// An unrelated unit owns the tree until its review ends.
+	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "worktree belongs to run") || len(c.closes) != 2 || c.commitReads != 1 {
+		t.Fatalf("repeat during later review: code=%d %+v", code, result)
+	}
+	c.writeCritic(install, "crit3", c.delegates[2], "cancelled", false)
+	if _, err := (&launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}}).CancelRun(laterRun); err != nil {
+		t.Fatal(err)
+	}
 	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 0 || len(c.closes) != 2 || c.commitReads != 1 {
-		t.Fatalf("repeat: code=%d %+v", code, result)
+		t.Fatalf("completed review repeated after release: code=%d %+v", code, result)
 	}
 }
 
@@ -366,5 +383,37 @@ func TestRefutedCloseSaysTheReviewIsClosed(t *testing.T) {
 		if other := inv.refutedClose(nil, b.install, bedGoal, "crit5"); other != nil {
 			t.Fatalf("%s: %+v", name, other)
 		}
+	}
+}
+
+func TestGoalDoneChecksAuthorityForSelectedInstallation(t *testing.T) {
+	t.Parallel()
+	b := newIntentBed(t, false, nil)
+	installation := filepath.Join(b.root(), "nested")
+	if err := os.MkdirAll(installation, 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(filepath.Join(b.root(), "metasystem.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = append(config, []byte("\nmetasystem.template=false\n")...)
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	owners := b.owners()
+	owners.commandNow = func(string) (time.Time, error) { return syncRequestTestNow, nil }
+	owners.prove = enrolledPersonProver(t, installation, syncRequestTestNow)
+	projected := false
+	owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		if !sameDirectory(root, installation) {
+			t.Fatalf("conclusion used endpoint %s instead of %s", root, installation)
+		}
+		projected = true
+		return goal.Endpoint{}, errors.New("the fixture stops after the authority boundary")
+	}
+	code, result := b.runJSON(owners, "goal", "done", bedGoal, "--repo", installation, "--reason", "Review complete", "--by", "Wido")
+	if code != 1 || !projected || !strings.Contains(result.Summary, "goal list can't be found") {
+		t.Fatalf("the installation's proven person was refused before projection: %d %+v projected=%t", code, result, projected)
 	}
 }

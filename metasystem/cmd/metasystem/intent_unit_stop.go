@@ -111,8 +111,8 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	for _, obligation := range file.ReviewObligations {
 		if obligation.TargetUnit == record.Unit || obligation.SourceUnit == record.Unit {
 			required = true
-			inherited = true
 		}
+		inherited = inherited || obligation.TargetUnit == record.Unit
 	}
 	if !declared && !required {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: "the goal has no accepted Units table; requiredness is unknown, so this unit stays open"}
@@ -259,10 +259,6 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 				return &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
 			}
 			nextBuild := inv.publicArgv("work", "build", record.Goal, "--work", destinations[0], "--brief", filepath.Join(round.Directory, destinations[0]+"-brief.md"))
-			for _, proof := range plan.Proof {
-				nextBuild = append(nextBuild, "--check")
-				nextBuild = append(nextBuild, proof.Argv...)
-			}
 			return &intentResult{Targets: targets, Outcome: intentConfirmed, Data: data, Summary: "the source read closed as transferred; its destinations remain required", next: nextBuild, nextReason: "builds the transferred work before completion"}
 		}
 	}

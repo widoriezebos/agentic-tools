@@ -131,22 +131,26 @@ func TestWorkReviewNextDeclaredUnitThenHandIn(t *testing.T) {
 		code, built, _ := bed.work(append([]string{"work", "build", bed.id, "--work", unit, "--brief", bed.brief(unit+".md", "Build it.\n")}, workCheck...)...)
 		expectOutcome(t, "build", code, built, intentConfirmed)
 		run := resultData(t, built)["run"].(string)
-		if err := (&launch.UnitRunner{Root: bed.unitRoot}).ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		if err := (&launch.UnitRunner{Root: bed.unitRoot, Git: workGit{bed}}).ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 			return retain(launch.UnitSubject{Round: 1, Commit: unit, Tip: unit, Published: unit, DiffDigest: review.DiffDigest})
 		}); err != nil {
 			t.Fatal(err)
 		}
+		bed.head = unit
 		if unit == "u3" {
 			state.Status.Units = append(state.Status.Units, branch.UnitStatus{Unit: unit, Commit: unit, ReadState: "read clean"})
 		}
 		code, result := bed.runJSON(inv.owners, "work", "review", bed.id, "--work", unit)
-		expectOutcome(t, "review", code, result, intentConfirmed)
+		expectOutcome(t, "review", code, result, intentUnchanged)
 		want := inv.publicArgv("work", "build", bed.id, "--work", "u3", "--brief", "FILE", "--check", "COMMAND")
 		if unit == "u3" {
 			want = inv.publicArgv("work", "land", bed.id)
 		}
 		if result.Next == nil || !slices.Equal(result.Next.Argv, want) {
 			t.Fatalf("review %s next=%+v want=%q", unit, result.Next, want)
+		}
+		if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(run); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

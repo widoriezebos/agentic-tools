@@ -59,15 +59,18 @@ type Question struct {
 	Budget         *goal.Budget      `json:"budget,omitempty"`
 	Thread         *MessageRef       `json:"thread"`
 	State          string            `json:"state"`
+	ClosedBecause  string            `json:"closedBecause,omitempty"`
 	Undelivered    int               `json:"undelivered"`
 	Answer         *Answer           `json:"answer"`
 	Rejected       []Rejection       `json:"rejected"`
 	FactsDigest    string            `json:"factsDigest"`
 	LedgerCursor   string            `json:"ledgerCursor,omitempty"`
 	UnitStop       *UnitStopQuestion `json:"unitStop,omitempty"`
+	ProcessAct     string            `json:"processAct,omitempty"`
 }
 
 type AskRequest struct {
+	ProcessAct                                    string
 	Context                                       context.Context
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
 	Facts                                         []string
@@ -293,7 +296,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
+	q := Question{ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -316,7 +319,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		}
 	}
 	// A question without a goal has no goal file to mark.
-	if r.Lineage != "" && r.Goal != "" {
+	if r.Lineage != "" && r.Goal != "" && r.ProcessAct == "" {
 		ep, e := goal.ResolveEndpoint(r.RepoRoot)
 		if e != nil {
 			return q, false, e
@@ -339,7 +342,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 // sameAsk says whether an open question carries exactly the options,
 // recommendation, wanted token and proposed budget a new request asks with.
 func sameAsk(q Question, r AskRequest) bool {
-	if q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
+	if q.ProcessAct != r.ProcessAct || q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
 		return false
 	}
 	if len(q.Options) != len(r.Options) {
@@ -400,6 +403,9 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if q.ProcessAct != "" {
+		return "Run " + q.Wants + "; applying this exact process act closes the question."
+	}
 	if q.UnitStop != nil {
 		return "Run " + q.UnitStop.Needs + "; a successful matching act or unit closure closes this question. A text answer leaves it open."
 	}
@@ -491,7 +497,7 @@ func questionHead(q Question) string {
 
 // LaneStopCommand recognizes the lane's own stop question in its existing facts.
 func LaneStopCommand(q Question) string {
-	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && strings.HasPrefix(q.Facts[1], "lane stop: ") {
+	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && (strings.HasPrefix(q.Facts[1], "lane stop: ") || strings.HasPrefix(q.Facts[1], "lane policy: ")) {
 		return q.Facts[0]
 	}
 	return ""
@@ -606,6 +612,9 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 	q.State = "closed"
 	if q.UnitStop != nil && len(successfulAct) > 0 {
 		q.UnitStop.ClosedBy = successfulAct[0]
+	}
+	if LaneStopCommand(q) != "" {
+		q.ClosedBecause = because
 	}
 	if q.Answer != nil {
 		q.Answer.Phase = "closed"

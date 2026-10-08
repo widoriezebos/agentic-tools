@@ -293,6 +293,9 @@ func TestIntentCorruptReviewStopNamesSettingRepair(t *testing.T) {
 				}
 				args := []string{"work", "review", b.id, "--work", "stopped"}
 				if !admitted {
+					if _, err := (&launch.UnitRunner{Manager: b.manager, Root: b.unitRoot, Git: workGit{b}}).CancelRun(fixture.run); err != nil {
+						t.Fatal(err)
+					}
 					args = append([]string{"work", "build", b.id, "other", "--brief", b.brief("other.md", "Build another unit.\n"), "--lines", "5"}, workCheck...)
 				}
 				launches := len(b.starter.launched())

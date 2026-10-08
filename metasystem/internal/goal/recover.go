@@ -352,7 +352,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 	}
 	if raw := entry.Intent.Args["claimEpoch"]; raw != "" {
 		epoch, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || epoch < 1 {
+		if err != nil || epoch < 0 {
 			return PublishRequest{}, fmt.Errorf("the stored intent carries invalid claimEpoch %q; close it by hand", raw)
 		}
 		r.ClaimEpoch = epoch
@@ -491,6 +491,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		if r.CallerClass != "MAIN" {
 			return PublishRequest{}, errors.New("the interrupted restamp wasn't made by the session holding the checkout; close it by hand")
 		}
+		r.EpochAuthority = EpochAuthorityHolder
 		return restampRequest(r, target), nil
 	case "set-budget":
 		return PublishRequest{}, coded("APPROVAL_REQUIRED", fmt.Errorf("an interrupted budget change was a person's act; close it by hand\nrun: metasystem goal budget %s  (as that person)", target))

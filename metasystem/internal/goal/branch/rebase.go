@@ -21,6 +21,7 @@ const (
 )
 
 type RebaseRequest struct {
+	SubjectCheck                      func(string, AttestationSubject) (GateObservation, error)
 	Repo, Remote, EndpointTip, GoalID string
 	CheckClaim                        func() error
 	Gate                              func(string) (string, error)
@@ -37,6 +38,8 @@ type RebaseResolution struct {
 }
 
 type RebaseResult struct {
+	ReviewReasons map[string]string `json:"reviewReasons,omitempty"`
+
 	State       string   `json:"state"`
 	Behind      int      `json:"behind"`
 	OldTip      string   `json:"oldTip"`
@@ -211,6 +214,7 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		result.NewTip = carried.NewTip
 	}
 	result.Carried, result.NeedsReview, result.Unknown = carried.Carried, carried.NeedsReview, carried.Unknown
+	result.ReviewReasons = carried.ReviewReasons
 	if err != nil {
 		return result, err
 	}
@@ -264,6 +268,8 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 type CarryRequest RebaseRequest
 
 type CarryResult struct {
+	ReviewReasons map[string]string `json:"reviewReasons,omitempty"`
+
 	NewTip      string   `json:"newTip"`
 	Carried     []string `json:"carried"`
 	NeedsReview []string `json:"needsReview"`
@@ -349,8 +355,19 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies, dropped ...map[str
 			unknown(unit)
 			continue
 		}
-		gate, err := d.gate(ReadGateRequest{Repo: req.Repo, GoalID: req.GoalID, UnitCommit: unit.ID, Gate: req.Gate})
+		gate, err := d.gate(ReadGateRequest{Repo: req.Repo, GoalID: req.GoalID, UnitCommit: unit.ID, Gate: req.Gate, SubjectCheck: req.SubjectCheck})
 		if err != nil {
+			var missing *DeclarationUnavailableError
+			if errors.As(err, &missing) {
+				result.NeedsReview = append(result.NeedsReview, unit.Units...)
+				if result.ReviewReasons == nil {
+					result.ReviewReasons = map[string]string{}
+				}
+				for _, name := range unit.Units {
+					result.ReviewReasons[name] = missing.Error()
+				}
+				continue
+			}
 			return result, err
 		}
 		op, err := d.newID("goal-rebase-read")
@@ -359,7 +376,7 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies, dropped ...map[str
 		}
 		next, _, err := d.commitRead(CommitReadRequest{Repo: req.Repo, Remote: req.Remote, EndpointTip: req.EndpointTip,
 			GoalID: req.GoalID, Units: unit.Units, OpID: op, CheckClaim: req.CheckClaim, Transport: req.Transport,
-			Carry: prior, TestsChanged: tests, GateRunID: gate.RunID, GateTree: gate.Tree})
+			Carry: prior, TestsChanged: tests, GateRunID: gate.RunID, GateTree: gate.Tree, GateObservation: &gate})
 		var refusal *OpError
 		if errors.As(err, &refusal) && refusal.Code == ReadStaleCode {
 			result.NeedsReview = append(result.NeedsReview, unit.Units...)

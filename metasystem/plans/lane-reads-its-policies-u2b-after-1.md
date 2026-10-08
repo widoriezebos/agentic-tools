@@ -1,0 +1,11 @@
+# Brief: lane-reads-its-policies U2b, correction 1
+
+Working Mode: Implement
+U2b is uncommitted in this worktree (U1, U2a committed). One Opus read found three material defects; fix exactly these.
+
+1. cmd/metasystem/intent_landing_prove.go:166-168 with internal/landing/plain/prove.go:383: a person's plain `landing prove` (and `--trunk`) without --wait starts its background child `landing prove --wait --attempt ID`, which hits lanePaused and is refused, so nothing runs while the parent reported it running. Write the direct act's admission (attempt id and provenance) into the running-proof record; the background call accepts only that attempt. Test without --wait: under a pause, a person's `landing prove` runs to a result (mutation: refuse the child, red).
+2. cmd/metasystem/intent_landing_prove.go:106 and FenceCheck at cmd/metasystem/intent_landing.go:1003-1006: once any person selection is admitted, lanePaused returns nil for every caller and mode, so an agent's `landing prove --trunk` runs under a pause. The continuation admits only gate and batch proofs of the recorded batch; a trunk proof under the pause still needs lanePerson. Test: pause, a recorded selection, an agent's `landing prove --trunk --wait` is refused (mutation: admit every mode, red).
+3. cmd/metasystem/intent_landing.go (`case lane.AgentPaused: if recorded { return pendingSelection(run.Line) }`): after a later pause cancels the admission, `landing run` prints `next: metasystem landing run`, which repeats itself. When the pause is not covered by the selection, the next step is `landing start` (the person's) or `landing run --goals <members>`; TestLandingExecutionLaterPauseStopsKeeperAndVerbs asserts the next command (mutation: the generic run, red).
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 30m ./internal/landing/... ./internal/steward/ && go test -count=1 -timeout 60m -run 'TestLanding|TestWorkLand|TestKeeper|TestHelm|TestPolicy|TestQuestion|TestPlainLane|TestEvery|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+Never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

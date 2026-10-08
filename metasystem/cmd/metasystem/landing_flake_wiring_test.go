@@ -265,7 +265,8 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 			}
 			code, output := b.run(t, b.root, words...)
 			if action == "refusal" {
-				if code != 1 || !strings.Contains(output, "metasystem landing status") || strings.Contains(output, "could not run") || !strings.Contains(output, "gets no other") {
+				// Decision 4 lets a person request one check without reopening automatic allowance.
+				if code != 1 || !strings.Contains(output, "metasystem landing prove") || strings.Contains(output, "could not run") || !strings.Contains(output, "gets no other") {
 					t.Fatalf("refusal = %d %s", code, output)
 				}
 				return

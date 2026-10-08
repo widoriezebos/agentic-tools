@@ -26,10 +26,9 @@ type View struct {
 	RegisteredBy *string   `json:"registered_by"`
 	RegisteredAt *string   `json:"registered_at"`
 	Owner        OwnerView `json:"owner"`
-	// Batch and Next are always null: the interface's committed bundle
-	// still reads them (internal/ui/web/_app/src/fleet/LandingLane.tsx)
-	// until it is rebuilt without them.
-	Batch *struct{} `json:"batch"`
+	// The plain lane's status reader supplies its recorded selection here.
+	// A view of the host registration alone has no selection to report.
+	Batch any       `json:"batch"`
 	Next  *struct{} `json:"next"`
 	// Wake is why the landing agent would run now (§3 Wake): the reasons the
 	// keeper wakes it on, read the same way; null with no lane.
@@ -217,7 +216,7 @@ func (view View) AgentSummary(waiting bool) string {
 			agent = fmt.Sprintf("idle; its agent starts within one tick (%d s)", int(AgentTick/time.Second))
 		}
 	case OwnerHeld:
-		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person's metasystem landing run starts it", view.Owner.Barren)
+		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person's recorded selection or a fresh proof of main is needed", view.Owner.Barren)
 	default:
 		// Why the lane cannot run and the one fix, in the one line (summary
 		// by default).

@@ -210,6 +210,9 @@ func (listing goalListing) section(page *textui.Page, title, aside, state string
 // concluded goal's conclusion.
 func (listing goalListing) nextText(env textui.Env, file *goal.GoalFile) string {
 	var markers []string
+	if file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0 {
+		markers = append(markers, "reserved, awaiting session start")
+	}
 	if file.Pinned != "" && file.State != goal.StateClaimed {
 		markers = append(markers, "pin "+file.Pinned)
 	}

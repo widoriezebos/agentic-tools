@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -122,7 +123,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), deployIntentCommands(), alertIntentCommands(), rosterIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus(), {object: "channel", action: "status", laidOut: true, audience: "both", summary: "this seat's status and observed process cost", maxArgs: 0, flags: []intentFlag{{name: "post", usage: "deliver to the configured channel"}}, usage: []string{"metasystem channel status [--post]"}, examples: []string{"metasystem channel status"}, run: runIntentChannelStatus}},
 	} {
 		commands = append(commands, part...)
 	}
@@ -171,6 +172,11 @@ func goalIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem goal list", "metasystem goal list --all --label ui", "metasystem goal list --ready", "metasystem goal list --tiers"},
 			run:      runIntentGoalViews,
+		},
+		{
+			object: "goal", action: "status", audience: "both", laidOut: true, summary: "a goal's work and measured process cost across all runs",
+			usage: []string{"metasystem goal status G"}, maxArgs: 1,
+			examples: []string{"metasystem goal status verbs-match-intent"}, run: runIntentTopStatus,
 		},
 		{
 			object: "goal", action: "show", audience: "both", laidOut: true, summary: "one goal's record: intent, next step, budget and designs",
@@ -628,6 +634,9 @@ type intentInvocation struct {
 	owners    intentOwners
 	layout    stateroot.Layout
 	stateRoot string
+	// claimPreparation retains preparation facts when an acquired claim lets
+	// work proceed despite another reservation awaiting adoption.
+	claimPreparation *up.Result
 	// reviewWork is set while review G examines one work item's subject.
 	reviewWork *reviewWorkContext
 	// inferredChain is the one examination root inferred from the goal's
@@ -638,7 +647,8 @@ type intentInvocation struct {
 	entrants []*diskstore.Entrant
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
-	notices *admissionNotices
+	notices       *admissionNotices
+	laneException *lanePersonObservation
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -840,6 +850,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	result = result.withClaimPreparation(inv.claimPreparation)
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
 	if result.Targets == nil {
@@ -1333,7 +1344,7 @@ type intentGroup struct {
 
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
-	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
+	{"deliver", "Deliver", []string{"work", "test", "question", "channel", "agent", "incident"}},
 	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
@@ -1347,6 +1358,7 @@ var intentObjectSummaries = map[string]string{
 	"work":       "a goal's work: brief, build, review, revise, land, finish, wait and stop",
 	"test":       "risk-selected tests and their proof",
 	"question":   "questions for a person, and their answers",
+	"channel":    "this seat's status report and its delivery",
 	"agent":      "messages between the agents on this host: ask, reply and read, never a person",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
@@ -1503,14 +1515,14 @@ var intentActionIntents = map[string][]struct {
 	actions []string
 }{
 	"goal": {
-		{"Read", []string{"list", "show", "notes"}},
+		{"Read", []string{"list", "show", "status", "notes"}},
 		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting"}},
 		{"Work", []string{"claim", "release", "pause", "resume", "done", "reopen", "abandon"}},
 		{"Shape", []string{"edit", "split", "group", "ungroup", "block", "unblock", "sync"}},
 	},
 	"work": {
 		{"Read", []string{"status", "wait"}},
-		{"Work", []string{"brief", "build", "workspace", "review", "revise", "rebase", "land", "finish", "stop"}},
+		{"Work", []string{"brief", "build", "workspace", "commit", "review", "revise", "rebase", "land", "finish", "stop"}},
 	},
 	"test": {
 		{"Read", []string{"plan", "list", "status", "wait"}},

@@ -192,6 +192,12 @@ func (s *connectionRuntimeBuilder) StartSupervisor(id, stateDir string) (identit
 		return identity.Ref{}, fmt.Errorf("%s preceded the builder", record.Kind)
 	}
 	_, err = s.c.StartSupervisor(id, stateDir)
+	if err == nil {
+		_, err = s.c.manager.Store.Update(id, func(current *launch.Record) error {
+			current.FinishedAt = s.c.manager.Now().UTC().Format(time.RFC3339Nano)
+			return nil
+		})
+	}
 	return s.deadChild, err
 }
 

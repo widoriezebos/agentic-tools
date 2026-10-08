@@ -233,6 +233,11 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	if retained, _ := os.ReadFile(firstCopy); !strings.Contains(string(retained), "fix first") {
 		t.Fatalf("round one's findings copy was replaced: %q", retained)
 	}
+	bed.manager.Prober = &treeProber{dead: true}
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(run); err != nil {
+		t.Fatal(err)
+	}
+	bed.manager.Prober = workProber{}
 	findings = ""
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "silent", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data = resultData(t, result)
@@ -251,7 +256,7 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	material := []readsubject.Finding{stopFinding("regression", "a.go"), stopFinding("incomplete-item", "b.go")}
 	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{material, material, {stopFinding("scope", "c.go")}}}
 	plain := bed.brief("plain.md", "Read each round: yes\nBuild the unit.\n")
-	check := append([]string{"--check"}, workArgv...)
+	check := []string{}
 	// A brief that names no read budget uses the configured allowance.
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "plain", "--brief", plain, "--lines", "5"}, check...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
@@ -262,10 +267,17 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	} else if readBrief, _ := os.ReadFile(plan.Read.Brief); !strings.Contains(string(readBrief), "Maximum reader tool calls: 48") {
 		t.Fatalf("the configured allowance is not the read's budget:\n%s", readBrief)
 	}
+	plainRun := resultData(t, result)["run"].(string)
 	budgeted := bed.brief("budgeted.md", "Read each round: yes\nBuild the unit.\n\nMaximum reader tool calls: 25\n")
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, result)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "25") {
 		t.Fatalf("conflicting read budget: code=%d %+v", code, result)
+	}
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(plainRun); err != nil {
+		t.Fatal(err)
 	}
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5"}, check...)...)
 	data := resultData(t, result)
@@ -387,7 +399,7 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 	}
 	filled := "Read each round: yes\n" + strings.Replace(string(written), "Maximum reader tool calls: 48", "Maximum reader tool calls: 20", 1)
 	os.WriteFile(filepath.Join(bed.root(), "filled.md"), []byte(filled), 0o600)
-	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "u1", "--brief", "filled.md", "--check"}, workArgv...)...)
+	code, result, _ = bed.work([]string{"work", "build", bed.id, "u1", "--brief", "filled.md"}...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build from the filled scaffold: code=%d %+v", code, result)
 	}

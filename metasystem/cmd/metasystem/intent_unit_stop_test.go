@@ -158,7 +158,7 @@ func stopPublic(t *testing.T, b *workBed, policy string, args ...string) (int, i
 func stopBuild(t *testing.T, b *workBed, policy string) (string, launch.UnitRunRecord, string) {
 	t.Helper()
 	brief := b.brief("stop-build.md", "Read each round: yes\nBuild the unit.\n")
-	check := []string{"--read-tool-calls", "12", "--check", "go", "test", "-count=1", "-timeout", "30m", "-run", "TestA|TestB", "./..."}
+	check := workCheck
 	code, result, _ := stopPublic(t, b, policy, append([]string{"work", "build", b.id, "stopped", "--brief", brief, "--lines", "5"}, check...)...)
 	if code != 0 {
 		t.Fatalf("build: %d %+v", code, result)

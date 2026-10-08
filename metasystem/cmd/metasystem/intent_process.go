@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -421,6 +422,7 @@ func processIntentCommands() []intentCommand {
 // processIntentOwners are the owners the process and question commands call.
 type processIntentOwners struct {
 	process        processOwners
+	adoptionReads  *claimAdoptionReads
 	up             func(up.Options) up.Result
 	health         func(repo, installation string, now time.Time) steward.HealthVerdict
 	healthNow      func(root string) (time.Time, error)
@@ -669,24 +671,14 @@ func runIntentSystemStart(inv *intentInvocation) int {
 
 // runIntentSessionStart prepares the current agent session through up.
 func runIntentSessionStart(inv *intentInvocation) int {
-	scope, scale, problem := inv.selectProcessScope()
+	scope, _, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	owners := inv.owners.processes
-	binary, err := owners.executable()
-	if err == nil {
-		binary, err = canonicalPath(binary)
+	result, problem := inv.prepareClaimSession(inv.claimLineage())
+	if problem != nil {
+		return inv.render(*problem)
 	}
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
-			retry: "try again", Details: []string{"engine path: " + err.Error()}})
-	}
-	result := owners.up(up.Options{
-		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
-		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityWith(inv.owners.dependencies, inv.owners.commandNow, true),
-	})
 	outcome := intentConfirmed
 	remedy := result.Remedy
 	if result.Adoption != nil && result.Adoption.Status == "pending" {
@@ -699,6 +691,44 @@ func runIntentSessionStart(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
 		Summary: sessionPreparationSummary(result), text: result.Lines(), Decision: remedy,
 		Data: map[string]any{"outcome": result.Outcome, "adoption": result.Adoption, "lines": nonNilLines(result.Lines()), "remedy": remedy}})
+}
+
+// prepareClaimSession leaves enrollment, announcement, adoption and supervision
+// with up and carries the original caller into that lifecycle owner.
+func (inv *intentInvocation) prepareClaimSession(lineage string) (up.Result, *intentResult) {
+	scope, scale, problem := inv.selectProcessScope()
+	if problem != nil {
+		return up.Result{}, problem
+	}
+	callerPid, err := inv.owners.dependencies.authorityFacts.caller.ClassifiablePid(processidentity.KernelProber{})
+	if err != nil {
+		return up.Result{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "the calling process could not be authenticated; the session was not started", Details: []string{err.Error()}, next: inv.publicArgv("session", "start")}
+	}
+	owners := inv.owners.processes
+	if owners.executable == nil {
+		owners.executable = os.Executable
+	}
+	if owners.up == nil {
+		owners.up = up.Run
+	}
+	binary, err := owners.executable()
+	if err == nil {
+		binary, err = canonicalPath(binary)
+	}
+	if err != nil {
+		return up.Result{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
+			retry: "try again", Details: []string{"engine path: " + err.Error()}}
+	}
+	reads := owners.adoptionReads
+	if reads == nil {
+		reads = &claimAdoptionReads{dependencies: inv.owners.dependencies, clock: inv.owners.commandNow}
+	}
+	result := owners.up(up.Options{
+		Root: scope.Installation.Path(), MetasystemRoot: scope.Installation.Path(), Scope: scope.Checkout, Binary: binary,
+		OwnerLineage: lineage, WaitScaleMilli: scale, CallerPid: callerPid,
+		RestampStopCapability: reads.RestampFresh,
+	})
+	return result, nil
 }
 
 func sessionPreparationSummary(result up.Result) string {
@@ -1237,7 +1267,20 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s could not be read", ref.qualified()),
 				retry: "try again", Details: []string{"unit run: " + err.Error()}})
 		}
-		lines := []string{}
+		_ = inv.selectRoot()
+		var now time.Time
+		if runner.Manager.Now != nil {
+			now = runner.Manager.Now()
+		} else {
+			now, err = inv.owners.commandNow(inv.layout.InstallationRoot.Path())
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the status clock could not be read",
+					next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "reads the run again", Details: []string{err.Error()}})
+			}
+			runner.Manager = &launch.Manager{Store: runner.Manager.Store, Now: func() time.Time { return now }}
+		}
+		report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), record.Goal, record.Unit, runner, now, nil)
+		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
 			if round.Cause != "" {
@@ -1246,7 +1289,7 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})
 	}
 	job := ref.job
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
@@ -1336,7 +1379,7 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 		if inv.owners.processes.launches != nil {
 			host.launches = inv.owners.processes.launches()
 		}
-		if batch, err := dispatchcore.ReconcileStopBatchWithLaunchStatus(inv.stateRoot, stopID, now, host.UnitLaunchStatus); err == nil {
+		if batch, err := dispatchcore.ReconcileStopBatchWithLaunchStatus(inv.layout.InstallationRoot.Path(), stopID, now, host.UnitLaunchStatus); err == nil {
 			data["stop"], data["stopState"] = stopID, string(batch.State)
 			if batch.State == goal.StopBatchComplete {
 				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"

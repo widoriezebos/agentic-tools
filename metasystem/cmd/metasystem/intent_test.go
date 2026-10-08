@@ -73,6 +73,12 @@ func (b *intentBed) owners() intentOwners {
 		parkBranchCheck: func(string, goal.Endpoint) func(string, string) (string, error) {
 			return func(string, string) (string, error) { return "", nil }
 		},
+		work: intentWorkOwners{git: func(_ string, args ...string) ([]byte, error) {
+			if slices.Equal(args, []string{"worktree", "list", "--porcelain"}) {
+				return []byte("worktree " + b.root() + "\n"), nil
+			}
+			return nil, fmt.Errorf("unexpected cleanup git %v", args)
+		}},
 		completion: completionInputs{
 			localTip: func(string, string) (string, bool, error) { return "", false, nil },
 			reporter: func(metrics.Options) (metrics.Result, error) { b.reports++; return metrics.Result{}, nil },

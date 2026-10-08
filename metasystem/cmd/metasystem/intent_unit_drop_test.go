@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -269,9 +270,19 @@ func (s dropProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		if err != nil || string(body) != "base\n" {
 			f.t.Fatalf("proof did not see the inverse: %q %v", body, err)
 		}
-		plan, err := os.ReadFile(r.Inputs[0].Path)
-		if err != nil || !bytes.Contains(plan, []byte(`"30m"`)) {
-			f.t.Fatalf("declared proof not retained: %s %v", plan, err)
+		body, err = os.ReadFile(r.Inputs[0].Path)
+		var proof launch.PlainBrief
+		if err != nil || json.Unmarshal(body, &proof) != nil {
+			f.t.Fatalf("publication check cannot be read: %v", err)
+		}
+		executable, err := os.Executable()
+		want := []string{executable, "test", "run", "--unit-run", f.run, "--repo"}
+		if err != nil || len(proof.Argv) != 7 || !slices.Equal(proof.Argv[:6], want) || !sameCanonicalPath(proof.Argv[6], f.bed.root()) || proof.Dir != f.scratch {
+			f.t.Fatalf("publication check does not call this unit on its candidate: %v", err)
+		}
+		plan, err := launch.ReadUnitPlan(filepath.Join(filepath.Dir(r.Inputs[0].Path), "plan.json"))
+		if err != nil || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || plan.Check.SourceTree != "declaration-tree" || plan.Check.Directory != f.bed.worktree || plan.Check.Environment == nil {
+			f.t.Fatalf("the frozen declared check is missing or changed: %v", err)
 		}
 	}
 	_, err = f.bed.starter.StartSupervisor(id, state)

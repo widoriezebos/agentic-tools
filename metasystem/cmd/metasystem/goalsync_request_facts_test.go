@@ -58,7 +58,7 @@ func newSyncRequestFacts(t *testing.T) *syncRequestFacts {
 
 func (f *syncRequestFacts) checkRoot(root string) {
 	f.t.Helper()
-	if root != f.root {
+	if !sameCanonicalPath(root, f.root) {
 		f.t.Fatalf("request root = %q, want %q", root, f.root)
 	}
 }

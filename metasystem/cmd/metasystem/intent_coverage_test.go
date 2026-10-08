@@ -16,18 +16,18 @@ import (
 // as revision 7's section 3.4 leaves it (R12: every public action states an
 // intent), with the top-level status: the complete public surface.
 var publicPairs = []string{
-	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
+	"goal list", "goal show", "goal status", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal review", "goal land-without-sitting", "goal block",
 	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow",
 	"grant add", "grant revoke", "grant list",
 	"decision list", "decision show",
 	"design write", "design show", "design list", "design check", "design review", "design stop",
-	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work rebase", "work status", "work stop", "work workspace",
+	"work brief", "work commit", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work rebase", "work status", "work stop", "work workspace",
 	"test run", "test groups", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"agent ask", "agent reply", "agent inbox",
 	"incident list", "incident claim", "incident close",
-	"status",
+	"status", "channel status",
 	"helm take", "helm return", "helm status",
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
@@ -40,7 +40,7 @@ var publicPairs = []string{
 	"evidence show", "evidence export", "evidence dispose",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",
 	"ui start", "ui stop", "ui restart", "ui status",
-	"settings show", "settings keys", "settings set", "settings check", "settings coordinator",
+	"settings show", "settings keys", "settings set", "settings unset", "settings check", "settings coordinator",
 	"roster list", "roster show", "roster set",
 	"receipt add", "receipt status", "receipt retro",
 	"experiment record", "experiment challenge", "experiment status", "experiment check",
@@ -49,7 +49,7 @@ var publicPairs = []string{
 // revisionSevenObjects are the objects section 3.4 leaves, in help order,
 // with helm (human-control design, section 3.1) and deploy
 // (landing-deploys-the-engine, Decision 4) in the Run group.
-var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "agent", "incident",
+var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "channel", "agent", "incident",
 	"helm", "session", "mission", "system", "landing", "deploy", "alert", "machine", "disk", "evidence", "app", "ui", "settings", "roster", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
@@ -200,7 +200,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"work finish":     {"work finish j2:J", "work finish j2:J --evidence R"},
 			"work land":       {"work land j2:J", "work land G --queue-only"},
 			"work wait":       {"work wait G", "work wait G --for landing|human-act", "--since TIP", "work wait REF", "work wait --path PATH --until present|absent", "work wait j2:J --exit-code", "work wait --run ID --exit-code", "work wait --list"},
-			"work build":      {"work build G [--work NAME] --brief FILE --check COMMAND...", "work build run:RUN"},
+			"work build":      {"work build G [--work NAME] --brief FILE", "work build run:RUN"},
 			"goal done":       {"goal done G --reason TEXT"},
 			"goal notes":      {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
 			"goal pin":        {"--clear"},

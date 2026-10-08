@@ -119,10 +119,19 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
 	if q.kind == "channel" {
 		c := q.channel
+		if c.ProcessAct != "" {
+			return intentResult{Outcome: intentConfirmed, Summary: c.State + ": " + c.Wants, Data: c, view: func(page *textui.Page) {
+				page.Headline(c.State + " process setting")
+				page.Section("", "").Fixed(c.Wants)
+			}}
+		}
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
 		switch {
+		case c.State == "closed" && channel.LaneStopCommand(c) != "" && c.ClosedBecause != "":
+			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
+			headline = result.Summary
 		case c.State == "closed":
 			result.Summary = fmt.Sprintf("channel question %s is withdrawn", c.ID)
 			headline = "Channel question " + c.ID + " is withdrawn"

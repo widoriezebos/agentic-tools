@@ -114,8 +114,8 @@ func TestReviewSubjectBindsTheLatestCompletedRound(t *testing.T) {
 	if empty := UnitResultDigest(""); empty != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
 		t.Fatalf("empty result digest=%s", empty)
 	}
-	// The run store alone is enough to review a run.
-	reviewer := &UnitRunner{Root: fixture.runner.Root}
+	// Reviewing retained material also checks the worktree reservation.
+	reviewer := &UnitRunner{Root: fixture.runner.Root, Git: fixture.git}
 	bound := UnitSubject{Round: 1, Operation: "op-1", ExpectedParent: "head", ResultDigest: UnitResultDigest(""), DiffDigest: wantDigest}
 	err = reviewer.ReviewSubject(first.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
 		if review.Record.ID != first.Record.ID || review.Round.Number != 1 || review.Head != "head" || review.Result != "" || review.Legacy ||

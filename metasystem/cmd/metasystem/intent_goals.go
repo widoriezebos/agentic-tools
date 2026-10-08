@@ -30,12 +30,23 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 }
 
 func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projection, time.Time, *intentResult) {
-	endpoint, err := inv.owners.dependencies.endpoint(inv.stateRoot)
+	if inv.owners.dependencies.endpoint == nil {
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal list is unavailable: no endpoint reader is configured",
+			next: inv.publicArgv("system", "check"), nextReason: "shows how this checkout is set up"}
+	}
+	if inv.layout.InstallationRoot == "" {
+		layout, err := inv.owners.resolver.ResolveLayout(inv.stateRoot)
+		if err != nil {
+			return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the installation cannot be found", Details: []string{err.Error()}, next: inv.publicArgv("system", "check"), nextReason: "shows how this checkout is set up"}
+		}
+		inv.layout = layout
+	}
+	endpoint, err := inv.owners.dependencies.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the goal list can't be found here: " + err.Error(), code: 1,
 			next: inv.publicArgv("system", "status"), nextReason: "shows how this checkout is set up"}
 	}
-	now, err := inv.owners.commandNow(inv.stateRoot)
+	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the clock can't be read: " + err.Error(), code: 1,
 			next: inv.typedArgv(), nextReason: "try again"}
@@ -925,9 +936,9 @@ func runIntentDone(inv *intentInvocation) int {
 	var treeErr error
 	concluded, recorded := false, false
 	if slices.Contains(actor, "--by") {
-		flags := &syncFlags{root: inv.stateRoot, by: unitStopActor(actor)}
+		flags := &syncFlags{root: inv.layout.InstallationRoot.Path(), by: unitStopActor(actor)}
 		proof, err := proveGoalHumanAuthorityFor(inv.owners.dependencies.authorityFacts.caller, "done", flags, inv.owners.prove, inv.owners.commandNow)
-		if err == nil && !proof.ValidFor(inv.stateRoot) {
+		if err == nil && !proof.ValidFor(flags.root) {
 			err = fmt.Errorf("this command has no proven person authority for this checkout")
 		}
 		if err != nil {

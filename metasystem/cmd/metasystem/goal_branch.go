@@ -474,6 +474,10 @@ func goalBranchClaimCheck(root, goalID string, endpoint goal.Endpoint) func() er
 }
 
 func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, config func(string, string) (string, error), holderRoot func(string) string) func() error {
+	return goalBranchClaimCheckWithDeadline(root, goalID, endpoint, config, holderRoot, nil)
+}
+
+func goalBranchClaimCheckWithDeadline(root, goalID string, endpoint goal.Endpoint, config func(string, string) (string, error), holderRoot func(string) string, deadline func(time.Duration) <-chan time.Time) func() error {
 	return func() error {
 		machine, err := goal.ResolveMachineWithConfig(root, config)
 		if err != nil {
@@ -487,7 +491,7 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 		if err != nil {
 			return err
 		}
-		projection, err := goal.Project(endpoint, true, time.Now().UTC())
+		projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), deadline)
 		if err != nil {
 			return err
 		}

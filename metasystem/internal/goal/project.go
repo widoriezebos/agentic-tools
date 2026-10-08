@@ -47,11 +47,12 @@ const (
 )
 
 type projectionDependencies struct {
-	fetch          func(Endpoint) (AdvanceResult, error)
-	timeout        time.Duration
-	processTimeout time.Duration
-	deadline       <-chan time.Time
-	source         *projectionSource
+	fetch           func(Endpoint) (AdvanceResult, error)
+	timeout         time.Duration
+	processTimeout  time.Duration
+	deadline        <-chan time.Time
+	processDeadline func(time.Duration) <-chan time.Time
+	source          *projectionSource
 }
 
 // projectionSource binds one accepted repository and machine to a read. The
@@ -104,7 +105,7 @@ func acceptedGoalWorldFor(endpoint Endpoint) (bool, error) {
 func (dependencies projectionDependencies) withDefaults() projectionDependencies {
 	if dependencies.fetch == nil {
 		dependencies.fetch = func(endpoint Endpoint) (AdvanceResult, error) {
-			return boundedFetchAdvance(endpoint, dependencies.processTimeout)
+			return boundedFetchAdvanceWithDeadline(endpoint, dependencies.processTimeout, dependencies.processDeadline)
 		}
 	}
 	if dependencies.timeout <= 0 {
@@ -124,7 +125,17 @@ func (dependencies projectionDependencies) withDefaults() projectionDependencies
 var ErrLedgerNotFetched = errors.New("this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it")
 
 func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
-	return project(e, fetchFirst, now, projectionDependencies{})
+	return ProjectWithDeadline(e, fetchFirst, now, nil)
+}
+
+// ProjectWithDeadline uses one deadline source for the projection and its fetch
+// process. A nil source keeps the production bounds and timers.
+func ProjectWithDeadline(e Endpoint, fetchFirst bool, now time.Time, deadline func(time.Duration) <-chan time.Time) (Projection, error) {
+	dependencies := projectionDependencies{processDeadline: deadline}
+	if deadline != nil && fetchFirst {
+		dependencies.deadline = deadline(defaultFreshProjectionTimeout)
+	}
+	return project(e, fetchFirst, now, dependencies)
 }
 
 func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projectionDependencies) (Projection, error) {
@@ -215,6 +226,10 @@ func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependenci
 // sixty-second Stop budget shipped under metasystem/internal/runtimes/enforcement and
 // owned by the hook's deadline parent.
 func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResult, error) {
+	return boundedFetchAdvanceWithDeadline(e, processTimeout, nil)
+}
+
+func boundedFetchAdvanceWithDeadline(e Endpoint, processTimeout time.Duration, deadline func(time.Duration) <-chan time.Time) (AdvanceResult, error) {
 	if e.Repository != nil {
 		return FetchAdvance(e)
 	}
@@ -232,7 +247,7 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	// ignores whether they existed, so arming it early costs nothing on the
 	// paths that never create one.
 	defer CleanupRefs(e, nonce)
-	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout)
+	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout, deadline)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -267,7 +282,10 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
 }
 
-func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout time.Duration) (string, error) {
+func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout time.Duration, deadline func(time.Duration) <-chan time.Time) (string, error) {
+	if deadline == nil {
+		deadline = time.After
+	}
 	ref := fetchRefFor(nonce)
 	args := []string{
 		"-C", e.Root, "-c", "core.logAllRefUpdates=false",
@@ -277,7 +295,7 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout tim
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := boundedexec.Run(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch"); err != nil {
+	if err := boundedexec.RunWithDeadline(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch", deadline); err != nil {
 		return "", fmt.Errorf("git fetch: %w (%s)", err, strings.TrimSpace(stderr.String()))
 	}
 	out, err := goalGit(e.Root, nil, "rev-parse", "--verify", ref)
@@ -307,6 +325,7 @@ type ClaimableBudgetedWork struct {
 	fencedClaims    []*GoalFile
 	landingClaims   []*GoalFile
 	ownedClaims     map[string]*GoalFile
+	Eligibility     map[string]ClaimEligibility
 }
 
 // OwnedClaim returns the exact accepted goal record used to compute this
@@ -443,7 +462,7 @@ func ClaimableWorkFromProjection(projection Projection, machine string, prober i
 		Landing:   append([]string(nil), frontier.Landing...),
 		Refused:   append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree:  projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
-		GoalFacts: map[string]GoalFacts{}, ownedClaims: map[string]*GoalFile{},
+		GoalFacts: map[string]GoalFacts{}, ownedClaims: map[string]*GoalFile{}, Eligibility: map[string]ClaimEligibility{},
 	}
 	for id, file := range projection.Tree.Live {
 		if file == nil {
@@ -464,10 +483,12 @@ func ClaimableWorkFromProjection(projection Projection, machine string, prober i
 	// A landing claim is joined to liveness like a working claim: a process
 	// landing it is live backlog activity.
 	claimLineages := make(map[string]string, len(frontier.Claimed)+len(frontier.Landing))
+	admission := newClaimAdmissionContext(projection.Root, projection.claimAdmissionLoader)
 	for _, id := range append(append([]string(nil), frontier.Claimed...), frontier.Landing...) {
 		if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
 			claimLineages[id] = file.Claimed.Lineage
 			work.ownedClaims[id] = file
+			work.Eligibility[id] = claimExecutionEligibility(admission, projection.Tree, file, projection.Horizon.Now)
 		}
 	}
 	work.Queued = len(frontier.Awaiting)
@@ -502,7 +523,7 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	if len(problems) > 0 {
 		return ClaimableBudgetedWork{}, fmt.Errorf("legacy goal ledger has %d parse problems", len(problems))
 	}
-	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued), GoalFacts: map[string]GoalFacts{}}
+	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued), GoalFacts: map[string]GoalFacts{}, Eligibility: map[string]ClaimEligibility{}}
 	for _, queued := range ledger.Queued {
 		work.Claimable = append(work.Claimable, queued.Id)
 		work.GoalFacts[queued.Id] = GoalFacts{Id: queued.Id, Intent: queued.Intent, NextStep: queued.NextStep}
@@ -510,6 +531,9 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	legacyClaim := ledger.Current != nil
 	if legacyClaim {
 		work.Claimed = append(work.Claimed, ledger.Current.Id)
+		// The monolithic ledger authorizes its current goal directly. It has
+		// no personal reservations or per-goal approval/capability records.
+		work.Eligibility[ledger.Current.Id] = ClaimEligibility{Ready: true}
 		work.GoalFacts[ledger.Current.Id] = GoalFacts{Id: ledger.Current.Id, Intent: ledger.Current.Intent, NextStep: ledger.Current.NextStep, Revision: ledger.Revision()}
 	}
 	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)

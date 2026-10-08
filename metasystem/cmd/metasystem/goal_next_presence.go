@@ -92,6 +92,10 @@ func silentHolders(
 			continue
 		}
 		for _, id := range standing.Holds {
+			if f := tree.Live[id]; f != nil && !f.IsFencedClaim() && f.StopCapability != nil && f.StopCapability.ClaimEpoch == 0 {
+				lines = append(lines, "goal "+id+" is reserved, awaiting session start on "+f.Claimed.Machine)
+				continue
+			}
 			lines = append(lines, "goal "+id+" is "+flag+"; "+remedyFor(tree.Live[id]))
 		}
 	}

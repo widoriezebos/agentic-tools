@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -13,8 +14,14 @@ func TestStatusAndTheSeatPromptShareOneUnitList(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("shared.md", "Working Mode: implement\n\nBuild the unit.\n\n| Unit | Lines |\n| --- | --- |\n| first | 40 |\n| second | 40 |\n")
 	for _, name := range []string{"first", "second"} {
-		if code, result, _ := bed.work(append([]string{"work", "build", bed.id, name, "--brief", brief}, workCheck...)...); code != 0 {
+		code, result, _ := bed.work(append([]string{"work", "build", bed.id, name, "--brief", brief}, workCheck...)...)
+		if code != 0 {
 			t.Fatalf("build: %+v", result)
+		}
+		if name == "first" {
+			if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, result)["run"].(string)); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	var config steward.TickConfig

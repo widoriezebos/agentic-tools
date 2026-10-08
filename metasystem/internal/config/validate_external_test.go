@@ -41,7 +41,7 @@ func TestValidateAdmitsANamedExternalRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Required proof commands belong to the repository configuration.
-			conf := "proof.full=true\nproof.cheap=true\nmetasystem.runtimes=fake,newagent\ntesting.contract=testing.json\nevidence.root=" + t.TempDir() +
+			conf := "proof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\nmetasystem.runtimes=fake,newagent\ntesting.contract=testing.json\nevidence.root=" + t.TempDir() +
 				"\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n"
 			if test.named {
 				conf += "adapters.newagent.use=external\n"

@@ -35,7 +35,7 @@ func (pendingDropGit) Run(dir string, env []string, args ...string) ([]byte, err
 type pendingDropProofStarter struct{ f *dropFixture }
 
 func (s pendingDropProofStarter) StartSupervisor(id, state string) (identity.Ref, error) {
-	ref, err := (dropProofStarter{s.f}).StartSupervisor(id, state)
+	ref, err := dropProofStarter(s).StartSupervisor(id, state)
 	r, _ := s.f.bed.manager.Store.Read(id)
 	if r.Kind == "proof" {
 		if e := os.WriteFile(filepath.Join(s.f.bed.worktree, "other.go"), []byte("moved during proof\n"), 0600); e != nil {

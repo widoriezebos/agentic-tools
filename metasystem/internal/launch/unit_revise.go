@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -484,8 +485,8 @@ func (runner *UnitRunner) rebasePlan(plan UnitPlan, binding *UnitRebasePlan) (Un
 		return path
 	}
 	plan.Proof = append([]ProofCommand(nil), plan.Proof...)
-	plan.Build.Inputs = append([]string(nil), plan.Build.Inputs...)
-	plan.Build.Outputs = append([]string(nil), plan.Build.Outputs...)
+	plan.Build.Inputs = slices.Clone(plan.Build.Inputs)
+	plan.Build.Outputs = slices.Clone(plan.Build.Outputs)
 	for i := range plan.Build.Inputs {
 		plan.Build.Inputs[i] = move(plan.Build.Inputs[i])
 	}

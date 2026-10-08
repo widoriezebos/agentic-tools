@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -28,17 +29,19 @@ func newStopVerbBed(t *testing.T) *replayVerbBed {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Check admission reconciles requests before the keeper tick; both use the same machine.
+	b.owners.landing.machine = func(string) (string, error) { return "lane-machine", nil }
 	return b
 }
 
 func syncStopQuestionHold(agent landingAgent, install string) (string, error) {
-	if err := plain.SyncStopQuestion(install, agent.machine, agent.now()); err != nil {
+	if err := plain.SyncPolicyQuestion(install, agent.machine, agent.now()); err != nil {
 		return "", err
 	}
 	return agent.questionHold(install)
 }
 
-func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing.T) {
+func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *testing.T) {
 	t.Parallel()
 	b := newStopVerbBed(t)
 	b.fail = func(_ *exec.Cmd, only string) (string, error) {
@@ -61,7 +64,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 		t.Fatalf("no recorded stop: %d %s", code, text)
 	}
 	stop := status.Data.Stop
-	command := "metasystem landing return GOAL --cause own --reason TEXT"
+	command := "metasystem landing return GOAL --cause unclassified --reason TEXT"
 	if stop.Loop != "lane-proof" || stop.Attempt != 2 || stop.Budget != 2 || stop.Cause.Kind != "unclassified" || stop.Command() != command || !strings.Contains(stop.Subject, "a") || !strings.Contains(stop.Subject, "b") || stop.Evidence == "" {
 		t.Fatalf("stop lost its decision or evidence: %+v", stop)
 	}
@@ -69,7 +72,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	if code != 0 || !strings.Contains(oneSpaced(text), "the lane stopped:") || !strings.Contains(oneSpaced(text), command) || !strings.Contains(oneSpaced(text), "TestBroken") {
 		t.Fatalf("stop is not visible: %d %s", code, text)
 	}
-	// The keeper reconciles the stop question at its own tick.
+	// The keeper recovers the request already reconciled by check admission.
 	agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
 	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
 		t.Fatalf("keeper did not ask and hold: %q %v", hold, err)
@@ -100,11 +103,14 @@ func TestLandingStopAfterSecondRedShowsCommandAndRunWithdrawsQuestion(t *testing
 	if code, text := b.run(t, b.root, "run"); code != 0 {
 		t.Fatalf("landing run: %d %s", code, text)
 	}
-	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || hold != "" {
-		t.Fatalf("the act did not end the question: %q %v", hold, err)
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
+		t.Fatalf("generic run changed the stopped subject: %q %v", hold, err)
 	}
-	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State != "closed" {
-		t.Fatalf("the question was not withdrawn: %+v %v", q, err)
+	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State == "closed" {
+		t.Fatalf("generic run closed the question without its effect: %+v %v", q, err)
+	}
+	if result, ok, err := plain.LastResult(b.install); err != nil || !ok || result.LoopClosed {
+		t.Fatalf("generic run reopened proof allowance: %+v %v", result, err)
 	}
 }
 
@@ -147,7 +153,8 @@ func TestLandingStopCauseChoosesTheHandoff(t *testing.T) {
 					t.Fatalf("main must hold without a lane question: %+v questions=%+v", stop, questions)
 				}
 			case "environment":
-				if stop.Attempt != 0 || stop.Command() != "metasystem landing run" || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+				// Decision 4 requires the check act; generic run grants no repeat authority.
+				if stop.Attempt != 0 || stop.Command() != "metasystem landing prove" || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
 					t.Fatalf("environment spent a full attempt or chose a return: %+v questions=%+v", stop, questions)
 				}
 			}
@@ -161,24 +168,31 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 		t.Run(act, func(t *testing.T) {
 			t.Parallel()
 			b := newStopVerbBed(t)
-			b.fail = func(_ *exec.Cmd, only string) (string, error) {
-				if only == "" {
+			b.fail = func(cmd *exec.Cmd, only string) (string, error) {
+				_, exists := os.Stat(filepath.Join(cmd.Dir, "b"))
+				if only == "" || exists == nil {
 					return replayFailure, errors.New("red")
 				}
 				return "LANDING-CHECKED\t0\n", nil
 			}
 			b.prove(t)
-			b.prove(t)
-			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\nlanding.on-red=person\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if code, out := b.run(t, b.root, "return", "b", "--cause", "own"); code != 1 || !strings.Contains(out, "the return needs a person") {
+				t.Fatalf("return request: %d %s", code, out)
+			}
+			// The observer synchronizes requests from fresh lane inputs (lane-reads-its-policies.md:140).
+			agent := landingAgent{proofEffects: b.owners.landing.plainProve, now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
 			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}
 			questions, _ := channel.WalkOpenQuestions(b.install)
-			if len(questions) != 1 {
+			if len(questions) != 1 || channel.LaneStopCommand(questions[0]) != "metasystem landing return b --cause own --reason TEXT" {
 				t.Fatalf("questions=%+v", questions)
 			}
 			q := questions[0]
-			q.State, q.Answer = "answered", &channel.Answer{Text: "return a"}
+			q.State, q.Answer = "answered", &channel.Answer{Text: "return b"}
 			data, err := json.Marshal(q)
 			if err != nil {
 				t.Fatal(err)
@@ -187,6 +201,11 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 				t.Fatal(err)
 			}
 			keeper := newLandingAgentKeeper(b.root, b.home, agent)
+			// This keeper continues the selection already proved by the fixture.
+			keeper.Prepare = func(record lane.Record) error {
+				_, err := plain.SelectBatch(record.Install, record.Root, record, b.owners.landing.plainProve)
+				return err
+			}
 			keeper.Running = func() (string, bool, error) { return "", false, nil }
 			keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 			keeper.Fingerprint = nil
@@ -197,10 +216,12 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 				t.Fatalf("an answer lifted the stop: %+v", run)
 			}
 			if act == "return" {
-				if code, out := b.run(t, b.root, "return", "a", "--cause", "own", "--reason", "person chose a"); code != 0 {
+				b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+				b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+				if code, out := b.run(t, b.root, "return", "b", "--cause", "own", "--reason", "person chose b"); code != 0 {
 					t.Fatalf("person return: %d %s", code, out)
 				}
-			} else if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "a", SHA: "new-sha"}); err != nil {
+			} else if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "b", SHA: "new-sha"}); err != nil {
 				t.Fatal(err)
 			}
 			// Reconciliation must happen even when the next launch is still alive.
@@ -209,11 +230,14 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			if ended, err := channel.ReadQuestion(b.install, q.ID); err != nil || ended.State != "closed" {
 				t.Fatalf("the later act did not withdraw: %+v %v", ended, err)
 			}
+			if open, err := plain.OpenStops(b.install); err != nil || len(open) != 0 {
+				t.Fatalf("the goal act left its proof or return stop open: %+v %v", open, err)
+			}
 		})
 	}
 }
 
-func TestLandingStopBarrenHoldRecordsOneQuestionAndRunClearsIt(t *testing.T) {
+func TestLandingStopBarrenHoldRecordsOneQuestionAndSelectionClearsIt(t *testing.T) {
 	t.Parallel()
 	b, keeper, now, starts, _ := landingRestartBed(t)
 	install := b.landingA
@@ -234,10 +258,11 @@ func TestLandingStopBarrenHoldRecordsOneQuestionAndRunClearsIt(t *testing.T) {
 	}
 	stop, err := plain.NewestStop(install)
 	questions, _ := channel.WalkOpenQuestions(install)
-	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run --goals a" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
 		t.Fatalf("barren stop: %+v %v questions=%+v", stop, err, questions)
 	}
-	if code, stdout, stderr := b.run(t, "landing", "run"); code != 0 || *starts != 3 {
+	b.prove = enrolledPersonProver(t, b.landingA, *now)
+	if code, stdout, stderr := b.run(t, "landing", "run", "--goals", "a"); code != 0 || *starts != 3 {
 		t.Fatalf("run did not lift the hold: %d %s %s starts=%d", code, stdout, stderr, *starts)
 	}
 	if q, err := channel.ReadQuestion(install, questions[0].ID); err != nil || q.State != "closed" {
@@ -273,7 +298,7 @@ func TestLandingUnreadableUnrelatedQuestionAllowsKeeperAndRun(t *testing.T) {
 	}
 }
 
-func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsRun(t *testing.T) {
+func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsSelection(t *testing.T) {
 	t.Parallel()
 	b, keeper, now, starts, _ := landingRestartBed(t)
 	queueRestartWork(t, b)
@@ -305,7 +330,8 @@ func TestLandingUnreadableOwnStopQuestionHoldsKeeperButAllowsRun(t *testing.T) {
 	if run := keeper.Run(); run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, questions[0].ID) {
 		t.Fatalf("own unreadable: %+v", run)
 	}
-	if code, out, stderr := b.run(t, "landing", "run"); code != 0 || *starts != 3 {
+	b.prove = enrolledPersonProver(t, b.landingA, *now)
+	if code, out, stderr := b.run(t, "landing", "run", "--goals", "first,second"); code != 0 || *starts != 3 {
 		t.Fatalf("explicit run: %d %s %s starts=%d", code, out, stderr, *starts)
 	}
 }
