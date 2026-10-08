@@ -27,7 +27,7 @@ func newDecisionTickRepository(t *testing.T) *decisionTickRepository {
 	t.Helper()
 	root := t.TempDir()
 	testprovider.Register(t, root)
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeStewardRecord(t, ledgerAttentionStatePath(root), map[string]any{

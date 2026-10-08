@@ -542,7 +542,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		return TickResult{}, err
 	}
 	if outageMark.LastClass == "unknown" && (d.Action == ActNotify || d.Action == ActHold) {
-		d.Reason = outageMark.LastDetail
+		d.Reason += "\n" + outageMark.LastDetail
 	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every

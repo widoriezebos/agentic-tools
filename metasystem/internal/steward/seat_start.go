@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -666,13 +667,15 @@ func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork 
 }
 
 func standingProviderOutage(repoRoot string, now time.Time, log func(string), homes ...string) (outage.Mark, bool) {
-	settings, err := launch.ResolveSettings(filepath.Join(repoRoot, "metasystem.conf"), os.LookupEnv)
+	roster, err := dispatch.ResolveRoster(dispatch.RosterParams{
+		ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Role: "steward-continuation", Mode: "build",
+	})
 	home := ""
 	if len(homes) > 0 {
 		home = homes[0]
 	}
 	providers, readErr := outage.ReadProviders(home)
-	mark, standing := providers.Standing(settings.SeatRuntime, now)
+	mark, standing := providers.Standing(roster.Runtime, now)
 	if err == nil {
 		err = readErr
 	}

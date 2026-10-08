@@ -11,9 +11,79 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
+
+func TestRevivalUnknownProviderNamesRegistrationRepair(t *testing.T) {
+	t.Parallel()
+	for _, handoff := range []bool{false, true} {
+		name := "seat idle"
+		if handoff {
+			name = "handoff"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var revival *revivalFixture
+			var intent Intent
+			if handoff {
+				revival, intent = stagedRevivalFixture(t, "6000000000000001")
+				revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, func() {
+					if err := os.Remove(lane.RecordPath(testprovider.Home(revival.root))); err != nil {
+						t.Fatal(err)
+					}
+				})
+			} else {
+				revival = newRevivalFixture(t, 1, 2)
+				intent = testIntent("6000000000000002")
+				intent.Reason = "seatIdle"
+				read := revival.dependencies.ReadClaimableBudgetedWork
+				revival.dependencies.ReadClaimableBudgetedWork = func(root string, now time.Time) (goal.ClaimableBudgetedWork, error) {
+					work, err := read(root, now)
+					if revival.workReads.Load() == 2 {
+						if err := os.Remove(lane.RecordPath(testprovider.Home(root))); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return work, err
+				}
+			}
+			root := revival.root
+			if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+				t.Fatal(err)
+			}
+			launched := false
+			outcome, err := revival.complete(TickConfig{Now: time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)}, deadCensus(), intent.Nonce, func(Intent) error {
+				launched = true
+				return nil
+			})
+			if err != nil || launched || outcome.Launched || outcome.Escalate || outcome.Held != handoff ||
+				!strings.Contains(outcome.Reason, "metasystem landing set PATH") || strings.Contains(outcome.Reason, "overloaded") {
+				t.Fatalf("registration loss before launch must name its repair: %+v %v launched=%t", outcome, err, launched)
+			}
+			live, err := LiveIntents(root)
+			if err != nil || len(live) != map[bool]int{false: 0, true: 1}[handoff] {
+				t.Fatalf("ordinary revivals cancel; handoffs remain resumable: %+v %v", live, err)
+			}
+			if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 0 {
+				t.Fatalf("provider uncertainty must spend no revival attempt: %+v %v", evidence, err)
+			}
+			if handoff {
+				pending, err := PendingNotifications(root)
+				if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, "metasystem landing set PATH") || strings.Contains(pending[0].Message, "overloaded") {
+					t.Fatalf("the handoff notice must name the registration repair: %+v %v", pending, err)
+				}
+			} else {
+				data, err := os.ReadFile(filepath.Join(cancelledDir(root), intent.Nonce+".json"))
+				if err != nil || !strings.Contains(string(data), "metasystem landing set PATH") || strings.Contains(string(data), "overloaded") {
+					t.Fatalf("the cancellation must record the registration repair: %s %v", data, err)
+				}
+			}
+		})
+	}
+}
 
 type handoffProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
 

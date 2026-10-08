@@ -169,6 +169,27 @@ func TestTickHoldsRevivalDuringOutage(t *testing.T) {
 	}
 }
 
+func TestTickUnknownProviderPreservesOperatorReason(t *testing.T) {
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	if err := os.Remove(lane.RecordPath(testprovider.Home(bed.root))); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEvidence(bed.root, EvidencePath(bed.root), Evidence{Marks: bed.currentMarks(), DryRevivals: 3}); err != nil {
+		t.Fatal(err)
+	}
+	result := bed.tickN(TickConfig{Now: time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)}, deadCensus(), 1)
+	if result.Decision.Action != ActNotify || !strings.Contains(result.Decision.Reason, "operator needed") ||
+		!strings.Contains(result.Decision.Reason, "metasystem landing set PATH") {
+		t.Fatalf("the operator reason and provider repair must both remain visible: %+v", result.Decision)
+	}
+	pending, err := PendingNotifications(bed.root)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, "operator needed") ||
+		!strings.Contains(pending[0].Message, "metasystem landing set PATH") {
+		t.Fatalf("the notification must retain both reasons: %+v %v", pending, err)
+	}
+}
+
 // A LONG outage reaches the human: the standing-outage noticing fires
 // once the mark's age crosses the threshold, rides the durable notify
 // queue, and is not silenced by a notify-tick decision. A fresh

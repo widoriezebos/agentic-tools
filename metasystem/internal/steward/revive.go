@@ -166,9 +166,9 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	// it costs at most one dry revival, which the hint's contract
 	// accepts.
 	if _, standing := standingProviderOutage(repoRoot, cfg.now(), nil, cfg.ProviderHome); standing {
-		reason := "the model provider is overloaded; holding revival until the provider recovers"
+		reason := providerWaitReason(repoRoot, cfg.now(), cfg.ProviderHome)
 		if it.Reason == seatHandoffReason {
-			reason = fmt.Sprintf("handoff %s waits: the model provider became overloaded before launch (session pid %d ended)", it.Nonce, it.Handoff.Predecessor.Pid)
+			reason = fmt.Sprintf("handoff %s waits: %s (session pid %d ended)", it.Nonce, reason, it.Handoff.Predecessor.Pid)
 			return holdHandoff(repoRoot, *it, reason)
 		}
 		if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {
