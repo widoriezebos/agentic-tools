@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 func processSettingBed(t *testing.T) (*policyBed, string) {
@@ -23,6 +24,12 @@ func processSettingBed(t *testing.T) (*policyBed, string) {
 	b.owners.prove = fixedFixtureGoalAuthority
 	b.owners.processes.question = channel.ReadQuestion
 	b.owners.dependencies.ownerLineage = func() string { return "builder-session" }
+	// Settings proposals observe only this fixture's retained executions.
+	unitRoot := t.TempDir()
+	manager := &launch.Manager{Store: launch.Store{Root: t.TempDir()}, Now: func() time.Time { return b.now }}
+	b.owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
+		return &launch.UnitRunner{Root: unitRoot, Manager: manager}
+	}
 	b.owners.policies.ConfPath = func(checkout string) (string, error) { return filepath.Join(checkout, "settings.conf"), nil }
 	local := filepath.Join(b.seat, "settings.conf.local")
 	if err := os.WriteFile(local, []byte("# preserve unrelated bytes\nsecret=not-a-real-secret\nlaunch.codex.sandbox=workspace-write\n"), 0600); err != nil {
@@ -342,8 +349,11 @@ func TestProcessSettingReproposal(t *testing.T) {
 			if err := os.WriteFile(local, []byte("launch.contract=before.json\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			_, result, _ := b.run(t, b.seat, "set", "launch.contract", "after.json")
+			code, result, _ := b.run(t, b.seat, "set", "launch.contract", "after.json")
 			previous := processAct(t, result)
+			if code != 1 || previous.Status != "proposed" || previous.Key != "launch.contract" || previous.After != "after.json" || previous.ID == "" || previous.Question == "" {
+				t.Fatalf("initial proposal: exit %d %+v", code, result)
+			}
 			for cycle := 0; cycle < 2; cycle++ {
 				b.owners.prove = enrolledPersonProver(t, b.seat, b.now)
 				if status == "superseded" {

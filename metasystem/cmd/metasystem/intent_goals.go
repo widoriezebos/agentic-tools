@@ -27,7 +27,8 @@ import (
 
 func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentResult) {
 	if inv.owners.dependencies.endpoint == nil {
-		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal list is unavailable: no endpoint reader is configured"}
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal list is unavailable: no endpoint reader is configured",
+			next: inv.publicArgv("system", "check"), nextReason: "shows how this checkout is set up"}
 	}
 	if inv.layout.InstallationRoot == "" {
 		layout, err := inv.owners.resolver.ResolveLayout(inv.stateRoot)

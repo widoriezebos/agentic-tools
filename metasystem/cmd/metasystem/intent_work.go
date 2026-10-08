@@ -545,11 +545,14 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	}
 	runner.PlanProof = inv.unitProof
 	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {
-		full, _ := landingProofCommand(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, "origin/main", "proof.full", func(root string, args ...string) (string, error) {
-			data, err := inv.work().git(root, args...)
-			return string(data), err
-		})
-		plan.FullArgv = strings.Fields(full)
+		// A manual repair must work without readable check declarations.
+		if !inv.input.has("check") {
+			full, _ := landingProofCommand(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, "origin/main", "proof.full", func(root string, args ...string) (string, error) {
+				data, err := inv.work().git(root, args...)
+				return string(data), err
+			})
+			plan.FullArgv = strings.Fields(full)
+		}
 		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
 		var err error
 		if problem := inv.selectLayoutRoot(); problem != nil {

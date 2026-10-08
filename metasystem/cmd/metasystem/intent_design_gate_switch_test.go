@@ -91,7 +91,7 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 			if record.Mode != mode || record.Person != (scenario == "person") || record.GovernedBy != "R-146-m1k" {
 				t.Fatalf("dispatch record: %+v", record)
 			}
-			if scenario == "allowed" && (record.Verdict != "allowed" || record.WouldRefuse || output != "") {
+			if scenario == "allowed" && (record.Verdict != "allowed" || record.WouldRefuse || output != "warning: estimate unavailable; the build goes on\n") {
 				t.Fatalf("allowed build: record=%+v output=%q", record, output)
 			}
 			if scenario == "person" && !strings.Contains(output, "; it goes on at your word\n") {
