@@ -89,6 +89,11 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 	}
 	drop := source.Drop
 	if drop.Decisions != digest || drop.Requirements != scope {
+		if drop.Subject.Published != "" {
+			result := fail(fmt.Errorf("the bound decisions or accepted requirements changed"))
+			result.Summary = "the inverse is published; reconcile the changed decisions or requirements before retrying"
+			return result
+		}
 		return fail(fmt.Errorf("the bound decisions or accepted requirements changed; code is retained"))
 	}
 	if drop.At == "" {

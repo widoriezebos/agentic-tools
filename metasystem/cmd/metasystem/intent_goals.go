@@ -26,6 +26,10 @@ import (
 // goal's recorded state and render the owner's typed result.
 
 func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentResult) {
+	return inv.projectionWithFetch(inv.input.switched("fetch"))
+}
+
+func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projection, time.Time, *intentResult) {
 	endpoint, err := inv.owners.dependencies.endpoint(inv.stateRoot)
 	if err != nil {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the goal list can't be found here: " + err.Error(), code: 1,
@@ -37,7 +41,7 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 			next: inv.typedArgv(), nextReason: "try again"}
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
-	projection, err := goal.Project(endpoint, inv.input.switched("fetch"), now)
+	projection, err := goal.Project(endpoint, fetchFirst, now)
 	if errors.Is(err, goal.ErrLedgerNotFetched) {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1,
 			Summary: "this checkout has not fetched the goal ledger yet; nothing was read",

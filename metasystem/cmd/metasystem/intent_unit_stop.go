@@ -99,7 +99,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			required = required || unit.Name == record.Unit
 		}
 	}
-	projection, _, problem := inv.projection()
+	projection, _, problem := inv.projectionWithFetch(true)
 	if problem != nil {
 		return problem
 	}

@@ -115,7 +115,7 @@ func TestWorkReviewDropPublicationRecovery(t *testing.T) {
 					f.bed.repo.serial++
 					id := fmt.Sprintf("%040x", f.bed.repo.serial)
 					f.bed.repo.commits[id] = obligationCommit{parent: f.bed.repo.canonical, files: files, at: current.at}
-					f.bed.repo.canonical, f.bed.repo.accepted = id, id
+					f.bed.repo.canonical = id
 				}
 				return push(req)
 			}
@@ -484,7 +484,7 @@ func (f *dropFixture) retained(t *testing.T) launch.UnitRunRecord {
 
 func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"inverse", "lost-response", "conflict", "red-proof", "moved-tree", "shared", "person", "stale-binding", "stale-design", "required", "dirty-tree", "proof-writes"} {
+	for _, name := range []string{"inverse", "lost-response", "conflict", "red-proof", "moved-tree", "shared", "person", "stale-binding", "stale-design", "required", "inherited-source", "inherited-target", "dirty-tree", "proof-writes"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newDropFixture(t)
@@ -520,6 +520,28 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if name == "inherited-source" || name == "inherited-target" {
+				current := f.bed.repo.commit(f.bed.repo.canonical)
+				files := obligationFilesCopy(current.files)
+				file, problems := goal.ParseFile(files["plans/goals/"+f.bed.id+".md"])
+				if len(problems) != 0 {
+					t.Fatal(problems)
+				}
+				source, target := "stopped", "destination"
+				if name == "inherited-target" {
+					source, target = "source", "stopped"
+				}
+				finding := stopFinding("regression", "source.go")
+				finding.ID = "read:1"
+				file.ReviewObligations = append(file.ReviewObligations, goal.ReviewObligation{Finding: finding.ID, Chain: "source", Artifact: "source.go", Test: "TestInherited", State: "open", SourceUnit: source, TargetUnit: target, OriginalRead: "read", OriginalFinding: finding.ID, StopReference: "stop-one", TransferredOnce: true, SourceCommit: f.commit, OriginalEvidence: finding})
+				file.Revision++
+				file.History = append(file.History, goal.HistoryLine{At: file.History[len(file.History)-1].At, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", f.bed.lineage), Verb: "edit", Actor: "human:Wido", Targets: []string{f.bed.id}, Keep: -1})
+				files["plans/goals/"+f.bed.id+".md"] = goal.RenderFile(file)
+				f.bed.repo.serial++
+				id := fmt.Sprintf("%040x", f.bed.repo.serial)
+				f.bed.repo.commits[id] = obligationCommit{parent: f.bed.repo.canonical, files: files, at: current.at}
+				f.bed.repo.canonical = id
+			}
 			if name == "red-proof" {
 				f.bed.starter.fail["proof"] = true
 			}
@@ -542,6 +564,9 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, result = f.review(t, args...)
+			if (name == "inherited-source" || name == "inherited-target") && (result.Outcome != intentRefused || !strings.Contains(result.Summary, "Required work")) {
+				t.Fatalf("current inherited requirement was not enforced: %d %+v", code, result)
+			}
 			r := f.retained(t)
 			successful := name == "inverse" || name == "person" || name == "stale-design"
 			if successful {
@@ -572,7 +597,9 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 				if (code != 0 && name != "stale-design") || f.inversions != 1 || f.commits != 1 || f.checks != 1 {
 					t.Fatalf("replay duplicated effect: %d %+v", code, result)
 				}
-				if name == "stale-design" && (!slices.ContainsFunc(result.Details, func(detail string) bool { return strings.Contains(detail, "requirements changed") }) || result.Outcome != intentInProgress) {
+				if name == "stale-design" && (!slices.ContainsFunc(result.Details, func(detail string) bool {
+					return strings.Contains(detail, "requirements changed") && !strings.Contains(detail, "code is retained")
+				}) || !strings.Contains(result.Summary, "inverse is published") || !strings.Contains(result.Summary, "reconcile") || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "--json", f.bed.id, "--work", "stopped", "--dispositions", path})) {
 					t.Fatalf("stale scope rejoined: %+v", result)
 				}
 			} else if name == "lost-response" {
@@ -593,7 +620,7 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 						t.Fatalf("lost pending scratch: %+v", r)
 					}
 				}
-				if name == "stale-binding" || name == "shared" || name == "required" || name == "dirty-tree" {
+				if name == "stale-binding" || name == "shared" || name == "required" || name == "inherited-source" || name == "inherited-target" || name == "dirty-tree" {
 					if f.inversions != 0 || f.checks != 0 {
 						t.Fatalf("unsafe input launched effects: %+v", result)
 					}
