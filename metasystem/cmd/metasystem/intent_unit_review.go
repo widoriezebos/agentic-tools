@@ -430,7 +430,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			err = conn.commitToken(install, func() error {
 				var carryErr error
 				carried, carryErr = conn.carry(branch.CarryRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
-					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport})
+					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, SubjectCheck: conn.subjectCheck, Transport: conn.transport})
 				return carryErr
 			})
 			data["carried"] = carried.Carried

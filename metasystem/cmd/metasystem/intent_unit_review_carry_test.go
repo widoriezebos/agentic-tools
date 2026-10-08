@@ -33,7 +33,7 @@ func unitCarryIntentBed(t *testing.T, amended bool) (*workBed, intentOwners, str
 	t.Helper()
 	b, owners, _ := rebaseIntentBed(t)
 	brief := b.brief("carry.md", "Build the unit.\n")
-	code, built, _ := b.work(append([]string{"work", "build", b.id, "u1", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	code, built, _ := b.work(append([]string{"work", "build", b.id, "u1", "--brief", brief, "--lines", "5", "--reason", "exercise review carry", "--by", "Wido"}, workCheck...)...)
 	if code != 0 {
 		t.Fatalf("build = %+v, code = %d", built, code)
 	}
@@ -50,6 +50,7 @@ func unitCarryIntentBed(t *testing.T, amended bool) (*workBed, intentOwners, str
 	if err != nil {
 		t.Fatal(err)
 	}
+	b.head = "replayed-tip"
 	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
 		return branch.BranchReadResult{RootJob: "critic"}, nil
 	}
@@ -180,6 +181,12 @@ func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 	}
 }
 
+// Git must replay the later unit and persist its subject journal and attestation.
+func TestUnitReviewAmendDeclaredCheckOverridesCachedGateGitAdapter(t *testing.T) {
+	t.Parallel()
+	witnessCanonicalReviewCarry(t, "unit-read", "cached gate")
+}
+
 func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	t.Helper()
 	b, owners, run, runner := unitCarryIntentBed(t, true)
@@ -187,7 +194,13 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	connectionGit(t, repo, "init", "-q", "-b", "main")
 	connectionGit(t, repo, "config", "user.name", "fixture")
 	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
-	connectionGit(t, repo, "commit", "-qm", "base", "--allow-empty")
+	declaration := "proof.cheap=true\nproof.audits=true\nproof.deadline=15\n"
+	if state == "cached gate" {
+		declaration = "proof.cheap=false\nproof.audits=false\nproof.deadline=15\n"
+	}
+	writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
+	connectionGit(t, repo, "add", "metasystem.conf")
+	connectionGit(t, repo, "commit", "-qm", "base")
 	base := connectionGit(t, repo, "rev-parse", "HEAD")
 	remote := filepath.Join(t.TempDir(), "origin.git")
 	connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
@@ -209,6 +222,11 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		}
 		writeUnitCarryFile(t, filepath.Join(repo, path), body)
 		connectionGit(t, repo, "add", path)
+		if state == "cached gate" && unit == "u2" {
+			declaration = "proof.cheap=printf 'cheap subject check\\n'; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\n"
+			writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
+			connectionGit(t, repo, "add", "metasystem.conf")
+		}
 		commit, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base,
 			GoalID: b.id, Unit: unit, OpID: "commit-" + unit, Kind: branch.Unit, CheckClaim: func() error { return nil }})
 		if err != nil {
@@ -275,6 +293,20 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		t.Fatal(err)
 	}
 	corrected := commits[0].ID
+	var carriedSubject, carriedTree, journalPath string
+	if state == "cached gate" {
+		for _, commit := range commits {
+			if commit.Kind == branch.Unit && slices.Contains(commit.Units, "u2") {
+				carriedSubject = commit.ID
+			}
+		}
+		if carriedSubject == "" || carriedSubject == later {
+			t.Fatal("the amendment did not replay the later unit")
+		}
+		carriedTree = connectionGit(t, repo, "rev-parse", carriedSubject+"^{tree}")
+		journalPath = filepath.Join(repo, ".git", "metasystem", "goal-reads", b.id, carriedSubject+".json")
+		writeUnitCarryFile(t, journalPath, fmt.Sprintf(`{"schemaVersion":1,"goal":%q,"unitCommit":%q,"tree":%q,"gateRunId":"cached-static-gate"}`, b.id, carriedSubject, carriedTree))
+	}
 	if err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		subject := *review.Subject
 		subject.Commit, subject.Tip, subject.Amends = corrected, tip, first
@@ -282,6 +314,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	b.head = tip
 	owners.connection.carry, owners.connection.push = nil, nil
 	var carried branch.CarryResult
 	owners.connection.carry = func(req branch.CarryRequest) (branch.CarryResult, error) {
@@ -300,6 +333,12 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return base, nil }
 	owners.connection.commitToken = func(_ string, fn func() error) error { return fn() }
 	owners.connection.rebaseGate = func(string) (string, error) { return "checks passed", nil }
+	if state == "cached gate" {
+		owners.connection.rebaseGate = func(string) (string, error) {
+			t.Fatal("correction carry ran the static gate")
+			return "", nil
+		}
+	}
 	critics := 0
 	owners.delivery.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
 		critics++
@@ -309,12 +348,13 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		return branch.BranchReadResult{}, 1, &branch.ReadNeverLaunchedError{Err: errors.New("critic requested")}
 	}
 	_, stdout, stderr := b.run(owners, "work", "review", "run:"+run)
-	if critics != 1 || state == "unchanged" && !strings.Contains(stdout+stderr, "review carried: u2") {
+	unchanged := state == "unchanged" || state == "cached gate"
+	if critics != 1 || unchanged && !strings.Contains(stdout+stderr, "review carried: u2") {
 		t.Fatalf("review output = %s%s, critics = %d", stdout, stderr, critics)
 	}
 	published := connectionGit(t, repo, "rev-parse", "HEAD")
 	status, err := branch.InspectStatus(repo, base, published, b.id)
-	if state != "unchanged" {
+	if !unchanged {
 		if err != nil || len(status.Units) != 2 || status.Units[1].ReadState == "read clean" || !slices.Contains(carried.NeedsReview, "u2") || len(carried.Carried) != 0 || !strings.Contains(stdout+stderr, "work review "+b.id+" --work u2") {
 			t.Fatalf("unread work was carried or lacks its remedy: status=%+v carry=%+v err=%v output=%s%s", status, carried, err, stdout, stderr)
 		}
@@ -330,6 +370,43 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	att, err := branch.ValidateAttestationAt(repo, published, base, b.id, "u2", status.Units[1].Commit)
 	if err != nil || att.Carry == nil || att.Carry.FromCommit != later || att.Carry.ToCommit != status.Units[1].Commit {
 		t.Fatalf("carried review = %+v, error = %v", att, err)
+	}
+	if state == "cached gate" {
+		if att.Subject.Commit != carriedSubject || att.Gate.Kind != "unit-check" || att.Gate.RunID == "cached-static-gate" || att.Gate.Tree != carriedTree {
+			t.Fatalf("carried attestation did not use its subject's declared check: subject=%+v gate=%+v", att.Subject, att.Gate)
+		}
+		executions, err := filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", carriedSubject, "check-*", "result.json"))
+		if err != nil || len(executions) != 1 {
+			t.Fatalf("subject check executions=%v error=%v", executions, err)
+		}
+		var execution struct {
+			ExecutionID string
+			Check       launch.UnitCheck
+			Exits       []launch.CheckExit
+		}
+		data, err := os.ReadFile(executions[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &execution); err != nil {
+			t.Fatal(err)
+		}
+		if execution.ExecutionID != att.Gate.RunID || execution.Check.SourceTree != carriedTree || len(execution.Exits) != 2 || execution.Exits[0].Exit != 0 || execution.Exits[1].Exit != 0 || !strings.Contains(execution.Exits[0].Output, "cheap subject check") || !strings.Contains(execution.Exits[1].Output, "audit subject check") {
+			t.Fatalf("attestation does not bind a passing subject execution: %+v", execution)
+		}
+		var committed struct {
+			ExecutionID string
+			Check       launch.UnitCheck
+			Exits       []launch.CheckExit
+		}
+		if err := json.Unmarshal([]byte(att.Gate.Evidence), &committed); err != nil || committed.ExecutionID != execution.ExecutionID || committed.Check.SourceTree != carriedTree || committed.Check.Cheap != execution.Check.Cheap || committed.Check.Audits != execution.Check.Audits || !slices.Equal(committed.Exits, execution.Exits) {
+			t.Fatalf("committed subject execution=%+v error=%v", committed, err)
+		}
+		data, err = os.ReadFile(journalPath)
+		var journal struct{ GateRunID string }
+		if err != nil || json.Unmarshal(data, &journal) != nil || journal.GateRunID != execution.ExecutionID {
+			t.Fatalf("subject journal retained its cached gate: %s error=%v", data, err)
+		}
 	}
 	var before, after readsubject.Read
 	if json.Unmarshal(original.CanonicalRead, &before) != nil || json.Unmarshal(att.CanonicalRead, &after) != nil || after.ID == before.ID || after.CarriedFrom != before.ID || after.Subject.Commit != att.Subject.Commit || after.Subject.Tree != att.Subject.Tree || after.Engine != before.Engine || after.Model != before.Model || after.Output != before.Output || att.Source != original.Source {

@@ -291,6 +291,16 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 			if code != 1 || resultData(t, result)["outcome"] != "proof-red" || !slices.Equal(starter.calls, []int{1, 1}) {
 				t.Fatalf("repair did not execute its actual red: %d %+v calls=%v", code, result, starter.calls)
 			}
+			for _, checkResult := range starter.results {
+				data, err := os.ReadFile(filepath.Join(resultData(t, checkResult)["execution"].(string), "result.json"))
+				var retained struct {
+					ExecutionID string
+					Exits       []launch.CheckExit
+				}
+				if err != nil || json.Unmarshal(data, &retained) != nil || retained.ExecutionID == "" || len(retained.Exits) != 2 || retained.Exits[0].Exit != 23 || retained.Exits[1].Exit != 0 {
+					t.Fatalf("manual repair did not retain its actual exits: %s %v", data, err)
+				}
+			}
 			plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
 			if err != nil || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" {
 				t.Fatalf("manual check provenance missing: %v", err)

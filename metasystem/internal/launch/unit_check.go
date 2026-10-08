@@ -61,9 +61,10 @@ func (check UnitCheck) Run(directory, records string) (string, []CheckExit, erro
 		exits = append(exits, result)
 	}
 	err = writeUnitJSON(filepath.Join(execution, "result.json"), struct {
-		Directory string      `json:"runDirectory"`
-		Check     UnitCheck   `json:"check"`
-		Exits     []CheckExit `json:"exits"`
-	}{directory, check, exits}, execution)
+		ExecutionID string      `json:"executionId"`
+		Directory   string      `json:"runDirectory"`
+		Check       UnitCheck   `json:"check"`
+		Exits       []CheckExit `json:"exits"`
+	}{filepath.Base(execution), directory, check, exits}, execution)
 	return execution, exits, errors.Join(append(failures, err)...)
 }
