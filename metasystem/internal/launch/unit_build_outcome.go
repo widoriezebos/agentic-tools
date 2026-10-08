@@ -22,6 +22,24 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 			return false, err
 		}
 	}
+	if round.Result == nil {
+		snapshot, err := runner.snapshotRepository(plan.Worktree)
+		if err != nil {
+			return false, err
+		}
+		patch, err := runner.WorktreeDiff(plan.Worktree, strings.TrimSpace(snapshot.Head))
+		if err != nil {
+			return false, err
+		}
+		if _, err := atomicfile.WriteText(filepath.Join(round.Directory, "result.patch"), string(patch), runner.root()); err != nil {
+			return false, err
+		}
+		commands, err := json.Marshal(proofCommands(plan))
+		if err != nil {
+			return false, err
+		}
+		round.Result = &RoundResult{Tree: snapshot.TreeID, Parent: strings.TrimSpace(snapshot.Head), PatchDigest: digestHex(patch), ProofIdentity: digestHex(commands)}
+	}
 	gap := false
 	if round.DeclaredLines == 0 {
 		diff, err := runner.diffSince(UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}, UnitRound{Directory: filepath.Join(round.Directory, "build-before")}, *round, "records", "metasystem/records")

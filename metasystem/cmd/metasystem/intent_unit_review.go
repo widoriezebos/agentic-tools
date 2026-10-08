@@ -229,7 +229,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if err != nil {
 			return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 		}
-		if subject != nil && subject.StagedTree != "" && head != review.Head {
+		if subject != nil && subject.StagedTree != "" && head != review.Head && head != subject.ExpectedParent {
 			// A commit may have been made without being recorded; only
 			// the exact bound result is adopted.
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, head)
@@ -240,11 +240,23 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			}
 			subject.Commit, subject.Tip = commit, head
 		} else {
+			var frozenPatch []byte
+			if review.Round.Result != nil {
+				frozenPatch, err = os.ReadFile(filepath.Join(review.Round.Directory, "result.patch"))
+				if err != nil || launch.UnitResultDigest(string(frozenPatch)) != review.Round.Result.PatchDigest {
+					return refuse(retry, "recovers the retained patch", "the retained result patch cannot be verified", "%v", err)
+				}
+			}
 			diff, err := runner.WorktreeDiff(worktree, review.Base)
 			if err != nil {
 				return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 			}
-			if head != review.Head || !bytes.Equal(diff, review.Diff) || (!review.Legacy && current != review.Result) {
+			movedEquivalent := false
+			if head != review.Head && frozenPatch != nil {
+				patch, patchErr := runner.WorktreeDiff(worktree, head)
+				movedEquivalent = patchErr == nil && bytes.Equal(patch, frozenPatch) && current == review.Result
+			}
+			if !movedEquivalent && (head != review.Head || !bytes.Equal(diff, review.Diff) || (!review.Legacy && current != review.Result)) {
 				return refuse(revise, "builds the result again; or put the worktree back as the build left it and repeat",
 					fmt.Sprintf("the goal worktree changed after build round %d, so nothing was staged", review.Round.Number),
 					"UNIT_RESULT_CHANGED: goal worktree %s no longer holds round %d's result (HEAD %.12s, expected %.12s)", worktree, review.Round.Number, head, review.Head)
@@ -273,7 +285,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				subject = &launch.UnitSubject{Round: review.Round.Number, Operation: operation}
 			}
 			subject.ExpectedParent, subject.ResultDigest, subject.DiffDigest, subject.Paths =
-				review.Head, launch.UnitResultDigest(current), review.DiffDigest, paths
+				head, launch.UnitResultDigest(current), review.DiffDigest, paths
 			if review.Prior != nil {
 				parent, err := git(worktree, "rev-parse", review.Prior.Commit+"^")
 				if err != nil {
@@ -299,13 +311,73 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				return refuse(retry, "try again; --verbose shows the cause", "the commit can't be recorded before it is made, so nothing was committed", "cannot retain the unit subject before committing: %v", err)
 			}
 			var installed string
+			var gateErr error
 			commitErr := conn.commitToken(install, func() error {
 				var err error
 				installed, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
 					GoalID: goalID, Units: []string{unit}, OpID: subject.Operation + "-unit", Kind: branch.Unit,
-					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport})
+					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport,
+					FrozenPatch: frozenPatch, ResumeWorktree: subject.GateWorktree,
+					KeepWorktree: func() bool {
+						for _, id := range subject.GateLaunches {
+							current, err := runner.Manager.Status(id)
+							if err != nil && !os.IsNotExist(err) || err == nil && !current.State.Terminal() {
+								return true
+							}
+						}
+						return false
+					},
+					BeforeCommit: func(dir, parent, tree string) error {
+						if parent != review.Head || subject.Amends != "" || subject.GateSnapshot != nil {
+							if subject.Amends != "" {
+								if _, err := conn.rebaseGate(dir); err != nil {
+									gateErr = err
+									return err
+								}
+							}
+							gate, err := runner.ProveRoundResult(review, dir, subject, retain)
+							if err != nil {
+								gateErr = err
+								return err
+							}
+							subject.GateRunID = gate
+						}
+						if subject.Amends == "" {
+							subject.ExpectedParent, subject.StagedTree = parent, tree
+						}
+						subject.Conflict = ""
+						return retain(*subject)
+					}})
 				return err
 			})
+
+			var pending *launch.PublicationPending
+			if errors.As(gateErr, &pending) {
+				if !pending.Running {
+					subject.GateWorktree = ""
+					_ = retain(*subject)
+				}
+				return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Data: data, Summary: pending.Error(), next: retry, nextReason: "resumes the recorded publication check"}
+			}
+			if _, err := os.Stat(subject.GateWorktree); subject.GateWorktree == "" || os.IsNotExist(err) {
+				subject.GateWorktree = ""
+			}
+			if commitErr != nil && gateErr == nil && subject.GateWorktree == "" {
+				subject.GateSnapshot = nil
+				subject.GateLaunches = nil
+			}
+			if err := retain(*subject); err != nil {
+				return refuse(retry, "reconciles the retained subject", "the publication outcome could not be recorded", "%v", err)
+			}
+			var replayConflict *branch.OpError
+			if errors.As(commitErr, &replayConflict) && replayConflict.Code == branch.ReplayConflictCode {
+				subject.Conflict = commitErr.Error()
+				if err := retain(*subject); err != nil {
+					return refuse(retry, "retains the same conflict", "the publication conflict could not be recorded", "%v", err)
+				}
+				correction := append(slices.Clone(revise), "--reason", "resolve the retained publication conflict", "--by", "NAME")
+				return refuse(correction, "a person admits a correction of this retained round with its original plan", "the retained change conflicts with the current branch; nothing was committed", "%s", subject.Conflict)
+			}
 			if commitErr != nil {
 				after, _ := git(worktree, "rev-parse", "HEAD")
 				installed = strings.TrimSpace(string(after))
@@ -313,12 +385,17 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, installed)
 			if conflict != nil {
 				data["subject"] = subject
+				if gateErr != nil {
+					correction := append(slices.Clone(revise), "--reason", "correct the retained publication check failure", "--by", "NAME")
+					return refuse(correction, "a person admits a correction of this retained round", "the publication checks failed; nothing was committed", "%v", gateErr)
+				}
 				summary := fmt.Sprintf("the branch commit owner's result for unit %s does not bind round %d: %v", unit, review.Round.Number, conflict)
 				if commitErr != nil {
 					summary = fmt.Sprintf("the branch commit owner did not commit unit %s: %v", unit, commitErr)
 				}
 				return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: summary,
-					next: inv.sameCommand(), nextReason: "the bound subject is kept; the same command reconciles or commits it once"}
+					Details: launchDetails(commitErr),
+					next:    inv.sameCommand(), nextReason: "the bound subject is kept; the same command reconciles or commits it once"}
 			}
 			subject.Commit, subject.Tip = commit, installed
 		}
@@ -330,6 +407,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		}
 	}
 	data["commit"], data["tip"], data["operation"] = subject.Commit, subject.Tip, subject.Operation
+	data["expectedParent"] = subject.ExpectedParent
 	if subject.Amends != "" {
 		data["amends"] = subject.Amends
 	}

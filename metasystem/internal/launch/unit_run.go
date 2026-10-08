@@ -70,6 +70,7 @@ type UnitRunRecord struct {
 }
 
 type UnitRound struct {
+	Result           *RoundResult       `json:"result,omitempty"`
 	GapMessage       string             `json:"gapMessage,omitempty"`
 	BuildLines       int64              `json:"buildLines,omitempty"`
 	DeclaredLines    int64              `json:"declaredLines,omitempty"`
@@ -507,6 +508,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return runner.finish(record, round, "proof-red")
 	}
 	plan = planned
+	if round.Result != nil {
+		commands, err := json.Marshal(proofCommands(plan))
+		if err != nil {
+			return UnitResult{}, err
+		}
+		round.Result.ProofIdentity = digestHex(commands)
+	}
 	if len(round.Steps) == buildCount {
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
@@ -994,10 +1002,11 @@ func (runner *UnitRunner) worktreeDiff(worktree, base string, excluded ...string
 }
 
 type repositorySnapshot struct {
-	Head  string `json:"head"`
-	Refs  string `json:"refs"`
-	Index string `json:"index"`
-	Tree  string `json:"tree"`
+	TreeID string `json:"treeId,omitempty"`
+	Head   string `json:"head"`
+	Refs   string `json:"refs"`
+	Index  string `json:"index"`
+	Tree   string `json:"tree"`
 }
 
 func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
@@ -1046,6 +1055,10 @@ func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree stri
 }
 
 func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapshot, error) {
+	return runner.snapshotWorktree(worktree, true)
+}
+
+func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (repositorySnapshot, error) {
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
@@ -1063,9 +1076,12 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	// notes and the stash. Remote-tracking refs and the engine's own
 	// refs/metasystem/ namespace move while a proof runs (the presence
 	// publisher and the goal ledger's fetch), and a proof writes neither.
-	refs, err := git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
-	if err != nil {
-		return repositorySnapshot{}, err
+	var refs []byte
+	if sharedRefs {
+		refs, err = git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")
+		if err != nil {
+			return repositorySnapshot{}, err
+		}
 	}
 	indexPath, err := git.Run(root, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
@@ -1120,7 +1136,11 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
+	treeID, err := git.Run(root, environment, "write-tree")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	return repositorySnapshot{TreeID: strings.TrimSpace(string(treeID)), Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
 }
 
 func proofMayStart(round UnitRound, buildCount int) error {

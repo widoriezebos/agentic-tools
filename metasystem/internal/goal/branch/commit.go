@@ -3,6 +3,7 @@ package branch
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -10,11 +11,13 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 const (
-	UnavailableCode = "GOAL_BRANCH_UNAVAILABLE"
-	NotHolderCode   = "GOAL_BRANCH_NOT_HOLDER"
+	UnavailableCode    = "GOAL_BRANCH_UNAVAILABLE"
+	NotHolderCode      = "GOAL_BRANCH_NOT_HOLDER"
+	ReplayConflictCode = "GOAL_BRANCH_REPLAY_CONFLICT"
 )
 
 type OpError struct {
@@ -54,6 +57,10 @@ func firstLine(err error) string {
 var pushProtocolAvailable bool
 
 type CommitRequest struct {
+	BeforeCommit                                  func(dir, parent, tree string) error
+	ResumeWorktree                                string
+	KeepWorktree                                  func() bool
+	FrozenPatch                                   []byte
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
 	Units                                         []string
 	Kind                                          Kind
@@ -379,13 +386,37 @@ func buildCommitOnto(req CommitRequest, state commitBranchState, subject, traile
 }
 
 func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchState, subject, trailer string, patch []byte) (string, error) {
-	worktree, close, err := r.effects.Open(req.Repo, state.baseTip, false)
+	worktree, close, err := r.openCommitWorktree(req, state.baseTip, false)
 	if err != nil {
 		return "", err
 	}
-	defer close()
-	if err := r.effects.Apply(worktree, patch); err != nil {
-		return "", operationRefusal(StaleCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
+	defer func() {
+		if req.KeepWorktree == nil || !req.KeepWorktree() {
+			close()
+		}
+	}()
+	if req.ResumeWorktree == "" {
+		if err := r.effects.Apply(worktree, patch); err != nil {
+			return "", operationRefusal(ReplayConflictCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
+		}
+	}
+	if req.BeforeCommit != nil {
+		tree, err := r.facts.Index(worktree)
+		if err != nil {
+			return "", err
+		}
+		parent, err := r.facts.Head(worktree)
+		if err != nil {
+			return "", err
+		}
+		if err := req.BeforeCommit(worktree, parent, tree); err != nil {
+			return "", err
+		}
+	}
+	if req.ResumeWorktree != "" {
+		if parent, err := r.facts.Head(worktree); err != nil || parent != state.baseTip {
+			return "", operationRefusal(StaleCode, "the branch moved while its publication check ran\nrun: metasystem work review %s --work %s", req.GoalID, unitList(req.Units))
+		}
 	}
 	if err := r.effects.Commit(worktree, subject, trailer, false); err != nil {
 		return "", err
@@ -495,6 +526,9 @@ func (r commitRepository) commitStagedOnto(req CommitRequest, state commitBranch
 	if err != nil {
 		return "", err
 	}
+	if req.FrozenPatch != nil {
+		patch = req.FrozenPatch
+	}
 	newTip, err := r.buildCommitOnto(req, state, subject, trailer, patch)
 	if err != nil {
 		return "", err
@@ -573,13 +607,24 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	if err != nil {
 		return "", err
 	}
-	worktree, close, err := r.effects.Open(req.Repo, target, true)
+	worktree, close, err := r.openCommitWorktree(req, target, true)
 	if err != nil {
 		return "", err
 	}
-	defer close()
-	if err := r.effects.Apply(worktree, patch); err != nil {
-		return "", operationRefusal(RangeCode, "the staged fix doesn't apply to build %s: %v\nrun: metasystem work status %s", list, err, req.GoalID)
+	defer func() {
+		if req.KeepWorktree == nil || !req.KeepWorktree() {
+			close()
+		}
+	}()
+	if req.ResumeWorktree == "" {
+		if err := r.effects.Apply(worktree, patch); err != nil {
+			return "", operationRefusal(RangeCode, "the staged fix doesn't apply to build %s: %v\nrun: metasystem work status %s", list, err, req.GoalID)
+		}
+	}
+	if req.BeforeCommit != nil {
+		if err := req.BeforeCommit(worktree, previous, wantedTree); err != nil {
+			return "", err
+		}
 	}
 	subject, trailer, err := commitMessage(req, "")
 	if err != nil {
@@ -639,4 +684,31 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 		return "", err
 	}
 	return newTip, nil
+}
+
+// CloseCommitWorktree removes the exact scratch tree created for publication.
+func CloseCommitWorktree(repo, worktree string) error {
+	prefix, err := gitOutput(repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return err
+	}
+	_ = os.Remove(landpath.TokenPath(filepath.Join(worktree, strings.TrimRight(string(prefix), "\n"))))
+	if _, err := gitOutput(repo, "worktree", "remove", "--force", worktree); err != nil {
+		return err
+	}
+	return os.Remove(filepath.Dir(worktree))
+}
+
+func (r commitRepository) openCommitWorktree(req CommitRequest, base string, amend bool) (string, func(), error) {
+	if req.ResumeWorktree == "" {
+		return r.effects.Open(req.Repo, base, amend)
+	}
+	prefix, err := gitOutput(req.Repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", nil, err
+	}
+	if err := mintScratchCommitToken(filepath.Join(req.ResumeWorktree, strings.TrimRight(string(prefix), "\n"))); err != nil {
+		return "", nil, err
+	}
+	return req.ResumeWorktree, func() { _ = CloseCommitWorktree(req.Repo, req.ResumeWorktree) }, nil
 }

@@ -16,10 +16,15 @@ import (
 // creating a second subject. A prior round's subject stays for diagnosis
 // after a later round amends it.
 type UnitSubject struct {
-	Round     int    `json:"round"`
-	Operation string `json:"operation"`
-	// ExpectedParent is the HEAD the completed round observed after its
-	// proof: the tip the unit commit is made on (or amended from).
+	GateWorktree string              `json:"gateWorktree,omitempty"`
+	GateSnapshot *repositorySnapshot `json:"gateSnapshot,omitempty"`
+	GateLaunches []string            `json:"gateLaunches,omitempty"`
+	GateRunID    string              `json:"gateRunId,omitempty"`
+	Conflict     string              `json:"conflict,omitempty"`
+	Round        int                 `json:"round"`
+	Operation    string              `json:"operation"`
+	// ExpectedParent is the publication parent after replay, or the branch
+	// tip an amendment replaces. The round retains its original parent.
 	ExpectedParent string `json:"expectedParent"`
 	// ResultDigest is the SHA-256 of the round's retained result: the raw
 	// diff of its proof-after snapshot. It is not a Git tree identifier.
@@ -51,10 +56,11 @@ type UnitSubject struct {
 
 // UnitReview is a completed round as a committed review consumes it.
 type UnitReview struct {
-	Wait   func(func() error) error
-	Whole  bool
-	Record UnitRunRecord
-	Round  UnitRound
+	AdmitChild func(string) error
+	Wait       func(func() error) error
+	Whole      bool
+	Record     UnitRunRecord
+	Round      UnitRound
 	// Head is the completed round's observed HEAD; Result is its retained
 	// raw diff (proof-after snapshot Tree), compared byte for byte. Base and
 	// Diff are the plan's cumulative diff base and the round's retained
@@ -155,6 +161,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	}
 	review := UnitReview{Wait: runner.CommandWait, Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
 		Diff: diff, DiffDigest: digestHex(diff), Legacy: after.Tree != "" && !strings.Contains(after.Tree, "\x00")}
+	review.AdmitChild = func(id string) error {
+		if runner.tree == nil {
+			return fmt.Errorf("the publication check has no worktree owner")
+		}
+		runner.tree.owner.Children = append(runner.tree.owner.Children, id)
+		return writeUnitJSON(runner.tree.path, *runner.tree.owner, runner.root())
+	}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
